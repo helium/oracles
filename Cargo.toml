@@ -1,0 +1,23 @@
+[package]
+name = "poc5g-server"
+version = "0.1.0"
+edition = "2021"
+description = "PoC Server for the Helium network"
+authors = ["Marc Nijdam <marc@nova.xyz>"]
+license = "Apache-2.0"
+
+[dependencies]
+thiserror = "1"
+serde =  {version = "1", features=["derive"]}
+serde_json = "1"
+clap = {version = "3", features = ["derive"]}
+sqlx = {version = "0", features = ["postgres", "uuid", "chrono", "migrate", "macros", "runtime-tokio-rustls"]}
+tokio = { version = "1", default-features=false, features=["fs", "macros", "signal", "rt", "process", "time"] }
+tracing = "0"
+tracing-subscriber = { version = "0", features = ["env-filter"] }
+axum = "0"
+hyper = "*"
+base64 = "0"
+sha2 = "*"
+chrono = {version = "0", features = ["serde"]}
+helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
