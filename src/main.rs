@@ -1,11 +1,12 @@
 use axum::{
     async_trait,
-    extract::{Extension, FromRequest, RequestParts},
+    extract::{Extension, FromRequest, Path, RequestParts},
     http::StatusCode,
-    routing::get,
-    Router,
+    routing::{get, post},
+    Json, Router,
 };
-use poc5g_server::Result;
+use poc5g_server::{AttachEvent, Result, Uuid};
+use serde_json::{json, Value};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::result::Result as StdResult;
 use std::{net::SocketAddr, time::Duration};
@@ -32,10 +33,8 @@ async fn main() -> Result {
 
     // build our application with some routes
     let app = Router::new()
-        .route(
-            "/",
-            get(using_connection_pool_extractor).post(using_connection_extractor),
-        )
+        .route("/attach-events/:id", get(get_attach_event))
+        .route("/attach-events", post(create_attach_event))
         .layer(Extension(pool));
 
     // run it with hyper
@@ -47,18 +46,7 @@ async fn main() -> Result {
     Ok(())
 }
 
-// we can extract the connection pool with `Extension`
-async fn using_connection_pool_extractor(
-    Extension(pool): Extension<PgPool>,
-) -> StdResult<String, (StatusCode, String)> {
-    sqlx::query_scalar("select 'hello world from pg'")
-        .fetch_one(&pool)
-        .await
-        .map_err(internal_error)
-}
-
-// we can also write a custom extractor that grabs a connection from the pool
-// which setup is appropriate depends on your application
+// A custom extractor that grabs a connection from the pool
 struct DatabaseConnection(sqlx::pool::PoolConnection<sqlx::Postgres>);
 
 #[async_trait]
@@ -79,14 +67,35 @@ where
     }
 }
 
-async fn using_connection_extractor(
-    DatabaseConnection(conn): DatabaseConnection,
-) -> StdResult<String, (StatusCode, String)> {
-    let mut conn = conn;
-    sqlx::query_scalar("select 'hello world from pg'")
-        .fetch_one(&mut conn)
+async fn create_attach_event(
+    Json(event): Json<AttachEvent>,
+    DatabaseConnection(mut conn): DatabaseConnection,
+) -> StdResult<Json<Value>, (StatusCode, String)> {
+    event
+        .insert_into(&mut conn)
         .await
+        .map(|id: Uuid| {
+            json!({
+                "id": id,
+            })
+        })
+        .map(Json)
         .map_err(internal_error)
+}
+
+async fn get_attach_event(
+    Path(id): Path<Uuid>,
+    DatabaseConnection(mut conn): DatabaseConnection,
+) -> StdResult<Json<Value>, (StatusCode, String)> {
+    let event = AttachEvent::get(&mut conn, &id)
+        .await
+        .map_err(internal_error)?;
+    if let Some(event) = event {
+        let json = serde_json::to_value(event).map_err(internal_error)?;
+        Ok(Json(json))
+    } else {
+        Err(not_found_error())
+    }
 }
 
 /// Utility function for mapping any error into a `500 Internal Server Error`
@@ -96,4 +105,9 @@ where
     E: std::error::Error,
 {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
+/// Utility function returning a not found error
+fn not_found_error() -> (StatusCode, String) {
+    (StatusCode::NOT_FOUND, "not found".to_string())
 }
