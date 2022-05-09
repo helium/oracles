@@ -15,8 +15,6 @@ pub struct CellAttachEvent {
 
     #[serde(skip_deserializing)]
     pub created_at: Option<DateTime<Utc>>,
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
 }
 
 impl CellAttachEvent {
