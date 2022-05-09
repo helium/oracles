@@ -5,7 +5,7 @@ mod public_key;
 mod scan;
 mod uuid;
 
-pub use attach_event::AttachEvent;
+pub use attach_event::CellAttachEvent;
 pub use error::{Error, Result};
 pub use imsi::Imsi;
 pub use public_key::PublicKey;

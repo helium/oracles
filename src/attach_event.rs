@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, Row};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize)]
-pub struct AttachEvent {
+pub struct CellAttachEvent {
     #[serde(skip_deserializing)]
     pub id: Uuid,
     pub imsi: Imsi,
@@ -19,7 +19,7 @@ pub struct AttachEvent {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-impl AttachEvent {
+impl CellAttachEvent {
     pub async fn insert_into(&self, conn: &mut PgConnection) -> Result<Uuid> {
         sqlx::query(
             r#"

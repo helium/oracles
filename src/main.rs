@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use poc5g_server::{AttachEvent, Result, Uuid};
+use poc5g_server::{CellAttachEvent, Result, Uuid};
 use serde_json::{json, Value};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::result::Result as StdResult;
@@ -33,8 +33,8 @@ async fn main() -> Result {
 
     // build our application with some routes
     let app = Router::new()
-        .route("/attach-events/:id", get(get_attach_event))
-        .route("/attach-events", post(create_attach_event))
+        .route("/cell/attach-events/:id", get(get_cell_attach_event))
+        .route("/cell/attach-events", post(create_cell_attach_event))
         .layer(Extension(pool));
 
     // run it with hyper
@@ -67,8 +67,8 @@ where
     }
 }
 
-async fn create_attach_event(
-    Json(event): Json<AttachEvent>,
+async fn create_cell_attach_event(
+    Json(event): Json<CellAttachEvent>,
     DatabaseConnection(mut conn): DatabaseConnection,
 ) -> StdResult<Json<Value>, (StatusCode, String)> {
     event
@@ -83,11 +83,11 @@ async fn create_attach_event(
         .map_err(internal_error)
 }
 
-async fn get_attach_event(
+async fn get_cell_attach_event(
     Path(id): Path<Uuid>,
     DatabaseConnection(mut conn): DatabaseConnection,
 ) -> StdResult<Json<Value>, (StatusCode, String)> {
-    let event = AttachEvent::get(&mut conn, &id)
+    let event = CellAttachEvent::get(&mut conn, &id)
         .await
         .map_err(internal_error)?;
     if let Some(event) = event {
