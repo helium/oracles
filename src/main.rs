@@ -45,9 +45,11 @@ async fn main() -> Result {
     // build our application with some routes
     let app = Router::new()
         .route("/cell/attach-events/:id", get(get_cell_attach_event))
-        .route("/cell/attach-events", post(create_cell_attach_event))
-        .layer(Extension(pool))
-        .layer(RequireAuthorizationLayer::bearer(&api_token));
+        .route(
+            "/cell/attach-events",
+            post(create_cell_attach_event).layer(RequireAuthorizationLayer::bearer(&api_token)),
+        )
+        .layer(Extension(pool));
 
     // run it with hyper
     tracing::debug!("listening on {}", addr);
