@@ -21,7 +21,7 @@ impl CellAttachEvent {
     pub async fn insert_into(&self, conn: &mut PgConnection) -> Result<Uuid> {
         sqlx::query(
             r#"
-        insert into attach_events (pubkey, imsi, timestamp)
+        insert into cell_attach_event (pubkey, imsi, timestamp)
         values ($1, $2, $3)
         returning id
             "#,
@@ -38,11 +38,11 @@ impl CellAttachEvent {
     pub async fn get(conn: &mut PgConnection, id: &Uuid) -> Result<Option<Self>> {
         sqlx::query_as::<_, Self>(
             r#"
-            select * from attach_events 
+            select * from cell_attach_event 
             where id = $1::uuid
             "#,
         )
-        .bind(id.to_string())
+        .bind(id)
         .fetch_optional(conn)
         .await
         .map_err(Error::from)
