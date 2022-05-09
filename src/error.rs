@@ -5,7 +5,7 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("environment error")]
-    Env(#[from] std::env::VarError),
+    DotEnv(#[from] dotenv::Error),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
     #[error("migration error")]

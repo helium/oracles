@@ -1026,6 +1026,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "dotenv",
  "helium-crypto",
  "hyper",
  "serde",

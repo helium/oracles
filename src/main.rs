@@ -14,14 +14,15 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result {
+    dotenv::dotenv()?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "poc5g_server=debug".into()),
+            dotenv::var("RUST_LOG").unwrap_or_else(|_| "poc5g_server=debug".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let db_connection_str = std::env::var("DATABASE_URL")?;
+    let db_connection_str = dotenv::var("DATABASE_URL")?;
 
     let pool = PgPoolOptions::new()
         .max_connections(10)
