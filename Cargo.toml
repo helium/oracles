@@ -21,4 +21,5 @@ hyper = "*"
 base64 = "0"
 sha2 = "*"
 chrono = {version = "0", features = ["serde"]}
+tower-http = {version = "*", features = ["auth"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}

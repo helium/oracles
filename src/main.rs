@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::result::Result as StdResult;
 use std::{io, net::SocketAddr, time::Duration};
+use tower_http::auth::RequireAuthorizationLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -31,6 +32,7 @@ async fn main() -> Result {
             ))
         })
     })?;
+    let api_token = dotenv::var("API_TOKEN")?;
 
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -44,7 +46,8 @@ async fn main() -> Result {
     let app = Router::new()
         .route("/cell/attach-events/:id", get(get_cell_attach_event))
         .route("/cell/attach-events", post(create_cell_attach_event))
-        .layer(Extension(pool));
+        .layer(Extension(pool))
+        .layer(RequireAuthorizationLayer::bearer(&api_token));
 
     // run it with hyper
     tracing::debug!("listening on {}", addr);
