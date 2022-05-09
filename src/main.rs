@@ -9,7 +9,7 @@ use poc5g_server::{CellAttachEvent, Result, Uuid};
 use serde_json::{json, Value};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::result::Result as StdResult;
-use std::{net::SocketAddr, time::Duration};
+use std::{io, net::SocketAddr, time::Duration};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -23,6 +23,14 @@ async fn main() -> Result {
         .init();
 
     let db_connection_str = dotenv::var("DATABASE_URL")?;
+    let addr = dotenv::var("SOCKET_ADDR").and_then(|v| {
+        v.parse::<SocketAddr>().map_err(|_| {
+            dotenv::Error::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid socket address",
+            ))
+        })
+    })?;
 
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -39,7 +47,6 @@ async fn main() -> Result {
         .layer(Extension(pool));
 
     // run it with hyper
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::debug!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
