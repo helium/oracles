@@ -53,6 +53,7 @@ async fn main() -> Result {
             post(attach_events::create_cell_attach_event)
                 .layer(RequireAuthorizationLayer::bearer(&api_token)),
         )
+        // heartbeats
         .route("/cell/heartbeats/:id", get(heartbeats::get_cell_hearbeat))
         .route(
             "/cell/heartbeats",
@@ -65,10 +66,11 @@ async fn main() -> Result {
                 .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
         .route(
-            "/cell/speedtests/hotspots/:id",
-            get(speedtests::get_hotspot_cell_speedtests)
+            "/cell/heartbeats/hotspots/:id",
+            get(heartbeats::get_hotspot_cell_heartbeats)
                 .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
+        // speedtests
         .route("/cell/speedtests/:id", get(speedtests::get_cell_speedtest))
         .route(
             "/cell/speedtests",
