@@ -1,5 +1,6 @@
 pub mod attach_events;
 pub mod heartbeats;
+pub mod speedtests;
 
 use axum::{
     async_trait,

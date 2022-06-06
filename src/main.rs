@@ -4,7 +4,7 @@ use axum::{
     Router,
 };
 use poc5g_server::{
-    api::{attach_events, heartbeats},
+    api::{attach_events, heartbeats, speedtests},
     Result,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -65,8 +65,24 @@ async fn main() -> Result {
                 .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
         .route(
-            "/cell/heartbeats/hotspots/:id",
-            get(heartbeats::get_hotspot_cell_heartbeats)
+            "/cell/speedtests/hotspots/:id",
+            get(speedtests::get_hotspot_cell_speedtests)
+                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
+        )
+        .route("/cell/speedtests/:id", get(speedtests::get_cell_speedtest))
+        .route(
+            "/cell/speedtests",
+            post(speedtests::create_cell_speedtest)
+                .layer(RequireAuthorizationLayer::bearer(&api_token)),
+        )
+        .route(
+            "/cell/speedtests/hotspots/:id/last",
+            get(speedtests::get_hotspot_last_cell_speedtest)
+                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
+        )
+        .route(
+            "/cell/speedtests/hotspots/:id",
+            get(speedtests::get_hotspot_cell_speedtests)
                 .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
         .layer(Extension(pool));

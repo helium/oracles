@@ -5,14 +5,14 @@ use sqlx::{PgConnection, Row};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize)]
 pub struct CellAttachEvent {
-    #[serde(skip_deserializing)]
-    pub id: Uuid,
     pub imsi: Imsi,
     #[serde(alias = "publicAddress")]
     pub pubkey: PublicKey,
     #[serde(alias = "iso_timestamp")]
     pub timestamp: DateTime<Utc>,
 
+    #[serde(skip_deserializing)]
+    pub id: Uuid,
     #[serde(skip_deserializing)]
     pub created_at: Option<DateTime<Utc>>,
 }
