@@ -6,6 +6,7 @@ create table cell_speedtest (
     timestamp timestamptz not null,
     upload_speed bigint,
     download_speed bigint,
+    latency integer,
 
     created_at timestamptz default now()
 );

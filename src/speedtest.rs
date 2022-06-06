@@ -9,12 +9,15 @@ pub const MAX_SPEEDTEST_COUNT: u32 = 1000;
 
 #[derive(sqlx::FromRow, Deserialize, Serialize)]
 pub struct CellSpeedtest {
-    #[serde(alias = "pub_key")]
+    #[serde(alias = "pubKey")]
     pub pubkey: PublicKey,
     pub serial: String,
     pub timestamp: DateTime<Utc>,
+    #[serde(alias = "uploadSpeed")]
     pub upload_speed: i64,
+    #[serde(alias = "downloadSpeed")]
     pub download_speed: i64,
+    pub latency: i32,
 
     #[serde(skip_deserializing)]
     pub id: Uuid,
@@ -26,8 +29,8 @@ impl CellSpeedtest {
     pub async fn insert_into(&self, conn: &mut PgConnection) -> Result<Uuid> {
         sqlx::query(
             r#"
-        insert into cell_speedtest (pubkey, serial, timestamp, upload_speed, download_speed)
-        values ($1, $2, $3, $4, $5)
+        insert into cell_speedtest (pubkey, serial, timestamp, upload_speed, download_speed, latency)
+        values ($1, $2, $3, $4, $5, $6)
         returning id
             "#,
         )
@@ -36,6 +39,7 @@ impl CellSpeedtest {
         .bind(self.timestamp)
         .bind(&self.upload_speed)
         .bind(&self.download_speed)
+        .bind(&self.latency)
         .fetch_one(conn)
         .await
         .and_then(|row| row.try_get("id"))
