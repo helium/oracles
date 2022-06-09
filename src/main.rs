@@ -9,7 +9,7 @@ use poc5g_server::{
 };
 use sqlx::postgres::PgPoolOptions;
 use std::{io, net::SocketAddr, time::Duration};
-use tower_http::auth::RequireAuthorizationLayer;
+use tower_http::{auth::RequireAuthorizationLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -87,6 +87,7 @@ async fn main() -> Result {
             get(speedtests::get_hotspot_cell_speedtests)
                 .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
+        .layer(TraceLayer::new_for_http())
         .layer(Extension(pool));
 
     // run it with hyper
