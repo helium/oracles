@@ -1,8 +1,8 @@
 use crate::{pagination::Since, Error, PublicKey, Result, Uuid};
-use chrono::{DateTime, Utc, MIN_DATETIME};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, Row};
-use std::cmp::min;
+use std::{cmp::min, time::SystemTime};
 
 pub const DEFAULT_HEARTBEAT_COUNT: usize = 100;
 pub const MAX_HEARTBEAT_COUNT: u32 = 1000;
@@ -12,13 +12,13 @@ pub struct CellHeartbeat {
     #[serde(alias = "pubKey")]
     pub pubkey: PublicKey,
     pub hotspot_type: String,
-    pub cell_id: u32,
+    pub cell_id: i32,
     pub timestamp: DateTime<Utc>,
     #[serde(alias = "longitude")]
-    pub lon: f32,
+    pub lon: f64,
     #[serde(alias = "latitude")]
-    pub lat: f32,
-    pub operation_mode: bool,
+    pub lat: f64,
+    pub operation_mode: String,
     pub cbsd_category: String,
 
     #[serde(skip_deserializing)]
@@ -77,7 +77,11 @@ impl CellHeartbeat {
             "#,
         )
         .bind(id)
-        .bind(since.since.unwrap_or(MIN_DATETIME))
+        .bind(
+            since
+                .since
+                .unwrap_or_else(|| DateTime::<Utc>::from(SystemTime::UNIX_EPOCH)),
+        )
         .bind(min(
             MAX_HEARTBEAT_COUNT,
             since.count.unwrap_or(DEFAULT_HEARTBEAT_COUNT) as u32,
@@ -88,6 +92,7 @@ impl CellHeartbeat {
     }
 
     pub async fn for_hotspot_last(conn: &mut PgConnection, id: &str) -> Result<Option<Self>> {
+        tracing::info!("GETTING LAST HEARTBEATFOR HOTSPOT {}", id);
         sqlx::query_as::<_, Self>(
             r#"
             select * from cell_heartbeat 

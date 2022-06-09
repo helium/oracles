@@ -1,8 +1,8 @@
 use crate::{pagination::Since, Error, PublicKey, Result, Uuid};
-use chrono::{DateTime, Utc, MIN_DATETIME};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, Row};
-use std::cmp::min;
+use std::{cmp::min, time::SystemTime};
 
 pub const DEFAULT_SPEEDTEST_COUNT: usize = 100;
 pub const MAX_SPEEDTEST_COUNT: u32 = 1000;
@@ -73,7 +73,11 @@ impl CellSpeedtest {
             "#,
         )
         .bind(id)
-        .bind(since.since.unwrap_or(MIN_DATETIME))
+        .bind(
+            since
+                .since
+                .unwrap_or_else(|| DateTime::<Utc>::from(SystemTime::UNIX_EPOCH)),
+        )
         .bind(min(
             MAX_SPEEDTEST_COUNT,
             since.count.unwrap_or(DEFAULT_SPEEDTEST_COUNT) as u32,
