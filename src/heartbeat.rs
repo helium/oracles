@@ -92,7 +92,6 @@ impl CellHeartbeat {
     }
 
     pub async fn for_hotspot_last(conn: &mut PgConnection, id: &str) -> Result<Option<Self>> {
-        tracing::info!("GETTING LAST HEARTBEATFOR HOTSPOT {}", id);
         sqlx::query_as::<_, Self>(
             r#"
             select * from cell_heartbeat 
