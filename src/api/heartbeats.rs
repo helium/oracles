@@ -1,7 +1,6 @@
 use crate::{
     api::{internal_error, not_found_error, DatabaseConnection},
-    pagination::Since,
-    CellHeartbeat, Uuid,
+    CellHeartbeat, Since, Uuid,
 };
 use axum::{
     extract::{Path, Query},

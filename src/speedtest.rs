@@ -1,4 +1,4 @@
-use crate::{pagination::Since, Error, PublicKey, Result, Uuid};
+use crate::{Error, PublicKey, Result, Since, Uuid};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, Row};
@@ -79,8 +79,8 @@ impl CellSpeedtest {
                 .unwrap_or_else(|| DateTime::<Utc>::from(SystemTime::UNIX_EPOCH)),
         )
         .bind(min(
-            MAX_SPEEDTEST_COUNT,
-            since.count.unwrap_or(DEFAULT_SPEEDTEST_COUNT) as u32,
+            MAX_SPEEDTEST_COUNT as i32,
+            since.count.unwrap_or(DEFAULT_SPEEDTEST_COUNT) as i32,
         ))
         .fetch_all(conn)
         .await

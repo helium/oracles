@@ -1,3 +1,4 @@
+use crate::{Error, Result};
 use serde::{
     de::{self, Deserializer},
     ser::Serializer,
@@ -12,7 +13,7 @@ use sqlx::{
 };
 use std::{ops::Deref, str::FromStr};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicKey(helium_crypto::PublicKey);
 
 impl Deref for PublicKey {
@@ -41,7 +42,7 @@ impl Encode<'_, Postgres> for PublicKey {
 }
 
 impl<'r> Decode<'r, Postgres> for PublicKey {
-    fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
+    fn decode(value: PgValueRef<'r>) -> std::result::Result<Self, BoxDynError> {
         let value = <&str as Decode<Postgres>>::decode(value)?;
         let key = helium_crypto::PublicKey::from_str(value)?;
         Ok(Self(key))
@@ -62,10 +63,30 @@ impl<'de> Deserialize<'de> for PublicKey {
 }
 
 impl Serialize for PublicKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl TryFrom<&[u8]> for PublicKey {
+    type Error = Error;
+    fn try_from(value: &[u8]) -> Result<Self> {
+        Ok(Self(helium_crypto::PublicKey::try_from(value)?))
+    }
+}
+
+impl std::fmt::Display for PublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::str::FromStr for PublicKey {
+    type Err = Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(helium_crypto::PublicKey::from_str(s)?))
     }
 }

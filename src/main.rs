@@ -1,16 +1,20 @@
-use axum::{
-    extract::Extension,
-    routing::{get, post},
-    Router,
-};
-use poc5g_server::{
-    api::{attach_events, heartbeats, speedtests},
-    Result,
-};
-use sqlx::postgres::PgPoolOptions;
-use std::{io, net::SocketAddr, time::Duration};
-use tower_http::{auth::RequireAuthorizationLayer, trace::TraceLayer};
+use clap::Parser;
+use poc5g_server::{cli, Result};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[derive(Debug, clap::Subcommand)]
+pub enum Cmd {
+    Server(cli::server::Cmd),
+    Maker(Box<cli::maker::Cmd>),
+}
+
+#[derive(Debug, clap::Parser)]
+#[clap(version = env!("CARGO_PKG_VERSION"))]
+#[clap(about = "PoC Mobile Token Server")]
+pub struct Cli {
+    #[clap(subcommand)]
+    cmd: Cmd,
+}
 
 #[tokio::main]
 async fn main() -> Result {
@@ -22,78 +26,10 @@ async fn main() -> Result {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let db_connection_str = dotenv::var("DATABASE_URL")?;
-    let addr = dotenv::var("SOCKET_ADDR").and_then(|v| {
-        v.parse::<SocketAddr>().map_err(|_| {
-            dotenv::Error::Io(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid socket address",
-            ))
-        })
-    })?;
-    let api_token = dotenv::var("API_TOKEN")?;
-    let api_ro_token = dotenv::var("API_RO_TOKEN")?;
+    let cli = Cli::parse();
 
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect_timeout(Duration::from_secs(3))
-        .connect(&db_connection_str)
-        .await?;
-
-    sqlx::migrate!().run(&pool).await?;
-
-    // build our application with some routes
-    let app = Router::new()
-        .route(
-            "/cell/attach-events/:id",
-            get(attach_events::get_cell_attach_event),
-        )
-        .route(
-            "/cell/attach-events",
-            post(attach_events::create_cell_attach_event)
-                .layer(RequireAuthorizationLayer::bearer(&api_token)),
-        )
-        // heartbeats
-        .route(
-            "/cell/heartbeats/hotspots/:id/last",
-            get(heartbeats::get_hotspot_last_cell_heartbeat)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
-        )
-        .route("/cell/heartbeats/:id", get(heartbeats::get_cell_hearbeat))
-        .route(
-            "/cell/heartbeats",
-            post(heartbeats::create_cell_heartbeat)
-                .layer(RequireAuthorizationLayer::bearer(&api_token)),
-        )
-        .route(
-            "/cell/heartbeats/hotspots/:id",
-            get(heartbeats::get_hotspot_cell_heartbeats)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
-        )
-        // speedtests
-        .route("/cell/speedtests/:id", get(speedtests::get_cell_speedtest))
-        .route(
-            "/cell/speedtests",
-            post(speedtests::create_cell_speedtest)
-                .layer(RequireAuthorizationLayer::bearer(&api_token)),
-        )
-        .route(
-            "/cell/speedtests/hotspots/:id/last",
-            get(speedtests::get_hotspot_last_cell_speedtest)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
-        )
-        .route(
-            "/cell/speedtests/hotspots/:id",
-            get(speedtests::get_hotspot_cell_speedtests)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
-        )
-        .layer(TraceLayer::new_for_http())
-        .layer(Extension(pool));
-
-    // run it with hyper
-    tracing::debug!("listening on {}", addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await?;
-    Ok(())
+    match cli.cmd {
+        Cmd::Server(cmd) => cmd.run().await,
+        Cmd::Maker(cmd) => cmd.run().await,
+    }
 }

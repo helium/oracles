@@ -20,6 +20,12 @@ axum = "0"
 hyper = "*"
 base64 = "0"
 sha2 = "*"
+http = "*"
+tonic = "0"
 chrono = {version = "0", features = ["serde"]}
 tower-http = {version = "*", features = ["auth", "trace"]}
+triggered = "0"
+futures = "*"
+futures-util = "*"
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}

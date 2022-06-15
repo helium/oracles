@@ -10,6 +10,16 @@ pub enum Error {
     Sql(#[from] sqlx::Error),
     #[error("migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
-    #[error("http error")]
-    Http(#[from] hyper::Error),
+    #[error("http server error")]
+    Server(#[from] hyper::Error),
+    #[error("grpc {}", .0.message())]
+    Grpc(#[from] tonic::Status),
+    #[error("service error")]
+    Service(#[from] helium_proto::services::Error),
+    #[error("uri error")]
+    Uri(#[from] http::uri::InvalidUri),
+    #[error("crypto error")]
+    Crypto(#[from] helium_crypto::Error),
+    #[error("json error")]
+    Json(#[from] serde_json::Error),
 }
