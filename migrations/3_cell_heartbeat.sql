@@ -7,7 +7,7 @@ create table cell_heartbeat (
     timestamp timestamptz not null,
     lon float,
     lat float,
-    operation_mode text,
+    operation_mode boolean,
     cbsd_category text,
 
     created_at timestamptz default now()

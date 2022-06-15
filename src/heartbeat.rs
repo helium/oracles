@@ -18,7 +18,7 @@ pub struct CellHeartbeat {
     pub lon: f64,
     #[serde(alias = "latitude")]
     pub lat: f64,
-    pub operation_mode: String,
+    pub operation_mode: bool,
     pub cbsd_category: String,
 
     #[serde(skip_deserializing)]
