@@ -8,6 +8,7 @@ mod imsi;
 mod maker;
 mod public_key;
 mod uuid;
+mod emissions;
 
 pub use error::{Error, Result};
 pub use event_id::EventId;
