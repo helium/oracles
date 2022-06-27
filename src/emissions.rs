@@ -20,10 +20,10 @@ pub enum Model {
     FFSercomm,
 }
 
-pub fn get_emissions_per_model(models: HashMap<Model, u32>, datetime: DateTime<Utc>) -> HashMap<Model, f64> {
+pub fn get_emissions_per_model(models: HashMap<Model, u64>, datetime: DateTime<Utc>) -> HashMap<Model, f64> {
     let total_rewards = get_scheduled_tokens(datetime).expect("Failed to supply valid date on the emission schedule");
     let ff436s = models.get(&Model::FF436).unwrap_or_else(|| &0);
-    let ff430s = models.get(&Model::FF436).unwrap_or_else(|| &0);
+    let ff430s = models.get(&Model::FF430).unwrap_or_else(|| &0);
     let ffsercomms = models.get(&Model::FFSercomm).unwrap_or_else(|| &0);
     let ff436_shares = *ff436s as f64 * FF436WT;
     let ff430_shares = *ff430s as f64 * FF430WT;
@@ -34,6 +34,10 @@ pub fn get_emissions_per_model(models: HashMap<Model, u32>, datetime: DateTime<U
         (Model::FF436, f64::trunc((base_reward * FF436WT) * PRECISION) / PRECISION),
         (Model::FF430, f64::trunc((base_reward * FF430WT) * PRECISION) / PRECISION),
         (Model::FFSercomm, f64::trunc((base_reward * FFSERWT) * PRECISION) / PRECISION),
+        // In case we need to fully truncate the rewards and not denominate tokens in decimals
+        // (Model::FF436, (base * FF436WT).round() as f64),
+        // (Model::FF430, (base * FF430WT).round() as f64),
+        // (Model::FFSercomm, (base * FFSERWT).round() as f64),
     ])
 }
 
@@ -59,4 +63,27 @@ mod test {
         let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 10)]);
         assert_eq!(expected, get_emissions_per_model(input, date))
     }
+
+    #[test]
+    fn transition_reward() {
+        let expected = HashMap::from([(Model::FFSercomm, 43809.52), (Model::FF430, 65714.28), (Model::FF436, 87619.04)]);
+        let date = Utc.ymd(2022, 8, 1).and_hms(0, 0, 0);
+        let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 10)]);
+        assert_eq!(expected, get_emissions_per_model(input, date))
+    }
+
+    #[test]
+    fn poc_5g_start_reward() {
+        let expected = HashMap::from([(Model::FFSercomm, 60952.36), (Model::FF430, 91428.55), (Model::FF436, 121904.73)]);
+        let date = Utc.ymd(2023, 1, 1).and_hms(0, 0, 0);
+        let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 10)]);
+        assert_eq!(expected, get_emissions_per_model(input, date))
+    }
+
+    // fn no_436s_reward() {
+    //     let expected = HashMap::from([(Model::FFSercomm, ), (Model::FF430, ), (Model::FF436, )]);
+    //     let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
+    //     let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 0)]);
+    //     assert_eq!(expected, get_emissions_per_model(input, date))
+    // }
 }
