@@ -30,3 +30,8 @@ pub struct Since {
     pub since: Option<DateTime<Utc>>,
     pub count: Option<usize>,
 }
+
+use chrono::NaiveDateTime;
+pub fn datetime_from_epoch(secs: i64) -> DateTime<Utc> {
+    DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(secs, 0), Utc)
+}

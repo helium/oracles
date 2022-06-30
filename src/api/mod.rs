@@ -1,6 +1,7 @@
 pub mod attach_events;
 pub mod gateways;
 pub mod heartbeats;
+pub mod server;
 pub mod speedtests;
 
 use axum::{

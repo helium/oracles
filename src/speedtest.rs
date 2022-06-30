@@ -26,7 +26,10 @@ pub struct CellSpeedtest {
 }
 
 impl CellSpeedtest {
-    pub async fn insert_into(&self, conn: &mut PgConnection) -> Result<Uuid> {
+    pub async fn insert_into<'e, 'c, E>(&self, executor: E) -> Result<Uuid>
+    where
+        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
         sqlx::query(
             r#"
         insert into cell_speedtest (pubkey, serial, timestamp, upload_speed, download_speed, latency)
@@ -40,7 +43,7 @@ impl CellSpeedtest {
         .bind(&self.upload_speed)
         .bind(&self.download_speed)
         .bind(&self.latency)
-        .fetch_one(conn)
+        .fetch_one(executor)
         .await
         .and_then(|row| row.try_get("id"))
         .map_err(Error::from)

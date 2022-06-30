@@ -20,6 +20,7 @@ pub struct CellHeartbeat {
     pub lat: f64,
     pub operation_mode: bool,
     pub cbsd_category: String,
+    pub cbsd_id: String,
 
     #[serde(skip_deserializing)]
     pub id: Uuid,
@@ -28,7 +29,10 @@ pub struct CellHeartbeat {
 }
 
 impl CellHeartbeat {
-    pub async fn insert_into(&self, conn: &mut PgConnection) -> Result<Uuid> {
+    pub async fn insert_into<'e, 'c, E>(&self, executor: E) -> Result<Uuid>
+    where
+        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
         sqlx::query(
             r#"
         insert into cell_heartbeat (pubkey, hotspot_type, cell_id, timestamp, lat, lon, operation_mode, cbsd_category)
@@ -44,7 +48,7 @@ impl CellHeartbeat {
         .bind(&self.lon)
         .bind(&self.operation_mode)
         .bind(&self.cbsd_category)
-        .fetch_one(conn)
+        .fetch_one(executor)
         .await
         .and_then(|row| row.try_get("id"))
         .map_err(Error::from)

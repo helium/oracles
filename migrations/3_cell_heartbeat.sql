@@ -9,6 +9,7 @@ create table cell_heartbeat (
     lat float,
     operation_mode boolean,
     cbsd_category text,
+    cbsd_id text,
 
     created_at timestamptz default now()
 );
