@@ -20,9 +20,27 @@
 #    pub id: Uuid,
 #    #[serde(skip_deserializing)]
 #    pub created_at: Option<DateTime<Utc>>,
-# }"""
+# }
+#
+# {
+#   "cbsd_category": "A",
+#   "cell_id": 630262,
+#   "created_at": "2022-06-29T20:09:41.321063Z",
+#   "hotspot_type": "enodeb",
+#   "id": "6906f158-f7e7-11ec-a998-63127488bd46",
+#   "lat": 27.901068,
+#   "lon": -82.739204,
+#   "operation_mode": true,
+#   "pubkey": "112HR2gQ2LimfGvYHRrVxUCuMAWhrW8h7NY25Nefo8yQfR1RwbNj",
+#   "timestamp": "2022-06-28T17:00:28Z"
+#}
+#
+#
+# """
 
+import base64
 from binascii import crc32
+import datetime
 from decimal import Decimal
 import json
 import logging
@@ -31,12 +49,14 @@ from pprint import pformat
 from random import choice, randrange, uniform
 import re
 import ssl
-import time
 import uuid
 import urllib.request
 
 log = logging.getLogger()
 
+fcc_ids = [ '2AG32PBS3101S', '2AG32MBS3100196N',
+            '2AG32PBS31010', 'P27-SCE4255W',
+            'P27-SCO4255PA10' ]
 
 # some fake longitude and latitudes, all in bodies of water:
 FAKE_LAT_LONG = {
@@ -47,10 +67,8 @@ FAKE_LAT_LONG = {
     "so-atlantic": (Decimal(-35.604556), Decimal(-54.880125)),
 }
 
-
 def choose_mode():
     return uniform(0, 1) < 0.75
-
 
 def build_gateways():
     # encode keys as bytes
@@ -59,34 +77,43 @@ def build_gateways():
         # generate an index into the latlong based on the pubkey
         # using crc32 modulo the length of the dict as a
         # consistent hash
-        i = (crc32(x.encode()) & 0xFFFFFFFF) % len(FAKE_LAT_LONG)
+        i = crc32(x.encode()) & 0xffffffff
+        i_ll = i % len(latlong)
+        i_fcc = i % len(fcc_ids)
+
+        fcc_id = fcc_ids[i_fcc]
+
+        serial = base64.b32encode((i & 0x0000ffff).to_bytes(4, 'big')).decode().replace('=','') + str(i & 0xffff0000)
         # between 1 and 3 cell ids
         cell_ids = [
-            randrange(10000, 99999) for _ in range(max(1, min(3, (i % 3) + 1)))
+            randrange(100000, 999999) for _ in xrange(max(1, min(3, (i % 3)+1)))
         ]
         # use the index to select the lat, long coordinates
         (lat, lon) = FAKE_LAT_LONG[list(FAKE_LAT_LONG)[i]]
         gateways.append(
-            {"gw_addr": x, "lat": lat, "lon": lon, "cell_ids": cell_ids}
+            {"gw_addr": x, "lat": lat, "lon": lon,
+             "cell_ids": cell_ids, "fcc_id": fcc_id,
+             "serial": serial}
         )
 
     return gateways
 
-
 def main(gateways):
     for gw in gateways:
         heartbeat = {
-            "pubkey": gw["gw_addr"],
-            "hotspot_type": "type",
-            "cell_id": choice(gw["cell_ids"]),
-            "timestamp": int(time.time()),
-            "lon": gw["lon"],
-            "lat": gw["lat"],
-            "operational_mode": choose_mode(),
-            "cbsd_category": "category",
-            "id": uuid.uuid4(),
-            "created_at": int(time.time()),
+            'pubkey': gw['gw_addr'],
+            'hotspot_type': 'enodeb',
+            'cell_id': choice(gw['cell_ids']),
+            'timestamp': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+            'lon': gw['lon'],
+            'lat': gw['lat'],
+            'operational_mode': choose_mode(),
+            'cbsd_category': 'A',
+            'cbsd_id': gw['fcc_id'] + gw['serial'],
+            'id': uuid.uuid4(),
+            'created_at': datetime.datetime.utcnow().isoformat() + 'Z'
         }
+
         context = ssl.create_default_context()
         data = json.dumps(heartbeat)
         hdrs = {
@@ -109,7 +136,6 @@ def main(gateways):
                 log.error(
                     "{} status request data {}".format(status, pformat(req))
                 )
-
 
 if __name__ == "__main__":
     gateways = build_gateways()
