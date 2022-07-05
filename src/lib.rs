@@ -1,14 +1,15 @@
 pub mod api;
 pub mod cli;
+pub mod emissions;
 mod error;
 mod event_id;
 mod file_writer;
 mod follower;
+mod hotspot;
 mod imsi;
 mod maker;
 mod public_key;
 mod uuid;
-pub mod emissions;
 
 pub use error::{Error, Result};
 pub use event_id::EventId;

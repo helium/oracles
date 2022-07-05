@@ -22,6 +22,7 @@ base64 = "0"
 sha2 = "*"
 http = "*"
 tonic = "0"
+lazy_static = "*"
 chrono = {version = "0", features = ["serde"]}
 tower-http = {version = "*", features = ["auth", "trace"]}
 triggered = "0"

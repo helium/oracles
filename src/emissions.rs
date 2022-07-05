@@ -1,57 +1,84 @@
+use crate::hotspot::{Hotspot, Model};
 use chrono::{DateTime, TimeZone, Utc};
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 
 const REWARDS_PER_WEEK: u64 = 336;
-const SCHEDULE: [((i32, u32, u32), (i32, u32, u32), u64); 3] =
-    [
-        ((2022, 7, 7), (2022, 7, 28), 640_000_000 / REWARDS_PER_WEEK),
-        ((2022, 7, 28), (2022, 8, 4), 920_000_000 / REWARDS_PER_WEEK),
-        ((2022, 8, 4), (2023, 7, 13), 1_280_000_000 / REWARDS_PER_WEEK),
-    ];
-const FF436WT: f64 = 2.0;
-const FF430WT: f64 = 1.5;
-const FFSERWT: f64 = 1.0;
+const GENESIS_REWARD: u64 = 640_000_000 / REWARDS_PER_WEEK;
+const PRE_POC_REWARD: u64 = 1_280_000_000 / REWARDS_PER_WEEK;
 const PRECISION: f64 = 100.0;
 
-#[derive(Debug, Eq, Hash, PartialEq)]
-pub enum Model {
-    FF436,
-    FF430,
-    FFSercomm,
+lazy_static! {
+    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+    static ref PRE_POC_START: DateTime<Utc> = Utc.ymd(2022, 8, 1).and_hms(0, 0, 0);
+    static ref PRE_POC_END: DateTime<Utc> = Utc.ymd(2023, 7, 17).and_hms(0, 0, 0);
 }
 
-pub fn get_emissions_per_model(models: HashMap<Model, u64>, datetime: DateTime<Utc>) -> HashMap<Model, f64> {
-    let total_rewards = get_scheduled_tokens(datetime).expect("Failed to supply valid date on the emission schedule");
-    let ff436s = models.get(&Model::FF436).unwrap_or_else(|| &0);
-    let ff430s = models.get(&Model::FF430).unwrap_or_else(|| &0);
-    let ffsercomms = models.get(&Model::FFSercomm).unwrap_or_else(|| &0);
-    let ff436_shares = *ff436s as f64 * FF436WT;
-    let ff430_shares = *ff430s as f64 * FF430WT;
-    let ffser_shares = *ffsercomms as f64 * FFSERWT;
-    let total_weights = ff436_shares + ff430_shares + ffser_shares;
+pub fn get_emissions_per_model(
+    models: HashMap<Model, u64>,
+    datetime: DateTime<Utc>,
+) -> HashMap<Model, f64> {
+    let total_rewards = get_scheduled_tokens(datetime)
+        .expect("Failed to supply valid date on the emission schedule");
+
+    let nova436s = models.get(&Model::Nova436H).unwrap_or_else(|| &0);
+    let nova430s = models.get(&Model::Nova430H).unwrap_or_else(|| &0);
+    let sercommos = models.get(&Model::SercommOutdoor).unwrap_or_else(|| &0);
+    let sercommis = models.get(&Model::SercommIndoor).unwrap_or_else(|| &0);
+    let neut430s = models.get(&Model::Neutrino430).unwrap_or_else(|| &0);
+
+    let nova436_shares = Hotspot::NOVA436H.reward_shares(*nova436s);
+    let nova430_shares = Hotspot::NOVA430H.reward_shares(*nova430s);
+    let sercommo_shares = Hotspot::SERCOMMOUTDOOR.reward_shares(*sercommos);
+    let sercommi_shares = Hotspot::SERCOMMINDOOR.reward_shares(*sercommis);
+    let neut430_shares = Hotspot::NEUTRINO430.reward_shares(*neut430s);
+
+    let total_weights =
+        nova436_shares + nova430_shares + sercommo_shares + sercommi_shares + neut430_shares;
     let base_reward = total_rewards as f64 / total_weights;
-    let ff436_rewards = if ff436s > &0 { f64::trunc((base_reward * FF436WT) * PRECISION) / PRECISION } else { 0.0 };
-    let ff430_rewards = if ff430s > &0 { f64::trunc((base_reward * FF430WT) * PRECISION) / PRECISION } else { 0.0 };
-    let ffsercomm_rewards = if ffsercomms > &0 { f64::trunc((base_reward * FFSERWT) * PRECISION) / PRECISION } else { 0.0 };
-    // let ff436_rewards = if ff436s > &0 { (base_reward * FF436WT).round() as u64 } else { 0 };
-    // let ff430_rewards = if ff430s > &0 { (base_reward * FF430WT).round() as u64 } else { 0 };
-    // let ffsercomm_rewards = if ffsercomms > &0 { (base_reward * FFSERWT).round() as u64 } else { 0 };
+    let nova436_rewards = if nova436s > &0 {
+        Hotspot::NOVA436H.rewards(base_reward, PRECISION)
+    } else {
+        0.0
+    };
+    let nova430_rewards = if nova430s > &0 {
+        Hotspot::NOVA430H.rewards(base_reward, PRECISION)
+    } else {
+        0.0
+    };
+    let sercommo_rewards = if sercommos > &0 {
+        Hotspot::SERCOMMOUTDOOR.rewards(base_reward, PRECISION)
+    } else {
+        0.0
+    };
+    let sercommi_rewards = if sercommis > &0 {
+        Hotspot::SERCOMMINDOOR.rewards(base_reward, PRECISION)
+    } else {
+        0.0
+    };
+    let neut430_rewards = if neut430s > &0 {
+        Hotspot::NEUTRINO430.rewards(base_reward, PRECISION)
+    } else {
+        0.0
+    };
+
     HashMap::from([
-        (Model::FF436, ff436_rewards),
-        (Model::FF430, ff430_rewards),
-        (Model::FFSercomm, ffsercomm_rewards),
+        (Model::Nova436H, nova436_rewards),
+        (Model::Nova430H, nova430_rewards),
+        (Model::SercommOutdoor, sercommo_rewards),
+        (Model::SercommIndoor, sercommi_rewards),
+        (Model::Neutrino430, neut430_rewards),
     ])
 }
 
 fn get_scheduled_tokens(datetime: DateTime<Utc>) -> Option<u64> {
-    for ((start_y, start_m, start_d), (end_y, end_m, end_d), val) in SCHEDULE.iter() {
-        let start_date = Utc.ymd(*start_y, *start_m, *start_d).and_hms(0, 0, 0);
-        let end_date = Utc.ymd(*end_y, *end_m, *end_d).and_hms(0, 0, 0);
-        if start_date < datetime && datetime < end_date {
-            return Some(*val);
-        }
+    if *GENESIS_START < datetime && datetime < *PRE_POC_START {
+        Some(GENESIS_REWARD)
+    } else if *PRE_POC_START < datetime && datetime < *PRE_POC_END {
+        Some(PRE_POC_REWARD)
+    } else {
+        None
     }
-    return None
 }
 
 #[cfg(test)]
@@ -60,33 +87,60 @@ mod test {
 
     #[test]
     fn genesis_reward() {
-        let expected = HashMap::from([(Model::FFSercomm, 30476.17), (Model::FF430, 45714.26), (Model::FF436, 60952.35)]);
+        let expected = HashMap::from([
+            (Model::SercommOutdoor, 30557.66),
+            (Model::Nova430H, 30557.66),
+            (Model::Nova436H, 40743.55),
+            (Model::SercommIndoor, 20371.77),
+            (Model::Neutrino430, 20371.77),
+        ]);
         let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
-        let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 10)]);
+        let input = HashMap::from([
+            (Model::SercommOutdoor, 20),
+            (Model::Nova430H, 15),
+            (Model::Nova436H, 10),
+            (Model::SercommIndoor, 13),
+            (Model::Neutrino430, 8),
+        ]);
         assert_eq!(expected, get_emissions_per_model(input, date))
     }
 
     #[test]
-    fn transition_reward() {
-        let expected = HashMap::from([(Model::FFSercomm, 43809.52), (Model::FF430, 65714.28), (Model::FF436, 87619.04)]);
-        let date = Utc.ymd(2022, 8, 1).and_hms(0, 0, 0);
-        let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 10)]);
-        assert_eq!(expected, get_emissions_per_model(input, date))
-    }
-
-    #[test]
-    fn poc_5g_start_reward() {
-        let expected = HashMap::from([(Model::FFSercomm, 60952.36), (Model::FF430, 91428.55), (Model::FF436, 121904.73)]);
+    fn post_genesis_reward() {
+        let expected = HashMap::from([
+            (Model::SercommOutdoor, 61115.34),
+            (Model::Nova430H, 61115.34),
+            (Model::Nova436H, 81487.12),
+            (Model::SercommIndoor, 40743.56),
+            (Model::Neutrino430, 40743.56),
+        ]);
         let date = Utc.ymd(2023, 1, 1).and_hms(0, 0, 0);
-        let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 10)]);
+        let input = HashMap::from([
+            (Model::SercommOutdoor, 20),
+            (Model::Nova430H, 15),
+            (Model::Nova436H, 10),
+            (Model::SercommIndoor, 13),
+            (Model::Neutrino430, 8),
+        ]);
         assert_eq!(expected, get_emissions_per_model(input, date))
     }
 
     #[test]
-    fn no_436s_reward() {
-        let expected = HashMap::from([(Model::FFSercomm, 44817.9), (Model::FF430, 67226.85), (Model::FF436, 0.0)]);
+    fn no_reporting_model_reward() {
+        let expected = HashMap::from([
+            (Model::SercommOutdoor, 38872.67),
+            (Model::Nova430H, 38872.67),
+            (Model::Nova436H, 0.0),
+            (Model::SercommIndoor, 25915.11),
+            (Model::Neutrino430, 25915.11),
+        ]);
         let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
-        let input = HashMap::from([(Model::FFSercomm, 20), (Model::FF430, 15), (Model::FF436, 0)]);
+        let input = HashMap::from([
+            (Model::SercommOutdoor, 20),
+            (Model::Nova430H, 15),
+            (Model::SercommIndoor, 13),
+            (Model::Neutrino430, 8),
+        ]);
         assert_eq!(expected, get_emissions_per_model(input, date))
     }
 }
