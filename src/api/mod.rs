@@ -1,8 +1,8 @@
-pub mod attach_events;
-pub mod gateways;
-pub mod heartbeats;
+pub mod attach_event;
+pub mod gateway;
+pub mod heartbeat;
 pub mod server;
-pub mod speedtests;
+pub mod speedtest;
 
 use axum::{
     async_trait,

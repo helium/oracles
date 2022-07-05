@@ -2,7 +2,7 @@ pub mod client;
 
 use client::FollowerService;
 
-use crate::{Gateway, Maker, Result};
+use crate::{api::gateway::Gateway, Maker, Result};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
     BlockchainTxnSubnetworkRewardsV1, FollowerTxnStreamRespV1,

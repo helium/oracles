@@ -1,6 +1,10 @@
 use crate::{
-    api::{attach_events, gateways, heartbeats, speedtests},
-    datetime_from_epoch, CellHeartbeat, CellSpeedtest, Error, PublicKey, Result, Uuid,
+    api::{
+        attach_event,
+        gateway::{self, Gateway},
+        heartbeat,
+    },
+    datetime_from_epoch, Error, PublicKey, Result,
 };
 use axum::{
     extract::Extension,
@@ -31,56 +35,24 @@ pub async fn api_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
     // build our application with some routes
     let app = Router::new()
         .route(
-            "/cell/attach-events/:id",
-            get(attach_events::get_cell_attach_event),
-        )
-        .route(
             "/cell/attach-events",
-            post(attach_events::create_cell_attach_event)
+            post(attach_event::create_cell_attach_event)
                 .layer(RequireAuthorizationLayer::bearer(&api_token)),
         )
         // heartbeats
         .route(
-            "/cell/heartbeats/hotspots/:id/last",
-            get(heartbeats::get_hotspot_last_cell_heartbeat)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
-        )
-        .route("/cell/heartbeats/:id", get(heartbeats::get_cell_hearbeat))
-        .route(
             "/cell/heartbeats",
-            post(heartbeats::create_cell_heartbeat)
+            post(heartbeat::create_cell_heartbeat)
                 .layer(RequireAuthorizationLayer::bearer(&api_token)),
-        )
-        .route(
-            "/cell/heartbeats/hotspots/:id",
-            get(heartbeats::get_hotspot_cell_heartbeats)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
-        )
-        // speedtests
-        .route("/cell/speedtests/:id", get(speedtests::get_cell_speedtest))
-        .route(
-            "/cell/speedtests",
-            post(speedtests::create_cell_speedtest)
-                .layer(RequireAuthorizationLayer::bearer(&api_token)),
-        )
-        .route(
-            "/cell/speedtests/hotspots/:id/last",
-            get(speedtests::get_hotspot_last_cell_speedtest)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
-        )
-        .route(
-            "/cell/speedtests/hotspots/:id",
-            get(speedtests::get_hotspot_cell_speedtests)
-                .layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
         // hotspots
         .route(
             "/hotspots",
-            get(gateways::get_gateways).layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
+            get(gateway::get_gateways).layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
         .route(
             "/hotspots/:pubkey",
-            get(gateways::get_gateway).layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
+            get(gateway::get_gateway).layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
         .layer(TraceLayer::new_for_http())
         .layer(Extension(pool.clone()));
@@ -109,40 +81,8 @@ impl GrpcServer {
     }
 }
 
-impl TryFrom<SpeedtestReqV1> for CellSpeedtest {
-    type Error = Error;
-    fn try_from(v: SpeedtestReqV1) -> Result<Self> {
-        Ok(Self {
-            pubkey: PublicKey::try_from(v.pub_key.as_ref())?,
-            serial: v.serial,
-            timestamp: datetime_from_epoch(v.timestamp as i64),
-            upload_speed: v.upload_speed as i64,
-            download_speed: v.download_speed as i64,
-            latency: v.latency as i32,
-            id: Uuid::nil(),
-            created_at: None,
-        })
-    }
-}
-
-impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
-    type Error = Error;
-    fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
-        Ok(Self {
-            pubkey: PublicKey::try_from(v.pub_key.as_ref())?,
-            hotspot_type: v.hotspot_type,
-            cell_id: v.cell_id as i32,
-            timestamp: datetime_from_epoch(v.timestamp as i64),
-            lon: v.lon,
-            lat: v.lat,
-            operation_mode: v.operation_mode,
-            cbsd_category: v.cbsd_category,
-            cbsd_id: v.cbsd_id,
-
-            id: Uuid::nil(),
-            created_at: None,
-        })
-    }
+fn decode_pubkey(pubkey: &[u8]) -> std::result::Result<PublicKey, Status> {
+    PublicKey::try_from(pubkey).map_err(|_err| Status::internal("Failed to decode public key"))
 }
 
 #[tonic::async_trait]
@@ -152,13 +92,16 @@ impl poc_mobile::PocMobile for GrpcServer {
         request: Request<SpeedtestReqV1>,
     ) -> GrpcResult<SpeedtestRespV1> {
         // TODO: Signature verify speedtest_req
-        let event = CellSpeedtest::try_from(request.into_inner())
-            .map_err(|_err| Status::internal("Failed to decode event"))?;
-        let id = event
-            .insert_into(&self.pool)
-            .await
-            .map_err(|_err| Status::internal("Failed to insert event"))?;
-        Ok(Response::new(SpeedtestRespV1 { id: id.to_string() }))
+        let event = request.into_inner();
+        let pubkey = Gateway::update_last_speedtest(
+            &self.pool,
+            decode_pubkey(&event.pub_key)?,
+            datetime_from_epoch(event.timestamp as i64),
+        )
+        .await
+        .map(|res| res.map_or_else(|| "".to_string(), |p| p.to_string()))
+        .map_err(|_err| Status::internal("Failed to insert event"))?;
+        Ok(Response::new(SpeedtestRespV1 { id: pubkey }))
     }
 
     async fn submit_cell_heartbeat(
@@ -166,13 +109,16 @@ impl poc_mobile::PocMobile for GrpcServer {
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
         // TODO: Signature verify heartbeat_req
-        let event = CellHeartbeat::try_from(request.into_inner())
-            .map_err(|_err| Status::internal("Failed to decode event"))?;
-        let id = event
-            .insert_into(&self.pool)
-            .await
-            .map_err(|_err| Status::internal("Failed to insert event"))?;
-        Ok(Response::new(CellHeartbeatRespV1 { id: id.to_string() }))
+        let event = request.into_inner();
+        let pubkey = Gateway::update_last_heartbeat(
+            &self.pool,
+            decode_pubkey(&event.pub_key)?,
+            datetime_from_epoch(event.timestamp as i64),
+        )
+        .await
+        .map(|res| res.map_or_else(|| "".to_string(), |p| p.to_string()))
+        .map_err(|_err| Status::internal("Failed to insert event"))?;
+        Ok(Response::new(CellHeartbeatRespV1 { id: pubkey }))
     }
 }
 

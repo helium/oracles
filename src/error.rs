@@ -8,6 +8,8 @@ pub enum Error {
     DotEnv(#[from] dotenv::Error),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
+    #[error("io error")]
+    Io(#[from] std::io::Error),
     #[error("migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
     #[error("http server error")]

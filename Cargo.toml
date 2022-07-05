@@ -27,5 +27,7 @@ tower-http = {version = "*", features = ["auth", "trace"]}
 triggered = "0"
 futures = "*"
 futures-util = "*"
+prost = "*"
+async-compression = {version = "0", features = ["tokio", "gzip"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "madninja/poc-mobile-service", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}

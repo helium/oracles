@@ -21,13 +21,13 @@ impl Maker {
         }
     }
 
-    pub async fn remove<'e, 'c, E>(pubkey: &PublicKey, executor: E) -> Result
+    pub async fn remove<'c, E>(pubkey: &PublicKey, executor: E) -> Result
     where
-        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         let _ = sqlx::query(
             r#"
-        delete from maker where pubkey = $1
+            delete from maker where pubkey = $1
             "#,
         )
         .bind(pubkey)
@@ -37,17 +37,17 @@ impl Maker {
         Ok(())
     }
 
-    pub async fn insert_into<'e, 'c, E>(&self, executor: E) -> Result<Self>
+    pub async fn insert_into<'c, E>(&self, executor: E) -> Result<Self>
     where
-        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query_as::<_, Self>(
             r#"
-        insert into maker (pubkey, description)
-        values ($1, $2)
-        on conflict (pubkey) do update set
-            description = EXCLUDED.description
-        returning *;
+            insert into maker (pubkey, description)
+            values ($1, $2)
+            on conflict (pubkey) do update set
+                description = EXCLUDED.description
+            returning *;
             "#,
         )
         .bind(&self.pubkey)
