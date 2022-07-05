@@ -34,7 +34,7 @@ impl Follower {
                 return Ok(());
             }
             let height = self.get_gateway_height().await? as u64;
-            tracing::info!("connecting to txn stream");
+            tracing::info!("connecting to txn stream at height {height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
                 stream_result = self.service.txn_stream(Some(height), &[], &[]) => match stream_result {
