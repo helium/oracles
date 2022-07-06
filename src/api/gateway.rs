@@ -1,5 +1,5 @@
 use crate::{
-    api::{internal_error, not_found_error, DatabaseConnection},
+    api::{internal_error, DatabaseConnection},
     datetime_from_epoch, Error, PublicKey, Result,
 };
 use axum::{
@@ -25,7 +25,7 @@ pub async fn get_gateway(
         let json = serde_json::to_value(event).map_err(internal_error)?;
         Ok(Json(json))
     } else {
-        Err(not_found_error())
+        Err(Error::not_found(format!("Gateway {pubkey} not found")).into())
     }
 }
 
@@ -122,46 +122,45 @@ impl Gateway {
         where pubkey = $1
         "#;
 
-    async fn _update_last_timestamp<'e, 'c, E>(
+    async fn _update_last_timestamp<'c, 'q, E>(
         executor: E,
-        query: &'static str,
-        pubkey: PublicKey,
-        timestamp: DateTime<Utc>,
-    ) -> Result<Option<PublicKey>>
+        query: &'q str,
+        pubkey: &'q PublicKey,
+        timestamp: &'q DateTime<Utc>,
+    ) -> Result
     where
-        'c: 'e,
-        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let result = sqlx::query(query)
-            .bind(&pubkey)
-            .bind(&timestamp)
+        let rows_affected = sqlx::query(query)
+            .bind(pubkey)
+            .bind(timestamp)
             .execute(executor)
             .await
+            .map(|res| res.rows_affected())
             .map_err(Error::from)?;
-        if result.rows_affected() == 1 {
-            Ok(Some(pubkey))
+        if rows_affected > 0 {
+            Err(Error::not_found(format!("gateway {pubkey} not found")))
         } else {
-            tracing::warn!("No known gateway to update last timestamp {pubkey}");
-            Ok(None)
+            Ok(())
         }
     }
 
-    pub async fn update_last_heartbeat<'c, E>(
+    pub async fn update_last_heartbeat<'c, 'q, E>(
         executor: E,
-        pubkey: PublicKey,
-        timestamp: DateTime<Utc>,
-    ) -> Result<Option<PublicKey>>
+        pubkey: &'q PublicKey,
+        timestamp: &'q DateTime<Utc>,
+    ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         Self::_update_last_timestamp(executor, Self::UPDATE_LAST_HEARTBEAT, pubkey, timestamp).await
     }
 
-    pub async fn update_last_speedtest<'c, E>(
+    pub async fn update_last_speedtest<'c, 'q, E>(
         executor: E,
-        pubkey: PublicKey,
-        timestamp: DateTime<Utc>,
-    ) -> Result<Option<PublicKey>>
+        pubkey: &'q PublicKey,
+        timestamp: &'q DateTime<Utc>,
+    ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -170,9 +169,9 @@ impl Gateway {
 
     pub async fn update_last_attach<'c, E>(
         executor: E,
-        pubkey: PublicKey,
-        timestamp: DateTime<Utc>,
-    ) -> Result<Option<PublicKey>>
+        pubkey: &'static PublicKey,
+        timestamp: &'static DateTime<Utc>,
+    ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {

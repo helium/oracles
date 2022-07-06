@@ -11,11 +11,6 @@ use axum::{
 };
 use sqlx::postgres::PgPool;
 
-/// Utility function returning a not found error
-pub fn not_found_error() -> (StatusCode, String) {
-    (StatusCode::NOT_FOUND, "not found".to_string())
-}
-
 /// Utility function for mapping any error into a `500 Internal Server Error`
 /// response.
 pub fn internal_error<E>(err: E) -> (StatusCode, String)

@@ -24,4 +24,31 @@ pub enum Error {
     Crypto(#[from] helium_crypto::Error),
     #[error("json error")]
     Json(#[from] serde_json::Error),
+
+    #[error("not found")]
+    NotFound(String),
+}
+
+impl Error {
+    pub fn not_found<E: ToString>(msg: E) -> Self {
+        Self::NotFound(msg.to_string())
+    }
+}
+
+impl From<Error> for tonic::Status {
+    fn from(v: Error) -> Self {
+        match v {
+            Error::NotFound(msg) => tonic::Status::not_found(msg),
+            _other => tonic::Status::internal("internal error"),
+        }
+    }
+}
+
+impl From<Error> for (http::StatusCode, String) {
+    fn from(v: Error) -> Self {
+        match v {
+            Error::NotFound(msg) => (http::StatusCode::NOT_FOUND, msg),
+            err => (http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+        }
+    }
 }

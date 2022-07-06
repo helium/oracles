@@ -1,6 +1,6 @@
 use crate::{
     api::{gateway::Gateway, internal_error, DatabaseConnection},
-    datetime_from_epoch, Error, PublicKey, Result,
+    Error, EventId, PublicKey, Result,
 };
 use axum::{http::StatusCode, Json};
 use chrono::{DateTime, Utc};
@@ -12,9 +12,10 @@ pub async fn create_cell_heartbeat(
     Json(event): Json<CellHeartbeat>,
     DatabaseConnection(mut conn): DatabaseConnection,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    Gateway::update_last_heartbeat(&mut conn, event.pubkey, event.timestamp)
+    Gateway::update_last_heartbeat(&mut conn, &event.pubkey, &event.timestamp)
         .await
-        .map(|pubkey: Option<PublicKey>| json!({ "pubkey": pubkey }))
+        .and_then(|_| EventId::try_from(event))
+        .map(|id| json!({ "id": id }))
         .map(Json)
         .map_err(internal_error)
 }
@@ -35,19 +36,20 @@ pub struct CellHeartbeat {
     pub cbsd_id: String,
 }
 
-impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
+impl TryInto<CellHeartbeatReqV1> for CellHeartbeat {
     type Error = Error;
-    fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
-        Ok(Self {
-            pubkey: PublicKey::try_from(v.pub_key.as_ref())?,
-            hotspot_type: v.hotspot_type,
-            cell_id: v.cell_id,
-            timestamp: datetime_from_epoch(v.timestamp as i64),
-            lon: v.lon,
-            lat: v.lat,
-            operation_mode: v.operation_mode,
-            cbsd_category: v.cbsd_category,
-            cbsd_id: v.cbsd_id,
+    fn try_into(self) -> Result<CellHeartbeatReqV1> {
+        Ok(CellHeartbeatReqV1 {
+            pub_key: self.pubkey.to_vec(),
+            hotspot_type: self.hotspot_type,
+            cell_id: self.cell_id,
+            timestamp: self.timestamp.timestamp() as u64,
+            lon: self.lon,
+            lat: self.lat,
+            operation_mode: self.operation_mode,
+            cbsd_category: self.cbsd_category,
+            cbsd_id: self.cbsd_id,
+            signature: vec![],
         })
     }
 }

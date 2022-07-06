@@ -1,6 +1,7 @@
 pub mod api;
 pub mod cli;
 mod error;
+mod event_id;
 mod file_writer;
 mod follower;
 mod imsi;
@@ -9,6 +10,7 @@ mod public_key;
 mod uuid;
 
 pub use error::{Error, Result};
+pub use event_id::EventId;
 pub use file_writer::FileWriter;
 pub use follower::Follower;
 pub use imsi::Imsi;

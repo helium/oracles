@@ -4,7 +4,7 @@ use crate::{
         gateway::{self, Gateway},
         heartbeat,
     },
-    datetime_from_epoch, Error, PublicKey, Result,
+    datetime_from_epoch, Error, EventId, PublicKey, Result,
 };
 use axum::{
     extract::Extension,
@@ -93,15 +93,16 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<SpeedtestRespV1> {
         // TODO: Signature verify speedtest_req
         let event = request.into_inner();
-        let pubkey = Gateway::update_last_speedtest(
+        Gateway::update_last_speedtest(
             &self.pool,
-            decode_pubkey(&event.pub_key)?,
-            datetime_from_epoch(event.timestamp as i64),
+            &decode_pubkey(&event.pub_key)?,
+            &datetime_from_epoch(event.timestamp as i64),
         )
         .await
-        .map(|res| res.map_or_else(|| "".to_string(), |p| p.to_string()))
-        .map_err(|_err| Status::internal("Failed to insert event"))?;
-        Ok(Response::new(SpeedtestRespV1 { id: pubkey }))
+        // Encode event digest, encode and return as the id
+        .map(EventId::from)
+        .map(|id| Response::new(id.into()))
+        .map_err(Status::from)
     }
 
     async fn submit_cell_heartbeat(
@@ -110,15 +111,17 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<CellHeartbeatRespV1> {
         // TODO: Signature verify heartbeat_req
         let event = request.into_inner();
-        let pubkey = Gateway::update_last_heartbeat(
+        let pubkey = decode_pubkey(&event.pub_key)?;
+        Gateway::update_last_heartbeat(
             &self.pool,
-            decode_pubkey(&event.pub_key)?,
-            datetime_from_epoch(event.timestamp as i64),
+            &pubkey,
+            &datetime_from_epoch(event.timestamp as i64),
         )
         .await
-        .map(|res| res.map_or_else(|| "".to_string(), |p| p.to_string()))
-        .map_err(|_err| Status::internal("Failed to insert event"))?;
-        Ok(Response::new(CellHeartbeatRespV1 { id: pubkey }))
+        // Encode event digest, encode and return as the id
+        .map(EventId::from)
+        .map(|id| Response::new(id.into()))
+        .map_err(Status::from)
     }
 }
 

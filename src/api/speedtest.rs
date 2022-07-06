@@ -1,6 +1,6 @@
 use crate::{
     api::{gateway::Gateway, internal_error, DatabaseConnection},
-    datetime_from_epoch, Error, PublicKey, Result,
+    Error, EventId, PublicKey, Result,
 };
 use axum::{http::StatusCode, Json};
 use chrono::{DateTime, Utc};
@@ -12,13 +12,10 @@ pub async fn create_cell_speedtest(
     Json(event): Json<CellSpeedtest>,
     DatabaseConnection(mut conn): DatabaseConnection,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    Gateway::update_last_speedtest(&mut conn, event.pubkey, event.timestamp)
+    Gateway::update_last_speedtest(&mut conn, &event.pubkey, &event.timestamp)
         .await
-        .map(|pubkey: Option<PublicKey>| {
-            json!({
-                "pubkey": pubkey,
-            })
-        })
+        .and_then(|_| EventId::try_from(event))
+        .map(|id| json!({ "id": id }))
         .map(Json)
         .map_err(internal_error)
 }
@@ -30,22 +27,23 @@ pub struct CellSpeedtest {
     pub serial: String,
     pub timestamp: DateTime<Utc>,
     #[serde(alias = "uploadSpeed")]
-    pub upload_speed: i64,
+    pub upload_speed: u64,
     #[serde(alias = "downloadSpeed")]
-    pub download_speed: i64,
-    pub latency: i32,
+    pub download_speed: u64,
+    pub latency: u32,
 }
 
-impl TryFrom<SpeedtestReqV1> for CellSpeedtest {
+impl TryInto<SpeedtestReqV1> for CellSpeedtest {
     type Error = Error;
-    fn try_from(v: SpeedtestReqV1) -> Result<Self> {
-        Ok(Self {
-            pubkey: PublicKey::try_from(v.pub_key.as_ref())?,
-            serial: v.serial,
-            timestamp: datetime_from_epoch(v.timestamp as i64),
-            upload_speed: v.upload_speed as i64,
-            download_speed: v.download_speed as i64,
-            latency: v.latency as i32,
+    fn try_into(self) -> Result<SpeedtestReqV1> {
+        Ok(SpeedtestReqV1 {
+            pub_key: self.pubkey.to_vec(),
+            serial: self.serial,
+            timestamp: self.timestamp.timestamp() as u64,
+            upload_speed: self.upload_speed,
+            download_speed: self.download_speed,
+            latency: self.latency,
+            signature: vec![],
         })
     }
 }
