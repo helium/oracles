@@ -37,7 +37,7 @@ impl Follower {
             tracing::info!("connecting to txn stream at height {height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
-                stream_result = self.service.txn_stream(Some(height), &[], &[]) => match stream_result {
+                stream_result = self.service.txn_stream(None, &[], &[]) => match stream_result {
                     Ok(txn_stream) => {
                         tracing::info!("connected to txn stream");
                         self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
@@ -87,6 +87,7 @@ impl Follower {
     }
 
     async fn process_txn_entry(&mut self, entry: FollowerTxnStreamRespV1) -> Result {
+        tracing::info!("processing {:?}", entry);
         let txn = match entry.txn {
             Some(BlockchainTxn { txn: Some(ref txn) }) => txn,
             _ => {
@@ -110,6 +111,13 @@ impl Follower {
         let gateway =
             Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
         let makers = Maker::list(&self.pool).await?;
+        tracing::info!(
+            "Makers: {}",
+            makers
+                .iter()
+                .map(|m| m.pubkey.to_string())
+                .collect::<Vec<String>>()
+        );
         if makers.iter().any(|m| m.pubkey == gateway.payer) {
             let inserted = gateway.insert_into(&self.pool).await?;
             tracing::info!(
