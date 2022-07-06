@@ -112,7 +112,7 @@ impl Follower {
             Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
         let makers = Maker::list(&self.pool).await?;
         tracing::info!(
-            "Makers: {}",
+            "Makers: {:?}",
             makers
                 .iter()
                 .map(|m| m.pubkey.to_string())
