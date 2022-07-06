@@ -27,16 +27,19 @@ impl FollowerService {
         })
     }
 
-    pub async fn txn_stream(
+    pub async fn txn_stream<T>(
         &mut self,
         height: Option<u64>,
         txn_hash: &[u8],
-        txn_types: &[String],
-    ) -> Result<Streaming<FollowerTxnStreamRespV1>> {
+        txn_types: &[T],
+    ) -> Result<Streaming<FollowerTxnStreamRespV1>>
+    where
+        T: ToString,
+    {
         let req = FollowerTxnStreamReqV1 {
             height,
             txn_hash: txn_hash.to_vec(),
-            txn_types: txn_types.to_vec(),
+            txn_types: txn_types.iter().map(|e| e.to_string()).collect(),
         };
         let res = self.client.txn_stream(req).await?.into_inner();
         Ok(res)
