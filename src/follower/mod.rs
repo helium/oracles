@@ -38,7 +38,10 @@ impl Follower {
             tokio::select! {
                 _ = shutdown.clone() => (),
                 stream_result = self.service.txn_stream(Some(height), &[], &[]) => match stream_result {
-                    Ok(txn_stream) => self.run_with_txn_stream(txn_stream, shutdown.clone()).await?,
+                    Ok(txn_stream) => {
+                        tracing::info!("connected to txn stream");
+                        self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
+                    }
                     Err(err) => {
                         tracing::warn!("failed to connect to txn stream: {err}");
                         self.reconnect_wait(shutdown.clone()).await

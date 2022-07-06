@@ -141,6 +141,7 @@ impl Gateway {
         if result.rows_affected() == 1 {
             Ok(Some(pubkey))
         } else {
+            tracing::warn!("No known gateway to update last timestamp {pubkey}");
             Ok(None)
         }
     }
