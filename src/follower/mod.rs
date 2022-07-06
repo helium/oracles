@@ -92,7 +92,6 @@ impl Follower {
     }
 
     async fn process_txn_entry(&mut self, entry: FollowerTxnStreamRespV1) -> Result {
-        tracing::info!("processing {:?}", entry);
         let txn = match entry.txn {
             Some(BlockchainTxn { txn: Some(ref txn) }) => txn,
             _ => {
@@ -113,16 +112,10 @@ impl Follower {
         envelope: &FollowerTxnStreamRespV1,
         txn: &BlockchainTxnAddGatewayV1,
     ) -> Result {
+        tracing::info!("processing add gw{:?}", txn);
         let gateway =
             Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
         let makers = Maker::list(&self.pool).await?;
-        tracing::info!(
-            "Makers: {:?}",
-            makers
-                .iter()
-                .map(|m| m.pubkey.to_string())
-                .collect::<Vec<String>>()
-        );
         if makers.iter().any(|m| m.pubkey == gateway.payer) {
             let inserted = gateway.insert_into(&self.pool).await?;
             tracing::info!(
