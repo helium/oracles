@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # """A stupid python daemon to simulate 5g cell heartbeats
 #
 # From the poc5g rust server:
@@ -45,7 +46,7 @@ from decimal import Decimal
 import json
 import logging
 import os
-from pprint import pformat
+from pprint import pformat, pprint
 from random import choice, randrange, uniform
 import re
 import ssl
@@ -73,12 +74,12 @@ def choose_mode():
 def build_gateways():
     # encode keys as bytes
     gateways = []
-    for x in re.split(",", os.environ["5G_GATEWAYS"]):
+    for x in re.split(",", os.environ["HEARTBEAT_GATEWAYS"]):
         # generate an index into the latlong based on the pubkey
         # using crc32 modulo the length of the dict as a
         # consistent hash
         i = crc32(x.encode()) & 0xffffffff
-        i_ll = i % len(latlong)
+        i_ll = i % len(FAKE_LAT_LONG)
         i_fcc = i % len(fcc_ids)
 
         fcc_id = fcc_ids[i_fcc]
@@ -86,10 +87,10 @@ def build_gateways():
         serial = base64.b32encode((i & 0x0000ffff).to_bytes(4, 'big')).decode().replace('=','') + str(i & 0xffff0000)
         # between 1 and 3 cell ids
         cell_ids = [
-            randrange(100000, 999999) for _ in xrange(max(1, min(3, (i % 3)+1)))
+            randrange(100000, 999999) for _ in range(max(1, min(3, (i % 3)+1)))
         ]
         # use the index to select the lat, long coordinates
-        (lat, lon) = FAKE_LAT_LONG[list(FAKE_LAT_LONG)[i]]
+        (lat, lon) = FAKE_LAT_LONG[list(FAKE_LAT_LONG)[i_ll]]
         gateways.append(
             {"gw_addr": x, "lat": lat, "lon": lon,
              "cell_ids": cell_ids, "fcc_id": fcc_id,
@@ -105,36 +106,37 @@ def main(gateways):
             'hotspot_type': 'enodeb',
             'cell_id': choice(gw['cell_ids']),
             'timestamp': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
-            'lon': gw['lon'],
-            'lat': gw['lat'],
+            'lon': float(gw['lon']),
+            'lat': float(gw['lat']),
             'operational_mode': choose_mode(),
             'cbsd_category': 'A',
             'cbsd_id': gw['fcc_id'] + gw['serial'],
-            'id': uuid.uuid4(),
-            'created_at': datetime.datetime.utcnow().isoformat() + 'Z'
+            'id': str(uuid.uuid4()),
+            'created_at': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
         }
+        pprint(heartbeat)
+
+        data = json.dumps(heartbeat).encode()
 
         context = ssl.create_default_context()
-        data = json.dumps(heartbeat)
         hdrs = {
             "User-Agent": "heartbeat-daemon-1",
-            "API-Key": os.environ["5G_API_KEY"],
+            "API-Key": os.environ["HEARTBEAT_API_KEY"],
         }
         req = urllib.request.Request(
-            os.environ["5G_HEARTBEAT_URL"],
+            os.environ["HEARTBEAT_API_URL"],
             data=data,
             headers=hdrs,
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=30, context=context) as resp:
-            status = resp.get_code()
-            if status > 199 and status < 300:
+            if resp.status > 199 and resp.status < 300:
                 log.info(
-                    "{} status for gw: {}".format(status, heartbeat["pubkey"])
+                    "{} status for gw: {}".format(resp.status, heartbeat["pubkey"])
                 )
             else:
                 log.error(
-                    "{} status request data {}".format(status, pformat(req))
+                    "{} status request data {}".format(resp.status, pformat(req))
                 )
 
 if __name__ == "__main__":
