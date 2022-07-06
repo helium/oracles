@@ -36,19 +36,19 @@ pub struct CellHeartbeat {
     pub cbsd_id: String,
 }
 
-impl TryInto<CellHeartbeatReqV1> for CellHeartbeat {
+impl TryFrom<CellHeartbeat> for CellHeartbeatReqV1 {
     type Error = Error;
-    fn try_into(self) -> Result<CellHeartbeatReqV1> {
-        Ok(CellHeartbeatReqV1 {
-            pub_key: self.pubkey.to_vec(),
-            hotspot_type: self.hotspot_type,
-            cell_id: self.cell_id,
-            timestamp: self.timestamp.timestamp() as u64,
-            lon: self.lon,
-            lat: self.lat,
-            operation_mode: self.operation_mode,
-            cbsd_category: self.cbsd_category,
-            cbsd_id: self.cbsd_id,
+    fn try_from(v: CellHeartbeat) -> Result<Self> {
+        Ok(Self {
+            pub_key: v.pubkey.to_vec(),
+            hotspot_type: v.hotspot_type,
+            cell_id: v.cell_id,
+            timestamp: v.timestamp.timestamp() as u64,
+            lon: v.lon,
+            lat: v.lat,
+            operation_mode: v.operation_mode,
+            cbsd_category: v.cbsd_category,
+            cbsd_id: v.cbsd_id,
             signature: vec![],
         })
     }

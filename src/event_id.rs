@@ -2,7 +2,9 @@ use crate::{
     api::{heartbeat::CellHeartbeat, speedtest::CellSpeedtest},
     Error, Result,
 };
-use helium_proto::services::poc_mobile::{CellHeartbeatRespV1, SpeedtestRespV1};
+use helium_proto::services::poc_mobile::{
+    CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -13,7 +15,7 @@ impl Serialize for EventId {
     where
         S: serde::Serializer,
     {
-        self.0.serialize(serializer)
+        serializer.serialize_str(&self.0)
     }
 }
 
@@ -32,14 +34,16 @@ impl<M: helium_proto::Message> From<M> for EventId {
 impl TryFrom<CellHeartbeat> for EventId {
     type Error = Error;
     fn try_from(event: CellHeartbeat) -> Result<Self> {
-        event.try_into()
+        let req = CellHeartbeatReqV1::try_from(event)?;
+        Ok(Self::from(req))
     }
 }
 
 impl TryFrom<CellSpeedtest> for EventId {
     type Error = Error;
     fn try_from(event: CellSpeedtest) -> Result<Self> {
-        event.try_into()
+        let req = SpeedtestReqV1::try_from(event)?;
+        Ok(Self::from(req))
     }
 }
 

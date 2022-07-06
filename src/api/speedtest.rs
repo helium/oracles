@@ -33,16 +33,16 @@ pub struct CellSpeedtest {
     pub latency: u32,
 }
 
-impl TryInto<SpeedtestReqV1> for CellSpeedtest {
+impl TryFrom<CellSpeedtest> for SpeedtestReqV1 {
     type Error = Error;
-    fn try_into(self) -> Result<SpeedtestReqV1> {
+    fn try_from(v: CellSpeedtest) -> Result<Self> {
         Ok(SpeedtestReqV1 {
-            pub_key: self.pubkey.to_vec(),
-            serial: self.serial,
-            timestamp: self.timestamp.timestamp() as u64,
-            upload_speed: self.upload_speed,
-            download_speed: self.download_speed,
-            latency: self.latency,
+            pub_key: v.pubkey.to_vec(),
+            serial: v.serial,
+            timestamp: v.timestamp.timestamp() as u64,
+            upload_speed: v.upload_speed,
+            download_speed: v.download_speed,
+            latency: v.latency,
             signature: vec![],
         })
     }
