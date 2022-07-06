@@ -85,8 +85,17 @@ impl Gateway {
     {
         sqlx::query(
             r#"
-        insert into gateway (pubkey, owner, payer, height, txn_hash, block_timestamp, last_heartbeat, last_speedtest, last_attach)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        insert into gateway (
+            pubkey, 
+            owner, 
+            payer, 
+            height, 
+            txn_hash, 
+            block_timestamp, 
+            last_heartbeat, 
+            last_speedtest, 
+            last_attach
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         returning pubkey
         on conflict do nothing
             "#,
@@ -139,7 +148,9 @@ impl Gateway {
             .map(|res| res.rows_affected())
             .map_err(Error::from)?;
         if rows_affected > 0 {
-            Err(Error::not_found(format!("gateway {pubkey} not found")))
+            let msg = format!("gateway {pubkey} not found");
+            tracing::warn!(msg);
+            Err(Error::not_found(msg))
         } else {
             Ok(())
         }
