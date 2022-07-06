@@ -1,8 +1,7 @@
 pub mod client;
 
+use crate::{api::gateway::Gateway, Maker, PublicKey, Result};
 use client::FollowerService;
-
-use crate::{api::gateway::Gateway, Maker, Result};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
     BlockchainTxnSubnetworkRewardsV1, FollowerTxnStreamRespV1,
@@ -112,7 +111,11 @@ impl Follower {
         envelope: &FollowerTxnStreamRespV1,
         txn: &BlockchainTxnAddGatewayV1,
     ) -> Result {
-        tracing::info!("processing add gw{:?}", txn);
+        tracing::info!(
+            "processing add gw {} payer {}",
+            PublicKey::try_from(txn.gateway.as_ref())?,
+            PublicKey::try_from(txn.payer.as_ref())?
+        );
         let gateway =
             Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
         let makers = Maker::list(&self.pool).await?;
