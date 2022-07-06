@@ -112,7 +112,8 @@ impl Follower {
         txn: &BlockchainTxnAddGatewayV1,
     ) -> Result {
         tracing::info!(
-            "processing add gw {} payer {}",
+            "processing {} add gw {} payer {}",
+            envelope.height,
             PublicKey::try_from(txn.gateway.as_ref())?,
             PublicKey::try_from(txn.payer.as_ref())?
         );
