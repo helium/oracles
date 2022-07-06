@@ -49,9 +49,7 @@ impl Follower {
     }
 
     async fn get_gateway_height(&mut self) -> Result<i64> {
-        Gateway::max_height(&self.pool)
-            .await
-            .map(|maybe| maybe.unwrap_or(START_BLOCK))
+        Gateway::max_height(&self.pool, START_BLOCK).await
     }
 
     async fn reconnect_wait(&mut self, shutdown: triggered::Listener) {

@@ -216,17 +216,17 @@ impl Gateway {
         .map_err(Error::from)
     }
 
-    pub async fn max_height<'c, E>(executor: E) -> Result<Option<i64>>
+    pub async fn max_height<'c, E>(executor: E, default: i64) -> Result<i64>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        tracing::info!("PRE EXEC");
-        sqlx::query_scalar::<_, i64>(
+        sqlx::query_scalar(
             r#"
-            select max(height) from gateway
+            select coalesce(max(height), $1) from gateway
             "#,
         )
-        .fetch_optional(executor)
+        .bind(default)
+        .fetch_one(executor)
         .await
         .map_err(Error::from)
     }
