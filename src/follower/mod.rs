@@ -13,9 +13,9 @@ use tonic::Streaming;
 
 pub const START_BLOCK: i64 = 995041;
 pub const TXN_TYPES: &[&'static str] = &[
-    "add_gateway_v1",
-    "consensus_group_v1",
-    "subnetwork_rewards_v1",
+    "blockchain_txn_add_gateway_v1",
+    "blockchain_txn_consensus_group_v1",
+    "blockchain_txn_subnetwork_rewards_v1",
 ];
 
 pub struct Follower {
