@@ -7,3 +7,4 @@ flamegraph.*
 *.json
 .envrc
 .env
+*.swp

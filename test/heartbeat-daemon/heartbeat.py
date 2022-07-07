@@ -41,7 +41,7 @@
 
 import base64
 from binascii import crc32
-import cPickle
+import pickle
 import datetime
 from decimal import Decimal
 import json
@@ -57,6 +57,11 @@ import urllib.request
 import dotenv
 
 log = logging.getLogger()
+log.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+log.addHandler(handler)
 
 PICKLE_FILE="heartbeat_gateways.pickle"
 
@@ -81,11 +86,11 @@ def build_gateways():
     gateways = []
     if os.path.exists("heartbeat_gateways.pickle"):
         with open(PICKLE_FILE, "rb") as f:
-            gateways = cPickle.load(f)
+            gateways = pickle.load(f)
     else:
         gateways = build_gateways_from_env([])
         with open(PICKLE_FILE, "wb") as f:
-            cPickle.dump(gateways, f, cPickle.HIGHEST_PROTOCOL)
+            pickle.dump(gateways, f, pickle.HIGHEST_PROTOCOL)
 
     if gateways:
         return gateways
@@ -134,7 +139,7 @@ def main(gateways):
             'id': str(uuid.uuid4()),
             'created_at': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
         }
-        pprint(heartbeat)
+        log.debug("{}".format(pformat(heartbeat)))
 
         data = json.dumps(heartbeat).encode()
 
@@ -149,6 +154,7 @@ def main(gateways):
             headers=hdrs,
             method="POST",
         )
+        log.debug("url: {}, headers: {}".format(req.full_url, pformat(req.headers)))
         with urllib.request.urlopen(req, timeout=30, context=context) as resp:
             if resp.status > 199 and resp.status < 300:
                 log.info(
@@ -160,11 +166,12 @@ def main(gateways):
                 )
 
 if __name__ == "__main__":
+
     gateways = build_gateways()
 
     # pull config from .env
     # if set, use the location given by this var
-    if os.environ["HEARTBEAT_ENV_FILE"]:
+    if 'HEARTBEAT_ENV_FILE' in os.environ:
         log.debug("loading .env from {}".format(os.environ["HEARTBEAT_ENV_FILE"]))
         dotenv.load(os.environ["HEARTBEAT_ENV_FILE"])
     else:
