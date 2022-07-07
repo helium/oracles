@@ -12,7 +12,7 @@ use tokio::time;
 use tonic::Streaming;
 
 pub const START_BLOCK: i64 = 995041;
-pub const TXN_TYPES: &[&'static str] = &[
+pub const TXN_TYPES: &[&str] = &[
     "blockchain_txn_add_gateway_v1",
     "blockchain_txn_consensus_group_v1",
     "blockchain_txn_subnetwork_rewards_v1",

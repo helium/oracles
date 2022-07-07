@@ -20,6 +20,8 @@ use std::{io, net::SocketAddr};
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 use tower_http::{auth::RequireAuthorizationLayer, trace::TraceLayer};
 
+async fn empty_handler() {}
+
 pub async fn api_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> Result {
     let api_addr = dotenv::var("API_SOCKET_ADDR").and_then(|v| {
         v.parse::<SocketAddr>().map_err(|_| {
@@ -34,6 +36,9 @@ pub async fn api_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
 
     // build our application with some routes
     let app = Router::new()
+        // health
+        .route("/health", get(empty_handler))
+        // attach events
         .route(
             "/cell/attach-events",
             post(attach_event::create_cell_attach_event)

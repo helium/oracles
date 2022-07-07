@@ -146,10 +146,9 @@ impl Gateway {
             .await
             .map(|res| res.rows_affected())
             .map_err(Error::from)?;
-        if rows_affected > 0 {
-            let msg = format!("gateway {pubkey} not found");
-            tracing::warn!(msg);
-            Err(Error::not_found(msg))
+        if rows_affected == 0 {
+            tracing::warn!("ignoring timestamp update for absent gateway: {pubkey}");
+            Err(Error::not_found(format!("gateway {pubkey} not found")))
         } else {
             Ok(())
         }
