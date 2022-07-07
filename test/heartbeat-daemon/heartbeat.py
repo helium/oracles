@@ -41,6 +41,7 @@
 
 import base64
 from binascii import crc32
+import cPickle
 import datetime
 from decimal import Decimal
 import json
@@ -53,9 +54,13 @@ import ssl
 import uuid
 import urllib.request
 
+import dotenv
+
 log = logging.getLogger()
 
-fcc_ids = [ '2AG32PBS3101S', '2AG32MBS3100196N',
+PICKLE_FILE="heartbeat_gateways.pickle"
+
+FCC_IDS = [ '2AG32PBS3101S', '2AG32MBS3100196N',
             '2AG32PBS31010', 'P27-SCE4255W',
             'P27-SCO4255PA10' ]
 
@@ -74,15 +79,30 @@ def choose_mode():
 def build_gateways():
     # encode keys as bytes
     gateways = []
+    if os.path.exists("heartbeat_gateways.pickle"):
+        with open(PICKLE_FILE, "rb") as f:
+            gateways = cPickle.load(f)
+    else:
+        gateways = build_gateways_from_env([])
+        with open(PICKLE_FILE, "wb") as f:
+            cPickle.dump(gateways, f, cPickle.HIGHEST_PROTOCOL)
+
+    if gateways:
+        return gateways
+    else:
+        log.critical("Could not build gateways. Is HEARTBEAT_GATEWAYS set?")
+        os.exit(1)
+
+def build_gateways_from_env(gateways):
     for x in re.split(",", os.environ["HEARTBEAT_GATEWAYS"]):
         # generate an index into the latlong based on the pubkey
         # using crc32 modulo the length of the dict as a
         # consistent hash
         i = crc32(x.encode()) & 0xffffffff
         i_ll = i % len(FAKE_LAT_LONG)
-        i_fcc = i % len(fcc_ids)
+        i_fcc = i % len(FCC_IDS)
 
-        fcc_id = fcc_ids[i_fcc]
+        fcc_id = FCC_IDS[i_fcc]
 
         serial = base64.b32encode((i & 0x0000ffff).to_bytes(4, 'big')).decode().replace('=','') + str(i & 0xffff0000)
         # between 1 and 3 cell ids
@@ -121,7 +141,7 @@ def main(gateways):
         context = ssl.create_default_context()
         hdrs = {
             "User-Agent": "heartbeat-daemon-1",
-            "API-Key": os.environ["HEARTBEAT_API_KEY"],
+            "Authorization": "Bearer " + os.environ["API_TOKEN"]
         }
         req = urllib.request.Request(
             os.environ["HEARTBEAT_API_URL"],
@@ -141,4 +161,14 @@ def main(gateways):
 
 if __name__ == "__main__":
     gateways = build_gateways()
+
+    # pull config from .env
+    # if set, use the location given by this var
+    if os.environ["HEARTBEAT_ENV_FILE"]:
+        log.debug("loading .env from {}".format(os.environ["HEARTBEAT_ENV_FILE"]))
+        dotenv.load(os.environ["HEARTBEAT_ENV_FILE"])
+    else:
+        # otherwise look in current working directory
+        dotenv.load()
+
     main(gateways)
