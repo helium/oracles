@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use helium_proto::BlockchainTxnAddGatewayV1;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{PgConnection, Row};
+use sqlx::PgConnection;
 use std::cmp::min;
 
 pub async fn get_gateway(
@@ -79,7 +79,7 @@ impl Gateway {
         Ok(gateway)
     }
 
-    pub async fn insert_into<'e, 'c, E>(&self, executor: E) -> Result<PublicKey>
+    pub async fn insert_into<'e, 'c, E>(&self, executor: E) -> Result
     where
         E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -96,7 +96,6 @@ impl Gateway {
             last_speedtest, 
             last_attach
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        returning pubkey
         on conflict do nothing
             "#,
         )
@@ -109,9 +108,9 @@ impl Gateway {
         .bind(self.last_attach)
         .bind(self.last_heartbeat)
         .bind(self.last_attach)
-        .fetch_one(executor)
+        .execute(executor)
         .await
-        .and_then(|row| row.try_get("pubkey"))
+        .map(|_| ())
         .map_err(Error::from)
     }
 
