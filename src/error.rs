@@ -8,14 +8,14 @@ pub enum Error {
     DotEnv(#[from] dotenv::Error),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
-    #[error("http server extension error")]
-    ServerExtension(#[from] axum::extract::rejection::ExtensionRejection),
     #[error("io error")]
     Io(#[from] std::io::Error),
     #[error("migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
     #[error("http server error")]
     Server(#[from] hyper::Error),
+    #[error("http server extension error")]
+    ServerExtension(#[from] axum::extract::rejection::ExtensionRejection),
     #[error("grpc {}", .0.message())]
     Grpc(#[from] tonic::Status),
     #[error("service error")]

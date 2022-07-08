@@ -152,7 +152,7 @@ pub async fn grpc_server(pool: Pool<Postgres>, shutdown: triggered::Listener) ->
     transport::Server::builder()
         .add_service(poc_mobile::Server::with_interceptor(
             poc_mobile,
-            move |req: Request<()>| match req.metadata().get("Authorization") {
+            move |req: Request<()>| match req.metadata().get("authorization") {
                 Some(t) if api_token == t => Ok(req),
                 _ => Err(Status::unauthenticated("No valid auth token")),
             },
