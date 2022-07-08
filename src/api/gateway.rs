@@ -48,9 +48,9 @@ pub struct Gateway {
     pub txn_hash: Vec<u8>,
     pub block_timestamp: DateTime<Utc>,
 
-    last_heartbeat: Option<DateTime<Utc>>,
-    last_speedtest: Option<DateTime<Utc>>,
-    last_attach: Option<DateTime<Utc>>,
+    pub last_heartbeat: Option<DateTime<Utc>>,
+    pub last_speedtest: Option<DateTime<Utc>>,
+    pub last_attach: Option<DateTime<Utc>>,
 }
 
 impl Gateway {
