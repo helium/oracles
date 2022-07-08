@@ -45,7 +45,7 @@ pub struct Gateway {
     pub owner: PublicKey,
     pub payer: PublicKey,
     pub height: i64,
-    pub txn_hash: Vec<u8>,
+    pub txn_hash: String,
     pub block_timestamp: DateTime<Utc>,
 
     pub last_heartbeat: Option<DateTime<Utc>>,
@@ -65,7 +65,7 @@ impl Gateway {
             owner: PublicKey::try_from(txn.owner.as_ref())?,
             payer: PublicKey::try_from(txn.payer.as_ref())?,
             height: height as i64,
-            txn_hash: txn_hash.to_vec(),
+            txn_hash: base64::encode_config(txn_hash, base64::URL_SAFE_NO_PAD),
             block_timestamp: datetime_from_epoch(timestamp as i64),
 
             last_heartbeat: None,
