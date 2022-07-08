@@ -1,5 +1,5 @@
 use crate::{
-    api::{internal_error, DatabaseConnection},
+    api::{api_error, DatabaseConnection},
     Error, Imsi, PublicKey, Result,
 };
 use axum::{http::StatusCode, Json};
@@ -21,7 +21,7 @@ pub async fn create_cell_attach_event(
             })
         })
         .map(Json)
-        .map_err(internal_error)
+        .map_err(api_error)
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize)]

@@ -4,6 +4,7 @@ pub mod heartbeat;
 pub mod server;
 pub mod speedtest;
 
+use crate::Error;
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
@@ -11,13 +12,13 @@ use axum::{
 };
 use sqlx::postgres::PgPool;
 
-/// Utility function for mapping any error into a `500 Internal Server Error`
-/// response.
-pub fn internal_error<E>(err: E) -> (StatusCode, String)
+/// Utility function for mapping any error into an api error
+pub fn api_error<E>(err: E) -> (StatusCode, String)
 where
     E: std::error::Error,
+    Error: From<E>,
 {
-    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+    Error::from(err).into()
 }
 
 // A custom extractor that grabs a connection from the pool
@@ -33,9 +34,9 @@ where
     async fn from_request(req: &mut RequestParts<B>) -> std::result::Result<Self, Self::Rejection> {
         let Extension(pool) = Extension::<PgPool>::from_request(req)
             .await
-            .map_err(internal_error)?;
+            .map_err(api_error)?;
 
-        let conn = pool.acquire().await.map_err(internal_error)?;
+        let conn = pool.acquire().await.map_err(api_error)?;
 
         Ok(Self(conn))
     }

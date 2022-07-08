@@ -8,6 +8,8 @@ pub enum Error {
     DotEnv(#[from] dotenv::Error),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
+    #[error("http server extension error")]
+    ServerExtension(#[from] axum::extract::rejection::ExtensionRejection),
     #[error("io error")]
     Io(#[from] std::io::Error),
     #[error("migration error")]
@@ -48,7 +50,7 @@ impl From<Error> for (http::StatusCode, String) {
     fn from(v: Error) -> Self {
         match v {
             Error::NotFound(msg) => (http::StatusCode::NOT_FOUND, msg),
-            err => (http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+            err => (http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    api::{internal_error, DatabaseConnection},
+    api::{api_error, DatabaseConnection},
     datetime_from_epoch, Error, PublicKey, Result,
 };
 use axum::{
@@ -18,11 +18,9 @@ pub async fn get_gateway(
     Path(pubkey): Path<PublicKey>,
     DatabaseConnection(mut conn): DatabaseConnection,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let event = Gateway::get(&mut conn, &pubkey)
-        .await
-        .map_err(internal_error)?;
+    let event = Gateway::get(&mut conn, &pubkey).await.map_err(api_error)?;
     if let Some(event) = event {
-        let json = serde_json::to_value(event).map_err(internal_error)?;
+        let json = serde_json::to_value(event).map_err(api_error)?;
         Ok(Json(json))
     } else {
         Err(Error::not_found(format!("Gateway {pubkey} not found")).into())
@@ -33,10 +31,8 @@ pub async fn get_gateways(
     Query(after): Query<After>,
     DatabaseConnection(mut conn): DatabaseConnection,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let gateways = Gateway::list(&mut conn, &after)
-        .await
-        .map_err(internal_error)?;
-    let json = serde_json::to_value(gateways).map_err(internal_error)?;
+    let gateways = Gateway::list(&mut conn, &after).await.map_err(api_error)?;
+    let json = serde_json::to_value(gateways).map_err(api_error)?;
     Ok(Json(json))
 }
 

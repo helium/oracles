@@ -1,5 +1,5 @@
 use crate::{
-    api::{gateway::Gateway, internal_error, DatabaseConnection},
+    api::{api_error, gateway::Gateway, DatabaseConnection},
     Error, EventId, PublicKey, Result,
 };
 use axum::{http::StatusCode, Json};
@@ -17,7 +17,7 @@ pub async fn create_cell_heartbeat(
         .and_then(|_| EventId::try_from(event))
         .map(|id| json!({ "id": id }))
         .map(Json)
-        .map_err(internal_error)
+        .map_err(api_error)
 }
 
 #[derive(Deserialize)]
