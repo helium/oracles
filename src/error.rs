@@ -26,6 +26,10 @@ pub enum Error {
     Crypto(#[from] helium_crypto::Error),
     #[error("json error")]
     Json(#[from] serde_json::Error),
+    #[error("csv error")]
+    Csv(#[from] csv::Error),
+    #[error("datetime error")]
+    Chrono(#[from] chrono::ParseError),
 
     #[error("not found")]
     NotFound(String),

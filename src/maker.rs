@@ -70,13 +70,28 @@ impl Maker {
         .map_err(Error::from)
     }
 
-    pub async fn list<'e, 'c, E>(executor: E) -> Result<Vec<Self>>
+    pub async fn list<'c, E>(executor: E) -> Result<Vec<Self>>
     where
-        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query_as::<_, Self>(
             r#"
             select * from maker 
+            order by created_at desc
+            "#,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(Error::from)
+    }
+
+    pub async fn list_keys<'c, E>(executor: E) -> Result<Vec<PublicKey>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as::<_, PublicKey>(
+            r#"
+            select pubkey from maker 
             order by created_at desc
             "#,
         )

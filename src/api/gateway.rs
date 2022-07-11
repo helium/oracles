@@ -39,7 +39,7 @@ pub async fn get_gateways(
 pub const DEFAULT_GATEWAY_COUNT: usize = 100;
 pub const MAX_GATEWAY_COUNT: u32 = 1000;
 
-#[derive(sqlx::FromRow, Deserialize, Serialize)]
+#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
 pub struct Gateway {
     pub pubkey: PublicKey,
     pub owner: PublicKey,
@@ -75,9 +75,9 @@ impl Gateway {
         Ok(gateway)
     }
 
-    pub async fn insert_into<'e, 'c, E>(&self, executor: E) -> Result
+    pub async fn insert_into<'c, E>(&self, executor: E) -> Result
     where
-        E: 'e + sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
             r#"
@@ -108,6 +108,35 @@ impl Gateway {
         .await
         .map(|_| ())
         .map_err(Error::from)
+    }
+
+    pub async fn update_owner<'c, 'q, E>(
+        executor: E,
+        pubkey: &PublicKey,
+        owner: &PublicKey,
+    ) -> Result
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let rows_affected = sqlx::query(
+            r#"
+        update gateway set
+            owner = $2
+        where pubkey = $1
+            "#,
+        )
+        .bind(&pubkey)
+        .bind(&owner)
+        .execute(executor)
+        .await
+        .map(|res| res.rows_affected())
+        .map_err(Error::from)?;
+        if rows_affected == 0 {
+            tracing::error!("failed owner update for absent gateway: {pubkey}");
+            Err(Error::not_found(format!("gateway {pubkey} not found")))
+        } else {
+            Ok(())
+        }
     }
 
     const UPDATE_LAST_HEARTBEAT: &'static str = r#"

@@ -1,6 +1,6 @@
 pub mod client;
 
-use crate::{api::gateway::Gateway, Maker, Result};
+use crate::{api::gateway::Gateway, Maker, PublicKey, Result};
 use client::FollowerService;
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
@@ -14,6 +14,8 @@ use tonic::Streaming;
 pub const START_BLOCK: i64 = 995041;
 pub const TXN_TYPES: &[&str] = &[
     "blockchain_txn_add_gateway_v1",
+    "blockchain_txn_transfer_hotspot_v1",
+    "blockchain_txn_transfer_hotspot_v2",
     "blockchain_txn_consensus_group_v1",
     "blockchain_txn_subnetwork_rewards_v1",
 ];
@@ -100,10 +102,24 @@ impl Follower {
         };
         match txn {
             Txn::AddGateway(txn) => self.process_add_gateway(&entry, txn).await,
+            Txn::TransferHotspot(txn) => {
+                self.process_transfer_gateway(txn.gateway.as_ref(), txn.buyer.as_ref())
+                    .await
+            }
+            Txn::TransferHotspotV2(txn) => {
+                self.process_transfer_gateway(txn.gateway.as_ref(), txn.new_owner.as_ref())
+                    .await
+            }
             Txn::SubnetworkRewards(txn) => self.process_subnet_rewards(&entry, txn).await,
             Txn::ConsensusGroup(_) => self.process_consensus_group(&entry).await,
             _ => Ok(()),
         }
+    }
+
+    async fn process_transfer_gateway(&mut self, gateway: &[u8], owner: &[u8]) -> Result {
+        let gateway = PublicKey::try_from(gateway)?;
+        let owner = PublicKey::try_from(owner)?;
+        Gateway::update_owner(&self.pool, &gateway, &owner).await
     }
 
     async fn process_add_gateway(
@@ -113,8 +129,8 @@ impl Follower {
     ) -> Result {
         let gateway =
             Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
-        let makers = Maker::list(&self.pool).await?;
-        if makers.iter().any(|m| m.pubkey == gateway.payer) {
+        let makers = Maker::list_keys(&self.pool).await?;
+        if makers.contains(&gateway.payer) {
             gateway.insert_into(&self.pool).await?;
             tracing::info!(
                 "inserted gateway: {gateway} maker: {maker}",

@@ -6,6 +6,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub enum Cmd {
     Server(cli::server::Cmd),
     Maker(Box<cli::maker::Cmd>),
+    Gateway(cli::gateway::Cmd),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -31,5 +32,6 @@ async fn main() -> Result {
     match cli.cmd {
         Cmd::Server(cmd) => cmd.run().await,
         Cmd::Maker(cmd) => cmd.run().await,
+        Cmd::Gateway(cmd) => cmd.run().await,
     }
 }
