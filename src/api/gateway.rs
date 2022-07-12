@@ -132,7 +132,6 @@ impl Gateway {
         .map(|res| res.rows_affected())
         .map_err(Error::from)?;
         if rows_affected == 0 {
-            tracing::error!("failed owner update for absent gateway: {pubkey}");
             Err(Error::not_found(format!("gateway {pubkey} not found")))
         } else {
             Ok(())

@@ -1,6 +1,6 @@
 pub mod client;
 
-use crate::{api::gateway::Gateway, Maker, PublicKey, Result};
+use crate::{api::gateway::Gateway, Maker, PublicKey, Result, Error};
 use client::FollowerService;
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
@@ -119,7 +119,11 @@ impl Follower {
     async fn process_transfer_gateway(&mut self, gateway: &[u8], owner: &[u8]) -> Result {
         let gateway = PublicKey::try_from(gateway)?;
         let owner = PublicKey::try_from(owner)?;
-        Gateway::update_owner(&self.pool, &gateway, &owner).await
+        match Gateway::update_owner(&self.pool, &gateway, &owner).await {
+            Ok(()) => Ok(()),
+            Err(Error::NotFound(_)) => Ok(()),
+            Err(err) => Err(err)
+        }
     }
 
     async fn process_add_gateway(
