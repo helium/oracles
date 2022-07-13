@@ -109,22 +109,22 @@ mod test {
     //     assert_eq!(expected, get_emissions_per_model(input, date))
     // }
 
-    // #[test]
-    // fn no_reporting_model_reward() {
-    //     let expected = HashMap::from([
-    //         (Model::SercommOutdoor, 3887267 * BONES),
-    //         (Model::Nova430I, 3887267 * BONES),
-    //         (Model::Nova436H, 0),
-    //         (Model::SercommIndoor, 2591511 * BONES),
-    //         (Model::Neutrino430, 2591511 * BONES),
-    //     ]);
-    //     let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
-    //     let input = HashMap::from([
-    //         (Model::SercommOutdoor, 20),
-    //         (Model::Nova430I, 15),
-    //         (Model::SercommIndoor, 13),
-    //         (Model::Neutrino430, 8),
-    //     ]);
-    //     assert_eq!(expected, get_emissions_per_model(input, date))
-    // }
+    #[test]
+    fn no_reporting_model_reward() {
+        let expected = HashMap::from([
+            (Model::SercommOutdoor, 40816326530612100),
+            (Model::Nova430I, 30612244897959075),
+            (Model::Nova436H, 0),
+            (Model::SercommIndoor, 17687074829931910),
+            (Model::Neutrino430, 10884353741496560),
+        ]);
+        let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
+        let input = HashMap::from([
+            (Model::SercommOutdoor, 20),
+            (Model::Nova430I, 15),
+            (Model::SercommIndoor, 13),
+            (Model::Neutrino430, 8),
+        ]);
+        assert_eq!(expected, get_emissions_per_model(input, date))
+    }
 }
