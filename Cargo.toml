@@ -33,3 +33,5 @@ csv = "1"
 async-compression = {version = "0", features = ["tokio", "gzip"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "madninja/poc-mobile-service", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
+rust_decimal = "1.25"
+rust_decimal_macros = "1.25"
