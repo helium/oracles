@@ -29,10 +29,14 @@ impl Cmd {
         // chain follower
         let mut follower = Follower::new(follower_uri.try_into()?, pool.clone())?;
 
+        // reward server
+        // let mut reward_server = RewardServer::new(follower_uri, base_path, shutdown_listener.clone());
+
         tokio::try_join!(
             api_server,
             grpc_server,
-            follower.run(shutdown_listener.clone())
+            follower.run(shutdown_listener.clone()),
+            // reward_server.run(shutdown_listener.clone())
         )?;
 
         Ok(())

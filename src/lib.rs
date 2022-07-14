@@ -1,11 +1,11 @@
 pub mod api;
+mod cell_type;
 pub mod cli;
 pub mod emissions;
 mod error;
 mod event_id;
 mod file_writer;
 mod follower;
-mod hotspot;
 mod imsi;
 mod maker;
 mod public_key;
