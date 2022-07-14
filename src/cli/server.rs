@@ -1,5 +1,5 @@
 use crate::{api::server, cli, Follower, Result};
-use tokio::signal;
+use tokio::{signal, sync::broadcast};
 
 /// Starts the server
 #[derive(Debug, clap::Args)]
@@ -27,10 +27,12 @@ impl Cmd {
         let grpc_server = server::grpc_server(pool.clone(), shutdown_listener.clone());
 
         // chain follower
-        let mut follower = Follower::new(follower_uri.try_into()?, pool.clone())?;
+        let (trigger_sender, _trigger_receiver) = broadcast::channel(2);
+        let mut follower =
+            Follower::new(follower_uri.try_into()?, pool.clone(), trigger_sender).await?;
 
         // reward server
-        // let mut reward_server = RewardServer::new(follower_uri, base_path, shutdown_listener.clone());
+        // let mut reward_server = RewardServer::new(follower_uri, base_path, trigger_receiver.clone(), shutdown_listener.clone());
 
         tokio::try_join!(
             api_server,
