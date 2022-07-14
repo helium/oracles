@@ -11,7 +11,6 @@ use sqlx::{Pool, Postgres};
 use tokio::{sync::broadcast, time};
 use tonic::Streaming;
 
-pub const START_BLOCK: i64 = 995041;
 pub const TXN_TYPES: &[&str] = &[
     "blockchain_txn_add_gateway_v1",
     "blockchain_txn_transfer_hotspot_v1",
@@ -23,6 +22,7 @@ pub const TXN_TYPES: &[&str] = &[
 pub struct Follower {
     pool: Pool<Postgres>,
     service: FollowerService,
+    start_block: i64,
     trigger: broadcast::Sender<rewards::Trigger>,
 }
 
@@ -30,12 +30,14 @@ impl Follower {
     pub async fn new(
         uri: Uri,
         pool: Pool<Postgres>,
+        start_block: i64,
         trigger: broadcast::Sender<rewards::Trigger>,
     ) -> Result<Self> {
         let service = FollowerService::new(uri)?;
         Ok(Self {
             service,
             pool,
+            start_block,
             trigger,
         })
     }
@@ -67,7 +69,7 @@ impl Follower {
     }
 
     async fn get_gateway_height(&mut self) -> Result<i64> {
-        Gateway::max_height(&self.pool, START_BLOCK).await
+        Gateway::max_height(&self.pool, self.start_block).await
     }
 
     async fn reconnect_wait(&mut self, shutdown: triggered::Listener) {
