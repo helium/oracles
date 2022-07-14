@@ -1,6 +1,6 @@
 pub mod client;
 
-use crate::{api::gateway::Gateway, maker, rewards, Error, PublicKey, Result};
+use crate::{api::gateway::Gateway, env_var, maker, rewards, Error, PublicKey, Result};
 use client::FollowerService;
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
@@ -10,6 +10,10 @@ use http::Uri;
 use sqlx::{Pool, Postgres};
 use tokio::{sync::broadcast, time};
 use tonic::Streaming;
+
+/// First block that 5G hotspots were introduced (FreedomFi)
+pub const DEFAULT_START_BLOCK: i64 = 995041;
+pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
 pub const TXN_TYPES: &[&str] = &[
     "blockchain_txn_add_gateway_v1",
@@ -28,11 +32,11 @@ pub struct Follower {
 
 impl Follower {
     pub async fn new(
-        uri: Uri,
         pool: Pool<Postgres>,
-        start_block: i64,
         trigger: broadcast::Sender<rewards::Trigger>,
     ) -> Result<Self> {
+        let uri = env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?;
+        let start_block = env_var("FOLLOWER_START_BLOCK", DEFAULT_START_BLOCK)?;
         let service = FollowerService::new(uri)?;
         Ok(Self {
             service,
