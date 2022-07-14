@@ -1,7 +1,4 @@
-use crate::{
-    cli::{mk_db_pool, print_json},
-    Maker, Result,
-};
+use crate::{cli::print_json, maker, Result};
 
 /// Add or remove eligible makers
 #[derive(Debug, clap::Parser)]
@@ -35,8 +32,7 @@ impl MakerCmd {
 
 impl List {
     pub async fn run(&self) -> Result {
-        let pool = mk_db_pool(1).await?;
-        let list = Maker::list(&pool).await?;
+        let list = maker::allowed();
         print_json(&list)
     }
 }

@@ -10,35 +10,35 @@ pub enum CellModel {
     SercommOutdoor,
 }
 
-pub struct CellType<'a> {
+pub struct CellType {
     pub cell_model: CellModel,
-    pub fcc_id: &'a str,
+    pub fcc_id: &'static str,
     // reward_wt is x10, so 15 = 1.5 (actual)
     pub reward_wt: Decimal,
 }
 
-impl<'a> CellType<'a> {
-    pub const NOVA436H: CellType<'a> = CellType {
+impl<'a> CellType {
+    pub const NOVA436H: CellType = CellType {
         cell_model: CellModel::Nova436H,
         fcc_id: "2AG32MBS3100196N",
         reward_wt: dec!(2.0),
     };
-    pub const NOVA430I: CellType<'a> = CellType {
+    pub const NOVA430I: CellType = CellType {
         cell_model: CellModel::Nova430I,
         fcc_id: "2AG32PBS3101S",
         reward_wt: dec!(1.5),
     };
-    pub const NEUTRINO430: CellType<'a> = CellType {
+    pub const NEUTRINO430: CellType = CellType {
         cell_model: CellModel::Neutrino430,
         fcc_id: "2AG32PBS31010",
         reward_wt: dec!(1.0),
     };
-    pub const SERCOMMINDOOR: CellType<'a> = CellType {
+    pub const SERCOMMINDOOR: CellType = CellType {
         cell_model: CellModel::SercommIndoor,
         fcc_id: "P27-SCE4255W",
         reward_wt: dec!(1.0),
     };
-    pub const SERCOMMOUTDOOR: CellType<'a> = CellType {
+    pub const SERCOMMOUTDOOR: CellType = CellType {
         cell_model: CellModel::SercommOutdoor,
         fcc_id: "P27-SCO4255PA10",
         reward_wt: dec!(1.5),

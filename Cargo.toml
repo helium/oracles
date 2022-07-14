@@ -30,6 +30,7 @@ futures = "*"
 futures-util = "*"
 prost = "*"
 csv = "1"
+once_cell = "1"
 async-compression = {version = "0", features = ["tokio", "gzip"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "madninja/poc-mobile-service", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
