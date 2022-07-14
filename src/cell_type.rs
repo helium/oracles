@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 #[derive(Debug, Eq, Hash, PartialEq)]
-pub enum CellModel {
+pub enum CellType {
     Nova436H,
     Nova430I,
     Neutrino430,
@@ -10,45 +10,32 @@ pub enum CellModel {
     SercommOutdoor,
 }
 
-pub struct CellType {
-    pub cell_model: CellModel,
-    pub fcc_id: &'static str,
-    // reward_wt is x10, so 15 = 1.5 (actual)
-    pub reward_wt: Decimal,
-}
+impl CellType {
+    pub fn fcc_id(&self) -> &'static str {
+        match self {
+            Self::Nova436H => "2AG32PBS3101S",
+            Self::Nova430I => "2AG32PBS3101S",
+            Self::Neutrino430 => "2AG32PBS31010",
+            Self::SercommIndoor => "P27-SCE4255W",
+            Self::SercommOutdoor => "P27-SCO4255PA10",
+        }
+    }
 
-impl<'a> CellType {
-    pub const NOVA436H: CellType = CellType {
-        cell_model: CellModel::Nova436H,
-        fcc_id: "2AG32MBS3100196N",
-        reward_wt: dec!(2.0),
-    };
-    pub const NOVA430I: CellType = CellType {
-        cell_model: CellModel::Nova430I,
-        fcc_id: "2AG32PBS3101S",
-        reward_wt: dec!(1.5),
-    };
-    pub const NEUTRINO430: CellType = CellType {
-        cell_model: CellModel::Neutrino430,
-        fcc_id: "2AG32PBS31010",
-        reward_wt: dec!(1.0),
-    };
-    pub const SERCOMMINDOOR: CellType = CellType {
-        cell_model: CellModel::SercommIndoor,
-        fcc_id: "P27-SCE4255W",
-        reward_wt: dec!(1.0),
-    };
-    pub const SERCOMMOUTDOOR: CellType = CellType {
-        cell_model: CellModel::SercommOutdoor,
-        fcc_id: "P27-SCO4255PA10",
-        reward_wt: dec!(1.5),
-    };
+    pub fn reward_weight(&self) -> Decimal {
+        match self {
+            Self::Nova436H => dec!(2.0),
+            Self::Nova430I => dec!(1.5),
+            Self::Neutrino430 => dec!(1.0),
+            Self::SercommIndoor => dec!(1.0),
+            Self::SercommOutdoor => dec!(1.5),
+        }
+    }
 
     pub fn reward_shares(&self, units: u64) -> Decimal {
-        self.reward_wt * Decimal::from(units)
+        self.reward_weight() * Decimal::from(units)
     }
 
     pub fn rewards(&self, base_rewards: Decimal) -> Decimal {
-        self.reward_wt * base_rewards
+        self.reward_weight() * base_rewards
     }
 }
