@@ -28,6 +28,7 @@ impl FileWriter {
         max_size: usize,
     ) -> Result<Self> {
         fs::create_dir_all(target_path).await?;
+        fs::create_dir_all(tmp_path).await?;
         Ok(Self {
             target_path: target_path.to_path_buf(),
             tmp_path: tmp_path.to_path_buf(),
