@@ -1,4 +1,4 @@
-use crate::cell_type::{CellModel, CellType};
+use crate::cell_type::CellType;
 use chrono::{DateTime, TimeZone, Utc};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
@@ -17,40 +17,40 @@ lazy_static! {
 }
 
 pub fn get_emissions_per_model(
-    models: HashMap<CellModel, u64>,
+    models: HashMap<CellType, u64>,
     datetime: DateTime<Utc>,
-) -> HashMap<CellModel, Decimal> {
+) -> HashMap<CellType, Decimal> {
     let total_rewards = get_scheduled_tokens(datetime)
         .expect("Failed to supply valid date on the emission schedule");
 
-    let nova436h_units = models.get(&CellModel::Nova436H).unwrap_or(&0);
-    let nova430i_units = models.get(&CellModel::Nova430I).unwrap_or(&0);
-    let sercommo_units = models.get(&CellModel::SercommOutdoor).unwrap_or(&0);
-    let sercommi_units = models.get(&CellModel::SercommIndoor).unwrap_or(&0);
-    let neut430_units = models.get(&CellModel::Neutrino430).unwrap_or(&0);
+    let nova436h_units = models.get(&CellType::Nova436H).unwrap_or(&0);
+    let nova430i_units = models.get(&CellType::Nova430I).unwrap_or(&0);
+    let sercommo_units = models.get(&CellType::SercommOutdoor).unwrap_or(&0);
+    let sercommi_units = models.get(&CellType::SercommIndoor).unwrap_or(&0);
+    let neut430_units = models.get(&CellType::Neutrino430).unwrap_or(&0);
 
-    let nova436h_shares = CellType::NOVA436H.reward_shares(*nova436h_units);
-    let nova430i_shares = CellType::NOVA430I.reward_shares(*nova430i_units);
-    let sercommo_shares = CellType::SERCOMMOUTDOOR.reward_shares(*sercommo_units);
-    let sercommi_shares = CellType::SERCOMMINDOOR.reward_shares(*sercommi_units);
-    let neut430_shares = CellType::NEUTRINO430.reward_shares(*neut430_units);
+    let nova436h_shares = CellType::Nova436H.reward_shares(*nova436h_units);
+    let nova430i_shares = CellType::Nova430I.reward_shares(*nova430i_units);
+    let sercommo_shares = CellType::SercommOutdoor.reward_shares(*sercommo_units);
+    let sercommi_shares = CellType::SercommIndoor.reward_shares(*sercommi_units);
+    let neut430_shares = CellType::Neutrino430.reward_shares(*neut430_units);
 
     let total_shares =
         nova436h_shares + nova430i_shares + sercommo_shares + sercommi_shares + neut430_shares;
     let base_reward = Decimal::from(total_rewards) / total_shares;
 
-    let nova436h_rewards = calc_rewards(CellType::NOVA436H, base_reward, *nova436h_units);
-    let nova430i_rewards = calc_rewards(CellType::NOVA430I, base_reward, *nova430i_units);
-    let sercommo_rewards = calc_rewards(CellType::SERCOMMOUTDOOR, base_reward, *sercommo_units);
-    let sercommi_rewards = calc_rewards(CellType::SERCOMMINDOOR, base_reward, *sercommi_units);
-    let neut430_rewards = calc_rewards(CellType::NEUTRINO430, base_reward, *neut430_units);
+    let nova436h_rewards = calc_rewards(CellType::Nova436H, base_reward, *nova436h_units);
+    let nova430i_rewards = calc_rewards(CellType::Nova430I, base_reward, *nova430i_units);
+    let sercommo_rewards = calc_rewards(CellType::SercommOutdoor, base_reward, *sercommo_units);
+    let sercommi_rewards = calc_rewards(CellType::SercommIndoor, base_reward, *sercommi_units);
+    let neut430_rewards = calc_rewards(CellType::Neutrino430, base_reward, *neut430_units);
 
     HashMap::from([
-        (CellModel::Nova436H, nova436h_rewards),
-        (CellModel::Nova430I, nova430i_rewards),
-        (CellModel::SercommOutdoor, sercommo_rewards),
-        (CellModel::SercommIndoor, sercommi_rewards),
-        (CellModel::Neutrino430, neut430_rewards),
+        (CellType::Nova436H, nova436h_rewards),
+        (CellType::Nova430I, nova430i_rewards),
+        (CellType::SercommOutdoor, sercommo_rewards),
+        (CellType::SercommIndoor, sercommi_rewards),
+        (CellType::Neutrino430, neut430_rewards),
     ])
 }
 
@@ -78,19 +78,19 @@ mod test {
     #[test]
     fn genesis_reward() {
         let expected = HashMap::from([
-            (CellModel::SercommOutdoor, dec!(3208556149732620.32)),
-            (CellModel::Nova430I, dec!(2406417112299465.24)),
-            (CellModel::Nova436H, dec!(2139037433155080.21)),
-            (CellModel::SercommIndoor, dec!(1390374331550802.14)),
-            (CellModel::Neutrino430, dec!(855614973262032.09)),
+            (CellType::SercommOutdoor, dec!(3208556149732620.32)),
+            (CellType::Nova430I, dec!(2406417112299465.24)),
+            (CellType::Nova436H, dec!(2139037433155080.21)),
+            (CellType::SercommIndoor, dec!(1390374331550802.14)),
+            (CellType::Neutrino430, dec!(855614973262032.09)),
         ]);
         let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
         let input = HashMap::from([
-            (CellModel::SercommOutdoor, 20),
-            (CellModel::Nova430I, 15),
-            (CellModel::Nova436H, 10),
-            (CellModel::SercommIndoor, 13),
-            (CellModel::Neutrino430, 8),
+            (CellType::SercommOutdoor, 20),
+            (CellType::Nova430I, 15),
+            (CellType::Nova436H, 10),
+            (CellType::SercommIndoor, 13),
+            (CellType::Neutrino430, 8),
         ]);
         assert_eq!(expected, get_emissions_per_model(input, date))
     }
@@ -118,18 +118,18 @@ mod test {
     #[test]
     fn no_reporting_model_reward() {
         let expected = HashMap::from([
-            (CellModel::SercommOutdoor, dec!(4081632653061224.49)),
-            (CellModel::Nova430I, dec!(3061224489795918.37)),
-            (CellModel::Nova436H, dec!(0)),
-            (CellModel::SercommIndoor, dec!(1768707482993197.28)),
-            (CellModel::Neutrino430, dec!(1088435374149659.86)),
+            (CellType::SercommOutdoor, dec!(4081632653061224.49)),
+            (CellType::Nova430I, dec!(3061224489795918.37)),
+            (CellType::Nova436H, dec!(0)),
+            (CellType::SercommIndoor, dec!(1768707482993197.28)),
+            (CellType::Neutrino430, dec!(1088435374149659.86)),
         ]);
         let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
         let input = HashMap::from([
-            (CellModel::SercommOutdoor, 20),
-            (CellModel::Nova430I, 15),
-            (CellModel::SercommIndoor, 13),
-            (CellModel::Neutrino430, 8),
+            (CellType::SercommOutdoor, 20),
+            (CellType::Nova430I, 15),
+            (CellType::SercommIndoor, 13),
+            (CellType::Neutrino430, 8),
         ]);
         assert_eq!(expected, get_emissions_per_model(input, date))
     }
