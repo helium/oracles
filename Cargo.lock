@@ -1282,6 +1282,7 @@ dependencies = [
  "http",
  "hyper",
  "lazy_static",
+ "once_cell",
  "prost",
  "rust_decimal",
  "rust_decimal_macros",

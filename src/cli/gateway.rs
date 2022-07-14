@@ -1,7 +1,7 @@
 use crate::{
     api::gateway::Gateway,
     cli::{mk_db_pool, print_json},
-    Error, Maker, PublicKey, Result,
+    maker, Error, PublicKey, Result,
 };
 use chrono::{TimeZone, Utc};
 use serde_json::json;
@@ -72,7 +72,6 @@ impl TryFrom<GatewayLine> for Gateway {
 impl Import {
     pub async fn run(&self) -> Result {
         let pool = mk_db_pool(1).await?;
-        let makers = Maker::list_keys(&pool).await?;
 
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
@@ -82,7 +81,7 @@ impl Import {
         for result in rdr.deserialize() {
             let record: GatewayLine = result?;
             let gateway = Gateway::try_from(record)?;
-            if makers.contains(&gateway.payer) {
+            if maker::allows(&gateway.payer) {
                 gateway.insert_into(&pool).await?;
             } else {
                 eprintln!(

@@ -6,7 +6,7 @@ mod event_id;
 mod file_writer;
 mod follower;
 mod imsi;
-mod maker;
+pub mod maker;
 mod public_key;
 pub mod rewards;
 mod uuid;
@@ -17,7 +17,6 @@ pub use event_id::EventId;
 pub use file_writer::FileWriter;
 pub use follower::Follower;
 pub use imsi::Imsi;
-pub use maker::Maker;
 pub use public_key::PublicKey;
 pub use uuid::Uuid;
 

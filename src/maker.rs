@@ -1,102 +1,39 @@
-use crate::{Error, PublicKey, Result};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use sqlx::PgConnection;
+use crate::PublicKey;
+use once_cell::sync::OnceCell;
+use serde::Serialize;
+use std::str::FromStr;
 
-#[derive(sqlx::FromRow, Deserialize, Serialize)]
+#[derive(Serialize)]
 pub struct Maker {
     pub pubkey: PublicKey,
-    pub description: Option<String>,
-
-    #[serde(skip_deserializing)]
-    pub created_at: Option<DateTime<Utc>>,
+    pub description: &'static str,
 }
 
 impl Maker {
-    pub fn new(pubkey: PublicKey, description: Option<String>) -> Self {
+    fn new(pubkey: &'static str, description: &'static str) -> Self {
         Self {
-            pubkey,
+            pubkey: PublicKey::from_str(pubkey).expect("maker public key"),
             description,
-            created_at: None,
         }
     }
+}
 
-    pub async fn remove<'c, E>(pubkey: &PublicKey, executor: E) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        let _ = sqlx::query(
-            r#"
-            delete from maker where pubkey = $1
-            "#,
-        )
-        .bind(pubkey)
-        .fetch_optional(executor)
-        .await
-        .map_err(Error::from)?;
-        Ok(())
-    }
+pub fn allowed() -> &'static Vec<Maker> {
+    static CELL: OnceCell<Vec<Maker>> = OnceCell::new();
+    CELL.get_or_init(|| {
+        vec![
+            Maker::new(
+                "13y2EqUUzyQhQGtDSoXktz8m5jHNSiwAKLTYnHNxZq2uH5GGGym",
+                "FreedomFi",
+            ),
+            Maker::new(
+                "14sKWeeYWQWrBSnLGq79uRQqZyw3Ldi7oBdxbF6a54QboTNBXDL",
+                "Bobcat 5G",
+            ),
+        ]
+    })
+}
 
-    pub async fn insert_into<'c, E>(&self, executor: E) -> Result<Self>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        sqlx::query_as::<_, Self>(
-            r#"
-            insert into maker (pubkey, description)
-            values ($1, $2)
-            on conflict (pubkey) do update set
-                description = EXCLUDED.description
-            returning *;
-            "#,
-        )
-        .bind(&self.pubkey)
-        .bind(&self.description)
-        .fetch_one(executor)
-        .await
-        .map_err(Error::from)
-    }
-
-    pub async fn get(conn: &mut PgConnection, pubkey: &PublicKey) -> Result<Option<Self>> {
-        sqlx::query_as::<_, Self>(
-            r#"
-            select * from maker 
-            where pubkey = $1
-            "#,
-        )
-        .bind(pubkey)
-        .fetch_optional(conn)
-        .await
-        .map_err(Error::from)
-    }
-
-    pub async fn list<'c, E>(executor: E) -> Result<Vec<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        sqlx::query_as::<_, Self>(
-            r#"
-            select * from maker 
-            order by created_at desc
-            "#,
-        )
-        .fetch_all(executor)
-        .await
-        .map_err(Error::from)
-    }
-
-    pub async fn list_keys<'c, E>(executor: E) -> Result<Vec<PublicKey>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        sqlx::query_as::<_, PublicKey>(
-            r#"
-            select pubkey from maker 
-            order by created_at desc
-            "#,
-        )
-        .fetch_all(executor)
-        .await
-        .map_err(Error::from)
-    }
+pub fn allows(pubkey: &PublicKey) -> bool {
+    allowed().iter().any(|maker| maker.pubkey.eq(pubkey))
 }

@@ -1,6 +1,6 @@
 pub mod client;
 
-use crate::{api::gateway::Gateway, rewards, Error, Maker, PublicKey, Result};
+use crate::{api::gateway::Gateway, maker, rewards, Error, PublicKey, Result};
 use client::FollowerService;
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
@@ -23,7 +23,6 @@ pub const TXN_TYPES: &[&str] = &[
 pub struct Follower {
     pool: Pool<Postgres>,
     service: FollowerService,
-    makers: Vec<PublicKey>,
     trigger: broadcast::Sender<rewards::Trigger>,
 }
 
@@ -34,11 +33,9 @@ impl Follower {
         trigger: broadcast::Sender<rewards::Trigger>,
     ) -> Result<Self> {
         let service = FollowerService::new(uri)?;
-        let makers = Maker::list_keys(&pool).await?;
         Ok(Self {
             service,
             pool,
-            makers,
             trigger,
         })
     }
@@ -145,7 +142,7 @@ impl Follower {
     ) -> Result {
         let gateway =
             Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
-        if self.makers.contains(&gateway.payer) {
+        if maker::allows(&gateway.payer) {
             gateway.insert_into(&self.pool).await?;
             tracing::info!(
                 "inserted gateway: {gateway} maker: {maker}",
