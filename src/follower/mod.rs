@@ -1,6 +1,6 @@
 pub mod client;
 
-use crate::{api::gateway::Gateway, Maker, PublicKey, Result, Error};
+use crate::{api::gateway::Gateway, rewards, Error, Maker, PublicKey, Result};
 use client::FollowerService;
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
@@ -8,7 +8,7 @@ use helium_proto::{
 };
 use http::Uri;
 use sqlx::{Pool, Postgres};
-use tokio::time;
+use tokio::{sync::broadcast, time};
 use tonic::Streaming;
 
 pub const START_BLOCK: i64 = 995041;
@@ -23,12 +23,24 @@ pub const TXN_TYPES: &[&str] = &[
 pub struct Follower {
     pool: Pool<Postgres>,
     service: FollowerService,
+    makers: Vec<PublicKey>,
+    trigger: broadcast::Sender<rewards::Trigger>,
 }
 
 impl Follower {
-    pub fn new(uri: Uri, pool: Pool<Postgres>) -> Result<Self> {
+    pub async fn new(
+        uri: Uri,
+        pool: Pool<Postgres>,
+        trigger: broadcast::Sender<rewards::Trigger>,
+    ) -> Result<Self> {
         let service = FollowerService::new(uri)?;
-        Ok(Self { service, pool })
+        let makers = Maker::list_keys(&pool).await?;
+        Ok(Self {
+            service,
+            pool,
+            makers,
+            trigger,
+        })
     }
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
@@ -122,7 +134,7 @@ impl Follower {
         match Gateway::update_owner(&self.pool, &gateway, &owner).await {
             Ok(()) => Ok(()),
             Err(Error::NotFound(_)) => Ok(()),
-            Err(err) => Err(err)
+            Err(err) => Err(err),
         }
     }
 
@@ -133,8 +145,7 @@ impl Follower {
     ) -> Result {
         let gateway =
             Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
-        let makers = Maker::list_keys(&self.pool).await?;
-        if makers.contains(&gateway.payer) {
+        if self.makers.contains(&gateway.payer) {
             gateway.insert_into(&self.pool).await?;
             tracing::info!(
                 "inserted gateway: {gateway} maker: {maker}",
@@ -156,7 +167,13 @@ impl Follower {
         Ok(())
     }
 
-    async fn process_consensus_group(&mut self, _envelope: &FollowerTxnStreamRespV1) -> Result {
-        Ok(())
+    async fn process_consensus_group(&mut self, envelope: &FollowerTxnStreamRespV1) -> Result {
+        match self.trigger.send(rewards::Trigger::new(envelope.height)) {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                tracing::error!("failed to send reward trigger");
+                Ok(())
+            }
+        }
     }
 }

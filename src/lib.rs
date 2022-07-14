@@ -1,7 +1,6 @@
 pub mod api;
 mod cell_type;
 pub mod cli;
-pub mod emissions;
 mod error;
 mod event_id;
 mod file_writer;
@@ -9,8 +8,10 @@ mod follower;
 mod imsi;
 mod maker;
 mod public_key;
+pub mod rewards;
 mod uuid;
 
+pub use cell_type::CellType;
 pub use error::{Error, Result};
 pub use event_id::EventId;
 pub use file_writer::FileWriter;
