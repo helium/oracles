@@ -27,7 +27,7 @@ pub fn allowed() -> &'static Vec<Maker> {
                 "FreedomFi",
             ),
             Maker::new(
-                "14sKWeeYWQWrBSnLGq79uRQqZyw3Ldi7oBdxbF6a54QboTNBXDL",
+                "14gqqPV2HEs4PCNNUacKVG7XeAhCUkN553NcBVw4xfwSFcCjhXv",
                 "Bobcat 5G",
             ),
         ]
