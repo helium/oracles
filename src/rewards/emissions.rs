@@ -1,7 +1,12 @@
 use crate::{cell_type::CellType, util::Mobile};
 use chrono::{DateTime, TimeZone, Utc};
 use lazy_static::lazy_static;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
+
+// 100M genesis rewards per day
+const GENESIS_REWARDS_PER_DAY: u64 = 100_000_000;
 
 lazy_static! {
     static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
@@ -28,6 +33,7 @@ pub fn get_emissions_per_model(
 
     let total_shares =
         nova436h_shares + nova430i_shares + sercommo_shares + sercommi_shares + neut430_shares;
+
     let base_reward = total_rewards / total_shares;
 
     let nova436h_rewards = calc_rewards(CellType::Nova436H, base_reward, *nova436h_units);
@@ -37,26 +43,26 @@ pub fn get_emissions_per_model(
     let neut430_rewards = calc_rewards(CellType::Neutrino430, base_reward, *neut430_units);
 
     HashMap::from([
-        (CellType::Nova436H, nova436h_rewards),
-        (CellType::Nova430I, nova430i_rewards),
-        (CellType::SercommOutdoor, sercommo_rewards),
-        (CellType::SercommIndoor, sercommi_rewards),
-        (CellType::Neutrino430, neut430_rewards),
+        (CellType::Nova436H, Mobile::from(nova436h_rewards)),
+        (CellType::Nova430I, Mobile::from(nova430i_rewards)),
+        (CellType::SercommOutdoor, Mobile::from(sercommo_rewards)),
+        (CellType::SercommIndoor, Mobile::from(sercommi_rewards)),
+        (CellType::Neutrino430, Mobile::from(neut430_rewards)),
     ])
 }
 
-fn calc_rewards(hotspot: CellType, base_reward: Mobile, num_units: u64) -> Mobile {
+fn calc_rewards(hotspot: CellType, base_reward: Decimal, num_units: u64) -> Decimal {
     if num_units > 0 {
-        hotspot.rewards(base_reward) * num_units
+        hotspot.rewards(base_reward) * Decimal::from(num_units)
     } else {
-        Mobile::from(0)
+        dec!(0)
     }
 }
 
-fn get_scheduled_tokens(datetime: DateTime<Utc>) -> Option<Mobile> {
+fn get_scheduled_tokens(datetime: DateTime<Utc>) -> Option<Decimal> {
     if *GENESIS_START < datetime {
         // 100M genesis rewards per day
-        Some(Mobile::from(100 * 1_000_000))
+        Some(Decimal::from(GENESIS_REWARDS_PER_DAY))
     } else {
         None
     }
@@ -69,11 +75,17 @@ mod test {
     #[test]
     fn genesis_reward() {
         let expected = HashMap::from([
-            (CellType::SercommOutdoor, Mobile::from(320855.614973262032)),
-            (CellType::Nova430I, Mobile::from(240641.711229946524)),
-            (CellType::Nova436H, Mobile::from(213903.743315508021)),
-            (CellType::SercommIndoor, Mobile::from(139037.433155080214)),
-            (CellType::Neutrino430, Mobile::from(85561.497326203209)),
+            (
+                CellType::SercommOutdoor,
+                Mobile::from(dec!(132860.93888397)),
+            ),
+            (CellType::Nova430I, Mobile::from(dec!(17670504.87156776))),
+            (CellType::Nova436H, Mobile::from(dec!(177147.91851196))),
+            (
+                CellType::SercommIndoor,
+                Mobile::from(dec!(81842338.35252436)),
+            ),
+            (CellType::Neutrino430, Mobile::from(dec!(177147.91851196))),
         ]);
         let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
         let input = HashMap::from([
@@ -84,9 +96,7 @@ mod test {
             (CellType::Neutrino430, 2),
         ]);
         let output = get_emissions_per_model(input, date);
-        println!("genesis_reward: {:?}", Mobile::from(1));
-        println!("output: {:#?}", output);
-        assert_eq!(expected, output)
+        assert_eq!(expected, output);
     }
 
     // #[test]
@@ -109,24 +119,29 @@ mod test {
     //     assert_eq!(expected, get_emissions_per_model(input, date))
     // }
 
-    // #[test]
-    // fn no_reporting_model_reward() {
-    //     let expected = HashMap::from([
-    //         (CellType::SercommOutdoor, Mobile::from(4081632653061224.49)),
-    //         (CellType::Nova430I, Mobile::from(3061224489795918.37)),
-    //         (CellType::Nova436H, Mobile::from(0)),
-    //         (CellType::SercommIndoor, Mobile::from(1768707482993197.28)),
-    //         (CellType::Neutrino430, Mobile::from(1088435374149659.86)),
-    //     ]);
-    //     let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
-    //     let input = HashMap::from([
-    //         (CellType::SercommOutdoor, 20),
-    //         (CellType::Nova430I, 15),
-    //         (CellType::SercommIndoor, 13),
-    //         (CellType::Neutrino430, 8),
-    //     ]);
-    //     let output = get_emissions_per_model(input, date);
-    //     println!("output: {:#?}", output);
-    //     assert_eq!(expected, output)
-    // }
+    #[test]
+    fn no_reporting_model_reward() {
+        let expected = HashMap::from([
+            (
+                CellType::SercommOutdoor,
+                Mobile::from(dec!(133096.71694765)),
+            ),
+            (CellType::Nova430I, Mobile::from(dec!(17701863.35403727))),
+            (CellType::Nova436H, Mobile::from(0)),
+            (
+                CellType::SercommIndoor,
+                Mobile::from(dec!(81987577.63975155)),
+            ),
+            (CellType::Neutrino430, Mobile::from(dec!(177462.28926353))),
+        ]);
+        let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
+        let input = HashMap::from([
+            (CellType::SercommOutdoor, 1),
+            (CellType::Nova430I, 133),
+            (CellType::SercommIndoor, 924),
+            (CellType::Neutrino430, 2),
+        ]);
+        let output = get_emissions_per_model(input, date);
+        assert_eq!(expected, output)
+    }
 }

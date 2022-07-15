@@ -2,7 +2,6 @@ use crate::{Error, Result};
 use core::fmt;
 use rust_decimal::prelude::*;
 use serde::{de::Deserializer, Deserialize, Serialize};
-use std::ops::{Add, Div, Mul};
 use std::str::FromStr;
 
 macro_rules! decimal_scalar {
@@ -68,22 +67,11 @@ macro_rules! decimal_scalar {
             }
         }
 
-        impl From<f64> for $stype {
-            fn from(v: f64) -> Self {
-                if let Some(mut data) = Decimal::from_f64_retain(v) {
-                    data.set_scale($scale).unwrap();
-                    return Self(data);
-                }
-                panic!("f64 could not be converted into Decimal")
-            }
-        }
-
         impl From<Decimal> for $stype {
             fn from(mut v: Decimal) -> Self {
-                match v.set_scale($scale) {
-                    Ok(()) => Self(v),
-                    Err(_e) => panic!("Decimal could not be converted to scaled Decimal"),
-                }
+                // rescale the decimal back to 8 digits of precision
+                v.rescale(8);
+                Self(v)
             }
         }
 
@@ -116,66 +104,6 @@ macro_rules! decimal_scalar {
                     }
                 }
                 panic!("Invalid scaled decimal construction")
-            }
-        }
-
-        impl Mul<f64> for $stype {
-            type Output = Self;
-            fn mul(self, rhs: f64) -> Self {
-                if let Some(rhs_d) = Decimal::from_f64_retain(rhs) {
-                    if let Some(ans) = rhs_d.checked_mul(self.get_decimal()) {
-                        return Self(ans);
-                    }
-                }
-                panic!("Invalid scaled decimal multiplication")
-            }
-        }
-
-        impl Mul<u64> for $stype {
-            type Output = Self;
-            fn mul(self, rhs: u64) -> Self {
-                let rhs_d = Decimal::from(rhs);
-                if let Some(ans) = rhs_d.checked_mul(self.get_decimal()) {
-                    return Self(ans);
-                }
-                panic!("Invalid scaled decimal multiplication")
-            }
-        }
-
-        impl Mul<Decimal> for $stype {
-            type Output = Self;
-            fn mul(self, rhs: Decimal) -> Self {
-                if let Some(ans) = rhs.checked_mul(self.get_decimal()) {
-                    return Self(ans);
-                }
-                panic!("Invalid scaled decimal multiplication")
-            }
-        }
-
-        impl Add for $stype {
-            type Output = Self;
-            fn add(self, other: Self) -> Self {
-                let x = self.get_decimal();
-                let y = other.get_decimal();
-                if let Some(ans) = x.checked_add(y) {
-                    return Self(ans);
-                }
-                panic!("Invalid scaled decimal addition")
-            }
-        }
-
-        impl Div for $stype {
-            type Output = Self;
-            fn div(self, other: Self) -> Self {
-                if other.get_decimal() == Decimal::from(0) {
-                    panic!("Cannot divide by 0")
-                }
-                let x = self.get_decimal();
-                let y = other.get_decimal();
-                if let Some(ans) = x.checked_div(y) {
-                    return Self(ans);
-                }
-                panic!("Invalid scaled decimal division")
             }
         }
     };
