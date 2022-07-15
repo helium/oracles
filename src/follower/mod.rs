@@ -71,7 +71,7 @@ impl Follower {
                 value = EXCLUDED.value
             "#,
         )
-        .bind(height)
+        .bind(height.to_string())
         .execute(executor)
         .await?;
         Ok(())
