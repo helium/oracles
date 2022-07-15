@@ -132,6 +132,7 @@ impl Gateway {
             owner = EXCLUDED.owner,
             location = EXCLUDED.location,
             last_heartbeat = EXCLUDED.last_heartbeat,
+            last_speedtest = EXCLUDED.last_speedtest,
             last_attach = EXCLUDED.last_attach;
             "#,
         )
