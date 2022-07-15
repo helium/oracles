@@ -1,3 +1,4 @@
+use crate::util::Mobile;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -31,11 +32,11 @@ impl CellType {
         }
     }
 
-    pub fn reward_shares(&self, units: u64) -> Decimal {
-        self.reward_weight() * Decimal::from(units)
+    pub fn reward_shares(&self, units: u64) -> Mobile {
+        Mobile::from(self.reward_weight() * Decimal::from(units))
     }
 
-    pub fn rewards(&self, base_rewards: Decimal) -> Decimal {
-        self.reward_weight() * base_rewards
+    pub fn rewards(&self, base_rewards: Mobile) -> Mobile {
+        base_rewards * self.reward_weight()
     }
 }

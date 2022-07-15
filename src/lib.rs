@@ -9,6 +9,7 @@ pub mod maker;
 mod public_key;
 pub mod rewards;
 pub mod store;
+pub mod util;
 mod uuid;
 
 pub use cell_type::CellType;
