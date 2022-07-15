@@ -139,8 +139,8 @@ impl Gateway {
         .bind(&self.address)
         .bind(&self.owner)
         .bind(&self.location)
-        .bind(self.last_attach)
         .bind(self.last_heartbeat)
+        .bind(self.last_speedtest)
         .bind(self.last_attach)
         .execute(executor)
         .await
