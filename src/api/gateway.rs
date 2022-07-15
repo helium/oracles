@@ -157,7 +157,6 @@ impl Gateway {
     {
         let rows_affected = sqlx::query(
             r#"
-            insert into gateway 
         update gateway set
             owner = $2
         where address = $1
