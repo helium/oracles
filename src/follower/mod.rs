@@ -123,6 +123,7 @@ impl Follower {
                         let height = txn.height as i64;
                         self.process_txn_entry(txn).await?;
                         Self::update_last_height(&self.pool, height).await?;
+                        tracing::info!("updated last_height to {height}");
                     }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
