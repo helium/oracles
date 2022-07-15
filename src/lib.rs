@@ -35,7 +35,7 @@ where
         Ok(v) => v
             .parse::<T>()
             .map_err(|_err| Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
-        Err(err) if err.not_found() => Ok(default),
+        Err(dotenv::Error::EnvVar(std::env::VarError::NotPresent)) => Ok(default),
         Err(err) => Err(Error::from(err)),
     }
 }
