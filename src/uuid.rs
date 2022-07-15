@@ -17,6 +17,12 @@ impl Deref for Uuid {
     }
 }
 
+impl Uuid {
+    pub fn nil() -> Self {
+        Self(sqlx::types::Uuid::nil())
+    }
+}
+
 impl<'de> Deserialize<'de> for Uuid {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
