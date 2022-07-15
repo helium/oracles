@@ -2,7 +2,6 @@ use crate::{cell_type::CellType, util::Mobile};
 use chrono::{DateTime, TimeZone, Utc};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
 // 100M genesis rewards per day
@@ -43,19 +42,19 @@ pub fn get_emissions_per_model(
     let neut430_rewards = calc_rewards(CellType::Neutrino430, base_reward, *neut430_units);
 
     HashMap::from([
-        (CellType::Nova436H, Mobile::from(nova436h_rewards)),
-        (CellType::Nova430I, Mobile::from(nova430i_rewards)),
-        (CellType::SercommOutdoor, Mobile::from(sercommo_rewards)),
-        (CellType::SercommIndoor, Mobile::from(sercommi_rewards)),
-        (CellType::Neutrino430, Mobile::from(neut430_rewards)),
+        (CellType::Nova436H, nova436h_rewards),
+        (CellType::Nova430I, nova430i_rewards),
+        (CellType::SercommOutdoor, sercommo_rewards),
+        (CellType::SercommIndoor, sercommi_rewards),
+        (CellType::Neutrino430, neut430_rewards),
     ])
 }
 
-fn calc_rewards(hotspot: CellType, base_reward: Decimal, num_units: u64) -> Decimal {
+fn calc_rewards(hotspot: CellType, base_reward: Decimal, num_units: u64) -> Mobile {
     if num_units > 0 {
-        hotspot.rewards(base_reward) * Decimal::from(num_units)
+        Mobile::from(hotspot.rewards(base_reward) * Decimal::from(num_units))
     } else {
-        dec!(0)
+        Mobile::from(0)
     }
 }
 
@@ -71,6 +70,7 @@ fn get_scheduled_tokens(datetime: DateTime<Utc>) -> Option<Decimal> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn genesis_reward() {
