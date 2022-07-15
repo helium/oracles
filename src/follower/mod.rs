@@ -123,7 +123,6 @@ impl Follower {
                         let height = txn.height as i64;
                         self.process_txn_entry(txn).await?;
                         Self::update_last_height(&self.pool, height).await?;
-                        tracing::info!("updated last_height to {height}");
                     }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
@@ -165,6 +164,7 @@ impl Follower {
     async fn process_transfer_gateway(&mut self, gateway: &[u8], owner: &[u8]) -> Result {
         let gateway = PublicKey::try_from(gateway)?;
         let owner = PublicKey::try_from(owner)?;
+        tracing::info!("processing transfer hotspot for {gateway} to {owner}");
         match Gateway::update_owner(&self.pool, &gateway, &owner).await {
             Ok(()) => Ok(()),
             Err(Error::NotFound(_)) => Ok(()),
@@ -184,6 +184,10 @@ impl Follower {
     }
 
     async fn process_consensus_group(&mut self, envelope: &FollowerTxnStreamRespV1) -> Result {
+        tracing::info!(
+            "processing consensus group at {height}",
+            height = envelope.height
+        );
         match self.trigger.send(rewards::Trigger::new(envelope.height)) {
             Ok(_) => Ok(()),
             Err(_) => {
