@@ -50,9 +50,9 @@ pub fn get_emissions_per_model(
     ])
 }
 
-fn calc_rewards(hotspot: CellType, base_reward: Decimal, num_units: u64) -> Mobile {
+fn calc_rewards(cell_type: CellType, base_reward: Decimal, num_units: u64) -> Mobile {
     if num_units > 0 {
-        Mobile::from(hotspot.rewards(base_reward) * Decimal::from(num_units))
+        Mobile::from(cell_type.rewards(base_reward) * Decimal::from(num_units))
     } else {
         Mobile::from(0)
     }
