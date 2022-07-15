@@ -1,7 +1,7 @@
-use crate::Result;
+use crate::{env_var, PublicKey, Result};
 use helium_proto::{
     services::{Channel, Endpoint},
-    FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
+    FollowerGatewayReqV1, FollowerGatewayRespV1, FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
 };
 use http::Uri;
 use std::time::Duration;
@@ -9,14 +9,21 @@ use tonic::Streaming;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
 type FollowerClient = helium_proto::follower_client::FollowerClient<Channel>;
 
+#[derive(Debug, Clone)]
 pub struct FollowerService {
     client: FollowerClient,
 }
 
 impl FollowerService {
+    pub fn from_env() -> Result<Self> {
+        let uri = env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?;
+        Self::new(uri)
+    }
+
     pub fn new(uri: Uri) -> Result<Self> {
         let channel = Endpoint::from(uri)
             .connect_timeout(CONNECT_TIMEOUT)
@@ -25,6 +32,14 @@ impl FollowerService {
         Ok(Self {
             client: FollowerClient::new(channel),
         })
+    }
+
+    pub async fn find_gateway(&mut self, address: &PublicKey) -> Result<FollowerGatewayRespV1> {
+        let req = FollowerGatewayReqV1 {
+            address: address.to_vec(),
+        };
+        let res = self.client.find_gateway(req).await?.into_inner();
+        Ok(res)
     }
 
     pub async fn txn_stream<T>(

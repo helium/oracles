@@ -1,22 +1,19 @@
 pub mod client;
+pub use client::FollowerService;
 
-use crate::{api::gateway::Gateway, env_var, maker, rewards, Error, PublicKey, Result};
-use client::FollowerService;
+use crate::{api::gateway::Gateway, env_var, rewards, Error, PublicKey, Result};
 use helium_proto::{
-    blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnAddGatewayV1,
-    BlockchainTxnSubnetworkRewardsV1, FollowerTxnStreamRespV1,
+    blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
+    FollowerTxnStreamRespV1,
 };
-use http::Uri;
 use sqlx::{Pool, Postgres};
 use tokio::{sync::broadcast, time};
 use tonic::Streaming;
 
 /// First block that 5G hotspots were introduced (FreedomFi)
 pub const DEFAULT_START_BLOCK: i64 = 995041;
-pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
 pub const TXN_TYPES: &[&str] = &[
-    "blockchain_txn_add_gateway_v1",
     "blockchain_txn_transfer_hotspot_v1",
     "blockchain_txn_transfer_hotspot_v2",
     "blockchain_txn_consensus_group_v1",
@@ -35,15 +32,49 @@ impl Follower {
         pool: Pool<Postgres>,
         trigger: broadcast::Sender<rewards::Trigger>,
     ) -> Result<Self> {
-        let uri = env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?;
         let start_block = env_var("FOLLOWER_START_BLOCK", DEFAULT_START_BLOCK)?;
-        let service = FollowerService::new(uri)?;
+        let service = FollowerService::from_env()?;
         Ok(Self {
             service,
             pool,
             start_block,
             trigger,
         })
+    }
+
+    async fn last_height<'c, E>(executor: E, start_block: i64) -> Result<i64>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let height = sqlx::query_scalar::<_, String>(
+            r#"
+            select value from follower_meta
+            where key = 'last_height'
+            "#,
+        )
+        .fetch_optional(executor)
+        .await?
+        .and_then(|v| v.parse::<i64>().map_or_else(|_| None, Some))
+        .unwrap_or(start_block);
+        Ok(height)
+    }
+
+    async fn update_last_height<'c, E>(executor: E, height: i64) -> Result
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let _ = sqlx::query(
+            r#"
+            insert into follower_meta (key, value)
+            values ('last_height', $1)
+            on conflict (key) do update set
+                value = EXCLUDED.value
+            "#,
+        )
+        .bind(height)
+        .execute(executor)
+        .await?;
+        Ok(())
     }
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
@@ -54,7 +85,7 @@ impl Follower {
                 tracing::info!("stopping follower");
                 return Ok(());
             }
-            let height = self.get_gateway_height().await? as u64;
+            let height = Self::last_height(&self.pool, self.start_block).await? as u64;
             tracing::info!("connecting to txn stream at height {height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
@@ -70,10 +101,6 @@ impl Follower {
                 }
             }
         }
-    }
-
-    async fn get_gateway_height(&mut self) -> Result<i64> {
-        Gateway::max_height(&self.pool, self.start_block).await
     }
 
     async fn reconnect_wait(&mut self, shutdown: triggered::Listener) {
@@ -92,7 +119,11 @@ impl Follower {
         loop {
             tokio::select! {
                 msg = txn_stream.message() => match msg {
-                    Ok(Some(txn)) => self.process_txn_entry(txn).await?,
+                    Ok(Some(txn)) => {
+                        let height = txn.height as i64;
+                        self.process_txn_entry(txn).await?;
+                        Self::update_last_height(&self.pool, height).await?;
+                    }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
                         return Ok(());
@@ -116,7 +147,6 @@ impl Follower {
             }
         };
         match txn {
-            Txn::AddGateway(txn) => self.process_add_gateway(&entry, txn).await,
             Txn::TransferHotspot(txn) => {
                 self.process_transfer_gateway(txn.gateway.as_ref(), txn.buyer.as_ref())
                     .await
@@ -139,24 +169,6 @@ impl Follower {
             Err(Error::NotFound(_)) => Ok(()),
             Err(err) => Err(err),
         }
-    }
-
-    async fn process_add_gateway(
-        &mut self,
-        envelope: &FollowerTxnStreamRespV1,
-        txn: &BlockchainTxnAddGatewayV1,
-    ) -> Result {
-        let gateway =
-            Gateway::from_txn(envelope.height, envelope.timestamp, &envelope.txn_hash, txn)?;
-        if maker::allows(&gateway.payer) {
-            gateway.insert_into(&self.pool).await?;
-            tracing::info!(
-                "inserted gateway: {gateway} maker: {maker}",
-                gateway = gateway.pubkey,
-                maker = gateway.payer
-            );
-        }
-        Ok(())
     }
 
     async fn process_subnet_rewards(

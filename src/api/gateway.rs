@@ -1,24 +1,23 @@
 use crate::{
-    api::{api_error, DatabaseConnection},
-    datetime_from_epoch, Error, PublicKey, Result,
+    api::api_error, datetime_from_epoch, follower::FollowerService, Error, PublicKey, Result,
 };
 use axum::{
-    extract::{Path, Query},
+    extract::{Extension, Path, Query},
     http::StatusCode,
     Json,
 };
 use chrono::{DateTime, Utc};
-use helium_proto::BlockchainTxnAddGatewayV1;
+use helium_proto::FollowerGatewayRespV1;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::PgConnection;
+use sqlx::PgPool;
 use std::cmp::min;
 
 pub async fn get_gateway(
     Path(pubkey): Path<PublicKey>,
-    DatabaseConnection(mut conn): DatabaseConnection,
+    Extension(pool): Extension<PgPool>,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let event = Gateway::get(&mut conn, &pubkey).await.map_err(api_error)?;
+    let event = Gateway::get(&pool, &pubkey).await.map_err(api_error)?;
     if let Some(event) = event {
         let json = serde_json::to_value(event).map_err(api_error)?;
         Ok(Json(json))
@@ -29,9 +28,9 @@ pub async fn get_gateway(
 
 pub async fn get_gateways(
     Query(after): Query<After>,
-    DatabaseConnection(mut conn): DatabaseConnection,
+    Extension(pool): Extension<PgPool>,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let gateways = Gateway::list(&mut conn, &after).await.map_err(api_error)?;
+    let gateways = Gateway::list(&pool, &after).await.map_err(api_error)?;
     let json = serde_json::to_value(gateways).map_err(api_error)?;
     Ok(Json(json))
 }
@@ -41,40 +40,80 @@ pub const MAX_GATEWAY_COUNT: u32 = 1000;
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
 pub struct Gateway {
-    pub pubkey: PublicKey,
+    pub address: PublicKey,
     pub owner: PublicKey,
-    pub payer: PublicKey,
-    pub height: i64,
-    pub txn_hash: String,
-    pub block_timestamp: DateTime<Utc>,
+    pub location: Option<String>,
 
     pub last_heartbeat: Option<DateTime<Utc>>,
     pub last_speedtest: Option<DateTime<Utc>>,
     pub last_attach: Option<DateTime<Utc>>,
+
+    #[serde(skip_deserializing)]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
-impl Gateway {
-    pub fn from_txn(
-        height: u64,
-        timestamp: u64,
-        txn_hash: &[u8],
-        txn: &BlockchainTxnAddGatewayV1,
-    ) -> Result<Self> {
-        let gateway = Self {
-            pubkey: PublicKey::try_from(txn.gateway.as_ref())?,
-            owner: PublicKey::try_from(txn.owner.as_ref())?,
-            payer: PublicKey::try_from(txn.payer.as_ref())?,
-            height: height as i64,
-            txn_hash: base64::encode_config(txn_hash, base64::URL_SAFE_NO_PAD),
-            block_timestamp: datetime_from_epoch(timestamp as i64),
-
+impl TryFrom<FollowerGatewayRespV1> for Gateway {
+    type Error = Error;
+    fn try_from(value: FollowerGatewayRespV1) -> Result<Self> {
+        let location = if value.location.is_empty() {
+            None
+        } else {
+            Some(value.location)
+        };
+        Ok(Self {
+            address: PublicKey::try_from(value.address.as_ref())?,
+            owner: PublicKey::try_from(value.owner.as_ref())?,
+            location,
             last_heartbeat: None,
             last_speedtest: None,
             last_attach: None,
-        };
-        Ok(gateway)
+
+            created_at: None,
+        })
+    }
+}
+
+enum TimestampField {
+    Heartbeat,
+    SpeedTest,
+    Attach,
+}
+
+impl TimestampField {
+    const UPDATE_LAST_HEARTBEAT: &'static str = r#"
+        update gateway set
+            last_heartbeat = $2
+        where address = $1
+        "#;
+    const UPDATE_LAST_SPEEDTEST: &'static str = r#"
+        update gateway set
+            last_speedtest = $2
+        where address = $1
+        "#;
+    const UPDATE_LAST_ATTACH: &'static str = r#"
+        update gateway set
+            last_attach = $2
+        where address = $1
+        "#;
+
+    fn update_query(&self) -> &'static str {
+        match self {
+            Self::Heartbeat => Self::UPDATE_LAST_HEARTBEAT,
+            Self::SpeedTest => Self::UPDATE_LAST_SPEEDTEST,
+            Self::Attach => Self::UPDATE_LAST_ATTACH,
+        }
     }
 
+    fn update_gateway(&self, gw: &mut Gateway, timestamp: DateTime<Utc>) {
+        match self {
+            Self::Heartbeat => gw.last_heartbeat = Some(timestamp),
+            Self::SpeedTest => gw.last_speedtest = Some(timestamp),
+            Self::Attach => gw.last_attach = Some(timestamp),
+        }
+    }
+}
+
+impl Gateway {
     pub async fn insert_into<'c, E>(&self, executor: E) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -82,25 +121,23 @@ impl Gateway {
         sqlx::query(
             r#"
         insert into gateway (
-            pubkey, 
+            address, 
             owner, 
-            payer, 
-            height, 
-            txn_hash, 
-            block_timestamp, 
+            location, 
             last_heartbeat, 
             last_speedtest, 
             last_attach
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        on conflict do nothing
+        ) values ($1, $2, $3, $4, $5, $6)
+        on conflict (address) do update set
+            owner = EXCLUDED.owner,
+            location = EXCLUDED.location,
+            last_heartbeat = EXCLUDED.last_heartbeat,
+            last_attach = EXCLUDED.last_attach;
             "#,
         )
-        .bind(&self.pubkey)
+        .bind(&self.address)
         .bind(&self.owner)
-        .bind(&self.payer)
-        .bind(&self.height)
-        .bind(&self.txn_hash)
-        .bind(self.block_timestamp)
+        .bind(&self.location)
         .bind(self.last_attach)
         .bind(self.last_heartbeat)
         .bind(self.last_attach)
@@ -112,7 +149,7 @@ impl Gateway {
 
     pub async fn update_owner<'c, 'q, E>(
         executor: E,
-        pubkey: &PublicKey,
+        address: &PublicKey,
         owner: &PublicKey,
     ) -> Result
     where
@@ -120,59 +157,46 @@ impl Gateway {
     {
         let rows_affected = sqlx::query(
             r#"
+            insert into gateway 
         update gateway set
             owner = $2
-        where pubkey = $1
+        where address = $1
             "#,
         )
-        .bind(&pubkey)
+        .bind(&address)
         .bind(&owner)
         .execute(executor)
         .await
         .map(|res| res.rows_affected())
         .map_err(Error::from)?;
         if rows_affected == 0 {
-            Err(Error::not_found(format!("gateway {pubkey} not found")))
+            Err(Error::not_found(format!("gateway {address} not found")))
         } else {
             Ok(())
         }
     }
 
-    const UPDATE_LAST_HEARTBEAT: &'static str = r#"
-        update gateway set
-            last_heartbeat = $2
-        where pubkey = $1
-        "#;
-    const UPDATE_LAST_SPEEDTEST: &'static str = r#"
-        update gateway set
-            last_speedtest = $2
-        where pubkey = $1
-        "#;
-    const UPDATE_LAST_ATTACH: &'static str = r#"
-        update gateway set
-            last_attach = $2
-        where pubkey = $1
-        "#;
-
     async fn _update_last_timestamp<'c, 'q, E>(
         executor: E,
-        query: &'q str,
-        pubkey: &'q PublicKey,
+        follower: &'q mut FollowerService,
+        field: TimestampField,
+        address: &'q PublicKey,
         timestamp: &'q DateTime<Utc>,
     ) -> Result
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        let rows_affected = sqlx::query(query)
-            .bind(pubkey)
+        let rows_affected = sqlx::query(field.update_query())
+            .bind(address)
             .bind(timestamp)
-            .execute(executor)
+            .execute(executor.clone())
             .await
             .map(|res| res.rows_affected())
             .map_err(Error::from)?;
         if rows_affected == 0 {
-            tracing::warn!("ignoring timestamp update for absent gateway: {pubkey}");
-            Err(Error::not_found(format!("gateway {pubkey} not found")))
+            let mut gw = Gateway::try_from(follower.find_gateway(address).await?)?;
+            field.update_gateway(&mut gw, *timestamp);
+            gw.insert_into(executor).await
         } else {
             Ok(())
         }
@@ -180,86 +204,95 @@ impl Gateway {
 
     pub async fn update_last_heartbeat<'c, 'q, E>(
         executor: E,
-        pubkey: &'q PublicKey,
+        follower: &'q mut FollowerService,
+        address: &'q PublicKey,
         timestamp: &'q DateTime<Utc>,
     ) -> Result
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        Self::_update_last_timestamp(executor, Self::UPDATE_LAST_HEARTBEAT, pubkey, timestamp).await
+        Self::_update_last_timestamp(
+            executor,
+            follower,
+            TimestampField::Heartbeat,
+            address,
+            timestamp,
+        )
+        .await
     }
 
     pub async fn update_last_speedtest<'c, 'q, E>(
         executor: E,
-        pubkey: &'q PublicKey,
+        follower: &'q mut FollowerService,
+        address: &'q PublicKey,
         timestamp: &'q DateTime<Utc>,
     ) -> Result
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        Self::_update_last_timestamp(executor, Self::UPDATE_LAST_SPEEDTEST, pubkey, timestamp).await
+        Self::_update_last_timestamp(
+            executor,
+            follower,
+            TimestampField::SpeedTest,
+            address,
+            timestamp,
+        )
+        .await
     }
 
     pub async fn update_last_attach<'c, E>(
         executor: E,
-        pubkey: &'static PublicKey,
+        follower: &'static mut FollowerService,
+        address: &'static PublicKey,
         timestamp: &'static DateTime<Utc>,
     ) -> Result
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        Self::_update_last_timestamp(executor, Self::UPDATE_LAST_ATTACH, pubkey, timestamp).await
+        Self::_update_last_timestamp(
+            executor,
+            follower,
+            TimestampField::Attach,
+            address,
+            timestamp,
+        )
+        .await
     }
 
-    pub async fn get(conn: &mut PgConnection, pubkey: &PublicKey) -> Result<Option<Self>> {
+    pub async fn get<'c, E>(executor: E, address: &PublicKey) -> Result<Option<Self>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
         sqlx::query_as::<_, Self>(
             r#"
             select * from gateway 
-            where pubkey = $1
+            where address = $1
             "#,
         )
-        .bind(pubkey)
-        .fetch_optional(conn)
+        .bind(address)
+        .fetch_optional(executor)
         .await
         .map_err(Error::from)
     }
 
-    pub async fn list(conn: &mut PgConnection, after: &After) -> Result<Vec<Self>> {
+    pub async fn list<'c, E>(executor: E, after: &After) -> Result<Vec<Self>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
         sqlx::query_as::<_, Self>(
             r#"
             select * from gateway 
-            where height >= $1 and pubkey > $2
-            order by height asc, pubkey asc
+            where created_at > $1
+            order by created_at asc
             limit $3
             "#,
         )
-        .bind(after.height.unwrap_or(0))
-        .bind(
-            after
-                .pubkey
-                .as_ref()
-                .map_or_else(|| "".to_string(), |pubkey| pubkey.to_string()),
-        )
+        .bind(after.created_at.unwrap_or_else(|| datetime_from_epoch(0)))
         .bind(min(
             MAX_GATEWAY_COUNT as i32,
             after.count.unwrap_or(DEFAULT_GATEWAY_COUNT) as i32,
         ))
-        .fetch_all(conn)
-        .await
-        .map_err(Error::from)
-    }
-
-    pub async fn max_height<'c, E>(executor: E, default: i64) -> Result<i64>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        sqlx::query_scalar(
-            r#"
-            select coalesce(max(height), $1) from gateway
-            "#,
-        )
-        .bind(default)
-        .fetch_one(executor)
+        .fetch_all(executor)
         .await
         .map_err(Error::from)
     }
@@ -267,7 +300,6 @@ impl Gateway {
 
 #[derive(Deserialize)]
 pub struct After {
-    pub height: Option<i64>,
-    pub pubkey: Option<PublicKey>,
+    pub created_at: Option<DateTime<Utc>>,
     pub count: Option<usize>,
 }

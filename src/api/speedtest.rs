@@ -1,18 +1,20 @@
 use crate::{
-    api::{api_error, gateway::Gateway, DatabaseConnection},
+    api::{api_error, gateway::Gateway, Follower},
     Error, EventId, PublicKey, Result,
 };
-use axum::{http::StatusCode, Json};
+use axum::{extract::Extension, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::SpeedtestReqV1;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sqlx::PgPool;
 
 pub async fn create_cell_speedtest(
     Json(event): Json<CellSpeedtest>,
-    DatabaseConnection(mut conn): DatabaseConnection,
+    Extension(pool): Extension<PgPool>,
+    Follower(mut follower): Follower,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    Gateway::update_last_speedtest(&mut conn, &event.pubkey, &event.timestamp)
+    Gateway::update_last_speedtest(&pool, &mut follower, &event.pubkey, &event.timestamp)
         .await
         .and_then(|_| EventId::try_from(event))
         .map(|id| json!({ "id": id }))

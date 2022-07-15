@@ -1,19 +1,16 @@
-use crate::{
-    api::{api_error, DatabaseConnection},
-    Error, Imsi, PublicKey, Result,
-};
-use axum::{http::StatusCode, Json};
+use crate::{api::api_error, Error, Imsi, PublicKey, Result};
+use axum::{extract::Extension, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 
 pub async fn create_cell_attach_event(
     Json(event): Json<CellAttachEvent>,
-    DatabaseConnection(mut conn): DatabaseConnection,
+    Extension(pool): Extension<PgPool>,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
     event
-        .insert_into(&mut conn)
+        .insert_into(&pool)
         .await
         .map(|pubkey: PublicKey| {
             json!({

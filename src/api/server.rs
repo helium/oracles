@@ -4,7 +4,9 @@ use crate::{
         gateway::{self, Gateway},
         heartbeat,
     },
-    datetime_from_epoch, Error, EventId, PublicKey, Result,
+    datetime_from_epoch,
+    follower::FollowerService,
+    Error, EventId, PublicKey, Result,
 };
 use axum::{
     extract::Extension,
@@ -33,6 +35,7 @@ pub async fn api_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
     })?;
     let api_token = dotenv::var("API_TOKEN")?;
     let api_ro_token = dotenv::var("API_RO_TOKEN")?;
+    let follower = FollowerService::from_env()?;
 
     // build our application with some routes
     let app = Router::new()
@@ -60,7 +63,8 @@ pub async fn api_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
             get(gateway::get_gateway).layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
         )
         .layer(TraceLayer::new_for_http())
-        .layer(Extension(pool.clone()));
+        .layer(Extension(pool))
+        .layer(Extension(follower));
     tracing::info!("api listening on {}", api_addr);
 
     axum::Server::bind(&api_addr)
@@ -98,14 +102,16 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<SpeedtestRespV1> {
         // TODO: Signature verify speedtest_req
         let event = request.into_inner();
+        let mut follower = FollowerService::from_env()?;
         Gateway::update_last_speedtest(
             &self.pool,
+            &mut follower,
             &decode_pubkey(&event.pub_key)?,
             &datetime_from_epoch(event.timestamp as i64),
         )
         .await
         // Encode event digest, encode and return as the id
-        .map(EventId::from)
+        .map(|_| EventId::from(event))
         .map(|id| Response::new(id.into()))
         .map_err(Status::from)
     }
@@ -117,14 +123,16 @@ impl poc_mobile::PocMobile for GrpcServer {
         // TODO: Signature verify heartbeat_req
         let event = request.into_inner();
         let pubkey = decode_pubkey(&event.pub_key)?;
+        let mut follower = FollowerService::from_env()?;
         Gateway::update_last_heartbeat(
             &self.pool,
+            &mut follower,
             &pubkey,
             &datetime_from_epoch(event.timestamp as i64),
         )
         .await
         // Encode event digest, encode and return as the id
-        .map(EventId::from)
+        .map(|_| EventId::from(event))
         .map(|id| Response::new(id.into()))
         .map_err(Status::from)
     }
