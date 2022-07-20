@@ -23,11 +23,11 @@ impl CellType {
 
     pub fn reward_weight(&self) -> Decimal {
         match self {
-            Self::Nova436H => dec!(2.0),
-            Self::Nova430I => dec!(1.5),
+            Self::Nova436H => dec!(4.0),
+            Self::Nova430I => dec!(2.5),
             Self::Neutrino430 => dec!(1.0),
             Self::SercommIndoor => dec!(1.0),
-            Self::SercommOutdoor => dec!(1.5),
+            Self::SercommOutdoor => dec!(2.5),
         }
     }
 

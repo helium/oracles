@@ -77,15 +77,15 @@ mod test {
         let expected = HashMap::from([
             (
                 CellType::SercommOutdoor,
-                Mobile::from(dec!(132860.93888397)),
+                Mobile::from(dec!(197628.45849802)),
             ),
-            (CellType::Nova430I, Mobile::from(dec!(17670504.87156776))),
-            (CellType::Nova436H, Mobile::from(dec!(177147.91851196))),
+            (CellType::Nova430I, Mobile::from(dec!(26284584.98023715))),
+            (CellType::Nova436H, Mobile::from(dec!(316205.53359684))),
             (
                 CellType::SercommIndoor,
-                Mobile::from(dec!(81842338.35252436)),
+                Mobile::from(dec!(73043478.26086957)),
             ),
-            (CellType::Neutrino430, Mobile::from(dec!(177147.91851196))),
+            (CellType::Neutrino430, Mobile::from(dec!(158102.76679842))),
         ]);
         let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
         let input = HashMap::from([
@@ -124,15 +124,15 @@ mod test {
         let expected = HashMap::from([
             (
                 CellType::SercommOutdoor,
-                Mobile::from(dec!(133096.71694765)),
+                Mobile::from(dec!(198255.35289453)),
             ),
-            (CellType::Nova430I, Mobile::from(dec!(17701863.35403727))),
+            (CellType::Nova430I, Mobile::from(dec!(26367961.93497224))),
             (CellType::Nova436H, Mobile::from(0)),
             (
                 CellType::SercommIndoor,
-                Mobile::from(dec!(81987577.63975155)),
+                Mobile::from(dec!(73275178.42981761)),
             ),
-            (CellType::Neutrino430, Mobile::from(dec!(177462.28926353))),
+            (CellType::Neutrino430, Mobile::from(dec!(158604.28231562))),
         ]);
         let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
         let input = HashMap::from([
