@@ -13,7 +13,7 @@ pub enum CellType {
 impl CellType {
     pub fn fcc_id(&self) -> &'static str {
         match self {
-            Self::Nova436H => "2AG32PBS3101S",
+            Self::Nova436H => "2AG32MBS3100196N",
             Self::Nova430I => "2AG32PBS3101S",
             Self::Neutrino430 => "2AG32PBS31010",
             Self::SercommIndoor => "P27-SCE4255W",
