@@ -1,0 +1,33 @@
+[package]
+name = "poc5g-ingest"
+version = "0.1.0"
+edition = "2021"
+description = "PoC Ingest Server for the Helium Mobile Network"
+authors = ["Marc Nijdam <marc@nova.xyz>"]
+license = "Apache-2.0"
+
+[dependencies]
+dotenv = "0"
+thiserror = "1"
+serde =  {version = "1", features=["derive"]}
+serde_json = "1"
+clap = {version = "3", features = ["derive"]}
+tokio = { version = "1", default-features=false, features=["fs", "macros", "signal", "rt-multi-thread"] }
+tracing = "0"
+tracing-subscriber = { version = "0", features = ["env-filter"] }
+axum = "0"
+hyper = "*"
+base64 = "0"
+sha2 = "*"
+http = "*"
+tonic = "0"
+chrono = {version = "0", features = ["serde"]}
+tower-http = {version = "*", features = ["auth", "trace"]}
+triggered = "0"
+futures = "*"
+futures-util = "*"
+prost = "*"
+async-compression = {version = "0", features = ["tokio", "gzip"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
+poc-store = { path = "../store" }

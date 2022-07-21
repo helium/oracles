@@ -1,0 +1,17 @@
+[package]
+name = "poc-store"
+version = "0.1.0"
+edition = "2021"
+description = "Ingest Store Library"
+authors = ["Marc Nijdam <marc@nova-labe.com>"]
+license = "Apache-2.0"
+
+[dependencies]
+thiserror = "1"
+tokio = { version = "1", default-features=false, features=["fs"] }
+async-compression = {version = "0", features = ["tokio", "gzip"]}
+futures = "*"
+futures-util = "*"
+prost = "0"
+chrono = {version = "0", features = ["serde"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
