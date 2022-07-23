@@ -96,7 +96,7 @@ impl FileSink {
     }
 
     async fn new_sink(&self) -> Result<(PathBuf, PathBuf, Sink)> {
-        let filename = format!("{}-{}.gz", self.prefix, Utc::now().timestamp_millis());
+        let filename = format!("{}.{}.gz", self.prefix, Utc::now().timestamp_millis());
         let prev_path = self.current_sink_path.to_path_buf();
         let new_path = self.tmp_path.join(filename);
         let writer = BufWriter::new(
@@ -160,6 +160,7 @@ impl FileSink {
                 io::IoSlice::new(buf_bytes),
             ];
             let written = sink.write_vectored(slices).await?;
+            sink.flush().await?;
             Ok(written)
         } else {
             Err(Error::from(io::Error::new(
