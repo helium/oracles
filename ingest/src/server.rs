@@ -1,6 +1,6 @@
 use crate::{
     env_var, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, Error, EventId, Result,
-    CELL_HEARTBEAT_PREFIX, CELL_SPEEDTEST_PREFIX,
+    CELL_HEARTBEAT_PREFIX, CELL_SPEEDTEST_PREFIX, DEFAULT_STORE_ROLLOVER_SECS,
 };
 use axum::{
     http::StatusCode,
@@ -13,8 +13,8 @@ use helium_proto::services::poc_mobile::{
 };
 use poc_store::{FileSink, FileSinkBuilder};
 use serde_json::{json, Value};
-use std::{net::SocketAddr, path::Path, str::FromStr};
-use tokio::sync::Mutex;
+use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc, time::Duration};
+use tokio::{sync::Mutex, time};
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 use tower_http::{auth::RequireAuthorizationLayer, trace::TraceLayer};
 
@@ -82,14 +82,17 @@ async fn create_cell_heartbeat(
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct GrpcServer {
-    heartbeat_sink: Mutex<FileSink>,
-    speedtest_sink: Mutex<FileSink>,
+    sinks: FileSinks,
 }
 
-impl GrpcServer {
-    pub async fn from_env() -> Result<Self> {
-        let store_path = dotenv::var("INGEST_STORE")?;
-        let base_path = Path::new(&store_path);
+#[derive(Clone)]
+pub struct FileSinks {
+    heartbeat_sink: Arc<Mutex<FileSink>>,
+    speedtest_sink: Arc<Mutex<FileSink>>,
+}
+
+impl FileSinks {
+    pub async fn with_base_path(base_path: &Path) -> Result<Self> {
         let heartbeat_sink = FileSinkBuilder::new(CELL_HEARTBEAT_PREFIX, base_path)
             .create()
             .await?;
@@ -97,9 +100,24 @@ impl GrpcServer {
             .create()
             .await?;
         Ok(Self {
-            heartbeat_sink: Mutex::new(heartbeat_sink),
-            speedtest_sink: Mutex::new(speedtest_sink),
+            heartbeat_sink: Arc::new(Mutex::new(heartbeat_sink)),
+            speedtest_sink: Arc::new(Mutex::new(speedtest_sink)),
         })
+    }
+
+    async fn shutdown(&self) {
+        (*self.heartbeat_sink.lock().await).shutdown().await;
+        (*self.speedtest_sink.lock().await).shutdown().await;
+    }
+
+    async fn maybe_roll(&self, duration: &Duration) -> Result {
+        (*self.heartbeat_sink.lock().await)
+            .maybe_roll(duration)
+            .await?;
+        (*self.speedtest_sink.lock().await)
+            .maybe_roll(duration)
+            .await?;
+        Ok(())
     }
 }
 
@@ -114,7 +132,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         // Encode event digest, encode and return as the id
         let event_id = EventId::from(&event);
         {
-            let mut sink = self.speedtest_sink.lock().await;
+            let mut sink = self.sinks.speedtest_sink.lock().await;
             match (*sink).write(event).await {
                 Ok(_) => (),
                 Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
@@ -131,7 +149,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event = request.into_inner();
         let event_id = EventId::from(&event);
         {
-            let mut sink = self.heartbeat_sink.lock().await;
+            let mut sink = self.sinks.heartbeat_sink.lock().await;
             match (*sink).write(event).await {
                 Ok(_) => (),
                 Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
@@ -148,7 +166,13 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
         SocketAddr::from_str("0.0.0.0:9081").expect("socket address"),
     )?;
 
-    let poc_mobile = GrpcServer::from_env().await?;
+    let store_path = dotenv::var("INGEST_STORE")?;
+    let store_base_path = Path::new(&store_path);
+    let sinks = FileSinks::with_base_path(store_base_path).await?;
+
+    let poc_mobile = GrpcServer {
+        sinks: sinks.clone(),
+    };
     let api_token = dotenv::var("API_TOKEN").map(|token| {
         format!("Bearer {}", token)
             .parse::<MetadataValue<_>>()
@@ -157,7 +181,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
 
     tracing::info!("grpc listening on {}", grpc_addr);
 
-    transport::Server::builder()
+    let server = transport::Server::builder()
         .add_service(poc_mobile::Server::with_interceptor(
             poc_mobile,
             move |req: Request<()>| match req.metadata().get("authorization") {
@@ -165,7 +189,31 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
                 _ => Err(Status::unauthenticated("No valid auth token")),
             },
         ))
-        .serve_with_shutdown(grpc_addr, shutdown)
-        .map_err(Error::from)
-        .await
+        .serve_with_shutdown(grpc_addr, async {
+            shutdown.await;
+            sinks.shutdown().await
+        })
+        .map_err(Error::from);
+
+    // Initialize time based rollover interval
+    let store_roll_time = Duration::from_secs(env_var::<u64>(
+        "STORE_ROLLOVER_SECS",
+        DEFAULT_STORE_ROLLOVER_SECS,
+    )?);
+    let mut rollover_timer = time::interval(store_roll_time);
+
+    tokio::pin!(server);
+
+    loop {
+        tokio::select! {
+            result = &mut server => return result,
+            _ = rollover_timer.tick() => match sinks.maybe_roll(&store_roll_time).await {
+                Ok(()) => (),
+                Err(err) => {
+                    tracing::error!("failed to roll file sinks: {err:?}");
+                    return Err(err)
+                }
+            }
+        }
+    }
 }

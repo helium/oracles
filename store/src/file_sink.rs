@@ -1,9 +1,10 @@
 use crate::{Error, Result};
 use async_compression::tokio::write::GzipEncoder;
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use std::{
     io,
     path::{Path, PathBuf},
+    time,
 };
 use tokio::{
     fs::{self, File, OpenOptions},
@@ -57,6 +58,7 @@ impl FileSinkBuilder {
             buf: vec![],
             current_sink_size: 0,
             current_sink: None,
+            current_sink_time: None,
             current_sink_path: PathBuf::new(),
         };
         sink.init().await?;
@@ -74,6 +76,7 @@ pub struct FileSink {
 
     current_sink_size: usize,
     current_sink_path: PathBuf,
+    current_sink_time: Option<DateTime<Utc>>,
     current_sink: Option<Sink>,
 }
 
@@ -95,8 +98,9 @@ impl FileSink {
         Ok(())
     }
 
-    async fn new_sink(&self) -> Result<(PathBuf, PathBuf, Sink)> {
-        let filename = format!("{}.{}.gz", self.prefix, Utc::now().timestamp_millis());
+    async fn new_sink(&self) -> Result<(PathBuf, PathBuf, DateTime<Utc>, Sink)> {
+        let sink_time = Utc::now();
+        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
         let prev_path = self.current_sink_path.to_path_buf();
         let new_path = self.tmp_path.join(filename);
         let writer = BufWriter::new(
@@ -106,21 +110,43 @@ impl FileSink {
                 .open(&new_path)
                 .await?,
         );
-        Ok((prev_path, new_path, GzipEncoder::new(writer)))
+        Ok((prev_path, new_path, sink_time, GzipEncoder::new(writer)))
+    }
+
+    pub async fn maybe_roll(&mut self, max_age: &time::Duration) -> Result {
+        let roll_time = Duration::from_std(*max_age).expect("valid duration");
+        if let Some(current_sink_time) = self.current_sink_time {
+            if current_sink_time + roll_time > Utc::now() {
+                let prev_sink_path = self.roll_sink().await?;
+                self.deposit_sink(&prev_sink_path).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn shutdown(&mut self) {
+        if let Some(current_sink) = self.current_sink.as_mut() {
+            let _ = current_sink.shutdown().await;
+            self.current_sink = None;
+        }
     }
 
     async fn roll_sink(&mut self) -> Result<PathBuf> {
-        let (prev_path, new_path, new_sink) = self.new_sink().await?;
+        let (prev_path, new_path, new_sink_time, new_sink) = self.new_sink().await?;
         if let Some(current_sink) = self.current_sink.as_mut() {
             current_sink.shutdown().await?;
         }
         self.current_sink = Some(new_sink);
+        self.current_sink_time = Some(new_sink_time);
         self.current_sink_path = new_path;
         self.current_sink_size = 0;
         Ok(prev_path)
     }
 
     async fn deposit_sink(&self, sink_path: &Path) -> Result {
+        if !sink_path.exists() {
+            return Ok(());
+        }
         let target_filename = sink_path.file_name().ok_or_else(|| {
             Error::from(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
