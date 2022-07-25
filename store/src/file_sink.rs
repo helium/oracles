@@ -175,6 +175,7 @@ impl FileSink {
         ));
         let mut reader = File::open(sink_path).await?;
         tokio::io::copy(&mut reader, &mut writer).await?;
+        writer.shutdown().await?;
 
         fs::rename(&compressed_target_path, &final_target_path).await?;
         fs::remove_file(sink_path).await?;
