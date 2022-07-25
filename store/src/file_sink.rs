@@ -1,5 +1,4 @@
 use crate::{Error, FileType, Result};
-use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use futures::SinkExt;
@@ -14,7 +13,7 @@ use tokio::{
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
-type Sink = GzipEncoder<BufWriter<File>>;
+type Sink = BufWriter<File>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
 
 fn new_transport(sink: Sink) -> Transport {
@@ -22,7 +21,7 @@ fn new_transport(sink: Sink) -> Transport {
 }
 
 fn buf_writer(transport: &mut Transport) -> &mut BufWriter<File> {
-    transport.get_mut().get_mut()
+    transport.get_mut()
 }
 
 pub struct FileSinkBuilder {
@@ -120,12 +119,7 @@ impl FileSink {
                 .open(&new_path)
                 .await?,
         );
-        Ok((
-            prev_path,
-            new_path,
-            sink_time,
-            new_transport(GzipEncoder::new(writer)),
-        ))
+        Ok((prev_path, new_path, sink_time, new_transport(writer)))
     }
 
     pub async fn maybe_roll(&mut self, max_age: &time::Duration) -> Result {
