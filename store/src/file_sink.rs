@@ -55,7 +55,6 @@ impl FileSinkBuilder {
             prefix: self.prefix,
             max_size: self.max_size,
 
-            buf: vec![],
             current_sink_size: 0,
             current_sink: None,
             current_sink_time: None,
@@ -72,7 +71,6 @@ pub struct FileSink {
     tmp_path: PathBuf,
     prefix: String,
     max_size: usize,
-    buf: Vec<u8>,
 
     current_sink_size: usize,
     current_sink_path: PathBuf,
@@ -159,15 +157,12 @@ impl FileSink {
     }
 
     pub async fn write<T: prost::Message>(&mut self, item: T) -> Result<usize> {
-        let len = item.encoded_len();
-        if len > self.buf.len() {
-            self.buf.resize(len - self.buf.len(), 0);
-        }
+        let buf = item.encode_to_vec();
 
         if self.current_sink.is_none() {
             let _ = self.roll_sink().await?;
         };
-        let prev_sink_path = if (self.current_sink_size + len) >= self.max_size {
+        let prev_sink_path = if (self.current_sink_size + buf.len()) >= self.max_size {
             Some(self.roll_sink().await?)
         } else {
             None
@@ -178,8 +173,8 @@ impl FileSink {
         }
 
         if let Some(sink) = self.current_sink.as_mut() {
-            sink.write_u32(len as u32).await?;
-            let written = sink.write(&self.buf[0..len]).await?;
+            sink.write_u32(buf.len() as u32).await?;
+            let written = sink.write(&buf).await?;
             Ok(written)
         } else {
             Err(Error::from(io::Error::new(
