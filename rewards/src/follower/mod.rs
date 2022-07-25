@@ -181,11 +181,14 @@ impl Follower {
     }
 
     async fn process_consensus_group(&mut self, envelope: &FollowerTxnStreamRespV1) -> Result {
+        let ht = envelope.height;
+        let ts = envelope.timestamp;
         tracing::info!(
-            "processing consensus group at {height}",
-            height = envelope.height
+            "processing consensus group at {height} with timestamp: {ts}",
+            height = ht,
+            ts = ts
         );
-        match self.trigger.send(Trigger::new(envelope.height)) {
+        match self.trigger.send(Trigger::new(ht, ts)) {
             Ok(_) => Ok(()),
             Err(_) => {
                 tracing::error!("failed to send reward trigger");
