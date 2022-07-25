@@ -1,7 +1,6 @@
 use crate::{Error, FileType, Result};
 use async_compression::tokio::write::GzipEncoder;
 use chrono::{DateTime, Duration, Utc};
-use prost::bytes::BufMut;
 use std::{
     io,
     path::{Path, PathBuf},
@@ -162,7 +161,7 @@ impl FileSink {
     pub async fn write<T: prost::Message>(&mut self, item: T) -> Result<usize> {
         let len = item.encoded_len();
         if len > self.buf.len() {
-            self.buf.reserve(len - self.buf.len())
+            self.buf.resize(len - self.buf.len(), 0);
         }
 
         if self.current_sink.is_none() {
