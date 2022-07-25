@@ -1,45 +1,36 @@
-use crate::{Error, FileType, Result};
+use crate::{FileType, Result};
 use async_compression::tokio::bufread::GzipDecoder;
-use std::{io, path::Path};
-use tokio::{
-    fs::File,
-    io::{AsyncReadExt, BufReader},
-};
+use bytes::BytesMut;
+use futures::StreamExt;
+use std::path::Path;
+use tokio::{fs::File, io::BufReader};
+use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
 type Source = GzipDecoder<BufReader<File>>;
+type Transport = FramedRead<Source, LengthDelimitedCodec>;
+
+fn new_transport(source: Source) -> Transport {
+    FramedRead::new(source, LengthDelimitedCodec::new())
+}
 
 #[derive(Debug)]
 pub struct FileSource {
     pub file_type: FileType,
-    source: Source,
-    buf: Vec<u8>,
+    source: Transport,
 }
 
 impl FileSource {
     pub async fn new(path: &Path) -> Result<Self> {
         let file_type = FileType::try_from(path)?;
         let file = File::open(path).await?;
-        let source = GzipDecoder::new(BufReader::new(file));
-        let buf = vec![];
-        Ok(Self {
-            file_type,
-            source,
-            buf,
-        })
+        let source = new_transport(GzipDecoder::new(BufReader::new(file)));
+        Ok(Self { file_type, source })
     }
 
-    pub async fn read(&mut self) -> Result<&[u8]> {
-        match self.source.read_u32().await {
-            Ok(len) => {
-                let len = len as usize;
-                if len > self.buf.len() {
-                    self.buf.reserve(len - self.buf.len());
-                }
-                self.source.read_exact(&mut self.buf[0..len]).await?;
-                Ok(&self.buf[0..len])
-            }
-            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => Ok(&self.buf[0..0]),
-            Err(err) => Err(Error::from(err)),
+    pub async fn read(&mut self) -> Result<Option<BytesMut>> {
+        match self.source.next().await {
+            Some(result) => Ok(Some(result?)),
+            None => Ok(None),
         }
     }
 

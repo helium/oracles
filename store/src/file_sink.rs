@@ -1,6 +1,8 @@
 use crate::{Error, FileType, Result};
 use async_compression::tokio::write::GzipEncoder;
+use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
+use futures::SinkExt;
 use std::{
     io,
     path::{Path, PathBuf},
@@ -10,8 +12,18 @@ use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncWriteExt, BufWriter},
 };
+use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
 type Sink = GzipEncoder<BufWriter<File>>;
+type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
+
+fn new_transport(sink: Sink) -> Transport {
+    FramedWrite::new(sink, LengthDelimitedCodec::new())
+}
+
+fn buf_writer(transport: &mut Transport) -> &mut BufWriter<File> {
+    transport.get_mut().get_mut()
+}
 
 pub struct FileSinkBuilder {
     prefix: String,
@@ -75,7 +87,7 @@ pub struct FileSink {
     current_sink_size: usize,
     current_sink_path: PathBuf,
     current_sink_time: Option<DateTime<Utc>>,
-    current_sink: Option<Sink>,
+    current_sink: Option<Transport>,
 }
 
 impl FileSink {
@@ -96,7 +108,7 @@ impl FileSink {
         Ok(())
     }
 
-    async fn new_sink(&self) -> Result<(PathBuf, PathBuf, DateTime<Utc>, Sink)> {
+    async fn new_sink(&self) -> Result<(PathBuf, PathBuf, DateTime<Utc>, Transport)> {
         let sink_time = Utc::now();
         let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
         let prev_path = self.current_sink_path.to_path_buf();
@@ -108,7 +120,12 @@ impl FileSink {
                 .open(&new_path)
                 .await?,
         );
-        Ok((prev_path, new_path, sink_time, GzipEncoder::new(writer)))
+        Ok((
+            prev_path,
+            new_path,
+            sink_time,
+            new_transport(GzipEncoder::new(writer)),
+        ))
     }
 
     pub async fn maybe_roll(&mut self, max_age: &time::Duration) -> Result {
@@ -124,7 +141,7 @@ impl FileSink {
 
     pub async fn shutdown(&mut self) {
         if let Some(current_sink) = self.current_sink.as_mut() {
-            let _ = current_sink.shutdown().await;
+            let _ = buf_writer(current_sink).shutdown().await;
             self.current_sink = None;
         }
     }
@@ -132,7 +149,7 @@ impl FileSink {
     async fn roll_sink(&mut self) -> Result<PathBuf> {
         let (prev_path, new_path, new_sink_time, new_sink) = self.new_sink().await?;
         if let Some(current_sink) = self.current_sink.as_mut() {
-            current_sink.shutdown().await?;
+            buf_writer(current_sink).shutdown().await?;
         }
         self.current_sink = Some(new_sink);
         self.current_sink_time = Some(new_sink_time);
@@ -173,9 +190,9 @@ impl FileSink {
         }
 
         if let Some(sink) = self.current_sink.as_mut() {
-            sink.write_u32(buf.len() as u32).await?;
-            let written = sink.write(&buf).await?;
-            Ok(written)
+            let buf_len = buf.len();
+            sink.send(Bytes::from(buf)).await?;
+            Ok(buf_len)
         } else {
             Err(Error::from(io::Error::new(
                 io::ErrorKind::Other,

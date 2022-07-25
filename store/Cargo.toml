@@ -12,9 +12,11 @@ serde = "1"
 serde_json = "1"
 thiserror = "1"
 tokio = { version = "1", default-features=false, features=["fs"] }
+tokio-util = "0"
 async-compression = {version = "0", features = ["tokio", "gzip"]}
 futures = "*"
 futures-util = "*"
 prost = "0"
+bytes = "*"
 chrono = {version = "0", features = ["serde"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}

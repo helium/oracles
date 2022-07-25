@@ -20,10 +20,12 @@ impl Cmd {
         let file_type = file_source.file_type.clone();
 
         let mut count = 1;
-        let mut buf = file_source.read().await?;
-        if buf.is_empty() {
-            return Err(Error::not_found("no message found in file source"));
-        }
+        let mut buf = match file_source.read().await? {
+            Some(buf) => buf,
+            None => {
+                return Err(Error::not_found("no message found in file source"));
+            }
+        };
 
         let first_timestamp = match file_type {
             FileType::CellHeartbeat => CellHeartbeatReqV1::decode(&mut buf)
@@ -34,7 +36,7 @@ impl Cmd {
 
         loop {
             let buf = file_source.read().await?;
-            if buf.is_empty() {
+            if buf.is_none() {
                 break;
             }
             count += 1;
