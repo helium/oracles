@@ -1,6 +1,6 @@
 use crate::{
     env_var, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, Error, EventId, Result,
-    CELL_HEARTBEAT_PREFIX, CELL_SPEEDTEST_PREFIX, DEFAULT_STORE_ROLLOVER_SECS,
+    DEFAULT_STORE_ROLLOVER_SECS,
 };
 use axum::{
     http::StatusCode,
@@ -11,7 +11,7 @@ use futures_util::TryFutureExt;
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
 };
-use poc_store::{FileSink, FileSinkBuilder};
+use poc_store::{FileSink, FileSinkBuilder, FileType};
 use serde_json::{json, Value};
 use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time};
@@ -93,10 +93,10 @@ pub struct FileSinks {
 
 impl FileSinks {
     pub async fn with_base_path(base_path: &Path) -> Result<Self> {
-        let heartbeat_sink = FileSinkBuilder::new(CELL_HEARTBEAT_PREFIX, base_path)
+        let heartbeat_sink = FileSinkBuilder::new(FileType::CellHeartbeat, base_path)
             .create()
             .await?;
-        let speedtest_sink = FileSinkBuilder::new(CELL_SPEEDTEST_PREFIX, base_path)
+        let speedtest_sink = FileSinkBuilder::new(FileType::CellHeartbeat, base_path)
             .create()
             .await?;
         Ok(Self {

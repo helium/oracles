@@ -12,8 +12,6 @@ pub use event_id::EventId;
 pub use imsi::Imsi;
 pub use public_key::PublicKey;
 
-pub const CELL_HEARTBEAT_PREFIX: &str = "cell_heartbeat";
-pub const CELL_SPEEDTEST_PREFIX: &str = "cell_speedtest";
 pub const DEFAULT_STORE_ROLLOVER_SECS: u64 = 30 * 60;
 
 use chrono::{DateTime, NaiveDateTime, Utc};

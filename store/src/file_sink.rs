@@ -1,6 +1,7 @@
-use crate::{Error, Result};
+use crate::{Error, FileType, Result};
 use async_compression::tokio::write::GzipEncoder;
 use chrono::{DateTime, Duration, Utc};
+use prost::bytes::BufMut;
 use std::{
     io,
     path::{Path, PathBuf},
@@ -21,9 +22,9 @@ pub struct FileSinkBuilder {
 }
 
 impl FileSinkBuilder {
-    pub fn new(prefix: &str, target_path: &Path) -> Self {
+    pub fn new(file_type: FileType, target_path: &Path) -> Self {
         Self {
-            prefix: prefix.to_string(),
+            prefix: file_type.to_string(),
             target_path: target_path.to_path_buf(),
             tmp_path: target_path.join("tmp"),
             max_size: 50_000_000,
@@ -163,7 +164,12 @@ impl FileSink {
         if len > self.buf.len() {
             self.buf.reserve(len - self.buf.len())
         }
-        item.encode(&mut self.buf).map_err(Error::from)?;
+
+        self.buf.put_u32(len as u32);
+        {
+            let mut buf = &mut self.buf[4..];
+            item.encode(&mut buf).map_err(Error::from)?;
+        }
 
         if self.current_sink.is_none() {
             let _ = self.roll_sink().await?;
@@ -179,14 +185,7 @@ impl FileSink {
         }
 
         if let Some(sink) = self.current_sink.as_mut() {
-            let len_bytes = len.to_be_bytes();
-            let buf_bytes = &self.buf[0..len];
-            let slices: &[_] = &[
-                io::IoSlice::new(len_bytes.as_ref()),
-                io::IoSlice::new(buf_bytes),
-            ];
-            let written = sink.write_vectored(slices).await?;
-            sink.flush().await?;
+            let written = sink.write(&self.buf[0..len + 4]).await?;
             Ok(written)
         } else {
             Err(Error::from(io::Error::new(

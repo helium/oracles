@@ -1230,10 +1230,13 @@ version = "0.1.0"
 dependencies = [
  "async-compression",
  "chrono",
+ "clap",
  "futures",
  "futures-util",
  "helium-proto",
  "prost",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
 ]
