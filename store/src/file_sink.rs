@@ -165,12 +165,6 @@ impl FileSink {
             self.buf.reserve(len - self.buf.len())
         }
 
-        self.buf.put_u32(len as u32);
-        {
-            let mut buf = &mut self.buf[4..];
-            item.encode(&mut buf).map_err(Error::from)?;
-        }
-
         if self.current_sink.is_none() {
             let _ = self.roll_sink().await?;
         };
@@ -185,7 +179,8 @@ impl FileSink {
         }
 
         if let Some(sink) = self.current_sink.as_mut() {
-            let written = sink.write(&self.buf[0..len + 4]).await?;
+            sink.write_u32(len as u32).await?;
+            let written = sink.write(&self.buf[0..len]).await?;
             Ok(written)
         } else {
             Err(Error::from(io::Error::new(
