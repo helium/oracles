@@ -1,3 +1,4 @@
+pub mod dump;
 pub mod info;
 
 use crate::Result;

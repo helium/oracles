@@ -1,16 +1,13 @@
 pub mod attach_event;
 mod error;
 mod event_id;
-pub mod heartbeat;
 mod imsi;
-mod public_key;
 pub mod server;
-pub mod speedtest;
 
 pub use error::{Error, Result};
 pub use event_id::EventId;
 pub use imsi::Imsi;
-pub use public_key::PublicKey;
+pub use poc_store::public_key::PublicKey;
 
 pub const DEFAULT_STORE_ROLLOVER_SECS: u64 = 30 * 60;
 
