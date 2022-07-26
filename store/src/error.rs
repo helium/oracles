@@ -18,6 +18,8 @@ pub enum Error {
 pub enum DecodeError {
     #[error("prost error")]
     Prost(#[from] helium_proto::DecodeError),
+    #[error("file info error")]
+    FileInfo(String),
 }
 
 #[derive(Error, Debug)]
@@ -48,5 +50,11 @@ from_err!(DecodeError, prost::DecodeError);
 impl Error {
     pub fn not_found<E: ToString>(msg: E) -> Self {
         Self::NotFound(msg.to_string())
+    }
+}
+
+impl DecodeError {
+    pub fn file_info<E: ToString>(msg: E) -> Error {
+        Error::Decode(Self::FileInfo(msg.to_string()))
     }
 }

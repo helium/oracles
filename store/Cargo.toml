@@ -19,5 +19,7 @@ futures-core = "*"
 futures-util = "*"
 prost = "0"
 bytes = "*"
+regex = "1"
+lazy_static = "1"
 chrono = {version = "0", features = ["serde"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}

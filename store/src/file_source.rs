@@ -1,4 +1,4 @@
-use crate::{FileType, Result};
+use crate::{FileInfo, Result};
 use async_compression::tokio::bufread::GzipDecoder;
 use bytes::BytesMut;
 use futures::StreamExt;
@@ -20,13 +20,13 @@ where
 }
 
 pub struct FileSource<'a> {
-    pub file_type: FileType,
+    pub file_info: FileInfo,
     transport: Transport<'a>,
 }
 
 impl<'a> FileSource<'a> {
     pub async fn new(path: &Path) -> Result<FileSource<'a>> {
-        let file_type = FileType::try_from(path)?;
+        let file_info = FileInfo::try_from(path)?;
         let file = File::open(path).await?;
 
         let buf_reader = BufReader::new(file);
@@ -36,7 +36,7 @@ impl<'a> FileSource<'a> {
             new_transport::<Source>(buf_reader)
         };
         Ok(Self {
-            file_type,
+            file_info,
             transport,
         })
     }

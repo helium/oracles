@@ -1,13 +1,13 @@
 pub mod cli;
 mod error;
+mod file_info;
 pub mod file_sink;
 pub mod file_source;
-mod file_type;
 
 pub use error::{Error, Result};
+pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
 pub use file_source::FileSource;
-pub use file_type::FileType;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 

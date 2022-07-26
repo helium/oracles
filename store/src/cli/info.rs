@@ -17,7 +17,7 @@ impl Cmd {
     pub async fn run(&self) -> Result {
         let file_size = self.path.metadata()?.len();
         let mut file_source = FileSource::new(&self.path).await?;
-        let file_type = file_source.file_type.clone();
+        let file_info = file_source.file_info.clone();
 
         let mut count = 1;
         let mut buf = match file_source.read().await? {
@@ -27,7 +27,7 @@ impl Cmd {
             }
         };
 
-        let first_timestamp = match file_type {
+        let first_timestamp = match file_info.file_type {
             FileType::CellHeartbeat => CellHeartbeatReqV1::decode(&mut buf)
                 .map(|entry| datetime_from_epoch(entry.timestamp))?,
             FileType::CellSpeedtest => SpeedtestReqV1::decode(&mut buf)
@@ -43,8 +43,11 @@ impl Cmd {
         }
 
         let json = json!({
-            "file_size": file_size,
-            "file_type": file_type.to_string(),
+            "file": json!({
+                "size": file_size,
+                "type": file_info.file_type.to_string(),
+                "timestamp": file_info.file_timestamp,
+            }),
             "first_timestamp":  first_timestamp,
             "count": count,
         });
