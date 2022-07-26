@@ -12,6 +12,10 @@ pub enum Error {
     Decode(#[from] DecodeError),
     #[error("not found")]
     NotFound(String),
+    #[error("crypto error")]
+    Crypto(#[from] helium_crypto::Error),
+    #[error("csv error")]
+    CSV(#[from] csv::Error),
 }
 
 #[derive(Error, Debug)]

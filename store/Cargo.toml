@@ -23,3 +23,8 @@ regex = "1"
 lazy_static = "1"
 chrono = {version = "0", features = ["serde"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+csv = "*"
+base64 = "0"
+bs58 = "0.4"
+base64-url = "1.4.13"
+helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.3", features = ["multisig"]}

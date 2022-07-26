@@ -20,8 +20,6 @@ pub enum Error {
     Grpc(#[from] tonic::Status),
     #[error("service error")]
     Service(#[from] helium_proto::services::Error),
-    #[error("crypto error")]
-    Crypto(#[from] helium_crypto::Error),
     #[error("store error")]
     Store(#[from] poc_store::Error),
     #[error("not found")]

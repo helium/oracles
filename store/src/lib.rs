@@ -3,11 +3,15 @@ mod error;
 mod file_info;
 pub mod file_sink;
 pub mod file_source;
+pub mod heartbeat;
+pub mod public_key;
+pub mod speedtest;
 
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
 pub use file_source::FileSource;
+pub use public_key::PublicKey;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 

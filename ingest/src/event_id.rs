@@ -1,7 +1,8 @@
-use crate::{heartbeat::CellHeartbeat, speedtest::CellSpeedtest, Error, Result};
+use crate::{Error, Result};
 use helium_proto::services::poc_mobile::{
     CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
 };
+use poc_store::{heartbeat::CellHeartbeat, speedtest::CellSpeedtest};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -31,7 +32,7 @@ impl<M: helium_proto::Message> From<&M> for EventId {
 impl TryFrom<CellHeartbeat> for EventId {
     type Error = Error;
     fn try_from(event: CellHeartbeat) -> Result<Self> {
-        let req = CellHeartbeatReqV1::try_from(event)?;
+        let req = CellHeartbeatReqV1::from(event);
         Ok(Self::from(&req))
     }
 }

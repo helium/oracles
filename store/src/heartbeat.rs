@@ -1,9 +1,9 @@
-use crate::{Error, PublicKey, Result};
+use crate::{datetime_from_epoch, Error, PublicKey, Result};
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::CellHeartbeatReqV1;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CellHeartbeat {
     #[serde(alias = "pubKey")]
     pub pubkey: PublicKey,
@@ -19,10 +19,26 @@ pub struct CellHeartbeat {
     pub cbsd_id: String,
 }
 
-impl TryFrom<CellHeartbeat> for CellHeartbeatReqV1 {
+impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
     type Error = Error;
-    fn try_from(v: CellHeartbeat) -> Result<Self> {
+    fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
         Ok(Self {
+            pubkey: PublicKey::try_from(v.pub_key.as_ref())?,
+            hotspot_type: v.hotspot_type,
+            cell_id: v.cell_id,
+            timestamp: datetime_from_epoch(v.timestamp),
+            lon: v.lon,
+            lat: v.lat,
+            operation_mode: v.operation_mode,
+            cbsd_category: v.cbsd_category,
+            cbsd_id: v.cbsd_id,
+        })
+    }
+}
+
+impl From<CellHeartbeat> for CellHeartbeatReqV1 {
+    fn from(v: CellHeartbeat) -> Self {
+        Self {
             pub_key: v.pubkey.to_vec(),
             hotspot_type: v.hotspot_type,
             cell_id: v.cell_id,
@@ -33,6 +49,6 @@ impl TryFrom<CellHeartbeat> for CellHeartbeatReqV1 {
             cbsd_category: v.cbsd_category,
             cbsd_id: v.cbsd_id,
             signature: vec![],
-        })
+        }
     }
 }
