@@ -7,3 +7,5 @@ flamegraph.*
 *.json
 .envrc
 .env
+
+!/minio/bucket-policy.json

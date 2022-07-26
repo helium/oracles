@@ -1,0 +1,41 @@
+version: "2.4"
+services:
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    volumes:
+      - bucket-data:/data
+    command: server /data --console-address ":9090"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  config:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    volumes:
+      - ${PWD}/bucket-policy.json:/tmp/bucket-policy.json
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set localminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+
+      if ! /usr/bin/mc ls localminio/${MINIO_BUCKET} > /dev/null 2>&1 ; then
+          /usr/bin/mc mb localminio/${MINIO_BUCKET};
+      fi;
+
+      /usr/bin/mc admin policy add localminio fullaccess /tmp/bucket-policy.json;
+
+      /usr/bin/mc admin user add localminio ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY};
+      /usr/bin/mc admin policy set localminio fullaccess user=${AWS_ACCESS_KEY_ID}
+      "
+
+volumes:
+  bucket-data:
