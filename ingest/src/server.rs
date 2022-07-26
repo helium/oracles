@@ -189,10 +189,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
                 _ => Err(Status::unauthenticated("No valid auth token")),
             },
         ))
-        .serve_with_shutdown(grpc_addr, async {
-            shutdown.await;
-            sinks.shutdown().await
-        })
+        .serve_with_shutdown(grpc_addr, shutdown)
         .map_err(Error::from);
 
     // Initialize time based rollover interval
@@ -206,7 +203,10 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
 
     loop {
         tokio::select! {
-            result = &mut server => return result,
+            result = &mut server => {
+                sinks.shutdown().await;
+                return result
+            },
             _ = rollover_timer.tick() => match sinks.maybe_roll(&store_roll_time).await {
                 Ok(()) => (),
                 Err(err) => {

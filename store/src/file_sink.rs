@@ -14,7 +14,7 @@ use tokio::{
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
-type Sink = BufWriter<File>;
+type Sink = GzipEncoder<BufWriter<File>>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
 
 fn new_transport(sink: Sink) -> Transport {
@@ -110,16 +110,16 @@ impl FileSink {
 
     async fn new_sink(&self) -> Result<(PathBuf, PathBuf, DateTime<Utc>, Transport)> {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}", self.prefix, sink_time.timestamp_millis());
+        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
         let prev_path = self.current_sink_path.to_path_buf();
         let new_path = self.tmp_path.join(filename);
-        let writer = BufWriter::new(
+        let writer = GzipEncoder::new(BufWriter::new(
             OpenOptions::new()
                 .write(true)
                 .create(true)
                 .open(&new_path)
                 .await?,
-        );
+        ));
         Ok((prev_path, new_path, sink_time, new_transport(writer)))
     }
 
@@ -163,22 +163,9 @@ impl FileSink {
                 "expected sink filename",
             ))
         })?;
-        let final_target_path = self.target_path.join(&target_filename).with_extension("gz");
+        let target_path = self.target_path.join(&target_filename);
 
-        let compressed_target_path = sink_path.with_extension("gz");
-        let mut writer = GzipEncoder::new(BufWriter::new(
-            OpenOptions::new()
-                .write(true)
-                .create(true)
-                .open(&compressed_target_path)
-                .await?,
-        ));
-        let mut reader = File::open(sink_path).await?;
-        tokio::io::copy(&mut reader, &mut writer).await?;
-        writer.shutdown().await?;
-
-        fs::rename(&compressed_target_path, &final_target_path).await?;
-        fs::remove_file(sink_path).await?;
+        fs::rename(&sink_path, &target_path).await?;
         Ok(())
     }
 

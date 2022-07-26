@@ -15,6 +15,7 @@ tokio = { version = "1", default-features=false, features=["fs"] }
 tokio-util = "0"
 async-compression = {version = "0", features = ["tokio", "gzip"]}
 futures = "*"
+futures-core = "*"
 futures-util = "*"
 prost = "0"
 bytes = "*"

@@ -2,33 +2,47 @@ use crate::{FileType, Result};
 use async_compression::tokio::bufread::GzipDecoder;
 use bytes::BytesMut;
 use futures::StreamExt;
-use std::path::Path;
+use futures_core::stream::BoxStream;
+use std::{boxed::Box, path::Path};
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
-type Source = GzipDecoder<BufReader<File>>;
-type Transport = FramedRead<Source, LengthDelimitedCodec>;
+pub type Source = BufReader<File>;
+pub type CompressedSource = GzipDecoder<Source>;
 
-fn new_transport(source: Source) -> Transport {
-    FramedRead::new(source, LengthDelimitedCodec::new())
+type Transport<'a> = BoxStream<'a, std::result::Result<BytesMut, std::io::Error>>;
+
+fn new_transport<'a, S>(source: S) -> Transport<'a>
+where
+    S: tokio::io::AsyncRead + std::marker::Send + 'a,
+{
+    Box::pin(FramedRead::new(source, LengthDelimitedCodec::new()))
 }
 
-#[derive(Debug)]
-pub struct FileSource {
+pub struct FileSource<'a> {
     pub file_type: FileType,
-    source: Transport,
+    transport: Transport<'a>,
 }
 
-impl FileSource {
-    pub async fn new(path: &Path) -> Result<Self> {
+impl<'a> FileSource<'a> {
+    pub async fn new(path: &Path) -> Result<FileSource<'a>> {
         let file_type = FileType::try_from(path)?;
         let file = File::open(path).await?;
-        let source = new_transport(GzipDecoder::new(BufReader::new(file)));
-        Ok(Self { file_type, source })
+
+        let buf_reader = BufReader::new(file);
+        let transport = if let Some("gz") = path.extension().and_then(|e| e.to_str()) {
+            new_transport(GzipDecoder::new(buf_reader))
+        } else {
+            new_transport::<Source>(buf_reader)
+        };
+        Ok(Self {
+            file_type,
+            transport,
+        })
     }
 
     pub async fn read(&mut self) -> Result<Option<BytesMut>> {
-        match self.source.next().await {
+        match self.transport.next().await {
             Some(result) => Ok(Some(result?)),
             None => Ok(None),
         }
