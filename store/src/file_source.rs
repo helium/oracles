@@ -1,5 +1,6 @@
 use crate::{FileInfo, Result};
 use async_compression::tokio::bufread::GzipDecoder;
+use async_trait::async_trait;
 use bytes::BytesMut;
 use futures::StreamExt;
 use futures_core::stream::BoxStream;
@@ -17,6 +18,11 @@ where
     S: tokio::io::AsyncRead + std::marker::Send + 'a,
 {
     Box::pin(FramedRead::new(source, LengthDelimitedCodec::new()))
+}
+
+#[async_trait]
+pub trait FileSourceRead<'a> {
+    async fn read(&mut self) -> Result<Option<BytesMut>>;
 }
 
 pub struct FileSource<'a> {
@@ -40,8 +46,11 @@ impl<'a> FileSource<'a> {
             transport,
         })
     }
+}
 
-    pub async fn read(&mut self) -> Result<Option<BytesMut>> {
+#[async_trait]
+impl<'a> FileSourceRead<'a> for FileSource<'a> {
+    async fn read(&mut self) -> Result<Option<BytesMut>> {
         match self.transport.next().await {
             Some(result) => Ok(Some(result?)),
             None => Ok(None),

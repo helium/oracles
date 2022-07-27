@@ -1278,6 +1278,7 @@ name = "poc-store"
 version = "0.1.0"
 dependencies = [
  "async-compression",
+ "async-trait",
  "bytes",
  "chrono",
  "clap",

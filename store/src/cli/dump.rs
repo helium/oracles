@@ -1,4 +1,4 @@
-use crate::{heartbeat::CellHeartbeat, FileSource, Result};
+use crate::{heartbeat::CellHeartbeat, FileSource, FileSourceRead, Result};
 use csv::Writer;
 use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
 use std::io;
