@@ -94,7 +94,7 @@ impl FileSinks {
         let heartbeat_sink = FileSinkBuilder::new(FileType::CellHeartbeat, base_path)
             .create()
             .await?;
-        let speedtest_sink = FileSinkBuilder::new(FileType::CellHeartbeat, base_path)
+        let speedtest_sink = FileSinkBuilder::new(FileType::CellSpeedtest, base_path)
             .create()
             .await?;
         Ok(Self {
