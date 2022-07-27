@@ -66,10 +66,7 @@ impl FileSinkBuilder {
             prefix: self.prefix,
             max_size: self.max_size,
 
-            current_sink_size: 0,
-            current_sink: None,
-            current_sink_time: None,
-            current_sink_path: PathBuf::new(),
+            active_sink: None,
         };
         sink.init().await?;
         Ok(sink)
@@ -83,10 +80,22 @@ pub struct FileSink {
     prefix: String,
     max_size: usize,
 
-    current_sink_size: usize,
-    current_sink_path: PathBuf,
-    current_sink_time: Option<DateTime<Utc>>,
-    current_sink: Option<Transport>,
+    active_sink: Option<ActiveSink>,
+}
+
+#[derive(Debug)]
+struct ActiveSink {
+    size: usize,
+    path: PathBuf,
+    time: DateTime<Utc>,
+    transport: Transport,
+}
+
+impl ActiveSink {
+    async fn shutdown(&mut self) -> Result {
+        transport_sink(&mut self.transport).shutdown().await?;
+        Ok(())
+    }
 }
 
 impl FileSink {
@@ -107,10 +116,9 @@ impl FileSink {
         Ok(())
     }
 
-    async fn new_sink(&self) -> Result<(PathBuf, PathBuf, DateTime<Utc>, Transport)> {
+    async fn new_sink(&self) -> Result<ActiveSink> {
         let sink_time = Utc::now();
         let filename = format!("{}.{}", self.prefix, sink_time.timestamp_millis());
-        let prev_path = self.current_sink_path.to_path_buf();
         let new_path = self.tmp_path.join(filename);
         let writer = BufWriter::new(
             OpenOptions::new()
@@ -119,37 +127,32 @@ impl FileSink {
                 .open(&new_path)
                 .await?,
         );
-        Ok((prev_path, new_path, sink_time, new_transport(writer)))
+        Ok(ActiveSink {
+            path: new_path,
+            size: 0,
+            time: sink_time,
+            transport: new_transport(writer),
+        })
     }
 
     pub async fn maybe_roll(&mut self, max_age: &time::Duration) -> Result {
         let roll_time = Duration::from_std(*max_age).expect("valid duration");
-        if let Some(current_sink_time) = self.current_sink_time {
-            if current_sink_time + roll_time > Utc::now() {
-                let prev_sink_path = self.roll_sink().await?;
-                self.deposit_sink(&prev_sink_path).await?;
+        if let Some(active_sink) = self.active_sink.as_mut() {
+            if active_sink.time + roll_time > Utc::now() {
+                let _ = active_sink.shutdown().await?;
+                let prev_path = active_sink.path.clone();
+                self.deposit_sink(&prev_path).await?;
+                self.active_sink = None;
             }
         }
         Ok(())
     }
 
     pub async fn shutdown(&mut self) {
-        if let Some(current_sink) = self.current_sink.as_mut() {
-            let _ = transport_sink(current_sink).shutdown().await;
-            self.current_sink = None;
+        if let Some(active_sink) = self.active_sink.as_mut() {
+            let _ = active_sink.shutdown().await;
+            self.active_sink = None;
         }
-    }
-
-    async fn roll_sink(&mut self) -> Result<PathBuf> {
-        let (prev_path, new_path, new_sink_time, new_sink) = self.new_sink().await?;
-        if let Some(current_sink) = self.current_sink.as_mut() {
-            transport_sink(current_sink).shutdown().await?;
-        }
-        self.current_sink = Some(new_sink);
-        self.current_sink_time = Some(new_sink_time);
-        self.current_sink_path = new_path;
-        self.current_sink_size = 0;
-        Ok(prev_path)
     }
 
     async fn deposit_sink(&self, sink_path: &Path) -> Result {
@@ -168,26 +171,30 @@ impl FileSink {
         Ok(())
     }
 
-    pub async fn write<T: prost::Message>(&mut self, item: T) -> Result<usize> {
+    pub async fn write<T: prost::Message>(&mut self, item: T) -> Result {
         let buf = item.encode_to_vec();
 
-        if self.current_sink.is_none() {
-            let _ = self.roll_sink().await?;
-        };
-        let prev_sink_path = if (self.current_sink_size + buf.len()) >= self.max_size {
-            Some(self.roll_sink().await?)
-        } else {
-            None
-        };
-
-        if let Some(prev_sink_path) = prev_sink_path {
-            self.deposit_sink(&prev_sink_path).await?;
+        match self.active_sink.as_mut() {
+            // If there is an active sink check if the write would make it too
+            // large. if so deposit and make a new sink. Otherwise the current
+            // active sink is usable.
+            Some(active_sink) => {
+                if active_sink.size + buf.len() >= self.max_size {
+                    active_sink.shutdown().await?;
+                    let prev_path = active_sink.path.clone();
+                    self.deposit_sink(&prev_path).await?;
+                    self.active_sink = Some(self.new_sink().await?);
+                }
+            }
+            // No sink, make a new one
+            None => {
+                self.active_sink = Some(self.new_sink().await?);
+            }
         }
 
-        if let Some(sink) = self.current_sink.as_mut() {
-            let buf_len = buf.len();
-            sink.send(Bytes::from(buf)).await?;
-            Ok(buf_len)
+        if let Some(active_sink) = self.active_sink.as_mut() {
+            active_sink.transport.send(Bytes::from(buf)).await?;
+            Ok(())
         } else {
             Err(Error::from(io::Error::new(
                 io::ErrorKind::Other,
