@@ -196,6 +196,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
         DEFAULT_STORE_ROLLOVER_SECS,
     )?);
     let mut rollover_timer = time::interval(store_roll_time);
+    rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
     tokio::pin!(server);
 

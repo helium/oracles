@@ -1,5 +1,4 @@
 use crate::{Error, FileType, Result};
-use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use futures::SinkExt;
@@ -14,7 +13,7 @@ use tokio::{
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
-type Sink = GzipEncoder<BufWriter<File>>;
+type Sink = BufWriter<File>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
 
 fn new_transport(sink: Sink) -> Transport {
@@ -110,16 +109,16 @@ impl FileSink {
 
     async fn new_sink(&self) -> Result<(PathBuf, PathBuf, DateTime<Utc>, Transport)> {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
+        let filename = format!("{}.{}", self.prefix, sink_time.timestamp_millis());
         let prev_path = self.current_sink_path.to_path_buf();
         let new_path = self.tmp_path.join(filename);
-        let writer = GzipEncoder::new(BufWriter::new(
+        let writer = BufWriter::new(
             OpenOptions::new()
                 .write(true)
                 .create(true)
                 .open(&new_path)
                 .await?,
-        ));
+        );
         Ok((prev_path, new_path, sink_time, new_transport(writer)))
     }
 
