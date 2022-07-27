@@ -16,7 +16,10 @@ impl TryFrom<&Path> for FileInfo {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.gz)?").unwrap();
         }
-        let path_str = value.to_string_lossy().into_owned();
+        let path_str = value
+            .file_name()
+            .map(|str| str.to_string_lossy().into_owned())
+            .ok_or_else(|| Error::not_found("missing filename"))?;
         let cap = RE
             .captures(&path_str)
             .ok_or_else(|| DecodeError::file_info("failed to decode file info"))?;
