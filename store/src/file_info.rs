@@ -14,7 +14,7 @@ impl TryFrom<&Path> for FileInfo {
     type Error = Error;
     fn try_from(value: &Path) -> Result<Self> {
         lazy_static! {
-            static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+).gz").unwrap();
+            static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.gz)?").unwrap();
         }
         let path_str = value.to_string_lossy().into_owned();
         let cap = RE
