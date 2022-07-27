@@ -18,6 +18,20 @@ impl FileMultiSource {
         // NOTE: Add in reverse, so we pop in order when reading
         for path in paths.into_iter().rev() {
             let fsource = FileSource::new(path.as_ref())?;
+<<<<<<< HEAD
+use async_trait::async_trait;
+use bytes::BytesMut;
+use std::path::Path;
+
+pub struct FileMultiSource<'a>(Vec<FileSource<'a>>);
+
+impl<'a> FileMultiSource<'a> {
+    pub async fn new(paths: &[&Path]) -> Result<FileMultiSource<'a>> {
+        let mut files = vec![];
+        for path in paths {
+            let fsource = FileSource::new(path).await?;
+=======
+>>>>>>> 3411799 (Convert FileSource and FileMultiSource to use Streams)
             files.push(fsource);
         }
         Ok(FileMultiSource(files))
@@ -67,5 +81,6 @@ mod test {
         let c2 = get_count(f2).await.unwrap();
 
         assert_eq!(tot_count, c1 + c2);
+
     }
 }
