@@ -1,4 +1,5 @@
 use crate::{Error, FileType, Result};
+use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use futures::SinkExt;
@@ -13,7 +14,7 @@ use tokio::{
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
-type Sink = BufWriter<File>;
+type Sink = GzipEncoder<BufWriter<File>>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
 
 fn new_transport(sink: Sink) -> Transport {
@@ -118,15 +119,15 @@ impl FileSink {
 
     async fn new_sink(&self) -> Result<ActiveSink> {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}", self.prefix, sink_time.timestamp_millis());
+        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
         let new_path = self.tmp_path.join(filename);
-        let writer = BufWriter::new(
+        let writer = GzipEncoder::new(BufWriter::new(
             OpenOptions::new()
                 .write(true)
                 .create(true)
                 .open(&new_path)
                 .await?,
-        );
+        ));
         Ok(ActiveSink {
             path: new_path,
             size: 0,
@@ -173,13 +174,14 @@ impl FileSink {
 
     pub async fn write<T: prost::Message>(&mut self, item: T) -> Result {
         let buf = item.encode_to_vec();
+        let buf_len = buf.len();
 
         match self.active_sink.as_mut() {
             // If there is an active sink check if the write would make it too
             // large. if so deposit and make a new sink. Otherwise the current
             // active sink is usable.
             Some(active_sink) => {
-                if active_sink.size + buf.len() >= self.max_size {
+                if active_sink.size + buf_len >= self.max_size {
                     active_sink.shutdown().await?;
                     let prev_path = active_sink.path.clone();
                     self.deposit_sink(&prev_path).await?;
@@ -194,6 +196,7 @@ impl FileSink {
 
         if let Some(active_sink) = self.active_sink.as_mut() {
             active_sink.transport.send(Bytes::from(buf)).await?;
+            active_sink.size += buf_len;
             Ok(())
         } else {
             Err(Error::from(io::Error::new(
