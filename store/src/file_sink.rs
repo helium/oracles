@@ -140,7 +140,7 @@ impl FileSink {
         let roll_time = Duration::from_std(*max_age).expect("valid duration");
         if let Some(active_sink) = self.active_sink.as_mut() {
             if active_sink.time + roll_time > Utc::now() {
-                let _ = active_sink.shutdown().await?;
+                active_sink.shutdown().await?;
                 let prev_path = active_sink.path.clone();
                 self.deposit_sink(&prev_path).await?;
                 self.active_sink = None;
