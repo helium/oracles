@@ -6,7 +6,7 @@ minio-start() {
     else
         MINIO_ROOT_USER=${MINIO_ROOT_USER:-novaadmin} \
             MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-novaadmin} \
-            MINIO_BUCKET=${MINIO_BUCKET:-heartbeats} \
+            MINIO_BUCKETS=${MINIO_BUCKETS:-"poc5g-ingest poc5g-rewards"} \
             docker-compose up -d
     fi
 }

@@ -21,21 +21,17 @@ services:
     image: minio/mc:latest
     depends_on:
       - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKETS: ${MINIO_BUCKETS}
+      TEST_USER_ID: ${AWS_ACCESS_KEY_ID}
+      TEST_USER_KEY: ${AWS_SECRET_ACCESS_KEY}
     volumes:
-      - ${PWD}/bucket-policy.json:/tmp/bucket-policy.json
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set localminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
-
-      if ! /usr/bin/mc ls localminio/${MINIO_BUCKET} > /dev/null 2>&1 ; then
-          /usr/bin/mc mb localminio/${MINIO_BUCKET};
-      fi;
-
-      /usr/bin/mc admin policy add localminio fullaccess /tmp/bucket-policy.json;
-
-      /usr/bin/mc admin user add localminio ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY};
-      /usr/bin/mc admin policy set localminio fullaccess user=${AWS_ACCESS_KEY_ID}
-      "
+      - ${PWD}/bucket-policy.json:/bucket-policy.json
+      - ${PWD}/config-entrypoint.sh:/config-entrypoint.sh
+    entrypoint:
+      - /config-entrypoint.sh
 
 volumes:
   bucket-data:
