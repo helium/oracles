@@ -17,6 +17,12 @@ impl Deref for PublicKey {
     }
 }
 
+impl AsRef<helium_crypto::PublicKey> for PublicKey {
+    fn as_ref(&self) -> &helium_crypto::PublicKey {
+        &self.0
+    }
+}
+
 impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where

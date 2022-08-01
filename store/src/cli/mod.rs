@@ -1,3 +1,4 @@
+pub mod bucket;
 pub mod dump;
 pub mod info;
 

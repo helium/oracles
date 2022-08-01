@@ -30,13 +30,6 @@ async fn main() -> Result {
         shutdown_trigger.trigger()
     });
 
-    // api server
-    let api_server = server::api_server(shutdown_listener.clone());
-
-    // grpc server
-    let grpc_server = server::grpc_server(shutdown_listener.clone());
-
-    tokio::try_join!(api_server, grpc_server,)?;
-
-    Ok(())
+    // run the grpc server
+    server::grpc_server(shutdown_listener).await
 }

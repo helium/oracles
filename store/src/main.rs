@@ -1,6 +1,6 @@
 use clap::Parser;
 use poc_store::{
-    cli::{dump, info},
+    cli::{bucket, dump, info},
     Result,
 };
 
@@ -8,6 +8,7 @@ use poc_store::{
 pub enum Cmd {
     Info(info::Cmd),
     Dump(dump::Cmd),
+    Bucket(bucket::Cmd),
 }
 
 #[derive(Debug, clap::Parser)]
@@ -25,5 +26,6 @@ async fn main() -> Result {
     match cli.cmd {
         Cmd::Info(cmd) => cmd.run().await,
         Cmd::Dump(cmd) => cmd.run().await,
+        Cmd::Bucket(cmd) => cmd.run().await,
     }
 }

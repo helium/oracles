@@ -7,8 +7,8 @@ use std::{boxed::Box, path::Path};
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
-pub type Source = BufReader<File>;
-pub type CompressedSource = GzipDecoder<Source>;
+type Source = BufReader<File>;
+type CompressedSource = GzipDecoder<Source>;
 
 type Transport<'a> = BoxStream<'a, std::result::Result<BytesMut, std::io::Error>>;
 
@@ -31,7 +31,7 @@ impl<'a> FileSource<'a> {
 
         let buf_reader = BufReader::new(file);
         let transport = if let Some("gz") = path.extension().and_then(|e| e.to_str()) {
-            new_transport(GzipDecoder::new(buf_reader))
+            new_transport::<CompressedSource>(GzipDecoder::new(buf_reader))
         } else {
             new_transport::<Source>(buf_reader)
         };

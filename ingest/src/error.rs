@@ -12,16 +12,14 @@ pub enum Error {
     Encode(#[from] EncodeError),
     #[error("dencode error")]
     Decode(#[from] DecodeError),
-    #[error("http server error")]
-    Server(#[from] hyper::Error),
-    #[error("http server extension error")]
-    ServerExtension(#[from] axum::extract::rejection::ExtensionRejection),
     #[error("grpc {}", .0.message())]
     Grpc(#[from] tonic::Status),
     #[error("service error")]
     Service(#[from] helium_proto::services::Error),
     #[error("store error")]
     Store(#[from] poc_store::Error),
+    #[error("env error")]
+    Env(#[from] std::env::VarError),
     #[error("not found")]
     NotFound(String),
 }
@@ -32,6 +30,8 @@ pub enum DecodeError {
     Prost(#[from] helium_proto::DecodeError),
     #[error("uri error")]
     Uri(#[from] http::uri::InvalidUri),
+    #[error("socket addr error")]
+    SocketAddr(#[from] std::net::AddrParseError),
 }
 
 #[derive(Error, Debug)]

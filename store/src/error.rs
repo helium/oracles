@@ -15,7 +15,13 @@ pub enum Error {
     #[error("crypto error")]
     Crypto(#[from] helium_crypto::Error),
     #[error("csv error")]
-    CSV(#[from] csv::Error),
+    Csv(#[from] csv::Error),
+    #[error("aws error")]
+    Aws(#[from] aws_sdk_s3::Error),
+    #[error("env error")]
+    Env(#[from] std::env::VarError),
+    #[error("mpsc channel error")]
+    Channel,
 }
 
 #[derive(Error, Debug)]
@@ -24,6 +30,8 @@ pub enum DecodeError {
     Prost(#[from] helium_proto::DecodeError),
     #[error("file info error")]
     FileInfo(String),
+    #[error("uri error")]
+    Uri(#[from] http::uri::InvalidUri),
 }
 
 #[derive(Error, Debug)]
@@ -54,6 +62,10 @@ from_err!(DecodeError, prost::DecodeError);
 impl Error {
     pub fn not_found<E: ToString>(msg: E) -> Self {
         Self::NotFound(msg.to_string())
+    }
+
+    pub fn channel() -> Error {
+        Error::Channel
     }
 }
 
