@@ -10,11 +10,10 @@ use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
 type Source = BufReader<File>;
-type CompressedSource = GzipDecoder<Source>;
 
 pub type Stream = BoxStream<'static, std::result::Result<BytesMut, std::io::Error>>;
 
-fn new_stream<'a, S>(source: S) -> Stream
+fn new_stream<S>(source: S) -> Stream
 where
     S: tokio::io::AsyncRead + Send + 'static,
 {
@@ -30,12 +29,6 @@ pub struct FileSource {
 impl FileSource {
     pub fn new(path: &Path) -> Result<Self> {
         let file_info = FileInfo::try_from(path)?;
-        let buf_reader = BufReader::new(file);
-        let transport = if let Some("gz") = path.extension().and_then(|e| e.to_str()) {
-            new_transport::<CompressedSource>(GzipDecoder::new(buf_reader))
-        } else {
-            new_transport::<Source>(buf_reader)
-        };
         Ok(Self {
             file_path: path.to_path_buf(),
             file_info,
