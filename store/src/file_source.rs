@@ -13,11 +13,7 @@ type Source = BufReader<File>;
 
 pub type Stream = BoxStream<'static, std::result::Result<BytesMut, std::io::Error>>;
 
-<<<<<<< HEAD
 fn new_stream<S>(source: S) -> Stream
-=======
-fn new_stream<'a, S>(source: S) -> Stream
->>>>>>> 3411799 (Convert FileSource and FileMultiSource to use Streams)
 where
     S: tokio::io::AsyncRead + Send + 'static,
 {
