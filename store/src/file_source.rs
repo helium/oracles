@@ -14,7 +14,7 @@ pub type CompressedSource = GzipDecoder<Source>;
 
 pub type Stream = BoxStream<'static, std::result::Result<BytesMut, std::io::Error>>;
 
-fn new_stream<'a, S>(source: S) -> Stream
+fn new_stream<S>(source: S) -> Stream
 where
     S: tokio::io::AsyncRead + Send + 'static,
 {
