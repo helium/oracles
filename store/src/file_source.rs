@@ -1,59 +1,52 @@
 use crate::{FileInfo, Result};
 use async_compression::tokio::bufread::GzipDecoder;
-use async_trait::async_trait;
 use bytes::BytesMut;
-use futures::StreamExt;
 use futures_core::stream::BoxStream;
-use std::{boxed::Box, path::Path};
+use std::{
+    boxed::Box,
+    path::{Path, PathBuf},
+};
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
 pub type Source = BufReader<File>;
 pub type CompressedSource = GzipDecoder<Source>;
 
-type Transport<'a> = BoxStream<'a, std::result::Result<BytesMut, std::io::Error>>;
+pub type Stream = BoxStream<'static, std::result::Result<BytesMut, std::io::Error>>;
 
-fn new_transport<'a, S>(source: S) -> Transport<'a>
+fn new_stream<'a, S>(source: S) -> Stream
 where
-    S: tokio::io::AsyncRead + std::marker::Send + 'a,
+    S: tokio::io::AsyncRead + Send + 'static,
 {
     Box::pin(FramedRead::new(source, LengthDelimitedCodec::new()))
 }
 
-#[async_trait]
-pub trait FileSourceRead<'a> {
-    async fn read(&mut self) -> Result<Option<BytesMut>>;
-}
-
-pub struct FileSource<'a> {
+#[derive(Clone)]
+pub struct FileSource {
+    pub file_path: PathBuf,
     pub file_info: FileInfo,
-    transport: Transport<'a>,
 }
 
-impl<'a> FileSource<'a> {
-    pub async fn new(path: &Path) -> Result<FileSource<'a>> {
+impl FileSource {
+    pub fn new(path: &Path) -> Result<Self> {
         let file_info = FileInfo::try_from(path)?;
-        let file = File::open(path).await?;
 
-        let buf_reader = BufReader::new(file);
-        let transport = if let Some("gz") = path.extension().and_then(|e| e.to_str()) {
-            new_transport(GzipDecoder::new(buf_reader))
-        } else {
-            new_transport::<Source>(buf_reader)
-        };
         Ok(Self {
+            file_path: path.to_path_buf(),
             file_info,
-            transport,
         })
     }
-}
 
-#[async_trait]
-impl<'a> FileSourceRead<'a> for FileSource<'a> {
-    async fn read(&mut self) -> Result<Option<BytesMut>> {
-        match self.transport.next().await {
-            Some(result) => Ok(Some(result?)),
-            None => Ok(None),
-        }
+    pub async fn into_stream(self) -> Result<Stream> {
+        let file = File::open(&self.file_path).await?;
+
+        let buf_reader = BufReader::new(file);
+        Ok(
+            if let Some("gz") = self.file_path.extension().and_then(|e| e.to_str()) {
+                new_stream(GzipDecoder::new(buf_reader))
+            } else {
+                new_stream::<Source>(buf_reader)
+            },
+        )
     }
 }
