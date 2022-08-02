@@ -1,15 +1,14 @@
 use crate::{
-    file_source::{FileSource, FileSourceRead},
+    file_source::{FileSource, Stream},
     Result,
 };
-use async_trait::async_trait;
-use bytes::BytesMut;
+use futures::stream::{select_all, StreamExt};
 use std::path::Path;
 
-pub struct FileMultiSource<'a>(Vec<FileSource<'a>>);
+pub struct FileMultiSource(Vec<FileSource>);
 
-impl<'a> FileMultiSource<'a> {
-    pub async fn new<I, P>(paths: I) -> Result<FileMultiSource<'a>>
+impl FileMultiSource {
+    pub fn new<I, P>(paths: I) -> Result<FileMultiSource>
     where
         I: IntoIterator<Item = P>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
@@ -18,26 +17,18 @@ impl<'a> FileMultiSource<'a> {
         let mut files = vec![];
         // NOTE: Add in reverse, so we pop in order when reading
         for path in paths.into_iter().rev() {
-            let fsource = FileSource::new(path.as_ref()).await?;
+            let fsource = FileSource::new(path.as_ref())?;
             files.push(fsource);
         }
         Ok(FileMultiSource(files))
     }
-}
 
-#[async_trait]
-impl<'a> FileSourceRead<'a> for FileMultiSource<'a> {
-    async fn read(&mut self) -> Result<Option<BytesMut>> {
-        while let Some(cur_src) = self.0.last_mut() {
-            match cur_src.read().await? {
-                Some(result) => return Ok(Some(result)),
-                None => {
-                    // Current source exhausted, pop and move to next one
-                    self.0.pop();
-                }
-            }
+    pub async fn into_stream(self) -> Result<Stream> {
+        let mut streams = Vec::new();
+        for source in self.0.into_iter() {
+            streams.push(source.into_stream().await?);
         }
-        Ok(None)
+        Ok(select_all(streams.into_iter()).boxed())
     }
 }
 
@@ -48,9 +39,10 @@ mod test {
 
     #[tokio::test]
     async fn test_multi_read() {
-        async fn get_count(mut file_src: FileSource<'_>) -> Result<i32> {
+        async fn get_count(file_src: FileSource) -> Result<i32> {
             let mut count = 0;
-            while let Some(_buf) = file_src.read().await.unwrap() {
+            let mut stream = file_src.into_stream().await?;
+            while let Some(_buf) = stream.next().await {
                 count += 1;
             }
             Ok(count)
@@ -58,18 +50,20 @@ mod test {
 
         let p1 = PathBuf::from(r"../test/cell_heartbeat.1658832527866.gz");
         let p2 = PathBuf::from(r"../test/cell_heartbeat.1658834120042.gz");
-        let mut file_multi_src = FileMultiSource::new(&[p1.as_path(), p2.as_path()])
+        let mut file_multi_stream = FileMultiSource::new(&[p1.as_path(), p2.as_path()])
+            .unwrap()
+            .into_stream()
             .await
             .unwrap();
 
         let mut tot_count = 0;
-        while let Some(_buf) = file_multi_src.read().await.unwrap() {
+        while let Some(_buf) = file_multi_stream.next().await {
             tot_count += 1;
         }
 
-        let f1 = FileSource::new(p1.as_path()).await.unwrap();
+        let f1 = FileSource::new(p1.as_path()).unwrap();
         let c1 = get_count(f1).await.unwrap();
-        let f2 = FileSource::new(p2.as_path()).await.unwrap();
+        let f2 = FileSource::new(p2.as_path()).unwrap();
         let c2 = get_count(f2).await.unwrap();
 
         assert_eq!(tot_count, c1 + c2);
