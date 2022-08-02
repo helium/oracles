@@ -9,7 +9,6 @@ use std::path::Path;
 pub struct FileMultiSource<'a>(Vec<FileSource<'a>>);
 
 impl<'a> FileMultiSource<'a> {
-impl<'a> FileMultiSource<'a> {
     pub async fn new<I, P>(paths: I) -> Result<FileMultiSource<'a>>
     where
         I: IntoIterator<Item = P>,
