@@ -9,11 +9,17 @@ use std::path::Path;
 pub struct FileMultiSource<'a>(Vec<FileSource<'a>>);
 
 impl<'a> FileMultiSource<'a> {
-    pub async fn new(paths: &[&Path]) -> Result<FileMultiSource<'a>> {
+impl<'a> FileMultiSource<'a> {
+    pub async fn new<I, P>(paths: I) -> Result<FileMultiSource<'a>>
+    where
+        I: IntoIterator<Item = P>,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+        P: AsRef<Path>,
+    {
         let mut files = vec![];
         // NOTE: Add in reverse, so we pop in order when reading
-        for path in paths.iter().rev() {
-            let fsource = FileSource::new(path).await?;
+        for path in paths.into_iter().rev() {
+            let fsource = FileSource::new(path.as_ref()).await?;
             files.push(fsource);
         }
         Ok(FileMultiSource(files))
