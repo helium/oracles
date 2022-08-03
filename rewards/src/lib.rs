@@ -3,6 +3,7 @@ pub mod decimal_scalar;
 mod error;
 pub mod follower;
 pub mod gateway;
+pub mod pending_txn;
 mod public_key;
 pub mod server;
 pub mod trigger;
