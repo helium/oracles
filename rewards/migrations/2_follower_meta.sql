@@ -4,4 +4,4 @@ create table follower_meta (
 );
 
 insert into follower_meta (key, value)
-values ('last_height', '995041')
+values ('last_height', '1431670')

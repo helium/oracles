@@ -11,7 +11,7 @@ use tokio::{sync::broadcast, time};
 use tonic::Streaming;
 
 /// First block that 5G hotspots were introduced (FreedomFi)
-pub const DEFAULT_START_BLOCK: i64 = 995041;
+pub const DEFAULT_START_BLOCK: i64 = 1431670;
 
 pub const TXN_TYPES: &[&str] = &[
     "blockchain_txn_transfer_hotspot_v1",
@@ -188,7 +188,7 @@ impl Follower {
             height = ht,
             ts = ts
         );
-        match self.trigger.send(Trigger::new(ht, ts)) {
+        match self.trigger.send(Trigger::new(ht as i64, ts as i64)) {
             Ok(_) => Ok(()),
             Err(_) => {
                 tracing::error!("failed to send reward trigger");

@@ -5,6 +5,7 @@ pub mod follower;
 pub mod gateway;
 mod public_key;
 pub mod server;
+pub mod trigger;
 mod uuid;
 
 pub use cell_type::CellType;
@@ -12,6 +13,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
 pub use public_key::PublicKey;
+pub use trigger::Trigger;
 pub use uuid::Uuid;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -42,19 +44,4 @@ pub async fn mk_db_pool(size: u32) -> Result<Pool<Postgres>> {
         .connect(&db_connection_str)
         .await?;
     Ok(pool)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Trigger {
-    pub block_height: u64,
-    pub block_timestamp: u64,
-}
-
-impl Trigger {
-    pub fn new(block_height: u64, block_timestamp: u64) -> Self {
-        Self {
-            block_height,
-            block_timestamp,
-        }
-    }
 }
