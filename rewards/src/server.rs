@@ -1,21 +1,13 @@
-use crate::{Result, Trigger};
-use sqlx::{Pool, Postgres};
+use crate::{ConsensusTxnTrigger, Result};
 use tokio::sync::broadcast;
 
 pub struct Server {
-    trigger_receiver: broadcast::Receiver<Trigger>,
-    pool: Pool<Postgres>,
+    trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
 }
 
 impl Server {
-    pub async fn new(
-        pool: Pool<Postgres>,
-        trigger_receiver: broadcast::Receiver<Trigger>,
-    ) -> Result<Self> {
-        let result = Self {
-            pool,
-            trigger_receiver,
-        };
+    pub async fn new(trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>) -> Result<Self> {
+        let result = Self { trigger_receiver };
         Ok(result)
     }
 
@@ -42,14 +34,17 @@ impl Server {
         }
     }
 
-    pub async fn handle_trigger(&mut self, trigger: Trigger) -> Result {
-        // Store the trigger (ht + timestamp) in pg
-        // Figure out heartbeat files corresponding to the incoming trigger - the last one we have
-        // in pg
-        // Read all the retrieved heartbeat files via FileMultiSource
-        if trigger.insert_into(&self.pool).await.is_err() {
-            tracing::error!("Error inserting trigger in DB!")
-        }
+    pub async fn handle_trigger(&mut self, trigger: ConsensusTxnTrigger) -> Result {
+        // Trigger received
+        // - check pending txns table for pending failures, abort if failed (TBD)
+        // - retrieve last reward cycle end time from follower_meta table, if none, continue (we just started)
+        // - fetch files from file_store from last_time to last_time + epoch
+        // - use file_multi_source to read heartbeats
+        // - look up hotspot owner for rewarded hotspot
+        // - construct pending reward txn, store in pending table
+        // - submit pending_txn to blockchain-node
+        // - use node's txn follower to detect cleared txns and update pending table
+
         tracing::info!("chain trigger received {:#?}", trigger);
         Ok(())
     }

@@ -1,7 +1,7 @@
 pub mod client;
 pub use client::FollowerService;
 
-use crate::{env_var, gateway::Gateway, Error, PublicKey, Result, Trigger};
+use crate::{env_var, gateway::Gateway, Error, PublicKey, Result, ConsensusTxnTrigger};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
     FollowerTxnStreamRespV1,
@@ -24,11 +24,11 @@ pub struct Follower {
     pool: Pool<Postgres>,
     service: FollowerService,
     start_block: i64,
-    trigger: broadcast::Sender<Trigger>,
+    trigger: broadcast::Sender<ConsensusTxnTrigger>,
 }
 
 impl Follower {
-    pub async fn new(pool: Pool<Postgres>, trigger: broadcast::Sender<Trigger>) -> Result<Self> {
+    pub async fn new(pool: Pool<Postgres>, trigger: broadcast::Sender<ConsensusTxnTrigger>) -> Result<Self> {
         let start_block = env_var("FOLLOWER_START_BLOCK", DEFAULT_START_BLOCK)?;
         let service = FollowerService::from_env()?;
         Ok(Self {
@@ -188,7 +188,7 @@ impl Follower {
             height = ht,
             ts = ts
         );
-        match self.trigger.send(Trigger::new(ht as i64, ts as i64)) {
+        match self.trigger.send(ConsensusTxnTrigger::new(ht as i64, ts as i64)) {
             Ok(_) => Ok(()),
             Err(_) => {
                 tracing::error!("failed to send reward trigger");

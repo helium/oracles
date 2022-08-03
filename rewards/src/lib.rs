@@ -13,7 +13,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
 pub use public_key::PublicKey;
-pub use trigger::Trigger;
+pub use trigger::ConsensusTxnTrigger;
 pub use uuid::Uuid;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};

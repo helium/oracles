@@ -38,7 +38,7 @@ async fn main() -> Result {
     let mut follower = Follower::new(pool.clone(), trigger_sender).await?;
 
     // reward server
-    let mut reward_server = Server::new(pool.clone(), trigger_receiver).await?;
+    let mut reward_server = Server::new(trigger_receiver).await?;
 
     tokio::try_join!(
         follower.run(shutdown_listener.clone()),
