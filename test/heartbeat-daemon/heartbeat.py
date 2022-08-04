@@ -133,7 +133,7 @@ def main(gateways):
             'timestamp': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
             'lon': float(gw['lon']),
             'lat': float(gw['lat']),
-            'operational_mode': choose_mode(),
+            'operation_mode': choose_mode(),
             'cbsd_category': 'A',
             'cbsd_id': gw['fcc_id'] + gw['serial'],
             'id': str(uuid.uuid4()),
@@ -146,7 +146,8 @@ def main(gateways):
         context = ssl.create_default_context()
         hdrs = {
             "User-Agent": "heartbeat-daemon-1",
-            "Authorization": "Bearer " + os.environ["API_TOKEN"]
+            "Authorization": "Bearer " + os.environ["API_TOKEN"],
+            "Content-Type": "application/json"
         }
         req = urllib.request.Request(
             os.environ["HEARTBEAT_API_URL"],
@@ -167,8 +168,6 @@ def main(gateways):
 
 if __name__ == "__main__":
 
-    gateways = build_gateways()
-
     # pull config from .env
     # if set, use the location given by this var
     if 'HEARTBEAT_ENV_FILE' in os.environ:
@@ -177,5 +176,7 @@ if __name__ == "__main__":
     else:
         # otherwise look in current working directory
         dotenv.load()
+
+    gateways = build_gateways()
 
     main(gateways)
