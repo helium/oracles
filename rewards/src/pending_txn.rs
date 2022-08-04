@@ -16,8 +16,8 @@ pub enum Status {
 pub struct PendingTxn {
     pub address: PublicKey,
     pub hash: String,
-    pub failed_reason: Option<String>,
     pub status: Status,
+    pub failed_reason: Option<String>,
 
     #[serde(skip_deserializing)]
     pub created_at: Option<DateTime<Utc>>,
@@ -26,6 +26,18 @@ pub struct PendingTxn {
 }
 
 impl PendingTxn {
+    pub async fn new(address: PublicKey, hash: String) -> PendingTxn {
+        PendingTxn {
+            address,
+            hash,
+            status: Status::Pending,
+
+            failed_reason: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
     pub async fn insert_into<'c, E>(&self, executor: E) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -36,7 +48,7 @@ impl PendingTxn {
             address, 
             hash, 
             status
-        ) values ($1, $2, $3, $4)
+        ) values ($1, $2, $3)
         on conflict (hash) do nothing;
             "#,
         )

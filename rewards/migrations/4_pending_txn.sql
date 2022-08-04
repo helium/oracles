@@ -7,14 +7,12 @@ CREATE TYPE status AS ENUM (
 );
 
 CREATE TABLE pending_txn (
-    created_at timestamptz NOT NULL DEFAULT NOW(),
-    updated_at timestamptz NOT NULL DEFAULT NOW(),
-    hash text NOT NULL,
+    hash text PRIMARY KEY NOT NULL,
     address text NOT NULL,
     status status NOT NULL,
     failed_reason text,
-    data bytea NOT NULL,
-    PRIMARY KEY (hash)
+    created_at timestamptz DEFAULT NOW(),
+    updated_at timestamptz DEFAULT NOW()
 );
 
 CREATE INDEX pending_txn_created_idx ON pending_txn (created_at);
