@@ -58,8 +58,27 @@ impl Server {
         if let Ok(failed_pending_txns) = PendingTxn::get_all_failed_pending_txns(&self.pool).await {
             if failed_pending_txns.is_empty() {
                 tracing::info!("all pending txns clear, continue");
-                let kv = FollowerMeta::get_value(&self.pool, "last_height").await;
-                tracing::info!("last_height: {:#?}", kv);
+
+                if let Ok(Some(last_reward_end_time)) =
+                    FollowerMeta::get(&self.pool, "last_reward_end_time").await
+                {
+                    tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
+                    // figure out next epoch + files corresponding to it...
+                } else {
+                    tracing::info!(
+                        "no last_reward_end_time found, maybe we just started, continue"
+                    );
+                    // not sure how to proceed for the first time...
+                }
+
+                // let kv = FollowerMeta::insert_kv(
+                //     &self.pool,
+                //     "last_reward_end_time",
+                //     &trigger.block_timestamp.to_string(),
+                // )
+                // .await?;
+                //
+                // tracing::info!("kv: {:#?}", kv);
             } else {
                 // abort the entire process (for now)
                 panic!("found failed_pending_txns {:#?}", failed_pending_txns);

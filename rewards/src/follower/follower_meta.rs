@@ -9,7 +9,25 @@ pub struct FollowerMeta {
 }
 
 impl FollowerMeta {
-    pub async fn get_value<'c, E>(executor: E, key: &str) -> Result<Option<Self>>
+    pub async fn insert_kv<'c, E>(executor: E, key: &str, val: &str) -> Result<Option<Self>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as::<_, Self>(
+            r#" insert into follower_meta ( key, value ) 
+            values ($1, $2) 
+            on conflict (key) do nothing 
+            returning *;
+            "#,
+        )
+        .bind(key)
+        .bind(val)
+        .fetch_optional(executor)
+        .await
+        .map_err(Error::from)
+    }
+
+    pub async fn get<'c, E>(executor: E, key: &str) -> Result<Option<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
