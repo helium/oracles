@@ -1,6 +1,5 @@
-use crate::{pending_txn::PendingTxn, ConsensusTxnTrigger, PublicKey, Result};
+use crate::{follower::FollowerMeta, pending_txn::PendingTxn, ConsensusTxnTrigger, Result};
 use sqlx::{Pool, Postgres};
-use std::str::FromStr;
 use tokio::sync::broadcast;
 
 pub struct Server {
@@ -54,19 +53,21 @@ impl Server {
         // - submit pending_txn to blockchain-node
         // - use node's txn follower to detect cleared txns and update pending table
 
-        // TODO: remove and construct an actual pending txn
-        let pending_txn = PendingTxn::new(
-            PublicKey::from_str("112fBdq2Hk4iFTi5JCWZ6mTdp4mb7piVBwcMcRyN7br7VPRhhHa").unwrap(),
-            "hash".to_string(),
-        )
-        .await;
-        tracing::info!("pending_txn {:#?}", pending_txn);
+        tracing::info!("chain trigger received {:#?}", trigger);
 
-        if pending_txn.insert_into(&self.pool).await.is_err() {
-            tracing::error!("Failed to insert pending txn")
+        if let Ok(failed_pending_txns) = PendingTxn::get_all_failed_pending_txns(&self.pool).await {
+            if failed_pending_txns.is_empty() {
+                tracing::info!("all pending txns clear, continue");
+                let kv = FollowerMeta::get_value(&self.pool, "last_height").await;
+                tracing::info!("last_height: {:#?}", kv);
+            } else {
+                // abort the entire process (for now)
+                panic!("found failed_pending_txns {:#?}", failed_pending_txns);
+            }
+        } else {
+            tracing::error!("unable to get failed_pending_txns!")
         }
 
-        tracing::info!("chain trigger received {:#?}", trigger);
         Ok(())
     }
 }

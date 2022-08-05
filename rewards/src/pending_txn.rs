@@ -3,8 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
-#[sqlx(type_name = "status")]
-#[sqlx(rename_all = "lowercase")]
+#[sqlx(type_name = "status", rename_all = "lowercase")]
 pub enum Status {
     Cleared,
     Pending,
@@ -18,10 +17,7 @@ pub struct PendingTxn {
     pub hash: String,
     pub status: Status,
     pub failed_reason: Option<String>,
-
-    #[serde(skip_deserializing)]
     pub created_at: Option<DateTime<Utc>>,
-    #[serde(skip_deserializing)]
     pub updated_at: Option<DateTime<Utc>>,
 }
 
@@ -43,13 +39,9 @@ impl PendingTxn {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
-            r#"
-        insert into pending_txn (
-            address, 
-            hash, 
-            status
-        ) values ($1, $2, $3)
-        on conflict (hash) do nothing;
+            r#" insert into pending_txn ( address, hash, status) 
+            values ($1, $2, $3) 
+            on conflict (hash) do nothing;
             "#,
         )
         .bind(&self.address)
@@ -59,5 +51,16 @@ impl PendingTxn {
         .await
         .map(|_| ())
         .map_err(Error::from)
+    }
+
+    pub async fn get_all_failed_pending_txns<'c, E>(executor: E) -> Result<Vec<Self>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as::<_, PendingTxn>(r#" select * from pending_txn where status = $1;"#)
+            .bind(Status::Failed)
+            .fetch_all(executor)
+            .await
+            .map_err(Error::from)
     }
 }
