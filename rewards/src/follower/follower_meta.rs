@@ -38,6 +38,22 @@ impl FollowerMeta {
             .map_err(Error::from)
     }
 
+    pub async fn last_reward_end_time<'c, E>(executor: E) -> Result<Option<i64>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let last_reward_end_time = sqlx::query_scalar::<_, String>(
+            r#"
+            select value from follower_meta
+            where key = 'last_reward_end_time'
+            "#,
+        )
+        .fetch_optional(executor)
+        .await?
+        .and_then(|v| v.parse::<i64>().map_or_else(|_| None, Some));
+        Ok(last_reward_end_time)
+    }
+
     pub async fn last_height<'c, E>(executor: E, start_block: i64) -> Result<i64>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,

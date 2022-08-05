@@ -60,25 +60,26 @@ impl Server {
                 tracing::info!("all pending txns clear, continue");
 
                 if let Ok(Some(last_reward_end_time)) =
-                    FollowerMeta::get(&self.pool, "last_reward_end_time").await
+                    FollowerMeta::last_reward_end_time(&self.pool).await
                 {
                     tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
-                    // figure out next epoch + files corresponding to it...
+                    // - fetch files from file_store from last_time to last_time + epoch
+                    // - use file_multi_source to read heartbeats
+                    // - look up hotspot owner for rewarded hotspot
+                    // - construct pending reward txn, store in pending table
                 } else {
                     tracing::info!(
-                        "no last_reward_end_time found, maybe we just started, continue"
+                        "no last_reward_end_time found, just insert trigger block_timestamp"
                     );
-                    // not sure how to proceed for the first time...
-                }
 
-                // let kv = FollowerMeta::insert_kv(
-                //     &self.pool,
-                //     "last_reward_end_time",
-                //     &trigger.block_timestamp.to_string(),
-                // )
-                // .await?;
-                //
-                // tracing::info!("kv: {:#?}", kv);
+                    let kv = FollowerMeta::insert_kv(
+                        &self.pool,
+                        "last_reward_end_time",
+                        &trigger.block_timestamp.to_string(),
+                    )
+                    .await?;
+                    tracing::info!("kv: {:#?}", kv);
+                }
             } else {
                 // abort the entire process (for now)
                 panic!("found failed_pending_txns {:#?}", failed_pending_txns);
