@@ -1,4 +1,6 @@
-use crate::{cli::print_json, datetime_from_epoch, Error, FileSource, FileType, Result};
+use crate::{
+    cli::print_json, datetime_from_epoch, Error, FileSource, FileSourceRead, FileType, Result,
+};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use helium_proto::{

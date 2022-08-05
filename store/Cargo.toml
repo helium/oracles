@@ -31,7 +31,7 @@ csv = "*"
 http = "*"
 aws-config = "0"
 aws-sdk-s3 = "0"
+async-trait = "*"
 
 [dev-dependencies]
 base64 = "0"
-

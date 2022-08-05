@@ -1,6 +1,7 @@
 pub mod cli;
 mod error;
 mod file_info;
+pub mod file_multi_source;
 pub mod file_sink;
 pub mod file_source;
 pub mod file_store;
@@ -13,7 +14,7 @@ pub mod speedtest;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
-pub use file_source::FileSource;
+pub use file_source::{FileSource, FileSourceRead};
 pub use file_store::FileStore;
 pub use msg_verify::MsgVerify;
 pub use public_key::PublicKey;
