@@ -1,28 +1,32 @@
 use crate::{cell_type::CellType, decimal_scalar::Mobile};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 
 // 100M genesis rewards per day
-const GENESIS_REWARDS_PER_DAY: u64 = 100_000_000;
+const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
+
+pub type Model = HashMap<CellType, u64>;
+pub type Emission = HashMap<CellType, Mobile>;
 
 lazy_static! {
-    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 7).and_hms(0, 0, 0);
 }
 
 pub fn get_emissions_per_model(
-    models: HashMap<CellType, u64>,
+    model: &Model,
     datetime: DateTime<Utc>,
-) -> HashMap<CellType, Mobile> {
-    let total_rewards = get_scheduled_tokens(datetime)
+    duration: Duration,
+) -> Emission {
+    let total_rewards = get_scheduled_tokens(datetime, duration)
         .expect("Failed to supply valid date on the emission schedule");
 
-    let nova436h_units = models.get(&CellType::Nova436H).unwrap_or(&0);
-    let nova430i_units = models.get(&CellType::Nova430I).unwrap_or(&0);
-    let sercommo_units = models.get(&CellType::SercommOutdoor).unwrap_or(&0);
-    let sercommi_units = models.get(&CellType::SercommIndoor).unwrap_or(&0);
-    let neut430_units = models.get(&CellType::Neutrino430).unwrap_or(&0);
+    let nova436h_units = model.get(&CellType::Nova436H).unwrap_or(&0);
+    let nova430i_units = model.get(&CellType::Nova430I).unwrap_or(&0);
+    let sercommo_units = model.get(&CellType::SercommOutdoor).unwrap_or(&0);
+    let sercommi_units = model.get(&CellType::SercommIndoor).unwrap_or(&0);
+    let neut430_units = model.get(&CellType::Neutrino430).unwrap_or(&0);
 
     let nova436h_shares = CellType::Nova436H.reward_shares(*nova436h_units);
     let nova430i_shares = CellType::Nova430I.reward_shares(*nova430i_units);
@@ -58,10 +62,14 @@ fn calc_rewards(cell_type: CellType, base_reward: Decimal, num_units: u64) -> Mo
     }
 }
 
-fn get_scheduled_tokens(datetime: DateTime<Utc>) -> Option<Decimal> {
-    if *GENESIS_START < datetime {
-        // 100M genesis rewards per day
-        Some(Decimal::from(GENESIS_REWARDS_PER_DAY))
+fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
+    if *GENESIS_START <= start {
+        // Get tokens from start - duration
+        Some(
+            (Decimal::from(GENESIS_REWARDS_PER_DAY)
+                / Decimal::from(Duration::hours(24).num_seconds()))
+                * Decimal::from(duration.num_seconds()),
+        )
     } else {
         None
     }
@@ -87,7 +95,6 @@ mod test {
             ),
             (CellType::Neutrino430, Mobile::from(dec!(158102.76679842))),
         ]);
-        let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
         let input = HashMap::from([
             (CellType::SercommOutdoor, 1),
             (CellType::Nova430I, 133),
@@ -95,7 +102,7 @@ mod test {
             (CellType::SercommIndoor, 924),
             (CellType::Neutrino430, 2),
         ]);
-        let output = get_emissions_per_model(input, date);
+        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24));
         assert_eq!(expected, output);
     }
 
@@ -134,14 +141,13 @@ mod test {
             ),
             (CellType::Neutrino430, Mobile::from(dec!(158604.28231562))),
         ]);
-        let date = Utc.ymd(2022, 7, 17).and_hms(0, 0, 0);
         let input = HashMap::from([
             (CellType::SercommOutdoor, 1),
             (CellType::Nova430I, 133),
             (CellType::SercommIndoor, 924),
             (CellType::Neutrino430, 2),
         ]);
-        let output = get_emissions_per_model(input, date);
+        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24));
         assert_eq!(expected, output)
     }
 }

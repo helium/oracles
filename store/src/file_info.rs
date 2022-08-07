@@ -38,6 +38,12 @@ impl FromStr for FileInfo {
     }
 }
 
+impl AsRef<str> for FileInfo {
+    fn as_ref(&self) -> &str {
+        &self.key
+    }
+}
+
 impl From<(FileType, DateTime<Utc>)> for FileInfo {
     fn from(v: (FileType, DateTime<Utc>)) -> Self {
         Self {

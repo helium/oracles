@@ -1,8 +1,10 @@
 mod cell_type;
 pub mod decimal_scalar;
+pub mod emissions;
 mod error;
 pub mod follower;
 pub mod gateway;
+pub mod pending_txn;
 mod public_key;
 pub mod server;
 mod uuid;
@@ -45,12 +47,12 @@ pub async fn mk_db_pool(size: u32) -> Result<Pool<Postgres>> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Trigger {
+pub struct ConsensusTxnTrigger {
     pub block_height: u64,
     pub block_timestamp: u64,
 }
 
-impl Trigger {
+impl ConsensusTxnTrigger {
     pub fn new(block_height: u64, block_timestamp: u64) -> Self {
         Self {
             block_height,
