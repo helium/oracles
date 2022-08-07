@@ -1,7 +1,9 @@
 pub mod client;
+pub mod meta;
 pub use client::FollowerService;
+pub use meta::Meta;
 
-use crate::{env_var, gateway::Gateway, Error, PublicKey, Result, Trigger};
+use crate::{env_var, gateway::Gateway, ConsensusTxnTrigger, Error, PublicKey, Result};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
     FollowerTxnStreamRespV1,
@@ -24,11 +26,14 @@ pub struct Follower {
     pool: Pool<Postgres>,
     service: FollowerService,
     start_block: i64,
-    trigger: broadcast::Sender<Trigger>,
+    trigger: broadcast::Sender<ConsensusTxnTrigger>,
 }
 
 impl Follower {
-    pub async fn new(pool: Pool<Postgres>, trigger: broadcast::Sender<Trigger>) -> Result<Self> {
+    pub async fn new(
+        pool: Pool<Postgres>,
+        trigger: broadcast::Sender<ConsensusTxnTrigger>,
+    ) -> Result<Self> {
         let start_block = env_var("FOLLOWER_START_BLOCK", DEFAULT_START_BLOCK)?;
         let service = FollowerService::from_env()?;
         Ok(Self {
@@ -39,41 +44,6 @@ impl Follower {
         })
     }
 
-    async fn last_height<'c, E>(executor: E, start_block: i64) -> Result<i64>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        let height = sqlx::query_scalar::<_, String>(
-            r#"
-            select value from follower_meta
-            where key = 'last_height'
-            "#,
-        )
-        .fetch_optional(executor)
-        .await?
-        .and_then(|v| v.parse::<i64>().map_or_else(|_| None, Some))
-        .unwrap_or(start_block);
-        Ok(height)
-    }
-
-    async fn update_last_height<'c, E>(executor: E, height: i64) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        let _ = sqlx::query(
-            r#"
-            insert into follower_meta (key, value)
-            values ('last_height', $1)
-            on conflict (key) do update set
-                value = EXCLUDED.value
-            "#,
-        )
-        .bind(height.to_string())
-        .execute(executor)
-        .await?;
-        Ok(())
-    }
-
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
         tracing::info!("starting follower");
 
@@ -82,7 +52,7 @@ impl Follower {
                 tracing::info!("stopping follower");
                 return Ok(());
             }
-            let height = Self::last_height(&self.pool, self.start_block).await? as u64;
+            let height = Meta::last_height(&self.pool, self.start_block).await? as u64;
             tracing::info!("connecting to txn stream at height {height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
@@ -119,7 +89,7 @@ impl Follower {
                     Ok(Some(txn)) => {
                         let height = txn.height as i64;
                         self.process_txn_entry(txn).await?;
-                        Self::update_last_height(&self.pool, height).await?;
+                        Meta::update_last_height(&self.pool, height).await?;
                     }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
@@ -188,7 +158,7 @@ impl Follower {
             height = ht,
             ts = ts
         );
-        match self.trigger.send(Trigger::new(ht, ts)) {
+        match self.trigger.send(ConsensusTxnTrigger::new(ht, ts)) {
             Ok(_) => Ok(()),
             Err(_) => {
                 tracing::error!("failed to send reward trigger");

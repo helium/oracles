@@ -1,13 +1,21 @@
-use crate::{Result, Trigger};
+use crate::{follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger, Result};
+use sqlx::{Pool, Postgres};
 use tokio::sync::broadcast;
 
 pub struct Server {
-    trigger_receiver: broadcast::Receiver<Trigger>,
+    trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
+    pool: Pool<Postgres>,
 }
 
 impl Server {
-    pub async fn new(trigger_receiver: broadcast::Receiver<Trigger>) -> Result<Self> {
-        let result = Self { trigger_receiver };
+    pub async fn new(
+        pool: Pool<Postgres>,
+        trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
+    ) -> Result<Self> {
+        let result = Self {
+            pool,
+            trigger_receiver,
+        };
         Ok(result)
     }
 
@@ -21,8 +29,64 @@ impl Server {
             }
             tokio::select! {
                 _ = shutdown.clone() => (),
-                _trigger = self.trigger_receiver.recv() => tracing::info!("chain trigger received"),
+                trigger = self.trigger_receiver.recv() => {
+                    if let Ok(trigger) = trigger {
+                        if self.handle_trigger(trigger).await.is_err() {
+                            tracing::error!("Failed to handle trigger!")
+                        }
+                    } else {
+                        tracing::error!("Failed to recv trigger!")
+                    }
+                }
             }
         }
+    }
+
+    pub async fn handle_trigger(&mut self, trigger: ConsensusTxnTrigger) -> Result {
+        // Trigger received
+        // - check pending txns table for pending failures, abort if failed (TBD)
+        // - retrieve last reward cycle end time from follower_meta table, if none, continue (we just started)
+        // - fetch files from file_store from last_time to last_time + epoch
+        // - use file_multi_source to read heartbeats
+        // - look up hotspot owner for rewarded hotspot
+        // - construct pending reward txn, store in pending table
+        // - submit pending_txn to blockchain-node
+        // - use node's txn follower to detect cleared txns and update pending table
+
+        tracing::info!("chain trigger received {:#?}", trigger);
+
+        if let Ok(failed_pending_txns) = PendingTxn::get_all_failed_pending_txns(&self.pool).await {
+            if failed_pending_txns.is_empty() {
+                tracing::info!("all pending txns clear, continue");
+
+                if let Ok(Some(last_reward_end_time)) = Meta::last_reward_end_time(&self.pool).await
+                {
+                    tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
+                    // - fetch files from file_store from last_time to last_time + epoch
+                    // - use file_multi_source to read heartbeats
+                    // - look up hotspot owner for rewarded hotspot
+                    // - construct pending reward txn, store in pending table
+                } else {
+                    tracing::info!(
+                        "no last_reward_end_time found, just insert trigger block_timestamp"
+                    );
+
+                    let kv = Meta::insert_kv(
+                        &self.pool,
+                        "last_reward_end_time",
+                        &trigger.block_timestamp.to_string(),
+                    )
+                    .await?;
+                    tracing::info!("kv: {:#?}", kv);
+                }
+            } else {
+                // abort the entire process (for now)
+                panic!("found failed_pending_txns {:#?}", failed_pending_txns);
+            }
+        } else {
+            tracing::error!("unable to get failed_pending_txns!")
+        }
+
+        Ok(())
     }
 }
