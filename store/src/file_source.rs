@@ -1,50 +1,145 @@
-use crate::{FileInfo, Result};
+use crate::{Error, FileStore, Result};
 use async_compression::tokio::bufread::GzipDecoder;
 use bytes::BytesMut;
-use futures::StreamExt;
-use futures_core::stream::BoxStream;
-use std::{boxed::Box, path::Path};
-use tokio::{fs::File, io::BufReader};
+use futures::{
+    stream::{self, BoxStream},
+    StreamExt, TryFutureExt, TryStreamExt,
+};
+use std::{
+    boxed::Box,
+    marker::Send,
+    path::{Path, PathBuf},
+};
+use tokio::{fs::File, io::AsyncRead, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
-type Source = BufReader<File>;
-type CompressedSource = GzipDecoder<Source>;
+pub type Stream = BoxStream<'static, Result<BytesMut>>;
 
-type Transport<'a> = BoxStream<'a, std::result::Result<BytesMut, std::io::Error>>;
-
-fn new_transport<'a, S>(source: S) -> Transport<'a>
+fn stream_source<S>(stream: S) -> Stream
 where
-    S: tokio::io::AsyncRead + std::marker::Send + 'a,
+    S: AsyncRead + Send + 'static,
 {
-    Box::pin(FramedRead::new(source, LengthDelimitedCodec::new()))
+    let buf_reader = BufReader::new(stream);
+    Box::pin(
+        FramedRead::new(GzipDecoder::new(buf_reader), LengthDelimitedCodec::new())
+            .map_err(Error::from),
+    )
 }
 
-pub struct FileSource<'a> {
-    pub file_info: FileInfo,
-    transport: Transport<'a>,
+/// Stream a series of items from a given remote store and bucket. This will
+/// automatically open the next file when the current one is exhausted.
+pub fn store_source<I, P>(store: FileStore, bucket: &'static str, keys: I) -> Stream
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<str> + Sized + Sync + Send,
+    <I as IntoIterator>::IntoIter: DoubleEndedIterator + Send + 'static,
+{
+    let keys = keys.into_iter().rev();
+    stream::try_unfold(
+        (keys, store, None),
+        move |(mut keys, store, current): (_, FileStore, Option<Stream>)| async move {
+            if let Some(mut stream) = current {
+                match stream.next().await {
+                    Some(Ok(item)) => return Ok(Some((item, (keys, store, Some(stream))))),
+                    Some(Err(err)) => return Err(err),
+                    None => (),
+                }
+            };
+            // No current exhausted or none. get next key and make a new stream
+            while let Some(key) = keys.next() {
+                let mut stream = stream_source(store.get(bucket, key.as_ref()).await?);
+                match stream.next().await {
+                    Some(Ok(item)) => return Ok(Some((item, (keys, store, Some(stream))))),
+                    Some(Err(err)) => return Err(err),
+                    None => (),
+                }
+            }
+            Ok(None)
+        },
+    )
+    .boxed()
 }
 
-impl<'a> FileSource<'a> {
-    pub async fn new(path: &Path) -> Result<FileSource<'a>> {
-        let file_info = FileInfo::try_from(path)?;
-        let file = File::open(path).await?;
+pub fn file_source<I, P>(paths: I) -> Stream
+where
+    I: IntoIterator<Item = P>,
+    <I as IntoIterator>::IntoIter: DoubleEndedIterator + Send,
+    P: AsRef<Path>,
+{
+    let paths = paths
+        .into_iter()
+        .rev()
+        .map(|p| p.as_ref().to_path_buf())
+        .collect();
+    stream::try_unfold(
+        (paths, None),
+        |(mut paths, current): (Vec<PathBuf>, Option<Stream>)| async move {
+            if let Some(mut stream) = current {
+                match stream.next().await {
+                    Some(Ok(item)) => return Ok(Some((item, (paths, Some(stream))))),
+                    Some(Err(err)) => return Err(err),
+                    None => (),
+                }
+            };
+            // No current exhausted or none. Pop paths and make a new file_source
+            while let Some(path) = paths.pop() {
+                let mut stream = File::open(path)
+                    .map_ok(stream_source)
+                    .map_err(Error::from)
+                    .await?;
+                match stream.next().await {
+                    Some(Ok(item)) => return Ok(Some((item, (paths, Some(stream))))),
+                    Some(Err(err)) => return Err(err),
+                    None => (),
+                }
+            }
+            Ok(None)
+        },
+    )
+    .boxed()
+}
 
-        let buf_reader = BufReader::new(file);
-        let transport = if let Some("gz") = path.extension().and_then(|e| e.to_str()) {
-            new_transport::<CompressedSource>(GzipDecoder::new(buf_reader))
-        } else {
-            new_transport::<Source>(buf_reader)
-        };
-        Ok(Self {
-            file_info,
-            transport,
-        })
-    }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::file_store::FileStore;
 
-    pub async fn read(&mut self) -> Result<Option<BytesMut>> {
-        match self.transport.next().await {
-            Some(result) => Ok(Some(result?)),
-            None => Ok(None),
-        }
+    #[tokio::test]
+    #[ignore = "credentials required"]
+    async fn test_multi_read() {
+        //
+        // Run with `cargo test -- --include-ignored`
+        //
+        // Use FileStore::get. These two files exist in the devnet bucket:
+        //
+        // aws s3 ls s3://devnet-poc5g-rewards
+        // 2022-08-05 15:35:55     240363 cell_heartbeat.1658832527866.gz
+        // 2022-08-05 15:36:08    6525274 cell_heartbeat.1658834120042.gz
+        //
+        let file_store = FileStore::new(None, "us-east-1").await.expect("file store");
+        let stream = store_source(
+            file_store.clone(),
+            "devnet-poc5g-rewards",
+            &[
+                "cell_heartbeat.1658832527866.gz",
+                "cell_heartbeat.1658834120042.gz",
+            ],
+        );
+        let p1_stream = store_source(
+            file_store.clone(),
+            "devnet-poc5g-rewards",
+            &["cell_heartbeat.1658832527866.gz"],
+        );
+        let p2_stream = store_source(
+            file_store.clone(),
+            "devnet-poc5g-rewards",
+            &["cell_heartbeat.1658834120042.gz"],
+        );
+
+        let p1_count = p1_stream.count().await;
+        let p2_count = p2_stream.count().await;
+        let multi_count = stream.count().await;
+
+        assert_eq!(multi_count, p1_count + p2_count);
     }
 }

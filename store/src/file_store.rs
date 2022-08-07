@@ -1,10 +1,11 @@
 use crate::{env_var, error::DecodeError, Error, FileInfo, FileType, Result};
-use aws_config::meta::region::RegionProviderChain;
+use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Error as SdkError, Region};
 use chrono::{DateTime, Utc};
 use http::Uri;
 use std::path::Path;
 use std::str::FromStr;
+use tokio::io::AsyncRead;
 
 #[derive(Debug, Clone)]
 pub struct FileStore {
@@ -19,12 +20,16 @@ impl FileStore {
                 |str| Uri::from_str(&str).map(Endpoint::immutable).map(Some),
             )
             .map_err(DecodeError::from)?;
-        Self::new(endpoint).await
+        let region =
+            env_var("BUCKET_REGION")?.map_or_else(|| Region::new("us-west-2"), Region::new);
+        Self::new(endpoint, region).await
     }
 
-    pub async fn new(endpoint: Option<Endpoint>) -> Result<Self> {
-        let region_provider =
-            RegionProviderChain::default_provider().or_else(Region::new("us-west-2"));
+    pub async fn new(
+        endpoint: Option<Endpoint>,
+        default_region: impl ProvideRegion + 'static,
+    ) -> Result<Self> {
+        let region_provider = RegionProviderChain::default_provider().or_else(default_region);
 
         let mut config = aws_config::from_env().region(region_provider);
         if let Some(endpoint) = endpoint {
@@ -94,5 +99,17 @@ impl FileStore {
             .await
             .map_err(SdkError::from)?;
         Ok(())
+    }
+
+    pub async fn get(&self, bucket: &str, key: &str) -> Result<impl AsyncRead> {
+        let output = self
+            .client
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(SdkError::from)?;
+        Ok(output.body.into_async_read())
     }
 }
