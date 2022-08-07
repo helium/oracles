@@ -1,5 +1,5 @@
-use crate::{cli::print_json, FileStore, FileType, Result};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use crate::{cli::print_json, datetime_from_naive, FileStore, FileType, Result};
+use chrono::NaiveDateTime;
 use std::path::PathBuf;
 
 /// Commands on remote buckets
@@ -51,8 +51,8 @@ impl List {
             .list(
                 &self.bucket,
                 self.file_type.clone(),
-                self.after.map(|v| DateTime::<Utc>::from_utc(v, Utc)),
-                self.before.map(|v| DateTime::<Utc>::from_utc(v, Utc)),
+                self.after.map(datetime_from_naive),
+                self.before.map(datetime_from_naive),
             )
             .await?;
         print_json(&file_infos)
