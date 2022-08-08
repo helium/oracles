@@ -1,4 +1,7 @@
-use crate::{follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger, Result};
+use crate::{
+    datetime_from_epoch, follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger, Result,
+};
+use poc_store::{FileStore, FileType};
 use sqlx::{Pool, Postgres};
 use tokio::sync::broadcast;
 
@@ -32,10 +35,10 @@ impl Server {
                 trigger = self.trigger_receiver.recv() => {
                     if let Ok(trigger) = trigger {
                         if self.handle_trigger(trigger).await.is_err() {
-                            tracing::error!("Failed to handle trigger!")
+                            tracing::error!("failed to handle trigger!")
                         }
                     } else {
-                        tracing::error!("Failed to recv trigger!")
+                        tracing::error!("failed to recv trigger!")
                     }
                 }
             }
@@ -44,28 +47,47 @@ impl Server {
 
     pub async fn handle_trigger(&mut self, trigger: ConsensusTxnTrigger) -> Result {
         // Trigger received
-        // - check pending txns table for pending failures, abort if failed (TBD)
-        // - retrieve last reward cycle end time from follower_meta table, if none, continue (we just started)
-        // - fetch files from file_store from last_time to last_time + epoch
-        // - use file_multi_source to read heartbeats
-        // - look up hotspot owner for rewarded hotspot
-        // - construct pending reward txn, store in pending table
-        // - submit pending_txn to blockchain-node
-        // - use node's txn follower to detect cleared txns and update pending table
-
         tracing::info!("chain trigger received {:#?}", trigger);
 
+        // Check pending txns table for pending failures, abort if failed (TBD)
         if let Ok(failed_pending_txns) = PendingTxn::get_all_failed_pending_txns(&self.pool).await {
             if failed_pending_txns.is_empty() {
                 tracing::info!("all pending txns clear, continue");
 
+                // Retrieve last reward cycle end time from follower_meta table, if none, continue (we just started)
                 if let Ok(Some(last_reward_end_time)) = Meta::last_reward_end_time(&self.pool).await
                 {
                     tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
-                    // - fetch files from file_store from last_time to last_time + epoch
-                    // - use file_multi_source to read heartbeats
-                    // - look up hotspot owner for rewarded hotspot
-                    // - construct pending reward txn, store in pending table
+
+                    // Fetch files from file_store from last_time to last_time + epoch
+                    if let Ok(store) = FileStore::from_env().await {
+                        tracing::info!(
+                            "searching for files after: {:?} - before: {:?}",
+                            datetime_from_epoch(last_reward_end_time),
+                            datetime_from_epoch(trigger.block_timestamp as i64)
+                        );
+
+                        if let Ok(file_list) = store
+                            .list(
+                                "poc5g-ingest",
+                                Some(FileType::CellHeartbeat),
+                                Some(datetime_from_epoch(last_reward_end_time)),
+                                Some(datetime_from_epoch(trigger.block_timestamp as i64)),
+                            )
+                            .await
+                        {
+                            if file_list.is_empty() {
+                                // No rewards to issue because we couldn't find any matching
+                                // files pertaining to this reward cycle
+                                tracing::info!("0 files found!")
+                            } else {
+                                // - use file_multi_source to read heartbeats
+                                // - look up hotspot owner for rewarded hotspot
+                                // - construct pending reward txn, store in pending table
+                                tracing::info!("found files: {:#?}", file_list)
+                            }
+                        }
+                    }
                 } else {
                     tracing::info!(
                         "no last_reward_end_time found, just insert trigger block_timestamp"
@@ -77,10 +99,10 @@ impl Server {
                         &trigger.block_timestamp.to_string(),
                     )
                     .await?;
-                    tracing::info!("kv: {:#?}", kv);
+                    tracing::info!("inserted kv: {:#?}", kv);
                 }
             } else {
-                // abort the entire process (for now)
+                // Abort the entire process (for now)
                 panic!("found failed_pending_txns {:#?}", failed_pending_txns);
             }
         } else {
