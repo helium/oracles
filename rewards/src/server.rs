@@ -1,6 +1,7 @@
 use crate::{
     datetime_from_epoch, follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger, Result,
 };
+use chrono::{Duration, Utc};
 use futures_util::stream::StreamExt;
 use poc_store::{file_source::store_source, FileStore, FileType};
 use sqlx::{Pool, Postgres};
@@ -60,27 +61,35 @@ impl Server {
                 {
                     tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
 
+                    let after_utc = datetime_from_epoch(last_reward_end_time);
+                    let mut before_utc = after_utc;
+
                     // Fetch files from file_store from last_time to last_time + epoch
                     if let Ok(store) = FileStore::from_env().await {
+                        // before = last_reward_end_time + 30 minutes
+                        // loop till before > now - stop
+                        loop {
+                            let before = before_utc + Duration::minutes(30);
+                            if before > Utc::now() {
+                                break;
+                            }
+                            before_utc = before
+                        }
+
                         tracing::info!(
                             "searching for files after: {:?} - before: {:?}",
-                            datetime_from_epoch(last_reward_end_time),
-                            datetime_from_epoch(trigger.block_timestamp as i64)
+                            after_utc,
+                            before_utc
                         );
 
-                        // before = last_reward_end_time + 30 minutes
-                        //
-                        // loop till
-                        // before > now - stop
-                        //
                         // only reward if hotspot (celltype) appears 3+ times in an epoch
 
                         if let Ok(file_list) = store
                             .list(
                                 "poc5g-ingest",
                                 Some(FileType::CellHeartbeat),
-                                Some(datetime_from_epoch(last_reward_end_time)),
-                                Some(datetime_from_epoch(trigger.block_timestamp as i64)),
+                                Some(after_utc),
+                                Some(before_utc),
                             )
                             .await
                         {
