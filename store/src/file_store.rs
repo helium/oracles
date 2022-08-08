@@ -49,15 +49,10 @@ impl FileStore {
         before: Option<DateTime<Utc>>,
     ) -> Result<Vec<FileInfo>> {
         let prefix = file_type.as_ref().map(|file_type| file_type.to_string());
-        let start_after = file_type
-            .zip(after)
-            .map(FileInfo::from)
-            .map(|info| info.key);
         let resp = self
             .client
             .list_objects_v2()
             .bucket(bucket)
-            .set_start_after(start_after)
             .set_prefix(prefix)
             .send()
             .await
@@ -71,7 +66,8 @@ impl FileStore {
             // instead of erroring
             .filter(|obj| FileInfo::matches(obj.key().unwrap_or_default()))
             .map(|obj| FileInfo::try_from(obj).unwrap())
-            .filter(|info| before.map_or(true, |v| info.timestamp > v))
+            .filter(|info| after.map_or(true, |v| info.timestamp > v))
+            .filter(|info| before.map_or(true, |v| info.timestamp < v))
             .collect::<Vec<FileInfo>>();
         Ok(result)
     }
