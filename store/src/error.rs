@@ -18,7 +18,9 @@ pub enum Error {
     Csv(#[from] csv::Error),
     #[error("aws error")]
     Aws(#[from] aws_sdk_s3::Error),
-    #[error("env error")]
+    #[error("environment error")]
+    DotEnv(#[from] dotenv::Error),
+    #[error("env var error")]
     Env(#[from] std::env::VarError),
     #[error("mpsc channel error")]
     Channel,

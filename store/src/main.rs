@@ -21,6 +21,7 @@ pub struct Cli {
 
 #[tokio::main]
 async fn main() -> Result {
+    dotenv::dotenv()?;
     let cli = Cli::parse();
 
     match cli.cmd {

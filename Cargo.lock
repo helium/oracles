@@ -1650,6 +1650,7 @@ dependencies = [
  "chrono",
  "clap",
  "csv",
+ "dotenv",
  "futures",
  "futures-core",
  "futures-util",
