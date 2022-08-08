@@ -18,9 +18,8 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(&self) -> Result {
-        let file_size = self.path.metadata()?.len();
         let file_info = FileInfo::try_from(self.path.as_path())?;
-        let mut file_stream = file_source::file_source(&self.path);
+        let mut file_stream = file_source::file_source(&[&self.path]);
 
         let mut count = 1;
         let buf = match file_stream.next().await {
@@ -45,11 +44,7 @@ impl Cmd {
             };
 
             let json = json!({
-                "file": json!({
-                    "size": file_size,
-                    "type": file_info.file_type.to_string(),
-                    "timestamp": file_info.file_timestamp,
-                }),
+                "file": file_info,
                 "first_timestamp":  first_timestamp,
                 "last_timestamp": last_timestamp,
                 "count": count,

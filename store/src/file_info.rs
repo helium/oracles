@@ -3,67 +3,78 @@ use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Serialize;
-use std::{fmt, io, path::Path, str::FromStr};
+use std::{fmt, io, os::unix::fs::MetadataExt, path::Path, str::FromStr};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FileInfo {
-    pub file_name: String,
+    pub key: String,
     pub file_type: FileType,
-    pub file_timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<Utc>,
+    pub size: usize,
 }
 
 lazy_static! {
     static ref RE: Regex = Regex::new(r"([a-z,_]+).(\d+)(.gz)?").unwrap();
 }
 
-impl TryFrom<&Path> for FileInfo {
-    type Error = Error;
-    fn try_from(value: &Path) -> Result<Self> {
-        let file_name = value
-            .file_name()
-            .map(|str| str.to_string_lossy().into_owned())
-            .ok_or_else(|| Error::not_found("missing filename"))?;
+impl FromStr for FileInfo {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        let key = s.to_string();
         let cap = RE
-            .captures(&file_name)
+            .captures(s)
             .ok_or_else(|| DecodeError::file_info("failed to decode file info"))?;
         let file_type = FileType::from_str(&cap[1])?;
-        let file_timestamp = datetime_from_epoch_millis(
+        let timestamp = datetime_from_epoch_millis(
             u64::from_str(&cap[2])
                 .map_err(|_| DecodeError::file_info("faild to decode timestamp"))?,
         );
         Ok(Self {
-            file_name,
+            key,
             file_type,
-            file_timestamp,
+            timestamp,
+            size: 0,
         })
-    }
-}
-
-impl FromStr for FileInfo {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
-        Self::try_from(Path::new(s))
     }
 }
 
 impl From<(FileType, DateTime<Utc>)> for FileInfo {
     fn from(v: (FileType, DateTime<Utc>)) -> Self {
-        Self::new(v.0, v.1)
+        Self {
+            key: format!("{}.{}.gz", &v.0, v.1.timestamp_millis()),
+            file_type: v.0,
+            timestamp: v.1,
+            size: 0,
+        }
+    }
+}
+
+impl TryFrom<&aws_sdk_s3::model::Object> for FileInfo {
+    type Error = Error;
+    fn try_from(value: &aws_sdk_s3::model::Object) -> Result<Self> {
+        let size = value.size() as usize;
+        let key = value
+            .key
+            .as_ref()
+            .ok_or_else(|| Error::not_found("no file name found"))?;
+        let mut info = Self::from_str(key)?;
+        info.size = size;
+        Ok(info)
+    }
+}
+
+impl TryFrom<&Path> for FileInfo {
+    type Error = Error;
+    fn try_from(value: &Path) -> Result<Self> {
+        let mut info = Self::from_str(&value.to_string_lossy())?;
+        info.size = value.metadata()?.size() as usize;
+        Ok(info)
     }
 }
 
 impl FileInfo {
     pub fn matches(str: &str) -> bool {
         RE.is_match(str)
-    }
-
-    pub fn new(file_type: FileType, file_timestamp: DateTime<Utc>) -> Self {
-        let file_name = format!("{}.{}.gz", file_type, file_timestamp.timestamp_millis());
-        Self {
-            file_name,
-            file_type,
-            file_timestamp,
-        }
     }
 }
 

@@ -52,7 +52,7 @@ impl FileStore {
         let start_after = file_type
             .zip(after)
             .map(FileInfo::from)
-            .map(|info| info.file_name);
+            .map(|info| info.key);
         let resp = self
             .client
             .list_objects_v2()
@@ -67,10 +67,11 @@ impl FileStore {
             .contents()
             .unwrap_or_default()
             .iter()
-            .map(|obj| obj.key().unwrap_or_default().to_string())
-            .filter(|key| FileInfo::matches(key))
-            .map(|key| FileInfo::from_str(&key).unwrap())
-            .filter(|info| before.map_or(true, |v| info.file_timestamp > v))
+            // Filter out any keys that don't match what a file info expects
+            // instead of erroring
+            .filter(|obj| FileInfo::matches(obj.key().unwrap_or_default()))
+            .map(|obj| FileInfo::try_from(obj).unwrap())
+            .filter(|info| before.map_or(true, |v| info.timestamp > v))
             .collect::<Vec<FileInfo>>();
         Ok(result)
     }
