@@ -68,6 +68,13 @@ impl Server {
                             datetime_from_epoch(trigger.block_timestamp as i64)
                         );
 
+                        // before = last_reward_end_time + 30 minutes
+                        //
+                        // loop till
+                        // before > now - stop
+                        //
+                        // only reward if hotspot (celltype) appears 3+ times in an epoch
+
                         if let Ok(file_list) = store
                             .list(
                                 "poc5g-ingest",
@@ -107,7 +114,7 @@ impl Server {
                 }
             } else {
                 // Abort the entire process (for now)
-                panic!("found failed_pending_txns {:#?}", failed_pending_txns);
+                tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns);
             }
         } else {
             tracing::error!("unable to get failed_pending_txns!")

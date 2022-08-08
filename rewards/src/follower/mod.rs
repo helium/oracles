@@ -147,6 +147,10 @@ impl Follower {
         if txn.token_type() != BlockchainTokenTypeV1::Mobile {
             return Ok(());
         }
+
+        // subnetwork reward txn observed (implying that it's cleared)
+        // mark txn cleared in pending_txn table, lookup by hash
+
         Ok(())
     }
 
@@ -159,7 +163,12 @@ impl Follower {
             ts = ts
         );
         match self.trigger.send(ConsensusTxnTrigger::new(ht, ts)) {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                // lookup non-cleared pending_txn
+                // mark pending as failed if txn_mgr in bnode says its failed
+
+                Ok(())
+            }
             Err(_) => {
                 tracing::error!("failed to send reward trigger");
                 Ok(())
