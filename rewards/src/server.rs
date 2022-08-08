@@ -1,7 +1,8 @@
 use crate::{
     datetime_from_epoch, follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger, Result,
 };
-use poc_store::{FileStore, FileType};
+use futures_util::stream::StreamExt;
+use poc_store::{file_source::store_source, FileStore, FileType};
 use sqlx::{Pool, Postgres};
 use tokio::sync::broadcast;
 
@@ -81,10 +82,13 @@ impl Server {
                                 // files pertaining to this reward cycle
                                 tracing::info!("0 files found!")
                             } else {
+                                tracing::info!("found {:?} files", file_list.len());
+                                let stream = store_source(store, "poc5g-ingest", file_list);
+                                tracing::info!("count: {:?}", stream.count().await)
+
                                 // - use file_multi_source to read heartbeats
                                 // - look up hotspot owner for rewarded hotspot
                                 // - construct pending reward txn, store in pending table
-                                tracing::info!("found files: {:#?}", file_list)
                             }
                         }
                     }
