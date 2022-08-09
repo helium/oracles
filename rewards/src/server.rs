@@ -1,16 +1,24 @@
-use crate::CellType;
 use crate::{
-    datetime_from_epoch, emissions, follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger,
-    Result,
+    datetime_from_epoch, emissions, follower::Meta, pending_txn::PendingTxn, CellType,
+    ConsensusTxnTrigger, Result,
 };
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
+use emissions::{get_emissions_per_model, Model};
 use futures::stream::StreamExt;
 use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
-use poc_store::{file_source::store_source, FileStore, FileType};
+use poc_store::{
+    file_source::{store_source, Stream},
+    FileStore, FileType,
+};
 use sqlx::{Pool, Postgres};
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 use tokio::sync::broadcast;
+
+// default minutes to delay lookup from now
+pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
+
+// key: <pubkey, cbsd_id>, val: # of heartbeats
+type Counter = HashMap<(Vec<u8>, String), u64>;
 
 pub struct Server {
     trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
@@ -53,115 +61,132 @@ impl Server {
     }
 
     pub async fn handle_trigger(&mut self, trigger: ConsensusTxnTrigger) -> Result {
-        // Trigger received
         tracing::info!("chain trigger received {:#?}", trigger);
 
-        // Check pending txns table for pending failures, abort if failed (TBD)
-        if let Ok(failed_pending_txns) = PendingTxn::get_all_failed_pending_txns(&self.pool).await {
-            if failed_pending_txns.is_empty() {
-                tracing::info!("all pending txns clear, continue");
-
-                // Retrieve last reward cycle end time from follower_meta table, if none, continue (we just started)
-                if let Ok(Some(last_reward_end_time)) = Meta::last_reward_end_time(&self.pool).await
-                {
-                    tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
-
-                    let after_utc = datetime_from_epoch(last_reward_end_time);
-                    let mut before_utc = after_utc;
-
-                    // Fetch files from file_store from last_time to last_time + epoch
-                    if let Ok(store) = FileStore::from_env().await {
-                        // before = last_reward_end_time + 30 minutes
-                        // loop till before > now - stop
-                        loop {
-                            let before = before_utc + Duration::minutes(30);
-                            if before > Utc::now() {
-                                break;
-                            }
-                            before_utc = before
-                        }
-
-                        tracing::info!(
-                            "searching for files after: {:?} - before: {:?}",
-                            after_utc,
-                            before_utc
-                        );
-
-                        // only reward if hotspot (celltype) appears 3+ times in an epoch
-
-                        if let Ok(file_list) = store
-                            .list(
-                                "poc5g-ingest",
-                                Some(FileType::CellHeartbeat),
-                                Some(after_utc),
-                                Some(before_utc),
-                            )
-                            .await
-                        {
-                            if file_list.is_empty() {
-                                // No rewards to issue because we couldn't find any matching
-                                // files pertaining to this reward cycle
-                                tracing::info!("0 files found!")
-                            } else {
-                                tracing::info!("found {:?} files", file_list.len());
-                                let mut stream = store_source(store, "poc5g-ingest", file_list);
-
-                                // key: <pubkey, cbsd_id>, val: # of heartbeats
-                                let mut counter: HashMap<(Vec<u8>, String), u64> = HashMap::new();
-
-                                while let Some(Ok(msg)) = stream.next().await {
-                                    let heartbeat_req = CellHeartbeatReqV1::decode(msg)?;
-                                    let count = counter
-                                        .entry((heartbeat_req.pub_key, heartbeat_req.cbsd_id))
-                                        .or_insert(0);
-                                    *count += 1;
-                                }
-
-                                // filter out any <pubkey, celltype> < 3
-                                counter.retain(|_, v| *v >= 3);
-
-                                // let mut follower_service = FollowerService::from_env()?;
-
-                                // how many total mobile each cell_type needs to get
-                                // (cell_type, mobile), (...)...
-                                let mut models: HashMap<CellType, u64> = HashMap::new();
-
-                                for ((_, cbsd_id), _v) in counter.iter() {
-                                    if let Ok(ct) = CellType::from_str(cbsd_id) {
-                                        let count = models.entry(ct).or_insert(0);
-                                        *count += 1
-                                    }
-                                }
-                                tracing::info!("models: {:#?}", models);
-
-                                let emitted = emissions::get_emissions_per_model(models, after_utc);
-                                tracing::info!("emitted: {:#?}", emitted);
-
-                                // - construct pending reward txn, store in pending table
-                            }
-                        }
-                    }
-                } else {
-                    tracing::info!(
-                        "no last_reward_end_time found, just insert trigger block_timestamp"
-                    );
-
-                    let kv = Meta::insert_kv(
-                        &self.pool,
-                        "last_reward_end_time",
-                        &trigger.block_timestamp.to_string(),
-                    )
-                    .await?;
+        match PendingTxn::get_all_failed_pending_txns(&self.pool).await {
+            Ok(Some(failed_pending_txns)) => {
+                tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns)
+            }
+            Err(_) => {
+                tracing::error!("unable to get failed_pending_txns!")
+            }
+            Ok(None) => match Meta::last_reward_end_time(&self.pool).await {
+                Err(_) => {
+                    tracing::error!("unable to get failed_pending_txns!")
+                }
+                Ok(None) => {
+                    let kv = handle_first_reward(&self.pool, &trigger).await;
                     tracing::info!("inserted kv: {:#?}", kv);
                 }
-            } else {
-                // Abort the entire process (for now)
-                tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns);
-            }
-        } else {
-            tracing::error!("unable to get failed_pending_txns!")
-        }
+                Ok(Some(last_reward_end_time)) => {
+                    tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
+                    let (after_utc, before_utc) = get_time_range(last_reward_end_time);
 
+                    if before_utc <= after_utc {
+                        tracing::error!("cannot reward future stuff");
+                        return Ok(());
+                    }
+
+                    match FileStore::from_env().await {
+                        Err(_) => {
+                            tracing::error!("unable to make file store")
+                        }
+                        Ok(store) => {
+                            tracing::info!(
+                                "searching for files after: {:?} - before: {:?}",
+                                after_utc,
+                                before_utc
+                            );
+                            let _ = handle_files(store, after_utc, before_utc).await;
+                        }
+                    }
+                }
+            },
+        }
         Ok(())
     }
+}
+
+async fn count_heartbeats(stream: &mut Stream) -> Result<Counter> {
+    // count heartbeats for this input stream
+    let mut counter: Counter = HashMap::new();
+    while let Some(Ok(msg)) = stream.next().await {
+        let heartbeat_req = CellHeartbeatReqV1::decode(msg)?;
+        let count = counter
+            .entry((heartbeat_req.pub_key, heartbeat_req.cbsd_id))
+            .or_insert(0);
+        if *count <= 3 {
+            *count += 1;
+        }
+    }
+    Ok(counter)
+}
+
+pub fn generate_model(counter: &Counter) -> Result<Model> {
+    // how many total mobile each cell_type needs to get
+    // (cell_type, mobile), (...)...
+    let mut model: HashMap<CellType, u64> = HashMap::new();
+    for ((_gw_pubkey_bin, cbsd_id), _heartbeats) in counter.iter() {
+        if let Ok(ct) = CellType::from_str(cbsd_id) {
+            let count = model.entry(ct).or_insert(0);
+            *count += 1
+        }
+    }
+    Ok(model)
+}
+
+async fn handle_first_reward(
+    pool: &Pool<Postgres>,
+    trigger: &ConsensusTxnTrigger,
+) -> Result<Option<Meta>> {
+    tracing::info!("no last_reward_end_time found, just insert trigger block_timestamp");
+
+    let kv = Meta::insert_kv(
+        pool,
+        "last_reward_end_time",
+        &trigger.block_timestamp.to_string(),
+    )
+    .await?;
+    Ok(kv)
+}
+
+fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
+    (
+        datetime_from_epoch(last_reward_end_time),
+        Utc::now() - Duration::minutes(DEFAULT_LOOKUP_DELAY),
+    )
+}
+
+async fn handle_files(
+    store: FileStore,
+    after_utc: DateTime<Utc>,
+    before_utc: DateTime<Utc>,
+) -> Result {
+    match store
+        .list(
+            "poc5g-ingest",
+            Some(FileType::CellHeartbeat),
+            Some(after_utc),
+            Some(before_utc),
+        )
+        .await
+    {
+        Err(_) => {
+            tracing::error!("unable to get file list");
+        }
+        Ok(None) => {
+            tracing::info!("0 files found");
+        }
+        Ok(Some(file_list)) => {
+            tracing::info!("found {:?} files", file_list.len());
+            let mut stream = store_source(store, "poc5g-ingest", file_list);
+            let counter = count_heartbeats(&mut stream).await?;
+
+            if let Ok(model) = generate_model(&counter) {
+                let emitted = get_emissions_per_model(model, after_utc, before_utc - after_utc);
+                tracing::info!("emitted: {:#?}", emitted);
+            }
+        }
+    }
+    Ok(())
 }

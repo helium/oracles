@@ -60,7 +60,7 @@ struct FileFilter {
 
 impl FileFilter {
     async fn list(&self, store: &FileStore, bucket: &str) -> Result<Vec<FileInfo>> {
-        store
+        match store
             .list(
                 bucket,
                 self.file_type.clone(),
@@ -68,6 +68,11 @@ impl FileFilter {
                 self.before.map(datetime_from_naive),
             )
             .await
+        {
+            Ok(Some(res)) => Ok(res),
+            Ok(None) => Ok(vec![]),
+            Err(e) => Err(e),
+        }
     }
 }
 

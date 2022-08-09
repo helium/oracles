@@ -47,7 +47,7 @@ impl FileStore {
         file_type: Option<FileType>,
         after: Option<DateTime<Utc>>,
         before: Option<DateTime<Utc>>,
-    ) -> Result<Vec<FileInfo>> {
+    ) -> Result<Option<Vec<FileInfo>>> {
         let prefix = file_type.as_ref().map(|file_type| file_type.to_string());
         let resp = self
             .client
@@ -69,7 +69,12 @@ impl FileStore {
             .filter(|info| after.map_or(true, |v| info.timestamp > v))
             .filter(|info| before.map_or(true, |v| info.timestamp < v))
             .collect::<Vec<FileInfo>>();
-        Ok(result)
+
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
     }
 
     pub async fn put(&self, bucket: &str, file: &Path) -> Result {
