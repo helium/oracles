@@ -3,11 +3,12 @@ use crate::{
     emissions::{self, Emission},
     follower::{FollowerService, Meta},
     pending_txn::PendingTxn,
-    CellType, ConsensusTxnTrigger, PublicKey, Result,
+    CellType, ConsensusTxnTrigger, Mobile, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use emissions::{get_emissions_per_model, Model};
 use futures::stream::StreamExt;
+// use helium_crypto::{KeyTag, Keypair, Sign};
 use helium_proto::{
     services::poc_mobile::CellHeartbeatReqV1, BlockchainTokenTypeV1,
     BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward,
@@ -17,6 +18,7 @@ use poc_store::{
     FileStore, FileType,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
+use serde_json::json;
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::broadcast;
@@ -289,6 +291,16 @@ async fn construct_rewards(
     }
 }
 
+fn int_to_tt(tt_int: i32) -> BlockchainTokenTypeV1 {
+    match tt_int {
+        0 => BlockchainTokenTypeV1::Hnt,
+        1 => BlockchainTokenTypeV1::Hst,
+        2 => BlockchainTokenTypeV1::Mobile,
+        3 => BlockchainTokenTypeV1::Iot,
+        _ => panic!("unknown"),
+    }
+}
+
 fn token_type_to_int(tt: BlockchainTokenTypeV1) -> i32 {
     match tt {
         BlockchainTokenTypeV1::Hnt => 0,
@@ -298,9 +310,36 @@ fn token_type_to_int(tt: BlockchainTokenTypeV1) -> i32 {
     }
 }
 
+pub fn print_txn(txn: &BlockchainTxnSubnetworkRewardsV1) -> Result {
+    // TODO: Fix formatting + signature printing
+    let mut rewards = Vec::with_capacity(txn.rewards.len());
+    for reward in txn.rewards.clone() {
+        rewards.push(json!({
+            "account": PublicKey::try_from(reward.account.as_ref())?.to_string(),
+            "amount": Mobile::from(reward.amount)
+        }))
+    }
+
+    let table = json!({
+        "rewards": rewards,
+        "start_epoch": txn.start_epoch,
+        "end_epoch": txn.end_epoch,
+        "token_type": int_to_tt(txn.token_type),
+        "signature": txn.reward_server_signature
+    });
+    print_json(&table)
+}
+
+pub fn print_json<T: ?Sized + serde::Serialize>(value: &T) -> Result {
+    println!("{:#?}", serde_json::to_string_pretty(value));
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use crate::Mobile;
+    use helium_crypto::Verify;
+    use rand::rngs::OsRng;
     use rust_decimal_macros::dec;
 
     use super::*;
@@ -362,6 +401,7 @@ mod test {
         expected_emitted.insert(CellType::Nova436H, Mobile::from(dec!(40000000.00000000)));
 
         let after_utc = Utc::now();
+        let before_utc = after_utc - Duration::hours(24);
         let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
         assert_eq!(emitted, expected_emitted);
 
@@ -374,7 +414,25 @@ mod test {
         let tot_rewards = rewards.iter().fold(0, |acc, reward| acc + reward.amount);
         assert_eq!(100_000_000, tot_rewards);
 
+        let key_tag = KeyTag {
+            network: helium_crypto::Network::MainNet,
+            key_type: helium_crypto::KeyType::Ed25519,
+        };
+        let kp = Keypair::generate(key_tag, &mut OsRng);
+
+        let mut txn = bare_txn(rewards.clone(), after_utc, before_utc)
+            .await
+            .expect("bare txn");
+
+        let signature = kp.sign(&txn.encode_to_vec()).expect("signature");
+        txn.reward_server_signature = signature.clone();
+
+        let bare_txn = bare_txn(rewards, after_utc, before_utc).await.unwrap();
+        assert!(kp
+            .public_key()
+            .verify(&bare_txn.encode_to_vec(), &signature)
+            .is_ok());
+
         // TODO cross check individual owner rewards
-        // TODO: Bug, we are likely having duplicates in rewards
     }
 }

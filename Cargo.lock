@@ -1715,6 +1715,7 @@ dependencies = [
  "once_cell",
  "poc-store",
  "prost",
+ "rand",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
