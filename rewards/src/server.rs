@@ -8,7 +8,10 @@ use crate::{
 use chrono::{DateTime, Duration, Utc};
 use emissions::{get_emissions_per_model, Model};
 use futures::stream::StreamExt;
-use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message, SubnetworkReward};
+use helium_proto::{
+    services::poc_mobile::CellHeartbeatReqV1, BlockchainTokenTypeV1,
+    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward,
+};
 use poc_store::{
     file_source::{store_source, Stream},
     FileStore, FileType,
@@ -23,6 +26,7 @@ pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 
 // key: <pubkey, cbsd_id>, val: # of heartbeats
 type Counter = HashMap<(Vec<u8>, String), u64>;
+type Rewards = Vec<SubnetworkReward>;
 
 pub struct Server {
     trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
@@ -189,24 +193,44 @@ async fn handle_files(
             if let Ok(model) = generate_model(&counter) {
                 let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
                 tracing::info!("emitted: {:#?}", emitted);
-                let rewards = construct_rewards(&counter, &model, &emitted).await;
-                tracing::info!("rewards: {:#?}", rewards);
 
-                // TODO: Now that we have the rewards rollup, we need to:
-                // - construct reward txn
-                // - submit it to the follower
-                // - insert in the pending_txn tbl
+                match construct_rewards(&counter, &model, &emitted).await? {
+                    Some(rewards) => {
+                        let txn = bare_txn(rewards, after_utc, before_utc).await?;
+                        // TODO: sign this transaction with the reward server secret key
+                        // - submit it to the follower
+                        // - insert in the pending_txn tbl
+                        tracing::info!("txn: {:#?}", txn)
+                    }
+                    None => {
+                        tracing::error!("unable to construct rewards!");
+                    }
+                }
             }
         }
     }
     Ok(())
 }
 
+async fn bare_txn(
+    rewards: Rewards,
+    after_utc: DateTime<Utc>,
+    before_utc: DateTime<Utc>,
+) -> Result<BlockchainTxnSubnetworkRewardsV1> {
+    Ok(BlockchainTxnSubnetworkRewardsV1 {
+        rewards,
+        token_type: token_type_to_int(BlockchainTokenTypeV1::Mobile),
+        start_epoch: after_utc.timestamp() as u64,
+        end_epoch: before_utc.timestamp() as u64,
+        reward_server_signature: vec![],
+    })
+}
+
 async fn construct_rewards(
     counter: &Counter,
     model: &Model,
     emitted: &Emission,
-) -> Result<Option<Vec<SubnetworkReward>>> {
+) -> Result<Option<Rewards>> {
     let mut follower_service = FollowerService::from_env()?;
 
     let mut rewards: Vec<SubnetworkReward> = vec![];
@@ -247,3 +271,36 @@ async fn construct_rewards(
         Ok(Some(rewards))
     }
 }
+
+fn token_type_to_int(tt: BlockchainTokenTypeV1) -> i32 {
+    match tt {
+        BlockchainTokenTypeV1::Hnt => 0,
+        BlockchainTokenTypeV1::Hst => 1,
+        BlockchainTokenTypeV1::Mobile => 2,
+        BlockchainTokenTypeV1::Iot => 3,
+    }
+}
+
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//
+//     #[test]
+//     fn check_rewards() {
+//         let o1 =
+//             PublicKey::from_str("112fBdq2Hk4iFTi5JCWZ6mTdp4mb7piVBwcMcRyN7br7VPRhhHa").unwrap();
+//         let o2 =
+//             PublicKey::from_str("11Uy5F7mgouEegZkgCwpWDXFupCCihw63ozzrFF8wX8QiHEJD1v").unwrap();
+//         let amt = 50;
+//         let r1 = SubnetworkReward {
+//             account: o1.to_vec(),
+//             amount: amt,
+//         };
+//         let r2 = SubnetworkReward {
+//             account: o2.to_vec(),
+//             amount: amt,
+//         };
+//
+//         // assert_eq!(expected, output);
+//     }
+// }
