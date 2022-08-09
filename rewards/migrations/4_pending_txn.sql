@@ -8,7 +8,6 @@ CREATE TYPE status AS ENUM (
 
 CREATE TABLE pending_txn (
     hash text PRIMARY KEY NOT NULL,
-    address text NOT NULL,
     status status DEFAULT 'pending' NOT NULL,
     failed_reason text,
     created_at timestamptz DEFAULT NOW(),

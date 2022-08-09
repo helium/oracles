@@ -3,12 +3,16 @@ pub mod meta;
 pub use client::FollowerService;
 pub use meta::Meta;
 
-use crate::{env_var, gateway::Gateway, ConsensusTxnTrigger, Error, PublicKey, Result};
+use crate::{
+    env_var, gateway::Gateway, pending_txn::PendingTxn, ConsensusTxnTrigger, Error, PublicKey,
+    Result,
+};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
     FollowerTxnStreamRespV1,
 };
 use sqlx::{Pool, Postgres};
+use std::str;
 use tokio::{sync::broadcast, time};
 use tonic::Streaming;
 
@@ -24,7 +28,7 @@ pub const TXN_TYPES: &[&str] = &[
 
 pub struct Follower {
     pool: Pool<Postgres>,
-    service: FollowerService,
+    pub service: FollowerService,
     start_block: i64,
     trigger: broadcast::Sender<ConsensusTxnTrigger>,
 }
@@ -56,7 +60,7 @@ impl Follower {
             tracing::info!("connecting to txn stream at height {height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
-                stream_result = self.service.txn_stream(Some(height), &[], TXN_TYPES) => match stream_result {
+                stream_result = self.service.txn_stream(height, &[], TXN_TYPES) => match stream_result {
                     Ok(txn_stream) => {
                         tracing::info!("connected to txn stream");
                         self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
@@ -141,17 +145,19 @@ impl Follower {
 
     async fn process_subnet_rewards(
         &mut self,
-        _envelope: &FollowerTxnStreamRespV1,
+        envelope: &FollowerTxnStreamRespV1,
         txn: &BlockchainTxnSubnetworkRewardsV1,
     ) -> Result {
         if txn.token_type() != BlockchainTokenTypeV1::Mobile {
             return Ok(());
         }
 
-        // subnetwork reward txn observed (implying that it's cleared)
-        // mark txn cleared in pending_txn table, lookup by hash
-
-        Ok(())
+        let txn_hash = str::from_utf8(&envelope.txn_hash).unwrap();
+        match PendingTxn::mark_txn_cleared(&self.pool, txn_hash).await {
+            Ok(()) => Ok(()),
+            // should we explicitly handle NotFound differently here?
+            Err(err) => Err(err),
+        }
     }
 
     async fn process_consensus_group(&mut self, envelope: &FollowerTxnStreamRespV1) -> Result {
@@ -166,6 +172,18 @@ impl Follower {
             Ok(_) => {
                 // lookup non-cleared pending_txn
                 // mark pending as failed if txn_mgr in bnode says its failed
+                match PendingTxn::get_all_pending_txns(&self.pool).await {
+                    Ok(Some(_pending_txns)) => {
+                        // do stuff to lookup and update results
+                        return Ok(());
+                    }
+                    Ok(None) => {
+                        tracing::info!("no pending txns waiting")
+                    }
+                    Err(_) => {
+                        tracing::error!("unable to retrieve outstanding pending txns")
+                    }
+                }
 
                 Ok(())
             }

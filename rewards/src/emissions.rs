@@ -11,7 +11,7 @@ pub type Model = HashMap<CellType, u64>;
 pub type Emission = HashMap<CellType, Mobile>;
 
 lazy_static! {
-    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 7).and_hms(0, 0, 0);
+    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
 }
 
 pub fn get_emissions_per_model(

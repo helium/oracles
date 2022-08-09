@@ -12,7 +12,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("encode error")]
     Encode(#[from] EncodeError),
-    #[error("dencode error")]
+    #[error("decode error")]
     Decode(#[from] DecodeError),
     #[error("migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
@@ -22,8 +22,12 @@ pub enum Error {
     Grpc(#[from] tonic::Status),
     #[error("crypto error")]
     Crypto(#[from] helium_crypto::Error),
+    #[error("store error")]
+    Store(#[from] poc_store::Error),
     #[error("not found")]
     NotFound(String),
+    #[error("base64 decode error")]
+    Base64DecodeError(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]
@@ -32,6 +36,8 @@ pub enum DecodeError {
     Prost(#[from] helium_proto::DecodeError),
     #[error("uri error")]
     Uri(#[from] http::uri::InvalidUri),
+    #[error("parse int error")]
+    ParseInt(#[from] std::num::ParseIntError),
     #[error("datetime error")]
     Chrono(#[from] chrono::ParseError),
     #[error("invalid decimals in {0}, only 8 allowed")]

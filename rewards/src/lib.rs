@@ -1,12 +1,18 @@
+#[macro_use]
+extern crate prettytable;
 mod cell_type;
 pub mod decimal_scalar;
 pub mod emissions;
 mod error;
 pub mod follower;
 pub mod gateway;
+pub mod keypair;
 pub mod pending_txn;
 mod public_key;
 pub mod server;
+pub mod token_type;
+pub mod traits;
+pub mod transaction;
 mod uuid;
 
 pub use cell_type::CellType;

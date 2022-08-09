@@ -44,7 +44,7 @@ impl FollowerService {
 
     pub async fn txn_stream<T>(
         &mut self,
-        height: Option<u64>,
+        height: u64,
         txn_hash: &[u8],
         txn_types: &[T],
     ) -> Result<Streaming<FollowerTxnStreamRespV1>>

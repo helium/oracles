@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{error::DecodeError, Error, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -9,7 +9,7 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub async fn insert_kv<'c, E>(executor: E, key: &str, val: &str) -> Result<Option<Self>>
+    pub async fn insert_kv<'c, E>(executor: E, key: &str, val: &str) -> Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -22,7 +22,7 @@ impl Meta {
         )
         .bind(key)
         .bind(val)
-        .fetch_optional(executor)
+        .fetch_one(executor)
         .await
         .map_err(Error::from)
     }
@@ -42,7 +42,7 @@ impl Meta {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let last_reward_end_time = sqlx::query_scalar::<_, String>(
+        sqlx::query_scalar::<_, String>(
             r#"
             select value from meta
             where key = 'last_reward_end_time'
@@ -50,8 +50,11 @@ impl Meta {
         )
         .fetch_optional(executor)
         .await?
-        .and_then(|v| v.parse::<i64>().map_or_else(|_| None, Some));
-        Ok(last_reward_end_time)
+        .map_or_else(
+            || Ok(None),
+            |v| v.parse::<i64>().map_err(DecodeError::from).map(Some),
+        )
+        .map_err(Error::from)
     }
 
     pub async fn last_height<'c, E>(executor: E, start_block: i64) -> Result<i64>
