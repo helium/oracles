@@ -240,7 +240,6 @@ async fn construct_rewards(
             let gw_resp = follower_service.find_gateway(&gw_pubkey).await?;
             let ct = CellType::from_str(cbsd_id)?;
             let owner = gw_resp.owner;
-
             // This seems necessary because some owner keys apparently don't cleanly
             // convert to PublicKey, even though the owner_pubkey isn't actually used!
             if let Ok(_owner_pubkey) = PublicKey::try_from(owner.as_ref()) {
@@ -281,26 +280,78 @@ fn token_type_to_int(tt: BlockchainTokenTypeV1) -> i32 {
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-//
-//     #[test]
-//     fn check_rewards() {
-//         let o1 =
-//             PublicKey::from_str("112fBdq2Hk4iFTi5JCWZ6mTdp4mb7piVBwcMcRyN7br7VPRhhHa").unwrap();
-//         let o2 =
-//             PublicKey::from_str("11Uy5F7mgouEegZkgCwpWDXFupCCihw63ozzrFF8wX8QiHEJD1v").unwrap();
-//         let amt = 50;
-//         let r1 = SubnetworkReward {
-//             account: o1.to_vec(),
-//             amount: amt,
-//         };
-//         let r2 = SubnetworkReward {
-//             account: o2.to_vec(),
-//             amount: amt,
-//         };
-//
-//         // assert_eq!(expected, output);
-//     }
-// }
+#[cfg(test)]
+mod test {
+    use crate::Mobile;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn check_rewards() {
+        // SercommIndoor
+        let g1 = PublicKey::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")
+            .unwrap()
+            .to_vec();
+        // Nova430I
+        let g2 = PublicKey::from_str("112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ")
+            .unwrap()
+            .to_vec();
+        // SercommOutdoor
+        let g3 = PublicKey::from_str("112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ")
+            .unwrap()
+            .to_vec();
+        // Nova436H
+        let g4 = PublicKey::from_str("11k712d9dSb8CAujzS4PdC7Hi8EEBZWsSnt4Zr1hgke4e1Efiag")
+            .unwrap()
+            .to_vec();
+
+        let mut counter: Counter = HashMap::new();
+        // SercommIndoor
+        counter.insert((g1, "P27-SCE4255W2107CW5000014".to_string()), 4);
+        // Nova430I
+        counter.insert((g2, "2AG32PBS3101S1202000464223GY0153".to_string()), 5);
+        // SercommOutdoor
+        counter.insert((g3, "P27-SCO4255PA102206DPT000207".to_string()), 6);
+        // Nova436H
+        counter.insert((g4, "2AG32MBS3100196N1202000240215KY0184".to_string()), 5);
+
+        let mut expected_model: Model = HashMap::new();
+        expected_model.insert(CellType::Nova436H, 1);
+        expected_model.insert(CellType::Nova430I, 1);
+        expected_model.insert(CellType::SercommOutdoor, 1);
+        expected_model.insert(CellType::SercommIndoor, 1);
+
+        let generated_model = generate_model(&counter).unwrap();
+        assert_eq!(generated_model, expected_model);
+
+        let mut expected_emitted: Emission = HashMap::new();
+        expected_emitted.insert(
+            CellType::SercommIndoor,
+            Mobile::from(dec!(10000000.00000000)),
+        );
+        expected_emitted.insert(
+            CellType::SercommOutdoor,
+            Mobile::from(dec!(25000000.00000000)),
+        );
+        expected_emitted.insert(CellType::Nova430I, Mobile::from(dec!(25000000.00000000)));
+        expected_emitted.insert(CellType::Neutrino430, Mobile::from(dec!(0.00000000)));
+        expected_emitted.insert(CellType::Nova436H, Mobile::from(dec!(40000000.00000000)));
+
+        let after_utc = Utc::now();
+        let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
+        assert_eq!(emitted, expected_emitted);
+
+        let rewards = construct_rewards(&counter, &generated_model, &emitted)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(4, rewards.len());
+
+        let tot_rewards = rewards.iter().fold(0, |acc, reward| acc + reward.amount);
+        assert_eq!(100_000_000, tot_rewards);
+
+        // TODO cross check individual owner rewards
+        // TODO: Bug, we are likely having duplicates in rewards
+    }
+}
