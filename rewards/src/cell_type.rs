@@ -1,13 +1,35 @@
+use crate::{Error, Result};
+use std::str::FromStr;
+
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum CellType {
     Nova436H,
     Nova430I,
     Neutrino430,
     SercommIndoor,
     SercommOutdoor,
+}
+
+impl FromStr for CellType {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        if s.starts_with("2AG32MBS3100196N") {
+            Ok(CellType::Nova436H)
+        } else if s.starts_with("2AG32PBS3101S") {
+            Ok(CellType::Nova430I)
+        } else if s.starts_with("2AG32PBS31010") {
+            Ok(CellType::Neutrino430)
+        } else if s.starts_with("P27-SCE4255W") {
+            Ok(CellType::SercommIndoor)
+        } else if s.starts_with("P27-SCO4255PA10") {
+            Ok(CellType::SercommOutdoor)
+        } else {
+            Err(Error::not_found(format!("invalid cell_type {}", s)))
+        }
+    }
 }
 
 impl CellType {

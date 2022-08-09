@@ -7,7 +7,7 @@ use serde::{
 use std::{ops::Deref, str::FromStr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PublicKey(helium_crypto::PublicKey);
+pub struct PublicKey(pub helium_crypto::PublicKey);
 
 impl Deref for PublicKey {
     type Target = helium_crypto::PublicKey;

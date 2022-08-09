@@ -14,7 +14,7 @@ use sqlx::{
 };
 use std::{ops::Deref, str::FromStr};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PublicKey(helium_crypto::PublicKey);
 
 impl Deref for PublicKey {
@@ -95,5 +95,11 @@ impl std::str::FromStr for PublicKey {
 impl<'r> sqlx::FromRow<'r, PgRow> for PublicKey {
     fn from_row(row: &'r PgRow) -> std::result::Result<Self, sqlx::Error> {
         row.try_get("pubkey")
+    }
+}
+
+impl From<poc_store::PublicKey> for PublicKey {
+    fn from(pkey: poc_store::PublicKey) -> Self {
+        PublicKey(pkey.0)
     }
 }

@@ -1,10 +1,15 @@
+use crate::CellType;
 use crate::{
-    datetime_from_epoch, follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger, Result,
+    datetime_from_epoch, emissions, follower::Meta, pending_txn::PendingTxn, ConsensusTxnTrigger,
+    Result,
 };
 use chrono::{Duration, Utc};
-use futures_util::stream::StreamExt;
+use futures::stream::StreamExt;
+use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
 use poc_store::{file_source::store_source, FileStore, FileType};
 use sqlx::{Pool, Postgres};
+use std::collections::HashMap;
+use std::str::FromStr;
 use tokio::sync::broadcast;
 
 pub struct Server {
@@ -99,11 +104,39 @@ impl Server {
                                 tracing::info!("0 files found!")
                             } else {
                                 tracing::info!("found {:?} files", file_list.len());
-                                let stream = store_source(store, "poc5g-ingest", file_list);
-                                tracing::info!("count: {:?}", stream.count().await)
+                                let mut stream = store_source(store, "poc5g-ingest", file_list);
 
-                                // - use file_multi_source to read heartbeats
-                                // - look up hotspot owner for rewarded hotspot
+                                // key: <pubkey, cbsd_id>, val: # of heartbeats
+                                let mut counter: HashMap<(Vec<u8>, String), u64> = HashMap::new();
+
+                                while let Some(Ok(msg)) = stream.next().await {
+                                    let heartbeat_req = CellHeartbeatReqV1::decode(msg)?;
+                                    let count = counter
+                                        .entry((heartbeat_req.pub_key, heartbeat_req.cbsd_id))
+                                        .or_insert(0);
+                                    *count += 1;
+                                }
+
+                                // filter out any <pubkey, celltype> < 3
+                                counter.retain(|_, v| *v >= 3);
+
+                                // let mut follower_service = FollowerService::from_env()?;
+
+                                // how many total mobile each cell_type needs to get
+                                // (cell_type, mobile), (...)...
+                                let mut models: HashMap<CellType, u64> = HashMap::new();
+
+                                for ((_, cbsd_id), _v) in counter.iter() {
+                                    if let Ok(ct) = CellType::from_str(cbsd_id) {
+                                        let count = models.entry(ct).or_insert(0);
+                                        *count += 1
+                                    }
+                                }
+                                tracing::info!("models: {:#?}", models);
+
+                                let emitted = emissions::get_emissions_per_model(models, after_utc);
+                                tracing::info!("emitted: {:#?}", emitted);
+
                                 // - construct pending reward txn, store in pending table
                             }
                         }

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::CellHeartbeatReqV1;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CellHeartbeat {
     #[serde(alias = "pubKey")]
     pub pubkey: PublicKey,

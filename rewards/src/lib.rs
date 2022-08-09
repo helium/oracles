@@ -1,5 +1,6 @@
 mod cell_type;
 pub mod decimal_scalar;
+pub mod emissions;
 mod error;
 pub mod follower;
 pub mod gateway;
