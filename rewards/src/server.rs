@@ -1,15 +1,19 @@
 use crate::{
-    datetime_from_epoch, emissions, follower::Meta, pending_txn::PendingTxn, CellType,
-    ConsensusTxnTrigger, Result,
+    datetime_from_epoch,
+    emissions::{self, Emission},
+    follower::{FollowerService, Meta},
+    pending_txn::PendingTxn,
+    CellType, ConsensusTxnTrigger, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use emissions::{get_emissions_per_model, Model};
 use futures::stream::StreamExt;
-use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
+use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message, SubnetworkReward};
 use poc_store::{
     file_source::{store_source, Stream},
     FileStore, FileType,
 };
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::broadcast;
@@ -183,10 +187,63 @@ async fn handle_files(
             let counter = count_heartbeats(&mut stream).await?;
 
             if let Ok(model) = generate_model(&counter) {
-                let emitted = get_emissions_per_model(model, after_utc, before_utc - after_utc);
+                let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
                 tracing::info!("emitted: {:#?}", emitted);
+                let rewards = construct_rewards(&counter, &model, &emitted).await;
+                tracing::info!("rewards: {:#?}", rewards);
+
+                // TODO: Now that we have the rewards rollup, we need to:
+                // - construct reward txn
+                // - submit it to the follower
+                // - insert in the pending_txn tbl
             }
         }
     }
     Ok(())
+}
+
+async fn construct_rewards(
+    counter: &Counter,
+    model: &Model,
+    emitted: &Emission,
+) -> Result<Option<Vec<SubnetworkReward>>> {
+    let mut follower_service = FollowerService::from_env()?;
+
+    let mut rewards: Vec<SubnetworkReward> = vec![];
+
+    for ((gw_pubkey_bin, cbsd_id), _) in counter.iter() {
+        if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin.as_ref()) {
+            let gw_resp = follower_service.find_gateway(&gw_pubkey).await?;
+            let ct = CellType::from_str(cbsd_id)?;
+            let owner = gw_resp.owner;
+
+            // This seems necessary because some owner keys apparently don't cleanly
+            // convert to PublicKey, even though the owner_pubkey isn't actually used!
+            if let Ok(_owner_pubkey) = PublicKey::try_from(owner.as_ref()) {
+                match model.get(&ct) {
+                    None => (),
+                    Some(total_count) => match emitted.get(&ct) {
+                        None => (),
+                        Some(total_reward) => {
+                            if let Some(amt) =
+                                (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
+                            {
+                                let reward = SubnetworkReward {
+                                    account: owner,
+                                    amount: amt,
+                                };
+                                rewards.push(reward);
+                            }
+                        }
+                    },
+                }
+            }
+        }
+    }
+
+    if rewards.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(rewards))
+    }
 }

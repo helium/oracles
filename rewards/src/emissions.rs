@@ -8,16 +8,17 @@ use std::collections::HashMap;
 const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
 
 pub type Model = HashMap<CellType, u64>;
+pub type Emission = HashMap<CellType, Mobile>;
 
 lazy_static! {
-    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 7).and_hms(0, 0, 0);
 }
 
 pub fn get_emissions_per_model(
-    model: Model,
+    model: &Model,
     datetime: DateTime<Utc>,
     duration: Duration,
-) -> HashMap<CellType, Mobile> {
+) -> Emission {
     let total_rewards = get_scheduled_tokens(datetime, duration)
         .expect("Failed to supply valid date on the emission schedule");
 
@@ -101,7 +102,7 @@ mod test {
             (CellType::SercommIndoor, 924),
             (CellType::Neutrino430, 2),
         ]);
-        let output = get_emissions_per_model(input, *GENESIS_START, Duration::hours(24));
+        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24));
         assert_eq!(expected, output);
     }
 
@@ -146,7 +147,7 @@ mod test {
             (CellType::SercommIndoor, 924),
             (CellType::Neutrino430, 2),
         ]);
-        let output = get_emissions_per_model(input, *GENESIS_START, Duration::hours(24));
+        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24));
         assert_eq!(expected, output)
     }
 }
