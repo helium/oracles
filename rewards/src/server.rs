@@ -24,8 +24,8 @@ use tokio::sync::broadcast;
 // default minutes to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 
-// key: <pubkey, cbsd_id>, val: # of heartbeats
-type Counter = HashMap<(Vec<u8>, String), u64>;
+//                     PubKey           cbsd_id cnt
+type Counter = HashMap<Vec<u8>, HashMap<String, u64>>;
 type Rewards = Vec<SubnetworkReward>;
 
 pub struct Server {
@@ -119,10 +119,21 @@ async fn count_heartbeats(stream: &mut Stream) -> Result<Counter> {
     // count heartbeats for this input stream
     let mut counter: Counter = HashMap::new();
     while let Some(Ok(msg)) = stream.next().await {
-        let heartbeat_req = CellHeartbeatReqV1::decode(msg)?;
+        let CellHeartbeatReqV1 {
+            pub_key, cbsd_id, ..
+        } = CellHeartbeatReqV1::decode(msg)?;
+        // Think of Counter more like a 2-dimensional sparse matrix and less like
+        // a hashmap of hashmaps.
         let count = counter
-            .entry((heartbeat_req.pub_key, heartbeat_req.cbsd_id))
+            .entry(pub_key)
+            .or_insert(HashMap::new())
+            .entry(cbsd_id)
             .or_insert(0);
+        // Why clamp, and did you meant to let the count grow to 4? If
+        // it doesn't matter as, let always accumulate:
+        //
+        // - the branch makes the condition seem important
+        // - branching is often slower than arithmetic ops
         if *count <= 3 {
             *count += 1;
         }
@@ -134,10 +145,14 @@ pub fn generate_model(counter: &Counter) -> Result<Model> {
     // how many total mobile each cell_type needs to get
     // (cell_type, mobile), (...)...
     let mut model: HashMap<CellType, u64> = HashMap::new();
-    for ((_gw_pubkey_bin, cbsd_id), _heartbeats) in counter.iter() {
+    for (cbsd_id, single_hotspot_count) in counter
+        .iter()
+        .map(|(_gw_pubkey_bin, sub_map)| sub_map.iter())
+        .flatten()
+    {
         if let Ok(ct) = CellType::from_str(cbsd_id) {
             let count = model.entry(ct).or_insert(0);
-            *count += 1
+            *count += single_hotspot_count
         }
     }
     Ok(model)
@@ -194,7 +209,7 @@ async fn handle_files(
                 let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
                 tracing::info!("emitted: {:#?}", emitted);
 
-                match construct_rewards(&counter, &model, &emitted).await? {
+                match construct_rewards(counter, &model, &emitted).await? {
                     Some(rewards) => {
                         let txn = bare_txn(rewards, after_utc, before_utc).await?;
                         // TODO: sign this transaction with the reward server secret key
@@ -227,43 +242,48 @@ async fn bare_txn(
 }
 
 async fn construct_rewards(
-    counter: &Counter,
+    counter: Counter,
     model: &Model,
     emitted: &Emission,
 ) -> Result<Option<Rewards>> {
     let mut follower_service = FollowerService::from_env()?;
+    let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
 
-    let mut rewards: Vec<SubnetworkReward> = vec![];
-
-    for ((gw_pubkey_bin, cbsd_id), _) in counter.iter() {
+    for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
         if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin.as_ref()) {
-            let gw_resp = follower_service.find_gateway(&gw_pubkey).await?;
-            let ct = CellType::from_str(cbsd_id)?;
-            let owner = gw_resp.owner;
-            // This seems necessary because some owner keys apparently don't cleanly
-            // convert to PublicKey, even though the owner_pubkey isn't actually used!
-            if let Ok(_owner_pubkey) = PublicKey::try_from(owner.as_ref()) {
-                match model.get(&ct) {
-                    None => (),
-                    Some(total_count) => match emitted.get(&ct) {
-                        None => (),
-                        Some(total_reward) => {
-                            if let Some(amt) =
-                                (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
-                            {
-                                let reward = SubnetworkReward {
-                                    account: owner,
-                                    amount: amt,
-                                };
-                                rewards.push(reward);
-                            }
-                        }
-                    },
+            let owner = follower_service.find_gateway(&gw_pubkey).await?.owner;
+            // This seems necessary because some owner keys apparently
+            // don't cleanly convert to PublicKey, even though the
+            // owner_pubkey isn't actually used!
+            if PublicKey::try_from((&owner).as_ref()).is_err() {
+                continue;
+            }
+
+            let mut reward_acc = 0;
+
+            for (cbsd_id, cnt) in per_cell_cnt {
+                if cnt < 3 {
+                    continue;
+                }
+
+                let cell_type = CellType::from_str(&cbsd_id)?;
+
+                if let (Some(total_count), Some(total_reward)) =
+                    (model.get(&cell_type), emitted.get(&cell_type))
+                {
+                    if let Some(amt) =
+                        (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
+                    {
+                        reward_acc += amt;
+                    }
                 }
             }
+            rewards.push(SubnetworkReward {
+                account: owner,
+                amount: reward_acc,
+            });
         }
     }
-
     if rewards.is_empty() {
         Ok(None)
     } else {
