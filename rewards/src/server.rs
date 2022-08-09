@@ -23,9 +23,12 @@ use tokio::sync::broadcast;
 
 // default minutes to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
+// minimum number of heartbeats to consider for rewarding
+pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 3;
 
-//                     PubKey           cbsd_id cnt
-type Counter = HashMap<Vec<u8>, HashMap<String, u64>>;
+//                         cbsd_id num_heartbeats
+type CbsdCounter = HashMap<String, u64>;
+type Counter = HashMap<Vec<u8>, CbsdCounter>;
 type Rewards = Vec<SubnetworkReward>;
 
 pub struct Server {
@@ -126,17 +129,10 @@ async fn count_heartbeats(stream: &mut Stream) -> Result<Counter> {
         // a hashmap of hashmaps.
         let count = counter
             .entry(pub_key)
-            .or_insert(HashMap::new())
+            .or_insert_with(HashMap::new)
             .entry(cbsd_id)
             .or_insert(0);
-        // Why clamp, and did you meant to let the count grow to 4? If
-        // it doesn't matter as, let always accumulate:
-        //
-        // - the branch makes the condition seem important
-        // - branching is often slower than arithmetic ops
-        if *count <= 3 {
-            *count += 1;
-        }
+        *count += 1;
     }
     Ok(counter)
 }
@@ -147,12 +143,14 @@ pub fn generate_model(counter: &Counter) -> Result<Model> {
     let mut model: HashMap<CellType, u64> = HashMap::new();
     for (cbsd_id, single_hotspot_count) in counter
         .iter()
-        .map(|(_gw_pubkey_bin, sub_map)| sub_map.iter())
-        .flatten()
+        .flat_map(|(_gw_pubkey_bin, sub_map)| sub_map.iter())
     {
         if let Ok(ct) = CellType::from_str(cbsd_id) {
             let count = model.entry(ct).or_insert(0);
-            *count += single_hotspot_count
+            // This cell type only gets added to the model if it has more than MIN_PER_CELL_TYPE_HEARTBEATS
+            if *single_hotspot_count > MIN_PER_CELL_TYPE_HEARTBEATS {
+                *count += 1
+            }
         }
     }
     Ok(model)
@@ -262,7 +260,7 @@ async fn construct_rewards(
             let mut reward_acc = 0;
 
             for (cbsd_id, cnt) in per_cell_cnt {
-                if cnt < 3 {
+                if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
                     continue;
                 }
 
@@ -314,7 +312,7 @@ mod test {
             .unwrap()
             .to_vec();
         // Nova430I
-        let g2 = PublicKey::from_str("112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ")
+        let g2 = PublicKey::from_str("118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc")
             .unwrap()
             .to_vec();
         // SercommOutdoor
@@ -326,21 +324,26 @@ mod test {
             .unwrap()
             .to_vec();
 
-        let mut counter: Counter = HashMap::new();
-        // SercommIndoor
-        counter.insert((g1, "P27-SCE4255W2107CW5000014".to_string()), 4);
-        // Nova430I
-        counter.insert((g2, "2AG32PBS3101S1202000464223GY0153".to_string()), 5);
-        // SercommOutdoor
-        counter.insert((g3, "P27-SCO4255PA102206DPT000207".to_string()), 6);
-        // Nova436H
-        counter.insert((g4, "2AG32MBS3100196N1202000240215KY0184".to_string()), 5);
+        let mut c1 = CbsdCounter::new();
+        c1.insert("P27-SCE4255W2107CW5000014".to_string(), 4);
+        let mut c2 = CbsdCounter::new();
+        c2.insert("2AG32PBS3101S1202000464223GY0153".to_string(), 5);
+        let mut c3 = CbsdCounter::new();
+        c3.insert("P27-SCO4255PA102206DPT000207".to_string(), 6);
+        let mut c4 = CbsdCounter::new();
+        c4.insert("2AG32MBS3100196N1202000240215KY0184".to_string(), 5);
+
+        let mut counter = Counter::new();
+        counter.insert(g1, c1);
+        counter.insert(g2, c2);
+        counter.insert(g3, c3);
+        counter.insert(g4, c4);
 
         let mut expected_model: Model = HashMap::new();
-        expected_model.insert(CellType::Nova436H, 1);
-        expected_model.insert(CellType::Nova430I, 1);
-        expected_model.insert(CellType::SercommOutdoor, 1);
         expected_model.insert(CellType::SercommIndoor, 1);
+        expected_model.insert(CellType::Nova436H, 1);
+        expected_model.insert(CellType::SercommOutdoor, 1);
+        expected_model.insert(CellType::Nova430I, 1);
 
         let generated_model = generate_model(&counter).unwrap();
         assert_eq!(generated_model, expected_model);
@@ -362,7 +365,7 @@ mod test {
         let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
         assert_eq!(emitted, expected_emitted);
 
-        let rewards = construct_rewards(&counter, &generated_model, &emitted)
+        let rewards = construct_rewards(counter, &generated_model, &emitted)
             .await
             .unwrap()
             .unwrap();
