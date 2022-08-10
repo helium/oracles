@@ -4,14 +4,15 @@ use crate::{
     follower::{FollowerService, Meta},
     keypair::Keypair,
     pending_txn::PendingTxn,
+    token_type::BlockchainTokenTypeV1,
     CellType, ConsensusTxnTrigger, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use emissions::{get_emissions_per_model, Model};
 use futures::stream::StreamExt;
 use helium_proto::{
-    services::poc_mobile::CellHeartbeatReqV1, BlockchainTokenTypeV1,
-    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward,
+    services::poc_mobile::CellHeartbeatReqV1, BlockchainTxnSubnetworkRewardsV1, Message,
+    SubnetworkReward,
 };
 use poc_store::{
     file_source::{store_source, Stream},
@@ -264,25 +265,6 @@ async fn construct_rewards(counter: Counter, model: &Model, emitted: &Emission) 
     Ok(rewards)
 }
 
-pub fn int_to_tt(tt_int: i32) -> String {
-    match tt_int {
-        0 => "Hnt".to_string(),
-        1 => "Hst".to_string(),
-        2 => "Mobile".to_string(),
-        3 => "Iot".to_string(),
-        i32::MIN..=-1_i32 | 4_i32..=i32::MAX => "unsupported".to_string(),
-    }
-}
-
-pub fn token_type_to_int(tt: BlockchainTokenTypeV1) -> i32 {
-    match tt {
-        BlockchainTokenTypeV1::Hnt => 0,
-        BlockchainTokenTypeV1::Hst => 1,
-        BlockchainTokenTypeV1::Mobile => 2,
-        BlockchainTokenTypeV1::Iot => 3,
-    }
-}
-
 pub fn unsigned_txn(
     rewards: Rewards,
     after_utc: DateTime<Utc>,
@@ -290,7 +272,7 @@ pub fn unsigned_txn(
 ) -> BlockchainTxnSubnetworkRewardsV1 {
     BlockchainTxnSubnetworkRewardsV1 {
         rewards,
-        token_type: token_type_to_int(BlockchainTokenTypeV1::Mobile),
+        token_type: BlockchainTokenTypeV1::from(helium_proto::BlockchainTokenTypeV1::Mobile).into(),
         start_epoch: after_utc.timestamp() as u64,
         end_epoch: before_utc.timestamp() as u64,
         reward_server_signature: vec![],
@@ -310,7 +292,10 @@ pub fn print_txn(txn: &BlockchainTxnSubnetworkRewardsV1) -> Result {
     ptable!(
         ["start_epoch", txn.start_epoch],
         ["end_epoch", txn.end_epoch],
-        ["token_type", int_to_tt(txn.token_type)],
+        [
+            "token_type",
+            BlockchainTokenTypeV1::try_from(txn.token_type)?.to_string()
+        ],
         ["rewards", table]
     );
     Ok(())
