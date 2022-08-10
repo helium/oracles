@@ -11,6 +11,7 @@ pub mod pending_txn;
 mod public_key;
 pub mod server;
 pub mod token_type;
+pub mod traits;
 mod uuid;
 
 pub use cell_type::CellType;

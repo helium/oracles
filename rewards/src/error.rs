@@ -12,7 +12,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("encode error")]
     Encode(#[from] EncodeError),
-    #[error("dencode error")]
+    #[error("decode error")]
     Decode(#[from] DecodeError),
     #[error("migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
@@ -26,6 +26,8 @@ pub enum Error {
     Store(#[from] poc_store::Error),
     #[error("not found")]
     NotFound(String),
+    #[error("base64 decode error")]
+    Base64DecodeError(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]

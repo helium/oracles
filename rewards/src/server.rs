@@ -5,6 +5,7 @@ use crate::{
     keypair::Keypair,
     pending_txn::PendingTxn,
     token_type::BlockchainTokenTypeV1,
+    traits::b64::B64,
     CellType, ConsensusTxnTrigger, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -296,7 +297,11 @@ pub fn print_txn(txn: &BlockchainTxnSubnetworkRewardsV1) -> Result {
             "token_type",
             BlockchainTokenTypeV1::try_from(txn.token_type)?.to_string()
         ],
-        ["rewards", table]
+        ["rewards", table],
+        [
+            "reward_server_signature",
+            txn.reward_server_signature.to_b64()?
+        ]
     );
     Ok(())
 }
@@ -451,6 +456,7 @@ mod test {
 
         let signature = loaded_kp.sign(&txn.encode_to_vec()).expect("signature");
         txn.reward_server_signature = signature.clone();
+        let _ = print_txn(&txn);
 
         let unsigned_txn = unsigned_txn(rewards, after_utc, before_utc);
         assert!(kp

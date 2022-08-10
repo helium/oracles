@@ -1,7 +1,7 @@
 use crate::{Error, Result};
 use std::fmt::Display;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlockchainTokenTypeV1(pub helium_proto::BlockchainTokenTypeV1);
 
 impl From<helium_proto::BlockchainTokenTypeV1> for BlockchainTokenTypeV1 {
