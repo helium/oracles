@@ -1,8 +1,11 @@
-use crate::{Error, Result};
-use std::str::FromStr;
-
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+
+pub const CELLTYPE_NOVA_436H: &str = "2AG32MBS3100196N";
+pub const CELLTYPE_NOVA_430I: &str = "2AG32PBS3101S";
+pub const CELLTYPE_NEUTRINO_430: &str = "2AG32PBS31010";
+pub const CELLTYPE_SERCCOMM_INDOOR: &str = "P27-SCE4255W";
+pub const CELLTYPE_SERCCOMM_OUTDOOR: &str = "P27-SCO4255PA10";
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum CellType {
@@ -13,33 +16,25 @@ pub enum CellType {
     SercommOutdoor,
 }
 
-impl FromStr for CellType {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
-        if s.starts_with("2AG32MBS3100196N") {
-            Ok(CellType::Nova436H)
-        } else if s.starts_with("2AG32PBS3101S") {
-            Ok(CellType::Nova430I)
-        } else if s.starts_with("2AG32PBS31010") {
-            Ok(CellType::Neutrino430)
-        } else if s.starts_with("P27-SCE4255W") {
-            Ok(CellType::SercommIndoor)
-        } else if s.starts_with("P27-SCO4255PA10") {
-            Ok(CellType::SercommOutdoor)
-        } else {
-            Err(Error::not_found(format!("invalid cell_type {}", s)))
+impl CellType {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            s if s.starts_with(CELLTYPE_NOVA_436H) => Some(CellType::Nova436H),
+            s if s.starts_with(CELLTYPE_NOVA_430I) => Some(CellType::Nova430I),
+            s if s.starts_with(CELLTYPE_NEUTRINO_430) => Some(CellType::Neutrino430),
+            s if s.starts_with(CELLTYPE_SERCCOMM_INDOOR) => Some(CellType::SercommIndoor),
+            s if s.starts_with(CELLTYPE_SERCCOMM_OUTDOOR) => Some(CellType::SercommOutdoor),
+            &_ => None,
         }
     }
-}
 
-impl CellType {
     pub fn fcc_id(&self) -> &'static str {
         match self {
-            Self::Nova436H => "2AG32MBS3100196N",
-            Self::Nova430I => "2AG32PBS3101S",
-            Self::Neutrino430 => "2AG32PBS31010",
-            Self::SercommIndoor => "P27-SCE4255W",
-            Self::SercommOutdoor => "P27-SCO4255PA10",
+            Self::Nova436H => CELLTYPE_NOVA_436H,
+            Self::Nova430I => CELLTYPE_NOVA_430I,
+            Self::Neutrino430 => CELLTYPE_NEUTRINO_430,
+            Self::SercommIndoor => CELLTYPE_SERCCOMM_INDOOR,
+            Self::SercommOutdoor => CELLTYPE_SERCCOMM_OUTDOOR,
         }
     }
 

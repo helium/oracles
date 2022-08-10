@@ -22,7 +22,7 @@ use poc_store::{
 use prettytable::Table;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Pool, Postgres};
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 use tokio::sync::broadcast;
 
 // default minutes to delay lookup from now
@@ -194,7 +194,7 @@ pub fn generate_model(counter: &Counter) -> Model {
         .iter()
         .flat_map(|(_gw_pubkey_bin, sub_map)| sub_map.iter())
     {
-        if let Ok(ct) = CellType::from_str(cbsd_id) {
+        if let Some(ct) = CellType::from_str(cbsd_id) {
             let count = model.entry(ct).or_insert(0);
             // This cell type only gets added to the model if it has more than MIN_PER_CELL_TYPE_HEARTBEATS
             if *single_hotspot_count >= MIN_PER_CELL_TYPE_HEARTBEATS {
@@ -245,7 +245,11 @@ async fn construct_rewards(counter: Counter, model: &Model, emitted: &Emission) 
                     continue;
                 }
 
-                let cell_type = CellType::from_str(&cbsd_id)?;
+                let cell_type = if let Some(cell_type) = CellType::from_str(&cbsd_id) {
+                    cell_type
+                } else {
+                    continue;
+                };
 
                 if let (Some(total_count), Some(total_reward)) =
                     (model.get(&cell_type), emitted.get(&cell_type))
