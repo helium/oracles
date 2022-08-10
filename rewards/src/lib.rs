@@ -12,6 +12,7 @@ mod public_key;
 pub mod server;
 pub mod token_type;
 pub mod traits;
+pub mod transaction;
 mod uuid;
 
 pub use cell_type::CellType;

@@ -43,7 +43,13 @@ async fn main() -> Result {
     let rs_keypair = load_from_file(&dotenv::var("REWARD_SERVER_KEYPAIR")?)?;
 
     // reward server
-    let mut reward_server = Server::new(pool.clone(), trigger_receiver, rs_keypair).await?;
+    let mut reward_server = Server::new(
+        pool.clone(),
+        trigger_receiver,
+        rs_keypair,
+        follower.service.clone(),
+    )
+    .await?;
 
     tokio::try_join!(
         follower.run(shutdown_listener.clone()),

@@ -4,10 +4,8 @@ pub use client::FollowerService;
 pub use meta::Meta;
 
 use crate::{
-    env_var,
-    gateway::Gateway,
-    pending_txn::PendingTxn,
-    ConsensusTxnTrigger, Error, PublicKey, Result
+    env_var, gateway::Gateway, pending_txn::PendingTxn, ConsensusTxnTrigger, Error, PublicKey,
+    Result,
 };
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
@@ -30,7 +28,7 @@ pub const TXN_TYPES: &[&str] = &[
 
 pub struct Follower {
     pool: Pool<Postgres>,
-    service: FollowerService,
+    pub service: FollowerService,
     start_block: i64,
     trigger: broadcast::Sender<ConsensusTxnTrigger>,
 }
@@ -62,7 +60,7 @@ impl Follower {
             tracing::info!("connecting to txn stream at height {height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
-                stream_result = self.service.txn_stream(Some(height), &[], TXN_TYPES) => match stream_result {
+                stream_result = self.service.txn_stream(height, &[], TXN_TYPES) => match stream_result {
                     Ok(txn_stream) => {
                         tracing::info!("connected to txn stream");
                         self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
@@ -177,7 +175,7 @@ impl Follower {
                 match PendingTxn::get_all_pending_txns(&self.pool).await {
                     Ok(Some(_pending_txns)) => {
                         // do stuff to lookup and update results
-                        return Ok(())
+                        return Ok(());
                     }
                     Ok(None) => {
                         tracing::info!("no pending txns waiting")

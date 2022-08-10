@@ -1,11 +1,10 @@
 use crate::{env_var, Result};
 use helium_proto::{
     services::{Channel, Endpoint},
-    TxnSubmitReqV1, TxnSubmitRespV1, TxnQueryReqV1, TxnQueryRespV1,
+    BlockchainTxn, TxnQueryReqV1, TxnQueryRespV1, TxnSubmitReqV1, TxnSubmitRespV1,
 };
 use http::Uri;
 use std::time::Duration;
-use tonic::Streaming;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
@@ -35,17 +34,13 @@ impl TransactionService {
     }
 
     pub async fn submit(&mut self, txn: BlockchainTxn) -> Result<TxnSubmitRespV1> {
-        let req = TxnSubmitReqV1{
-            txn
-        };
+        let req = TxnSubmitReqV1 { txn: Some(txn) };
         let res = self.client.submit(req).await?.into_inner();
         Ok(res)
     }
 
     pub async fn query(&mut self, key: &[u8]) -> Result<TxnQueryRespV1> {
-        let req = TxnQueryReqV1{
-            key
-        };
+        let req = TxnQueryReqV1 { key: key.to_vec() };
         let res = self.client.query(req).await?.into_inner();
         Ok(res)
     }

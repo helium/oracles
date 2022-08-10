@@ -6,14 +6,15 @@ use crate::{
     pending_txn::PendingTxn,
     token_type::BlockchainTokenTypeV1,
     traits::b64::B64,
+    transaction::client::TransactionService,
     CellType, ConsensusTxnTrigger, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use emissions::{get_emissions_per_model, Model};
 use futures::stream::StreamExt;
 use helium_proto::{
-    services::poc_mobile::CellHeartbeatReqV1, BlockchainTxnSubnetworkRewardsV1, Message,
-    SubnetworkReward,
+    blockchain_txn::Txn, services::poc_mobile::CellHeartbeatReqV1, BlockchainTxn,
+    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward,
 };
 use poc_store::{
     file_source::{store_source, Stream},
@@ -40,6 +41,8 @@ pub struct Server {
     trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
     pool: Pool<Postgres>,
     keypair: Keypair,
+    follower_service: FollowerService,
+    txn_service: TransactionService,
 }
 
 impl Server {
@@ -47,11 +50,14 @@ impl Server {
         pool: Pool<Postgres>,
         trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
         keypair: Keypair,
+        follower_service: FollowerService,
     ) -> Result<Self> {
         let result = Self {
             pool,
             trigger_receiver,
             keypair,
+            follower_service,
+            txn_service: TransactionService::from_env()?,
         };
         Ok(result)
     }
@@ -126,7 +132,7 @@ impl Server {
     }
 
     async fn handle_files(
-        &self,
+        &mut self,
         store: FileStore,
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
@@ -153,7 +159,7 @@ impl Server {
         let model = generate_model(&counter);
         let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
         tracing::info!("emitted: {:#?}", emitted);
-        let rewards = construct_rewards(counter, &model, &emitted).await?;
+        let rewards = self.construct_rewards(counter, &model, &emitted).await?;
         // tracing::info!("rewards: {:#?}", rewards);
         let mut txn = unsigned_txn(rewards, after_utc, before_utc);
 
@@ -161,9 +167,65 @@ impl Server {
         txn.reward_server_signature = signature.to_vec();
         print_txn(&txn)?;
 
-        // - submit it to the follower
+        let _ = &self
+            .txn_service
+            .submit(BlockchainTxn {
+                txn: Some(Txn::SubnetworkRewards(txn)),
+            })
+            .await;
+
         // - insert in the pending_txn tbl
         Ok(())
+    }
+
+    async fn construct_rewards(
+        &mut self,
+        counter: Counter,
+        model: &Model,
+        emitted: &Emission,
+    ) -> Result<Rewards> {
+        let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
+
+        for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
+            if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin.as_ref()) {
+                let owner = self.follower_service.find_gateway(&gw_pubkey).await?.owner;
+                // This seems necessary because some owner keys apparently
+                // don't cleanly convert to PublicKey, even though the
+                // owner_pubkey isn't actually used!
+                if PublicKey::try_from(owner.as_ref()).is_err() {
+                    continue;
+                }
+
+                let mut reward_acc = 0;
+
+                for (cbsd_id, cnt) in per_cell_cnt {
+                    if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
+                        continue;
+                    }
+
+                    let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
+                        cell_type
+                    } else {
+                        continue;
+                    };
+
+                    if let (Some(total_count), Some(total_reward)) =
+                        (model.get(&cell_type), emitted.get(&cell_type))
+                    {
+                        if let Some(amt) =
+                            (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
+                        {
+                            reward_acc += amt;
+                        }
+                    }
+                }
+                rewards.push(SubnetworkReward {
+                    account: owner,
+                    amount: reward_acc,
+                });
+            }
+        }
+        Ok(rewards)
     }
 }
 
@@ -222,52 +284,6 @@ fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
         datetime_from_epoch(last_reward_end_time),
         Utc::now() - Duration::minutes(DEFAULT_LOOKUP_DELAY),
     )
-}
-
-async fn construct_rewards(counter: Counter, model: &Model, emitted: &Emission) -> Result<Rewards> {
-    let mut follower_service = FollowerService::from_env()?;
-    let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
-
-    for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
-        if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin.as_ref()) {
-            let owner = follower_service.find_gateway(&gw_pubkey).await?.owner;
-            // This seems necessary because some owner keys apparently
-            // don't cleanly convert to PublicKey, even though the
-            // owner_pubkey isn't actually used!
-            if PublicKey::try_from((owner).as_ref()).is_err() {
-                continue;
-            }
-
-            let mut reward_acc = 0;
-
-            for (cbsd_id, cnt) in per_cell_cnt {
-                if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
-                    continue;
-                }
-
-                let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-                    cell_type
-                } else {
-                    continue;
-                };
-
-                if let (Some(total_count), Some(total_reward)) =
-                    (model.get(&cell_type), emitted.get(&cell_type))
-                {
-                    if let Some(amt) =
-                        (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
-                    {
-                        reward_acc += amt;
-                    }
-                }
-            }
-            rewards.push(SubnetworkReward {
-                account: owner,
-                amount: reward_acc,
-            });
-        }
-    }
-    Ok(rewards)
 }
 
 pub fn unsigned_txn(
