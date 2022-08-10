@@ -27,8 +27,9 @@ pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 // minimum number of heartbeats to consider for rewarding
 pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 3;
 
-// key: <pubkey, cbsd_id>, val: # of heartbeats
+// key: cbsd_id, val: # of heartbeats
 type CbsdCounter = HashMap<String, u64>;
+// key: gateway_pubkeybin, val: CbsdCounter
 type Counter = HashMap<Vec<u8>, CbsdCounter>;
 type Rewards = Vec<SubnetworkReward>;
 
@@ -149,7 +150,7 @@ pub fn generate_model(counter: &Counter) -> Model {
         if let Ok(ct) = CellType::from_str(cbsd_id) {
             let count = model.entry(ct).or_insert(0);
             // This cell type only gets added to the model if it has more than MIN_PER_CELL_TYPE_HEARTBEATS
-            if *single_hotspot_count > MIN_PER_CELL_TYPE_HEARTBEATS {
+            if *single_hotspot_count >= MIN_PER_CELL_TYPE_HEARTBEATS {
                 *count += 1
             }
         }
@@ -203,20 +204,16 @@ async fn handle_files(
     let model = generate_model(&counter);
     let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
     tracing::info!("emitted: {:#?}", emitted);
-    let rewards = construct_rewards(counter, &model, &emitted).await;
-    tracing::info!("rewards: {:#?}", rewards);
+    let rewards = construct_rewards(counter, &model, &emitted).await?;
+    // tracing::info!("rewards: {:#?}", rewards);
+    let bare_txn = bare_txn(rewards, after_utc, before_utc);
+    print_txn(&bare_txn)?;
 
-    // TODO: Now that we have the rewards rollup, we need to:
-    // - construct reward txn
     // - submit it to the follower
     // - insert in the pending_txn tbl
     Ok(())
 }
-async fn construct_rewards(
-    counter: Counter,
-    model: &Model,
-    emitted: &Emission,
-) -> Result<Option<Rewards>> {
+async fn construct_rewards(counter: Counter, model: &Model, emitted: &Emission) -> Result<Rewards> {
     let mut follower_service = FollowerService::from_env()?;
     let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
 
@@ -255,11 +252,7 @@ async fn construct_rewards(
             });
         }
     }
-    if rewards.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(rewards))
-    }
+    Ok(rewards)
 }
 
 pub fn int_to_tt(tt_int: i32) -> String {
@@ -332,6 +325,55 @@ mod test {
     use super::*;
 
     #[tokio::test]
+    #[should_panic]
+    #[ignore = "credentials required"]
+    async fn lower_heartbeats() {
+        // SercommIndoor
+        let g1 = PublicKey::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")
+            .unwrap()
+            .to_vec();
+        // Nova430I
+        let g2 = PublicKey::from_str("118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc")
+            .unwrap()
+            .to_vec();
+        // SercommOutdoor
+        let g3 = PublicKey::from_str("112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ")
+            .unwrap()
+            .to_vec();
+        // Nova436H
+        let g4 = PublicKey::from_str("11k712d9dSb8CAujzS4PdC7Hi8EEBZWsSnt4Zr1hgke4e1Efiag")
+            .unwrap()
+            .to_vec();
+
+        let mut c1 = CbsdCounter::new();
+        c1.insert("P27-SCE4255W2107CW5000014".to_string(), 4);
+        let mut c2 = CbsdCounter::new();
+        c2.insert("2AG32PBS3101S1202000464223GY0153".to_string(), 5);
+        let mut c3 = CbsdCounter::new();
+        c3.insert("P27-SCO4255PA102206DPT000207".to_string(), 6);
+        let mut c4 = CbsdCounter::new();
+
+        // This one has less than 3 heartbeats
+        c4.insert("2AG32MBS3100196N1202000240215KY0184".to_string(), 2);
+
+        let mut counter = Counter::new();
+        counter.insert(g1, c1);
+        counter.insert(g2, c2);
+        counter.insert(g3, c3);
+        counter.insert(g4, c4);
+
+        let mut expected_model: Model = HashMap::new();
+        expected_model.insert(CellType::SercommIndoor, 1);
+        expected_model.insert(CellType::Nova436H, 1);
+        expected_model.insert(CellType::SercommOutdoor, 1);
+        expected_model.insert(CellType::Nova430I, 1);
+
+        let generated_model = generate_model(&counter);
+        assert_eq!(generated_model, expected_model);
+    }
+
+    #[tokio::test]
+    #[ignore = "credentials required"]
     async fn check_rewards() {
         // SercommIndoor
         let g1 = PublicKey::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")
@@ -357,7 +399,7 @@ mod test {
         let mut c3 = CbsdCounter::new();
         c3.insert("P27-SCO4255PA102206DPT000207".to_string(), 6);
         let mut c4 = CbsdCounter::new();
-        c4.insert("2AG32MBS3100196N1202000240215KY0184".to_string(), 5);
+        c4.insert("2AG32MBS3100196N1202000240215KY0184".to_string(), 3);
 
         let mut counter = Counter::new();
         counter.insert(g1, c1);
@@ -394,7 +436,6 @@ mod test {
 
         let rewards = construct_rewards(counter, &generated_model, &emitted)
             .await
-            .unwrap()
             .unwrap();
         assert_eq!(4, rewards.len());
 
