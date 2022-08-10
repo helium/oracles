@@ -159,13 +159,13 @@ impl Server {
         let model = generate_model(&counter);
         let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
         tracing::info!("emitted: {:#?}", emitted);
-        let rewards = self.construct_rewards(counter, &model, &emitted).await?;
+        let rewards =
+            construct_rewards(&mut self.follower_service, counter, &model, &emitted).await?;
         // tracing::info!("rewards: {:#?}", rewards);
         let mut txn = unsigned_txn(rewards, after_utc, before_utc);
 
         let signature = &self.keypair.sign(&txn.encode_to_vec())?;
         txn.reward_server_signature = signature.to_vec();
-        print_txn(&txn)?;
 
         let _ = &self
             .txn_service
@@ -177,56 +177,56 @@ impl Server {
         // - insert in the pending_txn tbl
         Ok(())
     }
+}
 
-    async fn construct_rewards(
-        &mut self,
-        counter: Counter,
-        model: &Model,
-        emitted: &Emission,
-    ) -> Result<Rewards> {
-        let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
+async fn construct_rewards(
+    follower_service: &mut FollowerService,
+    counter: Counter,
+    model: &Model,
+    emitted: &Emission,
+) -> Result<Rewards> {
+    let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
 
-        for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
-            if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin.as_ref()) {
-                let owner = self.follower_service.find_gateway(&gw_pubkey).await?.owner;
-                // This seems necessary because some owner keys apparently
-                // don't cleanly convert to PublicKey, even though the
-                // owner_pubkey isn't actually used!
-                if PublicKey::try_from(owner.as_ref()).is_err() {
+    for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
+        if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin.as_ref()) {
+            let owner = follower_service.find_gateway(&gw_pubkey).await?.owner;
+            // This seems necessary because some owner keys apparently
+            // don't cleanly convert to PublicKey, even though the
+            // owner_pubkey isn't actually used!
+            if PublicKey::try_from(owner.as_ref()).is_err() {
+                continue;
+            }
+
+            let mut reward_acc = 0;
+
+            for (cbsd_id, cnt) in per_cell_cnt {
+                if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
                     continue;
                 }
 
-                let mut reward_acc = 0;
+                let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
+                    cell_type
+                } else {
+                    continue;
+                };
 
-                for (cbsd_id, cnt) in per_cell_cnt {
-                    if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
-                        continue;
-                    }
-
-                    let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-                        cell_type
-                    } else {
-                        continue;
-                    };
-
-                    if let (Some(total_count), Some(total_reward)) =
-                        (model.get(&cell_type), emitted.get(&cell_type))
+                if let (Some(total_count), Some(total_reward)) =
+                    (model.get(&cell_type), emitted.get(&cell_type))
+                {
+                    if let Some(amt) =
+                        (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
                     {
-                        if let Some(amt) =
-                            (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
-                        {
-                            reward_acc += amt;
-                        }
+                        reward_acc += amt;
                     }
                 }
-                rewards.push(SubnetworkReward {
-                    account: owner,
-                    amount: reward_acc,
-                });
             }
+            rewards.push(SubnetworkReward {
+                account: owner,
+                amount: reward_acc,
+            });
         }
-        Ok(rewards)
     }
+    Ok(rewards)
 }
 
 async fn count_heartbeats(stream: &mut Stream) -> Result<Counter> {
@@ -456,7 +456,9 @@ mod test {
         let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
         assert_eq!(emitted, expected_emitted);
 
-        let rewards = construct_rewards(counter, &generated_model, &emitted)
+        let mut fs = FollowerService::from_env().unwrap();
+
+        let rewards = construct_rewards(&mut fs, counter, &generated_model, &emitted)
             .await
             .unwrap();
         assert_eq!(4, rewards.len());
