@@ -77,11 +77,21 @@ impl PendingTxn {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as::<_, PendingTxn>(r#" select * from pending_txn where status = $1;"#)
-            .bind(Status::Pending)
-            .fetch_all(executor)
-            .await
-            .map_err(Error::from)
+        let result =
+            sqlx::query_as::<_, PendingTxn>(r#" select * from pending_txn where status = $1;"#)
+                .bind(Status::Pending)
+                .fetch_all(executor)
+                .await
+                .map_err(Error::from);
+        match result {
+            Ok(res) => {
+                if res.is_empty() {
+                    return Ok(None);
+                }
+                Ok(Some(res))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn get_all_failed_pending_txns<'c, E>(executor: E) -> Result<Option<Vec<Self>>>

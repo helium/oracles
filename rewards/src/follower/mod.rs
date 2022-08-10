@@ -175,8 +175,9 @@ impl Follower {
                 // lookup non-cleared pending_txn
                 // mark pending as failed if txn_mgr in bnode says its failed
                 match PendingTxn::get_all_pending_txns(&self.pool).await {
-                    Ok(Some(pending_txns)) => {
+                    Ok(Some(_pending_txns)) => {
                         // do stuff to lookup and update results
+                        return Ok(())
                     }
                     Ok(None) => {
                         tracing::info!("no pending txns waiting")
