@@ -33,6 +33,7 @@ rust_decimal = "1"
 rust_decimal_macros = "1"
 tonic = "0"
 http = "*"
+prettytable-rs = "*"
 
 [dev-dependencies]
 rand = "*"

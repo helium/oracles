@@ -3,7 +3,7 @@ use crate::{
     emissions::{self, Emission},
     follower::{FollowerService, Meta},
     pending_txn::PendingTxn,
-    CellType, ConsensusTxnTrigger, Mobile, PublicKey, Result,
+    CellType, ConsensusTxnTrigger, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use emissions::{get_emissions_per_model, Model};
@@ -17,8 +17,8 @@ use poc_store::{
     file_source::{store_source, Stream},
     FileStore, FileType,
 };
+use prettytable::Table;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
-use serde_json::json;
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::broadcast;
@@ -215,7 +215,7 @@ async fn handle_files(
                         // TODO: sign this transaction with the reward server secret key
                         // - submit it to the follower
                         // - insert in the pending_txn tbl
-                        tracing::info!("txn: {:#?}", txn)
+                        print_txn(&txn)?;
                     }
                     None => {
                         tracing::error!("unable to construct rewards!");
@@ -291,12 +291,12 @@ async fn construct_rewards(
     }
 }
 
-fn int_to_tt(tt_int: i32) -> BlockchainTokenTypeV1 {
+fn int_to_tt(tt_int: i32) -> String {
     match tt_int {
-        0 => BlockchainTokenTypeV1::Hnt,
-        1 => BlockchainTokenTypeV1::Hst,
-        2 => BlockchainTokenTypeV1::Mobile,
-        3 => BlockchainTokenTypeV1::Iot,
+        0 => "Hnt".to_string(),
+        1 => "Hst".to_string(),
+        2 => "Mobile".to_string(),
+        3 => "Iot".to_string(),
         _ => panic!("unknown"),
     }
 }
@@ -311,34 +311,36 @@ fn token_type_to_int(tt: BlockchainTokenTypeV1) -> i32 {
 }
 
 pub fn print_txn(txn: &BlockchainTxnSubnetworkRewardsV1) -> Result {
-    // TODO: Fix formatting + signature printing
-    let mut rewards = Vec::with_capacity(txn.rewards.len());
+    let mut table = Table::new();
+    table.add_row(row!["account", "amount"]);
     for reward in txn.rewards.clone() {
-        rewards.push(json!({
-            "account": PublicKey::try_from(reward.account.as_ref())?.to_string(),
-            "amount": Mobile::from(reward.amount)
-        }))
+        table.add_row(row![
+            PublicKey::try_from(reward.account.as_ref())?.to_string(),
+            reward.amount
+        ]);
     }
 
-    let table = json!({
-        "rewards": rewards,
-        "start_epoch": txn.start_epoch,
-        "end_epoch": txn.end_epoch,
-        "token_type": int_to_tt(txn.token_type),
-        "signature": txn.reward_server_signature
-    });
-    print_json(&table)
+    ptable!(
+        ["start_epoch", txn.start_epoch],
+        ["end_epoch", txn.end_epoch],
+        ["token_type", int_to_tt(txn.token_type)],
+        ["rewards", table]
+    );
+    Ok(())
 }
 
-pub fn print_json<T: ?Sized + serde::Serialize>(value: &T) -> Result {
-    println!("{:#?}", serde_json::to_string_pretty(value));
+pub fn print_table(table: &prettytable::Table, footnote: Option<&String>) -> Result {
+    table.printstd();
+    if let Some(f) = footnote {
+        println!("{}", f);
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use crate::Mobile;
-    use helium_crypto::Verify;
+    use helium_crypto::{KeyTag, Keypair, Sign, Verify};
     use rand::rngs::OsRng;
     use rust_decimal_macros::dec;
 
@@ -423,6 +425,8 @@ mod test {
         let mut txn = bare_txn(rewards.clone(), after_utc, before_utc)
             .await
             .expect("bare txn");
+
+        let _ = print_txn(&txn);
 
         let signature = kp.sign(&txn.encode_to_vec()).expect("signature");
         txn.reward_server_signature = signature.clone();
