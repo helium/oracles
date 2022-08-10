@@ -1,5 +1,7 @@
 use clap::Parser;
-use poc5g_rewards::{follower::Follower, mk_db_pool, server::Server, Result};
+use poc5g_rewards::{
+    follower::Follower, keypair::load_from_file, mk_db_pool, server::Server, Result,
+};
 use tokio::{signal, sync::broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -37,8 +39,11 @@ async fn main() -> Result {
     let (trigger_sender, trigger_receiver) = broadcast::channel(2);
     let mut follower = Follower::new(pool.clone(), trigger_sender).await?;
 
+    // reward server keypair from env
+    let rs_keypair = load_from_file(&dotenv::var("REWARD_SERVER_KEYPAIR")?)?;
+
     // reward server
-    let mut reward_server = Server::new(pool.clone(), trigger_receiver).await?;
+    let mut reward_server = Server::new(pool.clone(), trigger_receiver, rs_keypair).await?;
 
     tokio::try_join!(
         follower.run(shutdown_listener.clone()),

@@ -2,6 +2,7 @@ use crate::{
     datetime_from_epoch,
     emissions::{self, Emission},
     follower::{FollowerService, Meta},
+    keypair::Keypair,
     pending_txn::PendingTxn,
     CellType, ConsensusTxnTrigger, PublicKey, Result,
 };
@@ -36,16 +37,19 @@ type Rewards = Vec<SubnetworkReward>;
 pub struct Server {
     trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
     pool: Pool<Postgres>,
+    keypair: Keypair,
 }
 
 impl Server {
     pub async fn new(
         pool: Pool<Postgres>,
         trigger_receiver: broadcast::Receiver<ConsensusTxnTrigger>,
+        keypair: Keypair,
     ) -> Result<Self> {
         let result = Self {
             pool,
             trigger_receiver,
+            keypair,
         };
         Ok(result)
     }
@@ -110,12 +114,53 @@ impl Server {
                                 after_utc,
                                 before_utc
                             );
-                            let _ = handle_files(store, after_utc, before_utc).await;
+                            let _ = &self.handle_files(store, after_utc, before_utc).await;
                         }
                     }
                 }
             },
         }
+        Ok(())
+    }
+
+    async fn handle_files(
+        &self,
+        store: FileStore,
+        after_utc: DateTime<Utc>,
+        before_utc: DateTime<Utc>,
+    ) -> Result {
+        let file_list = store
+            .list(
+                "poc5g-ingest",
+                FileType::CellHeartbeat,
+                after_utc,
+                before_utc,
+            )
+            .await?;
+
+        if file_list.is_empty() {
+            // TBD: Is this a fatal error, or do we skip this round, or do we move
+            // the last rewards up and consider this period closed
+            tracing::info!("0 files found");
+            return Ok(());
+        }
+
+        tracing::info!("found {} files", file_list.len());
+        let mut stream = store_source(store, "poc5g-ingest", file_list);
+        let counter = count_heartbeats(&mut stream).await?;
+        let model = generate_model(&counter);
+        let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
+        tracing::info!("emitted: {:#?}", emitted);
+        let rewards = construct_rewards(counter, &model, &emitted).await?;
+        // tracing::info!("rewards: {:#?}", rewards);
+        let mut txn = unsigned_txn(rewards, after_utc, before_utc);
+
+        let signature = &self.keypair.sign(&txn.encode_to_vec())?;
+        txn.reward_server_signature = signature.to_vec();
+        print_txn(&txn)?;
+
+        // - submit it to the follower
+        // - insert in the pending_txn tbl
         Ok(())
     }
 }
@@ -177,42 +222,6 @@ fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
     )
 }
 
-async fn handle_files(
-    store: FileStore,
-    after_utc: DateTime<Utc>,
-    before_utc: DateTime<Utc>,
-) -> Result {
-    let file_list = store
-        .list(
-            "poc5g-ingest",
-            FileType::CellHeartbeat,
-            after_utc,
-            before_utc,
-        )
-        .await?;
-
-    if file_list.is_empty() {
-        // TBD: Is this a fatal error, or do we skip this round, or do we move
-        // the last rewards up and consider this period closed
-        tracing::info!("0 files found");
-        return Ok(());
-    }
-
-    tracing::info!("found {} files", file_list.len());
-    let mut stream = store_source(store, "poc5g-ingest", file_list);
-    let counter = count_heartbeats(&mut stream).await?;
-    let model = generate_model(&counter);
-    let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
-    tracing::info!("emitted: {:#?}", emitted);
-    let rewards = construct_rewards(counter, &model, &emitted).await?;
-    // tracing::info!("rewards: {:#?}", rewards);
-    let bare_txn = bare_txn(rewards, after_utc, before_utc);
-    print_txn(&bare_txn)?;
-
-    // - submit it to the follower
-    // - insert in the pending_txn tbl
-    Ok(())
-}
 async fn construct_rewards(counter: Counter, model: &Model, emitted: &Emission) -> Result<Rewards> {
     let mut follower_service = FollowerService::from_env()?;
     let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
@@ -274,7 +283,7 @@ pub fn token_type_to_int(tt: BlockchainTokenTypeV1) -> i32 {
     }
 }
 
-pub fn bare_txn(
+pub fn unsigned_txn(
     rewards: Rewards,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
@@ -317,9 +326,11 @@ pub fn print_table(table: &prettytable::Table, footnote: Option<&String>) -> Res
 
 #[cfg(test)]
 mod test {
-    use crate::Mobile;
-    use helium_crypto::{KeyTag, Keypair, Sign, Verify};
-    use rand::rngs::OsRng;
+    use crate::{
+        keypair::{load_from_file, save_to_file},
+        Mobile,
+    };
+    use helium_crypto::{KeyTag, Verify};
     use rust_decimal_macros::dec;
 
     use super::*;
@@ -446,18 +457,20 @@ mod test {
             network: helium_crypto::Network::MainNet,
             key_type: helium_crypto::KeyType::Ed25519,
         };
-        let kp = Keypair::generate(key_tag, &mut OsRng);
+        let kp = Keypair::generate(key_tag);
+        let _ = save_to_file(&kp, "/tmp/swarm_key");
+        let loaded_kp = load_from_file("/tmp/swarm_key").unwrap();
 
-        let mut txn = bare_txn(rewards.clone(), after_utc, before_utc);
+        let mut txn = unsigned_txn(rewards.clone(), after_utc, before_utc);
         let _ = print_txn(&txn);
 
-        let signature = kp.sign(&txn.encode_to_vec()).expect("signature");
+        let signature = loaded_kp.sign(&txn.encode_to_vec()).expect("signature");
         txn.reward_server_signature = signature.clone();
 
-        let bare_txn = bare_txn(rewards, after_utc, before_utc);
+        let unsigned_txn = unsigned_txn(rewards, after_utc, before_utc);
         assert!(kp
             .public_key()
-            .verify(&bare_txn.encode_to_vec(), &signature)
+            .verify(&unsigned_txn.encode_to_vec(), &signature)
             .is_ok());
 
         // TODO cross check individual owner rewards
