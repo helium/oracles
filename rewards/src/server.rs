@@ -326,6 +326,7 @@ mod test {
     };
     use helium_crypto::{KeyTag, Verify};
     use rust_decimal_macros::dec;
+    use std::str::FromStr;
 
     use super::*;
 
