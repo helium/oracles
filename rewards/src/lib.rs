@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate prettytable;
 mod cell_type;
 pub mod decimal_scalar;
 pub mod emissions;

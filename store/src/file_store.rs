@@ -41,14 +41,22 @@ impl FileStore {
         Ok(Self { client })
     }
 
-    pub async fn list(
+    pub async fn list<A, B, F>(
         &self,
         bucket: &str,
-        file_type: Option<FileType>,
-        after: Option<DateTime<Utc>>,
-        before: Option<DateTime<Utc>>,
-    ) -> Result<Option<Vec<FileInfo>>> {
-        let prefix = file_type.as_ref().map(|file_type| file_type.to_string());
+        file_type: F,
+        after: A,
+        before: B,
+    ) -> Result<Vec<FileInfo>>
+    where
+        F: Into<Option<FileType>> + Copy,
+        A: Into<Option<DateTime<Utc>>> + Copy,
+        B: Into<Option<DateTime<Utc>>> + Copy,
+    {
+        let prefix = file_type
+            .into()
+            .as_ref()
+            .map(|file_type| file_type.to_string());
         let resp = self
             .client
             .list_objects_v2()
@@ -66,15 +74,11 @@ impl FileStore {
             // instead of erroring
             .filter(|obj| FileInfo::matches(obj.key().unwrap_or_default()))
             .map(|obj| FileInfo::try_from(obj).unwrap())
-            .filter(|info| after.map_or(true, |v| info.timestamp > v))
-            .filter(|info| before.map_or(true, |v| info.timestamp < v))
+            .filter(|info| after.into().map_or(true, |v| info.timestamp > v))
+            .filter(|info| before.into().map_or(true, |v| info.timestamp < v))
             .collect::<Vec<FileInfo>>();
 
-        if result.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(result))
-        }
+        Ok(result)
     }
 
     pub async fn put(&self, bucket: &str, file: &Path) -> Result {
