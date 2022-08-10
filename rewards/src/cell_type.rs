@@ -17,7 +17,7 @@ pub enum CellType {
 }
 
 impl CellType {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_cbsd_id(s: &str) -> Option<Self> {
         match s {
             s if s.starts_with(CELLTYPE_NOVA_436H) => Some(CellType::Nova436H),
             s if s.starts_with(CELLTYPE_NOVA_430I) => Some(CellType::Nova430I),

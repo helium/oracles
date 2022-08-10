@@ -194,7 +194,7 @@ pub fn generate_model(counter: &Counter) -> Model {
         .iter()
         .flat_map(|(_gw_pubkey_bin, sub_map)| sub_map.iter())
     {
-        if let Some(ct) = CellType::from_str(cbsd_id) {
+        if let Some(ct) = CellType::from_cbsd_id(cbsd_id) {
             let count = model.entry(ct).or_insert(0);
             // This cell type only gets added to the model if it has more than MIN_PER_CELL_TYPE_HEARTBEATS
             if *single_hotspot_count >= MIN_PER_CELL_TYPE_HEARTBEATS {
@@ -234,7 +234,7 @@ async fn construct_rewards(counter: Counter, model: &Model, emitted: &Emission) 
             // This seems necessary because some owner keys apparently
             // don't cleanly convert to PublicKey, even though the
             // owner_pubkey isn't actually used!
-            if PublicKey::try_from((&owner).as_ref()).is_err() {
+            if PublicKey::try_from((owner).as_ref()).is_err() {
                 continue;
             }
 
@@ -245,7 +245,7 @@ async fn construct_rewards(counter: Counter, model: &Model, emitted: &Emission) 
                     continue;
                 }
 
-                let cell_type = if let Some(cell_type) = CellType::from_str(&cbsd_id) {
+                let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
                     cell_type
                 } else {
                     continue;
