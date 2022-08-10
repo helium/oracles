@@ -57,15 +57,13 @@ impl PendingTxn {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let updated_rows = sqlx::query(
-            r#" update pending_txn set status = $1 where hash = $2;"#
-        )
-        .bind(Status::Cleared)
-        .bind(&hash)
-        .execute(executor)
-        .await
-        .map(|res| res.rows_affected())
-        .map_err(Error::from)?;
+        let updated_rows = sqlx::query(r#" update pending_txn set status = $1 where hash = $2;"#)
+            .bind(Status::Cleared)
+            .bind(&hash)
+            .execute(executor)
+            .await
+            .map(|res| res.rows_affected())
+            .map_err(Error::from)?;
         if updated_rows == 0 {
             Err(Error::not_found(format!("txn {hash} not found")))
         } else {
