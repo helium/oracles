@@ -3,7 +3,7 @@ use crate::{
     emissions::{self, Emission},
     follower::{FollowerService, Meta},
     keypair::Keypair,
-    pending_txn::PendingTxn,
+    pending_txn::{PendingTxn, Status},
     token_type::BlockchainTokenTypeV1,
     traits::b64::B64,
     transaction::client::TransactionService,
@@ -89,7 +89,7 @@ impl Server {
     pub async fn handle_trigger(&mut self, trigger: ConsensusTxnTrigger) -> Result {
         tracing::info!("chain trigger received {:#?}", trigger);
 
-        match PendingTxn::get_all_failed_pending_txns(&self.pool).await {
+        match PendingTxn::list(&self.pool, Status::Failed).await {
             Ok(Some(failed_pending_txns)) => {
                 tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns)
             }
@@ -109,7 +109,11 @@ impl Server {
                     let (after_utc, before_utc) = get_time_range(last_reward_end_time);
 
                     if before_utc <= after_utc {
-                        tracing::error!("cannot reward future stuff");
+                        tracing::error!(
+                            "cannot reward future period, before: {:?}, after: {:?}",
+                            before_utc,
+                            after_utc
+                        );
                         return Ok(());
                     }
 
@@ -179,29 +183,24 @@ impl Server {
         let txn_hash_str = txn_hash.to_b64_url()?;
         tracing::info!("txn hash: {:?}", txn_hash_str);
 
-        self.submit_txn(txn, txn_hash).await?;
+        // insert in the pending_txn tbl (status: created)
+        let pt = PendingTxn::insert_new(&self.pool, txn_hash_str.clone()).await?;
+        tracing::info!("inserted pending_txn: {:?}", pt);
 
-        // insert in the pending_txn tbl
-        let pt = PendingTxn::new(txn_hash_str).await;
-        let _ = pt.insert_into(&self.pool).await;
-
-        Ok(())
-    }
-
-    async fn submit_txn(
-        &mut self,
-        txn: BlockchainTxnSubnetworkRewardsV1,
-        txn_hash: Vec<u8>,
-    ) -> Result {
-        // submit to txn_service
-        self.txn_service
+        // submit the txn
+        if let Ok(_resp) = self
+            .txn_service
             .submit(
                 BlockchainTxn {
                     txn: Some(Txn::SubnetworkRewards(txn)),
                 },
-                txn_hash,
+                pt.created_at.to_string().as_bytes().to_vec(),
             )
-            .await?;
+            .await
+        {
+            // update this pending_txn with status::pending
+            PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending).await?;
+        }
         Ok(())
     }
 }
@@ -314,11 +313,10 @@ async fn handle_first_reward(pool: &Pool<Postgres>, trigger: &ConsensusTxnTrigge
 }
 
 fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
-    let before_utc = Utc::now() - Duration::minutes(DEFAULT_LOOKUP_DELAY);
-    (
-        datetime_from_epoch(last_reward_end_time),
-        datetime_from_epoch(before_utc.timestamp()),
-    )
+    let after_utc = datetime_from_epoch(last_reward_end_time);
+    let stop_utc = Utc::now() - Duration::minutes(DEFAULT_LOOKUP_DELAY);
+    let start_utc = min(after_utc, stop_utc);
+    (start_utc, stop_utc)
 }
 
 pub fn unsigned_txn(

@@ -26,8 +26,6 @@ pub enum Error {
     Store(#[from] poc_store::Error),
     #[error("not found")]
     NotFound(String),
-    #[error("base64 decode error")]
-    Base64DecodeError(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]
@@ -42,6 +40,8 @@ pub enum DecodeError {
     Chrono(#[from] chrono::ParseError),
     #[error("invalid decimals in {0}, only 8 allowed")]
     Decimals(String),
+    #[error("base64 decode error")]
+    Base64(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]
@@ -79,3 +79,4 @@ from_err!(EncodeError, prost::EncodeError);
 from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);
 from_err!(DecodeError, chrono::ParseError);
+from_err!(DecodeError, base64::DecodeError);

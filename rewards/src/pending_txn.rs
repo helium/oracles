@@ -6,8 +6,25 @@ use serde::{Deserialize, Serialize};
 #[sqlx(type_name = "status", rename_all = "lowercase")]
 pub enum Status {
     Cleared,
-    Pending,
+    Created,
     Failed,
+    Pending,
+}
+
+impl Status {
+    const SELECT: &'static str = r#" select * from pending_txn where status = $1; "#;
+    const UPDATE: &'static str = r#" update pending_txn set status = $1 where hash = $2; "#;
+    const UPDATE_ALL: &'static str = r#" update pending_txn set status = $1 where hash in $2; "#;
+
+    fn select_query(&self) -> &'static str {
+        Self::SELECT
+    }
+    fn update_query(&self) -> &'static str {
+        Self::UPDATE
+    }
+    fn update_all_query(&self) -> &'static str {
+        Self::UPDATE_ALL
+    }
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -16,20 +33,26 @@ pub struct PendingTxn {
     pub hash: String,
     pub status: Status,
     pub failed_reason: Option<String>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl PendingTxn {
-    pub async fn new(hash: String) -> PendingTxn {
-        PendingTxn {
+    pub async fn insert_new<'c, E>(executor: E, hash: String) -> Result<Self>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let now = Utc::now();
+        let pt = PendingTxn {
             hash,
-            status: Status::Pending,
+            status: Status::Created,
 
             failed_reason: None,
-            created_at: None,
-            updated_at: None,
-        }
+            created_at: now,
+            updated_at: now,
+        };
+        pt.insert_into(executor).await?;
+        Ok(pt)
     }
 
     pub async fn insert_into<'c, E>(&self, executor: E) -> Result
@@ -50,12 +73,12 @@ impl PendingTxn {
         .map_err(Error::from)
     }
 
-    pub async fn mark_txn_cleared<'c, E>(executor: E, hash: &str) -> Result
+    pub async fn update<'c, E>(executor: E, hash: &str, status: Status) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let updated_rows = sqlx::query(r#" update pending_txn set status = $1 where hash = $2;"#)
-            .bind(Status::Cleared)
+        let updated_rows = sqlx::query(status.update_query())
+            .bind(status)
             .bind(&hash)
             .execute(executor)
             .await
@@ -68,37 +91,35 @@ impl PendingTxn {
         }
     }
 
-    pub async fn get_all_pending_txns<'c, E>(executor: E) -> Result<Option<Vec<Self>>>
+    pub async fn update_all<'c, E>(executor: E, hashes: Vec<String>, status: Status) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let result =
-            sqlx::query_as::<_, PendingTxn>(r#" select * from pending_txn where status = $1;"#)
-                .bind(Status::Pending)
-                .fetch_all(executor)
-                .await
-                .map_err(Error::from);
-        match result {
-            Ok(res) => {
-                if res.is_empty() {
-                    return Ok(None);
-                }
-                Ok(Some(res))
-            }
-            Err(e) => Err(e),
+        let updated_rows = sqlx::query(status.update_all_query())
+            .bind(status)
+            .bind(hashes)
+            .execute(executor)
+            .await
+            .map(|res| res.rows_affected())
+            .map_err(Error::from)?;
+        if updated_rows == 0 {
+            Err(Error::not_found(
+                "failed to update pending txns".to_string(),
+            ))
+        } else {
+            Ok(())
         }
     }
 
-    pub async fn get_all_failed_pending_txns<'c, E>(executor: E) -> Result<Option<Vec<Self>>>
+    pub async fn list<'c, E>(executor: E, status: Status) -> Result<Option<Vec<Self>>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let result =
-            sqlx::query_as::<_, PendingTxn>(r#" select * from pending_txn where status = $1;"#)
-                .bind(Status::Failed)
-                .fetch_all(executor)
-                .await
-                .map_err(Error::from);
+        let result = sqlx::query_as::<_, PendingTxn>(status.select_query())
+            .bind(status)
+            .fetch_all(executor)
+            .await
+            .map_err(Error::from);
         match result {
             Ok(res) => {
                 if res.is_empty() {
