@@ -9,6 +9,7 @@ create type status AS enum (
 
 create table pending_txn (
     hash text primary key not null,
+    txn_bin bytea not null,
     status status default 'created' not null,
 
     submitted_at timestamptz,

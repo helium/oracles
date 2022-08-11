@@ -293,8 +293,12 @@ impl Server {
         }
 
         let (txn, txn_hash_str) = construct_txn(&self.keypair, rewards, start_epoch, end_epoch)?;
+
+        // binary encode the txn for storage
+        let txn_encoded = txn.encode_to_vec();
+
         // insert in the pending_txn tbl (status: created)
-        let pt = PendingTxn::insert_new(&self.pool, txn_hash_str.clone()).await?;
+        let pt = PendingTxn::insert_new(&self.pool, txn_hash_str.clone(), txn_encoded).await?;
         tracing::info!("inserted pending_txn: {:?}", pt);
 
         // submit the txn
