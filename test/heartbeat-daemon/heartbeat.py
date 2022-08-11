@@ -42,7 +42,6 @@
 import base64
 from binascii import crc32
 import pickle
-import datetime
 from decimal import Decimal
 import json
 import logging
@@ -52,9 +51,14 @@ from random import choice, randrange, uniform
 import re
 import ssl
 import uuid
-import urllib.request
 
-import dotenv
+import grpc
+
+import heartbeat_pb2
+import heartbeat_pb2_grpc
+
+from dotenv import load_dotenv
+from datetime import datetime
 
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
@@ -126,56 +130,46 @@ def build_gateways_from_env(gateways):
 
 def main(gateways):
     for gw in gateways:
-        heartbeat = {
-            'pubkey': gw['gw_addr'],
-            'hotspot_type': 'enodeb',
-            'cell_id': choice(gw['cell_ids']),
-            'timestamp': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
-            'lon': float(gw['lon']),
-            'lat': float(gw['lat']),
-            'operation_mode': choose_mode(),
-            'cbsd_category': 'A',
-            'cbsd_id': gw['fcc_id'] + gw['serial'],
-            'id': str(uuid.uuid4()),
-            'created_at': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
-        }
-        log.debug("{}".format(pformat(heartbeat)))
-
-        data = json.dumps(heartbeat).encode()
-
-        context = ssl.create_default_context()
-        hdrs = {
-            "User-Agent": "heartbeat-daemon-1",
-            "Authorization": "Bearer " + os.environ["API_TOKEN"],
-            "Content-Type": "application/json"
-        }
-        req = urllib.request.Request(
-            os.environ["HEARTBEAT_API_URL"],
-            data=data,
-            headers=hdrs,
-            method="POST",
+        curr_dt = datetime.now(),
+        heartbeat = heartbeat_pb2.cell_heartbeat_req_v1(
+            pub_key=str.encode(gw['gw_addr']),
+            hotspot_type='enodeb',
+            cell_id=choice(gw['cell_ids']),
+            timestamp=1000000,
+            lon=float(gw['lon']),
+            lat=float(gw['lat']),
+            operation_mode=choose_mode(),
+            cbsd_category='A',
+            cbsd_id=gw['fcc_id'] + gw['serial']
         )
-        log.debug("url: {}, headers: {}".format(req.full_url, pformat(req.headers)))
-        with urllib.request.urlopen(req, timeout=30, context=context) as resp:
-            if resp.status > 199 and resp.status < 300:
-                log.info(
-                    "{} status for gw: {}".format(resp.status, heartbeat["pubkey"])
-                )
-            else:
-                log.error(
-                    "{} status request data {}".format(resp.status, pformat(req))
-                )
+        #log.debug("{}".format(pformat(heartbeat)))
+        
+        url = os.environ["HEARTBEAT_GRPC_URL"]
+        api_token = grpc.access_token_call_credentials("API_TOKEN")
+                                        
+        credentials = grpc.ssl_channel_credentials()
+        metadata = [('authorization', api_token)]
+        with grpc.insecure_channel(target=url,
+                                 options=[('grpc.lb_policy_name', 'pick_first'),
+                                        ('grpc.enable_retries', 0),
+                                        ('grpc.keepalive_timeout_ms', 10000)
+                                       ]) as channel:
+            stub = heartbeat_pb2_grpc.poc_mobileStub(channel)
+            response = stub.submit_cell_heartbeat(heartbeat,metadata=metadata)
+
+            print("submit heartbeat req received response: " + response.message)        
+
 
 if __name__ == "__main__":
-
+    
     # pull config from .env
     # if set, use the location given by this var
     if 'HEARTBEAT_ENV_FILE' in os.environ:
         log.debug("loading .env from {}".format(os.environ["HEARTBEAT_ENV_FILE"]))
-        dotenv.load(os.environ["HEARTBEAT_ENV_FILE"])
+        load_dotenv(os.environ["HEARTBEAT_ENV_FILE"])
     else:
         # otherwise look in current working directory
-        dotenv.load()
+        load_dotenv()
 
     gateways = build_gateways()
 

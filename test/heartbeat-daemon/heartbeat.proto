@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package helium.poc_mobile;
+
+message speedtest_req_v1 {
+  bytes pub_key = 1;
+  string serial = 2;
+  // Timestamp of speedtest test in seconds from unix epoch
+  uint64 timestamp = 3;
+  uint64 upload_speed = 4;
+  uint64 download_speed = 5;
+  uint32 latency = 6;
+
+  bytes signature = 7;
+}
+
+message speedtest_resp_v1 { string id = 1; }
+
+message cell_heartbeat_req_v1 {
+  // Public key of the hotspot
+  bytes pub_key = 1;
+  string hotspot_type = 2;
+  uint32 cell_id = 3;
+  // Timestamp of heartbeat in seconds from unix epoch
+  uint64 timestamp = 4;
+  double lat = 5;
+  double lon = 6;
+  bool operation_mode = 7;
+  string cbsd_category = 8;
+  string cbsd_id = 9;
+
+  bytes signature = 10;
+}
+
+message cell_heartbeat_resp_v1 { string id = 1; }
+
+service poc_mobile {
+  rpc submit_speedtest(speedtest_req_v1) returns (speedtest_resp_v1);
+  rpc submit_cell_heartbeat(cell_heartbeat_req_v1)
+      returns (cell_heartbeat_resp_v1);
+}
