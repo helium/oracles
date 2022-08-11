@@ -2,8 +2,9 @@
 -- :up
 CREATE TYPE status AS ENUM (
     'cleared',
-    'pending',
-    'failed'
+    'created',
+    'failed',
+    'pending'
 );
 
 CREATE TABLE pending_txn (

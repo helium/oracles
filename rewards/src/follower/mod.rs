@@ -181,7 +181,7 @@ impl Follower {
                 // mark pending as failed if txn_mgr in bnode says its failed
                 match PendingTxn::list(&self.pool, Status::Pending).await {
                     Ok(Some(pending_txns)) => {
-                        let mut failed_txns: Vec<PendingTxn> = Vec::new();
+                        let mut failed_hashes: Vec<String> = Vec::new();
                         for txn in pending_txns {
                             let submitted: DateTime<Utc> = txn.updated_at;
                             let created_ts = txn.created_at.to_string();
@@ -190,13 +190,21 @@ impl Follower {
                                 Ok(TxnQueryRespV1 { status, .. }) => {
                                     if TxnStatus::try_from(status)? == TxnStatus::from(ProtoTxnStatus::NotFound) {
                                         if (Utc::now() - submitted) > Duration::minutes(30) {
-                                            failed_txns.push(txn)
+                                            failed_hashes.push(txn.hash)
                                         }
                                     }
                                 }
                                 Err(_) => tracing::error!("failed to retrieve txn {created_ts} status")
                             }
                         }
+                        let failed_count = failed_hashes.len();
+                        if failed_count > 0 {
+                            match PendingTxn::update_all(&self.pool, failed_hashes, Status::Failed).await {
+                                Ok(()) => { tracing::info!("successfully failed {failed_count} txns") }
+                                Err(_) => { tracing::error!("unable to update failed txns") }
+                            }
+                        }
+
                         return Ok(());
                     }
                     Ok(None) => {

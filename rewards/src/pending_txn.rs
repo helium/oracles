@@ -14,9 +14,11 @@ pub enum Status {
 impl Status {
     const SELECT: &'static str = r#" select * from pending_txn where status = $1; "#;
     const UPDATE: &'static str = r#" update pending_txn set status = $1 where hash = $2; "#;
+    const UPDATE_ALL: &'static str = r#" update pending_txn set status = $1 where hash in $2; "#;
 
     fn select_query(&self) -> &'static str { Self::SELECT }
     fn update_query(&self) -> &'static str { Self::UPDATE }
+    fn update_all_query(&self) -> &'static str { Self::UPDATE_ALL }
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -72,6 +74,24 @@ impl PendingTxn {
             .map_err(Error::from)?;
         if updated_rows == 0 {
             Err(Error::not_found(format!("txn {hash} not found")))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn update_all<'c, E>(executor: E, hashes: Vec<String>, status: Status) -> Result
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let updated_rows = sqlx::query(status.update_all_query())
+            .bind(status)
+            .bind(hashes)
+            .execute(executor)
+            .await
+            .map(|res| res.rows_affected())
+            .map_err(Error::from)?;
+        if updated_rows == 0 {
+            Err(Error::not_found(format!("failed to update pending txns")))
         } else {
             Ok(())
         }
