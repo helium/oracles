@@ -223,12 +223,12 @@ async fn construct_rewards(
     let mut rewards: Vec<SubnetworkReward> = Vec::with_capacity(counter.len());
 
     for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
-        if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin.as_ref()) {
+        if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
             let owner = follower_service.find_gateway(&gw_pubkey).await?.owner;
             // This seems necessary because some owner keys apparently
             // don't cleanly convert to PublicKey, even though the
             // owner_pubkey isn't actually used!
-            if PublicKey::try_from(owner.as_ref()).is_err() {
+            if PublicKey::try_from(&owner).is_err() {
                 continue;
             }
 
@@ -305,13 +305,12 @@ pub fn generate_model(counter: &Counter) -> Model {
 async fn handle_first_reward(pool: &Pool<Postgres>, trigger: &ConsensusTxnTrigger) -> Result<Meta> {
     tracing::info!("no last_reward_end_time found, just insert trigger block_timestamp");
 
-    let kv = Meta::insert_kv(
+    Meta::insert_kv(
         pool,
         "last_reward_end_time",
         &trigger.block_timestamp.to_string(),
     )
-    .await?;
-    Ok(kv)
+    .await
 }
 
 fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
@@ -341,7 +340,7 @@ pub fn print_txn(txn: &BlockchainTxnSubnetworkRewardsV1) -> Result {
     table.add_row(row!["account", "amount"]);
     for reward in txn.rewards.clone() {
         table.add_row(row![
-            PublicKey::try_from(reward.account.as_ref())?.to_string(),
+            PublicKey::try_from(reward.account)?.to_string(),
             reward.amount
         ]);
     }

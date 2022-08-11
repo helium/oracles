@@ -23,7 +23,7 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
     type Error = Error;
     fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
         Ok(Self {
-            pubkey: PublicKey::try_from(v.pub_key.as_ref())?,
+            pubkey: PublicKey::try_from(v.pub_key)?,
             hotspot_type: v.hotspot_type,
             cell_id: v.cell_id,
             timestamp: datetime_from_epoch(v.timestamp),

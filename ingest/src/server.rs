@@ -22,7 +22,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         request: Request<SpeedtestReqV1>,
     ) -> GrpcResult<SpeedtestRespV1> {
         let event = request.into_inner();
-        let public_key = PublicKey::try_from(event.pub_key.as_ref())
+        let public_key = PublicKey::try_from(&event.pub_key)
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
         event
             .verify(&public_key)
@@ -41,7 +41,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
         let event = request.into_inner();
-        let public_key = PublicKey::try_from(event.pub_key.as_ref())
+        let public_key = PublicKey::try_from(&event.pub_key)
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
         event
             .verify(&public_key)
