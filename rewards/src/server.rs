@@ -175,22 +175,11 @@ impl Server {
         txn.reward_server_signature = signature.to_vec();
 
         // calculate hash of the txn
-        let mut hasher = Sha256::new();
-        hasher.update(txn.encode_to_vec());
-        let txn_hash = hasher.finalize();
-        let txn_hash_str = txn_hash.to_vec().to_b64_url()?;
+        let txn_hash = txn_hash(&txn);
+        let txn_hash_str = txn_hash.to_b64_url()?;
         tracing::info!("txn hash: {:?}", txn_hash_str);
 
-        // submit to txn_service
-        let _ = &self
-            .txn_service
-            .submit(
-                BlockchainTxn {
-                    txn: Some(Txn::SubnetworkRewards(txn.clone())),
-                },
-                txn_hash.to_vec(),
-            )
-            .await;
+        self.submit_txn(txn, txn_hash).await?;
 
         // insert in the pending_txn tbl
         let pt = PendingTxn::new(txn_hash_str).await;
@@ -198,6 +187,31 @@ impl Server {
 
         Ok(())
     }
+
+    async fn submit_txn(
+        &mut self,
+        txn: BlockchainTxnSubnetworkRewardsV1,
+        txn_hash: Vec<u8>,
+    ) -> Result {
+        // submit to txn_service
+        self.txn_service
+            .submit(
+                BlockchainTxn {
+                    txn: Some(Txn::SubnetworkRewards(txn)),
+                },
+                txn_hash,
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+fn txn_hash(txn: &BlockchainTxnSubnetworkRewardsV1) -> Vec<u8> {
+    // calculate hash of the txn
+    let mut hasher = Sha256::new();
+    hasher.update(txn.encode_to_vec());
+    let txn_hash = hasher.finalize();
+    txn_hash.to_vec()
 }
 
 async fn construct_rewards(
