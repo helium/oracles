@@ -38,15 +38,21 @@ pub struct PendingTxn {
 }
 
 impl PendingTxn {
-    pub fn new(hash: String) -> PendingTxn {
-        PendingTxn {
+    pub async fn insert_new<'c, E>(executor: E, hash: String) -> Result<Self>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let now = Utc::now();
+        let pt = PendingTxn {
             hash,
             status: Status::Created,
 
             failed_reason: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
+            created_at: now,
+            updated_at: now,
+        };
+        pt.insert_into(executor).await?;
+        Ok(pt)
     }
 
     pub async fn insert_into<'c, E>(&self, executor: E) -> Result
