@@ -16,9 +16,15 @@ impl Status {
     const UPDATE: &'static str = r#" update pending_txn set status = $1 where hash = $2; "#;
     const UPDATE_ALL: &'static str = r#" update pending_txn set status = $1 where hash in $2; "#;
 
-    fn select_query(&self) -> &'static str { Self::SELECT }
-    fn update_query(&self) -> &'static str { Self::UPDATE }
-    fn update_all_query(&self) -> &'static str { Self::UPDATE_ALL }
+    fn select_query(&self) -> &'static str {
+        Self::SELECT
+    }
+    fn update_query(&self) -> &'static str {
+        Self::UPDATE
+    }
+    fn update_all_query(&self) -> &'static str {
+        Self::UPDATE_ALL
+    }
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -32,10 +38,10 @@ pub struct PendingTxn {
 }
 
 impl PendingTxn {
-    pub async fn new(hash: String) -> PendingTxn {
+    pub fn new(hash: String) -> PendingTxn {
         PendingTxn {
             hash,
-            status: Status::Pending,
+            status: Status::Created,
 
             failed_reason: None,
             created_at: Utc::now(),
@@ -91,7 +97,9 @@ impl PendingTxn {
             .map(|res| res.rows_affected())
             .map_err(Error::from)?;
         if updated_rows == 0 {
-            Err(Error::not_found("failed to update pending txns".to_string()))
+            Err(Error::not_found(
+                "failed to update pending txns".to_string(),
+            ))
         } else {
             Ok(())
         }

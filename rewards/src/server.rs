@@ -182,7 +182,7 @@ impl Server {
         self.submit_txn(txn).await?;
 
         // insert in the pending_txn tbl
-        let pt = PendingTxn::new(txn_hash_str).await;
+        let pt = PendingTxn::new(txn_hash_str);
         let _ = pt.insert_into(&self.pool).await;
 
         Ok(())
