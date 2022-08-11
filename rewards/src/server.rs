@@ -172,7 +172,7 @@ impl Server {
         let mut hasher = Sha256::new();
         hasher.update(txn.encode_to_vec());
         let txn_hash = hasher.finalize();
-        let txn_hash_str = format!("{:?}", txn_hash);
+        let txn_hash_str = txn_hash.to_vec().to_b64_url()?;
         tracing::info!("txn hash: {:?}", txn_hash_str);
 
         // submit to txn_service
@@ -295,9 +295,10 @@ async fn handle_first_reward(pool: &Pool<Postgres>, trigger: &ConsensusTxnTrigge
 }
 
 fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
+    let before_utc = Utc::now() - Duration::minutes(DEFAULT_LOOKUP_DELAY);
     (
         datetime_from_epoch(last_reward_end_time),
-        Utc::now() - Duration::minutes(DEFAULT_LOOKUP_DELAY),
+        datetime_from_epoch(before_utc.timestamp()),
     )
 }
 
