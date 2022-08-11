@@ -1,4 +1,4 @@
-use crate::{Error, PublicKey, Result};
+use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,6 @@ pub enum Status {
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
 #[sqlx(type_name = "pending_txn")]
 pub struct PendingTxn {
-    pub address: PublicKey,
     pub hash: String,
     pub status: Status,
     pub failed_reason: Option<String>,
@@ -22,9 +21,8 @@ pub struct PendingTxn {
 }
 
 impl PendingTxn {
-    pub async fn new(address: PublicKey, hash: String) -> PendingTxn {
+    pub async fn new(hash: String) -> PendingTxn {
         PendingTxn {
-            address,
             hash,
             status: Status::Pending,
 
@@ -39,12 +37,11 @@ impl PendingTxn {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
-            r#" insert into pending_txn ( address, hash, status) 
-            values ($1, $2, $3) 
+            r#" insert into pending_txn ( hash, status) 
+            values ($1, $2) 
             on conflict (hash) do nothing;
             "#,
         )
-        .bind(&self.address)
         .bind(&self.hash)
         .bind(&self.status)
         .execute(executor)

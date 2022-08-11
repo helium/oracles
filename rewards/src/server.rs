@@ -22,6 +22,7 @@ use poc_store::{
 };
 use prettytable::Table;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
+use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
@@ -161,20 +162,34 @@ impl Server {
         tracing::info!("emitted: {:#?}", emitted);
         let rewards =
             construct_rewards(&mut self.follower_service, counter, &model, &emitted).await?;
-        // tracing::info!("rewards: {:#?}", rewards);
         let mut txn = unsigned_txn(rewards, after_utc, before_utc);
 
+        // sign txn
         let signature = &self.keypair.sign(&txn.encode_to_vec())?;
         txn.reward_server_signature = signature.to_vec();
 
+        // calculate hash of the txn
+        let mut hasher = Sha256::new();
+        hasher.update(txn.encode_to_vec());
+        let txn_hash = hasher.finalize();
+        let txn_hash_str = format!("{:?}", txn_hash);
+        tracing::info!("txn hash: {:?}", txn_hash_str);
+
+        // submit to txn_service
         let _ = &self
             .txn_service
-            .submit(BlockchainTxn {
-                txn: Some(Txn::SubnetworkRewards(txn)),
-            })
+            .submit(
+                BlockchainTxn {
+                    txn: Some(Txn::SubnetworkRewards(txn.clone())),
+                },
+                txn_hash.to_vec(),
+            )
             .await;
 
-        // - insert in the pending_txn tbl
+        // insert in the pending_txn tbl
+        let pt = PendingTxn::new(txn_hash_str).await;
+        let _ = pt.insert_into(&self.pool).await;
+
         Ok(())
     }
 }
