@@ -162,6 +162,12 @@ impl Server {
         tracing::info!("emitted: {:#?}", emitted);
         let rewards =
             construct_rewards(&mut self.follower_service, counter, &model, &emitted).await?;
+
+        if rewards.is_empty() {
+            tracing::info!("nothing to reward");
+            return Ok(());
+        }
+
         let mut txn = unsigned_txn(rewards, after_utc, before_utc);
 
         // sign txn
