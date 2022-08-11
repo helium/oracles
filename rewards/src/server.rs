@@ -3,7 +3,7 @@ use crate::{
     emissions::{self, Emission},
     follower::{FollowerService, Meta},
     keypair::Keypair,
-    pending_txn::PendingTxn,
+    pending_txn::{PendingTxn, Status},
     token_type::BlockchainTokenTypeV1,
     traits::b64::B64,
     transaction::client::TransactionService,
@@ -89,7 +89,7 @@ impl Server {
     pub async fn handle_trigger(&mut self, trigger: ConsensusTxnTrigger) -> Result {
         tracing::info!("chain trigger received {:#?}", trigger);
 
-        match PendingTxn::get_all_failed_pending_txns(&self.pool).await {
+        match PendingTxn::list(&self.pool, Status::Failed).await {
             Ok(Some(failed_pending_txns)) => {
                 tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns)
             }

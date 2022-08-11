@@ -11,6 +11,7 @@ pub mod pending_txn;
 mod public_key;
 pub mod server;
 pub mod token_type;
+pub mod txn_status;
 pub mod traits;
 pub mod transaction;
 mod uuid;

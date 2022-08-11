@@ -4,12 +4,17 @@ pub use client::FollowerService;
 pub use meta::Meta;
 
 use crate::{
-    env_var, gateway::Gateway, pending_txn::PendingTxn, ConsensusTxnTrigger, Error, PublicKey,
-    Result,
+    env_var,
+    gateway::Gateway,
+    pending_txn::{PendingTxn, Status},
+    transaction::client::TransactionService,
+    txn_status::TxnStatus,
+    ConsensusTxnTrigger, Error, PublicKey, Result,
 };
+use chrono::{DateTime, Duration, Utc};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
-    FollowerTxnStreamRespV1,
+    FollowerTxnStreamRespV1, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
 };
 use sqlx::{Pool, Postgres};
 use std::str;
@@ -29,6 +34,7 @@ pub const TXN_TYPES: &[&str] = &[
 pub struct Follower {
     pool: Pool<Postgres>,
     pub service: FollowerService,
+    pub txn_service: TransactionService,
     start_block: i64,
     trigger: broadcast::Sender<ConsensusTxnTrigger>,
 }
@@ -45,6 +51,7 @@ impl Follower {
             pool,
             start_block,
             trigger,
+            txn_service: TransactionService::from_env()?
         })
     }
 
@@ -153,7 +160,7 @@ impl Follower {
         }
 
         let txn_hash = str::from_utf8(&envelope.txn_hash).unwrap();
-        match PendingTxn::mark_txn_cleared(&self.pool, txn_hash).await {
+        match PendingTxn::update(&self.pool, txn_hash, Status::Cleared).await {
             Ok(()) => Ok(()),
             // should we explicitly handle NotFound differently here?
             Err(err) => Err(err),
@@ -172,9 +179,24 @@ impl Follower {
             Ok(_) => {
                 // lookup non-cleared pending_txn
                 // mark pending as failed if txn_mgr in bnode says its failed
-                match PendingTxn::get_all_pending_txns(&self.pool).await {
-                    Ok(Some(_pending_txns)) => {
-                        // do stuff to lookup and update results
+                match PendingTxn::list(&self.pool, Status::Pending).await {
+                    Ok(Some(pending_txns)) => {
+                        let mut failed_txns: Vec<PendingTxn> = Vec::new();
+                        for txn in pending_txns {
+                            let submitted: DateTime<Utc> = txn.updated_at;
+                            let created_ts = txn.created_at.to_string();
+                            let txn_key = created_ts.as_bytes();
+                            match self.txn_service.query(txn_key).await {
+                                Ok(TxnQueryRespV1 { status, .. }) => {
+                                    if TxnStatus::try_from(status)? == TxnStatus::from(ProtoTxnStatus::NotFound) {
+                                        if (Utc::now() - submitted) > Duration::minutes(30) {
+                                            failed_txns.push(txn)
+                                        }
+                                    }
+                                }
+                                Err(_) => tracing::error!("failed to retrieve txn {created_ts} status")
+                            }
+                        }
                         return Ok(());
                     }
                     Ok(None) => {
