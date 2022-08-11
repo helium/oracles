@@ -91,7 +91,7 @@ impl PendingTxn {
             .map(|res| res.rows_affected())
             .map_err(Error::from)?;
         if updated_rows == 0 {
-            Err(Error::not_found(format!("failed to update pending txns")))
+            Err(Error::not_found("failed to update pending txns".to_string()))
         } else {
             Ok(())
         }

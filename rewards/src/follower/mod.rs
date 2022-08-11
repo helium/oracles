@@ -51,7 +51,7 @@ impl Follower {
             pool,
             start_block,
             trigger,
-            txn_service: TransactionService::from_env()?
+            txn_service: TransactionService::from_env()?,
         })
     }
 
@@ -188,20 +188,29 @@ impl Follower {
                             let txn_key = created_ts.as_bytes();
                             match self.txn_service.query(txn_key).await {
                                 Ok(TxnQueryRespV1 { status, .. }) => {
-                                    if TxnStatus::try_from(status)? == TxnStatus::from(ProtoTxnStatus::NotFound) {
-                                        if (Utc::now() - submitted) > Duration::minutes(30) {
-                                            failed_hashes.push(txn.hash)
-                                        }
+                                    if TxnStatus::try_from(status)?
+                                        == TxnStatus::from(ProtoTxnStatus::NotFound)
+                                        && (Utc::now() - submitted) > Duration::minutes(30)
+                                    {
+                                        failed_hashes.push(txn.hash)
                                     }
                                 }
-                                Err(_) => tracing::error!("failed to retrieve txn {created_ts} status")
+                                Err(_) => {
+                                    tracing::error!("failed to retrieve txn {created_ts} status")
+                                }
                             }
                         }
                         let failed_count = failed_hashes.len();
                         if failed_count > 0 {
-                            match PendingTxn::update_all(&self.pool, failed_hashes, Status::Failed).await {
-                                Ok(()) => { tracing::info!("successfully failed {failed_count} txns") }
-                                Err(_) => { tracing::error!("unable to update failed txns") }
+                            match PendingTxn::update_all(&self.pool, failed_hashes, Status::Failed)
+                                .await
+                            {
+                                Ok(()) => {
+                                    tracing::info!("successfully failed {failed_count} txns")
+                                }
+                                Err(_) => {
+                                    tracing::error!("unable to update failed txns")
+                                }
                             }
                         }
 
