@@ -30,8 +30,8 @@ impl TryFrom<FollowerGatewayRespV1> for Gateway {
             Some(value.location)
         };
         Ok(Self {
-            address: PublicKey::try_from(value.address.as_ref())?,
-            owner: PublicKey::try_from(value.owner.as_ref())?,
+            address: PublicKey::try_from(value.address)?,
+            owner: PublicKey::try_from(value.owner)?,
             location,
             last_heartbeat: None,
             last_speedtest: None,

@@ -72,6 +72,20 @@ impl Serialize for PublicKey {
     }
 }
 
+impl TryFrom<Vec<u8>> for PublicKey {
+    type Error = Error;
+    fn try_from(value: Vec<u8>) -> Result<Self> {
+        Ok(Self(helium_crypto::PublicKey::try_from(value)?))
+    }
+}
+
+impl TryFrom<&Vec<u8>> for PublicKey {
+    type Error = Error;
+    fn try_from(value: &Vec<u8>) -> Result<Self> {
+        Ok(Self(helium_crypto::PublicKey::try_from(value.as_ref())?))
+    }
+}
+
 impl TryFrom<&[u8]> for PublicKey {
     type Error = Error;
     fn try_from(value: &[u8]) -> Result<Self> {

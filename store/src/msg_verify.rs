@@ -57,7 +57,7 @@ mod test {
                 .as_ref(),
         )
         .expect("cell speedtest");
-        let public_key = PublicKey::try_from(msg.pub_key.as_ref()).expect("public key");
+        let public_key = PublicKey::try_from(msg.pub_key).expect("public key");
         assert!(msg.verify(&public_key).is_ok());
     }
 }
