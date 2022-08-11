@@ -145,7 +145,7 @@ def main(gateways):
         #log.debug("{}".format(pformat(heartbeat)))
         
         url = os.environ["HEARTBEAT_GRPC_URL"]
-        api_token = grpc.access_token_call_credentials("API_TOKEN")
+        api_token = os.environ["API_TOKEN"]
                                         
         credentials = grpc.ssl_channel_credentials()
         metadata = [('authorization', api_token)]
