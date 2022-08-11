@@ -179,7 +179,7 @@ impl Server {
         let txn_hash_str = txn_hash.to_b64_url()?;
         tracing::info!("txn hash: {:?}", txn_hash_str);
 
-        self.submit_txn(txn, txn_hash).await?;
+        self.submit_txn(txn).await?;
 
         // insert in the pending_txn tbl
         let pt = PendingTxn::new(txn_hash_str).await;
@@ -188,18 +188,15 @@ impl Server {
         Ok(())
     }
 
-    async fn submit_txn(
-        &mut self,
-        txn: BlockchainTxnSubnetworkRewardsV1,
-        txn_hash: Vec<u8>,
-    ) -> Result {
+    async fn submit_txn(&mut self, txn: BlockchainTxnSubnetworkRewardsV1) -> Result {
+        let now = Utc::now().to_string().as_bytes().to_vec();
         // submit to txn_service
         self.txn_service
             .submit(
                 BlockchainTxn {
                     txn: Some(Txn::SubnetworkRewards(txn)),
                 },
-                txn_hash,
+                now,
             )
             .await?;
         Ok(())
