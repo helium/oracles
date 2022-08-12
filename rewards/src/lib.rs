@@ -10,6 +10,7 @@ pub mod keypair;
 pub mod pending_txn;
 mod public_key;
 pub mod server;
+pub mod subnetwork_reward;
 pub mod token_type;
 pub mod traits;
 pub mod transaction;
@@ -20,6 +21,7 @@ pub use cell_type::CellType;
 use chrono::{DateTime, NaiveDateTime, Utc};
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
+pub use keypair::Keypair;
 pub use public_key::PublicKey;
 pub use uuid::Uuid;
 

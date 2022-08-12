@@ -4,8 +4,9 @@ use crate::{
     follower::{FollowerService, Meta},
     keypair::Keypair,
     pending_txn::{PendingTxn, Status},
+    subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
-    traits::b64::B64,
+    traits::{b64::B64, txn_hash::TxnHash, txn_sign::TxnSign},
     transaction::client::TransactionService,
     CellType, ConsensusTxnTrigger, PublicKey, Result,
 };
@@ -22,9 +23,8 @@ use poc_store::{
 };
 use prettytable::Table;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
-use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
-use std::collections::HashMap;
+use std::{cmp::min, collections::HashMap, str::FromStr};
 use tokio::sync::broadcast;
 
 // default minutes to delay lookup from now
@@ -172,14 +172,13 @@ impl Server {
             return Ok(());
         }
 
-        let mut txn = unsigned_txn(rewards, after_utc, before_utc);
+        // This is done to ensure that we conform to the core txn
+        let sorted_rewards = sorted_rewards(rewards);
 
-        // sign txn
-        let signature = &self.keypair.sign(&txn.encode_to_vec())?;
-        txn.reward_server_signature = signature.to_vec();
+        let mut txn = unsigned_txn(sorted_rewards, after_utc, before_utc);
+        txn.reward_server_signature = txn.sign(&self.keypair)?;
 
-        // calculate hash of the txn
-        let txn_hash = txn_hash(&txn);
+        let txn_hash = txn.hash()?;
         let txn_hash_str = txn_hash.to_b64_url()?;
         tracing::info!("txn hash: {:?}", txn_hash_str);
 
@@ -199,18 +198,11 @@ impl Server {
             .await
         {
             // update this pending_txn with status::pending
+            tracing::info!("marking pending_txn as pending");
             PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending).await?;
         }
         Ok(())
     }
-}
-
-fn txn_hash(txn: &BlockchainTxnSubnetworkRewardsV1) -> Vec<u8> {
-    // calculate hash of the txn
-    let mut hasher = Sha256::new();
-    hasher.update(txn.encode_to_vec());
-    let txn_hash = hasher.finalize();
-    txn_hash.to_vec()
 }
 
 async fn construct_rewards(

@@ -38,3 +38,16 @@ impl B64 for Vec<u8> {
         Ok(decoded)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn roundtrip() {
+        let known_b64_enc: &str = "QslzojktHlbSuMF3FEpAW0nuIhgxhm_PUjE4QXo_x9A";
+        let raw = Vec::from_b64_url(known_b64_enc).unwrap();
+        let b64 = raw.to_b64_url().unwrap();
+        assert_eq!(b64, known_b64_enc);
+    }
+}
