@@ -1,7 +1,8 @@
 use crate::{env_var, error::DecodeError, Error, FileInfo, FileType, Result};
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
-use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Error as SdkError, Region};
+use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
+use futures::TryFutureExt;
 use http::Uri;
 use std::path::Path;
 use std::str::FromStr;
@@ -64,7 +65,7 @@ impl FileStore {
             .set_prefix(prefix)
             .send()
             .await
-            .map_err(SdkError::from)?;
+            .map_err(Error::s3_error)?;
 
         let result = resp
             .contents()
@@ -92,7 +93,7 @@ impl FileStore {
             .body(byte_stream)
             .send()
             .await
-            .map_err(SdkError::from)?;
+            .map_err(Error::s3_error)?;
         Ok(())
     }
 
@@ -103,19 +104,23 @@ impl FileStore {
             .key(key)
             .send()
             .await
-            .map_err(SdkError::from)?;
+            .map_err(Error::s3_error)?;
         Ok(())
     }
 
-    pub async fn get(&self, bucket: &str, key: &str) -> Result<impl AsyncRead> {
-        let output = self
-            .client
+    pub async fn get<B, K>(&self, bucket: B, key: K) -> Result<impl AsyncRead>
+    where
+        B: Into<String>,
+        K: Into<String>,
+    {
+        // let output =
+        self.client
             .get_object()
             .bucket(bucket)
             .key(key)
             .send()
+            .map_ok(|output| output.body.into_async_read())
+            .map_err(Error::s3_error)
             .await
-            .map_err(SdkError::from)?;
-        Ok(output.body.into_async_read())
     }
 }

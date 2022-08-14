@@ -1,14 +1,14 @@
 use crate::Result;
-use helium_crypto::Sign;
+use helium_crypto::{KeyTag, Keypair as CryptoKeypair, Sign};
 use std::{convert::TryFrom, fs, io, path};
 
 #[derive(Debug)]
-pub struct Keypair(helium_crypto::Keypair);
+pub struct Keypair(pub CryptoKeypair);
 
 impl Keypair {
-    pub fn generate(key_tag: helium_crypto::KeyTag) -> Self {
+    pub fn generate(key_tag: KeyTag) -> Self {
         use rand::rngs::OsRng;
-        Keypair(helium_crypto::Keypair::generate(key_tag, &mut OsRng))
+        Keypair(CryptoKeypair::generate(key_tag, &mut OsRng))
     }
 
     pub fn public_key(&self) -> &helium_crypto::PublicKey {
@@ -17,6 +17,12 @@ impl Keypair {
 
     pub fn sign(&self, msg: &[u8]) -> Result<Vec<u8>> {
         Ok(self.0.sign(msg)?)
+    }
+
+    pub fn generate_from_entropy(key_tag: KeyTag, entropy: &[u8]) -> Result<Keypair> {
+        Ok(Keypair(CryptoKeypair::generate_from_entropy(
+            key_tag, entropy,
+        )?))
     }
 }
 
@@ -33,14 +39,14 @@ pub fn save_to_file(keypair: &Keypair, path: &str) -> io::Result<()> {
     Ok(())
 }
 
-impl From<helium_crypto::Keypair> for Keypair {
-    fn from(v: helium_crypto::Keypair) -> Self {
+impl From<CryptoKeypair> for Keypair {
+    fn from(v: CryptoKeypair) -> Self {
         Self(v)
     }
 }
 
 impl std::ops::Deref for Keypair {
-    type Target = helium_crypto::Keypair;
+    type Target = CryptoKeypair;
     fn deref(&self) -> &Self::Target {
         &self.0
     }

@@ -2,7 +2,7 @@ use crate::{Error, Result};
 use helium_proto::TxnStatus as ProtoTxnStatus;
 use std::fmt::Display;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TxnStatus(pub ProtoTxnStatus);
 
 impl From<ProtoTxnStatus> for TxnStatus {

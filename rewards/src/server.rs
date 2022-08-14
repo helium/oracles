@@ -18,13 +18,13 @@ use helium_proto::{
     BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward,
 };
 use poc_store::{
-    file_source::{store_source, Stream},
+    file_source::{store_source, ByteStream},
     FileStore, FileType,
 };
 use prettytable::Table;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Pool, Postgres};
-use std::{cmp::min, collections::HashMap, str::FromStr};
+use std::{cmp::min, collections::HashMap};
 use tokio::sync::broadcast;
 
 // default minutes to delay lookup from now
@@ -94,7 +94,7 @@ impl Server {
                 tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns)
             }
             Err(_) => {
-                tracing::error!("unable to get failed_pending_txns!")
+                tracing::error!("unable to list failed_pending_txns!")
             }
             Ok(None) => match Meta::last_reward_end_time(&self.pool).await {
                 Err(_) => {
@@ -127,7 +127,23 @@ impl Server {
                                 after_utc,
                                 before_utc
                             );
-                            let _ = &self.handle_files(store, after_utc, before_utc).await;
+
+                            match Meta::last_reward_height(&self.pool).await? {
+                                None => {
+                                    tracing::error!("cannot continue, no known last_reward_height!")
+                                }
+                                Some(last_reward_height) => {
+                                    let _ = &self
+                                        .handle_files(
+                                            store,
+                                            after_utc,
+                                            before_utc,
+                                            last_reward_height + 1,
+                                            trigger.block_height as i64,
+                                        )
+                                        .await;
+                                }
+                            }
                         }
                     }
                 }
@@ -141,6 +157,8 @@ impl Server {
         store: FileStore,
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
+        start_epoch: i64,
+        end_epoch: i64,
     ) -> Result {
         let file_list = store
             .list(
@@ -175,7 +193,7 @@ impl Server {
         // This is done to ensure that we conform to the core txn
         let sorted_rewards = sorted_rewards(rewards);
 
-        let mut txn = unsigned_txn(sorted_rewards, after_utc, before_utc);
+        let mut txn = unsigned_txn(sorted_rewards, start_epoch, end_epoch);
         txn.reward_server_signature = txn.sign(&self.keypair)?;
 
         let txn_hash = txn.hash()?;
@@ -197,9 +215,7 @@ impl Server {
             )
             .await
         {
-            // update this pending_txn with status::pending
-            tracing::info!("marking pending_txn as pending");
-            PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending).await?;
+            PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending, Utc::now()).await?;
         }
         Ok(())
     }
@@ -255,7 +271,7 @@ async fn construct_rewards(
     Ok(rewards)
 }
 
-async fn count_heartbeats(stream: &mut Stream) -> Result<Counter> {
+async fn count_heartbeats(stream: &mut ByteStream) -> Result<Counter> {
     // count heartbeats for this input stream
     let mut counter: Counter = HashMap::new();
     while let Some(Ok(msg)) = stream.next().await {
@@ -306,21 +322,22 @@ async fn handle_first_reward(pool: &Pool<Postgres>, trigger: &ConsensusTxnTrigge
 
 fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
     let after_utc = datetime_from_epoch(last_reward_end_time);
-    let stop_utc = Utc::now() - Duration::minutes(DEFAULT_LOOKUP_DELAY);
+    let now = Utc::now();
+    let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
     let start_utc = min(after_utc, stop_utc);
     (start_utc, stop_utc)
 }
 
 pub fn unsigned_txn(
     rewards: Rewards,
-    after_utc: DateTime<Utc>,
-    before_utc: DateTime<Utc>,
+    start_epoch: i64,
+    end_epoch: i64,
 ) -> BlockchainTxnSubnetworkRewardsV1 {
     BlockchainTxnSubnetworkRewardsV1 {
         rewards,
         token_type: BlockchainTokenTypeV1::from(helium_proto::BlockchainTokenTypeV1::Mobile).into(),
-        start_epoch: after_utc.timestamp() as u64,
-        end_epoch: before_utc.timestamp() as u64,
+        start_epoch: start_epoch as u64,
+        end_epoch: end_epoch as u64,
         reward_server_signature: vec![],
     }
 }
@@ -477,7 +494,7 @@ mod test {
         expected_emitted.insert(CellType::Nova436H, Mobile::from(dec!(40000000.00000000)));
 
         let after_utc = Utc::now();
-        let before_utc = after_utc - Duration::hours(24);
+        // let before_utc = after_utc - Duration::hours(24);
         let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
         assert_eq!(emitted, expected_emitted);
 
@@ -499,14 +516,14 @@ mod test {
         let _ = save_to_file(&kp, "/tmp/swarm_key");
         let loaded_kp = load_from_file("/tmp/swarm_key").unwrap();
 
-        let mut txn = unsigned_txn(rewards.clone(), after_utc, before_utc);
+        let mut txn = unsigned_txn(rewards.clone(), 1000, 1001);
         let _ = print_txn(&txn);
 
         let signature = loaded_kp.sign(&txn.encode_to_vec()).expect("signature");
         txn.reward_server_signature = signature.clone();
         let _ = print_txn(&txn);
 
-        let unsigned_txn = unsigned_txn(rewards, after_utc, before_utc);
+        let unsigned_txn = unsigned_txn(rewards, 1000, 1001);
         assert!(kp
             .public_key()
             .verify(&unsigned_txn.encode_to_vec(), &signature)

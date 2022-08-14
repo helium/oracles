@@ -44,6 +44,12 @@ impl AsRef<str> for FileInfo {
     }
 }
 
+impl From<FileInfo> for String {
+    fn from(v: FileInfo) -> Self {
+        v.key
+    }
+}
+
 impl From<(FileType, DateTime<Utc>)> for FileInfo {
     fn from(v: (FileType, DateTime<Utc>)) -> Self {
         Self {

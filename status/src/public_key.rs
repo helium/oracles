@@ -117,15 +117,3 @@ impl From<poc_store::PublicKey> for PublicKey {
         PublicKey(pkey.0)
     }
 }
-
-impl AsRef<helium_crypto::PublicKey> for PublicKey {
-    fn as_ref(&self) -> &helium_crypto::PublicKey {
-        &self.0
-    }
-}
-
-impl From<&helium_crypto::PublicKey> for PublicKey {
-    fn from(pkey: &helium_crypto::PublicKey) -> Self {
-        PublicKey(pkey.to_owned())
-    }
-}

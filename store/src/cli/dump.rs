@@ -17,8 +17,9 @@ impl Cmd {
         let mut file_stream = file_source::file_source(&[&self.in_path]);
 
         let mut wtr = Writer::from_writer(io::stdout());
-        while let Some(msg) = file_stream.next().await {
-            let dec_msg = CellHeartbeatReqV1::decode(msg?)?;
+        while let Some(result) = file_stream.next().await {
+            let msg = result?;
+            let dec_msg = CellHeartbeatReqV1::decode(msg)?;
             wtr.serialize(CellHeartbeat::try_from(dec_msg)?)?;
         }
 

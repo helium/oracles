@@ -12,11 +12,9 @@ macro_rules! impl_hash {
     ($txn_type:ty, $( $sig: ident ),+ ) => {
         impl TxnHash for $txn_type {
             fn hash(&self) -> Result<Vec<u8>> {
-                let mut buf = vec![];
                 let mut txn = self.clone();
                 $(txn.$sig = vec![];)+
-                txn.encode(& mut buf)?;
-                Ok(Sha256::digest(&buf).to_vec())
+                Ok(Sha256::digest(&txn.encode_to_vec()).to_vec())
             }
         }
     }
@@ -28,9 +26,12 @@ impl_hash!(BlockchainTxnSubnetworkRewardsV1, reward_server_signature);
 mod test {
     use super::*;
     use crate::{
-        subnetwork_reward::sorted_rewards, token_type::BlockchainTokenTypeV1, traits::b64::B64,
-        PublicKey,
+        subnetwork_reward::sorted_rewards,
+        token_type::BlockchainTokenTypeV1,
+        traits::{b64::B64, txn_sign::TxnSign},
+        Keypair, PublicKey,
     };
+    use helium_crypto::KeyTag;
     use helium_proto::SubnetworkReward;
     use std::str::FromStr;
 
@@ -57,19 +58,34 @@ mod test {
         rewards.push(r2);
         rewards = sorted_rewards(rewards);
 
-        let txn = BlockchainTxnSubnetworkRewardsV1 {
+        let mut txn = BlockchainTxnSubnetworkRewardsV1 {
             rewards,
             token_type: BlockchainTokenTypeV1::from(helium_proto::BlockchainTokenTypeV1::Mobile)
                 .into(),
-            end_epoch: 1660254319,
-            start_epoch: 1660252975,
+            end_epoch: 2000,
+            start_epoch: 1000,
             reward_server_signature: vec![],
         };
 
+        let key_tag = KeyTag {
+            network: helium_crypto::Network::MainNet,
+            key_type: helium_crypto::KeyType::Ed25519,
+        };
+        let kp = Keypair::generate(key_tag);
+
+        let sig = txn.sign(&kp).expect("unable to sign txn");
+        txn.reward_server_signature = sig.clone();
+
+        // Check that we can verify this signature
+        assert!(txn.verify(&kp.public_key().into(), &sig).is_ok());
+
+        let txn_hash = txn.hash().expect("unable to hash");
+        let txn_hash_b64url = txn_hash.to_b64_url().expect("unable to b64url enc");
+
         // This hash is taken from blockchain-node by constructing the exact same txn
         assert_eq!(
-            txn.hash().unwrap().to_b64_url().unwrap(),
-            "ut-0ubcZLZwKH1l_rQfQCBm_frdV2T6DERvbqv7h9mA"
+            txn_hash_b64url,
+            "e5AfNbDmdTUAe6jb8uVtYqXFyfdouKcdeWw2iW13n9c"
         );
     }
 }
