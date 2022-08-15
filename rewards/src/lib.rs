@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate prettytable;
 mod cell_type;
 pub mod decimal_scalar;
 pub mod emissions;
@@ -10,6 +8,7 @@ pub mod pending_txn;
 mod public_key;
 pub mod server;
 pub mod subnetwork_reward;
+pub mod subnetwork_rewards;
 pub mod token_type;
 pub mod traits;
 pub mod transaction;

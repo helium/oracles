@@ -1,8 +1,37 @@
 use helium_proto::SubnetworkReward as ProtoSubnetworkReward;
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 
+// use crate::PublicKey;
+
 #[derive(Clone, Debug)]
 struct SubnetworkReward(ProtoSubnetworkReward);
+
+// TODO: Implement SubnetworkRewardDetails such that gateways and rewards are grouped by owners.
+// i.e. SubnetworkRewardDetails(Hashmap<owner, Vec<(gateway, amount)>)
+
+// #[derive(Clone, Debug)]
+// pub struct SubnetworkRewardDetails {
+//     reward: ProtoSubnetworkReward,
+//     gateway: PublicKey,
+// }
+
+// impl SubnetworkRewardDetails {
+//     pub fn new(reward: ProtoSubnetworkReward, gateway: PublicKey) -> SubnetworkRewardDetails {
+//         Self { reward, gateway }
+//     }
+// }
+
+impl From<SubnetworkReward> for ProtoSubnetworkReward {
+    fn from(subnet_reward: SubnetworkReward) -> Self {
+        subnet_reward.0
+    }
+}
+
+impl From<ProtoSubnetworkReward> for SubnetworkReward {
+    fn from(r: ProtoSubnetworkReward) -> Self {
+        Self(r)
+    }
+}
 
 pub fn sorted_rewards(unsorted_rewards: Vec<ProtoSubnetworkReward>) -> Vec<ProtoSubnetworkReward> {
     let mut rewards: Vec<SubnetworkReward> = unsorted_rewards
@@ -11,12 +40,6 @@ pub fn sorted_rewards(unsorted_rewards: Vec<ProtoSubnetworkReward>) -> Vec<Proto
         .collect();
     rewards.sort();
     rewards.iter().map(|r| r.0.to_owned()).collect()
-}
-
-impl From<ProtoSubnetworkReward> for SubnetworkReward {
-    fn from(r: helium_proto::SubnetworkReward) -> Self {
-        Self(r)
-    }
 }
 
 impl Ord for SubnetworkReward {
