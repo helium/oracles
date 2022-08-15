@@ -33,14 +33,10 @@ impl TransactionService {
         })
     }
 
-    pub async fn submit(
-        &mut self,
-        txn: BlockchainTxn,
-        created_at_bytes: Vec<u8>,
-    ) -> Result<TxnSubmitRespV1> {
+    pub async fn submit(&mut self, txn: BlockchainTxn, key: &[u8]) -> Result<TxnSubmitRespV1> {
         let req = TxnSubmitReqV1 {
             txn: Some(txn),
-            key: created_at_bytes,
+            key: key.to_vec(),
         };
         let res = self.client.submit(req).await?.into_inner();
         Ok(res)

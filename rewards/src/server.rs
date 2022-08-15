@@ -61,13 +61,13 @@ impl Server {
         tracing::info!("chain trigger received {:#?}", trigger);
 
         match PendingTxn::list(&self.pool, Status::Failed).await {
-            Ok(Some(failed_pending_txns)) => {
+            Ok(failed_pending_txns) if !failed_pending_txns.is_empty() => {
                 tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns)
             }
             Err(_) => {
                 tracing::error!("unable to list failed_pending_txns!")
             }
-            Ok(None) => match Meta::last_reward_end_time(&self.pool).await {
+            Ok(_) => match Meta::last_reward_end_time(&self.pool).await {
                 Err(_) => {
                     tracing::error!("unable to get failed_pending_txns!")
                 }
@@ -130,7 +130,7 @@ impl Server {
                 BlockchainTxn {
                     txn: Some(Txn::SubnetworkRewards(txn)),
                 },
-                pt.created_at.to_string().as_bytes().to_vec(),
+                &pt.pending_key()?,
             )
             .await
         {

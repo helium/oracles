@@ -11,7 +11,7 @@ use crate::{
     txn_status::TxnStatus,
     ConsensusTxnTrigger, Error, Result,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
     FollowerTxnStreamRespV1, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
@@ -154,12 +154,12 @@ impl Follower {
 
         let txn_ht = &envelope.height;
         let txn_hash = &envelope.txn_hash.to_b64_url()?;
-        let txn_ts = &envelope.timestamp;
+        let txn_ts = envelope.timestamp;
         match PendingTxn::update(
             &self.pool,
             txn_hash,
             Status::Cleared,
-            datetime_from_epoch(*txn_ts as i64),
+            datetime_from_epoch(txn_ts as i64),
         )
         .await
         {
@@ -198,30 +198,35 @@ impl Follower {
                 // lookup non-cleared pending_txn
                 // mark pending as failed if txn_mgr in bnode says its failed
                 match PendingTxn::list(&self.pool, Status::Pending).await {
-                    Ok(Some(pending_txns)) => {
+                    Ok(pending_txns) => {
                         let mut failed_hashes: Vec<String> = Vec::new();
                         for txn in pending_txns {
-                            let submitted: DateTime<Utc> = txn.updated_at;
-                            let created_ts = txn.created_at.to_string();
-                            let txn_key = created_ts.as_bytes();
-                            match self.txn_service.query(txn_key).await {
+                            let submitted_at = txn.submitted_at()?;
+                            let created_at = txn.created_at()?;
+                            let txn_key = txn.pending_key()?;
+                            match self.txn_service.query(&txn_key).await {
                                 Ok(TxnQueryRespV1 { status, .. }) => {
                                     if TxnStatus::try_from(status)?
                                         == TxnStatus::from(ProtoTxnStatus::NotFound)
-                                        && (Utc::now() - submitted) > Duration::minutes(30)
+                                        && (Utc::now() - submitted_at) > Duration::minutes(30)
                                     {
                                         failed_hashes.push(txn.hash)
                                     }
                                 }
                                 Err(_) => {
-                                    tracing::error!("failed to retrieve txn {created_ts} status")
+                                    tracing::error!("failed to retrieve txn {created_at} status")
                                 }
                             }
                         }
                         let failed_count = failed_hashes.len();
                         if failed_count > 0 {
-                            match PendingTxn::update_all(&self.pool, failed_hashes, Status::Failed)
-                                .await
+                            match PendingTxn::update_all(
+                                &self.pool,
+                                failed_hashes,
+                                Status::Failed,
+                                Utc::now(),
+                            )
+                            .await
                             {
                                 Ok(()) => {
                                     tracing::info!("successfully failed {failed_count} txns")
@@ -233,9 +238,6 @@ impl Follower {
                         }
 
                         return Ok(());
-                    }
-                    Ok(None) => {
-                        tracing::info!("no pending txns waiting")
                     }
                     Err(_) => {
                         tracing::error!("unable to retrieve outstanding pending txns")

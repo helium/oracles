@@ -1,32 +1,72 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Utc};
+use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "status", rename_all = "lowercase")]
 pub enum Status {
-    Cleared,
     Created,
-    Failed,
     Pending,
+    Cleared,
+    Failed,
 }
 
 impl Status {
-    const SELECT: &'static str = r#" select * from pending_txn where status = $1; "#;
-    const UPDATE: &'static str =
-        r#" update pending_txn set status = $1, updated_at = $2 where hash = $3; "#;
-    // from https://github.com/launchbadge/sqlx/blob/main/FAQ.md (we cannot do hash in vec easily)
-    const UPDATE_ALL: &'static str =
-        r#" update pending_txn set status = $1 where hash = any($2); "#;
-
-    fn select_query(&self) -> &'static str {
-        Self::SELECT
-    }
     fn update_query(&self) -> &'static str {
-        Self::UPDATE
+        match self {
+            Self::Created => {
+                r#" 
+                update pending_txn set 
+                    status = $1
+                where hash = $3; 
+                "#
+            }
+            Self::Pending => {
+                r#" 
+                update pending_txn set 
+                    status = $1, 
+                    submitted_at = $2 
+                where hash = $3; 
+                "#
+            }
+            Self::Cleared | Self::Failed => {
+                r#" 
+                update pending_txn set 
+                    status = $1, 
+                    completed_at = $2
+                where hash = $3; 
+                "#
+            }
+        }
     }
+
     fn update_all_query(&self) -> &'static str {
-        Self::UPDATE_ALL
+        match self {
+            Self::Created => {
+                r#" 
+                update pending_txn set 
+                    status = $1
+                where hash = any($3); 
+                "#
+            }
+            Self::Pending => {
+                r#" 
+                update pending_txn set 
+                    status = $1, 
+                    submitted_at = $2 
+                where hash = any($3); 
+                "#
+            }
+            Self::Cleared | Self::Failed => {
+                r#" 
+                update pending_txn set 
+                    status = $1, 
+                    completed_at = $2
+                where hash = any($3); 
+                "#
+            }
+        }
     }
 }
 
@@ -36,107 +76,115 @@ pub struct PendingTxn {
     pub hash: String,
     pub status: Status,
     pub failed_reason: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+
+    pub submitted_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 impl PendingTxn {
+    pub fn pending_key(&self) -> Result<Vec<u8>> {
+        self.created_at
+            .map(|ts| ts.timestamp_millis().to_be_bytes().to_vec())
+            .ok_or_else(|| Error::not_found("no created at in pending txn"))
+    }
+
+    pub fn submitted_at(&self) -> Result<DateTime<Utc>> {
+        self.submitted_at
+            .ok_or_else(|| Error::not_found("no pending submitted_at present"))
+    }
+
+    pub fn created_at(&self) -> Result<DateTime<Utc>> {
+        self.created_at
+            .ok_or_else(|| Error::not_found("no pending created_at present"))
+    }
+
     pub async fn insert_new<'c, E>(executor: E, hash: String) -> Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let now = Utc::now();
         let pt = PendingTxn {
             hash,
             status: Status::Created,
 
             failed_reason: None,
-            created_at: now,
-            updated_at: now,
+            created_at: None,
+            updated_at: None,
+
+            submitted_at: None,
+            completed_at: None,
         };
-        pt.insert_into(executor).await?;
-        Ok(pt)
+        pt.insert_into(executor).await
     }
 
-    pub async fn insert_into<'c, E>(&self, executor: E) -> Result
+    pub async fn insert_into<'c, E>(&self, executor: E) -> Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query(
-            r#" insert into pending_txn ( hash, status) 
+        sqlx::query_as::<_, Self>(
+            r#" 
+            insert into pending_txn ( hash, status) 
             values ($1, $2) 
-            on conflict (hash) do nothing;
+            on conflict (hash) do nothing
+            returning *;
             "#,
         )
         .bind(&self.hash)
         .bind(&self.status)
-        .execute(executor)
-        .await
-        .map(|_| ())
+        .fetch_one(executor)
         .map_err(Error::from)
+        .await
     }
 
-    pub async fn update<'c, E>(
+    pub async fn update<'c, E, T>(executor: E, hash: &str, status: Status, timestamp: T) -> Result
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        T: Into<DateTime<Utc>>,
+    {
+        sqlx::query(status.update_query())
+            .bind(status)
+            .bind(hash)
+            .bind(timestamp.into())
+            .execute(executor)
+            .map_ok(|_| ())
+            .map_err(Error::from)
+            .await
+    }
+
+    pub async fn update_all<'c, E, T>(
         executor: E,
-        hash: &str,
+        hashes: Vec<String>,
         status: Status,
-        updated_at: DateTime<Utc>,
+        timestamp: T,
     ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        T: Into<DateTime<Utc>>,
     {
-        let updated_rows = sqlx::query(status.update_query())
+        sqlx::query(status.update_all_query())
             .bind(status)
-            .bind(updated_at)
-            .bind(&hash)
+            .bind(hashes)
+            .bind(timestamp.into())
             .execute(executor)
+            .map_ok(|_| ())
+            .map_err(Error::from)
             .await
-            .map(|res| res.rows_affected())
-            .map_err(Error::from)?;
-        if updated_rows == 0 {
-            Err(Error::not_found(format!("txn {hash} not found")))
-        } else {
-            Ok(())
-        }
     }
 
-    pub async fn update_all<'c, E>(executor: E, hashes: Vec<String>, status: Status) -> Result
+    pub async fn list<'c, E>(executor: E, status: Status) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let updated_rows = sqlx::query(status.update_all_query())
-            .bind(&status)
-            .bind(&hashes)
-            .execute(executor)
-            .await
-            .map(|res| res.rows_affected())
-            .map_err(Error::from)?;
-        if updated_rows == 0 {
-            Err(Error::not_found(
-                "failed to update pending txns".to_string(),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-
-    pub async fn list<'c, E>(executor: E, status: Status) -> Result<Option<Vec<Self>>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        let result = sqlx::query_as::<_, PendingTxn>(status.select_query())
-            .bind(status)
-            .fetch_all(executor)
-            .await
-            .map_err(Error::from);
-        match result {
-            Ok(res) => {
-                if res.is_empty() {
-                    return Ok(None);
-                }
-                Ok(Some(res))
-            }
-            Err(e) => Err(e),
-        }
+        sqlx::query_as::<_, PendingTxn>(
+            r#"
+            select * from pending_txn where status = $1;
+            "#,
+        )
+        .bind(status)
+        .fetch_all(executor)
+        .map_err(Error::from)
+        .await
     }
 }
