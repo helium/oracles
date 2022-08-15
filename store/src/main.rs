@@ -13,7 +13,7 @@ pub enum Cmd {
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Helium Mobile Ingest Server")]
+#[clap(about = "Helium Ingest Server")]
 pub struct Cli {
     #[clap(subcommand)]
     cmd: Cmd,

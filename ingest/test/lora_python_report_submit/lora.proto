@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package helium.poc_lora;
+
+enum data_rate {
+  SF7BW125 = 0;
+  SF8BW125 = 1;
+  SF9BW125 = 2;
+  SF10BW125 = 3;
+  SF12BW125 = 4;
+  // TODO: add final values
+}
+
+enum invalid_reason {
+  bad_signature = 0;
+  // TODO: add final values
+}
+message lora_beacon_report_req_v1 {
+  bytes beacon_id = 1;  // likely be a concatenation of local and remote entropy so maybe not needed if we already include both fields ? 
+  bytes pub_key = 2;  
+  bytes local_entropy = 3;
+  bytes remote_entropy = 4;
+  bytes data = 5;
+  float frequency = 6;
+  int32 channel = 7;
+  data_rate datarate = 8;
+  int32 tx_power = 9;
+  // Timestamp of beacon report submit
+  uint64 timestamp = 10;
+  bytes signature = 11;
+}
+
+message lora_beacon_report_resp_v1 { string id = 1; }
+
+message lora_witness_report_req_v1 {
+  bytes beacon_id = 1;
+  bytes pub_key = 2;
+  bytes packet = 3;
+  uint64 timestamp = 4;
+  uint32 ts_res = 5;
+  sint32 signal = 6;
+  float snr = 7;
+  float frequency = 8;
+  int32 channel = 9;
+  data_rate datarate = 10;
+  bytes signature = 11;
+}
+
+message lora_witness_report_resp_v1 { string id = 1; }
+
+message invalid_beacon_report_v1 {
+    lora_beacon_report_req_v1 beacon = 1;
+    invalid_reason invalid_reason = 2;
+    bytes invalid_details = 3;    
+}
+
+message invalid_witness_report_v1 {
+    lora_witness_report_req_v1 witness = 1;
+    invalid_reason invalid_reason = 2;
+    bytes invalid_details = 3;    
+}
+
+message valid_poc_v1 {
+  bytes poc_id = 1;
+  lora_beacon_report_req_v1 beacon_report = 2;
+  repeated lora_witness_report_req_v1 witness_reports = 3;
+}
+
+service poc_lora {
+  rpc submit_lora_beacon(lora_beacon_report_req_v1) returns (lora_beacon_report_resp_v1);
+  rpc submit_lora_witness(lora_witness_report_req_v1) returns (lora_witness_report_resp_v1);
+}
+

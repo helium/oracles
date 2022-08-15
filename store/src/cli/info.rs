@@ -2,6 +2,9 @@ use crate::{cli::print_json, datetime_from_epoch, file_source, Error, FileInfo, 
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use helium_proto::services::poc_lora::{
+    LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+};
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
     Entropy, Message,
@@ -67,6 +70,14 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::Entropy => {
             Entropy::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
+        FileType::LoraBeaconIngestReport => LoraBeaconIngestReportV1::decode(buf)
+            .map(|entry| datetime_from_epoch(entry.received_timestamp))?,
+        FileType::LoraWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
+            .map(|entry| datetime_from_epoch(entry.received_timestamp))?,
+        FileType::LoraValidPoc => LoraValidPocV1::decode(buf)
+            .map(|entry| datetime_from_epoch(entry.beacon_report.unwrap().received_timestamp))?,
+
+        _ => Utc::now(),
     };
     Ok(result)
 }

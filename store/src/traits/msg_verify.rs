@@ -4,6 +4,9 @@ use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
     Message,
 };
+use helium_proto::{
+    services::poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
+};
 
 pub trait MsgVerify {
     fn verify(&self, verifier: &PublicKey) -> Result;
@@ -25,6 +28,8 @@ macro_rules! impl_msg_verify {
 
 impl_msg_verify!(CellHeartbeatReqV1, signature);
 impl_msg_verify!(SpeedtestReqV1, signature);
+impl_msg_verify!(LoraBeaconReportReqV1, signature);
+impl_msg_verify!(LoraWitnessReportReqV1, signature);
 
 #[cfg(test)]
 mod test {
@@ -57,4 +62,6 @@ mod test {
         let public_key = PublicKey::from_bytes(&msg.pub_key).expect("public key");
         assert!(msg.verify(&public_key).is_ok());
     }
+    // TODO: Add tests for lora beacon and witness reports
+
 }

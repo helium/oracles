@@ -62,7 +62,7 @@ impl poc_mobile::PocMobile for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
+pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> Result {
     let grpc_addr: SocketAddr = env::var("GRPC_SOCKET_ADDR")
         .map_or_else(
             |_| SocketAddr::from_str("0.0.0.0:9081"),
@@ -77,7 +77,6 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
     let store_path = std::env::var("INGEST_STORE")?;
     let store_base_path = Path::new(&store_path);
 
-    // heartbeats
     let (heartbeat_tx, heartbeat_rx) = file_sink::message_channel(50);
     let mut heartbeat_sink =
         file_sink::FileSinkBuilder::new(FileType::CellHeartbeat, store_base_path, heartbeat_rx)
@@ -93,7 +92,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
             .create()
             .await?;
 
-    let poc_mobile = GrpcServer {
+    let grpc_server = GrpcServer {
         speedtest_tx,
         heartbeat_tx,
     };
@@ -103,14 +102,20 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
             .unwrap()
     })?;
 
-    tracing::info!("grpc listening on {}", grpc_addr);
+    tracing::info!(
+        "grpc listening on {} and server mode {}",
+        grpc_addr,
+        server_mode
+    );
 
+    //TODO start a service with either the poc mobile or poc lora endpoints only - not both
+    //     use _server_mode (set above ) to decide
     let server = transport::Server::builder()
         .layer(poc_metrics::ActiveRequestsLayer::new(
             "ingest_server_grpc_connection_count",
         ))
         .add_service(poc_mobile::Server::with_interceptor(
-            poc_mobile,
+            grpc_server,
             move |req: Request<()>| match req.metadata().get("authorization") {
                 Some(t) if api_token == t => Ok(req),
                 _ => Err(Status::unauthenticated("No valid auth token")),
