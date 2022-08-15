@@ -1,5 +1,5 @@
 use crate::{env_var, Error, FileStore, Result};
-use futures_util::stream::StreamExt;
+use futures::StreamExt;
 use std::{
     path::{Path, PathBuf},
     time::Duration,

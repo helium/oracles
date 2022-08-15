@@ -63,7 +63,7 @@ impl FileFilter {
         store
             .list(
                 bucket,
-                self.file_type.clone(),
+                self.file_type,
                 self.after.map(datetime_from_naive),
                 self.before.map(datetime_from_naive),
             )

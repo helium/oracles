@@ -69,6 +69,13 @@ impl Error {
     pub fn channel() -> Error {
         Error::Channel
     }
+
+    pub fn s3_error<T>(err: T) -> Self
+    where
+        T: Into<aws_sdk_s3::Error>,
+    {
+        Self::from(err.into())
+    }
 }
 
 impl DecodeError {

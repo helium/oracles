@@ -1,7 +1,8 @@
 use crate::{env_var, error::DecodeError, Error, FileInfo, FileType, Result};
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
-use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Error as SdkError, Region};
+use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
+use futures::TryFutureExt;
 use http::Uri;
 use std::path::Path;
 use std::str::FromStr;
@@ -41,27 +42,30 @@ impl FileStore {
         Ok(Self { client })
     }
 
-    pub async fn list(
+    pub async fn list<A, B, F>(
         &self,
         bucket: &str,
-        file_type: Option<FileType>,
-        after: Option<DateTime<Utc>>,
-        before: Option<DateTime<Utc>>,
-    ) -> Result<Vec<FileInfo>> {
-        let prefix = file_type.as_ref().map(|file_type| file_type.to_string());
-        let start_after = file_type
-            .zip(after)
-            .map(FileInfo::from)
-            .map(|info| info.key);
+        file_type: F,
+        after: A,
+        before: B,
+    ) -> Result<Vec<FileInfo>>
+    where
+        F: Into<Option<FileType>> + Copy,
+        A: Into<Option<DateTime<Utc>>> + Copy,
+        B: Into<Option<DateTime<Utc>>> + Copy,
+    {
+        let prefix = file_type
+            .into()
+            .as_ref()
+            .map(|file_type| file_type.to_string());
         let resp = self
             .client
             .list_objects_v2()
             .bucket(bucket)
-            .set_start_after(start_after)
             .set_prefix(prefix)
             .send()
             .await
-            .map_err(SdkError::from)?;
+            .map_err(Error::s3_error)?;
 
         let result = resp
             .contents()
@@ -71,8 +75,10 @@ impl FileStore {
             // instead of erroring
             .filter(|obj| FileInfo::matches(obj.key().unwrap_or_default()))
             .map(|obj| FileInfo::try_from(obj).unwrap())
-            .filter(|info| before.map_or(true, |v| info.timestamp > v))
+            .filter(|info| after.into().map_or(true, |v| info.timestamp > v))
+            .filter(|info| before.into().map_or(true, |v| info.timestamp < v))
             .collect::<Vec<FileInfo>>();
+
         Ok(result)
     }
 
@@ -87,7 +93,7 @@ impl FileStore {
             .body(byte_stream)
             .send()
             .await
-            .map_err(SdkError::from)?;
+            .map_err(Error::s3_error)?;
         Ok(())
     }
 
@@ -98,19 +104,23 @@ impl FileStore {
             .key(key)
             .send()
             .await
-            .map_err(SdkError::from)?;
+            .map_err(Error::s3_error)?;
         Ok(())
     }
 
-    pub async fn get(&self, bucket: &str, key: &str) -> Result<impl AsyncRead> {
-        let output = self
-            .client
+    pub async fn get<B, K>(&self, bucket: B, key: K) -> Result<impl AsyncRead>
+    where
+        B: Into<String>,
+        K: Into<String>,
+    {
+        // let output =
+        self.client
             .get_object()
             .bucket(bucket)
             .key(key)
             .send()
+            .map_ok(|output| output.body.into_async_read())
+            .map_err(Error::s3_error)
             .await
-            .map_err(SdkError::from)?;
-        Ok(output.body.into_async_read())
     }
 }

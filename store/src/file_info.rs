@@ -38,6 +38,18 @@ impl FromStr for FileInfo {
     }
 }
 
+impl AsRef<str> for FileInfo {
+    fn as_ref(&self) -> &str {
+        &self.key
+    }
+}
+
+impl From<FileInfo> for String {
+    fn from(v: FileInfo) -> Self {
+        v.key
+    }
+}
+
 impl From<(FileType, DateTime<Utc>)> for FileInfo {
     fn from(v: (FileType, DateTime<Utc>)) -> Self {
         Self {
@@ -81,7 +93,7 @@ impl FileInfo {
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
     CellHeartbeat,

@@ -20,12 +20,18 @@ pub enum Error {
     Service(#[from] helium_proto::services::Error),
     #[error("grpc {}", .0.message())]
     Grpc(#[from] tonic::Status),
+    #[error("http server error")]
+    Server(#[from] hyper::Error),
+    #[error("http server extension error")]
+    ServerExtension(#[from] axum::extract::rejection::ExtensionRejection),
     #[error("crypto error")]
     Crypto(#[from] helium_crypto::Error),
     #[error("store error")]
     Store(#[from] poc_store::Error),
     #[error("not found")]
     NotFound(String),
+    #[error("base64 decode error")]
+    Base64DecodeError(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]
@@ -40,14 +46,14 @@ pub enum DecodeError {
     Chrono(#[from] chrono::ParseError),
     #[error("invalid decimals in {0}, only 8 allowed")]
     Decimals(String),
-    #[error("base64 decode error")]
-    Base64(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]
 pub enum EncodeError {
     #[error("prost error")]
     Prost(#[from] helium_proto::EncodeError),
+    #[error("json error")]
+    Json(#[from] serde_json::Error),
 }
 
 impl Error {
@@ -74,9 +80,18 @@ macro_rules! from_err {
 
 // Encode Errors
 from_err!(EncodeError, prost::EncodeError);
+from_err!(EncodeError, serde_json::Error);
 
 // Decode Errors
 from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);
 from_err!(DecodeError, chrono::ParseError);
-from_err!(DecodeError, base64::DecodeError);
+
+impl From<Error> for (http::StatusCode, String) {
+    fn from(v: Error) -> Self {
+        match v {
+            Error::NotFound(msg) => (http::StatusCode::NOT_FOUND, msg),
+            err => (http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+        }
+    }
+}

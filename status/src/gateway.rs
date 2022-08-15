@@ -1,6 +1,6 @@
-use crate::{datetime_from_epoch, follower::FollowerService, Error, PublicKey, Result};
+use crate::{Error, PublicKey, Result};
 use chrono::{DateTime, Utc};
-use helium_proto::FollowerGatewayRespV1;
+use poc_store::datetime_from_epoch;
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 
@@ -10,8 +10,6 @@ pub const MAX_GATEWAY_COUNT: u32 = 1000;
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
 pub struct Gateway {
     pub address: PublicKey,
-    pub owner: PublicKey,
-    pub location: Option<String>,
 
     pub last_heartbeat: Option<DateTime<Utc>>,
     pub last_speedtest: Option<DateTime<Utc>>,
@@ -21,24 +19,15 @@ pub struct Gateway {
     pub created_at: Option<DateTime<Utc>>,
 }
 
-impl TryFrom<FollowerGatewayRespV1> for Gateway {
-    type Error = Error;
-    fn try_from(value: FollowerGatewayRespV1) -> Result<Self> {
-        let location = if value.location.is_empty() {
-            None
-        } else {
-            Some(value.location)
-        };
-        Ok(Self {
-            address: PublicKey::try_from(value.address.as_ref())?,
-            owner: PublicKey::try_from(value.owner.as_ref())?,
-            location,
+impl Gateway {
+    pub fn with_address(address: PublicKey) -> Self {
+        Self {
+            address,
             last_heartbeat: None,
             last_speedtest: None,
             last_attach: None,
-
             created_at: None,
-        })
+        }
     }
 }
 
@@ -51,17 +40,17 @@ enum TimestampField {
 impl TimestampField {
     const UPDATE_LAST_HEARTBEAT: &'static str = r#"
         update gateway set
-            last_heartbeat = $2
+            last_heartbeat = greatest(last_heartbeat, $2)
         where address = $1
         "#;
     const UPDATE_LAST_SPEEDTEST: &'static str = r#"
         update gateway set
-            last_speedtest = $2
+            last_speedtest = greatest(last_speedtest, $2)
         where address = $1
         "#;
     const UPDATE_LAST_ATTACH: &'static str = r#"
         update gateway set
-            last_attach = $2
+            last_attach = greatest(last_attach, $2)
         where address = $1
         "#;
 
@@ -91,23 +80,14 @@ impl Gateway {
             r#"
         insert into gateway (
             address, 
-            owner, 
-            location, 
             last_heartbeat, 
             last_speedtest, 
             last_attach
-        ) values ($1, $2, $3, $4, $5, $6)
-        on conflict (address) do update set
-            owner = EXCLUDED.owner,
-            location = EXCLUDED.location,
-            last_heartbeat = EXCLUDED.last_heartbeat,
-            last_speedtest = EXCLUDED.last_speedtest,
-            last_attach = EXCLUDED.last_attach;
+        ) values ($1, $2, $3, $4)
+        on conflict (address) do nothing
             "#,
         )
         .bind(&self.address)
-        .bind(&self.owner)
-        .bind(&self.location)
         .bind(self.last_heartbeat)
         .bind(self.last_speedtest)
         .bind(self.last_attach)
@@ -117,37 +97,8 @@ impl Gateway {
         .map_err(Error::from)
     }
 
-    pub async fn update_owner<'c, 'q, E>(
-        executor: E,
-        address: &PublicKey,
-        owner: &PublicKey,
-    ) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        let rows_affected = sqlx::query(
-            r#"
-        update gateway set
-            owner = $2
-        where address = $1
-            "#,
-        )
-        .bind(&address)
-        .bind(&owner)
-        .execute(executor)
-        .await
-        .map(|res| res.rows_affected())
-        .map_err(Error::from)?;
-        if rows_affected == 0 {
-            Err(Error::not_found(format!("gateway {address} not found")))
-        } else {
-            Ok(())
-        }
-    }
-
     async fn _update_last_timestamp<'c, 'q, E>(
         executor: E,
-        follower: &'q mut FollowerService,
         field: TimestampField,
         address: &'q PublicKey,
         timestamp: &'q DateTime<Utc>,
@@ -163,7 +114,7 @@ impl Gateway {
             .map(|res| res.rows_affected())
             .map_err(Error::from)?;
         if rows_affected == 0 {
-            let mut gw = Gateway::try_from(follower.find_gateway(address).await?)?;
+            let mut gw = Gateway::with_address(address.to_owned());
             field.update_gateway(&mut gw, *timestamp);
             gw.insert_into(executor).await
         } else {
@@ -173,59 +124,35 @@ impl Gateway {
 
     pub async fn update_last_heartbeat<'c, 'q, E>(
         executor: E,
-        follower: &'q mut FollowerService,
         address: &'q PublicKey,
         timestamp: &'q DateTime<Utc>,
     ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        Self::_update_last_timestamp(
-            executor,
-            follower,
-            TimestampField::Heartbeat,
-            address,
-            timestamp,
-        )
-        .await
+        Self::_update_last_timestamp(executor, TimestampField::Heartbeat, address, timestamp).await
     }
 
     pub async fn update_last_speedtest<'c, 'q, E>(
         executor: E,
-        follower: &'q mut FollowerService,
         address: &'q PublicKey,
         timestamp: &'q DateTime<Utc>,
     ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        Self::_update_last_timestamp(
-            executor,
-            follower,
-            TimestampField::SpeedTest,
-            address,
-            timestamp,
-        )
-        .await
+        Self::_update_last_timestamp(executor, TimestampField::SpeedTest, address, timestamp).await
     }
 
     pub async fn update_last_attach<'c, E>(
         executor: E,
-        follower: &'static mut FollowerService,
         address: &'static PublicKey,
         timestamp: &'static DateTime<Utc>,
     ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        Self::_update_last_timestamp(
-            executor,
-            follower,
-            TimestampField::Attach,
-            address,
-            timestamp,
-        )
-        .await
+        Self::_update_last_timestamp(executor, TimestampField::Attach, address, timestamp).await
     }
 
     pub async fn get<'c, E>(executor: E, address: &PublicKey) -> Result<Option<Self>>

@@ -23,7 +23,8 @@ impl Cmd {
 
         let mut count = 1;
         let buf = match file_stream.next().await {
-            Some(buf) => buf?,
+            Some(Ok(buf)) => buf,
+            Some(Err(err)) => return Err(err),
             None => {
                 return Err(Error::not_found("no message found in file source"));
             }
@@ -32,8 +33,9 @@ impl Cmd {
         let first_timestamp = get_timestamp(&file_info.file_type, &buf)?;
         {
             let mut last_buf: Option<BytesMut> = None;
-            while let Some(buf) = file_stream.next().await {
-                last_buf = Some(buf?);
+            while let Some(result) = file_stream.next().await {
+                let buf = result?;
+                last_buf = Some(buf);
                 count += 1;
             }
 
