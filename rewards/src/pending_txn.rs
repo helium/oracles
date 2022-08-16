@@ -19,23 +19,23 @@ impl Status {
                 r#" 
                 update pending_txn set 
                     status = $1
-                where hash = $3; 
+                where hash = $2; 
                 "#
             }
             Self::Pending => {
                 r#" 
                 update pending_txn set 
                     status = $1, 
-                    submitted_at = $2 
-                where hash = $3; 
+                    submitted_at = $3 
+                where hash = $2; 
                 "#
             }
             Self::Cleared | Self::Failed => {
                 r#" 
                 update pending_txn set 
                     status = $1, 
-                    completed_at = $2
-                where hash = $3; 
+                    completed_at = $3 
+                where hash = $2; 
                 "#
             }
         }

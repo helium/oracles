@@ -28,7 +28,7 @@ mod test {
     use crate::{
         subnetwork_reward::sorted_rewards,
         token_type::BlockchainTokenTypeV1,
-        traits::{b64::B64, txn_sign::TxnSign},
+        traits::{TxnSign, B64},
         Keypair, PublicKey,
     };
     use helium_crypto::KeyTag;

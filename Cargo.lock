@@ -1704,6 +1704,7 @@ dependencies = [
 name = "poc5g-rewards"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64",
  "chrono",
  "clap",
