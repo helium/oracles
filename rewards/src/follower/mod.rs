@@ -112,7 +112,7 @@ impl Follower {
                     Ok(Some(txn)) => {
                         let height = txn.height as i64;
                         self.process_txn_entry(txn).await?;
-                        Meta::update(&self.pool, "last_height", &height.to_string()).await?;
+                        Meta::update(&self.pool, "last_height", height.to_string()).await?;
                     }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
@@ -152,7 +152,7 @@ impl Follower {
             return Ok(());
         }
 
-        let txn_ht = &envelope.height;
+        let txn_ht = envelope.height;
         let txn_hash = &envelope.txn_hash.to_b64_url()?;
         let txn_ts = envelope.timestamp;
         match PendingTxn::update(
@@ -164,10 +164,14 @@ impl Follower {
         .await
         {
             Ok(()) => {
-                // TODO: Don't do two separate queries
-                Meta::update(&self.pool, "last_reward_height", &txn_ht.to_string()).await?;
-                Meta::update(&self.pool, "last_reward_end_time", &txn_ts.to_string()).await?;
-                Ok(())
+                Meta::update_all(
+                    &self.pool,
+                    &[
+                        ("last_reward_height", txn_ht.to_string()),
+                        ("last_reward_end_time", txn_ts.to_string()),
+                    ],
+                )
+                .await
             }
             // we got a subnetwork reward but don't have a pending txn in our db,
             // it may have been submitted externally, ignore and just bump the last_reward_height
@@ -176,10 +180,14 @@ impl Follower {
                 tracing::warn!(
                     "ignore but bump last_reward_height and last_reward_end_time in meta!"
                 );
-                // TODO: Don't do two separate queries
-                Meta::update(&self.pool, "last_reward_height", &txn_ht.to_string()).await?;
-                Meta::update(&self.pool, "last_reward_end_time", &txn_ts.to_string()).await?;
-                Ok(())
+                Meta::update_all(
+                    &self.pool,
+                    &[
+                        ("last_reward_height", txn_ht.to_string()),
+                        ("last_reward_end_time", txn_ts.to_string()),
+                    ],
+                )
+                .await
             }
             Err(err) => Err(err),
         }
