@@ -9,6 +9,7 @@ use axum::{
     Json, Router,
 };
 use futures::TryFutureExt;
+use poc_common::record_duration;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::{io, net::SocketAddr};
@@ -32,6 +33,15 @@ impl Server {
         let api_ro_token = dotenv::var("API_RO_TOKEN")?;
         let pool = mk_db_pool(10).await?;
 
+        metrics::describe_histogram!(
+            "status_server_get_gateway_duration",
+            "Refers to the duration of fetching a single gateway"
+        );
+        metrics::describe_histogram!(
+            "status_server_get_gateways_duration",
+            "Refers to the duration of fetching a list of gateways"
+        );
+
         let app = Router::new()
             // health
             .route("/health", get(empty_handler))
@@ -44,6 +54,9 @@ impl Server {
                 "/hotspots/:pubkey",
                 get(get_gateway).layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
             )
+            .layer(poc_common::ActiveRequestsLayer::new(
+                "status_server_connection_count",
+            ))
             .layer(TraceLayer::new_for_http())
             .layer(Extension(pool));
 
@@ -68,22 +81,26 @@ pub async fn get_gateway(
     Path(pubkey): Path<PublicKey>,
     Extension(pool): Extension<PgPool>,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let event = Gateway::get(&pool, &pubkey).await.map_err(api_error)?;
-    if let Some(event) = event {
-        let json = serde_json::to_value(event).map_err(api_error)?;
-        Ok(Json(json))
-    } else {
-        Err(Error::not_found(format!("Gateway {pubkey} not found")).into())
-    }
+    record_duration!("status_server_get_gateway_duration", {
+        let event = Gateway::get(&pool, &pubkey).await.map_err(api_error)?;
+        if let Some(event) = event {
+            let json = serde_json::to_value(event).map_err(api_error)?;
+            Ok(Json(json))
+        } else {
+            Err(Error::not_found(format!("Gateway {pubkey} not found")).into())
+        }
+    })
 }
 
 pub async fn get_gateways(
     Query(after): Query<After>,
     Extension(pool): Extension<PgPool>,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
-    let gateways = Gateway::list(&pool, &after).await.map_err(api_error)?;
-    let json = serde_json::to_value(gateways).map_err(api_error)?;
-    Ok(Json(json))
+    record_duration!("status_server_get_gateways_duration", {
+        let gateways = Gateway::list(&pool, &after).await.map_err(api_error)?;
+        let json = serde_json::to_value(gateways).map_err(api_error)?;
+        Ok(Json(json))
+    })
 }
 
 /// Utility function for mapping any error into an api error

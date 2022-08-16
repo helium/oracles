@@ -12,6 +12,8 @@ async fn main() -> Result {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    poc_common::install_metrics();
+
     // Create database pool and run migrations
     let pool = mk_db_pool(2).await?;
     tracing::info!("running migrations");

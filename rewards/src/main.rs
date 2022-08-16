@@ -23,6 +23,9 @@ async fn main() -> Result {
 
     let _cli = Cli::parse();
 
+    // Install the prometheus metrics exporter
+    poc_common::install_metrics();
+
     // Create database pool
     let pool = mk_db_pool(10).await?;
     sqlx::migrate!().run(&pool).await?;

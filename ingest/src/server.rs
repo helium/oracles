@@ -33,6 +33,8 @@ impl poc_mobile::PocMobile for GrpcServer {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store speedtest: {err:?}"),
         }
+
+        metrics::increment_counter!("ingest_server_speedtest_count");
         Ok(Response::new(event_id.into()))
     }
 
@@ -51,6 +53,8 @@ impl poc_mobile::PocMobile for GrpcServer {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
         }
+
+        metrics::increment_counter!("ingest_server_heartbeat_count");
         // Encode event digest, encode and return as the id
         Ok(Response::new(event_id.into()))
     }
@@ -102,6 +106,9 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
     tracing::info!("grpc listening on {}", grpc_addr);
 
     let server = transport::Server::builder()
+        .layer(poc_common::ActiveRequestsLayer::new(
+            "ingest_server_grpc_connection_count",
+        ))
         .add_service(poc_mobile::Server::with_interceptor(
             poc_mobile,
             move |req: Request<()>| match req.metadata().get("authorization") {
