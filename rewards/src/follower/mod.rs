@@ -1,6 +1,6 @@
 pub mod client;
 pub mod meta;
-pub use client::FollowerService;
+pub use client::{FollowerService, FollowerServiceTrait};
 pub use meta::Meta;
 
 use crate::{

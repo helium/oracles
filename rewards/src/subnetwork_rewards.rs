@@ -1,11 +1,11 @@
 use crate::{
     datetime_from_epoch,
     emissions::{get_emissions_per_model, Emission, Model},
-    follower::FollowerService,
+    follower::{FollowerService, FollowerServiceTrait},
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
     traits::{b64::B64, txn_hash::TxnHash, txn_sign::TxnSign},
-    CellType, Error, Keypair, PublicKey, Result,
+    CellType, Error, Keypair, Mobile, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
@@ -17,7 +17,8 @@ use poc_store::{
     file_source::{store_source, ByteStream},
     FileStore, FileType,
 };
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::{cmp::min, collections::HashMap};
 
 // default minutes to delay lookup from now
@@ -112,7 +113,7 @@ async fn get_rewards(
     let counter = count_heartbeats(&mut stream).await?;
     let model = generate_model(&counter);
     let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
-    let rewards = construct_rewards(&mut follower_service, counter, model, emitted).await?;
+    let rewards = construct_rewards(&mut follower_service, counter, model, emitted, None).await?;
     Ok(rewards)
 }
 
@@ -167,20 +168,17 @@ pub async fn construct_rewards(
     counter: Counter,
     model: Model,
     emitted: Emission,
+    default_owner: Option<PublicKey>,
 ) -> Result<Vec<ProtoSubnetworkReward>> {
     let mut rewards: Vec<ProtoSubnetworkReward> = Vec::with_capacity(counter.len());
 
     for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
         if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
-            let owner = follower_service.find_gateway(&gw_pubkey).await?.owner;
-            // This seems necessary because some owner keys apparently
-            // don't cleanly convert to PublicKey, even though the
-            // owner_pubkey isn't actually used!
-            if PublicKey::try_from(&owner).is_err() {
-                continue;
-            }
+            let owner = follower_service
+                .find_owner(&gw_pubkey, default_owner.clone())
+                .await?;
 
-            let mut reward_acc = 0;
+            let mut reward_acc = dec!(0);
 
             for (cbsd_id, cnt) in per_cell_cnt {
                 if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
@@ -196,16 +194,13 @@ pub async fn construct_rewards(
                 if let (Some(total_count), Some(total_reward)) =
                     (model.get(&cell_type), emitted.get(&cell_type))
                 {
-                    if let Some(amt) =
-                        (total_reward.get_decimal() / Decimal::from(*total_count)).to_u64()
-                    {
-                        reward_acc += amt;
-                    }
+                    let amt = total_reward.get_decimal() / Decimal::from(*total_count);
+                    reward_acc += amt;
                 }
             }
             rewards.push(ProtoSubnetworkReward {
-                account: owner,
-                amount: reward_acc,
+                account: owner.to_vec(),
+                amount: u64::from(Mobile::from(reward_acc)),
             });
         }
     }
@@ -214,63 +209,11 @@ pub async fn construct_rewards(
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        keypair::{load_from_file, save_to_file},
-        Mobile,
-    };
-    use helium_crypto::{KeyTag, Verify};
+    use crate::{keypair::load_from_file, Mobile};
     use rust_decimal_macros::dec;
     use std::str::FromStr;
 
     use super::*;
-
-    #[tokio::test]
-    #[should_panic]
-    #[ignore = "credentials required"]
-    async fn lower_heartbeats() {
-        // SercommIndoor
-        let g1 = PublicKey::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")
-            .expect("unable to construct pubkey")
-            .to_vec();
-        // Nova430I
-        let g2 = PublicKey::from_str("118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc")
-            .expect("unable to construct pubkey")
-            .to_vec();
-        // SercommOutdoor
-        let g3 = PublicKey::from_str("112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ")
-            .expect("unable to construct pubkey")
-            .to_vec();
-        // Nova436H
-        let g4 = PublicKey::from_str("11k712d9dSb8CAujzS4PdC7Hi8EEBZWsSnt4Zr1hgke4e1Efiag")
-            .expect("unable to construct pubkey")
-            .to_vec();
-
-        let mut c1 = CbsdCounter::new();
-        c1.insert("P27-SCE4255W2107CW5000014".to_string(), 4);
-        let mut c2 = CbsdCounter::new();
-        c2.insert("2AG32PBS3101S1202000464223GY0153".to_string(), 5);
-        let mut c3 = CbsdCounter::new();
-        c3.insert("P27-SCO4255PA102206DPT000207".to_string(), 6);
-        let mut c4 = CbsdCounter::new();
-
-        // This one has less than 3 heartbeats
-        c4.insert("2AG32MBS3100196N1202000240215KY0184".to_string(), 2);
-
-        let mut counter = Counter::new();
-        counter.insert(g1, c1);
-        counter.insert(g2, c2);
-        counter.insert(g3, c3);
-        counter.insert(g4, c4);
-
-        let mut expected_model: Model = HashMap::new();
-        expected_model.insert(CellType::SercommIndoor, 1);
-        expected_model.insert(CellType::Nova436H, 1);
-        expected_model.insert(CellType::SercommOutdoor, 1);
-        expected_model.insert(CellType::Nova430I, 1);
-
-        let generated_model = generate_model(&counter);
-        assert_eq!(generated_model, expected_model);
-    }
 
     #[tokio::test]
     #[ignore = "credentials required"]
@@ -336,27 +279,30 @@ mod test {
 
         let mut fs = FollowerService::from_env().expect("unable to get follower_service");
 
-        let rewards = construct_rewards(&mut fs, counter, generated_model, emitted)
-            .await
-            .expect("unable to construct rewards");
+        let test_owner = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
+            .expect("unable to get test pubkey");
+
+        let rewards =
+            construct_rewards(&mut fs, counter, generated_model, emitted, Some(test_owner))
+                .await
+                .expect("unable to construct rewards");
         assert_eq!(4, rewards.len());
 
         let tot_rewards = rewards.iter().fold(0, |acc, reward| acc + reward.amount);
-        assert_eq!(100_000_000, tot_rewards);
 
-        let key_tag = KeyTag {
-            network: helium_crypto::Network::MainNet,
-            key_type: helium_crypto::KeyType::Ed25519,
-        };
-        let kp = Keypair::generate(key_tag);
-        let _ = save_to_file(&kp, "/tmp/swarm_key");
-        let loaded_kp = load_from_file("/tmp/swarm_key").expect("unable to load keypair");
+        // 100M in bones
+        assert_eq!(10000000000000000, tot_rewards);
 
-        let (txn, txn_hash_str) = construct_txn(&loaded_kp, SubnetworkRewards(rewards), 1000, 1010)
+        // TODO: read key from some test env
+        let kp = load_from_file("/tmp/reward_server_keys").expect("unable to load keypair");
+        let (_txn, txn_hash_str) = construct_txn(&kp, SubnetworkRewards(rewards), 1000, 1010)
             .expect("unable to construct txn");
 
-        println!("txn: {:?}", txn);
-        println!("txn_hash_str: {:?}", txn_hash_str);
+        // This is taken from a blockchain-node, constructing the exact same txn
+        assert_eq!(
+            "d3VgXagj8fn-iLPqFW5JSWtUu7O9RV0Uce31jmviXs0".to_string(),
+            txn_hash_str
+        );
 
         // TODO cross check individual owner rewards
     }

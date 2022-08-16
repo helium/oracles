@@ -1,7 +1,8 @@
 use crate::{env_var, PublicKey, Result};
+use async_trait::async_trait;
 use helium_proto::{
     services::{Channel, Endpoint},
-    FollowerGatewayReqV1, FollowerGatewayRespV1, FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
+    FollowerGatewayReqV1, FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
 };
 use http::Uri;
 use std::time::Duration;
@@ -18,6 +19,35 @@ pub struct FollowerService {
     client: FollowerClient,
 }
 
+#[async_trait]
+pub trait FollowerServiceTrait {
+    async fn find_owner(
+        &mut self,
+        address: &PublicKey,
+        test_owner: Option<PublicKey>,
+    ) -> Result<PublicKey>;
+}
+
+#[async_trait]
+impl FollowerServiceTrait for FollowerService {
+    async fn find_owner(
+        &mut self,
+        address: &PublicKey,
+        test_owner: Option<PublicKey>,
+    ) -> Result<PublicKey> {
+        match test_owner {
+            None => {
+                let req = FollowerGatewayReqV1 {
+                    address: address.to_vec(),
+                };
+                let res = self.client.find_gateway(req).await?.into_inner();
+                Ok(PublicKey::try_from(res.owner)?)
+            }
+            Some(owner) => Ok(owner),
+        }
+    }
+}
+
 impl FollowerService {
     pub fn from_env() -> Result<Self> {
         let uri = env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?;
@@ -32,14 +62,6 @@ impl FollowerService {
         Ok(Self {
             client: FollowerClient::new(channel),
         })
-    }
-
-    pub async fn find_gateway(&mut self, address: &PublicKey) -> Result<FollowerGatewayRespV1> {
-        let req = FollowerGatewayReqV1 {
-            address: address.to_vec(),
-        };
-        let res = self.client.find_gateway(req).await?.into_inner();
-        Ok(res)
     }
 
     pub async fn txn_stream<T>(
