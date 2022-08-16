@@ -1,22 +1,22 @@
--- migrations/4_pending_txns.sql
+-- migrations/3_pending_txns.sql
 
-CREATE TYPE status AS ENUM (
+create type status AS enum (
     'created',
     'pending',
     'cleared',
     'failed'
 );
 
-CREATE TABLE pending_txn (
-    hash text PRIMARY KEY NOT NULL,
-    status status DEFAULT 'created' NOT NULL,
+create table pending_txn (
+    hash text primary key not null,
+    status status default 'created' not null,
 
     submitted_at timestamptz,
-    completed_at timestamptz
+    completed_at timestamptz,
 
-    created_at timestamptz DEFAULT NOW() NOT NULL,
-    updated_at timestamptz DEFAULT NOW() NOT NULL,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
-CREATE INDEX pending_txn_created_idx ON pending_txn (created_at);
+create index pending_txn_created_idx on pending_txn (created_at);
 select trigger_updated_at('pending_txn');

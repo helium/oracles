@@ -39,7 +39,7 @@ impl Meta {
         sqlx::query(
             r#"
             insert into meta (key, value) 
-            values unnest($1, $2) 
+            select * from unnest($1::text[], $2::text[]) 
             on conflict (key) do update set 
             value = EXCLUDED.value;
             "#,
