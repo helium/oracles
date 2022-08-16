@@ -212,7 +212,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{keypair::load_from_file, Mobile};
+    use crate::Mobile;
     use async_trait::async_trait;
     use rust_decimal_macros::dec;
     use std::str::FromStr;
