@@ -1,12 +1,12 @@
 pub mod client;
 pub mod meta;
-pub use client::{FollowerService, FollowerServiceTrait};
+pub use client::FollowerService;
 pub use meta::Meta;
 
 use crate::{
     datetime_from_epoch, env_var,
     pending_txn::{PendingTxn, Status},
-    traits::b64::B64,
+    traits::B64,
     transaction::client::TransactionService,
     txn_status::TxnStatus,
     ConsensusTxnTrigger, Error, Result,

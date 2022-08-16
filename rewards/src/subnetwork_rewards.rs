@@ -1,10 +1,10 @@
 use crate::{
     datetime_from_epoch,
     emissions::{get_emissions_per_model, Emission, Model},
-    follower::{FollowerService, FollowerServiceTrait},
+    follower::FollowerService,
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
-    traits::{b64::B64, txn_hash::TxnHash, txn_sign::TxnSign},
+    traits::{OwnerResolver, TxnHash, TxnSign, B64},
     CellType, Error, Keypair, Mobile, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -113,7 +113,7 @@ async fn get_rewards(
     let counter = count_heartbeats(&mut stream).await?;
     let model = generate_model(&counter);
     let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
-    let rewards = construct_rewards(&mut follower_service, counter, model, emitted, None).await?;
+    let rewards = construct_rewards(&mut follower_service, counter, model, emitted).await?;
     Ok(rewards)
 }
 
@@ -163,20 +163,23 @@ fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
     (start_utc, stop_utc)
 }
 
-pub async fn construct_rewards(
-    follower_service: &mut FollowerService,
+pub async fn construct_rewards<F>(
+    owner_resolver: &mut F,
     counter: Counter,
     model: Model,
     emitted: Emission,
-    default_owner: Option<PublicKey>,
-) -> Result<Vec<ProtoSubnetworkReward>> {
+) -> Result<Vec<ProtoSubnetworkReward>>
+where
+    F: OwnerResolver,
+{
     let mut rewards: Vec<ProtoSubnetworkReward> = Vec::with_capacity(counter.len());
 
     for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
         if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
-            let owner = follower_service
-                .find_owner(&gw_pubkey, default_owner.clone())
-                .await?;
+            let owner = owner_resolver.resolve_owner(&gw_pubkey).await?;
+            if owner.is_none() {
+                continue;
+            }
 
             let mut reward_acc = dec!(0);
 
@@ -199,7 +202,7 @@ pub async fn construct_rewards(
                 }
             }
             rewards.push(ProtoSubnetworkReward {
-                account: owner.to_vec(),
+                account: owner.unwrap().to_vec(),
                 amount: u64::from(Mobile::from(reward_acc)),
             });
         }
@@ -210,10 +213,22 @@ pub async fn construct_rewards(
 #[cfg(test)]
 mod test {
     use crate::{keypair::load_from_file, Mobile};
+    use async_trait::async_trait;
     use rust_decimal_macros::dec;
     use std::str::FromStr;
 
     use super::*;
+
+    struct FixedOwnerResolver {
+        owner: PublicKey,
+    }
+
+    #[async_trait]
+    impl OwnerResolver for FixedOwnerResolver {
+        async fn resolve_owner(&mut self, _address: &PublicKey) -> Result<Option<PublicKey>> {
+            Ok(Some(self.owner.clone()))
+        }
+    }
 
     #[tokio::test]
     #[ignore = "credentials required"]
@@ -277,15 +292,13 @@ mod test {
         let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
         assert_eq!(emitted, expected_emitted);
 
-        let mut fs = FollowerService::from_env().expect("unable to get follower_service");
-
         let test_owner = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
             .expect("unable to get test pubkey");
+        let mut owner_resolver = FixedOwnerResolver { owner: test_owner };
 
-        let rewards =
-            construct_rewards(&mut fs, counter, generated_model, emitted, Some(test_owner))
-                .await
-                .expect("unable to construct rewards");
+        let rewards = construct_rewards(&mut owner_resolver, counter, generated_model, emitted)
+            .await
+            .expect("unable to construct rewards");
         assert_eq!(4, rewards.len());
 
         let tot_rewards = rewards.iter().fold(0, |acc, reward| acc + reward.amount);

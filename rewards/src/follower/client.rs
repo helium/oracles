@@ -1,4 +1,4 @@
-use crate::{env_var, PublicKey, Result};
+use crate::{env_var, traits::OwnerResolver, PublicKey, Result};
 use async_trait::async_trait;
 use helium_proto::{
     services::{Channel, Endpoint},
@@ -20,31 +20,13 @@ pub struct FollowerService {
 }
 
 #[async_trait]
-pub trait FollowerServiceTrait {
-    async fn find_owner(
-        &mut self,
-        address: &PublicKey,
-        test_owner: Option<PublicKey>,
-    ) -> Result<PublicKey>;
-}
-
-#[async_trait]
-impl FollowerServiceTrait for FollowerService {
-    async fn find_owner(
-        &mut self,
-        address: &PublicKey,
-        test_owner: Option<PublicKey>,
-    ) -> Result<PublicKey> {
-        match test_owner {
-            None => {
-                let req = FollowerGatewayReqV1 {
-                    address: address.to_vec(),
-                };
-                let res = self.client.find_gateway(req).await?.into_inner();
-                Ok(PublicKey::try_from(res.owner)?)
-            }
-            Some(owner) => Ok(owner),
-        }
+impl OwnerResolver for FollowerService {
+    async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>> {
+        let req = FollowerGatewayReqV1 {
+            address: address.to_vec(),
+        };
+        let res = self.client.find_gateway(req).await?.into_inner();
+        Ok(Some(PublicKey::try_from(res.owner)?))
     }
 }
 
