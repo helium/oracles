@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+REPO=poc_5g
+
 # Build mobile rewards server
 
 mkdir mobile_rewards
@@ -19,7 +21,14 @@ mv target/release/poc5g-rewards mobile_rewards/usr/bin/
 
 dpkg-deb --build mobile_rewards
 
-mv mobile_rewards.deb "mobile_rewards-${RELEASE_VERSION}.deb"
+MOBILE_REWARDS_PKGNAME="mobile_rewards-${RELEASE_VERSION}-amd64.deb"
+
+mv mobile_rewards.deb $MOBILE_REWARDS_PKGNAME
+
+curl -u "${PACKAGECLOUD_API_KEY}:" \
+     -F "package[distro_version_id]=210" \
+     -F "package[package_file]=@${MOBILE_REWARDS_PKGNAME}" \
+     https://packagecloud.io/api/v1/repos/helium/${REPO}/packages.json
 
 # Build mobile ingest server
 
@@ -40,5 +49,11 @@ mv target/release/poc5g-ingest mobile_ingest/usr/bin/
 
 dpkg-deb --build mobile_ingest
 
-mv mobile_ingest.deb "mobile_ingest-${RELEASE_VERSION}.deb"
+MOBILE_INGEST_PKGNAME="mobile_ingest-${RELEASE_VERSION}-amd64.deb"
 
+mv mobile_ingest.deb $MOBILE_INGEST_PKGNAME
+
+curl -u "${PACKAGECLOUD_API_KEY}:" \
+     -F "package[distro_version_id]=210" \
+     -F "package[package_file]=@${MOBILE_INGEST_PKGNAME}" \
+     https://packagecloud.io/api/v1/repos/helium/${REPO}/packages.json
