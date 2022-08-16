@@ -306,8 +306,13 @@ mod test {
         // 100M in bones
         assert_eq!(10000000000000000, tot_rewards);
 
-        // TODO: read key from some test env
-        let kp = load_from_file("/tmp/reward_server_keys").expect("unable to load keypair");
+        let keypair_b64 = "EeNwbGXheUq4frT05EJwMtvGuz8zHyajOaN2h5yz5M9A58pZdf9bLayp8Ex6x0BkGxREleQnTNwOTyT2vPL0i1_nyll1_1strKnwTHrHQGQbFESV5CdM3A5PJPa88vSLXw";
+        let kp = Keypair::try_from(
+            Vec::from_b64_url(keypair_b64)
+                .expect("unable to get raw keypair")
+                .as_ref(),
+        )
+        .expect("unable to get keypair");
         let (_txn, txn_hash_str) = construct_txn(&kp, SubnetworkRewards(rewards), 1000, 1010)
             .expect("unable to construct txn");
 
@@ -316,7 +321,5 @@ mod test {
             "d3VgXagj8fn-iLPqFW5JSWtUu7O9RV0Uce31jmviXs0".to_string(),
             txn_hash_str
         );
-
-        // TODO cross check individual owner rewards
     }
 }

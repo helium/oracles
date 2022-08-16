@@ -1,5 +1,5 @@
-use crate::Result;
-use helium_crypto::{KeyTag, Keypair as CryptoKeypair, Sign};
+use crate::{Error, Result};
+use helium_crypto::{KeyTag, KeyType, Keypair as CryptoKeypair, Sign};
 use std::{convert::TryFrom, fs, io, path};
 
 #[derive(Debug)]
@@ -49,5 +49,16 @@ impl std::ops::Deref for Keypair {
     type Target = CryptoKeypair;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl TryFrom<&[u8]> for Keypair {
+    type Error = Error;
+
+    fn try_from(input: &[u8]) -> Result<Self> {
+        match KeyType::try_from(input[0])? {
+            KeyType::Ed25519 => Ok(CryptoKeypair::try_from(input)?.into()),
+            KeyType::EccCompact => Ok(CryptoKeypair::try_from(input)?.into()),
+        }
     }
 }
