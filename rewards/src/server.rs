@@ -302,7 +302,7 @@ impl Server {
         let txn_encoded = txn.encode_to_vec();
 
         // insert in the pending_txn tbl (status: created)
-        let pt = PendingTxn::insert_new(&self.pool, txn_hash_str.clone(), txn_encoded).await?;
+        let pt = PendingTxn::insert_new(&self.pool, &txn_hash_str, txn_encoded).await?;
         tracing::info!("inserted pending_txn: {:?}", pt);
 
         // submit the txn
