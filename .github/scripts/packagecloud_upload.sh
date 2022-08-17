@@ -1,6 +1,9 @@
+#!/usr/bin/env bash
 
-MOBILE_REWARDS_PKGNAME="mobile-rewards_${RELEASE_VERSION}_amd64.deb"
-MOBILE_INGEST_PKGNAME="mobile-ingest_${RELEASE_VERSION}_amd64.deb"
+set -euo pipefail
+
+MOBILE_REWARDS_PKGNAME=$( find target/debian -type f -iname "poc5g-rewards_*.deb" )
+MOBILE_INGEST_PKGNAME=$( find target/debian -type f -iname "poc5g-ingest_*.deb" )
 
 curl -u "${PACKAGECLOUD_API_KEY}:" \
      -F "package[distro_version_id]=210" \

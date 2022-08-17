@@ -4,8 +4,8 @@ on:
   pull_request:
     branches: [ main ]
   push:
-    tags:
-      - '*'
+    branches: [ main ]
+    tags: [ '*' ]
 
 jobs:
   build:
@@ -37,10 +37,24 @@ jobs:
       - name: Build
         run: cargo build --all --release
 
-      - name: Package
-        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+      - name: PackageIngestorServer
+        id: build_ingestor
+        if: contains(github.ref, 'refs/tags/')
+        uses: ebbflow-io/cargo-deb-amd64-ubuntu@1.0
+        with:
+          cmd: cargo deb -p poc5g-ingest 
+
+      - name: PackageRewardsServer
+        id: build_rewards
+        if: contains(github.ref, 'refs/tags/')
+        uses: ebbflow-io/cargo-deb-amd64-ubuntu@1.0
+        with:
+          cmd: cargo deb -p poc5g-rewards 
+
+      - name: PackagecloudUpload
+        if: contains(github.ref, 'refs/tags/') && steps.build_ingestor.outcome == 'success' && steps.build_rewards.outcome == 'success'
+        env:
+          PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
         run: |
-          export RELEASE_VERSION=${GITHUB_REF#refs/*/}
-          export PACKAGECLOUD_API_KEY=${{ secrets.PACKAGECLOUD_API_KEY }}
-          ./.github/scripts/make_deb.sh
+          chmod +x ./.github/scripts/packagecloud_upload.sh
           ./.github/scripts/packagecloud_upload.sh
