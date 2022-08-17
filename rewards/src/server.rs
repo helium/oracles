@@ -13,7 +13,7 @@ use crate::{
 use chrono::{Duration, Utc};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
-    FollowerTxnStreamRespV1, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
+    FollowerTxnStreamRespV1, Message, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
 };
 use poc_store::FileStore;
 use sqlx::{Pool, Postgres};
@@ -324,35 +324,23 @@ impl Server {
     async fn process_prior_created_txns(&mut self) -> Result {
         tracing::info!("processing any unsubmitted reward txns from previous run");
 
-        match PendingTxn::list(&self.pool, Status::Created).await {
-            Ok(created_txns) if !created_txns.is_empty() => {
-                for pending_txn in created_txns {
-                    let txn = Message::decode(pending_txn.txn_bin.as_ref())?;
-                    if let Ok(_resp) = self
-                        .txn_service
-                        .submit(
-                            BlockchainTxn {
-                                txn: Some(Txn::SubnetworkRewards(txn)),
-                            },
-                            &pending_txn.pending_key()?,
-                        )
-                        .await
-                    {
-                        PendingTxn::update(
-                            &self.pool,
-                            &pending_txn.hash,
-                            Status::Pending,
-                            Utc::now(),
-                        )
+        let created_txns = PendingTxn::list(&self.pool, Status::Created).await?;
+        if !created_txns.is_empty() {
+            for pending_txn in created_txns {
+                let txn = Message::decode(pending_txn.txn_bin.as_ref())?;
+                if let Ok(_resp) = self
+                    .txn_service
+                    .submit(
+                        BlockchainTxn {
+                            txn: Some(Txn::SubnetworkRewards(txn)),
+                        },
+                        &pending_txn.pending_key()?,
+                    )
+                    .await
+                {
+                    PendingTxn::update(&self.pool, &pending_txn.hash, Status::Pending, Utc::now())
                         .await?;
-                    }
                 }
-            }
-            Err(_) => {
-                tracing::error!("unable to list created_txns!")
-            }
-            Ok(_) => {
-                tracing::info!("no previously created txns awaiting submission")
             }
         }
         Ok(())

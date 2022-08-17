@@ -107,7 +107,7 @@ impl PendingTxn {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         let pt = PendingTxn {
-            hash,
+            hash: hash.to_string(),
             txn_bin,
             status: Status::Created,
 
