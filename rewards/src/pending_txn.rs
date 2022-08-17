@@ -102,7 +102,7 @@ impl PendingTxn {
             .ok_or_else(|| Error::not_found("no pending created_at present"))
     }
 
-    pub async fn insert_new<'c, E>(executor: E, hash: String, txn_bin: Vec<u8>) -> Result<Self>
+    pub async fn insert_new<'c, E>(executor: E, hash: &str, txn_bin: Vec<u8>) -> Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
