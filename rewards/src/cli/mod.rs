@@ -1,4 +1,5 @@
-pub mod gen;
+pub mod generate;
+pub mod server;
 
 use crate::Result;
 

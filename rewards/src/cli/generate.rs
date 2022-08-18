@@ -6,20 +6,9 @@ use helium_proto::SubnetworkReward as ProtoSubnetworkReward;
 use poc_store::{datetime_from_naive, FileStore};
 use serde_json::json;
 
-/// Commands for poc rewards
+/// Generate poc rewards
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
-    #[clap(subcommand)]
-    cmd: RewardCmd,
-}
-
-#[derive(Debug, clap::Subcommand)]
-pub enum RewardCmd {
-    Range(Range),
-}
-
-#[derive(Debug, clap::Args)]
-pub struct Range {
     /// Required start time to look for (inclusive)
     #[clap(long)]
     after: NaiveDateTime,
@@ -28,7 +17,7 @@ pub struct Range {
     before: NaiveDateTime,
 }
 
-impl Range {
+impl Cmd {
     pub async fn run(&self) -> Result {
         let store = FileStore::from_env().await?;
         let follower_service = FollowerService::from_env()?;
@@ -54,19 +43,5 @@ impl Range {
             }
         };
         print_json(&json)
-    }
-}
-
-impl Cmd {
-    pub async fn run(&self) -> Result {
-        self.cmd.run().await
-    }
-}
-
-impl RewardCmd {
-    pub async fn run(&self) -> Result {
-        match self {
-            Self::Range(cmd) => cmd.run().await,
-        }
     }
 }

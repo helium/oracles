@@ -1,6 +1,7 @@
 use crate::{
     datetime_from_epoch,
     emissions::{get_emissions_per_model, Emission, Model},
+    env_var,
     follower::FollowerService,
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
@@ -106,16 +107,17 @@ async fn get_rewards(
         return Err(Error::NotFound("cannot reward future".to_string()));
     }
 
+    let ingest_bucket = env_var("INGEST_BUCKET", "mainnet-poc5g-ingest".to_string())?;
+
     let file_list = store
         .list(
-            "poc5g-ingest",
+            &ingest_bucket,
             FileType::CellHeartbeat,
             after_utc,
             before_utc,
         )
         .await?;
-    metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
-    let mut stream = store_source(store, "poc5g-ingest", file_list);
+    let mut stream = store_source(store, ingest_bucket, file_list);
     let counter = count_heartbeats(&mut stream).await?;
     let model = generate_model(&counter);
     if let Some(emitted) = get_emissions_per_model(&model, after_utc, before_utc - after_utc) {
@@ -297,7 +299,8 @@ mod test {
 
         let after_utc = Utc::now();
         // let before_utc = after_utc - Duration::hours(24);
-        let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
+        let emitted =
+            get_emissions_per_model(&generated_model, after_utc, Duration::hours(24)).unwrap();
         assert_eq!(emitted, expected_emitted);
 
         let test_owner = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
