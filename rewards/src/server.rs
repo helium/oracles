@@ -197,6 +197,7 @@ impl Server {
                         Ok(_) => tracing::info!("no pending transactions found failed"),
                         Err(err) => {
                             tracing::error!("pending transactions check failed with error: {err:?}")
+                            }
                         }
                     }
 

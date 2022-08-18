@@ -19,6 +19,7 @@ use poc_store::{
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::Serialize;
 use std::{cmp::min, collections::HashMap};
 
 // default minutes to delay lookup from now
@@ -31,7 +32,7 @@ pub type CbsdCounter = HashMap<String, u64>;
 // key: gateway_pubkeybin, val: CbsdCounter
 pub type Counter = HashMap<Vec<u8>, CbsdCounter>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SubnetworkRewards(Vec<ProtoSubnetworkReward>);
 
 impl SubnetworkRewards {
@@ -44,19 +45,23 @@ impl SubnetworkRewards {
         follower_service: FollowerService,
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
-    ) -> Result<Self> {
-        let rewards = get_rewards(store, follower_service, after_utc, before_utc).await?;
-        Ok(Self(rewards))
+    ) -> Result<Option<Self>> {
+        if let Some(rewards) = get_rewards(store, follower_service, after_utc, before_utc).await? {
+            return Ok(Some(Self(rewards)));
+        }
+        Ok(None)
     }
 
     pub async fn from_last_reward_end_time(
         store: FileStore,
         follower_service: FollowerService,
         last_reward_end_time: i64,
-    ) -> Result<Self> {
+    ) -> Result<Option<Self>> {
         let (after_utc, before_utc) = get_time_range(last_reward_end_time);
-        let rewards = get_rewards(store, follower_service, after_utc, before_utc).await?;
-        Ok(Self(rewards))
+        if let Some(rewards) = get_rewards(store, follower_service, after_utc, before_utc).await? {
+            return Ok(Some(Self(rewards)));
+        }
+        Ok(None)
     }
 }
 
@@ -91,7 +96,7 @@ async fn get_rewards(
     mut follower_service: FollowerService,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
-) -> Result<Vec<ProtoSubnetworkReward>> {
+) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
     if before_utc <= after_utc {
         tracing::error!(
             "cannot reward future period, before: {:?}, after: {:?}",
@@ -113,9 +118,11 @@ async fn get_rewards(
     let mut stream = store_source(store, "poc5g-ingest", file_list);
     let counter = count_heartbeats(&mut stream).await?;
     let model = generate_model(&counter);
-    let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
-    let rewards = construct_rewards(&mut follower_service, counter, model, emitted).await?;
-    Ok(rewards)
+    if let Some(emitted) = get_emissions_per_model(&model, after_utc, before_utc - after_utc) {
+        let rewards = construct_rewards(&mut follower_service, counter, model, emitted).await?;
+        return Ok(Some(rewards));
+    }
+    Ok(None)
 }
 
 async fn count_heartbeats(stream: &mut ByteStream) -> Result<Counter> {

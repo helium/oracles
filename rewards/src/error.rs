@@ -50,6 +50,8 @@ pub enum DecodeError {
 pub enum EncodeError {
     #[error("prost error")]
     Prost(#[from] helium_proto::EncodeError),
+    #[error("json error")]
+    Json(#[from] serde_json::Error),
 }
 
 impl Error {
@@ -76,6 +78,7 @@ macro_rules! from_err {
 
 // Encode Errors
 from_err!(EncodeError, prost::EncodeError);
+from_err!(EncodeError, serde_json::Error);
 
 // Decode Errors
 from_err!(DecodeError, http::uri::InvalidUri);

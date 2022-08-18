@@ -2,6 +2,7 @@ use crate::{cell_type::CellType, decimal_scalar::Mobile};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
 // 100M genesis rewards per day
@@ -18,7 +19,7 @@ pub fn get_emissions_per_model(
     model: &Model,
     datetime: DateTime<Utc>,
     duration: Duration,
-) -> Emission {
+) -> Option<Emission> {
     let total_rewards = get_scheduled_tokens(datetime, duration)
         .expect("Failed to supply valid date on the emission schedule");
 
@@ -37,21 +38,24 @@ pub fn get_emissions_per_model(
     let total_shares =
         nova436h_shares + nova430i_shares + sercommo_shares + sercommi_shares + neut430_shares;
 
-    let base_reward = total_rewards / total_shares;
+    if total_shares > dec!(0) {
+        let base_reward = total_rewards / total_shares;
 
-    let nova436h_rewards = calc_rewards(CellType::Nova436H, base_reward, *nova436h_units);
-    let nova430i_rewards = calc_rewards(CellType::Nova430I, base_reward, *nova430i_units);
-    let sercommo_rewards = calc_rewards(CellType::SercommOutdoor, base_reward, *sercommo_units);
-    let sercommi_rewards = calc_rewards(CellType::SercommIndoor, base_reward, *sercommi_units);
-    let neut430_rewards = calc_rewards(CellType::Neutrino430, base_reward, *neut430_units);
+        let nova436h_rewards = calc_rewards(CellType::Nova436H, base_reward, *nova436h_units);
+        let nova430i_rewards = calc_rewards(CellType::Nova430I, base_reward, *nova430i_units);
+        let sercommo_rewards = calc_rewards(CellType::SercommOutdoor, base_reward, *sercommo_units);
+        let sercommi_rewards = calc_rewards(CellType::SercommIndoor, base_reward, *sercommi_units);
+        let neut430_rewards = calc_rewards(CellType::Neutrino430, base_reward, *neut430_units);
 
-    HashMap::from([
-        (CellType::Nova436H, nova436h_rewards),
-        (CellType::Nova430I, nova430i_rewards),
-        (CellType::SercommOutdoor, sercommo_rewards),
-        (CellType::SercommIndoor, sercommi_rewards),
-        (CellType::Neutrino430, neut430_rewards),
-    ])
+        return Some(HashMap::from([
+            (CellType::Nova436H, nova436h_rewards),
+            (CellType::Nova430I, nova430i_rewards),
+            (CellType::SercommOutdoor, sercommo_rewards),
+            (CellType::SercommIndoor, sercommi_rewards),
+            (CellType::Neutrino430, neut430_rewards),
+        ]));
+    }
+    None
 }
 
 fn calc_rewards(cell_type: CellType, base_reward: Decimal, num_units: u64) -> Mobile {
@@ -102,7 +106,7 @@ mod test {
             (CellType::SercommIndoor, 924),
             (CellType::Neutrino430, 2),
         ]);
-        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24));
+        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24)).unwrap();
         assert_eq!(expected, output);
     }
 
@@ -147,7 +151,7 @@ mod test {
             (CellType::SercommIndoor, 924),
             (CellType::Neutrino430, 2),
         ]);
-        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24));
+        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::hours(24)).unwrap();
         assert_eq!(expected, output)
     }
 }

@@ -1,15 +1,20 @@
 use clap::Parser;
-use poc5g_rewards::{keypair::load_from_file, mk_db_pool, server::Server, Result};
-use tokio::signal;
+use poc5g_rewards::{cli::gen, keypair::load_from_file, mk_db_pool, server::Server, Result};
+use tokio::{signal, sync::broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Subcommand)]
-pub enum Cmd {}
+pub enum Cmd {
+    Gen(gen::Cmd),
+}
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
 #[clap(about = "Helium Mobile Reward Server")]
-pub struct Cli {}
+pub struct Cli {
+    #[clap(subcommand)]
+    cmd: Cmd,
+}
 
 #[tokio::main]
 async fn main() -> Result {
@@ -21,7 +26,12 @@ async fn main() -> Result {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let _cli = Cli::parse();
+    let cli = Cli::parse();
+
+    // TODO: Don't run the server when in CLI mode
+    match cli.cmd {
+        Cmd::Gen(cmd) => cmd.run().await?,
+    }
 
     // Install the prometheus metrics exporter
     poc_common::install_metrics();
