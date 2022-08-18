@@ -1,7 +1,8 @@
 use crate::{
     datetime_from_epoch, env_var,
-    follower::{FollowerService, Meta},
+    follower::FollowerService,
     keypair::Keypair,
+    meta::Meta,
     pending_txn::{PendingTxn, Status},
     subnetwork_rewards::{construct_txn, get_time_range, SubnetworkRewards},
     traits::B64,

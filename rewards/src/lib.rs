@@ -4,6 +4,7 @@ pub mod emissions;
 mod error;
 pub mod follower;
 pub mod keypair;
+pub mod meta;
 pub mod pending_txn;
 mod public_key;
 pub mod server;
