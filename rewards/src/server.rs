@@ -23,6 +23,8 @@ use tonic::Streaming;
 pub const DEFAULT_START_REWARD_BLOCK: i64 = 1477650;
 
 const RECONNECT_WAIT_SECS: u64 = 5;
+const REWARD_PROCESS_INTERVAL_SECS: i64 = 86400; // 24 hours
+const STALE_PENDING_TIMEOUT_SECS: i64 = 1800; // 30 min
 
 pub const TXN_TYPES: &[&str] = &[
     "blockchain_txn_consensus_group_v1",
@@ -181,7 +183,7 @@ impl Server {
         match Meta::last_reward_end_time(&self.pool).await? {
             Some(last_reward_time) => {
                 let (start_utc, stop_utc) = get_time_range(last_reward_time);
-                if stop_utc - start_utc > Duration::hours(4) {
+                if stop_utc - start_utc > Duration::seconds(REWARD_PROCESS_INTERVAL_SECS) {
                     match self.check_pending().await {
                         Ok(_) => tracing::info!("no pending transactions found failed"),
                         Err(err) => {
@@ -216,7 +218,8 @@ impl Server {
             match self.txn_service.query(&txn_key).await {
                 Ok(TxnQueryRespV1 { status, .. }) => {
                     if TxnStatus::try_from(status)? == TxnStatus::from(ProtoTxnStatus::NotFound)
-                        && (Utc::now() - submitted_at) > Duration::minutes(30)
+                        && (Utc::now() - submitted_at)
+                            > Duration::seconds(STALE_PENDING_TIMEOUT_SECS)
                     {
                         failed_hashes.push(txn.hash)
                     }
