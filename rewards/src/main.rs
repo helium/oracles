@@ -40,7 +40,7 @@ async fn main() -> Result {
     // reward server
     let mut reward_server = Server::new(pool.clone(), rs_keypair).await?;
 
-    tokio::try_join!(reward_server.run(shutdown_listener.clone()))?;
+    reward_server.run(shutdown_listener.clone()).await?;
 
     Ok(())
 }

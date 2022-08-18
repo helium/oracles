@@ -106,13 +106,4 @@ impl Meta {
     {
         Self::fetch_scalar::<E, i64>(executor, "last_reward_height").await
     }
-
-    pub async fn last_height<'c, E>(executor: E, start_block: i64) -> Result<i64>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        Self::fetch_scalar::<E, i64>(executor, "last_height")
-            .map_ok(|v| v.unwrap_or(start_block))
-            .await
-    }
 }

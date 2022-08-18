@@ -26,6 +26,8 @@ pub enum Error {
     Store(#[from] poc_store::Error),
     #[error("not found")]
     NotFound(String),
+    #[error("transaction error")]
+    TransactionError(String),
 }
 
 #[derive(Error, Debug)]
