@@ -74,6 +74,7 @@ impl Status {
 #[sqlx(type_name = "pending_txn")]
 pub struct PendingTxn {
     pub hash: String,
+    pub txn_bin: Vec<u8>,
     pub status: Status,
     pub failed_reason: Option<String>,
 
@@ -101,12 +102,13 @@ impl PendingTxn {
             .ok_or_else(|| Error::not_found("no pending created_at present"))
     }
 
-    pub async fn insert_new<'c, E>(executor: E, hash: String) -> Result<Self>
+    pub async fn insert_new<'c, E>(executor: E, hash: &str, txn_bin: Vec<u8>) -> Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         let pt = PendingTxn {
-            hash,
+            hash: hash.to_string(),
+            txn_bin,
             status: Status::Created,
 
             failed_reason: None,

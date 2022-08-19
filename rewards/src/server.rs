@@ -13,7 +13,7 @@ use crate::{
 use chrono::{Duration, Utc};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
-    FollowerTxnStreamRespV1, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
+    FollowerTxnStreamRespV1, Message, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
 };
 use poc_store::FileStore;
 use sqlx::{Pool, Postgres};
@@ -53,6 +53,10 @@ impl Server {
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
         tracing::info!("starting rewards server");
+
+        // If the rewards server has restarted, check for and process any
+        // PendingTxns that may have been created but failed to previoiusly send
+        self.process_prior_created_txns().await?;
 
         loop {
             if shutdown.is_triggered() {
@@ -293,8 +297,12 @@ impl Server {
         }
 
         let (txn, txn_hash_str) = construct_txn(&self.keypair, rewards, start_epoch, end_epoch)?;
+
+        // binary encode the txn for storage
+        let txn_encoded = txn.encode_to_vec();
+
         // insert in the pending_txn tbl (status: created)
-        let pt = PendingTxn::insert_new(&self.pool, txn_hash_str.clone()).await?;
+        let pt = PendingTxn::insert_new(&self.pool, &txn_hash_str, txn_encoded).await?;
         tracing::info!("inserted pending_txn: {:?}", pt);
 
         // submit the txn
@@ -309,6 +317,31 @@ impl Server {
             .await
         {
             PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending, Utc::now()).await?;
+        }
+        Ok(())
+    }
+
+    async fn process_prior_created_txns(&mut self) -> Result {
+        tracing::info!("processing any unsubmitted reward txns from previous run");
+
+        let created_txns = PendingTxn::list(&self.pool, Status::Created).await?;
+        if !created_txns.is_empty() {
+            for pending_txn in created_txns {
+                let txn = Message::decode(pending_txn.txn_bin.as_ref())?;
+                if let Ok(_resp) = self
+                    .txn_service
+                    .submit(
+                        BlockchainTxn {
+                            txn: Some(Txn::SubnetworkRewards(txn)),
+                        },
+                        &pending_txn.pending_key()?,
+                    )
+                    .await
+                {
+                    PendingTxn::update(&self.pool, &pending_txn.hash, Status::Pending, Utc::now())
+                        .await?;
+                }
+            }
         }
         Ok(())
     }
