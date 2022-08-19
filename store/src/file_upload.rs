@@ -21,19 +21,17 @@ pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
 pub struct FileUpload {
     enabled: bool,
     messages: UnboundedReceiverStream<PathBuf>,
-    bucket: String,
     store: FileStore,
 }
 
 impl FileUpload {
-    pub async fn from_env<B: ToString>(messages: MessageReceiver, bucket: B) -> Result<Self> {
+    pub async fn from_env(messages: MessageReceiver) -> Result<Self> {
         let enabled = env_var("FILE_UPLOAD_ENABLED")?.map_or_else(|| true, |str| str == "true");
 
         Ok(Self {
             enabled,
             messages: UnboundedReceiverStream::new(messages),
             store: FileStore::from_env().await?,
-            bucket: bucket.to_string(),
         })
     }
 
@@ -43,9 +41,10 @@ impl FileUpload {
         let enabled = self.enabled;
         let uploads = self
             .messages
-            .map(|msg| (self.store.clone(), self.bucket.clone(), msg))
-            .for_each_concurrent(5, |(store, bucket, path)| async move {
+            .map(|msg| (self.store.clone(), msg))
+            .for_each_concurrent(5, |(store, path)| async move {
                 let path_str = path.display();
+                let bucket = &store.bucket;
                 if !enabled {
                     tracing::info!("file upload disabled for {path_str} to {bucket}");
                     return;
@@ -63,7 +62,7 @@ impl FileUpload {
                 const RETRY_WAIT: Duration = Duration::from_secs(10);
                 while retry <= MAX_RETRIES {
                     tracing::debug!("storing {path_str} in {bucket} retry {retry}");
-                    match store.put(&bucket, &path).await {
+                    match store.put(&path).await {
                         Ok(()) => {
                             match fs::remove_file(&path).await {
                                 Ok(()) => {

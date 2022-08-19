@@ -14,7 +14,7 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(&self) -> Result {
-        let mut file_stream = file_source::file_source(&[&self.in_path]);
+        let mut file_stream = file_source::source(&[&self.in_path]);
 
         let mut wtr = Writer::from_writer(io::stdout());
         while let Some(result) = file_stream.next().await {

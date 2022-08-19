@@ -1,7 +1,7 @@
 use crate::{
+    cli::print_json,
     datetime_from_epoch,
     emissions::{get_emissions_per_model, Emission, Model},
-    env_var,
     follower::FollowerService,
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
@@ -9,23 +9,17 @@ use crate::{
     CellType, Error, Keypair, Mobile, PublicKey, Result,
 };
 use chrono::{DateTime, Duration, Utc};
-use futures::stream::StreamExt;
+use futures::stream::{self, StreamExt};
 use helium_proto::{
     services::poc_mobile::CellHeartbeatReqV1, BlockchainTokenTypeV1 as ProtoTokenType,
     BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward as ProtoSubnetworkReward,
 };
-use poc_store::{
-    file_source::{store_source, ByteStream},
-    FileStore, FileType,
-};
+use poc_store::{BytesMutStream, FileStore, FileType};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
-use std::{
-    cmp::min,
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use serde_json::json;
+use std::{cmp::min, collections::HashMap};
 
 // default minutes to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
@@ -179,18 +173,20 @@ async fn get_rewards(
         return Err(Error::NotFound("cannot reward future".to_string()));
     }
 
-    let ingest_bucket = env_var("INGEST_BUCKET", "mainnet-poc5g-ingest".to_string())?;
-
     let file_list = store
-        .list(
-            &ingest_bucket,
-            FileType::CellHeartbeat,
-            after_utc,
-            before_utc,
-        )
+        .list_all(FileType::CellHeartbeat, after_utc, before_utc)
         .await?;
-    let mut stream = store_source(store, ingest_bucket, file_list);
-    let counter = count_heartbeats(&mut stream).await?;
+
+    print_json(&json!({ "file_list": file_list }))?;
+
+    metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
+    let mut stream = store.source(stream::iter(file_list).map(Ok).boxed());
+    let counter = count_heartbeats(
+        &mut stream,
+        after_utc.timestamp() as u64,
+        before_utc.timestamp() as u64,
+    )
+    .await?;
     let model = generate_model(&counter);
     if let Some(emitted) = get_emissions_per_model(&model, after_utc, before_utc - after_utc) {
         let owner_rewards =
@@ -201,32 +197,37 @@ async fn get_rewards(
     Ok(None)
 }
 
-async fn count_heartbeats(stream: &mut ByteStream) -> Result<Counter> {
+async fn count_heartbeats(
+    stream: &mut BytesMutStream,
+    after_utc: u64,
+    before_utc: u64,
+) -> Result<Counter> {
     // count heartbeats for this input stream
-    let counter = Arc::new(Mutex::new(Counter::new()));
+    let mut counter = Counter::new();
 
-    stream
-        .for_each_concurrent(10, |msg| async {
-            if let Ok(m) = msg {
-                let CellHeartbeatReqV1 {
-                    pub_key, cbsd_id, ..
-                } = CellHeartbeatReqV1::decode(m).unwrap();
-                // Think of Counter more like a 2-dimensional sparse matrix and less like
-                // a hashmap of hashmaps.
-                let mut c = counter.lock().unwrap();
-                let count = c
-                    .entry(pub_key)
-                    .or_insert_with(HashMap::new)
-                    .entry(cbsd_id)
-                    .or_insert(0);
-                *count += 1;
-            }
-        })
-        .await;
+    while let Some(Ok(msg)) = stream.next().await {
+        let CellHeartbeatReqV1 {
+            pub_key,
+            cbsd_id,
+            timestamp,
+            ..
+        } = CellHeartbeatReqV1::decode(msg)?;
 
-    let result = Arc::try_unwrap(counter).unwrap().into_inner().unwrap();
+        if timestamp < after_utc || timestamp >= before_utc {
+            continue;
+        }
 
-    Ok(result)
+        // Think of Counter more like a 2-dimensional sparse matrix and less like
+        // a hashmap of hashmaps.
+        let count = counter
+            .entry(pub_key)
+            .or_insert_with(HashMap::new)
+            .entry(cbsd_id)
+            .or_insert(0);
+        *count += 1;
+    }
+
+    Ok(counter)
 }
 
 pub fn generate_model(counter: &Counter) -> Model {

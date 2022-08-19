@@ -69,10 +69,8 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
         .map_err(DecodeError::from)?;
 
     // Initialize uploader
-    let file_upload_bucket =
-        env_var("INGEST_BUCKET")?.unwrap_or_else(|| "poc5g_ingest".to_string());
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-    let file_upload = file_upload::FileUpload::from_env(file_upload_rx, file_upload_bucket).await?;
+    let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
 
     let store_path = dotenv::var("INGEST_STORE")?;
     let store_base_path = Path::new(&store_path);
