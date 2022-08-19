@@ -21,7 +21,11 @@ use poc_store::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
-use std::{cmp::min, collections::HashMap};
+use std::{
+    cmp::min,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 // default minutes to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
@@ -129,21 +133,30 @@ async fn get_rewards(
 
 async fn count_heartbeats(stream: &mut ByteStream) -> Result<Counter> {
     // count heartbeats for this input stream
-    let mut counter: Counter = HashMap::new();
-    while let Some(Ok(msg)) = stream.next().await {
-        let CellHeartbeatReqV1 {
-            pub_key, cbsd_id, ..
-        } = CellHeartbeatReqV1::decode(msg)?;
-        // Think of Counter more like a 2-dimensional sparse matrix and less like
-        // a hashmap of hashmaps.
-        let count = counter
-            .entry(pub_key)
-            .or_insert_with(HashMap::new)
-            .entry(cbsd_id)
-            .or_insert(0);
-        *count += 1;
-    }
-    Ok(counter)
+    let counter = Arc::new(Mutex::new(Counter::new()));
+
+    stream
+        .for_each_concurrent(10, |msg| async {
+            if let Ok(m) = msg {
+                let CellHeartbeatReqV1 {
+                    pub_key, cbsd_id, ..
+                } = CellHeartbeatReqV1::decode(m).unwrap();
+                // Think of Counter more like a 2-dimensional sparse matrix and less like
+                // a hashmap of hashmaps.
+                let mut c = counter.lock().unwrap();
+                let count = c
+                    .entry(pub_key)
+                    .or_insert_with(HashMap::new)
+                    .entry(cbsd_id)
+                    .or_insert(0);
+                *count += 1;
+            }
+        })
+        .await;
+
+    let result = Arc::try_unwrap(counter).unwrap().into_inner().unwrap();
+
+    Ok(result)
 }
 
 pub fn generate_model(counter: &Counter) -> Model {

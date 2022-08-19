@@ -197,14 +197,13 @@ impl Server {
                         Ok(_) => tracing::info!("no pending transactions found failed"),
                         Err(err) => {
                             tracing::error!("pending transactions check failed with error: {err:?}")
-                            }
                         }
                     }
+                }
 
-                    match self.handle_rewards(block_height, block_timestamp).await {
-                        Ok(_) => tracing::info!("successfully emitted mobile rewards"),
-                        Err(err) => tracing::error!("rewards emissions failed with error: {err:?}"),
-                    }
+                match self.handle_rewards(block_height, block_timestamp).await {
+                    Ok(_) => tracing::info!("successfully emitted mobile rewards"),
+                    Err(err) => tracing::error!("rewards emissions failed with error: {err:?}"),
                 }
             }
             None => {
@@ -214,7 +213,6 @@ impl Server {
                 checkpoint_last_reward_meta(&self.pool, block_height, block_timestamp).await?;
             }
         }
-
         Ok(())
     }
 
@@ -280,11 +278,13 @@ impl Server {
                     None => {
                         tracing::error!("cannot continue, no known last_reward_height!")
                     }
-                    Some(last_reward_height) => {
-                        let _ = &self
-                            .issue_rewards(rewards, last_reward_height + 1, block_height as i64)
-                            .await;
-                    }
+                    Some(last_reward_height) => match rewards {
+                        Some(r) => {
+                            self.issue_rewards(r, last_reward_height + 1, block_height as i64)
+                                .await?;
+                        }
+                        None => (),
+                    },
                 }
             }
         }
