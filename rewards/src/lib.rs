@@ -4,6 +4,7 @@ pub mod emissions;
 mod error;
 pub mod follower;
 pub mod keypair;
+pub mod meta;
 pub mod pending_txn;
 mod public_key;
 pub mod server;
@@ -51,19 +52,4 @@ pub async fn mk_db_pool(size: u32) -> Result<Pool<Postgres>> {
         .connect(&db_connection_str)
         .await?;
     Ok(pool)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConsensusTxnTrigger {
-    pub block_height: u64,
-    pub block_timestamp: u64,
-}
-
-impl ConsensusTxnTrigger {
-    pub fn new(block_height: u64, block_timestamp: u64) -> Self {
-        Self {
-            block_height,
-            block_timestamp,
-        }
-    }
 }

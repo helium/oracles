@@ -155,7 +155,7 @@ pub fn generate_model(counter: &Counter) -> Model {
     model
 }
 
-fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
+pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
     let after_utc = datetime_from_epoch(last_reward_end_time);
     let now = Utc::now();
     let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
