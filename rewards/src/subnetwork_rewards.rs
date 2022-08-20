@@ -36,9 +36,77 @@ pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 1;
 pub type CbsdCounter = HashMap<String, u64>;
 // key: gateway_pubkeybin, val: CbsdCounter
 pub type Counter = HashMap<Vec<u8>, CbsdCounter>;
+// key: owner, val: reward_amt
+type OwnerRewardMap = HashMap<Vec<u8>, u64>;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SubnetworkRewards(Vec<ProtoSubnetworkReward>);
+
+#[derive(Debug, Clone, Serialize)]
+struct OwnerRewards(OwnerRewardMap);
+
+impl OwnerRewards {
+    pub async fn new<F>(
+        owner_resolver: &mut F,
+        counter: Counter,
+        model: Model,
+        emitted: Emission,
+    ) -> Result<Self>
+    where
+        F: OwnerResolver,
+    {
+        let mut reward_map = OwnerRewardMap::new();
+
+        for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
+            if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
+                if let Some(owner) = owner_resolver.resolve_owner(&gw_pubkey).await? {
+                    let mut reward_acc = dec!(0);
+                    for (cbsd_id, cnt) in per_cell_cnt {
+                        if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
+                            continue;
+                        }
+
+                        let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
+                            cell_type
+                        } else {
+                            continue;
+                        };
+
+                        if let (Some(total_count), Some(total_reward)) =
+                            (model.get(&cell_type), emitted.get(&cell_type))
+                        {
+                            let amt = total_reward.get_decimal() / Decimal::from(*total_count);
+                            reward_acc += amt;
+                        }
+                    }
+                    *reward_map.entry(owner.to_vec()).or_insert(0) +=
+                        u64::from(Mobile::from(reward_acc));
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        }
+
+        Ok(OwnerRewards(reward_map))
+    }
+}
+
+impl From<OwnerRewards> for SubnetworkRewards {
+    fn from(owner_rewards: OwnerRewards) -> Self {
+        let unsorted_rewards = owner_rewards
+            .0
+            .into_iter()
+            .map(|(owner, amt)| ProtoSubnetworkReward {
+                account: owner,
+                amount: amt,
+            })
+            .collect();
+
+        SubnetworkRewards(sorted_rewards(unsorted_rewards))
+    }
+}
 
 impl SubnetworkRewards {
     pub fn is_empty(&self) -> bool {
@@ -125,8 +193,10 @@ async fn get_rewards(
     let counter = count_heartbeats(&mut stream).await?;
     let model = generate_model(&counter);
     if let Some(emitted) = get_emissions_per_model(&model, after_utc, before_utc - after_utc) {
-        let rewards = construct_rewards(&mut follower_service, counter, model, emitted).await?;
-        return Ok(Some(rewards));
+        let owner_rewards =
+            OwnerRewards::new(&mut follower_service, counter, model, emitted).await?;
+        let subnetwork_rewards = SubnetworkRewards::from(owner_rewards);
+        return Ok(Some(subnetwork_rewards.into()));
     }
     Ok(None)
 }
@@ -184,53 +254,6 @@ pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc
     let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
     let start_utc = min(after_utc, stop_utc);
     (start_utc, stop_utc)
-}
-
-pub async fn construct_rewards<F>(
-    owner_resolver: &mut F,
-    counter: Counter,
-    model: Model,
-    emitted: Emission,
-) -> Result<Vec<ProtoSubnetworkReward>>
-where
-    F: OwnerResolver,
-{
-    let mut rewards: Vec<ProtoSubnetworkReward> = Vec::with_capacity(counter.len());
-
-    for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
-        if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
-            if let Some(owner) = owner_resolver.resolve_owner(&gw_pubkey).await? {
-                let mut reward_acc = dec!(0);
-                for (cbsd_id, cnt) in per_cell_cnt {
-                    if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
-                        continue;
-                    }
-
-                    let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-                        cell_type
-                    } else {
-                        continue;
-                    };
-
-                    if let (Some(total_count), Some(total_reward)) =
-                        (model.get(&cell_type), emitted.get(&cell_type))
-                    {
-                        let amt = total_reward.get_decimal() / Decimal::from(*total_count);
-                        reward_acc += amt;
-                    }
-                }
-                rewards.push(ProtoSubnetworkReward {
-                    account: owner.to_vec(),
-                    amount: u64::from(Mobile::from(reward_acc)),
-                });
-            } else {
-                continue;
-            }
-        } else {
-            continue;
-        }
-    }
-    Ok(sorted_rewards(rewards))
 }
 
 #[cfg(test)]
@@ -320,10 +343,13 @@ mod test {
             .expect("unable to get test pubkey");
         let mut owner_resolver = FixedOwnerResolver { owner: test_owner };
 
-        let rewards = construct_rewards(&mut owner_resolver, counter, generated_model, emitted)
-            .await
-            .expect("unable to construct rewards");
-        assert_eq!(4, rewards.len());
+        let owner_rewards =
+            OwnerRewards::new(&mut owner_resolver, counter, generated_model, emitted)
+                .await
+                .expect("unable to create owner rewards");
+
+        let rewards: Vec<ProtoSubnetworkReward> = SubnetworkRewards::from(owner_rewards).into();
+        assert_eq!(1, rewards.len()); // there is only one fixed owner
 
         let tot_rewards = rewards.iter().fold(0, |acc, reward| acc + reward.amount);
 
@@ -342,7 +368,7 @@ mod test {
 
         // This is taken from a blockchain-node, constructing the exact same txn
         assert_eq!(
-            "d3VgXagj8fn-iLPqFW5JSWtUu7O9RV0Uce31jmviXs0".to_string(),
+            "hpnFwsGQQohIlAYGyaWJ-j3Hs8kIPeskh09qEkoL3I4".to_string(),
             txn_hash_str
         );
     }

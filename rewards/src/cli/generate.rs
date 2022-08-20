@@ -1,5 +1,6 @@
 use crate::{
-    cli::print_json, follower::FollowerService, subnetwork_rewards::SubnetworkRewards, Result,
+    cli::print_json, follower::FollowerService, subnetwork_rewards::SubnetworkRewards, PublicKey,
+    Result,
 };
 use chrono::NaiveDateTime;
 use helium_proto::SubnetworkReward as ProtoSubnetworkReward;
@@ -22,26 +23,36 @@ impl Cmd {
         let store = FileStore::from_env().await?;
         let follower_service = FollowerService::from_env()?;
 
-        let rewards = SubnetworkRewards::from_period(
+        SubnetworkRewards::from_period(
             store,
             follower_service,
             datetime_from_naive(self.after),
             datetime_from_naive(self.before),
         )
-        .await?;
+        .await?
+        .map_or_else(
+            || Ok(()),
+            |r| {
+                let proto_rewards: Vec<ProtoSubnetworkReward> = r.into();
 
-        let json = match rewards {
-            None => {
-                json!({ "rewards": "null", "total": 0 })
-            }
-            Some(r) => {
-                let proto_rewards: Vec<ProtoSubnetworkReward> = r.clone().into();
-                let total = proto_rewards
+                let total_rewards = proto_rewards
                     .iter()
                     .fold(0, |acc, reward| acc + reward.amount);
-                json!({ "rewards": r, "total": total })
-            }
-        };
-        print_json(&json)
+
+                // Convert Vec<u8> pubkeys to b58
+                let rewards: Vec<(PublicKey, u64)> = proto_rewards
+                    .iter()
+                    .map(|r| {
+                        (
+                            PublicKey::try_from(&r.account).expect("unable to get public key"),
+                            r.amount,
+                        )
+                    })
+                    .collect();
+
+                let json = json!({ "rewards": rewards, "total_rewards": total_rewards });
+                print_json(&json)
+            },
+        )
     }
 }
