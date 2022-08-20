@@ -199,35 +199,35 @@ where
 
     for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
         if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
-            let owner = owner_resolver.resolve_owner(&gw_pubkey).await?;
-            if owner.is_none() {
+            if let Some(owner) = owner_resolver.resolve_owner(&gw_pubkey).await? {
+                let mut reward_acc = dec!(0);
+                for (cbsd_id, cnt) in per_cell_cnt {
+                    if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
+                        continue;
+                    }
+
+                    let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
+                        cell_type
+                    } else {
+                        continue;
+                    };
+
+                    if let (Some(total_count), Some(total_reward)) =
+                        (model.get(&cell_type), emitted.get(&cell_type))
+                    {
+                        let amt = total_reward.get_decimal() / Decimal::from(*total_count);
+                        reward_acc += amt;
+                    }
+                }
+                rewards.push(ProtoSubnetworkReward {
+                    account: owner.to_vec(),
+                    amount: u64::from(Mobile::from(reward_acc)),
+                });
+            } else {
                 continue;
             }
-
-            let mut reward_acc = dec!(0);
-
-            for (cbsd_id, cnt) in per_cell_cnt {
-                if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
-                    continue;
-                }
-
-                let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-                    cell_type
-                } else {
-                    continue;
-                };
-
-                if let (Some(total_count), Some(total_reward)) =
-                    (model.get(&cell_type), emitted.get(&cell_type))
-                {
-                    let amt = total_reward.get_decimal() / Decimal::from(*total_count);
-                    reward_acc += amt;
-                }
-            }
-            rewards.push(ProtoSubnetworkReward {
-                account: owner.unwrap().to_vec(),
-                amount: u64::from(Mobile::from(reward_acc)),
-            });
+        } else {
+            continue;
         }
     }
     Ok(sorted_rewards(rewards))
