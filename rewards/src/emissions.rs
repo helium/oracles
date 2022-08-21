@@ -110,25 +110,29 @@ mod test {
         assert_eq!(expected, output);
     }
 
-    // #[test]
-    // fn post_genesis_reward() {
-    //     let expected = HashMap::from([
-    //         (CellModel::SercommOutdoor, 6111534 * BONES),
-    //         (CellModel::Nova430I, 6111534 * BONES),
-    //         (CellModel::Nova436H, 8148712 * BONES),
-    //         (CellModel::SercommIndoor, 4074356 * BONES),
-    //         (CellModel::Neutrino430, 4074356 * BONES),
-    //     ]);
-    //     let date = Utc.ymd(2023, 1, 1).and_hms(0, 0, 0);
-    //     let input = HashMap::from([
-    //         (CellModel::SercommOutdoor, 20),
-    //         (CellModel::Nova430I, 15),
-    //         (CellModel::Nova436H, 10),
-    //         (CellModel::SercommIndoor, 13),
-    //         (CellModel::Neutrino430, 8),
-    //     ]);
-    //     assert_eq!(expected, get_emissions_per_model(input, date))
-    // }
+    #[test]
+    fn emissions_per_second() {
+        // NOTE: The number of cells does not matter.
+        let input = HashMap::from([
+            (CellType::SercommOutdoor, 1),
+            (CellType::Nova430I, 133),
+            (CellType::Nova436H, 1),
+            (CellType::SercommIndoor, 924),
+            (CellType::Neutrino430, 2),
+        ]);
+        let output = get_emissions_per_model(&input, *GENESIS_START, Duration::seconds(1))
+            .expect("unable to get emissions");
+
+        // The emission per second is ALWAYS 1157.40740741 (in MOBILE)
+        let expected = Mobile::from(dec!(1157.40740741));
+
+        let sum: Mobile = output
+            .values()
+            .fold(Decimal::from(0), |acc, val| acc + val.get_decimal())
+            .into();
+
+        assert_eq!(expected, sum);
+    }
 
     #[test]
     fn no_reporting_model_reward() {

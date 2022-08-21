@@ -140,7 +140,7 @@ impl SubnetworkRewards {
 
 impl From<SubnetworkRewards> for Vec<ProtoSubnetworkReward> {
     fn from(subnetwork_rewards: SubnetworkRewards) -> Self {
-        subnetwork_rewards.0
+        sorted_rewards(subnetwork_rewards.0)
     }
 }
 
