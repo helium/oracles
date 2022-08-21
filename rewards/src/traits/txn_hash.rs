@@ -31,7 +31,6 @@ mod test {
         traits::{TxnSign, B64},
         Keypair, PublicKey,
     };
-    use helium_crypto::KeyTag;
     use helium_proto::SubnetworkReward;
     use std::str::FromStr;
 
@@ -67,11 +66,13 @@ mod test {
             reward_server_signature: vec![],
         };
 
-        let key_tag = KeyTag {
-            network: helium_crypto::Network::MainNet,
-            key_type: helium_crypto::KeyType::Ed25519,
-        };
-        let kp = Keypair::generate(key_tag);
+        let keypair_b64 = "EeNwbGXheUq4frT05EJwMtvGuz8zHyajOaN2h5yz5M9A58pZdf9bLayp8Ex6x0BkGxREleQnTNwOTyT2vPL0i1_nyll1_1strKnwTHrHQGQbFESV5CdM3A5PJPa88vSLXw";
+        let kp = Keypair::try_from(
+            Vec::from_b64_url(keypair_b64)
+                .expect("unable to get raw keypair")
+                .as_ref(),
+        )
+        .expect("unable to get keypair");
 
         let sig = txn.sign(&kp).expect("unable to sign txn");
         txn.reward_server_signature = sig.clone();
