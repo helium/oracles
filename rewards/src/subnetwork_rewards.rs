@@ -1,6 +1,7 @@
 use crate::{
     datetime_from_epoch,
     emissions::{get_emissions_per_model, Emission, Model},
+    env_var,
     follower::FollowerService,
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
@@ -19,7 +20,12 @@ use poc_store::{
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::{cmp::min, collections::HashMap};
+use serde::Serialize;
+use std::{
+    cmp::min,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 // default minutes to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
@@ -30,9 +36,77 @@ pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 1;
 pub type CbsdCounter = HashMap<String, u64>;
 // key: gateway_pubkeybin, val: CbsdCounter
 pub type Counter = HashMap<Vec<u8>, CbsdCounter>;
+// key: owner, val: reward_amt
+type OwnerRewardMap = HashMap<Vec<u8>, u64>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SubnetworkRewards(Vec<ProtoSubnetworkReward>);
+
+#[derive(Debug, Clone, Serialize)]
+struct OwnerRewards(OwnerRewardMap);
+
+impl OwnerRewards {
+    pub async fn new<F>(
+        owner_resolver: &mut F,
+        counter: Counter,
+        model: Model,
+        emitted: Emission,
+    ) -> Result<Self>
+    where
+        F: OwnerResolver,
+    {
+        let mut reward_map = OwnerRewardMap::new();
+
+        for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
+            if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
+                if let Some(owner) = owner_resolver.resolve_owner(&gw_pubkey).await? {
+                    let mut reward_acc = dec!(0);
+                    for (cbsd_id, cnt) in per_cell_cnt {
+                        if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
+                            continue;
+                        }
+
+                        let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
+                            cell_type
+                        } else {
+                            continue;
+                        };
+
+                        if let (Some(total_count), Some(total_reward)) =
+                            (model.get(&cell_type), emitted.get(&cell_type))
+                        {
+                            let amt = total_reward.get_decimal() / Decimal::from(*total_count);
+                            reward_acc += amt;
+                        }
+                    }
+                    *reward_map.entry(owner.to_vec()).or_insert(0) +=
+                        u64::from(Mobile::from(reward_acc));
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        }
+
+        Ok(OwnerRewards(reward_map))
+    }
+}
+
+impl From<OwnerRewards> for SubnetworkRewards {
+    fn from(owner_rewards: OwnerRewards) -> Self {
+        let unsorted_rewards = owner_rewards
+            .0
+            .into_iter()
+            .map(|(owner, amt)| ProtoSubnetworkReward {
+                account: owner,
+                amount: amt,
+            })
+            .collect();
+
+        SubnetworkRewards(sorted_rewards(unsorted_rewards))
+    }
+}
 
 impl SubnetworkRewards {
     pub fn is_empty(&self) -> bool {
@@ -44,25 +118,29 @@ impl SubnetworkRewards {
         follower_service: FollowerService,
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
-    ) -> Result<Self> {
-        let rewards = get_rewards(store, follower_service, after_utc, before_utc).await?;
-        Ok(Self(rewards))
+    ) -> Result<Option<Self>> {
+        if let Some(rewards) = get_rewards(store, follower_service, after_utc, before_utc).await? {
+            return Ok(Some(Self(rewards)));
+        }
+        Ok(None)
     }
 
     pub async fn from_last_reward_end_time(
         store: FileStore,
         follower_service: FollowerService,
         last_reward_end_time: i64,
-    ) -> Result<Self> {
+    ) -> Result<Option<Self>> {
         let (after_utc, before_utc) = get_time_range(last_reward_end_time);
-        let rewards = get_rewards(store, follower_service, after_utc, before_utc).await?;
-        Ok(Self(rewards))
+        if let Some(rewards) = get_rewards(store, follower_service, after_utc, before_utc).await? {
+            return Ok(Some(Self(rewards)));
+        }
+        Ok(None)
     }
 }
 
 impl From<SubnetworkRewards> for Vec<ProtoSubnetworkReward> {
     fn from(subnetwork_rewards: SubnetworkRewards) -> Self {
-        subnetwork_rewards.0
+        sorted_rewards(subnetwork_rewards.0)
     }
 }
 
@@ -91,7 +169,7 @@ async fn get_rewards(
     mut follower_service: FollowerService,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
-) -> Result<Vec<ProtoSubnetworkReward>> {
+) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
     if before_utc <= after_utc {
         tracing::error!(
             "cannot reward future period, before: {:?}, after: {:?}",
@@ -101,40 +179,54 @@ async fn get_rewards(
         return Err(Error::NotFound("cannot reward future".to_string()));
     }
 
+    let ingest_bucket = env_var("INGEST_BUCKET", "mainnet-poc5g-ingest".to_string())?;
+
     let file_list = store
         .list(
-            "poc5g-ingest",
+            &ingest_bucket,
             FileType::CellHeartbeat,
             after_utc,
             before_utc,
         )
         .await?;
-    metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
-    let mut stream = store_source(store, "poc5g-ingest", file_list);
+    let mut stream = store_source(store, ingest_bucket, file_list);
     let counter = count_heartbeats(&mut stream).await?;
     let model = generate_model(&counter);
-    let emitted = get_emissions_per_model(&model, after_utc, before_utc - after_utc);
-    let rewards = construct_rewards(&mut follower_service, counter, model, emitted).await?;
-    Ok(rewards)
+    if let Some(emitted) = get_emissions_per_model(&model, after_utc, before_utc - after_utc) {
+        let owner_rewards =
+            OwnerRewards::new(&mut follower_service, counter, model, emitted).await?;
+        let subnetwork_rewards = SubnetworkRewards::from(owner_rewards);
+        return Ok(Some(subnetwork_rewards.into()));
+    }
+    Ok(None)
 }
 
 async fn count_heartbeats(stream: &mut ByteStream) -> Result<Counter> {
     // count heartbeats for this input stream
-    let mut counter: Counter = HashMap::new();
-    while let Some(Ok(msg)) = stream.next().await {
-        let CellHeartbeatReqV1 {
-            pub_key, cbsd_id, ..
-        } = CellHeartbeatReqV1::decode(msg)?;
-        // Think of Counter more like a 2-dimensional sparse matrix and less like
-        // a hashmap of hashmaps.
-        let count = counter
-            .entry(pub_key)
-            .or_insert_with(HashMap::new)
-            .entry(cbsd_id)
-            .or_insert(0);
-        *count += 1;
-    }
-    Ok(counter)
+    let counter = Arc::new(Mutex::new(Counter::new()));
+
+    stream
+        .for_each_concurrent(10, |msg| async {
+            if let Ok(m) = msg {
+                let CellHeartbeatReqV1 {
+                    pub_key, cbsd_id, ..
+                } = CellHeartbeatReqV1::decode(m).unwrap();
+                // Think of Counter more like a 2-dimensional sparse matrix and less like
+                // a hashmap of hashmaps.
+                let mut c = counter.lock().unwrap();
+                let count = c
+                    .entry(pub_key)
+                    .or_insert_with(HashMap::new)
+                    .entry(cbsd_id)
+                    .or_insert(0);
+                *count += 1;
+            }
+        })
+        .await;
+
+    let result = Arc::try_unwrap(counter).unwrap().into_inner().unwrap();
+
+    Ok(result)
 }
 
 pub fn generate_model(counter: &Counter) -> Model {
@@ -162,53 +254,6 @@ pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc
     let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
     let start_utc = min(after_utc, stop_utc);
     (start_utc, stop_utc)
-}
-
-pub async fn construct_rewards<F>(
-    owner_resolver: &mut F,
-    counter: Counter,
-    model: Model,
-    emitted: Emission,
-) -> Result<Vec<ProtoSubnetworkReward>>
-where
-    F: OwnerResolver,
-{
-    let mut rewards: Vec<ProtoSubnetworkReward> = Vec::with_capacity(counter.len());
-
-    for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
-        if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
-            let owner = owner_resolver.resolve_owner(&gw_pubkey).await?;
-            if owner.is_none() {
-                continue;
-            }
-
-            let mut reward_acc = dec!(0);
-
-            for (cbsd_id, cnt) in per_cell_cnt {
-                if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
-                    continue;
-                }
-
-                let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-                    cell_type
-                } else {
-                    continue;
-                };
-
-                if let (Some(total_count), Some(total_reward)) =
-                    (model.get(&cell_type), emitted.get(&cell_type))
-                {
-                    let amt = total_reward.get_decimal() / Decimal::from(*total_count);
-                    reward_acc += amt;
-                }
-            }
-            rewards.push(ProtoSubnetworkReward {
-                account: owner.unwrap().to_vec(),
-                amount: u64::from(Mobile::from(reward_acc)),
-            });
-        }
-    }
-    Ok(sorted_rewards(rewards))
 }
 
 #[cfg(test)]
@@ -290,17 +335,21 @@ mod test {
 
         let after_utc = Utc::now();
         // let before_utc = after_utc - Duration::hours(24);
-        let emitted = get_emissions_per_model(&generated_model, after_utc, Duration::hours(24));
+        let emitted =
+            get_emissions_per_model(&generated_model, after_utc, Duration::hours(24)).unwrap();
         assert_eq!(emitted, expected_emitted);
 
         let test_owner = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
             .expect("unable to get test pubkey");
         let mut owner_resolver = FixedOwnerResolver { owner: test_owner };
 
-        let rewards = construct_rewards(&mut owner_resolver, counter, generated_model, emitted)
-            .await
-            .expect("unable to construct rewards");
-        assert_eq!(4, rewards.len());
+        let owner_rewards =
+            OwnerRewards::new(&mut owner_resolver, counter, generated_model, emitted)
+                .await
+                .expect("unable to create owner rewards");
+
+        let rewards: Vec<ProtoSubnetworkReward> = SubnetworkRewards::from(owner_rewards).into();
+        assert_eq!(1, rewards.len()); // there is only one fixed owner
 
         let tot_rewards = rewards.iter().fold(0, |acc, reward| acc + reward.amount);
 
@@ -319,7 +368,7 @@ mod test {
 
         // This is taken from a blockchain-node, constructing the exact same txn
         assert_eq!(
-            "d3VgXagj8fn-iLPqFW5JSWtUu7O9RV0Uce31jmviXs0".to_string(),
+            "hpnFwsGQQohIlAYGyaWJ-j3Hs8kIPeskh09qEkoL3I4".to_string(),
             txn_hash_str
         );
     }

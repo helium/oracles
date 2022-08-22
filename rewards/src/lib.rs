@@ -1,4 +1,5 @@
 mod cell_type;
+pub mod cli;
 pub mod decimal_scalar;
 pub mod emissions;
 mod error;
