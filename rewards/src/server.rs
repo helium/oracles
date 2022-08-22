@@ -15,6 +15,7 @@ use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
     FollowerTxnStreamRespV1, Message, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
 };
+use poc_common::record_duration;
 use poc_store::FileStore;
 use sqlx::{Pool, Postgres};
 use tokio::time;
@@ -112,13 +113,17 @@ impl Server {
             tokio::select! {
                 msg = txn_stream.message() => match msg {
                     Ok(Some(txn)) => {
-                        self.process_txn_entry(txn).await?;
+                        record_duration!(
+                            "reward_server_process_txn_entry_duration",
+                            self.process_txn_entry(txn).await?
+                        )
                     }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
                         return Ok(());
                     }
                     Err(err) => {
+                        metrics::increment_counter!("reward_server_txn_stream_error_count");
                         tracing::warn!("txn stream error {err:?}");
                         return Ok(());
                     }

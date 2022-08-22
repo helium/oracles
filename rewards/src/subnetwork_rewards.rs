@@ -109,6 +109,7 @@ async fn get_rewards(
             before_utc,
         )
         .await?;
+    metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
     let mut stream = store_source(store, "poc5g-ingest", file_list);
     let counter = count_heartbeats(&mut stream).await?;
     let model = generate_model(&counter);

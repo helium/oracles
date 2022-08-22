@@ -23,6 +23,9 @@ async fn main() -> Result {
 
     let _cli = Cli::parse();
 
+    // Install the prometheus metrics exporter
+    poc_common::install_metrics();
+
     // configure shutdown trigger
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();
     tokio::spawn(async move {
