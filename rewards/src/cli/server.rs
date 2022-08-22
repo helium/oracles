@@ -7,21 +7,24 @@ pub struct Cmd {}
 
 impl Cmd {
     pub async fn run(&self) -> Result {
-        // create database pool
+        // Install the prometheus metrics exporter
+        poc_common::install_metrics();
+
+        // Create database pool
         let pool = mk_db_pool(10).await?;
         sqlx::migrate!().run(&pool).await?;
 
-        // configure shutdown trigger
+        // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
             let _ = signal::ctrl_c().await;
             shutdown_trigger.trigger()
         });
 
-        // reward server keypair from env
+        // Reward server keypair from env
         let rs_keypair = load_from_file(&dotenv::var("REWARD_SERVER_KEYPAIR")?)?;
 
-        // reward server
+        // Reward server
         let mut reward_server = Server::new(pool.clone(), rs_keypair).await?;
 
         reward_server.run(shutdown_listener.clone()).await?;
