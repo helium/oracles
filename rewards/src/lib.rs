@@ -8,6 +8,7 @@ pub mod keypair;
 pub mod meta;
 pub mod pending_txn;
 mod public_key;
+pub mod reward_share;
 pub mod server;
 pub mod subnetwork_reward;
 pub mod subnetwork_rewards;

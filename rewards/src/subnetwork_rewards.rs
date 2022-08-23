@@ -1,106 +1,31 @@
 use crate::{
     cli::print_json,
     datetime_from_epoch,
-    emissions::{get_emissions_per_model, Emission, Model},
     follower::FollowerService,
+    reward_share::gather_shares,
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
-    traits::{OwnerResolver, TxnHash, TxnSign, B64},
-    CellType, Error, Keypair, Mobile, PublicKey, Result,
+    traits::{TxnHash, TxnSign, B64},
+    Error, Keypair, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::{self, StreamExt};
 use helium_proto::{
-    services::poc_mobile::CellHeartbeatReqV1, BlockchainTokenTypeV1 as ProtoTokenType,
-    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward as ProtoSubnetworkReward,
+    BlockchainTokenTypeV1 as ProtoTokenType, BlockchainTxnSubnetworkRewardsV1,
+    SubnetworkReward as ProtoSubnetworkReward,
 };
-use poc_store::{BytesMutStream, FileStore, FileType};
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
+use poc_store::{FileStore, FileType};
 use serde::Serialize;
 use serde_json::json;
-use std::{cmp::min, collections::HashMap};
+use std::cmp::min;
 
 // default minutes to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 // minimum number of heartbeats to consider for rewarding
 pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 1;
 
-// key: cbsd_id, val: # of heartbeats
-pub type CbsdCounter = HashMap<String, u64>;
-// key: gateway_pubkeybin, val: CbsdCounter
-pub type Counter = HashMap<Vec<u8>, CbsdCounter>;
-// key: owner, val: reward_amt
-type OwnerRewardMap = HashMap<Vec<u8>, u64>;
-
 #[derive(Debug, Clone, Serialize)]
 pub struct SubnetworkRewards(Vec<ProtoSubnetworkReward>);
-
-#[derive(Debug, Clone, Serialize)]
-struct OwnerRewards(OwnerRewardMap);
-
-impl OwnerRewards {
-    pub async fn new<F>(
-        owner_resolver: &mut F,
-        counter: Counter,
-        model: Model,
-        emitted: Emission,
-    ) -> Result<Self>
-    where
-        F: OwnerResolver,
-    {
-        let mut reward_map = OwnerRewardMap::new();
-
-        for (gw_pubkey_bin, per_cell_cnt) in counter.into_iter() {
-            if let Ok(gw_pubkey) = PublicKey::try_from(gw_pubkey_bin) {
-                if let Some(owner) = owner_resolver.resolve_owner(&gw_pubkey).await? {
-                    let mut reward_acc = dec!(0);
-                    for (cbsd_id, cnt) in per_cell_cnt {
-                        if cnt < MIN_PER_CELL_TYPE_HEARTBEATS {
-                            continue;
-                        }
-
-                        let cell_type = if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-                            cell_type
-                        } else {
-                            continue;
-                        };
-
-                        if let (Some(total_count), Some(total_reward)) =
-                            (model.get(&cell_type), emitted.get(&cell_type))
-                        {
-                            let amt = total_reward.get_decimal() / Decimal::from(*total_count);
-                            reward_acc += amt;
-                        }
-                    }
-                    *reward_map.entry(owner.to_vec()).or_insert(0) +=
-                        u64::from(Mobile::from(reward_acc));
-                } else {
-                    continue;
-                }
-            } else {
-                continue;
-            }
-        }
-
-        Ok(OwnerRewards(reward_map))
-    }
-}
-
-impl From<OwnerRewards> for SubnetworkRewards {
-    fn from(owner_rewards: OwnerRewards) -> Self {
-        let unsorted_rewards = owner_rewards
-            .0
-            .into_iter()
-            .map(|(owner, amt)| ProtoSubnetworkReward {
-                account: owner,
-                amount: amt,
-            })
-            .collect();
-
-        SubnetworkRewards(sorted_rewards(unsorted_rewards))
-    }
-}
 
 impl SubnetworkRewards {
     pub fn is_empty(&self) -> bool {
@@ -160,7 +85,7 @@ pub fn construct_txn(
 
 async fn get_rewards(
     store: FileStore,
-    mut follower_service: FollowerService,
+    mut _follower_service: FollowerService,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
 ) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
@@ -181,72 +106,17 @@ async fn get_rewards(
 
     metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
     let mut stream = store.source(stream::iter(file_list).map(Ok).boxed());
-    let counter = count_heartbeats(
+
+    let shares = gather_shares(
         &mut stream,
         after_utc.timestamp() as u64,
         before_utc.timestamp() as u64,
     )
     .await?;
-    let model = generate_model(&counter);
-    if let Some(emitted) = get_emissions_per_model(&model, after_utc, before_utc - after_utc) {
-        let owner_rewards =
-            OwnerRewards::new(&mut follower_service, counter, model, emitted).await?;
-        let subnetwork_rewards = SubnetworkRewards::from(owner_rewards);
-        return Ok(Some(subnetwork_rewards.into()));
-    }
+
+    print_json(&json!({ "shares": shares }))?;
+
     Ok(None)
-}
-
-async fn count_heartbeats(
-    stream: &mut BytesMutStream,
-    after_utc: u64,
-    before_utc: u64,
-) -> Result<Counter> {
-    // count heartbeats for this input stream
-    let mut counter = Counter::new();
-
-    while let Some(Ok(msg)) = stream.next().await {
-        let CellHeartbeatReqV1 {
-            pub_key,
-            cbsd_id,
-            timestamp,
-            ..
-        } = CellHeartbeatReqV1::decode(msg)?;
-
-        if timestamp < after_utc || timestamp >= before_utc {
-            continue;
-        }
-
-        // Think of Counter more like a 2-dimensional sparse matrix and less like
-        // a hashmap of hashmaps.
-        let count = counter
-            .entry(pub_key)
-            .or_insert_with(HashMap::new)
-            .entry(cbsd_id)
-            .or_insert(0);
-        *count += 1;
-    }
-
-    Ok(counter)
-}
-
-pub fn generate_model(counter: &Counter) -> Model {
-    // how many total mobile each cell_type needs to get
-    // (cell_type, mobile), (...)...
-    let mut model: HashMap<CellType, u64> = HashMap::new();
-    for (cbsd_id, single_hotspot_count) in counter
-        .iter()
-        .flat_map(|(_gw_pubkey_bin, sub_map)| sub_map.iter())
-    {
-        if let Some(ct) = CellType::from_cbsd_id(cbsd_id) {
-            let count = model.entry(ct).or_insert(0);
-            // This cell type only gets added to the model if it has more than MIN_PER_CELL_TYPE_HEARTBEATS
-            if *single_hotspot_count >= MIN_PER_CELL_TYPE_HEARTBEATS {
-                *count += 1
-            }
-        }
-    }
-    model
 }
 
 pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
@@ -278,7 +148,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[ignore = "credentials required"]
     async fn check_rewards() {
         // SercommIndoor
         let g1 = PublicKey::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")
