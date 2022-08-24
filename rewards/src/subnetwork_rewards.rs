@@ -2,7 +2,7 @@ use crate::{
     cli::print_json,
     datetime_from_epoch,
     follower::FollowerService,
-    reward_share::{cell_shares, gather_shares},
+    reward_share::{cell_shares, gather_shares, hotspot_shares, owner_emissions, owner_shares},
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
     traits::{TxnHash, TxnSign, B64},
@@ -85,7 +85,7 @@ pub fn construct_txn(
 
 async fn get_rewards(
     store: FileStore,
-    mut _follower_service: FollowerService,
+    mut follower_service: FollowerService,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
 ) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
@@ -97,28 +97,56 @@ async fn get_rewards(
         );
         return Err(Error::NotFound("cannot reward future".to_string()));
     }
+    let after_ts = after_utc.timestamp() as u64;
+    let before_ts = before_utc.timestamp() as u64;
 
     let file_list = store
         .list_all(FileType::CellHeartbeat, after_utc, before_utc)
         .await?;
-
-    print_json(&json!({ "file_list": file_list }))?;
-
     metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
+
+    let file_list_json = print_json(&json!({ "file_list": file_list }))?;
+    std::fs::write(
+        format!("/tmp/file_list-{}-{}.json", after_ts, before_ts),
+        file_list_json,
+    )?;
+
     let mut stream = store.source(stream::iter(file_list).map(Ok).boxed());
+    let shares = gather_shares(&mut stream, after_ts, before_ts).await?;
 
-    let shares = gather_shares(
-        &mut stream,
-        after_utc.timestamp() as u64,
-        before_utc.timestamp() as u64,
-    )
-    .await?;
+    let shares_json = print_json(&json!({ "shares": shares }))?;
+    std::fs::write(
+        format!("/tmp/shares-{}-{}.json", after_ts, before_ts),
+        shares_json,
+    )?;
 
-    print_json(&json!({ "shares": shares }))?;
+    let cell_shares = cell_shares(&shares);
+    let cell_shares_json = print_json(&json!({ "cell_shares": cell_shares }))?;
+    std::fs::write(
+        format!("/tmp/cell_shares-{}-{}.json", after_ts, before_ts),
+        cell_shares_json,
+    )?;
 
-    let cell_shares = cell_shares(shares);
+    let hotspot_shares = hotspot_shares(&shares);
+    let hotspot_shares_json = print_json(&json!({ "hotspot_shares": hotspot_shares }))?;
+    std::fs::write(
+        format!("/tmp/hotspot_shares-{}-{}.json", after_ts, before_ts),
+        hotspot_shares_json,
+    )?;
 
-    print_json(&json!({ "cell_shares": cell_shares }))?;
+    let owner_shares = owner_shares(&mut follower_service, hotspot_shares).await?;
+    let owner_shares_json = print_json(&json!({ "owner_shares": owner_shares }))?;
+    std::fs::write(
+        format!("/tmp/owner_shares-{}-{}.json", after_ts, before_ts),
+        owner_shares_json,
+    )?;
+
+    let owner_emissions = owner_emissions(owner_shares, after_utc, before_utc - after_utc);
+    let owner_emissions_json = print_json(&json!({ "owner_emissions": owner_emissions }))?;
+    std::fs::write(
+        format!("/tmp/owner_emissions-{}-{}.json", after_ts, before_ts),
+        owner_emissions_json,
+    )?;
 
     Ok(None)
 }

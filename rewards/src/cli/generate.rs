@@ -49,7 +49,8 @@ impl Cmd {
                         )
                     })
                     .collect();
-                print_json(&json!({ "rewards": rewards, "total_rewards": total_rewards }))
+                let _ = print_json(&json!({ "rewards": rewards, "total_rewards": total_rewards }))?;
+                Ok(())
             },
         )
     }

@@ -66,7 +66,7 @@ fn calc_rewards(cell_type: CellType, base_reward: Decimal, num_units: u64) -> Mo
     }
 }
 
-fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
+pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
     if *GENESIS_START <= start {
         // Get tokens from start - duration
         Some(
