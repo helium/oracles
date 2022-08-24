@@ -121,9 +121,19 @@ pub async fn gather_shares(
         }
 
         if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-            if let Ok(gw_pubkey) = PublicKey::try_from(pub_key) {
+            if let Ok(gw_pubkey) = PublicKey::try_from(&pub_key) {
                 let share = Share::new(timestamp, gw_pubkey, cell_type.reward_weight(), cell_type);
+
+                if shares
+                    .get(&cbsd_id)
+                    .map_or(false, |found_share| found_share.timestamp > timestamp)
+                {
+                    continue;
+                }
                 shares.insert(cbsd_id, share);
+            } else {
+                dbg!(pub_key);
+                continue;
             }
         }
     }
