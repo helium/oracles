@@ -1760,7 +1760,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
-name = "poc-common"
+name = "poc-metrics"
 version = "0.1.0"
 dependencies = [
  "metrics",
@@ -1818,7 +1818,7 @@ dependencies = [
  "http",
  "metrics",
  "metrics-exporter-prometheus",
- "poc-common",
+ "poc-metrics",
  "poc-store",
  "prost",
  "serde",
@@ -1850,7 +1850,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "once_cell",
- "poc-common",
+ "poc-metrics",
  "poc-store",
  "prost",
  "rand",
@@ -1886,7 +1886,7 @@ dependencies = [
  "lazy_static",
  "metrics",
  "once_cell",
- "poc-common",
+ "poc-metrics",
  "poc-store",
  "prost",
  "rust_decimal",

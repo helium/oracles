@@ -15,7 +15,7 @@ use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
     FollowerTxnStreamRespV1, Message, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
 };
-use poc_common::record_duration;
+use poc_metrics::record_duration;
 use poc_store::FileStore;
 use sqlx::{Pool, Postgres};
 use tokio::time;

@@ -9,7 +9,7 @@ use axum::{
     Json, Router,
 };
 use futures::TryFutureExt;
-use poc_common::record_duration;
+use poc_metrics::record_duration;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::{io, net::SocketAddr};
@@ -54,7 +54,7 @@ impl Server {
                 "/hotspots/:pubkey",
                 get(get_gateway).layer(RequireAuthorizationLayer::bearer(&api_ro_token)),
             )
-            .layer(poc_common::ActiveRequestsLayer::new(
+            .layer(poc_metrics::ActiveRequestsLayer::new(
                 "status_server_connection_count",
             ))
             .layer(TraceLayer::new_for_http())
