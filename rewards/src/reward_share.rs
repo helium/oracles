@@ -26,6 +26,9 @@ pub type OwnerShares = HashMap<PublicKey, Decimal>;
 // key: owner_pubkey, val: owner_reward
 pub type OwnerEmissions = HashMap<PublicKey, Mobile>;
 
+// key: gw_pubkey, val: total_accumulated_shares_for_this_hotspot
+pub type MissingOwnerShares = HashMap<PublicKey, Decimal>;
+
 #[derive(Debug, Serialize)]
 pub struct Share {
     pub timestamp: u64,
@@ -66,17 +69,20 @@ pub fn hotspot_shares(shares: &Shares) -> HotspotShares {
 pub async fn owner_shares<F>(
     owner_resolver: &mut F,
     hotspot_shares: HotspotShares,
-) -> Result<OwnerShares>
+) -> Result<(OwnerShares, MissingOwnerShares)>
 where
     F: OwnerResolver,
 {
     let mut owner_shares = OwnerShares::new();
+    let mut missing_owner_shares = MissingOwnerShares::new();
     for (hotspot, share) in hotspot_shares {
         if let Some(owner) = owner_resolver.resolve_owner(&hotspot).await? {
             *owner_shares.entry(owner).or_insert(dec!(0)) += share;
+        } else {
+            *missing_owner_shares.entry(hotspot).or_insert(dec!(0)) += share;
         }
     }
-    Ok(owner_shares)
+    Ok((owner_shares, missing_owner_shares))
 }
 
 pub fn owner_emissions(

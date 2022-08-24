@@ -134,11 +134,19 @@ async fn get_rewards(
         hotspot_shares_json,
     )?;
 
-    let owner_shares = owner_shares(&mut follower_service, hotspot_shares).await?;
+    let (owner_shares, missing_owner_shares) =
+        owner_shares(&mut follower_service, hotspot_shares).await?;
     let owner_shares_json = print_json(&json!({ "owner_shares": owner_shares }))?;
     std::fs::write(
         format!("/tmp/owner_shares-{}-{}.json", after_ts, before_ts),
         owner_shares_json,
+    )?;
+
+    let missing_owner_shares_json =
+        print_json(&json!({ "missing_owner_shares": missing_owner_shares }))?;
+    std::fs::write(
+        format!("/tmp/missing_owner_shares-{}-{}.json", after_ts, before_ts),
+        missing_owner_shares_json,
     )?;
 
     let owner_emissions = owner_emissions(owner_shares, after_utc, before_utc - after_utc);
