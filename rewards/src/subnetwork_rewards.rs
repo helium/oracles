@@ -2,7 +2,7 @@ use crate::{
     cli::print_json,
     datetime_from_epoch,
     follower::FollowerService,
-    reward_share::gather_shares,
+    reward_share::{cell_shares, gather_shares},
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
     traits::{TxnHash, TxnSign, B64},
@@ -115,6 +115,10 @@ async fn get_rewards(
     .await?;
 
     print_json(&json!({ "shares": shares }))?;
+
+    let cell_shares = cell_shares(shares);
+
+    print_json(&json!({ "cell_shares": cell_shares }))?;
 
     Ok(None)
 }

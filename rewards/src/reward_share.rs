@@ -2,6 +2,7 @@ use futures::stream::StreamExt;
 use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
 use poc_store::BytesMutStream;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::{CellType, PublicKey, Result};
@@ -9,6 +10,9 @@ use std::collections::HashMap;
 
 // key: cbsd_id, val: share
 pub type Shares = HashMap<String, Share>;
+
+// key: cell_type, val: total_accumulated_shares_for_this_cell_type
+pub type CellShares = HashMap<CellType, Decimal>;
 
 #[derive(Debug, Serialize)]
 pub struct Share {
@@ -27,6 +31,14 @@ impl Share {
             cell_type,
         }
     }
+}
+
+pub fn cell_shares(shares: Shares) -> CellShares {
+    let mut cell_shares = CellShares::new();
+    for (_, share) in shares {
+        *cell_shares.entry(share.cell_type).or_insert(dec!(0)) += share.weight;
+    }
+    cell_shares
 }
 
 pub async fn gather_shares(
