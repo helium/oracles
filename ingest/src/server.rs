@@ -106,7 +106,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
     tracing::info!("grpc listening on {}", grpc_addr);
 
     let server = transport::Server::builder()
-        .layer(poc_common::ActiveRequestsLayer::new(
+        .layer(poc_metrics::ActiveRequestsLayer::new(
             "ingest_server_grpc_connection_count",
         ))
         .add_service(poc_mobile::Server::with_interceptor(

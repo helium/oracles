@@ -8,7 +8,7 @@ pub struct Cmd {}
 impl Cmd {
     pub async fn run(&self) -> Result {
         // Install the prometheus metrics exporter
-        poc_common::install_metrics();
+        poc_metrics::install_metrics();
 
         // Create database pool
         let pool = mk_db_pool(10).await?;
