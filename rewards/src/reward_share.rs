@@ -12,14 +12,16 @@ pub type Shares = HashMap<String, Share>;
 
 #[derive(Debug, Serialize)]
 pub struct Share {
+    pub timestamp: u64,
     pub pub_key: PublicKey,
     pub weight: Decimal,
     pub cell_type: CellType,
 }
 
 impl Share {
-    pub fn new(pub_key: PublicKey, weight: Decimal, cell_type: CellType) -> Self {
+    pub fn new(timestamp: u64, pub_key: PublicKey, weight: Decimal, cell_type: CellType) -> Self {
         Self {
+            timestamp,
             pub_key,
             weight,
             cell_type,
@@ -48,7 +50,7 @@ pub async fn gather_shares(
 
         if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
             if let Ok(gw_pubkey) = PublicKey::try_from(pub_key) {
-                let share = Share::new(gw_pubkey, cell_type.reward_weight(), cell_type);
+                let share = Share::new(timestamp, gw_pubkey, cell_type.reward_weight(), cell_type);
                 shares.insert(cbsd_id, share);
             }
         }
