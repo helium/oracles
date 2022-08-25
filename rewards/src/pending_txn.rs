@@ -127,14 +127,14 @@ impl PendingTxn {
     {
         sqlx::query_as::<_, Self>(
             r#" 
-            insert into pending_txn ( hash, status) 
+            insert into pending_txn ( hash, txn_bin ) 
             values ($1, $2) 
             on conflict (hash) do nothing
             returning *;
             "#,
         )
         .bind(&self.hash)
-        .bind(&self.status)
+        .bind(&self.txn_bin)
         .fetch_one(executor)
         .map_err(Error::from)
         .await

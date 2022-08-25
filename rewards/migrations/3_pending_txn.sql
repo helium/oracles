@@ -11,6 +11,7 @@ create table pending_txn (
     hash text primary key not null,
     txn_bin bytea not null,
     status status default 'created' not null,
+    failed_reason text,
 
     submitted_at timestamptz,
     completed_at timestamptz,
