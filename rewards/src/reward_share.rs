@@ -1,13 +1,16 @@
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
-use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
+use helium_proto::{
+    services::poc_mobile::CellHeartbeatReqV1, Message, SubnetworkReward as ProtoSubnetworkReward,
+};
 use poc_store::BytesMutStream;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::{
-    emissions::get_scheduled_tokens, traits::OwnerResolver, CellType, Mobile, PublicKey, Result,
+    emissions::get_scheduled_tokens, subnetwork_rewards::SubnetworkRewards, traits::OwnerResolver,
+    CellType, Mobile, PublicKey, Result,
 };
 use std::collections::HashMap;
 
@@ -23,11 +26,52 @@ pub type HotspotShares = HashMap<PublicKey, Decimal>;
 // key: owner_pubkey, val: total_accumulated_shares_for_this_owner
 pub type OwnerShares = HashMap<PublicKey, Decimal>;
 
-// key: owner_pubkey, val: owner_reward
-pub type OwnerEmissions = HashMap<PublicKey, Mobile>;
-
 // key: gw_pubkey, val: total_accumulated_shares_for_this_hotspot
 pub type MissingOwnerShares = HashMap<PublicKey, Decimal>;
+
+// key: owner_pubkey, val: owner_reward (mobile)
+#[derive(Debug, Clone, Serialize)]
+pub struct OwnerEmissions(HashMap<PublicKey, Mobile>);
+
+impl OwnerEmissions {
+    pub fn new(owner_shares: OwnerShares, start: DateTime<Utc>, duration: Duration) -> Self {
+        let mut owner_emissions = HashMap::new();
+        let total_shares: Decimal = owner_shares.values().sum();
+        if let Some(actual_emissions) = get_scheduled_tokens(start, duration) {
+            let emissions_per_share = actual_emissions / total_shares;
+            for (owner, share) in owner_shares {
+                owner_emissions.insert(owner, Mobile::from(share * emissions_per_share));
+            }
+        }
+        OwnerEmissions(owner_emissions)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn total_emissions(&self) -> Mobile {
+        Mobile::from(
+            self.0
+                .values()
+                .fold(dec!(0), |acc, amt| acc + amt.get_decimal()),
+        )
+    }
+}
+
+impl From<OwnerEmissions> for SubnetworkRewards {
+    fn from(owner_emissions: OwnerEmissions) -> SubnetworkRewards {
+        let unsorted_rewards = owner_emissions
+            .0
+            .into_iter()
+            .map(|(owner, amt)| ProtoSubnetworkReward {
+                account: owner.to_vec(),
+                amount: u64::from(amt),
+            })
+            .collect();
+        SubnetworkRewards(unsorted_rewards)
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct Share {
@@ -85,22 +129,6 @@ where
     Ok((owner_shares, missing_owner_shares))
 }
 
-pub fn owner_emissions(
-    owner_shares: OwnerShares,
-    start: DateTime<Utc>,
-    duration: Duration,
-) -> OwnerEmissions {
-    let mut owner_emissions = OwnerEmissions::new();
-    let total_shares: Decimal = owner_shares.values().sum();
-    if let Some(actual_emissions) = get_scheduled_tokens(start, duration) {
-        let emissions_per_share = actual_emissions / total_shares;
-        for (owner, share) in owner_shares {
-            owner_emissions.insert(owner, Mobile::from(share * emissions_per_share));
-        }
-    }
-    owner_emissions
-}
-
 pub async fn gather_shares(
     stream: &mut BytesMutStream,
     after_utc: u64,
@@ -131,9 +159,6 @@ pub async fn gather_shares(
                     continue;
                 }
                 shares.insert(cbsd_id, share);
-            } else {
-                dbg!(pub_key);
-                continue;
             }
         }
     }

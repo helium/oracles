@@ -27,12 +27,11 @@ impl OwnerResolver for FollowerService {
         };
         let res = self.client.find_gateway(req).await?.into_inner();
 
-        if let Ok(pub_key) = PublicKey::try_from(res.clone().owner) {
-            Ok(Some(pub_key))
-        } else {
-            dbg!(res);
-            Ok(None)
+        if let Ok(pub_key) = PublicKey::try_from(res.owner) {
+            return Ok(Some(pub_key));
         }
+
+        Ok(None)
     }
 }
 

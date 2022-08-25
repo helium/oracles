@@ -1,12 +1,11 @@
 use crate::{
-    cli::print_json,
     datetime_from_epoch,
     follower::FollowerService,
-    reward_share::{cell_shares, gather_shares, hotspot_shares, owner_emissions, owner_shares},
+    reward_share::{cell_shares, gather_shares, hotspot_shares, owner_shares, OwnerEmissions},
     subnetwork_reward::sorted_rewards,
     token_type::BlockchainTokenTypeV1,
     traits::{TxnHash, TxnSign, B64},
-    Error, Keypair, Result,
+    write_json, Error, Keypair, Result,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::{self, StreamExt};
@@ -25,7 +24,7 @@ pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 1;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SubnetworkRewards(Vec<ProtoSubnetworkReward>);
+pub struct SubnetworkRewards(pub Vec<ProtoSubnetworkReward>);
 
 impl SubnetworkRewards {
     pub fn is_empty(&self) -> bool {
@@ -105,56 +104,62 @@ async fn get_rewards(
         .await?;
     metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
 
-    let file_list_json = print_json(&json!({ "file_list": file_list }))?;
-    std::fs::write(
-        format!("/tmp/file_list-{}-{}.json", after_ts, before_ts),
-        file_list_json,
+    write_json(
+        "file_list",
+        after_ts,
+        before_ts,
+        &json!({ "file_list": file_list }),
     )?;
 
     let mut stream = store.source(stream::iter(file_list).map(Ok).boxed());
-    let shares = gather_shares(&mut stream, after_ts, before_ts).await?;
 
-    let shares_json = print_json(&json!({ "shares": shares }))?;
-    std::fs::write(
-        format!("/tmp/shares-{}-{}.json", after_ts, before_ts),
-        shares_json,
-    )?;
+    let shares = gather_shares(&mut stream, after_ts, before_ts).await?;
+    write_json("shares", after_ts, before_ts, &json!({ "shares": shares }))?;
 
     let cell_shares = cell_shares(&shares);
-    let cell_shares_json = print_json(&json!({ "cell_shares": cell_shares }))?;
-    std::fs::write(
-        format!("/tmp/cell_shares-{}-{}.json", after_ts, before_ts),
-        cell_shares_json,
+    write_json(
+        "cell_shares",
+        after_ts,
+        before_ts,
+        &json!({ "cell_shares": cell_shares }),
     )?;
 
     let hotspot_shares = hotspot_shares(&shares);
-    let hotspot_shares_json = print_json(&json!({ "hotspot_shares": hotspot_shares }))?;
-    std::fs::write(
-        format!("/tmp/hotspot_shares-{}-{}.json", after_ts, before_ts),
-        hotspot_shares_json,
+    write_json(
+        "hotspot_shares",
+        after_ts,
+        before_ts,
+        &json!({ "hotspot_shares": hotspot_shares }),
     )?;
 
     let (owner_shares, missing_owner_shares) =
         owner_shares(&mut follower_service, hotspot_shares).await?;
-    let owner_shares_json = print_json(&json!({ "owner_shares": owner_shares }))?;
-    std::fs::write(
-        format!("/tmp/owner_shares-{}-{}.json", after_ts, before_ts),
-        owner_shares_json,
+    write_json(
+        "owner_shares",
+        after_ts,
+        before_ts,
+        &json!({ "owner_shares": owner_shares }),
     )?;
 
-    let missing_owner_shares_json =
-        print_json(&json!({ "missing_owner_shares": missing_owner_shares }))?;
-    std::fs::write(
-        format!("/tmp/missing_owner_shares-{}-{}.json", after_ts, before_ts),
-        missing_owner_shares_json,
+    write_json(
+        "missing_owner_shares",
+        after_ts,
+        before_ts,
+        &json!({ "missing_owner_shares": missing_owner_shares }),
     )?;
 
-    let owner_emissions = owner_emissions(owner_shares, after_utc, before_utc - after_utc);
-    let owner_emissions_json = print_json(&json!({ "owner_emissions": owner_emissions }))?;
-    std::fs::write(
-        format!("/tmp/owner_emissions-{}-{}.json", after_ts, before_ts),
-        owner_emissions_json,
+    let owner_emissions = OwnerEmissions::new(owner_shares, after_utc, before_utc - after_utc);
+    write_json(
+        "owner_emissions",
+        after_ts,
+        before_ts,
+        &json!({ "owner_emissions": owner_emissions, "total_emissions": owner_emissions.total_emissions() }),
     )?;
+
+    if !owner_emissions.is_empty() {
+        let subnetwork_rewards = SubnetworkRewards::from(owner_emissions);
+        return Ok(Some(subnetwork_rewards.into()));
+    }
 
     Ok(None)
 }
@@ -169,7 +174,7 @@ pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc
 
 #[cfg(test)]
 mod test {
-    use crate::Mobile;
+    use crate::{traits::owner_resolver::OwnerResolver, Mobile, PublicKey};
     use async_trait::async_trait;
     use rust_decimal_macros::dec;
     use std::str::FromStr;
