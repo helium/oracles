@@ -167,8 +167,8 @@ impl PendingTxn {
     {
         sqlx::query(status.update_all_query())
             .bind(status)
-            .bind(hashes)
             .bind(timestamp.into())
+            .bind(hashes)
             .execute(executor)
             .map_ok(|_| ())
             .map_err(Error::from)
