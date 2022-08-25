@@ -1,16 +1,17 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures::stream::StreamExt;
 use helium_proto::{
     services::poc_mobile::CellHeartbeatReqV1, Message, SubnetworkReward as ProtoSubnetworkReward,
 };
+use lazy_static::lazy_static;
 use poc_store::BytesMutStream;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::{
-    emissions::get_scheduled_tokens, subnetwork_rewards::SubnetworkRewards, traits::OwnerResolver,
-    CellType, Mobile, PublicKey, Result,
+    subnetwork_rewards::SubnetworkRewards, traits::OwnerResolver, CellType, Mobile, PublicKey,
+    Result,
 };
 use std::collections::HashMap;
 
@@ -32,6 +33,13 @@ pub type MissingOwnerShares = HashMap<PublicKey, Decimal>;
 // key: owner_pubkey, val: owner_reward (mobile)
 #[derive(Debug, Clone, Serialize)]
 pub struct OwnerEmissions(HashMap<PublicKey, Mobile>);
+
+// 100M genesis rewards per day
+const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
+
+lazy_static! {
+    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+}
 
 impl OwnerEmissions {
     pub fn new(owner_shares: OwnerShares, start: DateTime<Utc>, duration: Duration) -> Self {
@@ -89,6 +97,19 @@ impl Share {
             weight,
             cell_type,
         }
+    }
+}
+
+pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
+    if *GENESIS_START <= start {
+        // Get tokens from start - duration
+        Some(
+            (Decimal::from(GENESIS_REWARDS_PER_DAY)
+                / Decimal::from(Duration::hours(24).num_seconds()))
+                * Decimal::from(duration.num_seconds()),
+        )
+    } else {
+        None
     }
 }
 
@@ -164,4 +185,20 @@ pub async fn gather_shares(
     }
 
     Ok(shares)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn emissions_per_second() {
+        let scheduled_tokens = get_scheduled_tokens(Utc::now(), Duration::seconds(1))
+            .expect("unable to get scheduled_tokens");
+        assert_eq!(
+            Mobile::from(dec!(1157.40740741)),
+            Mobile::from(scheduled_tokens)
+        );
+    }
 }
