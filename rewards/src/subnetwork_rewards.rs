@@ -174,9 +174,12 @@ pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc
 
 #[cfg(test)]
 mod test {
-    use crate::{traits::owner_resolver::OwnerResolver, Mobile, PublicKey};
+    use crate::{
+        reward_share::{OwnerEmissions, Share, Shares},
+        traits::owner_resolver::OwnerResolver,
+        CellType, PublicKey,
+    };
     use async_trait::async_trait;
-    use rust_decimal_macros::dec;
     use std::str::FromStr;
 
     use super::*;
@@ -196,80 +199,58 @@ mod test {
     async fn check_rewards() {
         // SercommIndoor
         let g1 = PublicKey::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")
-            .expect("unable to construct pubkey")
-            .to_vec();
+            .expect("unable to construct pubkey");
         // Nova430I
         let g2 = PublicKey::from_str("118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc")
-            .expect("unable to construct pubkey")
-            .to_vec();
+            .expect("unable to construct pubkey");
         // SercommOutdoor
         let g3 = PublicKey::from_str("112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ")
-            .expect("unable to construct pubkey")
-            .to_vec();
+            .expect("unable to construct pubkey");
         // Nova436H
         let g4 = PublicKey::from_str("11k712d9dSb8CAujzS4PdC7Hi8EEBZWsSnt4Zr1hgke4e1Efiag")
-            .expect("unable to construct pubkey")
-            .to_vec();
+            .expect("unable to construct pubkey");
 
-        let mut c1 = CbsdCounter::new();
-        c1.insert("P27-SCE4255W2107CW5000014".to_string(), 4);
-        let mut c2 = CbsdCounter::new();
-        c2.insert("2AG32PBS3101S1202000464223GY0153".to_string(), 5);
-        let mut c3 = CbsdCounter::new();
-        c3.insert("P27-SCO4255PA102206DPT000207".to_string(), 6);
-        let mut c4 = CbsdCounter::new();
-        c4.insert("2AG32MBS3100196N1202000240215KY0184".to_string(), 3);
+        let c1 = "P27-SCE4255W2107CW5000014".to_string();
+        let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
+        let c3 = "P27-SCO4255PA102206DPT000207".to_string();
+        let c4 = "2AG32MBS3100196N1202000240215KY0184".to_string();
 
-        let mut counter = Counter::new();
-        counter.insert(g1, c1);
-        counter.insert(g2, c2);
-        counter.insert(g3, c3);
-        counter.insert(g4, c4);
+        let t1: u64 = 100;
+        let t2: u64 = 100;
+        let t3: u64 = 100;
+        let t4: u64 = 100;
 
-        let mut expected_model: Model = HashMap::new();
-        expected_model.insert(CellType::SercommIndoor, 1);
-        expected_model.insert(CellType::Nova436H, 1);
-        expected_model.insert(CellType::SercommOutdoor, 1);
-        expected_model.insert(CellType::Nova430I, 1);
+        let ct1 = CellType::from_cbsd_id(&c1).expect("unable to get cell_type");
+        let ct2 = CellType::from_cbsd_id(&c2).expect("unable to get cell_type");
+        let ct3 = CellType::from_cbsd_id(&c3).expect("unable to get cell_type");
+        let ct4 = CellType::from_cbsd_id(&c4).expect("unable to get cell_type");
 
-        let generated_model = generate_model(&counter);
-        assert_eq!(generated_model, expected_model);
+        let mut shares = Shares::new();
+        shares.insert(c1, Share::new(t1, g1, ct1.reward_weight(), ct1));
+        shares.insert(c2, Share::new(t2, g2, ct2.reward_weight(), ct2));
+        shares.insert(c3, Share::new(t3, g3, ct3.reward_weight(), ct3));
+        shares.insert(c4, Share::new(t4, g4, ct4.reward_weight(), ct4));
 
-        let mut expected_emitted: Emission = HashMap::new();
-        expected_emitted.insert(
-            CellType::SercommIndoor,
-            Mobile::from(dec!(10000000.00000000)),
-        );
-        expected_emitted.insert(
-            CellType::SercommOutdoor,
-            Mobile::from(dec!(25000000.00000000)),
-        );
-        expected_emitted.insert(CellType::Nova430I, Mobile::from(dec!(25000000.00000000)));
-        expected_emitted.insert(CellType::Neutrino430, Mobile::from(dec!(0.00000000)));
-        expected_emitted.insert(CellType::Nova436H, Mobile::from(dec!(40000000.00000000)));
-
-        let after_utc = Utc::now();
-        // let before_utc = after_utc - Duration::hours(24);
-        let emitted =
-            get_emissions_per_model(&generated_model, after_utc, Duration::hours(24)).unwrap();
-        assert_eq!(emitted, expected_emitted);
+        let hotspot_shares = hotspot_shares(&shares);
 
         let test_owner = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
             .expect("unable to get test pubkey");
         let mut owner_resolver = FixedOwnerResolver { owner: test_owner };
 
-        let owner_rewards =
-            OwnerRewards::new(&mut owner_resolver, counter, generated_model, emitted)
+        let (owner_shares, _missing_owner_shares) =
+            owner_shares(&mut owner_resolver, hotspot_shares)
                 .await
-                .expect("unable to create owner rewards");
+                .expect("unable to get owner_shares");
 
-        let rewards: Vec<ProtoSubnetworkReward> = SubnetworkRewards::from(owner_rewards).into();
-        assert_eq!(1, rewards.len()); // there is only one fixed owner
-
-        let tot_rewards = rewards.iter().fold(0, |acc, reward| acc + reward.amount);
+        let start = Utc::now();
+        let duration = Duration::hours(24);
+        let owner_emissions = OwnerEmissions::new(owner_shares, start, duration);
+        let total_owner_emissions = owner_emissions.total_emissions();
 
         // 100M in bones
-        assert_eq!(10000000000000000, tot_rewards);
+        assert_eq!(10000000000000000, u64::from(total_owner_emissions));
+
+        let subnetwork_rewards = SubnetworkRewards::from(owner_emissions);
 
         let keypair_b64 = "EeNwbGXheUq4frT05EJwMtvGuz8zHyajOaN2h5yz5M9A58pZdf9bLayp8Ex6x0BkGxREleQnTNwOTyT2vPL0i1_nyll1_1strKnwTHrHQGQbFESV5CdM3A5PJPa88vSLXw";
         let kp = Keypair::try_from(
@@ -278,8 +259,8 @@ mod test {
                 .as_ref(),
         )
         .expect("unable to get keypair");
-        let (_txn, txn_hash_str) = construct_txn(&kp, SubnetworkRewards(rewards), 1000, 1010)
-            .expect("unable to construct txn");
+        let (_txn, txn_hash_str) =
+            construct_txn(&kp, subnetwork_rewards, 1000, 1010).expect("unable to construct txn");
 
         // This is taken from a blockchain-node, constructing the exact same txn
         assert_eq!(
