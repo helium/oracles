@@ -15,22 +15,22 @@ use crate::{
 };
 use std::collections::HashMap;
 
-// key: cbsd_id, val: share
+/// Map from cbsd_id to share
 pub type Shares = HashMap<String, Share>;
 
-// key: cell_type, val: total_accumulated_shares_for_this_cell_type
+/// Map from cell_type to accumulated_reward_weight (decimal)
 pub type CellShares = HashMap<CellType, Decimal>;
 
-// key: gw_pubkey, val: total_accumulated_shares_for_this_hotspot
+/// Map from gw_public_key to accumulated_reward_weight (decimal)
 pub type HotspotShares = HashMap<PublicKey, Decimal>;
 
-// key: owner_pubkey, val: total_accumulated_shares_for_this_owner
+/// Map from owner_public_key to accumulated_reward_weight (decimal)
 pub type OwnerShares = HashMap<PublicKey, Decimal>;
 
-// key: gw_pubkey, val: total_accumulated_shares_for_this_hotspot
+/// Map from gw_public_key (without owners) to accumulated_reward_weight (decimal)
 pub type MissingOwnerShares = HashMap<PublicKey, Decimal>;
 
-// key: owner_pubkey, val: owner_reward (mobile)
+/// Map from owner_public_key to accumulated_rewards (mobile)
 #[derive(Debug, Clone, Serialize)]
 pub struct OwnerEmissions(HashMap<PublicKey, Mobile>);
 
@@ -116,7 +116,7 @@ pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<
 pub fn cell_shares(shares: &Shares) -> CellShares {
     let mut cell_shares = CellShares::new();
     for share in shares.values() {
-        *cell_shares.entry(share.cell_type).or_insert(dec!(0)) += share.weight;
+        *cell_shares.entry(share.cell_type).or_default() += share.weight;
     }
     cell_shares
 }
@@ -124,9 +124,7 @@ pub fn cell_shares(shares: &Shares) -> CellShares {
 pub fn hotspot_shares(shares: &Shares) -> HotspotShares {
     let mut hotspot_shares = HotspotShares::new();
     for share in shares.values() {
-        *hotspot_shares
-            .entry(share.pub_key.clone())
-            .or_insert(dec!(0)) += share.weight;
+        *hotspot_shares.entry(share.pub_key.clone()).or_default() += share.weight;
     }
     hotspot_shares
 }
@@ -142,9 +140,9 @@ where
     let mut missing_owner_shares = MissingOwnerShares::new();
     for (hotspot, share) in hotspot_shares {
         if let Some(owner) = owner_resolver.resolve_owner(&hotspot).await? {
-            *owner_shares.entry(owner).or_insert(dec!(0)) += share;
+            *owner_shares.entry(owner).or_default() += share;
         } else {
-            *missing_owner_shares.entry(hotspot).or_insert(dec!(0)) += share;
+            *missing_owner_shares.entry(hotspot).or_default() += share;
         }
     }
     Ok((owner_shares, missing_owner_shares))
@@ -158,6 +156,7 @@ pub async fn gather_shares(
     let mut shares = Shares::new();
 
     while let Some(Ok(msg)) = stream.next().await {
+        // NOTE: This will early exit with an error if we fail to decode
         let CellHeartbeatReqV1 {
             pub_key,
             cbsd_id,
