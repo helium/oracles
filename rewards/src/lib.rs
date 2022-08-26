@@ -1,13 +1,13 @@
 mod cell_type;
 pub mod cli;
 pub mod decimal_scalar;
-pub mod emissions;
 mod error;
 pub mod follower;
 pub mod keypair;
 pub mod meta;
 pub mod pending_txn;
 mod public_key;
+pub mod reward_share;
 pub mod server;
 pub mod subnetwork_reward;
 pub mod subnetwork_rewards;
@@ -26,10 +26,23 @@ pub use public_key::PublicKey;
 pub use uuid::Uuid;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use std::io;
+use std::{io, path::Path};
 
 pub fn datetime_from_epoch(secs: i64) -> DateTime<Utc> {
     DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(secs, 0), Utc)
+}
+
+pub fn write_json<T: ?Sized + serde::Serialize>(
+    fname_prefix: &str,
+    after_ts: u64,
+    before_ts: u64,
+    data: &T,
+) -> Result {
+    let tmp_output_dir = env_var("TMP_OUTPUT_DIR", "/tmp".to_string())?;
+    let fname = format!("{}-{}-{}.json", fname_prefix, after_ts, before_ts);
+    let fpath = Path::new(&tmp_output_dir).join(&fname);
+    std::fs::write(Path::new(&fpath), serde_json::to_string_pretty(data)?)?;
+    Ok(())
 }
 
 fn env_var<T>(key: &str, default: T) -> Result<T>

@@ -76,7 +76,6 @@ pub struct PendingTxn {
     pub hash: String,
     pub txn_bin: Vec<u8>,
     pub status: Status,
-    pub failed_reason: Option<String>,
 
     pub submitted_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -111,7 +110,6 @@ impl PendingTxn {
             txn_bin,
             status: Status::Created,
 
-            failed_reason: None,
             created_at: None,
             updated_at: None,
 
@@ -127,14 +125,14 @@ impl PendingTxn {
     {
         sqlx::query_as::<_, Self>(
             r#" 
-            insert into pending_txn ( hash, status) 
+            insert into pending_txn ( hash, txn_bin ) 
             values ($1, $2) 
             on conflict (hash) do nothing
             returning *;
             "#,
         )
         .bind(&self.hash)
-        .bind(&self.status)
+        .bind(&self.txn_bin)
         .fetch_one(executor)
         .map_err(Error::from)
         .await
@@ -167,8 +165,8 @@ impl PendingTxn {
     {
         sqlx::query(status.update_all_query())
             .bind(status)
-            .bind(hashes)
             .bind(timestamp.into())
+            .bind(hashes)
             .execute(executor)
             .map_ok(|_| ())
             .map_err(Error::from)

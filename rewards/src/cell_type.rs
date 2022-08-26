@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::Serialize;
 
 pub const CELLTYPE_NOVA_436H: &str = "2AG32MBS3100196N";
 pub const CELLTYPE_NOVA_430I: &str = "2AG32PBS3101S";
@@ -7,7 +8,7 @@ pub const CELLTYPE_NEUTRINO_430: &str = "2AG32PBS31010";
 pub const CELLTYPE_SERCCOMM_INDOOR: &str = "P27-SCE4255W";
 pub const CELLTYPE_SERCCOMM_OUTDOOR: &str = "P27-SCO4255PA10";
 
-#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone, Serialize)]
 pub enum CellType {
     Nova436H,
     Nova430I,

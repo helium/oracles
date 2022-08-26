@@ -30,6 +30,7 @@ impl OwnerResolver for FollowerService {
         if let Ok(pub_key) = PublicKey::try_from(res.owner) {
             return Ok(Some(pub_key));
         }
+
         Ok(None)
     }
 }
