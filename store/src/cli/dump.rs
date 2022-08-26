@@ -1,4 +1,6 @@
-use crate::{file_source, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, FileType, Result};
+use crate::{
+    file_source, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, FileInfo, FileType, Result,
+};
 use csv::Writer;
 use futures::stream::StreamExt;
 use helium_proto::{
@@ -20,16 +22,16 @@ impl Cmd {
     pub async fn run(&self) -> Result {
         let mut file_stream = file_source::source(&[&self.in_path]);
         let mut wtr = Writer::from_writer(io::stdout());
-        let file_prefix = self
-            .in_path
-            .file_name()
-            .expect("invalid_file_name")
-            .to_str()
-            .expect("invalid_file_str")
-            .split('.')
-            .collect::<Vec<_>>()[0];
 
-        match FileType::from_str(file_prefix)? {
+        let file_info = FileInfo::from_str(
+            self.in_path
+                .file_name()
+                .expect("unable to get filename")
+                .to_str()
+                .expect("unable to get filename str"),
+        )?;
+
+        match file_info.file_type {
             FileType::CellHeartbeat => {
                 while let Some(result) = file_stream.next().await {
                     let msg = result?;
