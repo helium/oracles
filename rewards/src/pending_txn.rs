@@ -76,7 +76,6 @@ pub struct PendingTxn {
     pub hash: String,
     pub txn_bin: Vec<u8>,
     pub status: Status,
-    pub failed_reason: Option<String>,
 
     pub submitted_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -111,7 +110,6 @@ impl PendingTxn {
             txn_bin,
             status: Status::Created,
 
-            failed_reason: None,
             created_at: None,
             updated_at: None,
 
