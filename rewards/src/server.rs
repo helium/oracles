@@ -278,13 +278,12 @@ impl Server {
                     None => {
                         tracing::error!("cannot continue, no known last_reward_height!")
                     }
-                    Some(last_reward_height) => match rewards {
-                        Some(r) => {
+                    Some(last_reward_height) => {
+                        if let Some(r) = rewards {
                             self.issue_rewards(r, last_reward_height + 1, block_height as i64)
                                 .await?;
                         }
-                        None => (),
-                    },
+                    }
                 }
             }
         }

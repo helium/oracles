@@ -1,21 +1,23 @@
-use crate::{env_var, gateway::Gateway, meta::Meta, mk_db_pool, PublicKey, Result};
+use crate::{gateway::Gateway, meta::Meta, mk_db_pool, PublicKey, Result};
 use chrono::{Duration, Utc};
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
     Message,
 };
-use poc_store::{datetime_from_epoch, file_source, FileStore, FileType};
+use poc_store::{datetime_from_epoch, FileStore, FileType};
 use sqlx::PgPool;
 use tokio::time;
 
 const STORE_POLL_TIME: time::Duration = time::Duration::from_secs(10 * 60);
-const LOADER_WORKERS: usize = 10;
-const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
+const LOADER_WORKERS: usize = 2;
+const STORE_WORKERS: usize = 5;
+// DB pool size if the store worker count multiplied by the number of file types
+// since they're processed concurrently
+const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;
 
 pub struct Loader {
     store: FileStore,
-    bucket: String,
     pool: PgPool,
 }
 
@@ -23,12 +25,7 @@ impl Loader {
     pub async fn from_env() -> Result<Self> {
         let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
         let store = FileStore::from_env().await?;
-        let bucket = env_var("INGEST_BUCKET")?.unwrap_or_else(|| "poc5g_ingest".to_string());
-        Ok(Self {
-            pool,
-            store,
-            bucket,
-        })
+        Ok(Self { pool, store })
     }
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
@@ -56,39 +53,51 @@ impl Loader {
     }
 
     async fn handle_store_tick(&self, shutdown: triggered::Listener) -> Result {
-        let file_type = FileType::CellHeartbeat;
+        stream::iter(&[FileType::CellHeartbeat, FileType::CellSpeedtest])
+            .map(|file_type| (file_type, shutdown.clone()))
+            .for_each_concurrent(2, |(file_type, shutdown)| async move {
+                let _ = self.process_events(*file_type, shutdown).await;
+            })
+            .await;
+        Ok(())
+    }
+
+    async fn process_events(&self, file_type: FileType, shutdown: triggered::Listener) -> Result {
+        let recent_time = Utc::now() - Duration::hours(2);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
-            .unwrap_or_else(|| Utc::now() - Duration::hours(4));
-        let infos = self
-            .store
-            .list(&self.bucket, FileType::CellHeartbeat, last_time, None)
-            .await?;
+            .unwrap_or(recent_time)
+            .max(recent_time);
+
+        tracing::info!("fetching {file_type} info");
+
+        let infos = self.store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
-            tracing::info!("no ingest files to process from: {}", last_time);
+            tracing::info!("no ingest {file_type} files to process from: {last_time}");
             return Ok(());
         }
 
         let last_timestamp = infos.last().map(|v| v.timestamp);
         let infos_len = infos.len();
-        tracing::info!("processing {infos_len} files");
-        let stream: file_source::ByteStream =
-            file_source::store_source(self.store.clone(), &self.bucket, infos);
-        let handler = stream.for_each_concurrent(LOADER_WORKERS, |msg| async move {
-            match msg {
-                Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
-                Ok(buf) => match self.handle_store_update(file_type, &buf).await {
-                    Ok(()) => (),
-                    Err(err) => {
-                        tracing::warn!("failed to update store: {err:?}")
-                    }
-                },
-            }
-        });
+        tracing::info!("processing {infos_len} {file_type} files");
+        let handler = self
+            .store
+            .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
+            .for_each_concurrent(STORE_WORKERS, |msg| async move {
+                match msg {
+                    Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
+                    Ok(buf) => match self.handle_store_update(file_type, &buf).await {
+                        Ok(()) => (),
+                        Err(err) => {
+                            tracing::warn!("failed to update store: {err:?}")
+                        }
+                    },
+                }
+            });
 
         tokio::select! {
             _ = handler => {
-                tracing::info!("completed processing {infos_len} files");
+                tracing::info!("completed processing {infos_len} {file_type} files");
                 Meta::update_last_timestamp(&self.pool, file_type, last_timestamp).await?;
             },
             _ = shutdown.clone() => (),

@@ -10,6 +10,8 @@ pub enum Error {
     Sql(#[from] sqlx::Error),
     #[error("io error")]
     Io(#[from] std::io::Error),
+    #[error("join error")]
+    Join(#[from] tokio::task::JoinError),
     #[error("encode error")]
     Encode(#[from] EncodeError),
     #[error("decode error")]
@@ -30,8 +32,6 @@ pub enum Error {
     Store(#[from] poc_store::Error),
     #[error("not found")]
     NotFound(String),
-    #[error("base64 decode error")]
-    Base64DecodeError(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]
@@ -46,6 +46,8 @@ pub enum DecodeError {
     Chrono(#[from] chrono::ParseError),
     #[error("invalid decimals in {0}, only 8 allowed")]
     Decimals(String),
+    #[error("base64 error")]
+    Base64(#[from] base64::DecodeError),
 }
 
 #[derive(Error, Debug)]

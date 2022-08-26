@@ -17,7 +17,13 @@ pub use file_store::FileStore;
 pub use msg_verify::MsgVerify;
 pub use public_key::PublicKey;
 
+use bytes::BytesMut;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use futures::stream::BoxStream;
+
+pub type Stream<T> = BoxStream<'static, Result<T>>;
+pub type FileInfoStream = Stream<FileInfo>;
+pub type BytesMutStream = Stream<BytesMut>;
 
 pub fn datetime_from_epoch(secs: u64) -> DateTime<Utc> {
     DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(secs as i64, 0), Utc)

@@ -19,7 +19,7 @@ pub struct Cmd {
 impl Cmd {
     pub async fn run(&self) -> Result {
         let file_info = FileInfo::try_from(self.path.as_path())?;
-        let mut file_stream = file_source::file_source(&[&self.path]);
+        let mut file_stream = file_source::source(&[&self.path]);
 
         let mut count = 1;
         let buf = match file_stream.next().await {
