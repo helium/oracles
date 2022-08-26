@@ -1,6 +1,13 @@
-use crate::{datetime_from_naive, Error, FileInfoStream, FileStore, FileType, Result};
+use crate::{
+    datetime_from_naive, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, Error, FileInfoStream,
+    FileStore, FileType, PublicKey, Result,
+};
 use chrono::NaiveDateTime;
-use futures::{stream::TryStreamExt, TryFutureExt};
+use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
+use helium_proto::{
+    services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
+    Message,
+};
 use serde::{ser::SerializeSeq, Serializer};
 use std::{
     io,
@@ -50,9 +57,9 @@ struct FileFilter {
     /// available timestamp in the bucket.
     #[clap(long)]
     before: Option<NaiveDateTime>,
-    /// The (optional) file type to search for
+    /// The file type to search for
     #[clap(long)]
-    file_type: Option<FileType>,
+    file_type: FileType,
 }
 
 impl FileFilter {
@@ -157,5 +164,62 @@ impl Get {
             })
             .await?;
         Ok(())
+    }
+}
+
+/// Locate specific records in a time range
+#[derive(Debug, clap::Args)]
+pub struct Locate {
+    gateway: PublicKey,
+
+    #[clap(flatten)]
+    filter: FileFilter,
+}
+
+impl Locate {
+    pub async fn run(&self) -> Result {
+        let store = FileStore::from_env().await?;
+        let file_infos = self.filter.list(&store);
+        let file_type = self.filter.file_type;
+        let gateway = &self.gateway.clone();
+        let mut events = store
+            .source(file_infos)
+            .map_ok(|buf| (buf, gateway))
+            .try_filter_map(|(buf, gateway)| async move { locate(file_type, gateway, &buf) })
+            .boxed();
+        let mut ser = serde_json::Serializer::new(io::stdout());
+        let mut seq = ser.serialize_seq(None)?;
+        while let Some(event) = events.try_next().await? {
+            seq.serialize_element(&event)?;
+        }
+        seq.end()?;
+        Ok(())
+    }
+}
+
+fn locate(
+    file_type: FileType,
+    gateway: &PublicKey,
+    buf: &[u8],
+) -> Result<Option<serde_json::Value>> {
+    match file_type {
+        FileType::CellHeartbeat => CellHeartbeatReqV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(CellHeartbeat::try_from)
+            .and_then(|event| {
+                (event.pubkey == *gateway)
+                    .then(|| serde_json::to_value(event))
+                    .transpose()
+                    .map_err(Error::from)
+            }),
+        FileType::CellSpeedtest => SpeedtestReqV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(CellSpeedtest::try_from)
+            .and_then(|event| {
+                (event.pubkey == *gateway)
+                    .then(|| serde_json::to_value(event))
+                    .transpose()
+                    .map_err(Error::from)
+            }),
     }
 }
