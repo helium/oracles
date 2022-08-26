@@ -45,8 +45,8 @@ impl OwnerEmissions {
     pub fn new(owner_shares: OwnerShares, start: DateTime<Utc>, duration: Duration) -> Self {
         let mut owner_emissions = HashMap::new();
         let total_shares: Decimal = owner_shares.values().sum();
-        if let Some(actual_emissions) = get_scheduled_tokens(start, duration) {
-            if total_shares > dec!(0) {
+        if total_shares > dec!(0) {
+            if let Some(actual_emissions) = get_scheduled_tokens(start, duration) {
                 let emissions_per_share = actual_emissions / total_shares;
                 for (owner, share) in owner_shares {
                     owner_emissions.insert(owner, Mobile::from(share * emissions_per_share));
