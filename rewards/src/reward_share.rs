@@ -1,7 +1,8 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures::stream::StreamExt;
 use helium_proto::{
-    services::poc_mobile::CellHeartbeatReqV1, Message, SubnetworkReward as ProtoSubnetworkReward,
+    services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
+    Message, SubnetworkReward as ProtoSubnetworkReward,
 };
 use lazy_static::lazy_static;
 use poc_store::BytesMutStream;
@@ -10,8 +11,10 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::{
-    subnetwork_rewards::SubnetworkRewards, traits::OwnerResolver, CellType, Mobile, PublicKey,
-    Result,
+    reward_speed_share::{SpeedShare, SpeedShareMovingAvgs, SpeedShares},
+    subnetwork_rewards::SubnetworkRewards,
+    traits::OwnerResolver,
+    CellType, Mobile, PublicKey, Result,
 };
 use std::collections::HashMap;
 
@@ -123,10 +126,18 @@ pub fn cell_shares(shares: &Shares) -> CellShares {
     cell_shares
 }
 
-pub fn hotspot_shares(shares: &Shares) -> HotspotShares {
+pub fn hotspot_shares(
+    shares: &Shares,
+    speed_shares_moving_avg: &SpeedShareMovingAvgs,
+) -> HotspotShares {
     let mut hotspot_shares = HotspotShares::new();
     for share in shares.values() {
-        *hotspot_shares.entry(share.pub_key.clone()).or_default() += share.weight;
+        let gw_public_key = &share.pub_key;
+        if let Some(moving_avg) = speed_shares_moving_avg.get(gw_public_key) {
+            if moving_avg.is_valid() {
+                *hotspot_shares.entry(gw_public_key.clone()).or_default() += share.weight;
+            }
+        }
     }
     hotspot_shares
 }
@@ -154,38 +165,100 @@ pub async fn gather_shares(
     stream: &mut BytesMutStream,
     after_utc: u64,
     before_utc: u64,
-) -> Result<Shares> {
+) -> Result<(Shares, SpeedShares, SpeedShareMovingAvgs)> {
     let mut shares = Shares::new();
+    let mut speed_shares = SpeedShares::new();
+    let mut speed_shares_moving_avg = SpeedShareMovingAvgs::default();
 
     while let Some(Ok(msg)) = stream.next().await {
         // NOTE: This will early exit with an error if we fail to decode
-        let CellHeartbeatReqV1 {
-            pub_key,
-            cbsd_id,
-            timestamp,
-            ..
-        } = CellHeartbeatReqV1::decode(msg)?;
 
-        if timestamp < after_utc || timestamp >= before_utc {
+        if let Ok(cell_heartbeat_req_v1) = CellHeartbeatReqV1::decode(msg.clone()) {
+            gather_heartbeat(&mut shares, cell_heartbeat_req_v1, after_utc, before_utc)
+        } else if let Ok(speedtest_req_v1) = SpeedtestReqV1::decode(msg) {
+            gather_speedtest(
+                &mut speed_shares,
+                &mut speed_shares_moving_avg,
+                speedtest_req_v1,
+                after_utc,
+                before_utc,
+            )
+        } else {
             continue;
         }
+    }
+    Ok((shares, speed_shares, speed_shares_moving_avg))
+}
 
-        if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-            if let Ok(gw_pubkey) = PublicKey::try_from(&pub_key) {
-                let share = Share::new(timestamp, gw_pubkey, cell_type.reward_weight(), cell_type);
+fn gather_speedtest(
+    speed_shares: &mut SpeedShares,
+    speed_shares_moving_avg: &mut SpeedShareMovingAvgs,
+    speedtest_req_v1: SpeedtestReqV1,
+    after_utc: u64,
+    before_utc: u64,
+) {
+    let SpeedtestReqV1 {
+        pub_key: st_pub_key,
+        timestamp: st_timestamp,
+        upload_speed: st_upload_speed,
+        download_speed: st_download_speed,
+        latency: st_latency,
+        ..
+    } = speedtest_req_v1;
 
-                if shares
-                    .get(&cbsd_id)
-                    .map_or(false, |found_share| found_share.timestamp > timestamp)
-                {
-                    continue;
-                }
-                shares.insert(cbsd_id, share);
-            }
-        }
+    if st_timestamp < after_utc || st_timestamp >= before_utc {
+        return;
     }
 
-    Ok(shares)
+    if let Ok(gw_public_key) = PublicKey::try_from(&st_pub_key) {
+        let share = SpeedShare::new(
+            gw_public_key.clone(),
+            st_timestamp,
+            st_upload_speed,
+            st_download_speed,
+            st_latency,
+        );
+
+        speed_shares.entry(gw_public_key).or_default().push(share);
+        speed_shares_moving_avg.update(speed_shares)
+    }
+}
+
+fn gather_heartbeat(
+    shares: &mut Shares,
+    cell_heartbeat_req_v1: CellHeartbeatReqV1,
+    after_utc: u64,
+    before_utc: u64,
+) {
+    let CellHeartbeatReqV1 {
+        pub_key: hb_pub_key,
+        cbsd_id: hb_cbsd_id,
+        timestamp: hb_timestamp,
+        ..
+    } = cell_heartbeat_req_v1;
+
+    if hb_timestamp < after_utc || hb_timestamp >= before_utc {
+        return;
+    }
+
+    if let Some(cell_type) = CellType::from_cbsd_id(&hb_cbsd_id) {
+        if let Ok(gw_pubkey) = PublicKey::try_from(&hb_pub_key) {
+            let share = Share::new(
+                hb_timestamp,
+                gw_pubkey,
+                cell_type.reward_weight(),
+                cell_type,
+            );
+
+            if shares
+                .get(&hb_cbsd_id)
+                .map_or(false, |found_share| found_share.timestamp > hb_timestamp)
+            {
+                return;
+            }
+            shares.insert(hb_cbsd_id, share);
+        }
+    }
 }
 
 #[cfg(test)]
