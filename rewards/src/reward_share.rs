@@ -134,7 +134,7 @@ pub fn hotspot_shares(
     for share in shares.values() {
         let gw_public_key = &share.pub_key;
         if let Some(moving_avg) = speed_shares_moving_avg.get(gw_public_key) {
-            if moving_avg.is_valid() {
+            if moving_avg.is_valid {
                 *hotspot_shares.entry(gw_public_key.clone()).or_default() += share.weight;
             }
         }
