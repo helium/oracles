@@ -36,9 +36,10 @@ impl SpeedShareMovingAvgs {
 
 #[derive(Debug, Serialize)]
 pub struct MovingAvg {
-    window_size: usize,
-    speed_shares: VecDeque<SpeedShare>,
-    average: Average,
+    pub window_size: usize,
+    pub speed_shares: VecDeque<SpeedShare>,
+    pub average: Average,
+    pub is_valid: bool,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -64,18 +65,12 @@ impl Default for MovingAvg {
             window_size: MOVING_WINDOW_SIZE,
             speed_shares: VecDeque::new(),
             average: Average::default(),
+            is_valid: false,
         }
     }
 }
 
 impl MovingAvg {
-    pub fn is_valid(&self) -> bool {
-        self.speed_shares.len() >= MOVING_WINDOW_SIZE
-            && self.average.download_speed_avg >= MIN_DOWNLOAD
-            && self.average.upload_speed_avg >= MIN_UPLOAD
-            && self.average.latency_avg <= MAX_LATENCY
-    }
-
     pub fn update(&mut self, value: SpeedShare) {
         self.speed_shares.push_back(value);
 
@@ -100,6 +95,14 @@ impl MovingAvg {
             let a3 = s3 / len as u32;
             self.average = Average::new(a1, a2, a3)
         }
+        self.is_valid = self.check_validity()
+    }
+
+    fn check_validity(&self) -> bool {
+        self.speed_shares.len() >= MOVING_WINDOW_SIZE
+            && self.average.download_speed_avg >= MIN_DOWNLOAD
+            && self.average.upload_speed_avg >= MIN_UPLOAD
+            && self.average.latency_avg <= MAX_LATENCY
     }
 }
 
@@ -156,9 +159,9 @@ mod test {
         for (index, share) in shares.iter().enumerate() {
             moving_avg.update(share.to_owned());
             if (index + 1) < MOVING_WINDOW_SIZE {
-                assert!(!moving_avg.is_valid())
+                assert!(!moving_avg.is_valid)
             } else {
-                assert!(moving_avg.is_valid())
+                assert!(moving_avg.is_valid)
             }
         }
     }
@@ -182,7 +185,7 @@ mod test {
         let mut moving_avg = MovingAvg::default();
         for share in shares {
             moving_avg.update(share);
-            assert!(!moving_avg.is_valid())
+            assert!(!moving_avg.is_valid)
         }
     }
 
@@ -214,7 +217,7 @@ mod test {
     //     let mut moving_avg = MovingAvg::default();
     //     for share in shares {
     //         moving_avg.update(share);
-    //         println!("moving_avg is_valid: {:#?}", moving_avg.is_valid());
+    //         println!("moving_avg is_valid: {:#?}", moving_avg.is_valid);
     //     }
 
     // }
