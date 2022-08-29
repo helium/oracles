@@ -31,3 +31,15 @@ poc-store = { path = "../store" }
 poc-metrics = { path = "../metrics" }
 metrics = "0.20"
 metrics-exporter-prometheus = "0.11.0"
+
+[package.metadata.deb]
+depends = "$auto"
+assets = [
+    ["target/release/poc5g-ingest", "/opt/poc5g-ingest/bin/", "755"],
+    ["../deb/.env", "/opt/poc5g-ingest/bin/.env", "644"]
+]
+conf-files = [
+    "/opt/poc5g-ingest/bin/.env"
+]
+maintainer-scripts = "../deb/"
+systemd-units = { unit-name = "poc5g-ingest" }

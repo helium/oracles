@@ -1,0 +1,16 @@
+[Unit]
+Description=poc5g-status
+After=network.target
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/opt/poc5g-status/bin/poc5g-status
+User=ubuntu
+PIDFile=/var/run/poc5g-status
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

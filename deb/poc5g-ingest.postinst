@@ -1,0 +1,4 @@
+# add to /usr/local/bin it appears in path
+ln -s /opt/poc5g-ingest/bin/poc5g-ingest /usr/local/bin/poc5g-ingest || true
+
+#DEBHELPER#

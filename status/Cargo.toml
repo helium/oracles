@@ -38,3 +38,15 @@ rust_decimal_macros = "1"
 tonic = "0"
 http = "*"
 metrics = "0.20"
+
+[package.metadata.deb]
+depends = "$auto"
+assets = [
+    ["target/release/poc5g-status", "/opt/poc5g-status/bin/", "755"],
+    ["../deb/.env", "/opt/poc5g-status/bin/.env", "644"]
+]
+conf-files = [
+    "/opt/poc5g-status/bin/.env"
+]
+maintainer-scripts = "../deb/"
+systemd-units = { unit-name = "poc5g-status" }
