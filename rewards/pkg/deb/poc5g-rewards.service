@@ -7,7 +7,7 @@ StartLimitBurst=3
 [Service]
 Type=simple
 ExecStart=/opt/poc5g-rewards/bin/poc5g-rewards
-User=ubuntu
+User=helium
 PIDFile=/var/run/poc5g-rewards
 Restart=always
 RestartSec=15

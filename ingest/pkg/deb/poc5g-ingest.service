@@ -7,7 +7,7 @@ StartLimitBurst=3
 [Service]
 Type=simple
 ExecStart=/opt/poc5g-ingest/bin/poc5g-ingest
-User=ubuntu
+User=helium
 PIDFile=/var/run/poc5g-ingest
 Restart=always
 RestartSec=15
