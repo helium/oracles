@@ -1,14 +1,14 @@
 [Unit]
-Description=poc5g-rewards
+Description=mobile-rewards
 After=network.target
 StartLimitInterval=60
 StartLimitBurst=3
 
 [Service]
 Type=simple
-ExecStart=/opt/poc5g-rewards/bin/poc5g-rewards
+ExecStart=/opt/mobile-rewards/bin/mobile-rewards
 User=helium
-PIDFile=/var/run/poc5g-rewards
+PIDFile=/var/run/mobile-rewards
 Restart=always
 RestartSec=15
 

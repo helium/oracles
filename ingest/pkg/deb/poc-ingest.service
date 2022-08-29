@@ -1,14 +1,14 @@
 [Unit]
-Description=poc5g-ingest
+Description=poc-ingest
 After=network.target
 StartLimitInterval=60
 StartLimitBurst=3
 
 [Service]
 Type=simple
-ExecStart=/opt/poc5g-ingest/bin/poc5g-ingest
+ExecStart=/opt/poc-ingest/bin/poc-ingest
 User=helium
-PIDFile=/var/run/poc5g-ingest
+PIDFile=/var/run/poc-ingest
 Restart=always
 RestartSec=15
 
