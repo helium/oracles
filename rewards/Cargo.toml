@@ -43,10 +43,7 @@ async-trait = "*"
 depends = "$auto"
 assets = [
     ["target/release/poc5g-rewards", "/opt/poc5g-rewards/bin/", "755"],
-    ["../deb/.env", "/opt/poc5g-rewards/bin/.env", "644"]
+    ["pkg/deb/env-template", "/usr/share/poc5g-rewards/env-template", "644"]
 ]
-conf-files = [
-    "/opt/poc5g-rewards/bin/.env"
-]
-maintainer-scripts = "../deb/"
-systemd-units = { unit-name = "poc5g-rewards" }
+maintainer-scripts = "pkg/deb/"
+systemd-units = { }

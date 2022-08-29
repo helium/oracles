@@ -43,10 +43,7 @@ metrics = "0.20"
 depends = "$auto"
 assets = [
     ["target/release/poc5g-status", "/opt/poc5g-status/bin/", "755"],
-    ["../deb/.env", "/opt/poc5g-status/bin/.env", "644"]
+    ["pkg/deb/env-template", "/usr/share/poc5g-status/env-template", "644"]
 ]
-conf-files = [
-    "/opt/poc5g-status/bin/.env"
-]
-maintainer-scripts = "../deb/"
-systemd-units = { unit-name = "poc5g-status" }
+maintainer-scripts = "deb/pkg/"
+systemd-units = { }
