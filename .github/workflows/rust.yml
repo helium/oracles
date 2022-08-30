@@ -49,10 +49,17 @@ jobs:
         if: contains(github.ref, 'refs/tags/')
         uses: ebbflow-io/cargo-deb-amd64-ubuntu@1.0
         with:
-          cmd: cargo deb -p poc5g-rewards 
+          cmd: cargo deb -p poc5g-rewards
+
+      - name: PackageStatusServer
+        id: build_status
+        if: contains(github.ref, 'refs/tags/')
+        uses: ebbflow-io/cargo-deb-amd64-ubuntu@1.0
+        with:
+          cmd: cargo deb -p poc5g-status
 
       - name: PackagecloudUpload
-        if: contains(github.ref, 'refs/tags/') && steps.build_ingestor.outcome == 'success' && steps.build_rewards.outcome == 'success'
+        if: contains(github.ref, 'refs/tags/') && steps.build_ingestor.outcome == 'success' && steps.build_rewards.outcome == 'success' && steps.build_status.outcome == 'success'
         env:
           PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
         run: |

@@ -1,0 +1,16 @@
+[Unit]
+Description=poc5g-ingest
+After=network.target
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/opt/poc5g-ingest/bin/poc5g-ingest
+User=helium
+PIDFile=/var/run/poc5g-ingest
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

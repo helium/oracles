@@ -1,0 +1,16 @@
+[Unit]
+Description=poc5g-rewards
+After=network.target
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/opt/poc5g-rewards/bin/poc5g-rewards
+User=helium
+PIDFile=/var/run/poc5g-rewards
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

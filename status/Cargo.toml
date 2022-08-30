@@ -38,3 +38,12 @@ rust_decimal_macros = "1"
 tonic = "0"
 http = "*"
 metrics = "0.20"
+
+[package.metadata.deb]
+depends = "$auto"
+assets = [
+    ["target/release/poc5g-status", "/opt/poc5g-status/bin/", "755"],
+    ["pkg/deb/env-template", "/usr/share/poc5g-status/env-template", "644"]
+]
+maintainer-scripts = "deb/pkg/"
+systemd-units = { }
