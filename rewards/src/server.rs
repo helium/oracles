@@ -65,18 +65,18 @@ impl Server {
                 return Ok(());
             }
 
-            let follow_start = match Meta::last_reward_height(&self.pool).await? {
+            let follow_start = match Meta::last_follower_height(&self.pool).await? {
                 None => {
                     let start_reward_block = &self.start_reward_block;
                     Meta::insert_kv(
                         &self.pool,
-                        "last_reward_height",
+                        "last_follower_height",
                         &start_reward_block.to_string(),
                     )
                     .await?;
                     *start_reward_block
                 }
-                Some(last_reward_height) => last_reward_height,
+                Some(last_follower_height) => last_follower_height,
             } as u64;
 
             tracing::info!("connecting to blockchain txn stream at height {follow_start}");
@@ -168,15 +168,13 @@ impl Server {
         )
         .await
         {
-            Ok(()) => Meta::update(&self.pool, "last_reward_height", txn_ht.to_string()).await,
+            Ok(()) => Meta::update(&self.pool, "last_follower_height", txn_ht.to_string()).await,
             // we got a subnetwork reward but don't have a pending txn in our db,
-            // it may have been submitted externally, ignore and just bump the last_reward_height
+            // it may have been submitted externally, ignore and just bump the last_follower_height
             // in our meta table
             Err(Error::NotFound(_)) => {
-                tracing::warn!(
-                    "ignore but bump last_reward_height and last_reward_end_time in meta!"
-                );
-                Meta::update(&self.pool, "last_reward_height", txn_ht.to_string()).await
+                tracing::warn!("ignore but bump last_follower_height to {txn_ht:?}!");
+                Meta::update(&self.pool, "last_follower_height", txn_ht.to_string()).await
             }
             Err(err) => Err(err),
         }
@@ -192,9 +190,12 @@ impl Server {
                 let (start_utc, end_utc) = get_time_range(last_reward_time);
                 if end_utc - start_utc > Duration::seconds(REWARD_PROCESS_INTERVAL_SECS) {
                     match self.check_pending().await {
-                        Ok(_) => tracing::info!("no pending transactions found to have failed"),
+                        Ok(_) => tracing::info!("no failed pending transactions"),
                         Err(err) => {
-                            tracing::error!("pending transactions check failed with error: {err:?}")
+                            tracing::error!(
+                                "pending transactions check failed with error: {err:?}"
+                            );
+                            return Err(err);
                         }
                     }
                 }
@@ -204,7 +205,10 @@ impl Server {
                     .await
                 {
                     Ok(_) => tracing::info!("successfully emitted mobile rewards"),
-                    Err(err) => tracing::error!("rewards emissions failed with error: {err:?}"),
+                    Err(err) => {
+                        tracing::error!("rewards emissions failed with error: {err:?}");
+                        return Err(err);
+                    }
                 }
             }
             None => {
@@ -268,13 +272,16 @@ impl Server {
         )
         .await?;
 
-        match Meta::last_reward_height(&self.pool).await? {
+        match Meta::last_follower_height(&self.pool).await? {
             None => {
-                tracing::error!("cannot continue, no known last_reward_height!")
+                tracing::error!("cannot continue, no known last_follower_height!");
+                return Err(Error::NotFound(
+                    "No last reward height for subnetwork reward txn".to_string(),
+                ));
             }
-            Some(last_reward_height) => {
+            Some(last_follower_height) => {
                 if let Some(r) = rewards {
-                    self.issue_rewards(r, last_reward_height + 1, block_height as i64)
+                    self.issue_rewards(r, last_follower_height + 1, block_height as i64)
                         .await?;
                     Meta::update(&self.pool, "last_reward_end_time", end_utc.to_string()).await?;
                 }
