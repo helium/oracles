@@ -168,7 +168,7 @@ impl Server {
         )
         .await
         {
-            Ok(()) => checkpoint_last_reward_meta(&self.pool, txn_ht, txn_ts).await,
+            Ok(()) => Meta::update(&self.pool, "last_reward_height", txn_ht.to_string()).await,
             // we got a subnetwork reward but don't have a pending txn in our db,
             // it may have been submitted externally, ignore and just bump the last_reward_height
             // in our meta table
@@ -176,7 +176,7 @@ impl Server {
                 tracing::warn!(
                     "ignore but bump last_reward_height and last_reward_end_time in meta!"
                 );
-                checkpoint_last_reward_meta(&self.pool, txn_ht, txn_ts).await
+                Meta::update(&self.pool, "last_reward_height", txn_ht.to_string()).await
             }
             Err(err) => Err(err),
         }
@@ -184,33 +184,35 @@ impl Server {
 
     async fn process_consensus_group(&mut self, envelope: &FollowerTxnStreamRespV1) -> Result {
         let block_height = envelope.height;
-        let block_timestamp = envelope.timestamp;
-        tracing::info!(
-            "processing consensus group at {block_height} with timestamp: {block_timestamp}"
-        );
+        tracing::info!("processing consensus group at height {block_height}");
 
         match Meta::last_reward_end_time(&self.pool).await? {
             Some(last_reward_time) => {
-                let (start_utc, stop_utc) = get_time_range(last_reward_time);
-                if stop_utc - start_utc > Duration::seconds(REWARD_PROCESS_INTERVAL_SECS) {
+                tracing::info!("found last_reward_end_time: {:#?}", last_reward_time);
+                let (start_utc, end_utc) = get_time_range(last_reward_time);
+                if end_utc - start_utc > Duration::seconds(REWARD_PROCESS_INTERVAL_SECS) {
                     match self.check_pending().await {
-                        Ok(_) => tracing::info!("no pending transactions found failed"),
+                        Ok(_) => tracing::info!("no pending transactions found to have failed"),
                         Err(err) => {
                             tracing::error!("pending transactions check failed with error: {err:?}")
                         }
                     }
                 }
 
-                match self.handle_rewards(block_height, block_timestamp).await {
+                match self
+                    .handle_rewards(block_height, last_reward_time, end_utc.timestamp())
+                    .await
+                {
                     Ok(_) => tracing::info!("successfully emitted mobile rewards"),
                     Err(err) => tracing::error!("rewards emissions failed with error: {err:?}"),
                 }
             }
             None => {
+                let starting_ts = Utc::now().timestamp();
                 tracing::info!(
-                    "no last_reward_end_time found, inserting trigger timestamp {block_timestamp}"
+                    "no last_reward_end_time found, inserting current timestamp {starting_ts}"
                 );
-                checkpoint_last_reward_meta(&self.pool, block_height, block_timestamp).await?;
+                Meta::update(&self.pool, "last_reward_end_time", starting_ts.to_string()).await?;
             }
         }
         Ok(())
@@ -250,40 +252,31 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_rewards(&mut self, block_height: u64, block_timestamp: u64) -> Result {
-        tracing::info!("chain consensus group transaction received");
+    async fn handle_rewards(
+        &mut self,
+        block_height: u64,
+        last_reward_time: i64,
+        end_utc: i64,
+    ) -> Result {
+        tracing::info!("triggering rewards emissions");
 
-        match Meta::last_reward_end_time(&self.pool).await {
-            Err(_) => {
-                tracing::error!("unable to get failed_pending_txns!")
+        let store = FileStore::from_env().await?;
+        let rewards = SubnetworkRewards::from_last_reward_end_time(
+            store,
+            self.follower_service.clone(),
+            last_reward_time,
+        )
+        .await?;
+
+        match Meta::last_reward_height(&self.pool).await? {
+            None => {
+                tracing::error!("cannot continue, no known last_reward_height!")
             }
-            Ok(None) => {
-                tracing::info!(
-                    "no last_reward_end_time found, inserting trigger timestamp {block_timestamp}"
-                );
-                checkpoint_last_reward_meta(&self.pool, block_height, block_timestamp).await?;
-            }
-            Ok(Some(last_reward_end_time)) => {
-                tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
-
-                let store = FileStore::from_env().await?;
-                let rewards = SubnetworkRewards::from_last_reward_end_time(
-                    store,
-                    self.follower_service.clone(),
-                    last_reward_end_time,
-                )
-                .await?;
-
-                match Meta::last_reward_height(&self.pool).await? {
-                    None => {
-                        tracing::error!("cannot continue, no known last_reward_height!")
-                    }
-                    Some(last_reward_height) => {
-                        if let Some(r) = rewards {
-                            self.issue_rewards(r, last_reward_height + 1, block_height as i64)
-                                .await?;
-                        }
-                    }
+            Some(last_reward_height) => {
+                if let Some(r) = rewards {
+                    self.issue_rewards(r, last_reward_height + 1, block_height as i64)
+                        .await?;
+                    Meta::update(&self.pool, "last_reward_end_time", end_utc.to_string()).await?;
                 }
             }
         }
@@ -350,19 +343,4 @@ impl Server {
         }
         Ok(())
     }
-}
-
-async fn checkpoint_last_reward_meta(
-    pool: &Pool<Postgres>,
-    block_height: u64,
-    block_timestamp: u64,
-) -> Result {
-    Meta::update_all(
-        pool,
-        &[
-            ("last_reward_height", block_height.to_string()),
-            ("last_reward_end_time", block_timestamp.to_string()),
-        ],
-    )
-    .await
 }
