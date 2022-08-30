@@ -1,0 +1,47 @@
+[package]
+name = "poc-iot-rewards"
+version = "0.1.0"
+description = "Reward Server for the Helium IoT Network"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+dotenv = {workspace = true}
+thiserror = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+sqlx = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = {workspace = true}
+base64 = {workspace = true}
+sha2 = {workspace = true}
+chrono = {workspace = true}
+triggered = {workspace = true}
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
+once_cell = {workspace = true}
+db-store = {path = "../db_store"}
+file-store = {path = "../file_store"}
+poc-metrics = {path = "../metrics"}
+helium-proto = {workspace = true}
+helium-crypto = {workspace = true}
+rust_decimal = {workspace = true}
+rust_decimal_macros = {workspace = true}
+tonic = {workspace = true}
+http = {workspace = true}
+metrics = {workspace = true}
+metrics-exporter-prometheus = {workspace = true}
+rand = "*"
+async-trait = "*"
+
+[package.metadata.deb]
+depends = "$auto"
+assets = [
+  ["target/release/poc-iot-rewards", "/opt/poc-iot-rewards/bin/", "755"],
+  ["pkg/deb/env-template", "/usr/share/poc-iot-rewards/env-template", "644"]
+]
+maintainer-scripts = "pkg/deb/"
+systemd-utils = {}

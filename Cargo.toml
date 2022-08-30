@@ -4,6 +4,7 @@ members = [
     "db_store",
     "file_store",
     "mobile_rewards",
+    "poc_iot_rewards",
     "poc_mobile_verifier",
     "entropy",
     "poc_iot_verifier",

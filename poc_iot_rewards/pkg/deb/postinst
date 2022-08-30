@@ -1,0 +1,4 @@
+# add to /usr/local/bin it appears in path
+ln -s /opt/poc-iot-rewards/bin/poc-iot-rewards /usr/local/bin/poc-iot-rewards || true
+
+#DEBHELPER#

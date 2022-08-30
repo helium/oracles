@@ -1,0 +1,7 @@
+RUST_LOG=info
+VERIFIER_BUCKET=examplenet-poc-verifier
+REWARDS_BUCKET=examplenet-poc-rewards
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/poc_iot_rewards_db
+METRICS_SCRAPE_ENDPOINT=127.0.0.1:19000
+FOLLOWER_URI=http://localhost:8080
+FOLLOWER_START_BLOCK=100
