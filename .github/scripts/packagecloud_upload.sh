@@ -19,4 +19,4 @@ curl -u "${PACKAGECLOUD_API_KEY}:" \
 curl -u "${PACKAGECLOUD_API_KEY}:" \
      -F "package[distro_version_id]=210" \
      -F "package[package_file]=@${MOBILE_STATUS_PKGNAME}" \
-     https://packagecloud.io/api/v1/repos/helium/mobile_ingest/packages.json
+     https://packagecloud.io/api/v1/repos/helium/mobile_status/packages.json
