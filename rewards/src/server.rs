@@ -157,9 +157,9 @@ impl Server {
             return Ok(());
         }
 
-        let txn_ht = envelope.height;
         let txn_hash = &envelope.txn_hash.to_b64_url()?;
         let txn_ts = envelope.timestamp;
+        let last_follower_height = txn.end_epoch;
         match PendingTxn::update(
             &self.pool,
             txn_hash,
@@ -168,13 +168,25 @@ impl Server {
         )
         .await
         {
-            Ok(()) => Meta::update(&self.pool, "last_follower_height", txn_ht.to_string()).await,
+            Ok(()) => {
+                Meta::update(
+                    &self.pool,
+                    "last_follower_height",
+                    last_follower_height.to_string(),
+                )
+                .await
+            }
             // we got a subnetwork reward but don't have a pending txn in our db,
             // it may have been submitted externally, ignore and just bump the last_follower_height
             // in our meta table
             Err(Error::NotFound(_)) => {
-                tracing::warn!("ignore but bump last_follower_height to {txn_ht:?}!");
-                Meta::update(&self.pool, "last_follower_height", txn_ht.to_string()).await
+                tracing::warn!("ignore but bump last_follower_height to {last_follower_height:?}!");
+                Meta::update(
+                    &self.pool,
+                    "last_follower_height",
+                    last_follower_height.to_string(),
+                )
+                .await
             }
             Err(err) => Err(err),
         }
