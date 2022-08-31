@@ -30,6 +30,12 @@ impl RewardPeriod {
     pub fn new(start: u64, end: u64) -> Self {
         Self(start, end)
     }
+    pub fn start(&self) -> u64 {
+        self.0
+    }
+    pub fn end(&self) -> u64 {
+        self.1
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,13 +80,13 @@ impl From<SubnetworkRewards> for Vec<ProtoSubnetworkReward> {
 pub fn construct_txn(
     keypair: &Keypair,
     rewards: SubnetworkRewards,
-    period: RewardPeriod,
+    period: &RewardPeriod,
 ) -> Result<(BlockchainTxnSubnetworkRewardsV1, String)> {
     let mut txn = BlockchainTxnSubnetworkRewardsV1 {
         rewards: rewards.into(),
         token_type: BlockchainTokenTypeV1::from(ProtoTokenType::Mobile).into(),
-        start_epoch: period.0,
-        end_epoch: period.1,
+        start_epoch: period.start(),
+        end_epoch: period.end(),
         reward_server_signature: vec![],
     };
     txn.reward_server_signature = txn.sign(keypair)?;
@@ -268,7 +274,7 @@ mod test {
         )
         .expect("unable to get keypair");
         let (_txn, txn_hash_str) =
-            construct_txn(&kp, subnetwork_rewards, RewardPeriod::new(1000, 1010))
+            construct_txn(&kp, subnetwork_rewards, &RewardPeriod::new(1000, 1010))
                 .expect("unable to construct txn");
 
         // This is taken from a blockchain-node, constructing the exact same txn

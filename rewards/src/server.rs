@@ -168,32 +168,28 @@ impl Server {
             return Ok(());
         }
 
-        let last_follower_height = txn.end_epoch;
         let txn_hash = &envelope.txn_hash.to_b64_url()?;
         let txn_ts = envelope.timestamp;
-        match PendingTxn::update(
+        PendingTxn::update(
             &self.pool,
             txn_hash,
             Status::Cleared,
             datetime_from_epoch(txn_ts as i64),
         )
         .await
-        {
-            Ok(()) => update_last_follower(&self.pool, last_follower_height).await,
-            // we got a subnetwork reward but don't have a pending txn in our db,
-            // it may have been submitted externally, ignore and just bump the last_follower_height
-            // in our meta table
-            Err(Error::NotFound(_)) => {
-                tracing::warn!("ignore but bump last_follower_height to {last_follower_height:?}!");
-                update_last_follower(&self.pool, last_follower_height).await
-            }
-            Err(err) => Err(err),
-        }
     }
 
     async fn process_clock_tick(&mut self) -> Result {
         let now = Utc::now();
-        tracing::info!("processing clock tick at {}", now.to_string());
+        let reward_period = &self.follower_service.reward_period().await?;
+        let current_height = reward_period.end();
+        tracing::info!(
+            "processing clock tick at height {} with time {}",
+            current_height,
+            now.to_string()
+        );
+
+        update_last_follower(&self.pool, current_height).await?;
 
         // Early exit if we found failed pending txns
         match self.check_pending().await {
@@ -214,7 +210,7 @@ impl Server {
                     // Handle rewards if we pass our duration
                     record_duration!(
                         "reward_server_emission_duration",
-                        self.handle_rewards(last_reward_time, end_utc.timestamp())
+                        self.handle_rewards(reward_period, last_reward_time, end_utc.timestamp())
                             .await?
                     )
                 }
@@ -264,7 +260,12 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_rewards(&mut self, last_reward_time: i64, end_utc: i64) -> Result {
+    async fn handle_rewards(
+        &mut self,
+        reward_period: &RewardPeriod,
+        last_reward_time: i64,
+        end_utc: i64,
+    ) -> Result {
         tracing::info!("triggering rewards emissions");
 
         let store = FileStore::from_env().await?;
@@ -272,19 +273,17 @@ impl Server {
             store,
             self.follower_service.clone(),
             last_reward_time,
-        );
+        )
+        .await?;
 
-        if let Ok(reward_period) = self.follower_service.reward_period().await {
-            if let Some(r) = rewards.await? {
-                let pool = &self.pool.clone();
-                let issue_rewards = self.issue_rewards(r, reward_period);
-                let update_end_time =
-                    Meta::update(pool, "last_reward_end_time", end_utc.to_string());
-                try_join!(issue_rewards, update_end_time)?;
-            } else {
-                tracing::error!("cannot continue; unable to determine reward period!");
-                return Err(Error::NotFound("invalid reward period".to_string()));
-            }
+        if let Some(r) = rewards {
+            let pool = &self.pool.clone();
+            let issue_rewards = self.issue_rewards(r, reward_period);
+            let update_end_time = Meta::update(pool, "last_reward_end_time", end_utc.to_string());
+            try_join!(issue_rewards, update_end_time)?;
+        } else {
+            tracing::error!("cannot continue; unable to determine reward period!");
+            return Err(Error::NotFound("invalid reward period".to_string()));
         }
         Ok(())
     }
@@ -292,7 +291,7 @@ impl Server {
     async fn issue_rewards(
         &mut self,
         rewards: SubnetworkRewards,
-        reward_period: RewardPeriod,
+        reward_period: &RewardPeriod,
     ) -> Result {
         if rewards.is_empty() {
             tracing::info!("nothing to reward");
