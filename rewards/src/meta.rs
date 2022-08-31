@@ -100,10 +100,10 @@ impl Meta {
         Self::fetch_scalar::<E, i64>(executor, "last_reward_end_time").await
     }
 
-    pub async fn last_reward_height<'c, E>(executor: E) -> Result<Option<i64>>
+    pub async fn last_follower_height<'c, E>(executor: E) -> Result<Option<i64>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        Self::fetch_scalar::<E, i64>(executor, "last_reward_height").await
+        Self::fetch_scalar::<E, i64>(executor, "last_follower_height").await
     }
 }
