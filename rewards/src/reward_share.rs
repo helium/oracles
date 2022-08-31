@@ -163,10 +163,11 @@ pub async fn gather_shares(
             pub_key,
             cbsd_id,
             timestamp,
+            operation_mode,
             ..
         } = CellHeartbeatReqV1::decode(msg)?;
 
-        if timestamp < after_utc || timestamp >= before_utc {
+        if !operation_mode || timestamp < after_utc || timestamp >= before_utc {
             continue;
         }
 
