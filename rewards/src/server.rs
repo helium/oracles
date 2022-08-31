@@ -190,24 +190,25 @@ impl Server {
                 let (start_utc, end_utc) = get_time_range(last_reward_time);
                 if end_utc - start_utc > Duration::seconds(REWARD_PROCESS_INTERVAL_SECS) {
                     match self.check_pending().await {
-                        Ok(_) => tracing::info!("no failed pending transactions"),
+                        Ok(_) => {
+                            tracing::info!("no failed pending transactions");
+                            match self
+                                .handle_rewards(block_height, last_reward_time, end_utc.timestamp())
+                                .await
+                            {
+                                Ok(_) => tracing::info!("successfully emitted mobile rewards"),
+                                Err(err) => {
+                                    tracing::error!("rewards emissions failed with error: {err:?}");
+                                    return Err(err);
+                                }
+                            }
+                        }
                         Err(err) => {
                             tracing::error!(
                                 "pending transactions check failed with error: {err:?}"
                             );
                             return Err(err);
                         }
-                    }
-                }
-
-                match self
-                    .handle_rewards(block_height, last_reward_time, end_utc.timestamp())
-                    .await
-                {
-                    Ok(_) => tracing::info!("successfully emitted mobile rewards"),
-                    Err(err) => {
-                        tracing::error!("rewards emissions failed with error: {err:?}");
-                        return Err(err);
                     }
                 }
             }
@@ -308,7 +309,7 @@ impl Server {
 
         // insert in the pending_txn tbl (status: created)
         let pt = PendingTxn::insert_new(&self.pool, &txn_hash_str, txn_encoded).await?;
-        tracing::info!("inserted pending_txn: {:?}", pt);
+        tracing::info!("inserted pending_txn with hash: {txn_hash_str}");
 
         // submit the txn
         if let Ok(_resp) = self
