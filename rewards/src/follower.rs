@@ -1,8 +1,12 @@
-use crate::{env_var, traits::OwnerResolver, PublicKey, Result};
+use crate::{
+    env_var, subnetwork_rewards::RewardPeriod, token_type::BlockchainTokenTypeV1,
+    traits::OwnerResolver, PublicKey, Result,
+};
 use async_trait::async_trait;
 use helium_proto::{
     services::{Channel, Endpoint},
-    FollowerGatewayReqV1, FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
+    BlockchainTokenTypeV1 as ProtoTokenType, FollowerGatewayReqV1,
+    FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
 };
 use http::Uri;
 use std::time::Duration;
@@ -67,5 +71,18 @@ impl FollowerService {
         };
         let res = self.client.txn_stream(req).await?.into_inner();
         Ok(res)
+    }
+
+    pub async fn reward_period(&mut self) -> Result<RewardPeriod> {
+        let req = FollowerSubnetworkLastRewardHeightReqV1 {
+            token_type: BlockchainTokenTypeV1::from(ProtoTokenType::Mobile).into(),
+        };
+        let res = self
+            .client
+            .subnetwork_last_reward_height(req)
+            .await?
+            .into_inner();
+
+        Ok(RewardPeriod::new(res.reward_height + 1, res.height))
     }
 }

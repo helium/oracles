@@ -1220,6 +1220,23 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
+source = "git+https://github.com/helium/proto?branch=jg/last_reward_follower_api#6f9605dc505b09ad7a525e551725f46f5af61942"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-build",
+ "protobuf-src",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "helium-proto"
+version = "0.1.0"
 source = "git+https://github.com/helium/proto?branch=master#56341e3eaa1a7b0355831812376b776bffa2b84f"
 dependencies = [
  "bytes",
@@ -1855,7 +1872,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "http",
  "lazy_static",
  "prost",
@@ -1883,7 +1900,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "http",
  "metrics",
  "metrics-exporter-prometheus",
@@ -1913,7 +1930,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=jg/last_reward_follower_api)",
  "http",
  "lazy_static",
  "metrics",
@@ -1949,7 +1966,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto",
+ "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
  "http",
  "hyper",
  "lazy_static",
