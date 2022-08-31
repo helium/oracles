@@ -124,10 +124,8 @@ impl Server {
             tokio::select! {
                 msg = txn_stream.message() => match msg {
                     Ok(Some(txn)) => {
-                        record_duration!(
-                            "reward_server_process_txn_entry_duration",
-                            self.process_txn_entry(txn).await?
-                        )
+                        tracing::info!("txn received from stream");
+                        self.process_txn_entry(txn).await?
                     }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
@@ -181,25 +179,13 @@ impl Server {
         )
         .await
         {
-            Ok(()) => {
-                Meta::update(
-                    &self.pool,
-                    "last_follower_height",
-                    last_follower_height.to_string(),
-                )
-                .await
-            }
+            Ok(()) => update_last_follower(&self.pool, last_follower_height).await,
             // we got a subnetwork reward but don't have a pending txn in our db,
             // it may have been submitted externally, ignore and just bump the last_follower_height
             // in our meta table
             Err(Error::NotFound(_)) => {
                 tracing::warn!("ignore but bump last_follower_height to {last_follower_height:?}!");
-                Meta::update(
-                    &self.pool,
-                    "last_follower_height",
-                    last_follower_height.to_string(),
-                )
-                .await
+                update_last_follower(&self.pool, last_follower_height).await
             }
             Err(err) => Err(err),
         }
@@ -226,16 +212,11 @@ impl Server {
                 let (start_utc, end_utc) = get_time_range(last_reward_time);
                 if end_utc - start_utc > self.reward_interval {
                     // Handle rewards if we pass our duration
-                    match self
-                        .handle_rewards(last_reward_time, end_utc.timestamp())
-                        .await
-                    {
-                        Ok(_) => tracing::info!("successfully emitted mobile rewards"),
-                        Err(err) => {
-                            tracing::error!("rewards emissions failed with error: {err:?}");
-                            return Err(err);
-                        }
-                    }
+                    record_duration!(
+                        "reward_server_emission_duration",
+                        self.handle_rewards(last_reward_time, end_utc.timestamp())
+                            .await?
+                    )
                 }
             }
             None => {
@@ -338,6 +319,7 @@ impl Server {
             )
             .await
         {
+            metrics::increment_counter!("reward_server_emission");
             PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending, Utc::now()).await?;
         }
         Ok(())
@@ -367,4 +349,9 @@ impl Server {
         }
         Ok(())
     }
+}
+
+async fn update_last_follower(pool: &Pool<Postgres>, last_height: u64) -> Result {
+    metrics::gauge!("reward_server_last_reward_height", last_height as f64);
+    Meta::update(pool, "last_follower_height", last_height.to_string()).await
 }
