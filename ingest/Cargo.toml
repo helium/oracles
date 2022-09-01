@@ -1,32 +1,40 @@
 [package]
-name = "poc5g-ingest"
+name = "poc-ingest"
 version = "0.1.0"
 edition = "2021"
-description = "PoC Ingest Server for the Helium Mobile Network"
+description = "PoC Ingest Server for the Helium Network"
 authors = ["Marc Nijdam <marc@nova.xyz>"]
 license = "Apache-2.0"
 
 [dependencies]
 dotenv = "0"
 thiserror = "1"
-serde =  {version = "1", features=["derive"]}
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-clap = {version = "3", features = ["derive"]}
-tokio = { version = "1", default-features=false, features=["fs", "macros", "signal", "rt-multi-thread", "rt"] }
+clap = { version = "3", features = ["derive"] }
+tokio = { version = "1", default-features = false, features = [
+  "fs",
+  "macros",
+  "signal",
+  "rt-multi-thread",
+  "rt",
+] }
 tracing = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
 base64 = "0"
 sha2 = "*"
 http = "*"
 tonic = "0"
-chrono = {version = "0", features = ["serde"]}
+chrono = { version = "0", features = ["serde"] }
 triggered = "0"
 futures = "*"
 futures-util = "*"
 prost = "*"
-async-compression = {version = "0", features = ["tokio", "gzip"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
-helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
+async-compression = { version = "0", features = ["tokio", "gzip"] }
+helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
+  "services",
+] }
+helium-crypto = { git = "https://github.com/helium/helium-crypto-rs", tag = "v0.3.4" }
 poc-store = { path = "../store" }
 poc-metrics = { path = "../metrics" }
 metrics = "0.20"
@@ -35,8 +43,16 @@ metrics-exporter-prometheus = "0.11.0"
 [package.metadata.deb]
 depends = "$auto"
 assets = [
-    ["target/release/poc5g-ingest", "/opt/poc5g-ingest/bin/", "755"],
-    ["pkg/deb/env-template", "/usr/share/poc5g-ingest/env-template", "644"]
+  [
+    "target/release/poc5g-ingest",
+    "/opt/poc5g-ingest/bin/",
+    "755",
+  ],
+  [
+    "pkg/deb/env-template",
+    "/usr/share/poc5g-ingest/env-template",
+    "644",
+  ],
 ]
 maintainer-scripts = "pkg/deb/"
-systemd-units = { }
+systemd-units = {}

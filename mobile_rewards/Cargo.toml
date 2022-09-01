@@ -1,5 +1,5 @@
 [package]
-name = "poc5g-rewards"
+name = "mobile-rewards"
 version = "0.1.0"
 edition = "2021"
 description = "Reward Server for the Helium Mobile Network"
