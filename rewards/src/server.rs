@@ -24,8 +24,8 @@ use tonic::Streaming;
 
 pub const DEFAULT_START_REWARD_BLOCK: i64 = 1477650;
 
-const RECONNECT_WAIT_SECS: u64 = 5;
-const DEFAULT_TRIGGER_INTERVAL_SECS: u64 = 900; // 15 min
+const RECONNECT_WAIT_SECS: i64 = 5;
+const DEFAULT_TRIGGER_INTERVAL_SECS: i64 = 900; // 15 min
 const DEFAULT_REWARD_INTERVAL_SECS: i64 = 86400; // 24 hours
 const STALE_PENDING_TIMEOUT_SECS: i64 = 1800; // 30 min
 
@@ -37,7 +37,7 @@ pub struct Server {
     follower_service: FollowerService,
     txn_service: TransactionService,
     start_reward_block: i64,
-    trigger_interval: time::Duration,
+    trigger_interval: Duration,
     reward_interval: Duration,
 }
 
@@ -49,7 +49,7 @@ impl Server {
             follower_service: FollowerService::from_env()?,
             txn_service: TransactionService::from_env()?,
             start_reward_block: env_var("FOLLOWER_START_BLOCK", DEFAULT_START_REWARD_BLOCK)?,
-            trigger_interval: time::Duration::from_secs(env_var(
+            trigger_interval: Duration::seconds(env_var(
                 "TRIGGER_INTERVAL",
                 DEFAULT_TRIGGER_INTERVAL_SECS,
             )?),
@@ -106,7 +106,11 @@ impl Server {
     }
 
     async fn reconnect_wait(&mut self, shutdown: triggered::Listener) {
-        let timer = time::sleep(time::Duration::from_secs(RECONNECT_WAIT_SECS));
+        let timer = time::sleep(
+            Duration::seconds(RECONNECT_WAIT_SECS)
+                .to_std()
+                .expect("valid interval in seconds"),
+        );
         tokio::select! {
             _ = timer => (),
             _ = shutdown => (),
@@ -118,7 +122,11 @@ impl Server {
         mut txn_stream: Streaming<FollowerTxnStreamRespV1>,
         shutdown: triggered::Listener,
     ) -> Result {
-        let mut trigger_timer = time::interval(self.trigger_interval);
+        let mut trigger_timer = time::interval(
+            self.trigger_interval
+                .to_std()
+                .expect("valid interval in seconds"),
+        );
 
         loop {
             tokio::select! {
@@ -181,8 +189,8 @@ impl Server {
 
     async fn process_clock_tick(&mut self) -> Result {
         let now = Utc::now();
-        let reward_period = &self.follower_service.reward_period().await?;
-        let current_height = reward_period.end();
+        let reward_period = self.follower_service.reward_period().await?;
+        let current_height = reward_period.end;
         tracing::info!(
             "processing clock tick at height {} with time {}",
             current_height,
@@ -216,11 +224,11 @@ impl Server {
                 }
             }
             None => {
+                let starting_ts = now.timestamp();
                 tracing::info!(
-                    "no last_reward_end_time found, inserting current timestamp {}",
-                    now.timestamp()
+                    "no last_reward_end_time found, inserting current timestamp {starting_ts}"
                 );
-                Meta::update(&self.pool, "last_reward_end_time", now.to_string()).await?;
+                Meta::update(&self.pool, "last_reward_end_time", starting_ts.to_string()).await?;
             }
         }
         Ok(())
@@ -262,7 +270,7 @@ impl Server {
 
     async fn handle_rewards(
         &mut self,
-        reward_period: &RewardPeriod,
+        reward_period: RewardPeriod,
         last_reward_time: i64,
         end_utc: i64,
     ) -> Result {
@@ -291,7 +299,7 @@ impl Server {
     async fn issue_rewards(
         &mut self,
         rewards: SubnetworkRewards,
-        reward_period: &RewardPeriod,
+        reward_period: RewardPeriod,
     ) -> Result {
         if rewards.is_empty() {
             tracing::info!("nothing to reward");
