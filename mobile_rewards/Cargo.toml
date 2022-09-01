@@ -10,7 +10,7 @@ license = "Apache-2.0"
 [dependencies]
 dotenv = "0"
 thiserror = "1"
-serde =  {version = "1", features=["derive"]}
+serde = {version = "1", features=["derive"]}
 serde_json = "1"
 clap = {version = "3", features = ["derive"]}
 sqlx = {version = "0", features = ["postgres", "uuid", "decimal", "chrono", "migrate", "macros", "runtime-tokio-rustls"]}
@@ -42,8 +42,8 @@ async-trait = "*"
 [package.metadata.deb]
 depends = "$auto"
 assets = [
-    ["target/release/poc5g-rewards", "/opt/poc5g-rewards/bin/", "755"],
-    ["pkg/deb/env-template", "/usr/share/poc5g-rewards/env-template", "644"]
+    ["target/release/mobile-rewards", "/opt/mobile-rewards/bin/", "755"],
+    ["pkg/deb/env-template", "/usr/share/mobile-rewards/env-template", "644"],
 ]
 maintainer-scripts = "pkg/deb/"
 systemd-units = { }
