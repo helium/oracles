@@ -1218,9 +1218,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "helium-crypto"
+version = "0.4.2"
+source = "git+https://github.com/helium/helium-crypto-rs?branch=main#6afb43f4548b724abe2ecb6554abdaad32a25a17"
+dependencies = [
+ "base64",
+ "bs58",
+ "ed25519-dalek",
+ "lazy_static",
+ "p256",
+ "rand_core 0.6.3",
+ "serde",
+ "sha2 0.9.9",
+ "signature",
+ "thiserror",
+]
+
+[[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#56341e3eaa1a7b0355831812376b776bffa2b84f"
+source = "git+https://github.com/helium/proto?branch=map/verifier-protos#f0f1280bda90e84dc2e6494a4a1110307339e578"
 dependencies = [
  "bytes",
  "prost",
@@ -1626,6 +1643,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-verifier"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "dotenv",
+ "futures",
+ "futures-util",
+ "helium-crypto 0.4.2",
+ "helium-proto",
+ "http",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "once_cell",
+ "poc-metrics",
+ "poc-store",
+ "prost",
+ "rand",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "multimap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1854,7 +1907,7 @@ dependencies = [
  "futures",
  "futures-core",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.3.4",
  "helium-proto",
  "http",
  "lazy_static",
@@ -1882,7 +1935,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.3.4",
  "helium-proto",
  "http",
  "metrics",
@@ -1912,7 +1965,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.3.4",
  "helium-proto",
  "http",
  "lazy_static",
@@ -1948,7 +2001,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.3.4",
  "helium-proto",
  "http",
  "hyper",

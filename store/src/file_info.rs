@@ -96,8 +96,8 @@ pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
-    CellHeartbeat,
-    CellSpeedtest,
+    CellHeartbeat = 0,
+    CellSpeedtest = 1,
 }
 
 impl fmt::Display for FileType {
