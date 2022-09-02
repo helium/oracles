@@ -1,5 +1,5 @@
 use clap::Parser;
-use poc5g_ingest::{server, Result};
+use poc_ingest::{server, Result};
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -16,7 +16,7 @@ async fn main() -> Result {
     dotenv::dotenv()?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            dotenv::var("RUST_LOG").unwrap_or_else(|_| "poc5g_ingest=debug,poc_store=debug".into()),
+            dotenv::var("RUST_LOG").unwrap_or_else(|_| "poc_ingest=debug,poc_store=debug".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();

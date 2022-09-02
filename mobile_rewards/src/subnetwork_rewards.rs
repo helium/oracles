@@ -23,6 +23,18 @@ pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 // minimum number of heartbeats to consider for rewarding
 pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 1;
 
+#[derive(Debug)]
+pub struct RewardPeriod {
+    pub start: u64,
+    pub end: u64,
+}
+
+impl RewardPeriod {
+    pub fn new(start: u64, end: u64) -> Self {
+        Self { start, end }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SubnetworkRewards(pub Vec<ProtoSubnetworkReward>);
 
@@ -65,14 +77,13 @@ impl From<SubnetworkRewards> for Vec<ProtoSubnetworkReward> {
 pub fn construct_txn(
     keypair: &Keypair,
     rewards: SubnetworkRewards,
-    start_epoch: i64,
-    end_epoch: i64,
+    period: RewardPeriod,
 ) -> Result<(BlockchainTxnSubnetworkRewardsV1, String)> {
     let mut txn = BlockchainTxnSubnetworkRewardsV1 {
         rewards: rewards.into(),
         token_type: BlockchainTokenTypeV1::from(ProtoTokenType::Mobile).into(),
-        start_epoch: start_epoch as u64,
-        end_epoch: end_epoch as u64,
+        start_epoch: period.start,
+        end_epoch: period.end,
         reward_server_signature: vec![],
     };
     txn.reward_server_signature = txn.sign(keypair)?;
@@ -329,7 +340,8 @@ mod test {
         )
         .expect("unable to get keypair");
         let (_txn, txn_hash_str) =
-            construct_txn(&kp, subnetwork_rewards, 1000, 1010).expect("unable to construct txn");
+            construct_txn(&kp, subnetwork_rewards, RewardPeriod::new(1000, 1010))
+                .expect("unable to construct txn");
 
         // This is taken from a blockchain-node, constructing the exact same txn
         assert_eq!(

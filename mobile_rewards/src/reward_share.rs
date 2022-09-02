@@ -174,18 +174,15 @@ pub async fn gather_shares(
 
     while let Some(Ok(msg)) = stream.next().await {
         // NOTE: This will early exit with an error if we fail to decode
+        let CellHeartbeatReqV1 {
+            pub_key,
+            cbsd_id,
+            timestamp,
+            operation_mode,
+            ..
+        } = CellHeartbeatReqV1::decode(msg)?;
 
-        if let Ok(cell_heartbeat_req_v1) = CellHeartbeatReqV1::decode(msg.clone()) {
-            gather_heartbeat(&mut shares, cell_heartbeat_req_v1, after_utc, before_utc)
-        } else if let Ok(speedtest_req_v1) = SpeedtestReqV1::decode(msg) {
-            gather_speedtest(
-                &mut speed_shares,
-                &mut speed_shares_moving_avg,
-                speedtest_req_v1,
-                after_utc,
-                before_utc,
-            )
-        } else {
+        if !operation_mode || timestamp < after_utc || timestamp >= before_utc {
             continue;
         }
     }

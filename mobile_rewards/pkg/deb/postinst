@@ -1,0 +1,4 @@
+# add to /usr/local/bin it appears in path
+ln -s /opt/mobile-rewards/bin/mobile-rewards /usr/local/bin/mobile-rewards || true
+
+#DEBHELPER#

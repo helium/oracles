@@ -4,13 +4,14 @@ use crate::{
     keypair::Keypair,
     meta::Meta,
     pending_txn::{PendingTxn, Status},
-    subnetwork_rewards::{construct_txn, get_time_range, SubnetworkRewards},
+    subnetwork_rewards::{construct_txn, get_time_range, RewardPeriod, SubnetworkRewards},
     traits::B64,
     transaction::TransactionService,
     txn_status::TxnStatus,
     Error, Result,
 };
 use chrono::{Duration, Utc};
+use futures::try_join;
 use helium_proto::{
     blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
     FollowerTxnStreamRespV1, Message, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
@@ -23,14 +24,12 @@ use tonic::Streaming;
 
 pub const DEFAULT_START_REWARD_BLOCK: i64 = 1477650;
 
-const RECONNECT_WAIT_SECS: u64 = 5;
-const REWARD_PROCESS_INTERVAL_SECS: i64 = 86400; // 24 hours
+const RECONNECT_WAIT_SECS: i64 = 5;
+const DEFAULT_TRIGGER_INTERVAL_SECS: i64 = 900; // 15 min
+const DEFAULT_REWARD_INTERVAL_SECS: i64 = 86400; // 24 hours
 const STALE_PENDING_TIMEOUT_SECS: i64 = 1800; // 30 min
 
-pub const TXN_TYPES: &[&str] = &[
-    "blockchain_txn_consensus_group_v1",
-    "blockchain_txn_subnetwork_rewards_v1",
-];
+pub const TXN_TYPES: &[&str] = &["blockchain_txn_subnetwork_rewards_v1"];
 
 pub struct Server {
     pool: Pool<Postgres>,
@@ -38,6 +37,8 @@ pub struct Server {
     follower_service: FollowerService,
     txn_service: TransactionService,
     start_reward_block: i64,
+    trigger_interval: Duration,
+    reward_interval: Duration,
 }
 
 impl Server {
@@ -47,7 +48,15 @@ impl Server {
             keypair,
             follower_service: FollowerService::from_env()?,
             txn_service: TransactionService::from_env()?,
-            start_reward_block: env_var("REWARD_START_BLOCK", DEFAULT_START_REWARD_BLOCK)?,
+            start_reward_block: env_var("FOLLOWER_START_BLOCK", DEFAULT_START_REWARD_BLOCK)?,
+            trigger_interval: Duration::seconds(env_var(
+                "TRIGGER_INTERVAL",
+                DEFAULT_TRIGGER_INTERVAL_SECS,
+            )?),
+            reward_interval: Duration::seconds(env_var(
+                "REWARD_INTERVAL",
+                DEFAULT_REWARD_INTERVAL_SECS,
+            )?),
         };
         Ok(result)
     }
@@ -65,18 +74,18 @@ impl Server {
                 return Ok(());
             }
 
-            let follow_start = match Meta::last_reward_height(&self.pool).await? {
+            let follow_start = match Meta::last_follower_height(&self.pool).await? {
                 None => {
                     let start_reward_block = &self.start_reward_block;
                     Meta::insert_kv(
                         &self.pool,
-                        "last_reward_height",
+                        "last_follower_height",
                         &start_reward_block.to_string(),
                     )
                     .await?;
                     *start_reward_block
                 }
-                Some(last_reward_height) => last_reward_height,
+                Some(last_follower_height) => last_follower_height,
             } as u64;
 
             tracing::info!("connecting to blockchain txn stream at height {follow_start}");
@@ -97,7 +106,11 @@ impl Server {
     }
 
     async fn reconnect_wait(&mut self, shutdown: triggered::Listener) {
-        let timer = time::sleep(time::Duration::from_secs(RECONNECT_WAIT_SECS));
+        let timer = time::sleep(
+            Duration::seconds(RECONNECT_WAIT_SECS)
+                .to_std()
+                .expect("valid interval in seconds"),
+        );
         tokio::select! {
             _ = timer => (),
             _ = shutdown => (),
@@ -109,14 +122,18 @@ impl Server {
         mut txn_stream: Streaming<FollowerTxnStreamRespV1>,
         shutdown: triggered::Listener,
     ) -> Result {
+        let mut trigger_timer = time::interval(
+            self.trigger_interval
+                .to_std()
+                .expect("valid interval in seconds"),
+        );
+
         loop {
             tokio::select! {
                 msg = txn_stream.message() => match msg {
                     Ok(Some(txn)) => {
-                        record_duration!(
-                            "reward_server_process_txn_entry_duration",
-                            self.process_txn_entry(txn).await?
-                        )
+                        tracing::info!("txn received from stream");
+                        self.process_txn_entry(txn).await?
                     }
                     Ok(None) => {
                         tracing::warn!("txn stream disconnected");
@@ -128,6 +145,9 @@ impl Server {
                         return Ok(());
                     }
                 },
+                _ = trigger_timer.tick() => {
+                    self.process_clock_tick().await?
+                }
                 _ = shutdown.clone() => return Ok(())
             }
         }
@@ -143,7 +163,6 @@ impl Server {
         };
         match txn {
             Txn::SubnetworkRewards(txn) => self.process_subnet_rewards(&entry, txn).await,
-            Txn::ConsensusGroup(_) => self.process_consensus_group(&entry).await,
             _ => Ok(()),
         }
     }
@@ -157,60 +176,59 @@ impl Server {
             return Ok(());
         }
 
-        let txn_ht = envelope.height;
         let txn_hash = &envelope.txn_hash.to_b64_url()?;
         let txn_ts = envelope.timestamp;
-        match PendingTxn::update(
+        PendingTxn::update(
             &self.pool,
             txn_hash,
             Status::Cleared,
             datetime_from_epoch(txn_ts as i64),
         )
         .await
-        {
-            Ok(()) => checkpoint_last_reward_meta(&self.pool, txn_ht, txn_ts).await,
-            // we got a subnetwork reward but don't have a pending txn in our db,
-            // it may have been submitted externally, ignore and just bump the last_reward_height
-            // in our meta table
-            Err(Error::NotFound(_)) => {
-                tracing::warn!(
-                    "ignore but bump last_reward_height and last_reward_end_time in meta!"
-                );
-                checkpoint_last_reward_meta(&self.pool, txn_ht, txn_ts).await
-            }
-            Err(err) => Err(err),
-        }
     }
 
-    async fn process_consensus_group(&mut self, envelope: &FollowerTxnStreamRespV1) -> Result {
-        let block_height = envelope.height;
-        let block_timestamp = envelope.timestamp;
+    async fn process_clock_tick(&mut self) -> Result {
+        let now = Utc::now();
+        let reward_period = self.follower_service.reward_period().await?;
+        let current_height = reward_period.end;
         tracing::info!(
-            "processing consensus group at {block_height} with timestamp: {block_timestamp}"
+            "processing clock tick at height {} with time {}",
+            current_height,
+            now.to_string()
         );
+
+        update_last_follower(&self.pool, current_height).await?;
+
+        // Early exit if we found failed pending txns
+        match self.check_pending().await {
+            Ok(_) => {
+                tracing::info!("no failed pending transactions");
+            }
+            Err(err) => {
+                tracing::error!("pending transactions check failed with error: {err:?}");
+                return Err(err);
+            }
+        }
 
         match Meta::last_reward_end_time(&self.pool).await? {
             Some(last_reward_time) => {
-                let (start_utc, stop_utc) = get_time_range(last_reward_time);
-                if stop_utc - start_utc > Duration::seconds(REWARD_PROCESS_INTERVAL_SECS) {
-                    match self.check_pending().await {
-                        Ok(_) => tracing::info!("no pending transactions found failed"),
-                        Err(err) => {
-                            tracing::error!("pending transactions check failed with error: {err:?}")
-                        }
-                    }
-                }
-
-                match self.handle_rewards(block_height, block_timestamp).await {
-                    Ok(_) => tracing::info!("successfully emitted mobile rewards"),
-                    Err(err) => tracing::error!("rewards emissions failed with error: {err:?}"),
+                tracing::info!("found last_reward_end_time: {:#?}", last_reward_time);
+                let (start_utc, end_utc) = get_time_range(last_reward_time);
+                if end_utc - start_utc > self.reward_interval {
+                    // Handle rewards if we pass our duration
+                    record_duration!(
+                        "reward_server_emission_duration",
+                        self.handle_rewards(reward_period, last_reward_time, end_utc.timestamp())
+                            .await?
+                    )
                 }
             }
             None => {
+                let starting_ts = now.timestamp();
                 tracing::info!(
-                    "no last_reward_end_time found, inserting trigger timestamp {block_timestamp}"
+                    "no last_reward_end_time found, inserting current timestamp {starting_ts}"
                 );
-                checkpoint_last_reward_meta(&self.pool, block_height, block_timestamp).await?;
+                Meta::update(&self.pool, "last_reward_end_time", starting_ts.to_string()).await?;
             }
         }
         Ok(())
@@ -250,42 +268,30 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_rewards(&mut self, block_height: u64, block_timestamp: u64) -> Result {
-        tracing::info!("chain consensus group transaction received");
+    async fn handle_rewards(
+        &mut self,
+        reward_period: RewardPeriod,
+        last_reward_time: i64,
+        end_utc: i64,
+    ) -> Result {
+        tracing::info!("triggering rewards emissions");
 
-        match Meta::last_reward_end_time(&self.pool).await {
-            Err(_) => {
-                tracing::error!("unable to get failed_pending_txns!")
-            }
-            Ok(None) => {
-                tracing::info!(
-                    "no last_reward_end_time found, inserting trigger timestamp {block_timestamp}"
-                );
-                checkpoint_last_reward_meta(&self.pool, block_height, block_timestamp).await?;
-            }
-            Ok(Some(last_reward_end_time)) => {
-                tracing::info!("found last_reward_end_time: {:#?}", last_reward_end_time);
+        let store = FileStore::from_env().await?;
+        let rewards = SubnetworkRewards::from_last_reward_end_time(
+            store,
+            self.follower_service.clone(),
+            last_reward_time,
+        )
+        .await?;
 
-                let store = FileStore::from_env().await?;
-                let rewards = SubnetworkRewards::from_last_reward_end_time(
-                    store,
-                    self.follower_service.clone(),
-                    last_reward_end_time,
-                )
-                .await?;
-
-                match Meta::last_reward_height(&self.pool).await? {
-                    None => {
-                        tracing::error!("cannot continue, no known last_reward_height!")
-                    }
-                    Some(last_reward_height) => {
-                        if let Some(r) = rewards {
-                            self.issue_rewards(r, last_reward_height + 1, block_height as i64)
-                                .await?;
-                        }
-                    }
-                }
-            }
+        if let Some(r) = rewards {
+            let pool = &self.pool.clone();
+            let issue_rewards = self.issue_rewards(r, reward_period);
+            let update_end_time = Meta::update(pool, "last_reward_end_time", end_utc.to_string());
+            try_join!(issue_rewards, update_end_time)?;
+        } else {
+            tracing::error!("cannot continue; unable to determine reward period!");
+            return Err(Error::NotFound("invalid reward period".to_string()));
         }
         Ok(())
     }
@@ -293,22 +299,21 @@ impl Server {
     async fn issue_rewards(
         &mut self,
         rewards: SubnetworkRewards,
-        start_epoch: i64,
-        end_epoch: i64,
+        reward_period: RewardPeriod,
     ) -> Result {
         if rewards.is_empty() {
             tracing::info!("nothing to reward");
             return Ok(());
         }
 
-        let (txn, txn_hash_str) = construct_txn(&self.keypair, rewards, start_epoch, end_epoch)?;
+        let (txn, txn_hash_str) = construct_txn(&self.keypair, rewards, reward_period)?;
 
         // binary encode the txn for storage
         let txn_encoded = txn.encode_to_vec();
 
         // insert in the pending_txn tbl (status: created)
         let pt = PendingTxn::insert_new(&self.pool, &txn_hash_str, txn_encoded).await?;
-        tracing::info!("inserted pending_txn: {:?}", pt);
+        tracing::info!("inserted pending_txn with hash: {txn_hash_str}");
 
         // submit the txn
         if let Ok(_resp) = self
@@ -321,6 +326,7 @@ impl Server {
             )
             .await
         {
+            metrics::increment_counter!("reward_server_emission");
             PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending, Utc::now()).await?;
         }
         Ok(())
@@ -352,17 +358,7 @@ impl Server {
     }
 }
 
-async fn checkpoint_last_reward_meta(
-    pool: &Pool<Postgres>,
-    block_height: u64,
-    block_timestamp: u64,
-) -> Result {
-    Meta::update_all(
-        pool,
-        &[
-            ("last_reward_height", block_height.to_string()),
-            ("last_reward_end_time", block_timestamp.to_string()),
-        ],
-    )
-    .await
+async fn update_last_follower(pool: &Pool<Postgres>, last_height: u64) -> Result {
+    metrics::gauge!("reward_server_last_reward_height", last_height as f64);
+    Meta::update(pool, "last_follower_height", last_height.to_string()).await
 }

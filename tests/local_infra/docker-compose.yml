@@ -16,6 +16,17 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: poc_db
+      PGDATA: /data
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/data
 
   config:
     image: minio/mc:latest
@@ -35,3 +46,4 @@ services:
 
 volumes:
   bucket-data:
+  db-data:
