@@ -44,13 +44,13 @@ metrics-exporter-prometheus = "0.11.0"
 depends = "$auto"
 assets = [
   [
-    "target/release/poc5g-ingest",
-    "/opt/poc5g-ingest/bin/",
+    "target/release/poc-ingest",
+    "/opt/poc-ingest/bin/",
     "755",
   ],
   [
     "pkg/deb/env-template",
-    "/usr/share/poc5g-ingest/env-template",
+    "/usr/share/poc-ingest/env-template",
     "644",
   ],
 ]
