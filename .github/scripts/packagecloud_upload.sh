@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-MOBILE_REWARDS_PKGNAME=$( find target/debian -type f -iname "poc5g-rewards_*.deb" )
-MOBILE_INGEST_PKGNAME=$( find target/debian -type f -iname "poc5g-ingest_*.deb" )
+MOBILE_REWARDS_PKGNAME=$( find target/debian -type f -iname "mobile-rewards_*.deb" )
+MOBILE_INGEST_PKGNAME=$( find target/debian -type f -iname "poc-ingest_*.deb" )
 MOBILE_STATUS_PKGNAME=$( find target/debian -type f -iname "poc5g-status_*.deb" )
 
 curl -u "${PACKAGECLOUD_API_KEY}:" \

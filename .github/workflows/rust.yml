@@ -42,14 +42,14 @@ jobs:
         if: contains(github.ref, 'refs/tags/')
         uses: novalabsxyz/cargo-deb-amd64-ubuntu@v1.0
         with:
-          cmd: cargo deb -p poc5g-ingest
+          cmd: cargo deb -p poc-ingest
 
       - name: PackageRewardsServer
         id: build_rewards
         if: contains(github.ref, 'refs/tags/')
         uses: novalabsxyz/cargo-deb-amd64-ubuntu@v1.0
         with:
-          cmd: cargo deb -p poc5g-rewards
+          cmd: cargo deb -p mobile-rewards
 
       - name: PackageStatusServer
         id: build_status
