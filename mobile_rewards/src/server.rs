@@ -279,7 +279,7 @@ impl Server {
         let store = FileStore::from_env().await?;
         let rewards = SubnetworkRewards::from_last_reward_end_time(
             store,
-            self.follower_service.clone(),
+            &mut self.follower_service,
             last_reward_time,
         )
         .await?;

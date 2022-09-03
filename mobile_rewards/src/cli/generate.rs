@@ -21,11 +21,11 @@ pub struct Cmd {
 impl Cmd {
     pub async fn run(&self) -> Result {
         let store = FileStore::from_env().await?;
-        let follower_service = FollowerService::from_env()?;
+        let mut follower_service = FollowerService::from_env()?;
 
         SubnetworkRewards::from_period(
             store,
-            follower_service,
+            &mut follower_service,
             datetime_from_naive(self.after),
             datetime_from_naive(self.before),
         )
