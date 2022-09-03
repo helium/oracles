@@ -40,21 +40,21 @@ jobs:
       - name: PackageIngestorServer
         id: build_ingestor
         if: contains(github.ref, 'refs/tags/')
-        uses: novelabsxyz/cargo-deb-amd64-ubuntu@v1.0
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v1.0
         with:
           cmd: cargo deb -p poc5g-ingest
 
       - name: PackageRewardsServer
         id: build_rewards
         if: contains(github.ref, 'refs/tags/')
-        uses: novelabsxyz/cargo-deb-amd64-ubuntu@v1.0
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v1.0
         with:
           cmd: cargo deb -p poc5g-rewards
 
       - name: PackageStatusServer
         id: build_status
         if: contains(github.ref, 'refs/tags/')
-        uses: novelabsxyz/cargo-deb-amd64-ubuntu@v1.0
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v1.0
         with:
           cmd: cargo deb -p poc5g-status
 
