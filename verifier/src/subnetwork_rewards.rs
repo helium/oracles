@@ -5,7 +5,7 @@ use crate::{
     subnetwork_reward::sorted_rewards,
     write_json,
 };
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
 use helium_proto::{
     follower_client::FollowerClient,
@@ -25,10 +25,6 @@ use poc_store::{FileStore, FileType};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use serde::Serialize;
-use std::cmp::min;
-
-// default hours to delay lookup from now
-pub const DEFAULT_LOOKUP_DELAY: i64 = 20;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SubnetworkRewards(pub Vec<ProtoSubnetworkReward>);
@@ -45,27 +41,6 @@ impl SubnetworkRewards {
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
     ) -> Result<Option<Self>> {
-        if let Some(rewards) = get_rewards(
-            input_store,
-            output_store,
-            follower_service,
-            after_utc,
-            before_utc,
-        )
-        .await?
-        {
-            return Ok(Some(Self(rewards)));
-        }
-        Ok(None)
-    }
-
-    pub async fn from_last_reward_end_time(
-        input_store: &FileStore,
-        output_store: &FileStore,
-        follower_service: FollowerClient<Channel>,
-        last_reward_end_time: i64,
-    ) -> Result<Option<Self>> {
-        let (after_utc, before_utc) = get_time_range(last_reward_end_time);
         if let Some(rewards) = get_rewards(
             input_store,
             output_store,
@@ -376,18 +351,6 @@ fn cell_share_to_u64(decimal: Decimal) -> u64 {
     (decimal * dec!(10)).to_u64().unwrap()
 }
 
-pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
-    let after_utc = datetime_from_epoch(last_reward_end_time);
-    let now = Utc::now();
-    let stop_utc = now - Duration::hours(DEFAULT_LOOKUP_DELAY);
-    let start_utc = min(after_utc, stop_utc);
-    (start_utc, stop_utc)
-}
-
-pub fn datetime_from_epoch(secs: i64) -> DateTime<Utc> {
-    DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(secs, 0), Utc)
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
@@ -501,20 +464,20 @@ mod test {
             .expect("unable to get test pubkey");
         let mut owner_resolver = FixedOwnerResolver { owner: test_owner };
 
-        let (owner_shares, _missing_owner_shares) =
-            owner_shares(&mut owner_resolver, hotspot_shares)
-                .await
-                .expect("unable to get owner_shares");
+        let (owner_shares, _missing_owner_shares) = owner_resolver
+            .owner_shares(hotspot_shares)
+            .await
+            .expect("unable to get owner_shares");
 
         let start = Utc::now();
-        let duration = Duration::hours(24);
+        let duration = chrono::Duration::hours(24);
         let owner_emissions = OwnerEmissions::new(owner_shares, start, duration);
         let total_owner_emissions = owner_emissions.total_emissions();
 
         // 100M in bones
         assert_eq!(10000000000000000, u64::from(total_owner_emissions));
 
-        let subnetwork_rewards = SubnetworkRewards::from(owner_emissions);
+        let _subnetwork_rewards = SubnetworkRewards::from(owner_emissions);
 
         /*
 
