@@ -1,13 +1,9 @@
 use crate::{
-    datetime_from_naive, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, Error, FileInfoStream,
-    FileStore, FileType, PublicKey, Result,
+    datetime_from_naive, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, traits::MsgDecode,
+    Error, FileInfoStream, FileStore, FileType, PublicKey, Result,
 };
 use chrono::NaiveDateTime;
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
-use helium_proto::{
-    services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
-    Message,
-};
 use serde::{ser::SerializeSeq, Serializer};
 use std::{
     io,
@@ -203,23 +199,56 @@ fn locate(
     buf: &[u8],
 ) -> Result<Option<serde_json::Value>> {
     match file_type {
-        FileType::CellHeartbeat => CellHeartbeatReqV1::decode(buf)
+        FileType::CellHeartbeat => {
+            CellHeartbeat::decode(buf).and_then(|event| event.to_value_if(gateway))
+        }
+        FileType::CellSpeedtest => {
+            CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(gateway))
+        }
+    }
+}
+
+trait ToValue {
+    fn to_value(self) -> Result<serde_json::Value>
+    where
+        Self: serde::Serialize;
+
+    fn to_value_if(self, gateway: &PublicKey) -> Result<Option<serde_json::Value>>
+    where
+        Self: Gateway,
+        Self: serde::Serialize + Sized,
+    {
+        (self.pubkey() == gateway)
+            .then(|| self.to_value())
+            .transpose()
+    }
+}
+
+trait Gateway {
+    fn pubkey(&self) -> &PublicKey;
+}
+
+impl<T> ToValue for T
+where
+    T: serde::Serialize,
+{
+    fn to_value(self) -> Result<serde_json::Value>
+    where
+        Self: serde::Serialize,
+    {
+        self.serialize(serde_json::value::Serializer)
             .map_err(Error::from)
-            .and_then(CellHeartbeat::try_from)
-            .and_then(|event| {
-                (event.pubkey == *gateway)
-                    .then(|| serde_json::to_value(event))
-                    .transpose()
-                    .map_err(Error::from)
-            }),
-        FileType::CellSpeedtest => SpeedtestReqV1::decode(buf)
-            .map_err(Error::from)
-            .and_then(CellSpeedtest::try_from)
-            .and_then(|event| {
-                (event.pubkey == *gateway)
-                    .then(|| serde_json::to_value(event))
-                    .transpose()
-                    .map_err(Error::from)
-            }),
+    }
+}
+
+impl Gateway for CellHeartbeat {
+    fn pubkey(&self) -> &PublicKey {
+        &self.pubkey
+    }
+}
+
+impl Gateway for CellSpeedtest {
+    fn pubkey(&self) -> &PublicKey {
+        &self.pubkey
     }
 }

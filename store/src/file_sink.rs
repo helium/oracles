@@ -253,7 +253,7 @@ impl FileSink {
                 "expected sink filename",
             ))
         })?;
-        let target_path = self.target_path.join(&target_filename);
+        let target_path = self.target_path.join(target_filename);
 
         fs::rename(&sink_path, &target_path).await?;
         if let Some(deposits) = &self.deposits {

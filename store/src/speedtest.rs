@@ -1,4 +1,4 @@
-use crate::{datetime_from_epoch, Error, PublicKey, Result};
+use crate::{datetime_from_epoch, traits::MsgDecode, Error, PublicKey, Result};
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::SpeedtestReqV1;
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,10 @@ pub struct CellSpeedtest {
     #[serde(alias = "downloadSpeed")]
     pub download_speed: u64,
     pub latency: u32,
+}
+
+impl MsgDecode for CellSpeedtest {
+    type Msg = SpeedtestReqV1;
 }
 
 impl From<CellSpeedtest> for SpeedtestReqV1 {
