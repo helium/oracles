@@ -93,7 +93,7 @@ impl FileInfo {
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
     CellHeartbeat,
