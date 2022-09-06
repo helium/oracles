@@ -41,14 +41,14 @@ impl CellType {
     }
 }
 
-impl Into<CellTypeProto> for CellType {
-    fn into(self) -> CellTypeProto {
-        match self {
-            Self::Nova436H => CellTypeProto::Nova436h,
-            Self::Nova430I => CellTypeProto::Nova430i,
-            Self::Neutrino430 => CellTypeProto::Neutrino430,
-            Self::SercommIndoor => CellTypeProto::SercommIndoor,
-            Self::SercommOutdoor => CellTypeProto::SercommOutdoor,
+impl From<CellType> for CellTypeProto {
+    fn from(ct: CellType) -> Self {
+        match ct {
+            CellType::Nova436H => Self::Nova436h,
+            CellType::Nova430I => Self::Nova430i,
+            CellType::Neutrino430 => Self::Neutrino430,
+            CellType::SercommIndoor => Self::SercommIndoor,
+            CellType::SercommOutdoor => Self::SercommOutdoor,
         }
     }
 }

@@ -32,7 +32,7 @@ macro_rules! decimal_scalar {
                 Self(d)
             }
 
-            pub fn into_inner(&self) -> Decimal {
+            pub fn into_inner(self) -> Decimal {
                 self.0
             }
 

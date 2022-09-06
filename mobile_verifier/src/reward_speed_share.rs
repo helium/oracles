@@ -58,12 +58,12 @@ pub struct Average {
     pub latency_avg: u32,
 }
 
-impl Into<AverageProto> for Average {
-    fn into(self) -> AverageProto {
-        AverageProto {
-            upload_speed_avg: self.upload_speed_avg,
-            download_speed_avg: self.download_speed_avg,
-            latency_avg: self.latency_avg,
+impl From<Average> for AverageProto {
+    fn from(avg: Average) -> Self {
+        Self {
+            upload_speed_avg: avg.upload_speed_avg,
+            download_speed_avg: avg.download_speed_avg,
+            latency_avg: avg.latency_avg,
         }
     }
 }
@@ -134,14 +134,14 @@ pub struct SpeedShare {
     pub latency: u32,
 }
 
-impl Into<SpeedShareProto> for SpeedShare {
-    fn into(self) -> SpeedShareProto {
-        SpeedShareProto {
-            pub_key: self.pub_key.to_vec(),
-            timestamp: self.timestamp,
-            upload_speed: self.upload_speed,
-            download_speed: self.download_speed,
-            latency: self.latency,
+impl From<SpeedShare> for SpeedShareProto {
+    fn from(ss: SpeedShare) -> Self {
+        Self {
+            pub_key: ss.pub_key.to_vec(),
+            timestamp: ss.timestamp,
+            upload_speed: ss.upload_speed,
+            download_speed: ss.download_speed,
+            latency: ss.latency,
         }
     }
 }
