@@ -23,8 +23,8 @@ pub type InvalidSpeedShares = Vec<InvalidSpeedShare>;
 pub struct SpeedShareMovingAvgs(HashMap<PublicKey, MovingAvg>);
 
 impl SpeedShareMovingAvgs {
-    pub fn update(&mut self, speed_shares: &SpeedShares) {
-        for (public_key, speed_shares) in speed_shares {
+    pub fn update(&mut self, speed_shares_by_pub_key: &SpeedShares) {
+        for (public_key, speed_shares) in speed_shares_by_pub_key {
             for share in speed_shares {
                 self.0
                     .entry(public_key.clone())
