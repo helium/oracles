@@ -1,4 +1,4 @@
-use crate::{datetime_from_epoch, Error, PublicKey, Result};
+use crate::{datetime_from_epoch, traits::MsgDecode, Error, PublicKey, Result};
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::CellHeartbeatReqV1;
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,10 @@ pub struct CellHeartbeat {
     pub operation_mode: bool,
     pub cbsd_category: String,
     pub cbsd_id: String,
+}
+
+impl MsgDecode for CellHeartbeat {
+    type Msg = CellHeartbeatReqV1;
 }
 
 impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
