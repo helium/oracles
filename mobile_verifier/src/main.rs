@@ -6,7 +6,7 @@ async fn main() -> Result {
     dotenv::dotenv()?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            dotenv::var("RUST_LOG").unwrap_or_else(|_| "mobile_rewards=debug".into()),
+            dotenv::var("RUST_LOG").unwrap_or_else(|_| "mobile_verifier=debug".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
