@@ -110,17 +110,9 @@ async fn get_rewards(
     let after_ts = after_utc.timestamp() as u64;
     let before_ts = before_utc.timestamp() as u64;
 
-    let mut file_list = store
+    let file_list = store
         .list_all(FileType::CellHeartbeat, after_utc, before_utc)
         .await?;
-
-    let mut speedtest_list = store
-        .list_all(FileType::CellSpeedtest, after_utc, before_utc)
-        .await?;
-    file_list.append(&mut speedtest_list);
-    // XXX: speedtest_list is empty now! It's fine if we don't need it, but we could do some
-    // alternative vector concat too.
-
     metrics::histogram!("reward_server_processed_files", file_list.len() as f64);
 
     write_json(
@@ -132,21 +124,8 @@ async fn get_rewards(
 
     let mut stream = store.source(stream::iter(file_list).map(Ok).boxed());
 
-    let (shares, speed_shares, speed_shares_moving_avg) =
-        gather_shares(&mut stream, after_ts, before_ts).await?;
+    let shares = gather_shares(&mut stream, after_ts, before_ts).await?;
     write_json("shares", after_ts, before_ts, &json!({ "shares": shares }))?;
-    write_json(
-        "speed_shares",
-        after_ts,
-        before_ts,
-        &json!({ "speed_shares": speed_shares }),
-    )?;
-    write_json(
-        "speed_shares_moving_avg",
-        after_ts,
-        before_ts,
-        &json!({ "speed_shares_moving_avg": speed_shares_moving_avg }),
-    )?;
 
     let cell_shares = cell_shares(&shares);
     write_json(
@@ -156,7 +135,7 @@ async fn get_rewards(
         &json!({ "cell_shares": cell_shares }),
     )?;
 
-    let hotspot_shares = hotspot_shares(&shares, &speed_shares_moving_avg);
+    let hotspot_shares = hotspot_shares(&shares);
     write_json(
         "hotspot_shares",
         after_ts,
@@ -208,7 +187,6 @@ pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc
 mod test {
     use crate::{
         reward_share::{OwnerEmissions, Share, Shares},
-        reward_speed_share::{SpeedShare, SpeedShareMovingAvgs, SpeedShares},
         traits::owner_resolver::OwnerResolver,
         CellType, PublicKey,
     };
@@ -259,59 +237,12 @@ mod test {
         let ct4 = CellType::from_cbsd_id(&c4).expect("unable to get cell_type");
 
         let mut shares = Shares::new();
-        shares.insert(c1, Share::new(t1, g1.clone(), ct1.reward_weight(), ct1));
-        shares.insert(c2, Share::new(t2, g2.clone(), ct2.reward_weight(), ct2));
-        shares.insert(c3, Share::new(t3, g3.clone(), ct3.reward_weight(), ct3));
-        shares.insert(c4, Share::new(t4, g4.clone(), ct4.reward_weight(), ct4));
+        shares.insert(c1, Share::new(t1, g1, ct1.reward_weight(), ct1));
+        shares.insert(c2, Share::new(t2, g2, ct2.reward_weight(), ct2));
+        shares.insert(c3, Share::new(t3, g3, ct3.reward_weight(), ct3));
+        shares.insert(c4, Share::new(t4, g4, ct4.reward_weight(), ct4));
 
-        // All g1 averages are satifsied
-        let s1 = vec![
-            SpeedShare::new(g1.clone(), 1661578086, 2182223, 11739568, 118),
-            SpeedShare::new(g1.clone(), 1661581686, 2589229, 12618734, 30),
-            SpeedShare::new(g1.clone(), 1661585286, 11420942, 11376519, 8),
-            SpeedShare::new(g1.clone(), 1661588886, 7646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 7646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 8646683, 35517840, 6),
-        ];
-        // The avg latency for g2 is too high, should not appear in hotspot_shares
-        let s2 = vec![
-            SpeedShare::new(g2.clone(), 1661578086, 2182223, 11739568, 118),
-            SpeedShare::new(g2.clone(), 1661581686, 2589229, 12618734, 30),
-            SpeedShare::new(g2.clone(), 1661585286, 11420942, 11376519, 40),
-            SpeedShare::new(g2.clone(), 1661588886, 7646683, 35517840, 60),
-            SpeedShare::new(g2.clone(), 1661588886, 7646683, 35517840, 55),
-            SpeedShare::new(g2.clone(), 1661588886, 8646683, 35517840, 58),
-        ];
-        // The avg upload speed for g3 is too low, should not appear in hotspot_shares
-        let s3 = vec![
-            SpeedShare::new(g1.clone(), 1661578086, 182223, 11739568, 118),
-            SpeedShare::new(g1.clone(), 1661581686, 589229, 12618734, 30),
-            SpeedShare::new(g1.clone(), 1661585286, 1420942, 11376519, 8),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6),
-        ];
-        // The avg download speed for g4 is too low, should not appear in hotspot_shares
-        let s4 = vec![
-            SpeedShare::new(g4.clone(), 1661578086, 2182223, 1739568, 118),
-            SpeedShare::new(g4.clone(), 1661581686, 2589229, 2618734, 30),
-            SpeedShare::new(g4.clone(), 1661585286, 11420942, 1376519, 8),
-            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6),
-            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6),
-            SpeedShare::new(g4.clone(), 1661588886, 8646683, 5517840, 6),
-        ];
-
-        let mut speed_shares = SpeedShares::new();
-        let mut moving_avgs = SpeedShareMovingAvgs::default();
-        speed_shares.insert(g1.clone(), s1);
-        speed_shares.insert(g2, s2);
-        speed_shares.insert(g3, s3);
-        speed_shares.insert(g4, s4);
-        moving_avgs.update(&speed_shares);
-
-        let hotspot_shares = hotspot_shares(&shares, &moving_avgs);
-        // Only g1 should be in hotspot_shares
-        assert!(hotspot_shares.contains_key(&g1) && hotspot_shares.keys().len() == 1);
+        let hotspot_shares = hotspot_shares(&shares);
 
         let test_owner = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
             .expect("unable to get test pubkey");

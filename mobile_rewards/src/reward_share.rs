@@ -1,8 +1,7 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures::stream::StreamExt;
 use helium_proto::{
-    services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
-    Message, SubnetworkReward as ProtoSubnetworkReward,
+    services::poc_mobile::CellHeartbeatReqV1, Message, SubnetworkReward as ProtoSubnetworkReward,
 };
 use lazy_static::lazy_static;
 use poc_store::BytesMutStream;
@@ -11,10 +10,8 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::{
-    reward_speed_share::{SpeedShare, SpeedShareMovingAvgs, SpeedShares},
-    subnetwork_rewards::SubnetworkRewards,
-    traits::OwnerResolver,
-    CellType, Mobile, PublicKey, Result,
+    subnetwork_rewards::SubnetworkRewards, traits::OwnerResolver, CellType, Mobile, PublicKey,
+    Result,
 };
 use std::collections::HashMap;
 
@@ -126,20 +123,10 @@ pub fn cell_shares(shares: &Shares) -> CellShares {
     cell_shares
 }
 
-pub fn hotspot_shares(
-    shares: &Shares,
-    speed_shares_moving_avg: &SpeedShareMovingAvgs,
-) -> HotspotShares {
+pub fn hotspot_shares(shares: &Shares) -> HotspotShares {
     let mut hotspot_shares = HotspotShares::new();
     for share in shares.values() {
-        speed_shares_moving_avg.get(&share.pub_key).map_or_else(
-            || (),
-            |moving_avg| {
-                if moving_avg.is_valid {
-                    *hotspot_shares.entry(share.pub_key.clone()).or_default() += share.weight;
-                }
-            },
-        )
+        *hotspot_shares.entry(share.pub_key.clone()).or_default() += share.weight;
     }
     hotspot_shares
 }
@@ -167,10 +154,8 @@ pub async fn gather_shares(
     stream: &mut BytesMutStream,
     after_utc: u64,
     before_utc: u64,
-) -> Result<(Shares, SpeedShares, SpeedShareMovingAvgs)> {
+) -> Result<Shares> {
     let mut shares = Shares::new();
-    let mut speed_shares = SpeedShares::new();
-    let mut speed_shares_moving_avg = SpeedShareMovingAvgs::default();
 
     while let Some(Ok(msg)) = stream.next().await {
         // NOTE: This will early exit with an error if we fail to decode
@@ -185,79 +170,23 @@ pub async fn gather_shares(
         if !operation_mode || timestamp < after_utc || timestamp >= before_utc {
             continue;
         }
-    }
-    Ok((shares, speed_shares, speed_shares_moving_avg))
-}
 
-fn gather_speedtest(
-    speed_shares: &mut SpeedShares,
-    speed_shares_moving_avg: &mut SpeedShareMovingAvgs,
-    speedtest_req_v1: SpeedtestReqV1,
-    after_utc: u64,
-    before_utc: u64,
-) {
-    let SpeedtestReqV1 {
-        pub_key: st_pub_key,
-        timestamp: st_timestamp,
-        upload_speed: st_upload_speed,
-        download_speed: st_download_speed,
-        latency: st_latency,
-        ..
-    } = speedtest_req_v1;
+        if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
+            if let Ok(gw_pubkey) = PublicKey::try_from(&pub_key) {
+                let share = Share::new(timestamp, gw_pubkey, cell_type.reward_weight(), cell_type);
 
-    if st_timestamp < after_utc || st_timestamp >= before_utc {
-        return;
-    }
-
-    if let Ok(gw_public_key) = PublicKey::try_from(&st_pub_key) {
-        let share = SpeedShare::new(
-            gw_public_key.clone(),
-            st_timestamp,
-            st_upload_speed,
-            st_download_speed,
-            st_latency,
-        );
-
-        speed_shares.entry(gw_public_key).or_default().push(share);
-        speed_shares_moving_avg.update(speed_shares)
-    }
-}
-
-fn gather_heartbeat(
-    shares: &mut Shares,
-    cell_heartbeat_req_v1: CellHeartbeatReqV1,
-    after_utc: u64,
-    before_utc: u64,
-) {
-    let CellHeartbeatReqV1 {
-        pub_key: hb_pub_key,
-        cbsd_id: hb_cbsd_id,
-        timestamp: hb_timestamp,
-        ..
-    } = cell_heartbeat_req_v1;
-
-    if hb_timestamp < after_utc || hb_timestamp >= before_utc {
-        return;
-    }
-
-    if let Some(cell_type) = CellType::from_cbsd_id(&hb_cbsd_id) {
-        if let Ok(gw_pubkey) = PublicKey::try_from(&hb_pub_key) {
-            let share = Share::new(
-                hb_timestamp,
-                gw_pubkey,
-                cell_type.reward_weight(),
-                cell_type,
-            );
-
-            if shares
-                .get(&hb_cbsd_id)
-                .map_or(false, |found_share| found_share.timestamp > hb_timestamp)
-            {
-                return;
+                if shares
+                    .get(&cbsd_id)
+                    .map_or(false, |found_share| found_share.timestamp > timestamp)
+                {
+                    continue;
+                }
+                shares.insert(cbsd_id, share);
             }
-            shares.insert(hb_cbsd_id, share);
         }
     }
+
+    Ok(shares)
 }
 
 #[cfg(test)]
