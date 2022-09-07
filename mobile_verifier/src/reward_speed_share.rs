@@ -11,6 +11,8 @@ const MIN_UPLOAD: u64 = 1250000;
 const MAX_LATENCY: u32 = 50;
 // Window size of rolling average
 pub const MOVING_WINDOW_SIZE: usize = 6;
+// Minimum samples required to check validity
+pub const MIN_REQUIRED_SAMPLES: usize = 2;
 
 use helium_crypto::PublicKey;
 
@@ -118,7 +120,7 @@ impl MovingAvg {
     }
 
     fn check_validity(&self) -> bool {
-        self.speed_shares.len() >= MOVING_WINDOW_SIZE
+        self.speed_shares.len() >= MIN_REQUIRED_SAMPLES
             && self.average.download_speed_avg >= MIN_DOWNLOAD
             && self.average.upload_speed_avg >= MIN_UPLOAD
             && self.average.latency_avg <= MAX_LATENCY
@@ -176,90 +178,142 @@ pub struct InvalidSpeedShare {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use chrono::DateTime;
     use std::str::FromStr;
 
-    use super::*;
+    fn parse_dt(dt: &str) -> u64 {
+        DateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
+            .expect("unable_to_parse")
+            .timestamp() as u64
+    }
 
-    #[test]
-    fn check_valid() {
+    fn bytes_per_s(mbps: u64) -> u64 {
+        mbps * 125000
+    }
+
+    fn known_shares() -> Vec<SpeedShare> {
+        // This data is taken from the spreadsheet
+        // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Pass?
+        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
+        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
+        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
+        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
+        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
+        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
+        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
+        // 2022-08-02 18:00:00	70	30	40	103.33	19.17	30.00	TRUE
+
         let gw_public_key =
             PublicKey::from_str("1126cBTucnhedhxnWp6puBWBk6Xdbpi7nkqeaX4s4xoDy2ja7bcd")
                 .expect("unable to get pubkey");
         let mut shares = vec![];
-        for timestamp in 1..=13 {
-            let share = SpeedShare::new(
-                gw_public_key.clone(),
-                timestamp as u64,
-                MIN_UPLOAD + 1,
-                MIN_DOWNLOAD + 1,
-                MAX_LATENCY - 1,
-            );
-            shares.push(share)
-        }
+
+        let s0 = SpeedShare::new(
+            gw_public_key.clone(),
+            parse_dt("2022-08-01 0:00:00 +0000"),
+            0,
+            0,
+            0,
+        );
+        let s1 = SpeedShare::new(
+            gw_public_key.clone(),
+            parse_dt("2022-08-01 6:00:00 +0000"),
+            bytes_per_s(25),
+            bytes_per_s(150),
+            70,
+        );
+        let s2 = SpeedShare::new(
+            gw_public_key.clone(),
+            parse_dt("2022-08-01 12:00:00 +0000"),
+            bytes_per_s(10),
+            bytes_per_s(118),
+            50,
+        );
+        let s3 = SpeedShare::new(
+            gw_public_key.clone(),
+            parse_dt("2022-08-01 18:00:00 +0000"),
+            bytes_per_s(30),
+            bytes_per_s(112),
+            40,
+        );
+        let s4 = SpeedShare::new(
+            gw_public_key.clone(),
+            parse_dt("2022-08-02 0:00:00 +0000"),
+            bytes_per_s(15),
+            bytes_per_s(90),
+            10,
+        );
+        let s5 = SpeedShare::new(
+            gw_public_key.clone(),
+            parse_dt("2022-08-02 6:00:00 +0000"),
+            bytes_per_s(20),
+            bytes_per_s(130),
+            10,
+        );
+        let s6 = SpeedShare::new(
+            gw_public_key.clone(),
+            parse_dt("2022-08-02 12:00:00 +0000"),
+            bytes_per_s(10),
+            bytes_per_s(100),
+            30,
+        );
+        let s7 = SpeedShare::new(
+            gw_public_key,
+            parse_dt("2022-08-02 18:00:00 +0000"),
+            bytes_per_s(30),
+            bytes_per_s(70),
+            40,
+        );
+        shares.push(s0);
+        shares.push(s1);
+        shares.push(s2);
+        shares.push(s3);
+        shares.push(s4);
+        shares.push(s5);
+        shares.push(s6);
+        shares.push(s7);
+        shares
+    }
+
+    #[test]
+    fn check_known_valid() {
         let mut moving_avg = MovingAvg::default();
+        let shares = known_shares();
         for (index, share) in shares.iter().enumerate() {
             moving_avg.update(share.to_owned());
-            if (index + 1) < MOVING_WINDOW_SIZE {
-                assert!(!moving_avg.is_valid)
-            } else {
+            if index > 4 {
+                // This should be valid according to the spreadsheet
                 assert!(moving_avg.is_valid)
+            } else {
+                assert!(!moving_avg.is_valid)
             }
         }
     }
 
     #[test]
-    fn check_invalid() {
-        let gw_public_key =
-            PublicKey::from_str("1126cBTucnhedhxnWp6puBWBk6Xdbpi7nkqeaX4s4xoDy2ja7bcd")
-                .expect("unable to get pubkey");
-        let mut shares = vec![];
-        for timestamp in 1..=13 {
-            let share = SpeedShare::new(
-                gw_public_key.clone(),
-                timestamp as u64,
-                MIN_UPLOAD - 1,
-                MIN_DOWNLOAD - 1,
-                MAX_LATENCY + 1,
-            );
-            shares.push(share)
-        }
+    fn check_minimum_known_valid() {
         let mut moving_avg = MovingAvg::default();
-        for share in shares {
-            moving_avg.update(share);
-            assert!(!moving_avg.is_valid)
+        let shares = known_shares();
+        for (index, share) in shares[4..6].iter().enumerate() {
+            moving_avg.update(share.to_owned());
+            if index > 0 {
+                // This becomes valid as soon as s5 comes in
+                assert!(moving_avg.is_valid)
+            } else {
+                assert!(!moving_avg.is_valid)
+            }
         }
     }
 
-    // NOTE: We should get some ruby code to check a speedtest file and compare what it says about
-    // valid speedtests for hotspots too. Enable this or a similar test then...
-    // #[test]
-    // fn check_sample() {
-    //     let gw_public_key =
-    //         PublicKey::from_str("1126cBTucnhedhxnWp6puBWBk6Xdbpi7nkqeaX4s4xoDy2ja7bcd")
-    //             .expect("unable to get pubkey");
-    //     let shares = vec![
-    //         SpeedShare::new(gw_public_key.clone(), 1661578086, 2182223, 11739568, 118),
-    //         SpeedShare::new(gw_public_key.clone(), 1661581686, 2589229, 12618734, 30),
-    //         SpeedShare::new(gw_public_key.clone(), 1661585286, 11420942, 11376519, 8),
-    //         SpeedShare::new(gw_public_key.clone(), 1661588886, 5646683, 10551784, 6),
-    //         SpeedShare::new(gw_public_key.clone(), 1661592486, 1655764, 19594159, 47),
-    //         SpeedShare::new(gw_public_key.clone(), 1661596086, 1461670, 33046967, 24),
-    //         SpeedShare::new(gw_public_key.clone(), 1661599686, 623987, 104615, 317),
-    //         SpeedShare::new(gw_public_key.clone(), 1661603286, 1451442, 41535836, 31),
-    //         SpeedShare::new(gw_public_key.clone(), 1661606886, 1448379, 27020854, 66),
-    //         SpeedShare::new(gw_public_key.clone(), 1661610486, 2515468, 11118020, 39),
-    //         SpeedShare::new(gw_public_key.clone(), 1661614086, 734261, 26084694, 34),
-    //         SpeedShare::new(gw_public_key.clone(), 1661617686, 102592, 2051052, 74),
-    //         SpeedShare::new(gw_public_key.clone(), 1661621286, 1214982, 1030764, 165),
-    //         SpeedShare::new(gw_public_key.clone(), 1661624886, 1218291, 28013571, 124),
-    //         SpeedShare::new(gw_public_key, 1661628486, 580032, 3799167, 27),
-    //     ];
-
-    //     let mut moving_avg = MovingAvg::default();
-    //     for share in shares {
-    //         moving_avg.update(share);
-    //         println!("moving_avg is_valid: {:#?}", moving_avg.is_valid);
-    //     }
-
-    // }
+    #[test]
+    fn check_minimum_known_invalid() {
+        let mut moving_avg = MovingAvg::default();
+        let shares = known_shares();
+        for (_index, share) in shares[5..6].iter().enumerate() {
+            moving_avg.update(share.to_owned());
+            // This is invalid because MIN_REQUIRED_SAMPLES is not satifsied
+            assert!(!moving_avg.is_valid)
+        }
+    }
 }
