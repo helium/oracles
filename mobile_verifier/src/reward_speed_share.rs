@@ -146,8 +146,8 @@ impl From<SpeedShare> for SpeedShareProto {
         Self {
             pub_key: ss.pub_key.to_vec(),
             timestamp: ss.timestamp,
-            upload_speed: ss.upload_speed,
-            download_speed: ss.download_speed,
+            upload_speed_bps: ss.upload_speed,
+            download_speed_bps: ss.download_speed,
             latency: ss.latency,
             validity: ss.validity as i32,
         }

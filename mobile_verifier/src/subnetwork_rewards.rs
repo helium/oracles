@@ -195,8 +195,8 @@ async fn get_rewards(
                 .into_iter()
                 .map(|share| SpeedShareProto {
                     pub_key: share.pub_key.to_vec(),
-                    upload_speed: share.upload_speed,
-                    download_speed: share.download_speed,
+                    upload_speed_bps: share.upload_speed,
+                    download_speed_bps: share.download_speed,
                     latency: share.latency,
                     timestamp: share.timestamp,
                     validity: share.validity as i32,
