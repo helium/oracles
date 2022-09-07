@@ -11,9 +11,9 @@ pub use error::{Error, Result};
 pub use server::Server;
 
 use poc_store::FileStore;
-use std::io;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use std::io;
 
 pub async fn write_json<T: ?Sized + serde::Serialize>(
     file_store: &FileStore,
@@ -51,4 +51,3 @@ fn bones_to_u64(decimal: Decimal) -> u64 {
 fn cell_share_to_u64(decimal: Decimal) -> u64 {
     (decimal * dec!(10)).to_u64().unwrap()
 }
-

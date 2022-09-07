@@ -1,11 +1,10 @@
 use crate::{
+    bones_to_u64, cell_share_to_u64,
     error::{Error, Result},
     reward_share::{cell_shares, hotspot_shares, GatheredShares, OwnerEmissions, OwnerResolver},
     reward_speed_share::SpeedShare,
     subnetwork_reward::sorted_rewards,
     write_json,
-    bones_to_u64,
-    cell_share_to_u64,
 };
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
@@ -15,8 +14,8 @@ use helium_proto::{
         poc_mobile::{
             CellShare, CellShares, FileInfo, HotspotShare, HotspotShares, InvalidSpeedShares,
             MovingAvg, OwnerEmission, OwnerEmissions as OwnerEmissionsProto, OwnerShare,
-            OwnerShares, ProcessedFiles, Share, Shares, SpeedShare as SpeedShareProto, SpeedShareList, SpeedShareMovingAvgs,
-            SpeedShares, Validity,
+            OwnerShares, ProcessedFiles, Share, Shares, SpeedShare as SpeedShareProto,
+            SpeedShareList, SpeedShareMovingAvgs, SpeedShares, Validity,
         },
         Channel,
     },
@@ -181,7 +180,7 @@ async fn get_rewards(
         "invalid_shares",
         after_ts,
         before_ts,
-        &invalid_shares, 
+        &invalid_shares,
     )
     .await?;
 
@@ -385,46 +384,184 @@ mod test {
         let ct4 = CellType::from_cbsd_id(&c4).expect("unable to get cell_type");
 
         let mut shares = Shares::new();
-        shares.insert(c1, Share::new(t1, g1.clone(), ct1.reward_weight(), ct1));
-        shares.insert(c2, Share::new(t2, g2.clone(), ct2.reward_weight(), ct2));
-        shares.insert(c3, Share::new(t3, g3.clone(), ct3.reward_weight(), ct3));
-        shares.insert(c4, Share::new(t4, g4.clone(), ct4.reward_weight(), ct4));
+        shares.insert(
+            c1,
+            Share::new(t1, g1.clone(), ct1.reward_weight(), ct1, Validity::Valid),
+        );
+        shares.insert(
+            c2,
+            Share::new(t2, g2.clone(), ct2.reward_weight(), ct2, Validity::Valid),
+        );
+        shares.insert(
+            c3,
+            Share::new(t3, g3.clone(), ct3.reward_weight(), ct3, Validity::Valid),
+        );
+        shares.insert(
+            c4,
+            Share::new(t4, g4.clone(), ct4.reward_weight(), ct4, Validity::Valid),
+        );
 
         // All g1 averages are satifsied
         let s1 = vec![
-            SpeedShare::new(g1.clone(), 1661578086, 2182223, 11739568, 118),
-            SpeedShare::new(g1.clone(), 1661581686, 2589229, 12618734, 30),
-            SpeedShare::new(g1.clone(), 1661585286, 11420942, 11376519, 8),
-            SpeedShare::new(g1.clone(), 1661588886, 7646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 7646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 8646683, 35517840, 6),
+            SpeedShare::new(
+                g1.clone(),
+                1661578086,
+                2182223,
+                11739568,
+                118,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661581686,
+                2589229,
+                12618734,
+                30,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661585286,
+                11420942,
+                11376519,
+                8,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661588886,
+                7646683,
+                35517840,
+                6,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661588886,
+                7646683,
+                35517840,
+                6,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661588886,
+                8646683,
+                35517840,
+                6,
+                Validity::Valid,
+            ),
         ];
         // The avg latency for g2 is too high, should not appear in hotspot_shares
         let s2 = vec![
-            SpeedShare::new(g2.clone(), 1661578086, 2182223, 11739568, 118),
-            SpeedShare::new(g2.clone(), 1661581686, 2589229, 12618734, 30),
-            SpeedShare::new(g2.clone(), 1661585286, 11420942, 11376519, 40),
-            SpeedShare::new(g2.clone(), 1661588886, 7646683, 35517840, 60),
-            SpeedShare::new(g2.clone(), 1661588886, 7646683, 35517840, 55),
-            SpeedShare::new(g2.clone(), 1661588886, 8646683, 35517840, 58),
+            SpeedShare::new(
+                g2.clone(),
+                1661578086,
+                2182223,
+                11739568,
+                118,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g2.clone(),
+                1661581686,
+                2589229,
+                12618734,
+                30,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g2.clone(),
+                1661585286,
+                11420942,
+                11376519,
+                40,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g2.clone(),
+                1661588886,
+                7646683,
+                35517840,
+                60,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g2.clone(),
+                1661588886,
+                7646683,
+                35517840,
+                55,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g2.clone(),
+                1661588886,
+                8646683,
+                35517840,
+                58,
+                Validity::Valid,
+            ),
         ];
         // The avg upload speed for g3 is too low, should not appear in hotspot_shares
         let s3 = vec![
-            SpeedShare::new(g1.clone(), 1661578086, 182223, 11739568, 118),
-            SpeedShare::new(g1.clone(), 1661581686, 589229, 12618734, 30),
-            SpeedShare::new(g1.clone(), 1661585286, 1420942, 11376519, 8),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6),
+            SpeedShare::new(
+                g1.clone(),
+                1661578086,
+                182223,
+                11739568,
+                118,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661581686,
+                589229,
+                12618734,
+                30,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661585286,
+                1420942,
+                11376519,
+                8,
+                Validity::Valid,
+            ),
+            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6, Validity::Valid),
+            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6, Validity::Valid),
+            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6, Validity::Valid),
         ];
         // The avg download speed for g4 is too low, should not appear in hotspot_shares
         let s4 = vec![
-            SpeedShare::new(g4.clone(), 1661578086, 2182223, 1739568, 118),
-            SpeedShare::new(g4.clone(), 1661581686, 2589229, 2618734, 30),
-            SpeedShare::new(g4.clone(), 1661585286, 11420942, 1376519, 8),
-            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6),
-            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6),
-            SpeedShare::new(g4.clone(), 1661588886, 8646683, 5517840, 6),
+            SpeedShare::new(
+                g4.clone(),
+                1661578086,
+                2182223,
+                1739568,
+                118,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g4.clone(),
+                1661581686,
+                2589229,
+                2618734,
+                30,
+                Validity::Valid,
+            ),
+            SpeedShare::new(
+                g4.clone(),
+                1661585286,
+                11420942,
+                1376519,
+                8,
+                Validity::Valid,
+            ),
+            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6, Validity::Valid),
+            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6, Validity::Valid),
+            SpeedShare::new(g4.clone(), 1661588886, 8646683, 5517840, 6, Validity::Valid),
         ];
 
         let mut speed_shares = SpeedShares::new();

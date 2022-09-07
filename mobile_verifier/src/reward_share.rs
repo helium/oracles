@@ -3,7 +3,7 @@ use futures::stream::StreamExt;
 use helium_proto::{
     follower_client::FollowerClient,
     services::{
-        poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1, Validity, Share as ShareProto},
+        poc_mobile::{CellHeartbeatReqV1, Share as ShareProto, SpeedtestReqV1, Validity},
         Channel,
     },
     FollowerGatewayReqV1, Message, SubnetworkReward as ProtoSubnetworkReward,
@@ -17,9 +17,7 @@ use serde::Serialize;
 use crate::{
     cell_type::CellType,
     mobile::Mobile,
-    reward_speed_share::{
-        InvalidSpeedShares, SpeedShare, SpeedShareMovingAvgs, SpeedShares,
-    },
+    reward_speed_share::{InvalidSpeedShares, SpeedShare, SpeedShareMovingAvgs, SpeedShares},
     subnetwork_rewards::SubnetworkRewards,
     Result,
 };
@@ -111,7 +109,13 @@ pub struct Share {
 }
 
 impl Share {
-    pub fn new(timestamp: u64, pub_key: PublicKey, weight: Decimal, cell_type: CellType, validity: Validity) -> Self {
+    pub fn new(
+        timestamp: u64,
+        pub_key: PublicKey,
+        weight: Decimal,
+        cell_type: CellType,
+        validity: Validity,
+    ) -> Self {
         Self {
             timestamp,
             pub_key,
@@ -312,7 +316,7 @@ impl GatheredShares {
                     gw_pubkey,
                     cell_type.reward_weight(),
                     cell_type,
-                    Validity::Valid, 
+                    Validity::Valid,
                 );
 
                 if self
