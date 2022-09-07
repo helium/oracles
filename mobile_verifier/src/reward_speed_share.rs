@@ -1,5 +1,5 @@
 //use crate::PublicKey;
-use helium_proto::services::poc_mobile::{Average as AverageProto, SpeedShare as SpeedShareProto};
+use helium_proto::services::poc_mobile::{Average as AverageProto, SpeedShare as SpeedShareProto, Validity};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 
@@ -19,7 +19,7 @@ use helium_crypto::PublicKey;
 /// Map from gw_public_key to vec<speed_share>
 pub type SpeedShares = HashMap<PublicKey, Vec<SpeedShare>>;
 
-pub type InvalidSpeedShares = Vec<InvalidSpeedShare>;
+pub type InvalidSpeedShares = Vec<SpeedShare>;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct SpeedShareMovingAvgs(HashMap<PublicKey, MovingAvg>);
@@ -55,27 +55,31 @@ pub struct MovingAvg {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Average {
-    pub upload_speed_avg: u64,
-    pub download_speed_avg: u64,
-    pub latency_avg: u32,
+    pub upload_speed_avg_bps: u64,
+    pub download_speed_avg_bps: u64,
+    pub latency_avg_ms: u32,
 }
 
 impl From<Average> for AverageProto {
     fn from(avg: Average) -> Self {
         Self {
-            upload_speed_avg: avg.upload_speed_avg,
-            download_speed_avg: avg.download_speed_avg,
-            latency_avg: avg.latency_avg,
+            upload_speed_avg_bps: avg.upload_speed_avg_bps,
+            download_speed_avg_bps: avg.download_speed_avg_bps,
+            latency_avg_ms: avg.latency_avg_ms,
         }
     }
 }
 
 impl Average {
-    pub fn new(upload_speed_avg: u64, download_speed_avg: u64, latency_avg: u32) -> Self {
+    pub fn new(
+        upload_speed_avg_bps: u64,
+        download_speed_avg_bps: u64,
+        latency_avg_ms: u32,
+    ) -> Self {
         Self {
-            upload_speed_avg,
-            download_speed_avg,
-            latency_avg,
+            upload_speed_avg_bps,
+            download_speed_avg_bps,
+            latency_avg_ms,
         }
     }
 }
@@ -121,9 +125,9 @@ impl MovingAvg {
 
     fn check_validity(&self) -> bool {
         self.speed_shares.len() >= MIN_REQUIRED_SAMPLES
-            && self.average.download_speed_avg >= MIN_DOWNLOAD
-            && self.average.upload_speed_avg >= MIN_UPLOAD
-            && self.average.latency_avg <= MAX_LATENCY
+            && self.average.download_speed_avg_bps >= MIN_DOWNLOAD
+            && self.average.upload_speed_avg_bps >= MIN_UPLOAD
+            && self.average.latency_avg_ms <= MAX_LATENCY
     }
 }
 
@@ -134,6 +138,7 @@ pub struct SpeedShare {
     pub upload_speed: u64,
     pub download_speed: u64,
     pub latency: u32,
+    pub validity: Validity,
 }
 
 impl From<SpeedShare> for SpeedShareProto {
@@ -144,6 +149,7 @@ impl From<SpeedShare> for SpeedShareProto {
             upload_speed: ss.upload_speed,
             download_speed: ss.download_speed,
             latency: ss.latency,
+            validity: ss.validity as i32,
         }
     }
 }
@@ -155,6 +161,7 @@ impl SpeedShare {
         upload_speed: u64,
         download_speed: u64,
         latency: u32,
+        validity: Validity,
     ) -> Self {
         Self {
             pub_key,
@@ -162,18 +169,9 @@ impl SpeedShare {
             upload_speed,
             download_speed,
             latency,
+            validity,
         }
     }
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct InvalidSpeedShare {
-    pub pub_key: Vec<u8>,
-    pub timestamp: u64,
-    pub upload_speed: u64,
-    pub download_speed: u64,
-    pub latency: u32,
-    pub invalid_reason: &'static str,
 }
 
 #[cfg(test)]

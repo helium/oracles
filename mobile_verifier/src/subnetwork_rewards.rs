@@ -4,6 +4,8 @@ use crate::{
     reward_speed_share::SpeedShare,
     subnetwork_reward::sorted_rewards,
     write_json,
+    bones_to_u64,
+    cell_share_to_u64,
 };
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
@@ -11,19 +13,16 @@ use helium_proto::{
     follower_client::FollowerClient,
     services::{
         poc_mobile::{
-            CellShare, CellShares, FileInfo, HotspotShare, HotspotShares, InvalidShare,
-            InvalidShares, InvalidSpeedShare, InvalidSpeedShares, MissingOwnerShare,
-            MissingOwnerShares, MovingAvg, OwnerEmission, OwnerEmissions as OwnerEmissionsProto,
-            OwnerShare, OwnerShares, ProcessedFiles, Share, Shares, SpeedShareList,
-            SpeedShareMovingAvgs, SpeedShares,
+            CellShare, CellShares, FileInfo, HotspotShare, HotspotShares, InvalidSpeedShares,
+            MovingAvg, OwnerEmission, OwnerEmissions as OwnerEmissionsProto, OwnerShare,
+            OwnerShares, ProcessedFiles, Share, Shares, SpeedShare as SpeedShareProto, SpeedShareList, SpeedShareMovingAvgs,
+            SpeedShares, Validity,
         },
         Channel,
     },
     SubnetworkReward as ProtoSubnetworkReward,
 };
 use poc_store::{FileStore, FileType};
-use rust_decimal::prelude::*;
-use rust_decimal_macros::dec;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,6 +152,7 @@ async fn get_rewards(
                     pub_key: share.pub_key.to_vec(),
                     weight: bones_to_u64(share.weight),
                     cell_type: share.cell_type as i32,
+                    validity: Validity::Valid as i32,
                 })
                 .collect(),
         },
@@ -181,19 +181,7 @@ async fn get_rewards(
         "invalid_shares",
         after_ts,
         before_ts,
-        &InvalidShares {
-            shares: invalid_shares
-                .into_iter()
-                .map(|share| InvalidShare {
-                    cbsd_id: share.cbsd_id,
-                    pub_key: share.pub_key,
-                    weight: bones_to_u64(share.weight),
-                    timestamp: share.timestamp,
-                    cell_type: share.cell_type as i32,
-                    invalid_reason: share.invalid_reason.to_string(),
-                })
-                .collect(),
-        },
+        &invalid_shares, 
     )
     .await?;
 
@@ -205,13 +193,13 @@ async fn get_rewards(
         &InvalidSpeedShares {
             speed_shares: invalid_speed_shares
                 .into_iter()
-                .map(|share| InvalidSpeedShare {
-                    pub_key: share.pub_key,
+                .map(|share| SpeedShareProto {
+                    pub_key: share.pub_key.to_vec(),
                     upload_speed: share.upload_speed,
                     download_speed: share.download_speed,
                     latency: share.latency,
                     timestamp: share.timestamp,
-                    invalid_reason: share.invalid_reason.to_string(),
+                    validity: share.validity as i32,
                 })
                 .collect(),
         },
@@ -302,11 +290,11 @@ async fn get_rewards(
         "missing_owner_shares",
         after_ts,
         before_ts,
-        &MissingOwnerShares {
+        &OwnerShares {
             shares: missing_owner_shares
                 .clone()
                 .into_iter()
-                .map(|(key, weight)| MissingOwnerShare {
+                .map(|(key, weight)| OwnerShare {
                     pub_key: key.to_vec(),
                     weight: bones_to_u64(weight),
                 })
@@ -340,15 +328,6 @@ async fn get_rewards(
     }
 
     Ok(None)
-}
-
-fn bones_to_u64(decimal: Decimal) -> u64 {
-    // One bone is one million mobiles
-    (decimal * dec!(1_000_000)).to_u64().unwrap()
-}
-
-fn cell_share_to_u64(decimal: Decimal) -> u64 {
-    (decimal * dec!(10)).to_u64().unwrap()
 }
 
 #[cfg(test)]

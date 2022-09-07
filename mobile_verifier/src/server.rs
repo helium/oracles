@@ -19,7 +19,7 @@ const RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
 /// Default hours to delay lookup from now
-pub const DEFAULT_LOOKUP_DELAY: i64 = 20;
+pub const DEFAULT_LOOKUP_DELAY: i64 = 24;
 
 impl Server {
     pub async fn new() -> Result<Self> {

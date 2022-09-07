@@ -3,7 +3,7 @@ use futures::stream::StreamExt;
 use helium_proto::{
     follower_client::FollowerClient,
     services::{
-        poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
+        poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1, Validity, Share as ShareProto},
         Channel,
     },
     FollowerGatewayReqV1, Message, SubnetworkReward as ProtoSubnetworkReward,
@@ -18,7 +18,7 @@ use crate::{
     cell_type::CellType,
     mobile::Mobile,
     reward_speed_share::{
-        InvalidSpeedShare, InvalidSpeedShares, SpeedShare, SpeedShareMovingAvgs, SpeedShares,
+        InvalidSpeedShares, SpeedShare, SpeedShareMovingAvgs, SpeedShares,
     },
     subnetwork_rewards::SubnetworkRewards,
     Result,
@@ -30,7 +30,7 @@ use std::collections::HashMap;
 pub type Shares = HashMap<String, Share>;
 
 /// Map from cbsd_id to invalid share
-pub type InvalidShares = Vec<InvalidShare>;
+pub type InvalidShares = Vec<ShareProto>;
 
 /// Map from cell_type to accumulated_reward_weight (decimal)
 pub type CellShares = HashMap<CellType, Decimal>;
@@ -107,15 +107,17 @@ pub struct Share {
     pub pub_key: PublicKey,
     pub weight: Decimal,
     pub cell_type: CellType,
+    pub validity: Validity,
 }
 
 impl Share {
-    pub fn new(timestamp: u64, pub_key: PublicKey, weight: Decimal, cell_type: CellType) -> Self {
+    pub fn new(timestamp: u64, pub_key: PublicKey, weight: Decimal, cell_type: CellType, validity: Validity) -> Self {
         Self {
             timestamp,
             pub_key,
             weight,
             cell_type,
+            validity,
         }
     }
 }
@@ -131,16 +133,6 @@ pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<
     } else {
         None
     }
-}
-
-pub struct InvalidShare {
-    pub cbsd_id: String,
-    pub timestamp: u64,
-    pub pub_key: Vec<u8>,
-    pub weight: Decimal,
-    pub cell_type: CellType,
-    // TODO: Probably better to make this an enum or something.
-    pub invalid_reason: &'static str,
 }
 
 pub fn cell_shares(shares: &Shares) -> CellShares {
@@ -258,13 +250,13 @@ impl GatheredShares {
         } = speedtest_req_v1;
 
         if st_timestamp < after_utc || st_timestamp >= before_utc {
-            self.invalid_speed_shares.push(InvalidSpeedShare {
-                pub_key: st_pub_key,
+            self.invalid_speed_shares.push(SpeedShare {
+                pub_key: PublicKey::try_from(st_pub_key.as_ref()).unwrap(),
                 timestamp: st_timestamp,
                 upload_speed: st_upload_speed,
                 download_speed: st_download_speed,
                 latency: st_latency,
-                invalid_reason: "outside of time range",
+                validity: Validity::InvalidHeartbeatNotWithinRange,
             });
             return;
         }
@@ -276,6 +268,7 @@ impl GatheredShares {
                 st_upload_speed,
                 st_download_speed,
                 st_latency,
+                Validity::Valid,
             );
 
             self.speed_shares
@@ -302,13 +295,13 @@ impl GatheredShares {
         if let Some(cell_type) = CellType::from_cbsd_id(&hb_cbsd_id) {
             // TODO: Will only get inserted in invalid if cbsd_id is a valid cell_type
             if hb_timestamp < after_utc || hb_timestamp >= before_utc {
-                self.invalid_shares.push(InvalidShare {
+                self.invalid_shares.push(ShareProto {
                     cbsd_id: hb_cbsd_id,
-                    pub_key: hb_pub_key,
                     timestamp: hb_timestamp,
-                    weight: cell_type.reward_weight(),
-                    cell_type,
-                    invalid_reason: "outside of time range",
+                    pub_key: hb_pub_key.to_vec(),
+                    weight: crate::bones_to_u64(cell_type.reward_weight()),
+                    cell_type: cell_type as i32,
+                    validity: Validity::InvalidHeartbeatNotWithinRange as i32,
                 });
                 return;
             }
@@ -319,6 +312,7 @@ impl GatheredShares {
                     gw_pubkey,
                     cell_type.reward_weight(),
                     cell_type,
+                    Validity::Valid, 
                 );
 
                 if self
