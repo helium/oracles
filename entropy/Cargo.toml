@@ -1,8 +1,8 @@
 [package]
-name = "poc-ingest"
+name = "poc-entropy"
 version = "0.1.0"
 edition = "2021"
-description = "PoC Ingest Server for the Helium Network"
+description = "PoC Entropy Server for the Helium Network"
 authors = ["Marc Nijdam <marc@nova-labs.com>"]
 license = "Apache-2.0"
 
@@ -24,33 +24,36 @@ tracing-subscriber = { version = "0", features = ["env-filter"] }
 base64 = "0"
 sha2 = "*"
 http = "*"
-tonic = "0"
+hyper = "*"
+axum = "0"
+tower-http = {version = "*", features = ["auth", "trace"]}
+jsonrpsee = { version = "0", features = ["async-client", "http-client"] }
 chrono = { version = "0", features = ["serde"] }
 triggered = "0"
 futures = "*"
 futures-util = "*"
 prost = "*"
-async-compression = { version = "0", features = ["tokio", "gzip"] }
+bs58 = "*"
+metrics = "0"
+metrics-exporter-prometheus = "0"
 helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
 helium-crypto = { git = "https://github.com/helium/helium-crypto-rs", tag = "v0.3.4" }
 poc-store = { path = "../store" }
 poc-metrics = { path = "../metrics" }
-metrics = "0.20"
-metrics-exporter-prometheus = "0.11.0"
 
 [package.metadata.deb]
 depends = "$auto"
 assets = [
   [
-    "target/release/poc-ingest",
-    "/opt/poc-ingest/bin/",
+    "target/release/poc-entropy",
+    "/opt/poc-entropy/bin/",
     "755",
   ],
   [
     "pkg/deb/env-template",
-    "/usr/share/poc-ingest/env-template",
+    "/usr/share/poc-entropy/env-template",
     "644",
   ],
 ]

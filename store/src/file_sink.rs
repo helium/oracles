@@ -85,9 +85,9 @@ impl FileSinkBuilder {
         Self { deposits, ..self }
     }
 
-    pub fn roll_time(self, duration: time::Duration) -> Self {
+    pub fn roll_time(self, duration: Duration) -> Self {
         Self {
-            roll_time: Duration::from_std(duration).expect("valid duration"),
+            roll_time: duration,
             ..self
         }
     }
