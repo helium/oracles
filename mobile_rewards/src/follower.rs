@@ -4,9 +4,14 @@ use crate::{
 };
 use async_trait::async_trait;
 use helium_proto::{
-    services::{Channel, Endpoint},
-    BlockchainTokenTypeV1 as ProtoTokenType, FollowerGatewayReqV1,
-    FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
+    services::{
+        follower::{
+            self, FollowerGatewayReqV1, FollowerSubnetworkLastRewardHeightReqV1,
+            FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
+        },
+        Channel, Endpoint,
+    },
+    BlockchainTokenTypeV1 as ProtoTokenType,
 };
 use http::Uri;
 use std::time::Duration;
@@ -16,7 +21,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
-type FollowerClient = helium_proto::follower_client::FollowerClient<Channel>;
+type FollowerClient = follower::Client<Channel>;
 
 #[derive(Debug, Clone)]
 pub struct FollowerService {
