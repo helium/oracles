@@ -2,21 +2,10 @@
 
 set -euo pipefail
 
-MOBILE_REWARDS_PKGNAME=$( find target/debian -type f -iname "mobile-rewards_*.deb" )
-MOBILE_INGEST_PKGNAME=$( find target/debian -type f -iname "poc-ingest_*.deb" )
-MOBILE_STATUS_PKGNAME=$( find target/debian -type f -iname "poc5g-status_*.deb" )
-
-curl -u "${PACKAGECLOUD_API_KEY}:" \
-     -F "package[distro_version_id]=210" \
-     -F "package[package_file]=@${MOBILE_REWARDS_PKGNAME}" \
-     https://packagecloud.io/api/v1/repos/helium/mobile_rewards/packages.json
-
-curl -u "${PACKAGECLOUD_API_KEY}:" \
-     -F "package[distro_version_id]=210" \
-     -F "package[package_file]=@${MOBILE_INGEST_PKGNAME}" \
-     https://packagecloud.io/api/v1/repos/helium/mobile_ingestor/packages.json
-
-curl -u "${PACKAGECLOUD_API_KEY}:" \
-     -F "package[distro_version_id]=210" \
-     -F "package[package_file]=@${MOBILE_STATUS_PKGNAME}" \
-     https://packagecloud.io/api/v1/repos/helium/mobile_status/packages.json
+for $deb in "target/debian/*.deb"
+do
+    curl -u "${PACKAGECLOUD_API_KEY}:" \
+         -F "package[distro_version_id]=210" \
+         -F "package[package_file]=@${deb}" \
+         https://packagecloud.io/api/v1/repos/helium/oracles/packages.json
+done
