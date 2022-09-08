@@ -3,7 +3,7 @@ name = "mobile-rewards"
 version = "0.1.0"
 edition = "2021"
 description = "Reward Server for the Helium Mobile Network"
-authors = ["Marc Nijdam <marc@nova.xyz>"]
+authors = ["Marc Nijdam <marc@nova-labs.com>"]
 license = "Apache-2.0"
 
 
@@ -28,7 +28,7 @@ prost = "*"
 once_cell = "1"
 poc-store = {path = "../store"}
 poc-metrics = {path = "../metrics"}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "andmck/poc-lora-support", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
 rust_decimal = "1"
 rust_decimal_macros = "1"
