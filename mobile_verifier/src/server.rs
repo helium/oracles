@@ -14,8 +14,8 @@ pub struct Server {
     pub last_reward_end_time: i64,
 }
 
-const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-const RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+pub const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+pub const RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
 /// Default hours to delay lookup from now

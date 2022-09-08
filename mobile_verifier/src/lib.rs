@@ -3,9 +3,10 @@ mod error;
 mod mobile;
 mod reward_share;
 mod reward_speed_share;
-mod server;
 mod subnetwork_reward;
-mod subnetwork_rewards;
+
+pub mod server;
+pub mod subnetwork_rewards;
 
 pub use error::{Error, Result};
 pub use server::Server;
@@ -29,7 +30,7 @@ pub async fn write_json<T: ?Sized + serde::Serialize>(
     Ok(())
 }
 
-fn env_var<T>(key: &str, default: T) -> Result<T>
+pub fn env_var<T>(key: &str, default: T) -> Result<T>
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
