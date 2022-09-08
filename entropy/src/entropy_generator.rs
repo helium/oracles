@@ -22,15 +22,23 @@ pub fn message_channel(init: Entropy) -> (MessageSender, MessageReceiver) {
     watch::channel(init)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Entropy {
     pub timestamp: i64,
+    #[serde(serialize_with = "ser_base64")]
     pub data: Vec<u8>,
 }
 
+fn ser_base64<T, S>(key: &T, serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    T: AsRef<[u8]>,
+    S: serde::ser::Serializer,
+{
+    serializer.serialize_str(&base64::encode(key.as_ref()))
+}
 impl std::fmt::Display for Entropy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&bs58::encode(&self.data).into_string())
+        f.write_str(&base64::encode(&self.data))
     }
 }
 

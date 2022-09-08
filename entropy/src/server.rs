@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::{extract::Extension, http::StatusCode, routing::get, Json, Router};
 use futures_util::TryFutureExt;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::{io, net::SocketAddr};
 use tokio::sync::watch;
 use tower_http::trace::TraceLayer;
@@ -60,10 +60,7 @@ async fn get_entropy(
     Extension(entropy_watch): Extension<watch::Receiver<Entropy>>,
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
     let entropy = &*entropy_watch.borrow();
-    let json = json!({
-        "data": base64::encode(&entropy.data),
-        "timestamp": entropy.timestamp,
-    });
+    let json = serde_json::to_value(entropy).map_err(api_error)?;
     Ok(Json(json))
 }
 
