@@ -3,7 +3,7 @@ name = "poc5g-status"
 version = "0.1.0"
 edition = "2021"
 description = "Status Server for the Helium Mobile Network"
-authors = ["Marc Nijdam <marc@novalabs.com>"]
+authors = ["Marc Nijdam <marc@nova-labs.com>"]
 license = "Apache-2.0"
 
 
