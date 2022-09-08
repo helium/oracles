@@ -35,9 +35,6 @@ impl ApiServer {
             .route("/health", get(empty_handler))
             // entropy
             .route("/entropy", get(get_entropy))
-            .layer(poc_metrics::ActiveRequestsLayer::new(
-                "entropy_server_connection_count",
-            ))
             .layer(TraceLayer::new_for_http())
             .layer(Extension(entropy_watch));
 
@@ -61,6 +58,7 @@ async fn get_entropy(
 ) -> std::result::Result<Json<Value>, (StatusCode, String)> {
     let entropy = &*entropy_watch.borrow();
     let json = serde_json::to_value(entropy).map_err(api_error)?;
+    metrics::increment_counter!("entropy_server_get_count");
     Ok(Json(json))
 }
 
