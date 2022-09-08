@@ -30,6 +30,7 @@ pub struct Cli {
 #[tokio::main]
 async fn main() -> Result {
     dotenv::dotenv()?;
+    tracing_subscriber::fmt::init();
 
     let Cli {
         after,
@@ -37,6 +38,10 @@ async fn main() -> Result {
         input_bucket,
         output_bucket,
     } = Cli::parse();
+
+    tracing::info!(
+        "Verifying shares from bucket {input_bucket} within the following time range: {after} to {before}"
+    );
 
     let input_store = FileStore::new(None, "us-west-2", input_bucket).await?;
     let output_store = FileStore::new(None, "us-west-2", output_bucket).await?;
