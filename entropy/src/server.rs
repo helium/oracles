@@ -1,12 +1,19 @@
 use crate::{
-    entropy_generator::{Entropy, MessageReceiver},
+    entropy_generator::{Entropy, MessageReceiver, ENTROPY_TICK_TIME},
     Error, Result,
 };
-use axum::{extract::Extension, http::StatusCode, routing::get, Json, Router};
+use axum::{
+    extract::Extension,
+    headers::{CacheControl, HeaderMap, HeaderMapExt},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::get,
+    Json, Router,
+};
+use chrono::Utc;
 use futures_util::TryFutureExt;
-use serde_json::Value;
 use std::{io, net::SocketAddr};
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Duration};
 use tower_http::trace::TraceLayer;
 
 pub struct ApiServer {
@@ -55,11 +62,16 @@ impl ApiServer {
 
 async fn get_entropy(
     Extension(entropy_watch): Extension<watch::Receiver<Entropy>>,
-) -> std::result::Result<Json<Value>, (StatusCode, String)> {
+) -> std::result::Result<impl IntoResponse, (StatusCode, String)> {
     let entropy = &*entropy_watch.borrow();
     let json = serde_json::to_value(entropy).map_err(api_error)?;
     metrics::increment_counter!("entropy_server_get_count");
-    Ok(Json(json))
+    let mut headers = HeaderMap::new();
+    let remaining_age =
+        (ENTROPY_TICK_TIME.as_secs() as i64 - (Utc::now().timestamp() - entropy.timestamp)).max(0);
+    headers
+        .typed_insert(CacheControl::new().with_max_age(Duration::from_secs(remaining_age as u64)));
+    Ok((headers, Json(json)))
 }
 
 async fn empty_handler() {}
