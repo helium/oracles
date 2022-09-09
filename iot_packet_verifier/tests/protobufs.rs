@@ -1,5 +1,4 @@
 /// Loading & processing of encoded Protobufs and bypass AWS S3 during ingest.
-
 extern crate iot_packet_verifier as pv;
 
 use helium_proto::services::router::PacketRouterPacketReportV1;

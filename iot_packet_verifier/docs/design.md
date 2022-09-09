@@ -47,7 +47,7 @@ where:
 
 Note: only PS follows the chain (which keeps PV simple)
 
-### PV Input Processing
+## PV Input Processing
 
 - Sequence of S3 input is in approximate timeseries order
 - Update tables by gateway, by OUI:

@@ -1,8 +1,8 @@
 extern crate iot_packet_verifier;
 
-use slog::info;
-use poc_store::Result;
 use iot_packet_verifier::{mk_logger, run};
+use poc_store::Result;
+use slog::info;
 
 #[tokio::main]
 async fn main() -> Result {

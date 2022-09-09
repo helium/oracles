@@ -5,8 +5,8 @@ use std::collections::HashMap;
 //use tokio_stream::StreamExt;
 // use tokio::sync::mpsc;
 
-use helium_proto::Message;
 use helium_proto::services::router::PacketRouterPacketReportV1;
+use helium_proto::Message;
 use poc_store::{file_source, Result};
 // FIXME for writing to S3:
 //use poc_store::FileStore;
@@ -67,7 +67,8 @@ pub async fn run(logger: &Logger) -> Result {
     // FIXME open file on S3, which is gz compressed
     // Until then, run: cargo test --features=sample-data && gzip tests/*.data
     //let filenames = ["tests/HPR-report-stream.data.gz"];
-    let filenames: Vec<String> = (0..6).into_iter()
+    let filenames: Vec<String> = (0..6)
+        .into_iter()
         .map(|i| format!("iot_packet_verifier/tests/HPR-report-{i:02x}.data.gz"))
         .collect();
     let mut file_stream = file_source::source(&filenames);
@@ -88,24 +89,38 @@ pub async fn run(logger: &Logger) -> Result {
 
     // FIXME populate bookkeeping structs and write to S3 via ../../store/file_sink.rs
 
-    info!(logger, "completed: n-records={} filenames={:?}", i, &filenames);
+    info!(
+        logger,
+        "completed: n-records={} filenames={:?}", i, &filenames
+    );
     Ok(())
 }
 
-pub fn update_counters(logger: &Logger, ingest: &PacketRouterPacketReportV1,
-                       counters: &mut PacketCounters) -> () {
+pub fn update_counters(
+    logger: &Logger,
+    ingest: &PacketRouterPacketReportV1,
+    counters: &mut PacketCounters,
+) -> () {
     let PacketRouterPacketReportV1 {
-        oui, net_id, gateway, payload_hash, ..
+        oui,
+        net_id,
+        gateway,
+        payload_hash,
+        ..
     } = ingest;
     info!(
         logger,
         "ingesting: oui={} netid={:#x} hash={:#x?}", oui, net_id, &payload_hash[0..9];
         "oui" => oui
     );
-    let _gw_count = counters.gateway.entry(gateway.to_owned())
+    let _gw_count = counters
+        .gateway
+        .entry(gateway.to_owned())
         .and_modify(|n| *n += 1)
         .or_insert(1);
-    let _oui_count = counters.oui.entry(oui.to_owned())
+    let _oui_count = counters
+        .oui
+        .entry(oui.to_owned())
         .and_modify(|n| *n += 1)
         .or_insert(1);
 }
