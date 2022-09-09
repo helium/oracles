@@ -13,6 +13,7 @@ use poc_store::{file_source, Result};
 
 // Inputs:
 type GatewayPubKey = Vec<u8>;
+#[allow(clippy::upper_case_acronyms)]
 type OUI = u32;
 
 // Outputs:
@@ -51,6 +52,12 @@ impl PacketCounters {
     }
 }
 
+impl Default for PacketCounters {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // TODO replicate mk_logger() from ~/helium/gateway-rs/src/main.rs or similar
 pub fn mk_logger() -> Logger {
     let drain = slog_syslog::unix_3164(slog_syslog::Facility::LOG_USER)
@@ -84,7 +91,7 @@ pub async fn run(logger: &Logger) -> Result {
         info!(logger, "decoding: nth-record={}", i);
         let decoded = PacketRouterPacketReportV1::decode(msg)?;
         info!(logger, "counting: nth-record={}", i);
-        update_counters(&logger, &decoded, &mut counters)
+        update_counters(logger, &decoded, &mut counters)
     }
 
     // FIXME populate bookkeeping structs and write to S3 via ../../store/file_sink.rs
@@ -100,7 +107,7 @@ pub fn update_counters(
     logger: &Logger,
     ingest: &PacketRouterPacketReportV1,
     counters: &mut PacketCounters,
-) -> () {
+) {
     let PacketRouterPacketReportV1 {
         oui,
         net_id,
