@@ -5,6 +5,7 @@ mod reward_share;
 mod reward_speed_share;
 mod subnetwork_reward;
 
+pub mod cli;
 pub mod server;
 pub mod subnetwork_rewards;
 
