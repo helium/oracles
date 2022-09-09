@@ -27,7 +27,8 @@ futures-util = "*"
 # FIXME
 # helium-proto = {git="https://github.com/helium/proto", branch="master", features=["services"]}
 # helium-proto = {git="https://github.com/helium/proto", branch="macpie/packet_router", features=["services"]}
-helium-proto = {path="../../../helium/proto", features=["services"]}
+helium-proto = {git="https://github.com/helium/proto", branch="dpezely/packet-verifier", features=["services"]}
+#helium-proto = {path="../../../helium/proto", features=["services"]}
 
 # lazy_static = "1"
 
