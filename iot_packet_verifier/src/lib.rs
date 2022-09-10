@@ -37,7 +37,7 @@ static AWS_DEFAULT_REGION: &str = "AWS_DEFAULT_REGION";
 static PACKET_REPORTER_BUCKET_NAME: &str = "PACKET_REPORTER_BUCKET_NAME";
 */
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PacketCounters {
     pub gateway: HashMap<GatewayPubKey, u32>,
     pub oui: HashMap<OUI, u32>,
@@ -49,12 +49,6 @@ impl PacketCounters {
             gateway: HashMap::new(),
             oui: HashMap::new(),
         }
-    }
-}
-
-impl Default for PacketCounters {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

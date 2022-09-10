@@ -17,6 +17,8 @@ run:
 	cargo run
 
 release:
+	cargo clippy --all
+	cargo fmt --all --check
 	cargo build --all --release
 
 update:
