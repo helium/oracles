@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::{sync::watch, time};
 
-const ENTROPY_TICK_TIME: time::Duration = time::Duration::from_secs(60);
+pub const ENTROPY_TICK_TIME: time::Duration = time::Duration::from_secs(60);
 const ENTROPY_TIMEOUT: time::Duration = time::Duration::from_secs(5);
 
 pub type MessageSender = watch::Sender<Entropy>;

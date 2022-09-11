@@ -25,7 +25,7 @@ base64 = "0"
 sha2 = "*"
 http = "*"
 hyper = "*"
-axum = "0"
+axum = { version = "0", features = ["headers"] }
 tower-http = {version = "*", features = ["auth", "trace"]}
 jsonrpsee = { version = "0", features = ["async-client", "http-client"] }
 chrono = { version = "0", features = ["serde"] }
