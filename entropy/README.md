@@ -10,7 +10,9 @@ The entropy server
 - Generates entropy on a regular interval (60s). The entropy can be sourced from
   any secure, reliable online source. The initial implementation relies on a
   Solana JSON-RPC source over TLS to collect Solana block hashes as entropy.
-- Stores and uploads generated entropy to a bucket for use by verifier(s)
+- Stores and uploads [generated
+  entropy](https://github.com/helium/proto/blob/master/src/entropy.proto) to a
+  bucket for use by verifier(s)
 - Serves it up over http
 
 Note that TLS termination and CDN use is required to expose the server publicly.
