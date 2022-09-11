@@ -13,9 +13,53 @@ The entropy server
 - Stores and uploads [generated
   entropy](https://github.com/helium/proto/blob/master/src/entropy.proto) to a
   bucket for use by verifier(s)
-- Serves it up over http
+- Serves entropy over http
 
-Note that TLS termination and CDN use is required to expose the server publicly.
+The [figure below](#fig-entropy-server) illustates the server in a deployment setup.
+
+Note that TLS termination is required and regionalised CDN is highly recommended
+to expose the server publicly.
+
+<div align = "center" markdown = 1 id="fig-entropy-server">
+
+```mermaid
+flowchart TB
+    Hotspot(Hotspot) <--> |https entropy request| CDN
+    CDN(CDN) <--> |https entropy request| LoadBalancer
+    subgraph Cloud
+      LoadBalancer(Load Balancer</br>TLS termination) <--> |http entropy request| EntropyServer
+      EntropyServer(Entropy Server)
+      EntropyServer --> Bucket
+      Bucket[(Entropy Reports)]
+    end
+```
+
+</div>
+
+## Endpoints
+
+The entropy server exposes the following endpoints.
+
+### `/health`
+
+Health check for use by the load balancer
+
+### `/entropy`
+
+Fetches currently active entropy. The returned `data` is a base64 encoded array
+of entropy data. The `timestamp`has a unix epoch timestamp at which the entropy
+started.
+
+The `cache-control` response header is set to indicate how long the entropy is
+still active for (in seconds). This is used by the CDN to refresh edge cached
+entropy values.
+
+```json
+{
+  "data": "St6vWMe4FfFJGeJDfcxkRizqE48mnaps/6LFp0FHVuc=",
+  "timestamp": 1662927759
+}
+```
 
 ## Configuration
 
