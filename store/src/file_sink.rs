@@ -300,9 +300,9 @@ impl FileSink {
 mod tests {
     use super::*;
     use async_compression::tokio::bufread::GzipDecoder;
+    use futures::stream::StreamExt;
     use tokio::{fs::DirEntry, io::BufReader};
     use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
-    use futures::stream::StreamExt;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn writes_a_framed_gzip_encoded_file() {
@@ -320,7 +320,10 @@ mod tests {
             let _ = file_sink.run(&shutdown_listener).await;
         });
 
-        let _ = sender.send(String::into_bytes("hello".to_string())).await.unwrap();
+        let _ = sender
+            .send(String::into_bytes("hello".to_string()))
+            .await
+            .unwrap();
 
         std::thread::sleep(time::Duration::from_millis(200));
 
@@ -329,7 +332,9 @@ mod tests {
 
         let entropy_file = get_entropy_file(&tmp_dir).await.unwrap();
 
-        let g = GzipDecoder::new(BufReader::new(File::open(entropy_file.path()).await.unwrap()));
+        let g = GzipDecoder::new(BufReader::new(
+            File::open(entropy_file.path()).await.unwrap(),
+        ));
         let mut fr = FramedRead::new(g, LengthDelimitedCodec::new());
 
         assert_eq!("hello", fr.next().await.unwrap().unwrap());
@@ -347,7 +352,7 @@ mod tests {
         None
     }
 
-    fn is_entropy_file(entry: &DirEntry) ->bool {
+    fn is_entropy_file(entry: &DirEntry) -> bool {
         entry.file_name().to_str().unwrap().starts_with("entropy.")
     }
 }
