@@ -20,8 +20,6 @@ use std::cmp::min;
 
 // default minutes to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
-// minimum number of heartbeats to consider for rewarding
-pub const MIN_PER_CELL_TYPE_HEARTBEATS: u64 = 1;
 
 #[derive(Debug)]
 pub struct RewardPeriod {
@@ -45,7 +43,7 @@ impl SubnetworkRewards {
 
     pub async fn from_period(
         store: FileStore,
-        follower_service: FollowerService,
+        follower_service: &mut FollowerService,
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
     ) -> Result<Option<Self>> {
@@ -57,7 +55,7 @@ impl SubnetworkRewards {
 
     pub async fn from_last_reward_end_time(
         store: FileStore,
-        follower_service: FollowerService,
+        follower_service: &mut FollowerService,
         last_reward_end_time: i64,
     ) -> Result<Option<Self>> {
         let (after_utc, before_utc) = get_time_range(last_reward_end_time);
@@ -95,7 +93,7 @@ pub fn construct_txn(
 
 async fn get_rewards(
     store: FileStore,
-    mut follower_service: FollowerService,
+    follower_service: &mut FollowerService,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
 ) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
@@ -144,7 +142,7 @@ async fn get_rewards(
     )?;
 
     let (owner_shares, missing_owner_shares) =
-        owner_shares(&mut follower_service, hotspot_shares).await?;
+        owner_shares(follower_service, hotspot_shares).await?;
     write_json(
         "owner_shares",
         after_ts,

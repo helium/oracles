@@ -1,6 +1,9 @@
-use crate::{datetime_from_naive, Error, FileInfoStream, FileStore, FileType, Result};
+use crate::{
+    datetime_from_naive, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, traits::MsgDecode,
+    Error, FileInfoStream, FileStore, FileType, PublicKey, Result,
+};
 use chrono::NaiveDateTime;
-use futures::{stream::TryStreamExt, TryFutureExt};
+use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
 use serde::{ser::SerializeSeq, Serializer};
 use std::{
     io,
@@ -50,9 +53,9 @@ struct FileFilter {
     /// available timestamp in the bucket.
     #[clap(long)]
     before: Option<NaiveDateTime>,
-    /// The (optional) file type to search for
+    /// The file type to search for
     #[clap(long)]
-    file_type: Option<FileType>,
+    file_type: FileType,
 }
 
 impl FileFilter {
@@ -157,5 +160,96 @@ impl Get {
             })
             .await?;
         Ok(())
+    }
+}
+
+/// Locate specific records in a time range
+#[derive(Debug, clap::Args)]
+pub struct Locate {
+    gateway: PublicKey,
+
+    #[clap(flatten)]
+    filter: FileFilter,
+}
+
+impl Locate {
+    pub async fn run(&self) -> Result {
+        let store = FileStore::from_env().await?;
+        let file_infos = self.filter.list(&store);
+        let file_type = self.filter.file_type;
+        let gateway = &self.gateway.clone();
+        let mut events = store
+            .source(file_infos)
+            .map_ok(|buf| (buf, gateway))
+            .try_filter_map(|(buf, gateway)| async move { locate(file_type, gateway, &buf) })
+            .boxed();
+        let mut ser = serde_json::Serializer::new(io::stdout());
+        let mut seq = ser.serialize_seq(None)?;
+        while let Some(event) = events.try_next().await? {
+            seq.serialize_element(&event)?;
+        }
+        seq.end()?;
+        Ok(())
+    }
+}
+
+fn locate(
+    file_type: FileType,
+    gateway: &PublicKey,
+    buf: &[u8],
+) -> Result<Option<serde_json::Value>> {
+    match file_type {
+        FileType::CellHeartbeat => {
+            CellHeartbeat::decode(buf).and_then(|event| event.to_value_if(gateway))
+        }
+        FileType::CellSpeedtest => {
+            CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(gateway))
+        }
+        FileType::Entropy => Ok(None),
+    }
+}
+
+trait ToValue {
+    fn to_value(self) -> Result<serde_json::Value>
+    where
+        Self: serde::Serialize;
+
+    fn to_value_if(self, gateway: &PublicKey) -> Result<Option<serde_json::Value>>
+    where
+        Self: Gateway,
+        Self: serde::Serialize + Sized,
+    {
+        (self.pubkey() == gateway)
+            .then(|| self.to_value())
+            .transpose()
+    }
+}
+
+trait Gateway {
+    fn pubkey(&self) -> &PublicKey;
+}
+
+impl<T> ToValue for T
+where
+    T: serde::Serialize,
+{
+    fn to_value(self) -> Result<serde_json::Value>
+    where
+        Self: serde::Serialize,
+    {
+        self.serialize(serde_json::value::Serializer)
+            .map_err(Error::from)
+    }
+}
+
+impl Gateway for CellHeartbeat {
+    fn pubkey(&self) -> &PublicKey {
+        &self.pubkey
+    }
+}
+
+impl Gateway for CellSpeedtest {
+    fn pubkey(&self) -> &PublicKey {
+        &self.pubkey
     }
 }

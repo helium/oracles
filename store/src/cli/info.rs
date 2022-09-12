@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
-    Message,
+    Entropy, Message,
 };
 use serde_json::json;
 use std::path::PathBuf;
@@ -19,7 +19,7 @@ pub struct Cmd {
 impl Cmd {
     pub async fn run(&self) -> Result {
         let file_info = FileInfo::try_from(self.path.as_path())?;
-        let mut file_stream = file_source::source(&[&self.path]);
+        let mut file_stream = file_source::source([&self.path]);
 
         let mut count = 1;
         let buf = match file_stream.next().await {
@@ -63,6 +63,9 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         }
         FileType::CellSpeedtest => {
             SpeedtestReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
+        }
+        FileType::Entropy => {
+            Entropy::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
     };
     Ok(result)

@@ -13,8 +13,12 @@ use crate::{
 use chrono::{Duration, Utc};
 use futures::try_join;
 use helium_proto::{
-    blockchain_txn::Txn, BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
-    FollowerTxnStreamRespV1, Message, TxnQueryRespV1, TxnStatus as ProtoTxnStatus,
+    blockchain_txn::Txn,
+    services::{
+        follower::FollowerTxnStreamRespV1,
+        transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
+    },
+    BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
 };
 use poc_metrics::record_duration;
 use poc_store::FileStore;
@@ -279,7 +283,7 @@ impl Server {
         let store = FileStore::from_env().await?;
         let rewards = SubnetworkRewards::from_last_reward_end_time(
             store,
-            self.follower_service.clone(),
+            &mut self.follower_service,
             last_reward_time,
         )
         .await?;

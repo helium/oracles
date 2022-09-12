@@ -3,7 +3,7 @@ use futures_util::TryFutureExt;
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
 };
-use poc_store::MsgVerify;
+use poc_store::traits::MsgVerify;
 use poc_store::{file_sink, file_upload, FileType};
 use std::{net::SocketAddr, path::Path, str::FromStr};
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};

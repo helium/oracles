@@ -72,7 +72,7 @@ impl FileStore {
         before: B,
     ) -> Result<Vec<FileInfo>>
     where
-        F: Into<Option<FileType>> + Copy,
+        F: Into<FileType> + Copy,
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
@@ -81,11 +81,11 @@ impl FileStore {
 
     pub fn list<A, B, F>(&self, file_type: F, after: A, before: B) -> FileInfoStream
     where
-        F: Into<Option<FileType>> + Copy,
+        F: Into<FileType> + Copy,
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
-        let prefix = file_type.into().map(|file_type| file_type.to_string());
+        let prefix = file_type.into().to_string();
         let before = before.into();
         let after = after.into();
 
@@ -93,7 +93,7 @@ impl FileStore {
             .client
             .list_objects_v2()
             .bucket(&self.bucket)
-            .set_prefix(prefix)
+            .prefix(prefix)
             .into_paginator()
             .send();
         stream

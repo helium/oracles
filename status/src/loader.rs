@@ -7,6 +7,7 @@ use helium_proto::{
 };
 use poc_store::{datetime_from_epoch, FileStore, FileType};
 use sqlx::PgPool;
+use strum::EnumCount;
 use tokio::time;
 
 const STORE_POLL_TIME: time::Duration = time::Duration::from_secs(10 * 60);
@@ -55,7 +56,7 @@ impl Loader {
     async fn handle_store_tick(&self, shutdown: triggered::Listener) -> Result {
         stream::iter(&[FileType::CellHeartbeat, FileType::CellSpeedtest])
             .map(|file_type| (file_type, shutdown.clone()))
-            .for_each_concurrent(2, |(file_type, shutdown)| async move {
+            .for_each_concurrent(FileType::COUNT, |(file_type, shutdown)| async move {
                 let _ = self.process_events(*file_type, shutdown).await;
             })
             .await;
@@ -128,6 +129,7 @@ impl Loader {
                 )
                 .await
             }
+            FileType::Entropy => Ok(()),
         }
     }
 }

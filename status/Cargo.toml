@@ -3,7 +3,7 @@ name = "poc5g-status"
 version = "0.1.0"
 edition = "2021"
 description = "Status Server for the Helium Mobile Network"
-authors = ["Marc Nijdam <marc@novalabs.com>"]
+authors = ["Marc Nijdam <marc@nova-labs.com>"]
 license = "Apache-2.0"
 
 
@@ -37,7 +37,8 @@ rust_decimal = "1"
 rust_decimal_macros = "1"
 tonic = "0"
 http = "*"
-metrics = "0.20"
+metrics = "0"
+strum = "*"
 
 [package.metadata.deb]
 depends = "$auto"

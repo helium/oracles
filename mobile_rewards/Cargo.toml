@@ -3,7 +3,7 @@ name = "mobile-rewards"
 version = "0.1.0"
 edition = "2021"
 description = "Reward Server for the Helium Mobile Network"
-authors = ["Marc Nijdam <marc@nova.xyz>"]
+authors = ["Marc Nijdam <marc@nova-labs.com>"]
 license = "Apache-2.0"
 
 
@@ -42,8 +42,8 @@ async-trait = "*"
 [package.metadata.deb]
 depends = "$auto"
 assets = [
-    ["target/release/poc5g-rewards", "/opt/poc5g-rewards/bin/", "755"],
-    ["pkg/deb/env-template", "/usr/share/poc5g-rewards/env-template", "644"]
+    ["target/release/mobile-rewards", "/opt/mobile-rewards/bin/", "755"],
+    ["pkg/deb/env-template", "/usr/share/mobile-rewards/env-template", "644"]
 ]
 maintainer-scripts = "pkg/deb/"
 systemd-units = { }

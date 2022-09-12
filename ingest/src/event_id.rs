@@ -40,7 +40,7 @@ impl TryFrom<CellHeartbeat> for EventId {
 impl TryFrom<CellSpeedtest> for EventId {
     type Error = Error;
     fn try_from(event: CellSpeedtest) -> Result<Self> {
-        let req = SpeedtestReqV1::try_from(event)?;
+        let req = SpeedtestReqV1::from(event);
         Ok(Self::from(&req))
     }
 }

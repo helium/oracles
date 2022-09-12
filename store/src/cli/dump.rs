@@ -20,7 +20,8 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(&self) -> Result {
-        let mut file_stream = file_source::source(&[&self.in_path]);
+        let mut file_stream = file_source::source([&self.in_path]);
+
         let mut wtr = Writer::from_writer(io::stdout());
 
         let file_info = FileInfo::from_str(

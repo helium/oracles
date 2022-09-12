@@ -1,0 +1,4 @@
+# add to /usr/local/bin it appears in path
+ln -s /opt/poc-entropy/bin/poc-entropy /usr/local/bin/poc-entropy || true
+
+#DEBHELPER#
