@@ -306,7 +306,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn writes_a_framed_gzip_encoded_file() {
-        let tmp_dir = tempdir::TempDir::new("entropy_tests").unwrap();
+        let tmp_dir = tempdir::TempDir::new("entropy_tests").expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (sender, receiver) = message_channel(10);
 
@@ -314,42 +314,48 @@ mod tests {
             .roll_time(chrono::Duration::milliseconds(100))
             .create()
             .await
-            .unwrap();
+            .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
-            let _ = file_sink.run(&shutdown_listener).await;
+            file_sink
+                .run(&shutdown_listener)
+                .await
+                .expect("failed to complete file sink");
         });
 
-        let _ = sender
-            .send(String::into_bytes("hello".to_string()))
-            .await
-            .unwrap();
+        sender
+            .try_send(String::into_bytes("hello".to_string()))
+            .expect("failed to send bytes to file sink");
 
-        std::thread::sleep(time::Duration::from_millis(200));
+        tokio::time::sleep(time::Duration::from_millis(200)).await;
 
         shutdown_trigger.trigger();
-        let _ = sink_thread.await;
+        sink_thread.await.expect("file sink did not complete");
 
-        let entropy_file = get_entropy_file(&tmp_dir).await.unwrap();
-
-        let g = GzipDecoder::new(BufReader::new(
-            File::open(entropy_file.path()).await.unwrap(),
-        ));
-        let mut fr = FramedRead::new(g, LengthDelimitedCodec::new());
-
-        assert_eq!("hello", fr.next().await.unwrap().unwrap());
+        let entropy_file = get_entropy_file(&tmp_dir).await;
+        assert_eq!("hello", read_file(&entropy_file).await);
     }
 
-    async fn get_entropy_file(tmp_dir: &tempdir::TempDir) -> Option<DirEntry> {
-        let mut entries = fs::read_dir(tmp_dir.path()).await.unwrap();
+    async fn read_file(entry: &DirEntry) -> bytes::BytesMut {
+        let gzip_decoder =
+            GzipDecoder::new(BufReader::new(File::open(entry.path()).await.unwrap()));
+        let mut framed_reader = FramedRead::new(gzip_decoder, LengthDelimitedCodec::new());
+
+        framed_reader.next().await.unwrap().unwrap()
+    }
+
+    async fn get_entropy_file(tmp_dir: &tempdir::TempDir) -> DirEntry {
+        let mut entries = fs::read_dir(tmp_dir.path())
+            .await
+            .expect("failed to read tmp dir");
 
         while let Some(entry) = entries.next_entry().await.unwrap() {
             if is_entropy_file(&entry) {
-                return Some(entry);
+                return entry;
             }
         }
 
-        None
+        panic!("no entropy file available")
     }
 
     fn is_entropy_file(entry: &DirEntry) -> bool {
