@@ -295,3 +295,59 @@ impl FileSink {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_compression::tokio::bufread::GzipDecoder;
+    use tokio::{fs::DirEntry, io::BufReader};
+    use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
+    use futures::stream::StreamExt;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn writes_a_framed_gzip_encoded_file() {
+        let tmp_dir = tempdir::TempDir::new("entropy_tests").unwrap();
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let (sender, receiver) = message_channel(10);
+
+        let mut file_sink = FileSinkBuilder::new(FileType::Entropy, &tmp_dir.path(), receiver)
+            .roll_time(chrono::Duration::milliseconds(100))
+            .create()
+            .await
+            .unwrap();
+
+        let sink_thread = tokio::spawn(async move {
+            let _ = file_sink.run(&shutdown_listener).await;
+        });
+
+        let _ = sender.send(String::into_bytes("hello".to_string())).await.unwrap();
+
+        std::thread::sleep(time::Duration::from_millis(200));
+
+        shutdown_trigger.trigger();
+        let _ = sink_thread.await;
+
+        let entropy_file = get_entropy_file(&tmp_dir).await.unwrap();
+
+        let g = GzipDecoder::new(BufReader::new(File::open(entropy_file.path()).await.unwrap()));
+        let mut fr = FramedRead::new(g, LengthDelimitedCodec::new());
+
+        assert_eq!("hello", fr.next().await.unwrap().unwrap());
+    }
+
+    async fn get_entropy_file(tmp_dir: &tempdir::TempDir) -> Option<DirEntry> {
+        let mut entries = fs::read_dir(tmp_dir.path()).await.unwrap();
+
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            if is_entropy_file(&entry) {
+                return Some(entry);
+            }
+        }
+
+        None
+    }
+
+    fn is_entropy_file(entry: &DirEntry) ->bool {
+        entry.file_name().to_str().unwrap().starts_with("entropy.")
+    }
+}
