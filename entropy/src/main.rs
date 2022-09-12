@@ -43,7 +43,7 @@ async fn main() -> Result {
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
 
-    let store_path = dotenv::var("ENTROPY_STORE")?;
+    let store_path = std::env::var("ENTROPY_STORE").unwrap_or_else(|_| String::from("/tmp"));
     let store_base_path = path::Path::new(&store_path);
 
     // entropy
