@@ -1,12 +1,12 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures::stream::StreamExt;
 use helium_proto::{
-    follower_client::FollowerClient,
     services::{
-        poc_mobile::{CellHeartbeatReqV1, Share as ShareProto, SpeedtestReqV1, Validity},
+        follower::{self, FollowerGatewayReqV1},
+        poc_mobile::{CellHeartbeatReqV1, Share as ShareProto, ShareValidity, SpeedtestReqV1},
         Channel,
     },
-    FollowerGatewayReqV1, Message, SubnetworkReward as ProtoSubnetworkReward,
+    Message, SubnetworkReward as ProtoSubnetworkReward,
 };
 use lazy_static::lazy_static;
 use poc_store::BytesMutStream;
@@ -105,7 +105,7 @@ pub struct Share {
     pub pub_key: PublicKey,
     pub weight: Decimal,
     pub cell_type: CellType,
-    pub validity: Validity,
+    pub validity: ShareValidity,
 }
 
 impl Share {
@@ -114,7 +114,7 @@ impl Share {
         pub_key: PublicKey,
         weight: Decimal,
         cell_type: CellType,
-        validity: Validity,
+        validity: ShareValidity,
     ) -> Self {
         Self {
             timestamp,
@@ -187,7 +187,7 @@ pub trait OwnerResolver {
 }
 
 #[async_trait::async_trait]
-impl OwnerResolver for FollowerClient<Channel> {
+impl OwnerResolver for follower::Client<Channel> {
     async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>> {
         let req = FollowerGatewayReqV1 {
             address: address.to_vec(),
@@ -260,7 +260,7 @@ impl GatheredShares {
                 upload_speed: st_upload_speed,
                 download_speed: st_download_speed,
                 latency: st_latency,
-                validity: Validity::InvalidHeartbeatNotWithinRange,
+                validity: ShareValidity::HeartbeatOutsideRange,
             });
             return;
         }
@@ -272,7 +272,7 @@ impl GatheredShares {
                 st_upload_speed,
                 st_download_speed,
                 st_latency,
-                Validity::Valid,
+                ShareValidity::Valid,
             );
 
             self.speed_shares
@@ -305,7 +305,7 @@ impl GatheredShares {
                     pub_key: hb_pub_key.to_vec(),
                     weight: crate::bones_to_u64(cell_type.reward_weight()),
                     cell_type: cell_type as i32,
-                    validity: Validity::InvalidHeartbeatNotWithinRange as i32,
+                    validity: ShareValidity::HeartbeatOutsideRange as i32,
                 });
                 return;
             }
@@ -316,7 +316,7 @@ impl GatheredShares {
                     gw_pubkey,
                     cell_type.reward_weight(),
                     cell_type,
-                    Validity::Valid,
+                    ShareValidity::Valid,
                 );
 
                 if self

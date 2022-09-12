@@ -1,6 +1,6 @@
 //use crate::PublicKey;
 use helium_proto::services::poc_mobile::{
-    Average as AverageProto, SpeedShare as SpeedShareProto, Validity,
+    Average as AverageProto, ShareValidity, SpeedShare as SpeedShareProto,
 };
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -140,7 +140,7 @@ pub struct SpeedShare {
     pub upload_speed: u64,
     pub download_speed: u64,
     pub latency: u32,
-    pub validity: Validity,
+    pub validity: ShareValidity,
 }
 
 impl From<SpeedShare> for SpeedShareProto {
@@ -150,7 +150,7 @@ impl From<SpeedShare> for SpeedShareProto {
             timestamp: ss.timestamp,
             upload_speed_bps: ss.upload_speed,
             download_speed_bps: ss.download_speed,
-            latency: ss.latency,
+            latency_ms: ss.latency,
             validity: ss.validity as i32,
         }
     }
@@ -163,7 +163,7 @@ impl SpeedShare {
         upload_speed: u64,
         download_speed: u64,
         latency: u32,
-        validity: Validity,
+        validity: ShareValidity,
     ) -> Self {
         Self {
             pub_key,

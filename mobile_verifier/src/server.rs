@@ -1,16 +1,13 @@
 use crate::{env_var, error::Result, subnetwork_rewards::SubnetworkRewards};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use helium_proto::{
-    follower_client::FollowerClient,
-    services::{Channel, Endpoint, Uri},
-};
+use helium_proto::services::{follower, Channel, Endpoint, Uri};
 use poc_store::FileStore;
 use tokio::{select, time::sleep};
 
 pub struct Server {
     pub input_store: FileStore,
     pub output_store: FileStore,
-    pub follower_client: FollowerClient<Channel>,
+    pub follower_client: follower::Client<Channel>,
     pub last_reward_end_time: i64,
 }
 
@@ -26,7 +23,7 @@ impl Server {
         Ok(Self {
             input_store: FileStore::from_env_with_prefix("INPUT").await?,
             output_store: FileStore::from_env_with_prefix("OUTPUT").await?,
-            follower_client: FollowerClient::new(
+            follower_client: follower::Client::new(
                 Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
                     .connect_timeout(CONNECT_TIMEOUT)
                     .timeout(RPC_TIMEOUT)

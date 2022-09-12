@@ -5,10 +5,7 @@ use crate::{
     Result,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
-use helium_proto::{
-    follower_client::FollowerClient,
-    services::{Endpoint, Uri},
-};
+use helium_proto::services::{follower, Endpoint, Uri};
 use poc_store::FileStore;
 
 /// Verify the shares for a given time range
@@ -40,7 +37,7 @@ impl Cmd {
         let input_store = FileStore::new(None, "us-west-2", input_bucket).await?;
         let output_store = FileStore::new(None, "us-west-2", output_bucket).await?;
 
-        let follower_service = FollowerClient::new(
+        let follower_service = follower::Client::new(
             Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
                 .connect_timeout(CONNECT_TIMEOUT)
                 .timeout(RPC_TIMEOUT)

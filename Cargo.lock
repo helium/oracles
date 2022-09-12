@@ -1287,7 +1287,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#affb89276624eed87d09a89087a2e355dd05b287"
+source = "git+https://github.com/helium/proto?branch=master#36bed6a23bc111760b5438c973b1e45c29be928b"
 dependencies = [
  "bytes",
  "prost",
@@ -2058,7 +2058,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.3.4",
  "helium-proto",
  "http",
  "hyper",

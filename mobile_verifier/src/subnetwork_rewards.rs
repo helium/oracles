@@ -9,13 +9,13 @@ use crate::{
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
 use helium_proto::{
-    follower_client::FollowerClient,
     services::{
+        follower,
         poc_mobile::{
             CellShare, CellShares, FileInfo, HotspotShare, HotspotShares, InvalidSpeedShares,
             MovingAvg, OwnerEmission, OwnerEmissions as OwnerEmissionsProto, OwnerShare,
-            OwnerShares, ProcessedFiles, Share, Shares, SpeedShare as SpeedShareProto,
-            SpeedShareList, SpeedShareMovingAvgs, SpeedShares, Validity,
+            OwnerShares, ProcessedFiles, Share, ShareValidity, Shares,
+            SpeedShare as SpeedShareProto, SpeedShareList, SpeedShareMovingAvgs, SpeedShares,
         },
         Channel,
     },
@@ -35,7 +35,7 @@ impl SubnetworkRewards {
     pub async fn from_period(
         input_store: &FileStore,
         output_store: &FileStore,
-        follower_service: FollowerClient<Channel>,
+        follower_service: follower::Client<Channel>,
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
     ) -> Result<Option<Self>> {
@@ -63,7 +63,7 @@ impl From<SubnetworkRewards> for Vec<ProtoSubnetworkReward> {
 async fn get_rewards(
     input_store: &FileStore,
     output_store: &FileStore,
-    mut follower_service: FollowerClient<Channel>,
+    mut follower_service: follower::Client<Channel>,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
 ) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
@@ -151,7 +151,7 @@ async fn get_rewards(
                     pub_key: share.pub_key.to_vec(),
                     weight: bones_to_u64(share.weight),
                     cell_type: share.cell_type as i32,
-                    validity: Validity::Valid as i32,
+                    validity: ShareValidity::Valid as i32,
                 })
                 .collect(),
         },
@@ -196,7 +196,7 @@ async fn get_rewards(
                     pub_key: share.pub_key.to_vec(),
                     upload_speed_bps: share.upload_speed,
                     download_speed_bps: share.download_speed,
-                    latency: share.latency,
+                    latency_ms: share.latency,
                     timestamp: share.timestamp,
                     validity: share.validity as i32,
                 })
