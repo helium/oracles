@@ -65,9 +65,10 @@ entropy values.
 
 The following environment variables are used by the server:
 
-| Name            | Value                                     |
-| --------------- | ----------------------------------------- |
-| API_SOCKET_ADDR | Listen address for http api               |
-| BUCKET          | Bucket to send entropy values to          |
-| ENTROPY_STORE   | Absolute path for temporary entropy store |
-| ENTROPY_URL     | URL for entropy request                   |
+| Name                    | Value                                     | Default      |
+| ----------------------- | ----------------------------------------- | ------------ |
+| API_SOCKET_ADDR         | Listen address for http api               | 0.0.0.0:8080 |
+| METRICS_SCRAPE_ENDPOINT | Metrics scrape url                        | 0.0.0.0:9000 |
+| ENTROPY_STORE           | Absolute path for temporary entropy store | /tmp         |
+| ENTROPY_URL             | URL for entropy request                   |              |
+| BUCKET                  | Bucket to send entropy values to          |              |

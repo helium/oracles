@@ -48,6 +48,8 @@ pub enum DecodeError {
     Decimals(String),
     #[error("base64 error")]
     Base64(#[from] base64::DecodeError),
+    #[error("socket addr error")]
+    SocketAddr(#[from] std::net::AddrParseError),
 }
 
 #[derive(Error, Debug)]
@@ -88,6 +90,7 @@ from_err!(EncodeError, serde_json::Error);
 from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);
 from_err!(DecodeError, chrono::ParseError);
+from_err!(DecodeError, std::net::AddrParseError);
 
 impl From<Error> for (http::StatusCode, String) {
     fn from(v: Error) -> Self {

@@ -1,4 +1,5 @@
 use crate::{
+    error::DecodeError,
     gateway::{After, Gateway},
     mk_db_pool, Error, PublicKey, Result,
 };
@@ -12,7 +13,7 @@ use futures::TryFutureExt;
 use poc_metrics::record_duration;
 use serde_json::Value;
 use sqlx::PgPool;
-use std::{io, net::SocketAddr};
+use std::net::SocketAddr;
 use tower_http::{auth::RequireAuthorizationLayer, trace::TraceLayer};
 
 pub struct Server {
@@ -22,14 +23,10 @@ pub struct Server {
 
 impl Server {
     pub async fn from_env() -> Result<Self> {
-        let socket_addr = dotenv::var("API_SOCKET_ADDR").and_then(|v| {
-            v.parse::<SocketAddr>().map_err(|_| {
-                dotenv::Error::Io(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "invalid api socket address",
-                ))
-            })
-        })?;
+        let socket_addr_env =
+            std::env::var("API_SOCKET_ADDR").unwrap_or_else(|_| String::from("0.0.0.0:9080"));
+        let socket_addr: SocketAddr = socket_addr_env.parse().map_err(DecodeError::from)?;
+
         let api_ro_token = dotenv::var("API_RO_TOKEN")?;
         let pool = mk_db_pool(10).await?;
 
