@@ -1,0 +1,16 @@
+[Unit]
+Description=poc-injector
+After=network.target
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/opt/poc-injector/bin/poc-injector
+User=helium
+PIDFile=/var/run/poc-injector
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

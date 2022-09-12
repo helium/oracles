@@ -1,0 +1,4 @@
+# add to /usr/local/bin it appears in path
+ln -s /opt/poc-injector/bin/poc-injector /usr/local/bin/poc-injector || true
+
+#DEBHELPER#
