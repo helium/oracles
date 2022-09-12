@@ -24,6 +24,8 @@ futures = "*"
 futures-core = "*"
 futures-util = "*"
 
+helium-crypto = {git="https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
+
 # FIXME
 # helium-proto = {git="https://github.com/helium/proto", branch="master", features=["services"]}
 # helium-proto = {git="https://github.com/helium/proto", branch="macpie/packet_router", features=["services"]}
@@ -40,13 +42,6 @@ bytes = "*"
 
 serde =  {version = "1", features=["derive"]}
 serde_json = "1"
-
-slog = "2"
-slog-async = "2"
-slog-term = "2"
-slog-syslog = "0"
-slog-scope = "4"
-slog-stdlog = "4"
 
 #thiserror = "1"
 

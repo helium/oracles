@@ -1,10 +1,10 @@
 use futures::stream::StreamExt;
-use slog::{self, info, o, Drain, Level, Logger};
 use std::collections::HashMap;
 //use std::io::{ErrorKind, Result};
 //use tokio_stream::StreamExt;
 // use tokio::sync::mpsc;
 
+use helium_crypto::public_key::PublicKey;
 use helium_proto::services::router::PacketRouterPacketReportV1;
 use helium_proto::Message;
 use poc_store::{file_source, Result};
@@ -12,7 +12,6 @@ use poc_store::{file_source, Result};
 //use poc_store::FileStore;
 
 // Inputs:
-type GatewayPubKey = Vec<u8>;
 #[allow(clippy::upper_case_acronyms)]
 type OUI = u32;
 
@@ -24,11 +23,10 @@ type OUI = u32;
 // While processing:
 
 pub struct Counts {
-    pub gateway: GatewayPubKey,
+    pub gateway: PublicKey,
     pub oui: OUI,
 }
 
-// TODO move to Settings.toml
 // Same var names as used in HPR's .env files.
 /*
 static AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
@@ -39,7 +37,7 @@ static PACKET_REPORTER_BUCKET_NAME: &str = "PACKET_REPORTER_BUCKET_NAME";
 
 #[derive(Debug, Default)]
 pub struct PacketCounters {
-    pub gateway: HashMap<GatewayPubKey, u32>,
+    pub gateway: HashMap<PublicKey, u32>,
     pub oui: HashMap<OUI, u32>,
 }
 
@@ -52,19 +50,7 @@ impl PacketCounters {
     }
 }
 
-// TODO replicate mk_logger() from ~/helium/gateway-rs/src/main.rs or similar
-pub fn mk_logger() -> Logger {
-    let drain = slog_syslog::unix_3164(slog_syslog::Facility::LOG_USER)
-        .expect("syslog drain")
-        .fuse();
-    let async_drain = slog_async::Async::new(drain)
-        .build()
-        .filter_level(Level::Info)
-        .fuse();
-    slog::Logger::root(async_drain, o!())
-}
-
-pub async fn run(logger: &Logger) -> Result {
+pub async fn run() -> Result {
     // FIXME open file on S3, which is gz compressed
     // Until then, run: cargo test --features=sample-data && gzip tests/*.data
     //let filenames = ["tests/HPR-report-stream.data.gz"];
@@ -78,30 +64,23 @@ pub async fn run(logger: &Logger) -> Result {
     let mut i: usize = 0;
     while let Some(record) = file_stream.next().await {
         i += 1;
-        info!(logger, "ingesting: nth-record={}", i);
+        println!("ingesting: nth-record={}", i);
         // FIXME Error:
         // Io(Custom { kind: InvalidData, error: LengthDelimitedCodecError })
         let msg = record?;
-        info!(logger, "decoding: nth-record={}", i);
+        println!("decoding: nth-record={}", i);
         let decoded = PacketRouterPacketReportV1::decode(msg)?;
-        info!(logger, "counting: nth-record={}", i);
-        update_counters(logger, &decoded, &mut counters)
+        println!("counting: nth-record={}", i);
+        update_counters(&decoded, &mut counters)
     }
 
     // FIXME populate bookkeeping structs and write to S3 via ../../store/file_sink.rs
 
-    info!(
-        logger,
-        "completed: n-records={} filenames={:?}", i, &filenames
-    );
+    println!("completed: n-records={} filenames={:?}", i, &filenames);
     Ok(())
 }
 
-pub fn update_counters(
-    logger: &Logger,
-    ingest: &PacketRouterPacketReportV1,
-    counters: &mut PacketCounters,
-) {
+pub fn update_counters(ingest: &PacketRouterPacketReportV1, counters: &mut PacketCounters) {
     let PacketRouterPacketReportV1 {
         oui,
         net_id,
@@ -109,19 +88,22 @@ pub fn update_counters(
         payload_hash,
         ..
     } = ingest;
-    info!(
-        logger,
-        "ingesting: oui={} netid={:#x} hash={:#x?}", oui, net_id, &payload_hash[0..9];
-        "oui" => oui
+    println!(
+        "ingesting: oui={} netid={:#x} hash={:#x?}",
+        oui,
+        net_id,
+        &payload_hash[0..9]
     );
-    let _gw_count = counters
-        .gateway
-        .entry(gateway.to_owned())
-        .and_modify(|n| *n += 1)
-        .or_insert(1);
-    let _oui_count = counters
-        .oui
-        .entry(oui.to_owned())
-        .and_modify(|n| *n += 1)
-        .or_insert(1);
+    if let Ok(pubkey) = PublicKey::from_bytes(gateway) {
+        let _gw_count = counters
+            .gateway
+            .entry(pubkey)
+            .and_modify(|n| *n += 1)
+            .or_insert(1);
+        let _oui_count = counters
+            .oui
+            .entry(oui.to_owned())
+            .and_modify(|n| *n += 1)
+            .or_insert(1);
+    }
 }
