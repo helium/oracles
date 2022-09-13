@@ -1,34 +1,42 @@
 use crate::{
     datetime_from_epoch,
     error::DecodeError,
-    follower::FollowerService,
     keypair::Keypair,
     meta::Meta,
     pending_txn::{PendingTxn, Status},
-    subnetwork_rewards::{construct_txn, get_time_range, RewardPeriod, SubnetworkRewards},
     traits::B64,
     transaction::TransactionService,
     txn_status::TxnStatus,
     Error, Result,
 };
-use chrono::{Duration, Utc};
-use futures::try_join;
+use chrono::{DateTime, Duration, Utc};
+use futures::{stream, try_join, StreamExt};
 use helium_proto::{
     blockchain_txn::Txn,
     services::{
-        follower::FollowerTxnStreamRespV1,
+        follower::{
+            self, FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamReqV1,
+            FollowerTxnStreamRespV1,
+        },
+        poc_mobile::OwnerEmissions,
         transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
+        Channel, Endpoint,
     },
-    BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
+    BlockchainTokenTypeV1, BlockchainTokenTypeV1 as ProtoTokenType, BlockchainTxn,
+    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward,
 };
+use http::Uri;
 use poc_metrics::record_duration;
-use poc_store::FileStore;
+use poc_store::{FileStore, FileType};
 use sqlx::{Pool, Postgres};
 use std::env;
+use std::{ops::Range, time::Duration as StdDuration};
 use tokio::time;
 use tonic::Streaming;
 
 pub const DEFAULT_START_REWARD_BLOCK: i64 = 1477650;
+/// default minutes to delay lookup from now
+pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 
 const RECONNECT_WAIT_SECS: i64 = 5;
 const DEFAULT_TRIGGER_INTERVAL_SECS: i64 = 900; // 15 min
@@ -40,11 +48,12 @@ pub const TXN_TYPES: &[&str] = &["blockchain_txn_subnetwork_rewards_v1"];
 pub struct Server {
     pool: Pool<Postgres>,
     keypair: Keypair,
-    follower_service: FollowerService,
+    follower_client: follower::Client<Channel>,
     txn_service: TransactionService,
     start_reward_block: i64,
     trigger_interval: Duration,
     reward_interval: Duration,
+    verifier_store: FileStore,
 }
 
 impl Server {
@@ -52,7 +61,7 @@ impl Server {
         let result = Self {
             pool,
             keypair,
-            follower_service: FollowerService::from_env()?,
+            follower_client: new_client_from_env()?,
             txn_service: TransactionService::from_env()?,
             start_reward_block: env::var("FOLLOWER_START_BLOCK")
                 .unwrap_or_else(|_| DEFAULT_START_REWARD_BLOCK.to_string())
@@ -70,6 +79,7 @@ impl Server {
                     .parse()
                     .map_err(DecodeError::from)?,
             ),
+            verifier_store: FileStore::from_env().await?,
         };
         Ok(result)
     }
@@ -104,7 +114,7 @@ impl Server {
             tracing::info!("connecting to blockchain txn stream at height {follow_start}");
             tokio::select! {
                 _ = shutdown.clone() => (),
-                stream_result = self.follower_service.txn_stream(follow_start, &[], TXN_TYPES) => match stream_result {
+                stream_result = txn_stream(&mut self.follower_client, follow_start, &[], TXN_TYPES) => match stream_result {
                     Ok(txn_stream) => {
                         tracing::info!("connected to txn stream");
                         self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
@@ -202,7 +212,7 @@ impl Server {
 
     async fn process_clock_tick(&mut self) -> Result {
         let now = Utc::now();
-        let reward_period = self.follower_service.reward_period().await?;
+        let reward_period = reward_period(&mut self.follower_client).await?;
         let current_height = reward_period.end;
         tracing::info!(
             "processing clock tick at height {} with time {}",
@@ -231,7 +241,7 @@ impl Server {
                     // Handle rewards if we pass our duration
                     record_duration!(
                         "reward_server_emission_duration",
-                        self.handle_rewards(reward_period, last_reward_time, end_utc.timestamp())
+                        self.handle_rewards(reward_period, start_utc, end_utc)
                             .await?
                     )
                 }
@@ -283,23 +293,39 @@ impl Server {
 
     async fn handle_rewards(
         &mut self,
-        reward_period: RewardPeriod,
-        last_reward_time: i64,
-        end_utc: i64,
+        reward_period: Range<u64>,
+        start_utc: DateTime<Utc>,
+        end_utc: DateTime<Utc>,
     ) -> Result {
         tracing::info!("triggering rewards emissions");
 
-        let store = FileStore::from_env().await?;
-        let rewards = SubnetworkRewards::from_last_reward_end_time(
-            store,
-            &mut self.follower_service,
-            last_reward_time,
-        )
-        .await?;
+        let file_list = self
+            .verifier_store
+            .list_all(FileType::OwnerEmissions, start_utc, end_utc)
+            .await?;
 
-        if let Some(r) = rewards {
+        // TODO: We need a better pattern for this:
+        let mut stream = self
+            .verifier_store
+            .source(stream::iter(file_list).map(Ok).boxed());
+        let mut rewards = vec![];
+        while let Some(Ok(msg)) = stream.next().await {
+            match OwnerEmissions::decode(msg) {
+                Ok(OwnerEmissions { emissions }) => {
+                    for emission in emissions.into_iter() {
+                        rewards.push(SubnetworkReward {
+                            account: emission.pub_key,
+                            amount: emission.weight,
+                        });
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        if !rewards.is_empty() {
             let pool = &self.pool.clone();
-            let issue_rewards = self.issue_rewards(r, reward_period);
+            let issue_rewards = self.issue_rewards(rewards, reward_period);
             let update_end_time = Meta::update(pool, "last_reward_end_time", end_utc.to_string());
             try_join!(issue_rewards, update_end_time)?;
         } else {
@@ -311,8 +337,8 @@ impl Server {
 
     async fn issue_rewards(
         &mut self,
-        rewards: SubnetworkRewards,
-        reward_period: RewardPeriod,
+        rewards: Vec<SubnetworkReward>,
+        reward_period: Range<u64>,
     ) -> Result {
         if rewards.is_empty() {
             tracing::info!("nothing to reward");
@@ -371,7 +397,92 @@ impl Server {
     }
 }
 
+const CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
+const RPC_TIMEOUT: StdDuration = StdDuration::from_secs(5);
+const DEFAULT_URI: &str = "http://127.0.0.1:8080";
+
 async fn update_last_follower(pool: &Pool<Postgres>, last_height: u64) -> Result {
     metrics::gauge!("reward_server_last_reward_height", last_height as f64);
     Meta::update(pool, "last_follower_height", last_height.to_string()).await
+}
+
+fn new_client_from_env() -> Result<follower::Client<Channel>> {
+    let uri: Uri = env::var("FOLLOWER_URI")
+        .unwrap_or_else(|_| DEFAULT_URI.to_string())
+        .parse()?;
+    let channel = Endpoint::from(uri)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(RPC_TIMEOUT)
+        .connect_lazy();
+    Ok(follower::Client::new(channel))
+}
+
+async fn txn_stream<T>(
+    client: &mut follower::Client<Channel>,
+    height: u64,
+    txn_hash: &[u8],
+    txn_types: &[T],
+) -> Result<Streaming<FollowerTxnStreamRespV1>>
+where
+    T: ToString,
+{
+    let req = FollowerTxnStreamReqV1 {
+        height,
+        txn_hash: txn_hash.to_vec(),
+        txn_types: txn_types.iter().map(|e| e.to_string()).collect(),
+    };
+    let res = client.txn_stream(req).await?.into_inner();
+    Ok(res)
+}
+
+async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u64>> {
+    let req = FollowerSubnetworkLastRewardHeightReqV1 {
+        token_type: BlockchainTokenTypeV1::from(ProtoTokenType::Mobile).into(),
+    };
+    let res = client
+        .subnetwork_last_reward_height(req)
+        .await?
+        .into_inner();
+
+    Ok(res.reward_height + 1..res.height)
+}
+
+pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
+    let after_utc = datetime_from_epoch(last_reward_end_time);
+    let now = Utc::now();
+    let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
+    let start_utc = after_utc.min(stop_utc);
+    (start_utc, stop_utc)
+}
+
+pub fn construct_txn(
+    keypair: &Keypair,
+    rewards: Vec<SubnetworkReward>,
+    period: Range<u64>,
+) -> Result<(BlockchainTxnSubnetworkRewardsV1, String)> {
+    let mut txn = BlockchainTxnSubnetworkRewardsV1 {
+        rewards: rewards,
+        token_type: BlockchainTokenTypeV1::from(ProtoTokenType::Mobile).into(),
+        start_epoch: period.start,
+        end_epoch: period.end,
+        reward_server_signature: vec![],
+    };
+    txn.reward_server_signature = sign_txn(&txn, keypair)?;
+    let hash = hash_txn_b64_url(&txn);
+    Ok((txn, hash))
+}
+
+use sha2::{Digest, Sha256};
+
+fn hash_txn_b64_url(txn: &BlockchainTxnSubnetworkRewardsV1) -> String {
+    let mut txn = txn.clone();
+    txn.reward_server_signature = vec![];
+    let digest = Sha256::digest(&txn.encode_to_vec()).to_vec();
+    base64::encode_config(&digest, base64::URL_SAFE_NO_PAD)
+}
+
+fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result<Vec<u8>> {
+    let mut txn = txn.clone();
+    txn.reward_server_signature = vec![];
+    keypair.sign(&txn.encode_to_vec())
 }
