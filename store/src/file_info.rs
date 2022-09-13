@@ -101,7 +101,7 @@ pub enum FileType {
     CellHeartbeat,
     CellSpeedtest,
     Entropy,
-    OwnerEmissions
+    OwnerEmissions,
 }
 
 impl fmt::Display for FileType {

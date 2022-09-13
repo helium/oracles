@@ -58,9 +58,9 @@ impl Cmd {
 
 fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<Option<DateTime<Utc>>> {
     let result = match file_type {
-        FileType::CellHeartbeat => {
-            Some(CellHeartbeatReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?)
-        }
+        FileType::CellHeartbeat => Some(
+            CellHeartbeatReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?,
+        ),
         FileType::CellSpeedtest => {
             Some(SpeedtestReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?)
         }
