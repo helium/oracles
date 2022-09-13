@@ -1,5 +1,6 @@
 use crate::{
-    datetime_from_epoch, env_var,
+    datetime_from_epoch,
+    error::DecodeError,
     follower::FollowerService,
     keypair::Keypair,
     meta::Meta,
@@ -23,6 +24,7 @@ use helium_proto::{
 use poc_metrics::record_duration;
 use poc_store::FileStore;
 use sqlx::{Pool, Postgres};
+use std::env;
 use tokio::time;
 use tonic::Streaming;
 
@@ -52,15 +54,22 @@ impl Server {
             keypair,
             follower_service: FollowerService::from_env()?,
             txn_service: TransactionService::from_env()?,
-            start_reward_block: env_var("FOLLOWER_START_BLOCK", DEFAULT_START_REWARD_BLOCK)?,
-            trigger_interval: Duration::seconds(env_var(
-                "TRIGGER_INTERVAL",
-                DEFAULT_TRIGGER_INTERVAL_SECS,
-            )?),
-            reward_interval: Duration::seconds(env_var(
-                "REWARD_INTERVAL",
-                DEFAULT_REWARD_INTERVAL_SECS,
-            )?),
+            start_reward_block: env::var("FOLLOWER_START_BLOCK")
+                .unwrap_or_else(|_| DEFAULT_START_REWARD_BLOCK.to_string())
+                .parse()
+                .map_err(DecodeError::from)?,
+            trigger_interval: Duration::seconds(
+                env::var("TRIGGER_INTERVAL")
+                    .unwrap_or_else(|_| DEFAULT_TRIGGER_INTERVAL_SECS.to_string())
+                    .parse()
+                    .map_err(DecodeError::from)?,
+            ),
+            reward_interval: Duration::seconds(
+                env::var("REWARD_INTERVAL")
+                    .unwrap_or_else(|_| DEFAULT_REWARD_INTERVAL_SECS.to_string())
+                    .parse()
+                    .map_err(DecodeError::from)?,
+            ),
         };
         Ok(result)
     }

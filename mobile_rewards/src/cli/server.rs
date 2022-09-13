@@ -22,7 +22,8 @@ impl Cmd {
         });
 
         // Reward server keypair from env
-        let rs_keypair = load_from_file(&dotenv::var("REWARD_SERVER_KEYPAIR")?)?;
+        let keypair_file = std::env::var("REWARD_SERVER_KEYPAIR")?;
+        let rs_keypair = load_from_file(&keypair_file)?;
 
         // Reward server
         let mut reward_server = Server::new(pool.clone(), rs_keypair).await?;

@@ -1,6 +1,6 @@
 use crate::{
-    env_var, subnetwork_rewards::RewardPeriod, token_type::BlockchainTokenTypeV1,
-    traits::OwnerResolver, PublicKey, Result,
+    subnetwork_rewards::RewardPeriod, token_type::BlockchainTokenTypeV1, traits::OwnerResolver,
+    PublicKey, Result,
 };
 use async_trait::async_trait;
 use helium_proto::{
@@ -14,7 +14,7 @@ use helium_proto::{
     BlockchainTokenTypeV1 as ProtoTokenType,
 };
 use http::Uri;
-use std::time::Duration;
+use std::{env, str::FromStr, time::Duration};
 use tonic::Streaming;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -46,7 +46,8 @@ impl OwnerResolver for FollowerService {
 
 impl FollowerService {
     pub fn from_env() -> Result<Self> {
-        let uri = env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?;
+        let uri =
+            Uri::from_str(&env::var("FOLLOWER_URI").unwrap_or_else(|_| DEFAULT_URI.to_string()))?;
         Self::new(uri)
     }
 

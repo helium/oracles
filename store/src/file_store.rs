@@ -1,13 +1,13 @@
 use crate::{
-    env_var, error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result,
+    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result,
 };
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
-use std::path::Path;
 use std::str::FromStr;
+use std::{env, path::Path};
 
 #[derive(Debug, Clone)]
 pub struct FileStore {
@@ -17,16 +17,15 @@ pub struct FileStore {
 
 impl FileStore {
     pub async fn from_env() -> Result<Self> {
-        let endpoint: Option<Endpoint> = env_var("BUCKET_ENDPOINT")?
-            .map_or_else(
-                || Ok(None),
-                |str| Uri::from_str(&str).map(Endpoint::immutable).map(Some),
-            )
+        let endpoint_env = env::var("BUCKET_ENDPOINT")?;
+        let endpoint: Option<Endpoint> = Uri::from_str(&endpoint_env)
+            .map(Endpoint::immutable)
+            .map(Some)
             .map_err(DecodeError::from)?;
+
         let region =
-            env_var("BUCKET_REGION")?.map_or_else(|| Region::new("us-west-2"), Region::new);
-        let bucket =
-            env_var("BUCKET")?.ok_or_else(|| Error::not_found("BUCKET env var not found"))?;
+            env::var("BUCKET_REGION").map_or_else(|_| Region::new("us-west-2"), Region::new);
+        let bucket = env::var("BUCKET")?;
         Self::new(endpoint, region, bucket).await
     }
 

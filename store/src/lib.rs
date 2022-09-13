@@ -40,13 +40,3 @@ pub fn datetime_from_epoch_millis(millis: u64) -> DateTime<Utc> {
 pub fn datetime_from_naive(v: NaiveDateTime) -> DateTime<Utc> {
     DateTime::<Utc>::from_utc(v, Utc)
 }
-
-use std::env;
-
-pub fn env_var(key: &str) -> Result<Option<String>> {
-    match env::var(key) {
-        Ok(v) => Ok(Some(v)),
-        Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(err) => Err(Error::from(err)),
-    }
-}
