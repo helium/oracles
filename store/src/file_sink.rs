@@ -299,10 +299,10 @@ impl FileSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_compression::tokio::bufread::GzipDecoder;
+    use crate::{file_source, FileInfo};
     use futures::stream::StreamExt;
-    use tokio::{fs::DirEntry, io::BufReader};
-    use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
+    use std::str::FromStr;
+    use tokio::fs::DirEntry;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn writes_a_framed_gzip_encoded_file() {
@@ -337,11 +337,11 @@ mod tests {
     }
 
     async fn read_file(entry: &DirEntry) -> bytes::BytesMut {
-        let gzip_decoder =
-            GzipDecoder::new(BufReader::new(File::open(entry.path()).await.unwrap()));
-        let mut framed_reader = FramedRead::new(gzip_decoder, LengthDelimitedCodec::new());
-
-        framed_reader.next().await.unwrap().unwrap()
+        file_source::source([entry.path()])
+            .next()
+            .await
+            .unwrap()
+            .expect("invalid data in file")
     }
 
     async fn get_entropy_file(tmp_dir: &tempdir::TempDir) -> DirEntry {
@@ -359,6 +359,10 @@ mod tests {
     }
 
     fn is_entropy_file(entry: &DirEntry) -> bool {
-        entry.file_name().to_str().unwrap().starts_with("entropy.")
+        entry
+            .file_name()
+            .to_str()
+            .and_then(|file_name| FileInfo::from_str(file_name).ok())
+            .map_or(false, |file_info| file_info.file_type == FileType::Entropy)
     }
 }
