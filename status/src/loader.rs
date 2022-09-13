@@ -129,7 +129,7 @@ impl Loader {
                 )
                 .await
             }
-            FileType::Entropy => Ok(()),
+            _ => Ok(()),
         }
     }
 }
