@@ -27,7 +27,7 @@ impl Server {
             std::env::var("API_SOCKET_ADDR").unwrap_or_else(|_| String::from("0.0.0.0:9080"));
         let socket_addr: SocketAddr = socket_addr_env.parse().map_err(DecodeError::from)?;
 
-        let api_ro_token = dotenv::var("API_RO_TOKEN")?;
+        let api_ro_token = std::env::var("API_RO_TOKEN")?;
         let pool = mk_db_pool(10).await?;
 
         metrics::describe_histogram!(

@@ -1,4 +1,4 @@
-use crate::{env_var, Error, FileStore, Result};
+use crate::{Error, FileStore, Result};
 use futures::StreamExt;
 use std::{
     path::{Path, PathBuf},
@@ -19,17 +19,13 @@ pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
 }
 
 pub struct FileUpload {
-    enabled: bool,
     messages: UnboundedReceiverStream<PathBuf>,
     store: FileStore,
 }
 
 impl FileUpload {
     pub async fn from_env(messages: MessageReceiver) -> Result<Self> {
-        let enabled = env_var("FILE_UPLOAD_ENABLED")?.map_or_else(|| true, |str| str == "true");
-
         Ok(Self {
-            enabled,
             messages: UnboundedReceiverStream::new(messages),
             store: FileStore::from_env().await?,
         })
@@ -38,17 +34,12 @@ impl FileUpload {
     pub async fn run(self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting file uploader");
 
-        let enabled = self.enabled;
         let uploads = self
             .messages
             .map(|msg| (self.store.clone(), msg))
             .for_each_concurrent(5, |(store, path)| async move {
                 let path_str = path.display();
                 let bucket = &store.bucket;
-                if !enabled {
-                    tracing::info!("file upload disabled for {path_str} to {bucket}");
-                    return;
-                }
                 if !path.exists() {
                     tracing::warn!("ignoring absent file {path_str}");
                     return;

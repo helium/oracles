@@ -1,10 +1,11 @@
-use crate::{env_var, error::DecodeError, Error, EventId, PublicKey, Result};
+use crate::{error::DecodeError, Error, EventId, PublicKey, Result};
 use futures_util::TryFutureExt;
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
 };
 use poc_store::traits::MsgVerify;
 use poc_store::{file_sink, file_upload, FileType};
+use std::env;
 use std::{net::SocketAddr, path::Path, str::FromStr};
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 
@@ -61,9 +62,9 @@ impl poc_mobile::PocMobile for GrpcServer {
 }
 
 pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
-    let grpc_addr: SocketAddr = env_var("GRPC_SOCKET_ADDR")?
+    let grpc_addr: SocketAddr = env::var("GRPC_SOCKET_ADDR")
         .map_or_else(
-            || SocketAddr::from_str("0.0.0.0:9081"),
+            |_| SocketAddr::from_str("0.0.0.0:9081"),
             |str| SocketAddr::from_str(&str),
         )
         .map_err(DecodeError::from)?;
@@ -72,7 +73,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
 
-    let store_path = dotenv::var("INGEST_STORE")?;
+    let store_path = std::env::var("INGEST_STORE")?;
     let store_base_path = Path::new(&store_path);
 
     // heartbeats
@@ -95,7 +96,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
         speedtest_tx,
         heartbeat_tx,
     };
-    let api_token = dotenv::var("API_TOKEN").map(|token| {
+    let api_token = std::env::var("API_TOKEN").map(|token| {
         format!("Bearer {}", token)
             .parse::<MetadataValue<_>>()
             .unwrap()
