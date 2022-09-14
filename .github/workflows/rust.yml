@@ -35,34 +35,39 @@ jobs:
           args: -- -Dclippy::all
 
       - name: Build
+        if: contains(github.ref, 'refs/tags/') == false
         run: cargo build --all --release
 
       - name: PackageIngestorServer
         id: build_ingestor
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.0
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
         with:
+          toml_path: ingest
           cmd: cargo deb -p poc-ingest
 
       - name: PackageRewardsServer
         id: build_rewards
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.0
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
         with:
+          toml_path: mobile_rewards
           cmd: cargo deb -p mobile-rewards
 
       - name: PackageStatusServer
         id: build_status
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.0
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
         with:
+          toml_path: status
           cmd: cargo deb -p poc5g-status
 
       - name: PackageEntropyServer
         id: build_entropy
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.0
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
         with:
+          toml_path: entropy
           cmd: cargo deb -p poc-entropy
 
 
