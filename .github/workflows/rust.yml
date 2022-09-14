@@ -40,33 +40,33 @@ jobs:
       - name: PackageIngestorServer
         id: build_ingestor
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.5
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.6
         with:
-          path: ingest
+          cargo_path: ingest
           cmd: cargo deb -p poc-ingest
 
       - name: PackageRewardsServer
         id: build_rewards
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.5
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.6
         with:
-          path: mobile_rewards
+          cargo_path: mobile_rewards
           cmd: cargo deb -p mobile-rewards
 
       - name: PackageStatusServer
         id: build_status
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.5
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.6
         with:
-          path: status
+          cargo_path: status
           cmd: cargo deb -p poc5g-status
 
       - name: PackageEntropyServer
         id: build_entropy
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.5
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.6
         with:
-          path: entropy
+          cargo_path: entropy
           cmd: cargo deb -p poc-entropy
 
 
