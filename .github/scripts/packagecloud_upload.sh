@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-for $deb in "target/debian/*.deb"
+for deb in "target/debian/*.deb"
 do
     curl -u "${PACKAGECLOUD_API_KEY}:" \
          -F "package[distro_version_id]=210" \
