@@ -2057,7 +2057,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "poc-injector"
+name = "poc-iot-injector"
 version = "0.1.0"
 dependencies = [
  "base64",

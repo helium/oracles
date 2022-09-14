@@ -1,14 +1,14 @@
 [Unit]
-Description=poc-injector
+Description=poc-iot-injector
 After=network.target
 StartLimitInterval=60
 StartLimitBurst=3
 
 [Service]
 Type=simple
-ExecStart=/opt/poc-injector/bin/poc-injector
+ExecStart=/opt/poc-iot-injector/bin/poc-iot-injector
 User=helium
-PIDFile=/var/run/poc-injector
+PIDFile=/var/run/poc-iot-injector
 Restart=always
 RestartSec=15
 

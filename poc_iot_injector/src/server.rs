@@ -8,7 +8,7 @@ use crate::{follower::FollowerService, keypair::Keypair, Result};
 use tokio::time;
 
 // 30 mins
-pub const POC_TICK_TIME: time::Duration = time::Duration::from_secs(1800);
+pub const POC_IOT_TICK_TIME: time::Duration = time::Duration::from_secs(1800);
 
 pub struct Server {
     keypair: Keypair,
@@ -25,9 +25,9 @@ impl Server {
     }
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
-        tracing::info!("starting poc-injector server");
-        let mut poc_timer = time::interval(POC_TICK_TIME);
-        poc_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+        tracing::info!("starting poc-iot-injector server");
+        let mut poc_iot_timer = time::interval(POC_IOT_TICK_TIME);
+        poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
             if shutdown.is_triggered() {
@@ -35,10 +35,10 @@ impl Server {
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = poc_timer.tick() => match self.handle_poc_tick().await {
+                _ = poc_iot_timer.tick() => match self.handle_poc_tick().await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal poc_injector error: {err:?}");
+                        tracing::error!("fatal poc_iot_injector error: {err:?}");
                         return Err(err)
                     }
                 }

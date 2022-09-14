@@ -1,8 +1,8 @@
 [package]
-name = "poc-injector"
+name = "poc-iot-injector"
 version = "0.1.0"
 edition = "2021"
-description = "PoC injector Server for the Helium Network"
+description = "PoC IOT injector Server for the Helium Network"
 license = "Apache-2.0"
 
 [dependencies]
@@ -40,13 +40,13 @@ poc-metrics = { path = "../metrics" }
 depends = "$auto"
 assets = [
   [
-    "target/release/poc-injector",
-    "/opt/poc-injector/bin/",
+    "target/release/poc-iot-injector",
+    "/opt/poc-iot-injector/bin/",
     "755",
   ],
   [
     "pkg/deb/env-template",
-    "/usr/share/poc-injector/env-template",
+    "/usr/share/poc-iot-injector/env-template",
     "644",
   ],
 ]
