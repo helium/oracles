@@ -1,3 +1,6 @@
+// TODO: Remove
+#![allow(dead_code, unused)]
+
 // TODO: This should really be in something like poc-common
 // OR we'll use the follower service from poc-verifier once that lands
 

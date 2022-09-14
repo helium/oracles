@@ -1,3 +1,6 @@
+// TODO: Remove
+#![allow(dead_code, unused)]
+
 use crate::{follower::FollowerService, keypair::Keypair, Result};
 // use helium_proto::{
 //     blockchain_txn::Txn,
