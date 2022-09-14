@@ -302,11 +302,12 @@ mod tests {
     use crate::{file_source, FileInfo};
     use futures::stream::StreamExt;
     use std::str::FromStr;
+    use tempfile::TempDir;
     use tokio::fs::DirEntry;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn writes_a_framed_gzip_encoded_file() {
-        let tmp_dir = tempdir::TempDir::new("entropy_tests").expect("Unable to create temp dir");
+        let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (sender, receiver) = message_channel(10);
 
@@ -344,7 +345,7 @@ mod tests {
             .expect("invalid data in file")
     }
 
-    async fn get_entropy_file(tmp_dir: &tempdir::TempDir) -> DirEntry {
+    async fn get_entropy_file(tmp_dir: &TempDir) -> DirEntry {
         let mut entries = fs::read_dir(tmp_dir.path())
             .await
             .expect("failed to read tmp dir");

@@ -36,7 +36,7 @@ tonic = "0"
 http = "*"
 metrics = "0.20"
 metrics-exporter-prometheus = "0.11.0"
-rand = "0.8"
+rand = "*"
 async-trait = "*"
 
 [package.metadata.deb]
