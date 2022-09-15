@@ -440,7 +440,7 @@ where
 
 async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u64>> {
     let req = FollowerSubnetworkLastRewardHeightReqV1 {
-        token_type: BlockchainTokenTypeV1::from(ProtoTokenType::Mobile).into(),
+        token_type: ProtoTokenType::Mobile,
     };
     let res = client
         .subnetwork_last_reward_height(req)
