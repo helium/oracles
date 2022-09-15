@@ -50,13 +50,10 @@ impl Server {
             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(last_reward_end_time, 0), Utc);
         loop {
             let (start, stop) = get_time_range(last_reward_end_time, lookup_delay);
-            let _ = SubnetworkRewards::from_period(
-                &input_store,
-                &output_store,
-                follower_client.clone(),
-                start,
-                stop,
-            );
+            SubnetworkRewards::from_period(&input_store, follower_client.clone(), start, stop)
+                .await?
+                .write(&output_store)
+                .await?;
             last_reward_end_time = stop;
             select! {
                 _ = sleep(std::time::Duration::from_secs(lookup_delay as u64 * 60 * 60)) => continue,

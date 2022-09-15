@@ -6,7 +6,7 @@ use helium_proto::{
         poc_mobile::{CellHeartbeatReqV1, Share as ShareProto, ShareValidity, SpeedtestReqV1},
         Channel,
     },
-    Message, SubnetworkReward as ProtoSubnetworkReward,
+    Message,
 };
 use lazy_static::lazy_static;
 use poc_store::BytesMutStream;
@@ -18,7 +18,6 @@ use crate::{
     cell_type::CellType,
     mobile::Mobile,
     reward_speed_share::{InvalidSpeedShares, SpeedShare, SpeedShareMovingAvgs, SpeedShares},
-    subnetwork_rewards::SubnetworkRewards,
     Result,
 };
 use helium_crypto::PublicKey;
@@ -82,20 +81,6 @@ impl OwnerEmissions {
 
     pub fn into_inner(self) -> HashMap<PublicKey, Mobile> {
         self.0
-    }
-}
-
-impl From<OwnerEmissions> for SubnetworkRewards {
-    fn from(owner_emissions: OwnerEmissions) -> SubnetworkRewards {
-        let unsorted_rewards = owner_emissions
-            .0
-            .into_iter()
-            .map(|(owner, amt)| ProtoSubnetworkReward {
-                account: owner.to_vec(),
-                amount: u64::from(amt),
-            })
-            .collect();
-        SubnetworkRewards(unsorted_rewards)
     }
 }
 
@@ -202,6 +187,7 @@ impl OwnerResolver for follower::Client<Channel> {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
 pub struct GatheredShares {
     pub shares: Shares,
     pub invalid_shares: InvalidShares,

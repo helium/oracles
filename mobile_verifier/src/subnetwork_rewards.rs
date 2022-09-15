@@ -1,332 +1,343 @@
 use crate::{
     bones_to_u64, cell_share_to_u64,
     error::{Error, Result},
-    reward_share::{cell_shares, hotspot_shares, GatheredShares, OwnerEmissions, OwnerResolver},
+    reward_share::{
+        self, cell_shares, hotspot_shares, GatheredShares, OwnerEmissions, OwnerResolver,
+    },
     reward_speed_share::SpeedShare,
-    subnetwork_reward::sorted_rewards,
     write_json,
 };
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
-use helium_proto::{
-    services::{
-        follower,
-        poc_mobile::{
-            CellShare, CellShares, FileInfo, HotspotShare, HotspotShares, InvalidSpeedShares,
-            MovingAvg, OwnerEmission, OwnerEmissions as OwnerEmissionsProto, OwnerShare,
-            OwnerShares, ProcessedFiles, Share, ShareValidity, Shares,
-            SpeedShare as SpeedShareProto, SpeedShareList, SpeedShareMovingAvgs, SpeedShares,
-        },
-        Channel,
-    },
-    SubnetworkReward as ProtoSubnetworkReward,
-};
-use poc_store::{FileStore, FileType};
+use helium_proto::services::{follower, Channel};
+use poc_store::{FileInfo, FileStore, FileType};
 use serde::Serialize;
 
+mod proto {
+    pub use helium_proto::services::poc_mobile::*;
+    pub use helium_proto::SubnetworkReward;
+}
+
 #[derive(Debug, Clone, Serialize)]
-pub struct SubnetworkRewards(pub Vec<ProtoSubnetworkReward>);
+pub struct SubnetworkRewards {
+    pub after_ts: u64,
+    pub before_ts: u64,
+    pub file_list: Vec<FileInfo>,
+    pub gathered_shares: GatheredShares,
+    pub cell_shares: reward_share::CellShares,
+    pub hotspot_shares: reward_share::HotspotShares,
+    pub owner_shares: reward_share::OwnerShares,
+    pub missing_owner_shares: reward_share::MissingOwnerShares,
+    pub rewards: Vec<proto::SubnetworkReward>,
+}
 
 impl SubnetworkRewards {
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.rewards.is_empty()
     }
 
     pub async fn from_period(
-        input_store: &FileStore,
-        output_store: &FileStore,
-        follower_service: follower::Client<Channel>,
+        file_store: &FileStore,
+        mut follower_service: follower::Client<Channel>,
         after_utc: DateTime<Utc>,
         before_utc: DateTime<Utc>,
-    ) -> Result<Option<Self>> {
-        if let Some(rewards) = get_rewards(
-            input_store,
-            output_store,
-            follower_service,
-            after_utc,
-            before_utc,
-        )
-        .await?
-        {
-            return Ok(Some(Self(rewards)));
+    ) -> Result<Self> {
+        if before_utc <= after_utc {
+            tracing::error!(
+                "cannot reward future period, before: {:?}, after: {:?}",
+                before_utc,
+                after_utc
+            );
+            return Err(Error::NotFound("cannot reward future".to_string()));
         }
-        Ok(None)
-    }
-}
+        let after_ts = after_utc.timestamp() as u64;
+        let before_ts = before_utc.timestamp() as u64;
 
-impl From<SubnetworkRewards> for Vec<ProtoSubnetworkReward> {
-    fn from(subnetwork_rewards: SubnetworkRewards) -> Self {
-        sorted_rewards(subnetwork_rewards.0)
-    }
-}
-
-async fn get_rewards(
-    input_store: &FileStore,
-    output_store: &FileStore,
-    mut follower_service: follower::Client<Channel>,
-    after_utc: DateTime<Utc>,
-    before_utc: DateTime<Utc>,
-) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
-    if before_utc <= after_utc {
-        tracing::error!(
-            "cannot reward future period, before: {:?}, after: {:?}",
-            before_utc,
-            after_utc
+        let mut file_list = file_store
+            .list_all(FileType::CellHeartbeat, after_utc, before_utc)
+            .await?;
+        file_list.extend(
+            file_store
+                .list_all(FileType::CellSpeedtest, after_utc, before_utc)
+                .await?,
         );
-        return Err(Error::NotFound("cannot reward future".to_string()));
+
+        metrics::histogram!("verifier_server_processed_files", file_list.len() as f64);
+
+        let mut stream = file_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
+
+        /*let GatheredShares {
+                shares,
+                speed_shares,
+                speed_shares_moving_avg,
+                invalid_shares,
+                invalid_speed_shares,
+        } =*/
+        let gathered_shares = GatheredShares::from_stream(&mut stream, after_ts, before_ts).await?;
+
+        let cell_shares = cell_shares(&gathered_shares.shares);
+
+        let hotspot_shares = hotspot_shares(
+            &gathered_shares.shares,
+            &gathered_shares.speed_shares_moving_avg,
+        );
+
+        let (owner_shares, missing_owner_shares) = follower_service
+            .owner_shares(hotspot_shares.clone())
+            .await?;
+
+        let owner_emissions =
+            OwnerEmissions::new(owner_shares.clone(), after_utc, before_utc - after_utc);
+
+        let mut rewards = owner_emissions
+            .into_inner()
+            .into_iter()
+            .map(|(owner, amt)| proto::SubnetworkReward {
+                account: owner.to_vec(),
+                amount: u64::from(amt),
+            })
+            .collect::<Vec<_>>();
+
+        // Sort the rewards
+        rewards.sort_by(|a, b| {
+            a.account
+                .cmp(&b.account)
+                .then_with(|| a.amount.cmp(&b.amount))
+        });
+
+        Ok(Self {
+            after_ts,
+            before_ts,
+            file_list,
+            gathered_shares,
+            cell_shares,
+            hotspot_shares,
+            owner_shares,
+            missing_owner_shares,
+            rewards,
+        })
     }
-    let after_ts = after_utc.timestamp() as u64;
-    let before_ts = before_utc.timestamp() as u64;
 
-    let mut file_list = input_store
-        .list_all(FileType::CellHeartbeat, after_utc, before_utc)
+    /// Write output from each step to S3
+    pub async fn write(self, file_store: &FileStore) -> Result<()> {
+        // TODO: Clean up these conversions
+        // One possibility for the common cases would be to wrap in a macro.
+        // Also, a lot of the meat of these conversion should be moved to helper
+        // functions.
+        let Self {
+            after_ts,
+            before_ts,
+            file_list,
+            gathered_shares:
+                GatheredShares {
+                    shares,
+                    speed_shares,
+                    speed_shares_moving_avg,
+                    invalid_shares,
+                    invalid_speed_shares,
+                },
+            cell_shares,
+            hotspot_shares,
+            owner_shares,
+            missing_owner_shares,
+            rewards,
+        } = self;
+
+        write_json(
+            file_store,
+            "file_list",
+            after_ts,
+            before_ts,
+            &proto::ProcessedFiles {
+                files: file_list
+                    .into_iter()
+                    .map(|file_info| proto::FileInfo {
+                        key: file_info.key,
+                        file_type: file_info.file_type as i32,
+                        timestamp: file_info.timestamp.timestamp() as u64,
+                        size: file_info.size as u64,
+                    })
+                    .collect(),
+            },
+        )
         .await?;
-    file_list.extend(
-        input_store
-            .list_all(FileType::CellSpeedtest, after_utc, before_utc)
-            .await?,
-    );
 
-    metrics::histogram!("verifier_server_processed_files", file_list.len() as f64);
-
-    let mut stream = input_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
-
-    let GatheredShares {
-        shares,
-        speed_shares,
-        speed_shares_moving_avg,
-        invalid_shares,
-        invalid_speed_shares,
-    } = GatheredShares::from_stream(&mut stream, after_ts, before_ts).await?;
-
-    let cell_shares = cell_shares(&shares);
-
-    let hotspot_shares = hotspot_shares(&shares, &speed_shares_moving_avg);
-
-    let (owner_shares, missing_owner_shares) = follower_service
-        .owner_shares(hotspot_shares.clone())
+        write_json(
+            file_store,
+            "shares",
+            after_ts,
+            before_ts,
+            &proto::Shares {
+                shares: shares
+                    .into_iter()
+                    .map(|(cbsd_id, share)| proto::Share {
+                        cbsd_id,
+                        timestamp: share.timestamp,
+                        pub_key: share.pub_key.to_vec(),
+                        weight: bones_to_u64(share.weight),
+                        cell_type: share.cell_type as i32,
+                        validity: proto::ShareValidity::Valid as i32,
+                    })
+                    .collect(),
+            },
+        )
         .await?;
 
-    let owner_emissions =
-        OwnerEmissions::new(owner_shares.clone(), after_utc, before_utc - after_utc);
+        write_json(
+            file_store,
+            "speed_shares",
+            after_ts,
+            before_ts,
+            &proto::SpeedShares {
+                speed_shares: speed_shares
+                    .into_iter()
+                    .map(|(key, shares)| proto::SpeedShareList {
+                        gw_pub_key: key.to_vec(),
+                        speed_shares: shares.into_iter().map(SpeedShare::into).collect(),
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Write output from each step to S3:
-    //
-    // TODO: Clean up these conversions
-    // One possibility for the common cases would be to wrap in a macro.
-    // Also, a lot of the meat of these conversion should be moved to helper
-    // functions.
+        write_json(
+            file_store,
+            "invalid_shares",
+            after_ts,
+            before_ts,
+            &invalid_shares,
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "file_list",
-        after_ts,
-        before_ts,
-        &ProcessedFiles {
-            files: file_list
-                .into_iter()
-                .map(|file_info| FileInfo {
-                    key: file_info.key,
-                    file_type: file_info.file_type as i32,
-                    timestamp: file_info.timestamp.timestamp() as u64,
-                    size: file_info.size as u64,
-                })
-                .collect(),
-        },
-    )
-    .await?;
+        write_json(
+            file_store,
+            "invalid_speed_shares",
+            after_ts,
+            before_ts,
+            &proto::InvalidSpeedShares {
+                speed_shares: invalid_speed_shares
+                    .into_iter()
+                    .map(|share| proto::SpeedShare {
+                        pub_key: share.pub_key.to_vec(),
+                        upload_speed_bps: share.upload_speed,
+                        download_speed_bps: share.download_speed,
+                        latency_ms: share.latency,
+                        timestamp: share.timestamp,
+                        validity: share.validity as i32,
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "shares",
-        after_ts,
-        before_ts,
-        &Shares {
-            shares: shares
-                .into_iter()
-                .map(|(cbsd_id, share)| Share {
-                    cbsd_id,
-                    timestamp: share.timestamp,
-                    pub_key: share.pub_key.to_vec(),
-                    weight: bones_to_u64(share.weight),
-                    cell_type: share.cell_type as i32,
-                    validity: ShareValidity::Valid as i32,
-                })
-                .collect(),
-        },
-    )
-    .await?;
+        write_json(
+            file_store,
+            "speed_shares_moving_avg",
+            after_ts,
+            before_ts,
+            &proto::SpeedShareMovingAvgs {
+                moving_avgs: speed_shares_moving_avg
+                    .into_inner()
+                    .into_iter()
+                    .map(|(key, moving_avg)| {
+                        proto::MovingAvg {
+                            pub_key: key.to_vec(),
+                            window_size: moving_avg.window_size as u64,
+                            is_valid: moving_avg.is_valid,
+                            // TODO: Flatten this so that we do not need to wrap it in an optional.
+                            average: Some(moving_avg.average.into()),
+                            speed_shares: moving_avg
+                                .speed_shares
+                                .into_iter()
+                                .map(SpeedShare::into)
+                                .collect(),
+                        }
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "speed_shares",
-        after_ts,
-        before_ts,
-        &SpeedShares {
-            speed_shares: speed_shares
-                .into_iter()
-                .map(|(key, shares)| SpeedShareList {
-                    gw_pub_key: key.to_vec(),
-                    speed_shares: shares.into_iter().map(SpeedShare::into).collect(),
-                })
-                .collect(),
-        },
-    )
-    .await?;
+        write_json(
+            file_store,
+            "cell_shares",
+            after_ts,
+            before_ts,
+            &proto::CellShares {
+                shares: cell_shares
+                    .into_iter()
+                    .map(|(cell_type, weight)| proto::CellShare {
+                        cell_type: cell_type as i32,
+                        weight: cell_share_to_u64(weight),
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "invalid_shares",
-        after_ts,
-        before_ts,
-        &invalid_shares,
-    )
-    .await?;
-
-    write_json(
-        output_store,
-        "invalid_speed_shares",
-        after_ts,
-        before_ts,
-        &InvalidSpeedShares {
-            speed_shares: invalid_speed_shares
-                .into_iter()
-                .map(|share| SpeedShareProto {
-                    pub_key: share.pub_key.to_vec(),
-                    upload_speed_bps: share.upload_speed,
-                    download_speed_bps: share.download_speed,
-                    latency_ms: share.latency,
-                    timestamp: share.timestamp,
-                    validity: share.validity as i32,
-                })
-                .collect(),
-        },
-    )
-    .await?;
-
-    write_json(
-        output_store,
-        "speed_shares_moving_avg",
-        after_ts,
-        before_ts,
-        &SpeedShareMovingAvgs {
-            moving_avgs: speed_shares_moving_avg
-                .into_inner()
-                .into_iter()
-                .map(|(key, moving_avg)| {
-                    MovingAvg {
+        write_json(
+            file_store,
+            "hotspot_shares",
+            after_ts,
+            before_ts,
+            &proto::HotspotShares {
+                shares: hotspot_shares
+                    .into_iter()
+                    .map(|(key, weight)| proto::HotspotShare {
                         pub_key: key.to_vec(),
-                        window_size: moving_avg.window_size as u64,
-                        is_valid: moving_avg.is_valid,
-                        // TODO: Flatten this so that we do not need to wrap it in an optional.
-                        average: Some(moving_avg.average.into()),
-                        speed_shares: moving_avg
-                            .speed_shares
-                            .into_iter()
-                            .map(SpeedShare::into)
-                            .collect(),
-                    }
-                })
-                .collect(),
-        },
-    )
-    .await?;
+                        weight: bones_to_u64(weight),
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "cell_shares",
-        after_ts,
-        before_ts,
-        &CellShares {
-            shares: cell_shares
-                .into_iter()
-                .map(|(cell_type, weight)| CellShare {
-                    cell_type: cell_type as i32,
-                    weight: cell_share_to_u64(weight),
-                })
-                .collect(),
-        },
-    )
-    .await?;
+        write_json(
+            file_store,
+            "owner_shares",
+            after_ts,
+            before_ts,
+            &proto::OwnerShares {
+                shares: owner_shares
+                    .into_iter()
+                    .map(|(key, weight)| proto::OwnerShare {
+                        pub_key: key.to_vec(),
+                        weight: bones_to_u64(weight),
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "hotspot_shares",
-        after_ts,
-        before_ts,
-        &HotspotShares {
-            shares: hotspot_shares
-                .into_iter()
-                .map(|(key, weight)| HotspotShare {
-                    pub_key: key.to_vec(),
-                    weight: bones_to_u64(weight),
-                })
-                .collect(),
-        },
-    )
-    .await?;
+        write_json(
+            file_store,
+            "missing_owner_shares",
+            after_ts,
+            before_ts,
+            &proto::OwnerShares {
+                shares: missing_owner_shares
+                    .clone()
+                    .into_iter()
+                    .map(|(key, weight)| proto::OwnerShare {
+                        pub_key: key.to_vec(),
+                        weight: bones_to_u64(weight),
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "owner_shares",
-        after_ts,
-        before_ts,
-        &OwnerShares {
-            shares: owner_shares
-                .into_iter()
-                .map(|(key, weight)| OwnerShare {
-                    pub_key: key.to_vec(),
-                    weight: bones_to_u64(weight),
-                })
-                .collect(),
-        },
-    )
-    .await?;
+        write_json(
+            file_store,
+            "subnetwork_rewards",
+            after_ts,
+            before_ts,
+            &rewards,
+        )
+        .await?;
 
-    write_json(
-        output_store,
-        "missing_owner_shares",
-        after_ts,
-        before_ts,
-        &OwnerShares {
-            shares: missing_owner_shares
-                .clone()
-                .into_iter()
-                .map(|(key, weight)| OwnerShare {
-                    pub_key: key.to_vec(),
-                    weight: bones_to_u64(weight),
-                })
-                .collect(),
-        },
-    )
-    .await?;
-
-    write_json(
-        output_store,
-        "owner_emissions",
-        after_ts,
-        before_ts,
-        &OwnerEmissionsProto {
-            emissions: owner_emissions
-                .clone()
-                .into_inner()
-                .into_iter()
-                .map(|(key, weight)| OwnerEmission {
-                    pub_key: key.to_vec(),
-                    weight: bones_to_u64(weight.into_inner()),
-                })
-                .collect(),
-        },
-    )
-    .await?;
-
-    if !owner_emissions.is_empty() {
-        let subnetwork_rewards = SubnetworkRewards::from(owner_emissions);
-        return Ok(Some(subnetwork_rewards.into()));
+        Ok(())
     }
-
-    Ok(None)
 }
 
 #[cfg(test)]
