@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-/// A key-value pair that is stored in the metadata table. 
+/// A key-value pair that is stored in the metadata table.
 pub struct MetaValue<T> {
     key: String,
     value: T,
@@ -21,7 +21,7 @@ impl<T> MetaValue<T> {
             value,
         }
     }
-    
+
     pub fn key(&self) -> &str {
         &self.key
     }
@@ -35,12 +35,9 @@ impl<T> MetaValue<T>
 where
     T: ToString,
 {
-    pub async fn insert<'c, E>(
-        &self, 
-        exec: E,
-    ) -> Result<(), MetaError>
+    pub async fn insert<'c, E>(&self, exec: E) -> Result<(), MetaError>
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
             r#"
@@ -53,7 +50,7 @@ where
         .bind(&self.key)
         .bind(self.value.to_string())
         .execute(exec)
-            .await?;
+        .await?;
         Ok(())
     }
 }
