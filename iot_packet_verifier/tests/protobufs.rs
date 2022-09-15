@@ -47,24 +47,6 @@ mod test {
         ],
     ];
 
-    #[cfg(feature = "sample-data")]
-    #[test]
-    fn mk_pb() {
-        write_protobuf_files()
-    }
-
-    /// Generate sample data files files for further exploration.
-    #[allow(dead_code)]
-    fn write_protobuf_files() {
-        use std::fs::File;
-        use std::io::prelude::*;
-        for (i, encoded) in ENCODED_PROTOBUF_BYTES.into_iter().enumerate() {
-            let filename = format!("tests/HPR-report-{i:02x}.data");
-            let mut f = File::create(filename).unwrap();
-            f.write_all(&encoded).unwrap();
-        }
-    }
-
     #[test]
     fn decode_packet_reports() {
         for encoded in ENCODED_PROTOBUF_BYTES {
@@ -118,6 +100,71 @@ mod test {
             let ingest: PacketRouterPacketReportV1 = decoded;
             let mut counters = pv::PacketCounters::new();
             pv::update_counters(&ingest, &mut counters);
+        }
+    }
+
+    #[cfg(feature = "sample-data")]
+    mod generate_sample_data {
+        extern crate async_compression;
+        extern crate futures_util;
+        extern crate tokio;
+
+        use async_compression::tokio::write::GzipEncoder;
+        use bytes::Bytes;
+        use futures_util::sink::SinkExt;
+        use tokio::{fs::OpenOptions, io::BufWriter};
+        use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
+
+        #[test]
+        fn make_local_protobuf_files() {
+            make_pb_files().unwrap();
+        }
+
+        /// Write a set of gzip'd Protobuf files and a single concatenated version.
+        #[tokio::main]
+        async fn make_pb_files() -> Result<(), Box<dyn std::error::Error>> {
+            let cat_filename = format!("tests/HPR-report.stream.gz");
+            let writer = GzipEncoder::new(BufWriter::new(
+                OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(&cat_filename)
+                    .await?,
+            ));
+            let mut transport = FramedWrite::new(writer, LengthDelimitedCodec::new());
+
+            for (i, encoded) in super::ENCODED_PROTOBUF_BYTES.into_iter().enumerate() {
+                let filename = format!("tests/HPR-report-{i:02x}.data.gz");
+                let mut bytes = Bytes::from(encoded.to_vec());
+                let buf = bytes.clone();
+                match write_length_encoded(&filename, &mut bytes).await {
+                    Ok(()) => (),
+                    Err(e) => println!("failed: file={} {:?}", &filename, e),
+                };
+                transport.send(buf).await?;
+            }
+            Ok(())
+        }
+
+        /// Generate sample data files files for further exploration.
+        /// Write length then payload similar to ../store/file_sink.rs
+        // https://docs.rs/tokio-util/latest/tokio_util/codec/length_delimited/
+        // For similar use cases, see also: Prost's Message
+        async fn write_length_encoded(
+            filename: &str,
+            buf: &mut Bytes,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let writer = GzipEncoder::new(BufWriter::new(
+                OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(&filename)
+                    .await?,
+            ));
+            // Essentially, write a single u32 first:
+            let mut transport = FramedWrite::new(writer, LengthDelimitedCodec::new());
+            transport.send(buf.to_owned()).await?;
+            Ok(())
         }
     }
 }

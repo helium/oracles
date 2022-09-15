@@ -13,16 +13,17 @@ doc = false
 
 [features]
 # Generate protobuf files via: cargo test --feature=sample-data
-sample-data = []
+sample-data = ["async-compression", "futures-util"]
 
 [dependencies]
+async-compression = {version="*", optional=true}
 #aws-config = "0"
 #aws-sdk-s3 = "0"
 #clap = {version = "3", features = ["derive"]}
 #dotenv = "0"
 futures = "*"
 futures-core = "*"
-futures-util = "*"
+futures-util = {version="*", optional=true}
 
 helium-crypto = {git="https://github.com/helium/helium-crypto-rs", tag="v0.3.4"}
 
