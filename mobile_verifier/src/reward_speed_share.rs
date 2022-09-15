@@ -220,7 +220,7 @@ mod test {
         let s1 = SpeedShare::new(
             gw_public_key.clone(),
             parse_dt("2022-08-01 6:00:00 +0000"),
-            bytes_per_s(25),
+            bytes_per_s(20),
             bytes_per_s(150),
             70,
             Validity::Valid,
