@@ -28,6 +28,7 @@ use helium_proto::{
 use http::Uri;
 use poc_metrics::record_duration;
 use poc_store::{FileStore, FileType};
+use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
 use std::env;
 use std::{ops::Range, time::Duration as StdDuration};
@@ -474,8 +475,6 @@ pub fn construct_txn(
     let hash = hash_txn_b64_url(&txn);
     Ok((txn, hash))
 }
-
-use sha2::{Digest, Sha256};
 
 fn hash_txn_b64_url(txn: &BlockchainTxnSubnetworkRewardsV1) -> String {
     let mut txn = txn.clone();
