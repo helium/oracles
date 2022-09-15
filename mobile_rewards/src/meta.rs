@@ -1,60 +1,46 @@
-use crate::{error::DecodeError, Error, Result};
-use futures::TryFutureExt;
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
-#[sqlx(type_name = "meta")]
-pub struct Meta {
-    pub key: String,
-    pub value: String,
+/// A key-value pair that is stored in the metadata table. 
+pub struct MetaValue<T> {
+    key: String,
+    value: T,
 }
 
-impl Meta {
-    pub async fn insert_kv<'c, E>(executor: E, key: &str, val: &str) -> Result<Self>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        sqlx::query_as::<_, Self>(
-            r#"
-            insert into meta ( key, value ) 
-            values ($1, $2) 
-            on conflict (key) do nothing 
-            returning *;
-            "#,
-        )
-        .bind(key)
-        .bind(val)
-        .fetch_one(executor)
-        .await
-        .map_err(Error::from)
+#[derive(thiserror::Error, Debug)]
+pub enum MetaError {
+    #[error("Sql error")]
+    SqlError(#[from] sqlx::Error),
+    #[error("Failed to decode meta value")]
+    DecodeError,
+}
+
+impl<T> MetaValue<T> {
+    pub fn new(key: &str, value: T) -> Self {
+        Self {
+            key: key.to_string(),
+            value,
+        }
+    }
+    
+    pub fn key(&self) -> &str {
+        &self.key
     }
 
-    pub async fn update_all<'c, 'i, E, T>(executor: E, tuples: T) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-        T: IntoIterator<Item = &'i (&'i str, String)>,
-    {
-        let (keys, values): (Vec<&str>, Vec<String>) = tuples.into_iter().cloned().unzip();
-        sqlx::query(
-            r#"
-            insert into meta (key, value) 
-            select * from unnest($1::text[], $2::text[]) 
-            on conflict (key) do update set 
-            value = EXCLUDED.value;
-            "#,
-        )
-        .bind(keys)
-        .bind(values)
-        .execute(executor)
-        .map_ok(|_| ())
-        .map_err(Error::from)
-        .await
+    pub fn value(&self) -> &T {
+        &self.value
     }
+}
 
-    pub async fn update<'c, E>(executor: E, key: &str, val: String) -> Result
+impl<T> MetaValue<T>
+where
+    T: ToString,
+{
+    pub async fn insert<'c, E>(
+        &self, 
+        exec: E,
+    ) -> Result<(), MetaError>
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>
     {
         sqlx::query(
             r#"
@@ -64,46 +50,81 @@ impl Meta {
             value = EXCLUDED.value;
             "#,
         )
-        .bind(key)
-        .bind(val)
-        .execute(executor)
-        .map_ok(|_| ())
-        .map_err(Error::from)
-        .await
+        .bind(&self.key)
+        .bind(self.value.to_string())
+        .execute(exec)
+            .await?;
+        Ok(())
     }
+}
 
-    async fn fetch_scalar<'c, E, T>(executor: E, key: &str) -> Result<Option<T>>
+impl<T> MetaValue<T>
+where
+    T: ToString + FromStr,
+{
+    pub async fn fetch_or_insert_with<'c, E>(
+        exec: E,
+        key: &str,
+        default_fn: impl FnOnce() -> T,
+    ) -> Result<Self, MetaError>
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-        T: FromStr,
-        DecodeError: From<<T as FromStr>::Err>,
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Copy,
     {
-        sqlx::query_scalar::<_, String>(
+        let str_val = sqlx::query_scalar::<_, String>(
             r#"
             select value from meta where key = $1;
             "#,
         )
         .bind(key)
-        .fetch_optional(executor)
-        .await?
-        .map_or_else(
-            || Ok(None),
-            |v| v.parse::<T>().map_err(DecodeError::from).map(Some),
+        .fetch_optional(exec)
+        .await?;
+
+        match str_val {
+            Some(str_val) => {
+                let value = str_val.parse().map_err(|_| MetaError::DecodeError)?;
+                Ok(Self {
+                    key: key.to_string(),
+                    value,
+                })
+            }
+            None => {
+                let value = default_fn();
+                sqlx::query(
+                    r#"
+                    insert into meta (key, value) 
+                    values ($1, $2) 
+                    on conflict (key) do update set 
+                    value = EXCLUDED.value;
+                    "#,
+                )
+                .bind(key)
+                .bind(value.to_string())
+                .execute(exec)
+                .await?;
+                Ok(Self {
+                    key: key.to_string(),
+                    value,
+                })
+            }
+        }
+    }
+
+    pub async fn update<'c, E>(&mut self, exec: E, new_val: T) -> Result<T, MetaError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query(
+            r#"
+            insert into meta (key, value) 
+            values ($1, $2) 
+            on conflict (key) do update set 
+            value = EXCLUDED.value;
+            "#,
         )
-        .map_err(Error::from)
-    }
-
-    pub async fn last_reward_end_time<'c, E>(executor: E) -> Result<Option<i64>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        Self::fetch_scalar::<E, i64>(executor, "last_reward_end_time").await
-    }
-
-    pub async fn last_follower_height<'c, E>(executor: E) -> Result<Option<i64>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        Self::fetch_scalar::<E, i64>(executor, "last_follower_height").await
+        .bind(&self.key)
+        .bind(new_val.to_string())
+        .execute(exec)
+        .await?;
+        Ok(std::mem::replace(&mut self.value, new_val))
     }
 }

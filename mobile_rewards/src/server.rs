@@ -2,7 +2,7 @@ use crate::{
     datetime_from_epoch,
     error::DecodeError,
     keypair::Keypair,
-    meta::Meta,
+    meta::MetaValue,
     pending_txn::{PendingTxn, Status},
     traits::B64,
     transaction::TransactionService,
@@ -10,7 +10,7 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Duration, Utc};
-use futures::{stream, try_join, StreamExt};
+use futures::{join, stream, StreamExt};
 use helium_proto::{
     blockchain_txn::Txn,
     services::{
@@ -97,19 +97,12 @@ impl Server {
                 return Ok(());
             }
 
-            let follow_start = match Meta::last_follower_height(&self.pool).await? {
-                None => {
-                    let start_reward_block = &self.start_reward_block;
-                    Meta::insert_kv(
-                        &self.pool,
-                        "last_follower_height",
-                        &start_reward_block.to_string(),
-                    )
-                    .await?;
-                    *start_reward_block
-                }
-                Some(last_follower_height) => last_follower_height,
-            } as u64;
+            let follow_start =
+                *MetaValue::<i64>::fetch_or_insert_with(&self.pool, "last_follower_height", || {
+                    self.start_reward_block
+                })
+                .await?
+                .value() as u64;
 
             tracing::info!("connecting to blockchain txn stream at height {follow_start}");
             tokio::select! {
@@ -233,27 +226,31 @@ impl Server {
             }
         }
 
-        match Meta::last_reward_end_time(&self.pool).await? {
-            Some(last_reward_time) => {
-                tracing::info!("found last_reward_end_time: {:#?}", last_reward_time);
-                let (start_utc, end_utc) = get_time_range(last_reward_time);
-                if end_utc - start_utc > self.reward_interval {
-                    // Handle rewards if we pass our duration
-                    record_duration!(
-                        "reward_server_emission_duration",
-                        self.handle_rewards(reward_period, start_utc, end_utc)
-                            .await?
-                    )
-                }
-            }
-            None => {
+        let last_reward_time =
+            MetaValue::<i64>::fetch_or_insert_with(&self.pool, "last_reward_end_time", || {
                 let starting_ts = now.timestamp();
                 tracing::info!(
                     "no last_reward_end_time found, inserting current timestamp {starting_ts}"
                 );
-                Meta::update(&self.pool, "last_reward_end_time", starting_ts.to_string()).await?;
-            }
+                starting_ts
+            })
+            .await?;
+
+        tracing::info!(
+            "found last_reward_end_time: {:#?}",
+            *last_reward_time.value()
+        );
+
+        let (start_utc, end_utc) = get_time_range(*last_reward_time.value());
+        if end_utc - start_utc > self.reward_interval {
+            // Handle rewards if we pass our duration
+            record_duration!(
+                "reward_server_emission_duration",
+                self.handle_rewards(reward_period, last_reward_time, start_utc..end_utc)
+                    .await?
+            )
         }
+
         Ok(())
     }
 
@@ -294,14 +291,14 @@ impl Server {
     async fn handle_rewards(
         &mut self,
         reward_period: Range<u64>,
-        start_utc: DateTime<Utc>,
-        end_utc: DateTime<Utc>,
+        mut last_reward_end_time: MetaValue<i64>,
+        time_range: Range<DateTime<Utc>>,
     ) -> Result {
         tracing::info!("triggering rewards emissions");
 
         let file_list = self
             .verifier_store
-            .list_all(FileType::OwnerEmissions, start_utc, end_utc)
+            .list_all(FileType::OwnerEmissions, time_range.start, time_range.end)
             .await?;
 
         // TODO: We need a better pattern for this:
@@ -324,10 +321,13 @@ impl Server {
         }
 
         if !rewards.is_empty() {
-            let pool = &self.pool.clone();
-            let issue_rewards = self.issue_rewards(rewards, reward_period);
-            let update_end_time = Meta::update(pool, "last_reward_end_time", end_utc.to_string());
-            try_join!(issue_rewards, update_end_time)?;
+            let pool = self.pool.clone();
+            let (issue_rewards, update_end_time) = join!(
+                self.issue_rewards(rewards, reward_period),
+                last_reward_end_time.update(&pool, time_range.end.timestamp())
+            );
+            issue_rewards?;
+            update_end_time?;
         } else {
             tracing::error!("cannot continue; unable to determine reward period!");
             return Err(Error::NotFound("invalid reward period".to_string()));
@@ -403,7 +403,10 @@ const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
 async fn update_last_follower(pool: &Pool<Postgres>, last_height: u64) -> Result {
     metrics::gauge!("reward_server_last_reward_height", last_height as f64);
-    Meta::update(pool, "last_follower_height", last_height.to_string()).await
+    MetaValue::new("last_follower_height", last_height)
+        .insert(pool)
+        .await?;
+    Ok(())
 }
 
 fn new_client_from_env() -> Result<follower::Client<Channel>> {
