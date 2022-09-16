@@ -17,12 +17,13 @@ pub struct FileStore {
 
 impl FileStore {
     pub async fn from_env() -> Result<Self> {
-        let endpoint_env = env::var("BUCKET_ENDPOINT")?;
-        let endpoint: Option<Endpoint> = Uri::from_str(&endpoint_env)
-            .map(Endpoint::immutable)
-            .map(Some)
-            .map_err(DecodeError::from)?;
-
+        let endpoint: Option<Endpoint> = match env::var("BUCKET_ENDPOINT") {
+            Ok(endpoint_env) => Uri::from_str(&endpoint_env)
+                .map(Endpoint::immutable)
+                .map(Some)
+                .map_err(DecodeError::from)?,
+            _ => None,
+        };
         let region =
             env::var("BUCKET_REGION").map_or_else(|_| Region::new("us-west-2"), Region::new);
         let bucket = env::var("BUCKET")?;
