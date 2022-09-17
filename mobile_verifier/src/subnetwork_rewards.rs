@@ -15,7 +15,7 @@ use serde::Serialize;
 
 mod proto {
     pub use helium_proto::services::poc_mobile::*;
-    pub use helium_proto::SubnetworkReward;
+    pub use helium_proto::{SubnetworkReward, SubnetworkRewards};
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -66,13 +66,6 @@ impl SubnetworkRewards {
 
         let mut stream = file_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
 
-        /*let GatheredShares {
-                shares,
-                speed_shares,
-                speed_shares_moving_avg,
-                invalid_shares,
-                invalid_speed_shares,
-        } =*/
         let gathered_shares = GatheredShares::from_stream(&mut stream, after_ts, before_ts).await?;
 
         let cell_shares = cell_shares(&gathered_shares.shares);
@@ -332,7 +325,7 @@ impl SubnetworkRewards {
             "subnetwork_rewards",
             after_ts,
             before_ts,
-            &rewards,
+            &proto::SubnetworkRewards { rewards },
         )
         .await?;
 
