@@ -10,7 +10,7 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Duration, Utc};
-use futures::{join, stream, StreamExt};
+use futures::{stream, StreamExt};
 use helium_proto::{
     blockchain_txn::Txn,
     services::{
@@ -18,12 +18,11 @@ use helium_proto::{
             self, FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamReqV1,
             FollowerTxnStreamRespV1,
         },
-        poc_mobile::OwnerEmissions,
         transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
         Channel, Endpoint,
     },
     BlockchainTokenTypeV1, BlockchainTokenTypeV1 as ProtoTokenType, BlockchainTxn,
-    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward,
+    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward, SubnetworkRewards,
 };
 use http::Uri;
 use poc_metrics::record_duration;
@@ -299,7 +298,11 @@ impl Server {
 
         let file_list = self
             .verifier_store
-            .list_all(FileType::OwnerEmissions, time_range.start, time_range.end)
+            .list_all(
+                FileType::SubnetworkRewards,
+                time_range.start,
+                time_range.end,
+            )
             .await?;
 
         // TODO: We need a better pattern for this:
@@ -308,27 +311,17 @@ impl Server {
             .source(stream::iter(file_list).map(Ok).boxed());
         let mut rewards = vec![];
         while let Some(Ok(msg)) = stream.next().await {
-            match OwnerEmissions::decode(msg) {
-                Ok(OwnerEmissions { emissions }) => {
-                    for emission in emissions.into_iter() {
-                        rewards.push(SubnetworkReward {
-                            account: emission.pub_key,
-                            amount: emission.weight,
-                        });
-                    }
-                }
-                _ => (),
+            let subnet_rewards = SubnetworkRewards::decode(msg);
+            if let Ok(subnet_rewards) = subnet_rewards {
+                rewards.extend(subnet_rewards.rewards);
             }
         }
 
         if !rewards.is_empty() {
-            let pool = self.pool.clone();
-            let (issue_rewards, update_end_time) = join!(
-                self.issue_rewards(rewards, reward_period),
-                last_reward_end_time.update(&pool, time_range.end.timestamp())
-            );
-            issue_rewards?;
-            update_end_time?;
+            self.issue_rewards(rewards, reward_period).await?;
+            last_reward_end_time
+                .update(&self.pool, time_range.end.timestamp())
+                .await?;
         } else {
             tracing::error!("cannot continue; unable to determine reward period!");
             return Err(Error::NotFound("invalid reward period".to_string()));
@@ -441,7 +434,7 @@ where
 
 async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u64>> {
     let req = FollowerSubnetworkLastRewardHeightReqV1 {
-        token_type: ProtoTokenType::Mobile,
+        token_type: ProtoTokenType::Mobile as i32,
     };
     let res = client
         .subnetwork_last_reward_height(req)
@@ -465,8 +458,8 @@ pub fn construct_txn(
     period: Range<u64>,
 ) -> Result<(BlockchainTxnSubnetworkRewardsV1, String)> {
     let mut txn = BlockchainTxnSubnetworkRewardsV1 {
-        rewards: rewards,
-        token_type: BlockchainTokenTypeV1::from(ProtoTokenType::Mobile).into(),
+        rewards,
+        token_type: BlockchainTokenTypeV1::Mobile as i32,
         start_epoch: period.start,
         end_epoch: period.end,
         reward_server_signature: vec![],
