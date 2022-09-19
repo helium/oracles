@@ -6,7 +6,9 @@ use helium_proto::services::poc_lora::{
     LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
 };
 use helium_proto::{
-    services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
+    services::poc_mobile::{
+        CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1, SpeedtestReqV1,
+    },
     Entropy, Message,
 };
 use serde_json::json;
@@ -67,6 +69,10 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::CellSpeedtest => {
             SpeedtestReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
+        FileType::CellHeartbeatIngestReport => CellHeartbeatIngestReportV1::decode(buf)
+            .map(|entry| datetime_from_epoch(entry.report.unwrap().timestamp))?,
+        FileType::CellSpeedtestIngestReport => SpeedtestIngestReportV1::decode(buf)
+            .map(|entry| datetime_from_epoch(entry.report.unwrap().timestamp))?,
         FileType::Entropy => {
             Entropy::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }

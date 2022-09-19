@@ -1,7 +1,7 @@
 use crate::{datetime_from_epoch, traits::MsgDecode, Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKey;
-use helium_proto::services::poc_mobile::CellHeartbeatReqV1;
+use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -20,8 +20,18 @@ pub struct CellHeartbeat {
     pub cbsd_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CellHeartbeatIngestReport {
+    pub received_timestamp: DateTime<Utc>,
+    pub report: CellHeartbeat,
+}
+
 impl MsgDecode for CellHeartbeat {
     type Msg = CellHeartbeatReqV1;
+}
+
+impl MsgDecode for CellHeartbeatIngestReport {
+    type Msg = CellHeartbeatIngestReportV1;
 }
 
 impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
@@ -41,6 +51,16 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
     }
 }
 
+impl TryFrom<CellHeartbeatIngestReportV1> for CellHeartbeatIngestReport {
+    type Error = Error;
+    fn try_from(v: CellHeartbeatIngestReportV1) -> Result<Self> {
+        Ok(Self {
+            received_timestamp: Utc.timestamp_millis(v.received_timestamp as i64),
+            report: TryFrom::try_from(v.report.unwrap())?,
+        })
+    }
+}
+
 impl From<CellHeartbeat> for CellHeartbeatReqV1 {
     fn from(v: CellHeartbeat) -> Self {
         Self {
@@ -55,5 +75,50 @@ impl From<CellHeartbeat> for CellHeartbeatReqV1 {
             cbsd_id: v.cbsd_id,
             signature: vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prost::Message;
+
+    fn bytes() -> Vec<u8> {
+        hex::decode("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1").unwrap()
+    }
+
+    #[test]
+    fn decode_proto_heartbeat_ingest_report_to_internal_struct() {
+        let now = Utc::now().timestamp_millis();
+        let report = CellHeartbeatIngestReportV1 {
+            received_timestamp: now as u64,
+            report: Some(CellHeartbeatReqV1 {
+                pub_key: bytes(),
+                hotspot_type: "hotspot".to_string(),
+                cell_id: 123,
+                timestamp: Utc::now().timestamp() as u64,
+                lat: 72.63,
+                lon: 72.53,
+                operation_mode: true,
+                cbsd_category: "category".to_string(),
+                cbsd_id: "id".to_string(),
+                signature: vec![],
+            }),
+        };
+
+        let mut buffer = vec![];
+
+        report
+            .encode(&mut buffer)
+            .expect("unable to encode cell heartbeat request v1");
+
+        let cellheartbeatreport = CellHeartbeatIngestReport::decode(buffer.as_slice())
+            .expect("unable to decode into CellHeartbeat");
+
+        assert_eq!(
+            cellheartbeatreport.received_timestamp,
+            Utc.timestamp_millis(now)
+        );
+        assert_eq!(cellheartbeatreport.report.cell_id, 123);
     }
 }

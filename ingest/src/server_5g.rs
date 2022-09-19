@@ -36,7 +36,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event_id = EventId::from(&event);
 
         let report = SpeedtestIngestReportV1 {
-            report: Some(event.clone()),
+            report: Some(event),
             received_timestamp: timestamp,
         };
 
@@ -63,7 +63,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event_id = EventId::from(&event);
 
         let report = CellHeartbeatIngestReportV1 {
-            report: Some(event.clone()),
+            report: Some(event),
             received_timestamp: timestamp,
         };
 
