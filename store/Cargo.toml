@@ -37,4 +37,5 @@ strum_macros = "0"
 
 [dev-dependencies]
 base64 = "0"
+hex = "0"
 tempfile = "3"
