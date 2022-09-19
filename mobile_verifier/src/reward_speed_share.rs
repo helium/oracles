@@ -215,7 +215,7 @@ mod test {
             0,
             0,
             0,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         let s1 = SpeedShare::new(
             gw_public_key.clone(),
@@ -223,7 +223,7 @@ mod test {
             bytes_per_s(20),
             bytes_per_s(150),
             70,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         let s2 = SpeedShare::new(
             gw_public_key.clone(),
@@ -231,7 +231,7 @@ mod test {
             bytes_per_s(10),
             bytes_per_s(118),
             50,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         let s3 = SpeedShare::new(
             gw_public_key.clone(),
@@ -239,7 +239,7 @@ mod test {
             bytes_per_s(30),
             bytes_per_s(112),
             40,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         let s4 = SpeedShare::new(
             gw_public_key.clone(),
@@ -247,7 +247,7 @@ mod test {
             bytes_per_s(15),
             bytes_per_s(90),
             10,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         let s5 = SpeedShare::new(
             gw_public_key.clone(),
@@ -255,7 +255,7 @@ mod test {
             bytes_per_s(20),
             bytes_per_s(130),
             10,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         let s6 = SpeedShare::new(
             gw_public_key.clone(),
@@ -263,7 +263,7 @@ mod test {
             bytes_per_s(10),
             bytes_per_s(100),
             30,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         let s7 = SpeedShare::new(
             gw_public_key,
@@ -271,7 +271,7 @@ mod test {
             bytes_per_s(30),
             bytes_per_s(70),
             40,
-            Validity::Valid,
+            ShareValidity::Valid,
         );
         shares.push(s0);
         shares.push(s1);

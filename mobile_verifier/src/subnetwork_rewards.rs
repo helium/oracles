@@ -335,6 +335,7 @@ impl SubnetworkRewards {
 
 #[cfg(test)]
 mod test {
+    use super::proto::ShareValidity;
     use crate::{
         cell_type::CellType,
         reward_share::{OwnerEmissions, OwnerResolver, Share, Shares},
@@ -390,19 +391,43 @@ mod test {
         let mut shares = Shares::new();
         shares.insert(
             c1,
-            Share::new(t1, g1.clone(), ct1.reward_weight(), ct1, Validity::Valid),
+            Share::new(
+                t1,
+                g1.clone(),
+                ct1.reward_weight(),
+                ct1,
+                ShareValidity::Valid,
+            ),
         );
         shares.insert(
             c2,
-            Share::new(t2, g2.clone(), ct2.reward_weight(), ct2, Validity::Valid),
+            Share::new(
+                t2,
+                g2.clone(),
+                ct2.reward_weight(),
+                ct2,
+                ShareValidity::Valid,
+            ),
         );
         shares.insert(
             c3,
-            Share::new(t3, g3.clone(), ct3.reward_weight(), ct3, Validity::Valid),
+            Share::new(
+                t3,
+                g3.clone(),
+                ct3.reward_weight(),
+                ct3,
+                ShareValidity::Valid,
+            ),
         );
         shares.insert(
             c4,
-            Share::new(t4, g4.clone(), ct4.reward_weight(), ct4, Validity::Valid),
+            Share::new(
+                t4,
+                g4.clone(),
+                ct4.reward_weight(),
+                ct4,
+                ShareValidity::Valid,
+            ),
         );
 
         // All g1 averages are satifsied
@@ -413,7 +438,7 @@ mod test {
                 2182223,
                 11739568,
                 118,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g1.clone(),
@@ -421,7 +446,7 @@ mod test {
                 2589229,
                 12618734,
                 30,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g1.clone(),
@@ -429,7 +454,7 @@ mod test {
                 11420942,
                 11376519,
                 8,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g1.clone(),
@@ -437,7 +462,7 @@ mod test {
                 7646683,
                 35517840,
                 6,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g1.clone(),
@@ -445,7 +470,7 @@ mod test {
                 7646683,
                 35517840,
                 6,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g1.clone(),
@@ -453,7 +478,7 @@ mod test {
                 8646683,
                 35517840,
                 6,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
         ];
         // The avg latency for g2 is too high, should not appear in hotspot_shares
@@ -464,7 +489,7 @@ mod test {
                 2182223,
                 11739568,
                 118,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g2.clone(),
@@ -472,7 +497,7 @@ mod test {
                 2589229,
                 12618734,
                 30,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g2.clone(),
@@ -480,7 +505,7 @@ mod test {
                 11420942,
                 11376519,
                 40,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g2.clone(),
@@ -488,7 +513,7 @@ mod test {
                 7646683,
                 35517840,
                 60,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g2.clone(),
@@ -496,7 +521,7 @@ mod test {
                 7646683,
                 35517840,
                 55,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g2.clone(),
@@ -504,7 +529,7 @@ mod test {
                 8646683,
                 35517840,
                 58,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
         ];
         // The avg upload speed for g3 is too low, should not appear in hotspot_shares
@@ -515,7 +540,7 @@ mod test {
                 182223,
                 11739568,
                 118,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g1.clone(),
@@ -523,7 +548,7 @@ mod test {
                 589229,
                 12618734,
                 30,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g1.clone(),
@@ -531,11 +556,32 @@ mod test {
                 1420942,
                 11376519,
                 8,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6, Validity::Valid),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6, Validity::Valid),
-            SpeedShare::new(g1.clone(), 1661588886, 646683, 35517840, 6, Validity::Valid),
+            SpeedShare::new(
+                g1.clone(),
+                1661588886,
+                646683,
+                35517840,
+                6,
+                ShareValidity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661588886,
+                646683,
+                35517840,
+                6,
+                ShareValidity::Valid,
+            ),
+            SpeedShare::new(
+                g1.clone(),
+                1661588886,
+                646683,
+                35517840,
+                6,
+                ShareValidity::Valid,
+            ),
         ];
         // The avg download speed for g4 is too low, should not appear in hotspot_shares
         let s4 = vec![
@@ -545,7 +591,7 @@ mod test {
                 2182223,
                 1739568,
                 118,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g4.clone(),
@@ -553,7 +599,7 @@ mod test {
                 2589229,
                 2618734,
                 30,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
             SpeedShare::new(
                 g4.clone(),
@@ -561,11 +607,32 @@ mod test {
                 11420942,
                 1376519,
                 8,
-                Validity::Valid,
+                ShareValidity::Valid,
             ),
-            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6, Validity::Valid),
-            SpeedShare::new(g4.clone(), 1661588886, 7646683, 5517840, 6, Validity::Valid),
-            SpeedShare::new(g4.clone(), 1661588886, 8646683, 5517840, 6, Validity::Valid),
+            SpeedShare::new(
+                g4.clone(),
+                1661588886,
+                7646683,
+                5517840,
+                6,
+                ShareValidity::Valid,
+            ),
+            SpeedShare::new(
+                g4.clone(),
+                1661588886,
+                7646683,
+                5517840,
+                6,
+                ShareValidity::Valid,
+            ),
+            SpeedShare::new(
+                g4.clone(),
+                1661588886,
+                8646683,
+                5517840,
+                6,
+                ShareValidity::Valid,
+            ),
         ];
 
         let mut speed_shares = SpeedShares::new();
@@ -596,8 +663,6 @@ mod test {
 
         // 100M in bones
         assert_eq!(10000000000000000, u64::from(total_owner_emissions));
-
-        let _subnetwork_rewards = SubnetworkRewards::from(owner_emissions);
 
         /*
 
