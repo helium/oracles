@@ -2118,7 +2118,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.3.4",
  "helium-proto",
  "http",
  "metrics",

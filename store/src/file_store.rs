@@ -32,17 +32,17 @@ impl FileStore {
 
     // TODO: Figure out how to better deal with multiple file stores
     pub async fn from_env_with_prefix(prefix: &str) -> Result<FileStore> {
-        let endpoint: Option<Endpoint> = env_var(&format!("{prefix}_BUCKET_ENDPOINT"))?
-            .map_or_else(
-                || Ok(None),
-                |str| Uri::from_str(&str).map(Endpoint::immutable).map(Some),
-            )
-            .map_err(DecodeError::from)?;
-        let region = env_var(&format!("{prefix}_BUCKET_REGION"))?
-            .map_or_else(|| Region::new("us-west-2"), Region::new);
-        let bucket = env_var(&format!("{prefix}_BUCKET"))?
-            .ok_or_else(|| Error::not_found("BUCKET env var not found"))?;
-        FileStore::new(endpoint, region, bucket).await
+        let endpoint: Option<Endpoint> = match env::var(&format!("{prefix}_BUCKET_ENDPOINT")) {
+            Ok(endpoint_env) => Uri::from_str(&endpoint_env)
+                .map(Endpoint::immutable)
+                .map(Some)
+                .map_err(DecodeError::from)?,
+            _ => None,
+        };
+        let region = env::var(&format!("{prefix}_BUCKET_REGION"))
+            .map_or_else(|_| Region::new("us-west-2"), Region::new);
+        let bucket = env::var(&format!("{prefix}_BUCKET"))?;
+        Self::new(endpoint, region, bucket).await
     }
 
     pub async fn new(
