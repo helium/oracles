@@ -11,6 +11,7 @@ User=helium
 PIDFile=/var/run/poc5g-status
 Restart=always
 RestartSec=15
+WorkingDirectory=/opt/poc5g-status
 
 [Install]
 WantedBy=multi-user.target

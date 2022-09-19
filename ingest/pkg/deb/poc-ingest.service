@@ -11,6 +11,7 @@ User=helium
 PIDFile=/var/run/poc-ingest
 Restart=always
 RestartSec=15
+WorkingDirectory=/opt/poc-ingest
 
 [Install]
 WantedBy=multi-user.target

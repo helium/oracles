@@ -11,6 +11,7 @@ User=helium
 PIDFile=/var/run/poc-entropy
 Restart=always
 RestartSec=15
+WorkingDirectory=/opt/poc-entropy
 
 [Install]
 WantedBy=multi-user.target
