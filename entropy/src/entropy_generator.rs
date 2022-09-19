@@ -1,4 +1,4 @@
-use crate::{env_var, Error, Result};
+use crate::{Error, Result};
 use chrono::Utc;
 use futures::TryFutureExt;
 use helium_proto::Entropy as ProtoEntropy;
@@ -10,6 +10,7 @@ use jsonrpsee::{
 use poc_store::file_sink;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::env;
 use tokio::{sync::watch, time};
 
 pub const ENTROPY_TICK_TIME: time::Duration = time::Duration::from_secs(60);
@@ -66,8 +67,7 @@ pub struct EntropyGenerator {
 
 impl EntropyGenerator {
     pub async fn from_env() -> Result<Self> {
-        let url =
-            env_var("ENTROPY_URL")?.ok_or_else(|| Error::not_found("ENTROPY_URL var not found"))?;
+        let url = env::var("ENTROPY_URL")?;
         Self::new(url).await
     }
 

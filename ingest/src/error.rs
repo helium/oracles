@@ -40,6 +40,12 @@ pub enum EncodeError {
     Prost(#[from] helium_proto::EncodeError),
 }
 
+impl Error {
+    pub fn not_found<E: ToString>(msg: E) -> Self {
+        Self::NotFound(msg.to_string())
+    }
+}
+
 impl From<Error> for tonic::Status {
     fn from(v: Error) -> Self {
         match v {

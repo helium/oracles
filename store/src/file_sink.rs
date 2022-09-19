@@ -295,3 +295,75 @@ impl FileSink {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{file_source, FileInfo};
+    use futures::stream::StreamExt;
+    use std::str::FromStr;
+    use tempfile::TempDir;
+    use tokio::fs::DirEntry;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn writes_a_framed_gzip_encoded_file() {
+        let tmp_dir = TempDir::new().expect("Unable to create temp dir");
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let (sender, receiver) = message_channel(10);
+
+        let mut file_sink = FileSinkBuilder::new(FileType::Entropy, &tmp_dir.path(), receiver)
+            .roll_time(chrono::Duration::milliseconds(100))
+            .create()
+            .await
+            .expect("failed to create file sink");
+
+        let sink_thread = tokio::spawn(async move {
+            file_sink
+                .run(&shutdown_listener)
+                .await
+                .expect("failed to complete file sink");
+        });
+
+        sender
+            .try_send(String::into_bytes("hello".to_string()))
+            .expect("failed to send bytes to file sink");
+
+        tokio::time::sleep(time::Duration::from_millis(200)).await;
+
+        shutdown_trigger.trigger();
+        sink_thread.await.expect("file sink did not complete");
+
+        let entropy_file = get_entropy_file(&tmp_dir).await;
+        assert_eq!("hello", read_file(&entropy_file).await);
+    }
+
+    async fn read_file(entry: &DirEntry) -> bytes::BytesMut {
+        file_source::source([entry.path()])
+            .next()
+            .await
+            .unwrap()
+            .expect("invalid data in file")
+    }
+
+    async fn get_entropy_file(tmp_dir: &TempDir) -> DirEntry {
+        let mut entries = fs::read_dir(tmp_dir.path())
+            .await
+            .expect("failed to read tmp dir");
+
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            if is_entropy_file(&entry) {
+                return entry;
+            }
+        }
+
+        panic!("no entropy file available")
+    }
+
+    fn is_entropy_file(entry: &DirEntry) -> bool {
+        entry
+            .file_name()
+            .to_str()
+            .and_then(|file_name| FileInfo::from_str(file_name).ok())
+            .map_or(false, |file_info| file_info.file_type == FileType::Entropy)
+    }
+}

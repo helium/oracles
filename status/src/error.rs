@@ -6,6 +6,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("environment error")]
     DotEnv(#[from] dotenv::Error),
+    #[error("env error")]
+    Env(#[from] std::env::VarError),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
     #[error("io error")]
@@ -48,6 +50,8 @@ pub enum DecodeError {
     Decimals(String),
     #[error("base64 error")]
     Base64(#[from] base64::DecodeError),
+    #[error("socket addr error")]
+    SocketAddr(#[from] std::net::AddrParseError),
 }
 
 #[derive(Error, Debug)]
@@ -88,6 +92,7 @@ from_err!(EncodeError, serde_json::Error);
 from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);
 from_err!(DecodeError, chrono::ParseError);
+from_err!(DecodeError, std::net::AddrParseError);
 
 impl From<Error> for (http::StatusCode, String) {
     fn from(v: Error) -> Self {

@@ -1,5 +1,6 @@
 use crate::{
     entropy_generator::{Entropy, MessageReceiver, ENTROPY_TICK_TIME},
+    error::DecodeError,
     Error, Result,
 };
 use axum::{
@@ -12,7 +13,7 @@ use axum::{
 };
 use chrono::Utc;
 use futures_util::TryFutureExt;
-use std::{io, net::SocketAddr};
+use std::net::SocketAddr;
 use tokio::{sync::watch, time::Duration};
 use tower_http::trace::TraceLayer;
 
@@ -23,19 +24,9 @@ pub struct ApiServer {
 
 impl ApiServer {
     pub async fn from_env(entropy_watch: MessageReceiver) -> Result<Self> {
-        let socket_addr = dotenv::var("API_SOCKET_ADDR").and_then(|v| {
-            v.parse::<SocketAddr>().map_err(|_| {
-                dotenv::Error::Io(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "invalid api socket address",
-                ))
-            })
-        })?;
-
-        metrics::describe_histogram!(
-            "ingest_server_get_entropy_duration",
-            "Refers to the duration of fetching cached entropy"
-        );
+        let socket_addr_env =
+            std::env::var("API_SOCKET_ADDR").unwrap_or_else(|_| String::from("0.0.0.0:8080"));
+        let socket_addr: SocketAddr = socket_addr_env.parse().map_err(DecodeError::from)?;
 
         let app = Router::new()
             // health
