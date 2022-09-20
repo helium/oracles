@@ -1,6 +1,7 @@
-use crate::{gateway::Gateway, meta::Meta, mk_db_pool, PublicKey, Result};
+use crate::{gateway::Gateway, meta::Meta, mk_db_pool, Result};
 use chrono::{Duration, Utc};
 use futures::{stream, StreamExt};
+use helium_crypto::PublicKey;
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
     Message,

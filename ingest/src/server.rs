@@ -1,5 +1,6 @@
-use crate::{error::DecodeError, Error, EventId, PublicKey, Result};
+use crate::{error::DecodeError, Error, EventId, Result};
 use futures_util::TryFutureExt;
+use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
 };
@@ -23,7 +24,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         request: Request<SpeedtestReqV1>,
     ) -> GrpcResult<SpeedtestRespV1> {
         let event = request.into_inner();
-        let public_key = PublicKey::try_from(&event.pub_key)
+        let public_key = PublicKey::try_from(event.pub_key.as_ref())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
         event
             .verify(&public_key)
@@ -44,7 +45,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
         let event = request.into_inner();
-        let public_key = PublicKey::try_from(&event.pub_key)
+        let public_key = PublicKey::try_from(event.pub_key.as_slice())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
         event
             .verify(&public_key)

@@ -1,5 +1,6 @@
-use crate::{Error, PublicKey, Result};
+use crate::{Error, Result};
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKey;
 use poc_store::datetime_from_epoch;
 use serde::{Deserialize, Serialize};
 use std::cmp::min;

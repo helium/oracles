@@ -1,5 +1,5 @@
-use crate::{Error, PublicKey, Result};
-use helium_crypto::Verify;
+use crate::{Error, Result};
+use helium_crypto::{PublicKey, Verify};
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
     Message,
@@ -17,10 +17,7 @@ macro_rules! impl_msg_verify {
                 let mut msg = self.clone();
                 msg.$sig = vec![];
                 msg.encode(&mut buf)?;
-                verifier
-                    .as_ref()
-                    .verify(&buf, &self.$sig)
-                    .map_err(Error::from)
+                verifier.verify(&buf, &self.$sig).map_err(Error::from)
             }
         }
     };

@@ -39,7 +39,7 @@ metrics-exporter-prometheus = "0"
 helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
-helium-crypto = { git = "https://github.com/helium/helium-crypto-rs", tag = "v0.3.4" }
+helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}
 poc-store = { path = "../store" }
 poc-metrics = { path = "../metrics" }
 

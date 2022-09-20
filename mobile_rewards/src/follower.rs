@@ -1,8 +1,9 @@
 use crate::{
     subnetwork_rewards::RewardPeriod, token_type::BlockchainTokenTypeV1, traits::OwnerResolver,
-    PublicKey, Result,
+    Result,
 };
 use async_trait::async_trait;
+use helium_crypto::PublicKey;
 use helium_proto::{
     services::{
         follower::{

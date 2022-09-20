@@ -1,7 +1,7 @@
 use crate::{
     error::DecodeError,
     gateway::{After, Gateway},
-    mk_db_pool, Error, PublicKey, Result,
+    mk_db_pool, Error, Result,
 };
 use axum::{
     extract::{Extension, Path, Query},
@@ -10,6 +10,7 @@ use axum::{
     Json, Router,
 };
 use futures::TryFutureExt;
+use helium_crypto::PublicKey;
 use poc_metrics::record_duration;
 use serde_json::Value;
 use sqlx::PgPool;

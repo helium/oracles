@@ -1,5 +1,5 @@
-use crate::{Keypair, PublicKey, Result};
-use helium_crypto::Verify;
+use crate::{Keypair, Result};
+use helium_crypto::{PublicKey, Verify};
 use helium_proto::{BlockchainTxnSubnetworkRewardsV1, Message};
 
 pub trait TxnSign: Message + std::clone::Clone {
