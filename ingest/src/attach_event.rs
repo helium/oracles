@@ -1,5 +1,6 @@
-use crate::{Imsi, PublicKey};
+use crate::Imsi;
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKey;
 use serde::Deserialize;
 
 #[derive(Deserialize)]

@@ -1,5 +1,6 @@
-use crate::{datetime_from_epoch, traits::MsgDecode, Error, PublicKey, Result};
+use crate::{datetime_from_epoch, traits::MsgDecode, Error, Result};
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::CellHeartbeatReqV1;
 use serde::{Deserialize, Serialize};
 

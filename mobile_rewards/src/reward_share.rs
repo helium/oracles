@@ -10,9 +10,9 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 
 use crate::{
-    subnetwork_rewards::SubnetworkRewards, traits::OwnerResolver, CellType, Mobile, PublicKey,
-    Result,
+    subnetwork_rewards::SubnetworkRewards, traits::OwnerResolver, CellType, Mobile, Result,
 };
+use helium_crypto::PublicKey;
 use std::collections::HashMap;
 
 /// Map from cbsd_id to share
@@ -172,7 +172,7 @@ pub async fn gather_shares(
         }
 
         if let Some(cell_type) = CellType::from_cbsd_id(&cbsd_id) {
-            if let Ok(gw_pubkey) = PublicKey::try_from(&pub_key) {
+            if let Ok(gw_pubkey) = PublicKey::try_from(pub_key.as_slice()) {
                 let share = Share::new(timestamp, gw_pubkey, cell_type.reward_weight(), cell_type);
 
                 if shares

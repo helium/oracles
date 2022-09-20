@@ -6,7 +6,6 @@ pub mod follower;
 pub mod keypair;
 pub mod meta;
 pub mod pending_txn;
-mod public_key;
 pub mod reward_share;
 pub mod server;
 pub mod subnetwork_reward;
@@ -22,7 +21,6 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
 pub use keypair::Keypair;
-pub use public_key::PublicKey;
 pub use uuid::Uuid;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
