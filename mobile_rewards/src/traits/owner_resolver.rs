@@ -1,5 +1,6 @@
-use crate::{PublicKey, Result};
+use crate::Result;
 use async_trait::async_trait;
+use helium_crypto::PublicKey;
 
 #[async_trait]
 pub trait OwnerResolver {

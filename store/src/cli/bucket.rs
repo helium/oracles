@@ -1,9 +1,10 @@
 use crate::{
     datetime_from_naive, heartbeat::CellHeartbeat, speedtest::CellSpeedtest, traits::MsgDecode,
-    Error, FileInfoStream, FileStore, FileType, PublicKey, Result,
+    Error, FileInfoStream, FileStore, FileType, Result,
 };
 use chrono::NaiveDateTime;
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
+use helium_crypto::PublicKey;
 use serde::{ser::SerializeSeq, Serializer};
 use std::{
     io,

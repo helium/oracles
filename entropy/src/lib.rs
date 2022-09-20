@@ -3,7 +3,6 @@ mod error;
 pub mod server;
 
 pub use error::{Error, Result};
-pub use poc_store::public_key::PublicKey;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 
