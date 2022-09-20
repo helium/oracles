@@ -27,6 +27,7 @@ pub enum BucketCmd {
     Rm(Remove),
     Put(Put),
     Get(Get),
+    Locate(Locate),
 }
 
 impl Cmd {
@@ -42,6 +43,7 @@ impl BucketCmd {
             Self::Rm(cmd) => cmd.run(settings).await,
             Self::Put(cmd) => cmd.run(settings).await,
             Self::Get(cmd) => cmd.run(settings).await,
+            Self::Locate(cmd) => cmd.run(settings).await,
         }
     }
 }
