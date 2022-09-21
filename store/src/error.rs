@@ -6,6 +6,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("io error")]
     Io(#[from] std::io::Error),
+    #[error("custom error")]
+    Custom(String),
     #[error("encode error")]
     Encode(#[from] EncodeError),
     #[error("dencode error")]
@@ -65,7 +67,9 @@ impl Error {
     pub fn not_found<E: ToString>(msg: E) -> Self {
         Self::NotFound(msg.to_string())
     }
-
+    pub fn custom<E: ToString>(msg: E) -> Self {
+        Self::Custom(msg.to_string())
+    }
     pub fn channel() -> Error {
         Error::Channel
     }

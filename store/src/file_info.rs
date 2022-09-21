@@ -93,6 +93,11 @@ impl FileInfo {
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const ENTROPY: &str = "entropy";
+pub const LORA_BEACON_INGEST_REPORT: &str = "lora_beacon_ingest_report";
+pub const LORA_WITNESS_INGEST_REPORT: &str = "lora_witness_ingest_report";
+pub const LORA_VALID_POC: &str = "lora_valid_poc";
+pub const LORA_INVALID_BEACON_REPORT: &str = "lora_invalid_beacon";
+pub const LORA_INVALID_WITNESS_REPORT: &str = "lora_invalid_witness";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -100,6 +105,11 @@ pub enum FileType {
     CellHeartbeat,
     CellSpeedtest,
     Entropy,
+    LoraBeaconIngestReport,
+    LoraWitnessIngestReport,
+    LoraValidPoc,
+    LoraInvalidBeaconReport,
+    LoraInvalidWitnessReport,
 }
 
 impl fmt::Display for FileType {
@@ -108,6 +118,11 @@ impl fmt::Display for FileType {
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::Entropy => ENTROPY,
+            Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
+            Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
+            Self::LoraValidPoc => LORA_VALID_POC,
+            Self::LoraInvalidBeaconReport => LORA_INVALID_BEACON_REPORT,
+            Self::LoraInvalidWitnessReport => LORA_INVALID_WITNESS_REPORT,
         };
         f.write_str(s)
     }
@@ -119,6 +134,11 @@ impl FileType {
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::Entropy => ENTROPY,
+            Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
+            Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
+            Self::LoraValidPoc => LORA_VALID_POC,
+            Self::LoraInvalidBeaconReport => LORA_INVALID_BEACON_REPORT,
+            Self::LoraInvalidWitnessReport => LORA_INVALID_WITNESS_REPORT,
         }
     }
 }
@@ -130,6 +150,11 @@ impl FromStr for FileType {
             CELL_HEARTBEAT => Self::CellHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
             ENTROPY => Self::Entropy,
+            LORA_BEACON_INGEST_REPORT => Self::LoraBeaconIngestReport,
+            LORA_WITNESS_INGEST_REPORT => Self::LoraWitnessIngestReport,
+            LORA_VALID_POC => Self::LoraValidPoc,
+            LORA_INVALID_BEACON_REPORT => Self::LoraInvalidBeaconReport,
+            LORA_INVALID_WITNESS_REPORT => Self::LoraInvalidWitnessReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

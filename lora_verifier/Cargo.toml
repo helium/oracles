@@ -1,0 +1,37 @@
+[package]
+name = "poclora-verifier"
+version = "0.1.0"
+edition = "2021"
+description = "PoC Verifier Server for the Helium Lora Network"
+authors = ["Andrew McKenzie <andrewm@nova.xyz>"]
+license = "Apache-2.0"
+
+[dependencies]
+dotenv = "0"
+thiserror = "1"
+serde =  {version = "1", features=["derive"]}
+serde_json = "1"
+clap = {version = "3", features = ["derive"]}
+sqlx = {version = "0", features = ["postgres", "uuid", "decimal", "chrono", "migrate", "macros", "runtime-tokio-rustls"]}
+tokio = { version = "1", default-features=false, features=["fs", "macros", "signal", "rt-multi-thread", "rt"] }
+tracing = "0"
+tracing-subscriber = { version = "0", features = ["env-filter"] }
+base64 = "0"
+sha2 = "*"
+http = "*"
+tonic = "0"
+chrono = {version = "0", features = ["serde"]}
+triggered = "0"
+futures = "*"
+futures-util = "*"
+prost = "*"
+hyper = "*"
+axum = "0"
+async-compression = {version = "0", features = ["tokio", "gzip"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4"}
+poc-store = { path = "../store" }
+async-trait = "*"
+lazy_static = "*"
+once_cell = "1"
+

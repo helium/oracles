@@ -1258,7 +1258,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#81fe0a4de38aad4e1a9044623769724419725389"
+source = "git+https://github.com/helium/proto?branch=master#571b71f48faf45ce5d09a3245aa9a782b6fb2a6d"
 dependencies = [
  "bytes",
  "prost",
@@ -2033,33 +2033,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "poc-iot-injector"
-version = "0.1.0"
-dependencies = [
- "base64",
- "clap",
- "dotenv",
- "futures",
- "futures-util",
- "helium-crypto",
- "helium-proto",
- "http",
- "metrics",
- "metrics-exporter-prometheus",
- "poc-metrics",
- "prost",
- "rand",
- "serde",
- "serde_json",
- "sha2 0.10.6",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "poc-metrics"
 version = "0.1.0"
 dependencies = [
@@ -2136,6 +2109,39 @@ dependencies = [
  "tokio",
  "tonic",
  "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
+name = "poclora-verifier"
+version = "0.1.0"
+dependencies = [
+ "async-compression",
+ "async-trait",
+ "axum",
+ "base64",
+ "chrono",
+ "clap",
+ "dotenv",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "hyper",
+ "lazy_static",
+ "once_cell",
+ "poc-store",
+ "prost",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "triggered",
