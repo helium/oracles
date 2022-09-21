@@ -11,6 +11,7 @@ dotenv = "0"
 clap = {version = "3", features = ["derive"]}
 serde =  {version = "1", features=["derive"]}
 serde_json = "1"
+sqlx = {version = "0", features = ["postgres", "uuid", "decimal", "chrono", "migrate", "macros", "runtime-tokio-rustls"]}
 thiserror = "1"
 tokio = { version = "1", default-features=false, features=["fs", "rt-multi-thread"] }
 tokio-util = "0"

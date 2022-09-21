@@ -2146,6 +2146,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sqlx",
  "strum",
  "strum_macros",
  "tempfile",

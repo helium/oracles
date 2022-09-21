@@ -28,6 +28,8 @@ pub enum Error {
     NotFound(String),
     #[error("transaction error")]
     TransactionError(String),
+    #[error("meta error")]
+    MetaError(#[from] poc_store::MetaError),
 }
 
 #[derive(Error, Debug)]
