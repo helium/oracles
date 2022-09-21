@@ -195,7 +195,7 @@ impl Loader {
             }
             _ => {
                 tracing::warn!("ignoring unexpected filetype: {file_type:?}");
-                return Ok(());
+                Ok(())
             }
         }
     }

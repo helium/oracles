@@ -43,6 +43,6 @@ impl FollowerService {
             address: address.to_vec(),
         };
         let res = self.client.find_gateway(req).await?.into_inner();
-        return Ok(res);
+        Ok(res)
     }
 }

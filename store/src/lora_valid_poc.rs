@@ -47,7 +47,7 @@ impl TryFrom<LoraValidPocV1> for LoraValidPoc {
         }
         Ok(Self {
             poc_id: v.poc_id,
-            beacon_report: beacon_report,
+            beacon_report,
             witness_reports: witnesses,
         })
     }

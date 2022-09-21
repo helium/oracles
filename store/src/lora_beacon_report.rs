@@ -36,7 +36,7 @@ impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconIngestReport {
         //TODO: fix this to return error is not valid value
         // let data_rate: DataRate = DataRate::from_i32(v.datarate).unwrap();
         let data_rate: DataRate =
-            DataRate::from_i32(v.datarate).ok_or(Error::custom(format!("unsupported datarate")))?;
+            DataRate::from_i32(v.datarate).ok_or_else(|| Error::custom("unsupported datarate"))?;
         Ok(Self {
             received_timestamp: Utc::now(),
             report: LoraBeaconReport {
@@ -62,7 +62,7 @@ impl TryFrom<LoraBeaconIngestReportV1> for LoraBeaconIngestReport {
         //TODO: fix this to return error is not valid value
         // let data_rate: DataRate = DataRate::from_i32(v.datarate).unwrap();
         let data_rate: DataRate = DataRate::from_i32(report.datarate)
-            .ok_or(Error::custom(format!("unsupported datarate")))?;
+            .ok_or_else(|| Error::custom("unsupported datarate"))?;
         Ok(Self {
             received_timestamp: datetime_from_epoch(report.timestamp),
             report: LoraBeaconReport {

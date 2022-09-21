@@ -56,7 +56,7 @@ impl Runner {
 
         let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraInvalidBeaconReport,
-            &store_base_path,
+            store_base_path,
             lora_invalid_beacon_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
@@ -65,7 +65,7 @@ impl Runner {
 
         let mut lora_invalid_witness_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraInvalidWitnessReport,
-            &store_base_path,
+            store_base_path,
             lora_invalid_witness_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
@@ -74,7 +74,7 @@ impl Runner {
 
         let mut lora_valid_poc_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraValidPoc,
-            &store_base_path,
+            store_base_path,
             lora_valid_poc_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
@@ -142,7 +142,7 @@ impl Runner {
             let beacon_report = LoraBeaconIngestReportV1::decode(beacon_buf)?;
             let beacon = beacon_report.report.clone().unwrap();
             let beaconer_pub_key = &beacon.pub_key;
-            let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, &packet_data).await?;
+            let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
             // get the beacon and witness report PBs from the db reports
             let mut witnesses: Vec<LoraWitnessIngestReportV1> = Vec::new();
             for db_witness in db_witnesses {
@@ -156,7 +156,7 @@ impl Runner {
 
             // is beaconer allower to beacon at this time ?
             // any irregularily timed beacons will be rejected
-            match LastBeacon::get(&self.pool, &beaconer_pub_key).await? {
+            match LastBeacon::get(&self.pool, beaconer_pub_key).await? {
                 Some(last_beacon) => {
                     let beacon_received_ts = datetime_from_epoch(beacon_report.received_timestamp);
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
@@ -175,7 +175,6 @@ impl Runner {
                 }
                 None => {
                     tracing::info!("no last beacon timestamp available");
-                    () // no previous beacon from this gateway, continue                    ()
                 }
             }
 
@@ -212,7 +211,7 @@ impl Runner {
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
                     // and halt here, let things be reprocessed next tick
-                    if verified_witnesses_result.failed_witnesses.len() > 0 {
+                    if !verified_witnesses_result.failed_witnesses.is_empty() {
                         for failed_witness in verified_witnesses_result.failed_witnesses {
                             // something went wrong whilst verifying witnesses
                             // halt here and allow things to be reprocessed next tick
@@ -293,7 +292,7 @@ impl Runner {
             reason: invalid_reason as i32,
             report: Some(beacon),
         };
-        file_sink::write(&lora_valid_poc_tx, invalid_poc).await?;
+        file_sink::write(lora_valid_poc_tx, invalid_poc).await?;
         for witness_report in witness_reports {
             let witness = witness_report.report.unwrap();
             let invalid_witness_report: LoraInvalidWitnessReportV1 = LoraInvalidWitnessReportV1 {
@@ -302,7 +301,7 @@ impl Runner {
                 reason: invalid_reason as i32,
                 participant_side: InvalidParticipantSide::Beaconer as i32,
             };
-            file_sink::write(&lora_invalid_witness_tx, invalid_witness_report).await?;
+            file_sink::write(lora_invalid_witness_tx, invalid_witness_report).await?;
         }
         // update beacon and all witness reports in the db for this beacon id to invalid
         Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
@@ -339,7 +338,7 @@ impl Runner {
         // write out any invalid witnesses
         let invalid_witnesses = witnesses_result.invalid_witnesses;
         for invalid_witness_report in invalid_witnesses {
-            file_sink::write(&lora_invalid_witness_tx, invalid_witness_report.clone()).await?;
+            file_sink::write(lora_invalid_witness_tx, invalid_witness_report.clone()).await?;
             let invalid_witness = invalid_witness_report.report.unwrap();
             // update the witness record in the db
             // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?

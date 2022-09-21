@@ -97,8 +97,7 @@ impl Poc {
         // verify the beaconer's remote entropy
         // if beacon received timestamp is outside of entopy start/end then reject the poc
         let beacon_received_time = datetime_from_epoch(self.beacon_report.received_timestamp);
-        if &beacon_received_time < &self.entropy_start || &beacon_received_time > &self.entropy_end
-        {
+        if beacon_received_time < self.entropy_start || beacon_received_time > self.entropy_end {
             let resp = VerifyBeaconResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::BadEntropy),
@@ -122,19 +121,15 @@ impl Poc {
         // check beaconer is permitted to participate in POC
         // TODO implement capabilities mask
         let staking_mode = GatewayStakingMode::from_i32(beaconer_info.staking_mode);
-        match staking_mode {
-            Some(GatewayStakingMode::Dataonly) => {
-                let resp = VerifyBeaconResult {
-                    result: VerificationStatus::Invalid,
-                    invalid_reason: Some(InvalidReason::InvalidCapability),
-                    gateway_info: Some(beaconer_info),
-                    hex_scale: None,
-                };
-                return Ok(resp);
-            }
-            _ => (),
+        if let Some(GatewayStakingMode::Dataonly) = staking_mode {
+            let resp = VerifyBeaconResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::InvalidCapability),
+                gateway_info: Some(beaconer_info),
+                hex_scale: None,
+            };
+            return Ok(resp);
         }
-
         // TODO: insert hex scale lookup here
         //       value hardcoded to 1.0 temporarily
 
@@ -145,7 +140,8 @@ impl Poc {
             gateway_info: Some(beaconer_info),
             hex_scale: Some(1.0),
         };
-        return Ok(resp);
+
+        Ok(resp)
     }
 
     pub async fn verify_witnesses(&mut self) -> Result<VerifyWitnessesResult> {
@@ -190,11 +186,12 @@ impl Poc {
             }
         }
         let resp = VerifyWitnessesResult {
-            invalid_witnesses: invalid_witnesses,
-            valid_witnesses: valid_witnesses,
-            failed_witnesses: failed_witnesses,
+            invalid_witnesses,
+            valid_witnesses,
+            failed_witnesses,
         };
-        return Ok(resp);
+
+        Ok(resp)
     }
 
     async fn verify_witness(
@@ -232,7 +229,7 @@ impl Poc {
 
         // if beacon timestamp is outside of entopy start/end then reject the poc
         let witness_packet_time = datetime_from_epoch(witness.timestamp);
-        if &witness_packet_time < &self.entropy_start || &witness_packet_time > &self.entropy_end {
+        if witness_packet_time < self.entropy_start || witness_packet_time > self.entropy_end {
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::EntropyExpired),
@@ -254,16 +251,13 @@ impl Poc {
         // check beaconer is permitted to participate in POC
         // TODO implement capabilities mask or is mode check sufficient these days?
         let staking_mode = GatewayStakingMode::from_i32(witness_info.staking_mode);
-        match staking_mode {
-            Some(GatewayStakingMode::Dataonly) => {
-                let resp = VerifyWitnessResult {
-                    result: VerificationStatus::Invalid,
-                    invalid_reason: Some(InvalidReason::InvalidCapability),
-                    gateway_info: Some(witness_info),
-                };
-                return Ok(resp);
-            }
-            _ => (),
+        if let Some(GatewayStakingMode::Dataonly) = staking_mode {
+            let resp = VerifyWitnessResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::InvalidCapability),
+                gateway_info: Some(witness_info),
+            };
+            return Ok(resp);
         }
 
         //TODO: Plugin Jay's crate here when ready
@@ -283,6 +277,7 @@ impl Poc {
             invalid_reason: None,
             gateway_info: Some(witness_info),
         };
-        return Ok(resp);
+
+        Ok(resp)
     }
 }
