@@ -67,18 +67,6 @@ impl OwnerEmissions {
         OwnerEmissions(owner_emissions)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn total_emissions(&self) -> Mobile {
-        Mobile::from(
-            self.0
-                .values()
-                .fold(dec!(0), |acc, amt| acc + amt.into_inner()),
-        )
-    }
-
     pub fn into_inner(self) -> HashMap<PublicKey, Mobile> {
         self.0
     }
