@@ -198,7 +198,9 @@ impl SubnetworkRewards {
             "invalid_shares",
             after_ts,
             before_ts,
-            &invalid_shares,
+            &proto::Shares {
+                shares: invalid_shares,
+            },
         )
         .await?;
 
