@@ -11,22 +11,9 @@ pub mod subnetwork_rewards;
 pub use error::{Error, Result};
 pub use server::Server;
 
-use poc_store::FileStore;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::io;
-
-pub async fn write_message<T: prost::Message>(
-    file_store: &FileStore,
-    fname_prefix: &str,
-    after_ts: u64,
-    before_ts: u64,
-    data: &T,
-) -> Result {
-    let fname = format!("{}-{}-{}.json", fname_prefix, after_ts, before_ts);
-    file_store.put_bytes(&fname, data.encode_to_vec()).await?;
-    Ok(())
-}
 
 pub fn env_var<T>(key: &str, default: T) -> Result<T>
 where

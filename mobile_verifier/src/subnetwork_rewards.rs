@@ -5,7 +5,6 @@ use crate::{
         self, cell_shares, hotspot_shares, GatheredShares, OwnerEmissions, OwnerResolver,
     },
     reward_speed_share::SpeedShare,
-    write_message,
 };
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
@@ -333,6 +332,18 @@ impl SubnetworkRewards {
 
         Ok(())
     }
+}
+
+pub async fn write_message<T: prost::Message>(
+    file_store: &FileStore,
+    fname_prefix: &str,
+    after_ts: u64,
+    before_ts: u64,
+    data: &T,
+) -> Result {
+    let fname = format!("{}-{}-{}.json", fname_prefix, after_ts, before_ts);
+    file_store.put_bytes(&fname, data.encode_to_vec()).await?;
+    Ok(())
 }
 
 #[cfg(test)]
