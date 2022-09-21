@@ -95,7 +95,7 @@ impl FileStore {
                                 None
                             }
                         })
-                        .filter(move |info| after.map_or(true, |v| info.timestamp > v))
+                        .filter(move |info| after.map_or(true, |v| info.timestamp >= v))
                         .filter(move |info| before.map_or(true, |v| info.timestamp <= v))
                         .map(Ok);
                     stream::iter(filtered).boxed()
