@@ -1,11 +1,9 @@
 use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
+use helium_proto::services::poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1};
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
     Message,
-};
-use helium_proto::{
-    services::poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
 };
 
 pub trait MsgVerify {
@@ -63,5 +61,4 @@ mod test {
         assert!(msg.verify(&public_key).is_ok());
     }
     // TODO: Add tests for lora beacon and witness reports
-
 }
