@@ -212,47 +212,21 @@ impl GatheredShares {
         Ok(shares)
     }
 
-    fn gather_speedtest(
-        &mut self,
-        speedtest_req_v1: SpeedtestReqV1,
-        after_utc: u64,
-        before_utc: u64,
-    ) {
-        let SpeedtestReqV1 {
-            pub_key: st_pub_key,
-            timestamp: st_timestamp,
-            upload_speed: st_upload_speed,
-            download_speed: st_download_speed,
-            latency: st_latency,
-            ..
-        } = speedtest_req_v1;
+    fn gather_speedtest(&mut self, speedtest_req: SpeedtestReqV1, after_utc: u64, before_utc: u64) {
+        // TODO: Better error handling for bad public keys
+        let mut speed_share = match SpeedShare::try_from(speedtest_req) {
+            Ok(share) => share,
+            Err(_) => return,
+        };
 
-        if st_timestamp < after_utc || st_timestamp >= before_utc {
-            self.invalid_speed_shares.push(SpeedShare {
-                pub_key: PublicKey::try_from(st_pub_key.as_ref()).unwrap(),
-                timestamp: st_timestamp,
-                upload_speed: st_upload_speed,
-                download_speed: st_download_speed,
-                latency: st_latency,
-                validity: ShareValidity::HeartbeatOutsideRange,
-            });
-            return;
-        }
-
-        if let Ok(gw_public_key) = PublicKey::try_from(st_pub_key.as_ref()) {
-            let share = SpeedShare::new(
-                gw_public_key.clone(),
-                st_timestamp,
-                st_upload_speed,
-                st_download_speed,
-                st_latency,
-                ShareValidity::Valid,
-            );
-
+        if speed_share.timestamp < after_utc || speed_share.timestamp >= before_utc {
+            speed_share.validity = ShareValidity::HeartbeatOutsideRange;
+            self.invalid_speed_shares.push(speed_share);
+        } else {
             self.speed_shares
-                .entry(gw_public_key)
+                .entry(speed_share.pub_key.clone())
                 .or_default()
-                .push(share);
+                .push(speed_share);
             self.speed_shares_moving_avg.update(&self.speed_shares)
         }
     }

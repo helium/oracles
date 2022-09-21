@@ -1,6 +1,6 @@
 //use crate::PublicKey;
 use helium_proto::services::poc_mobile::{
-    Average as AverageProto, ShareValidity, SpeedShare as SpeedShareProto,
+    Average as AverageProto, ShareValidity, SpeedShare as SpeedShareProto, SpeedtestReqV1,
 };
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -141,6 +141,21 @@ pub struct SpeedShare {
     pub download_speed: u64,
     pub latency: u32,
     pub validity: ShareValidity,
+}
+
+impl TryFrom<SpeedtestReqV1> for SpeedShare {
+    type Error = helium_crypto::Error;
+
+    fn try_from(speed_test: SpeedtestReqV1) -> Result<Self, Self::Error> {
+        Ok(Self {
+            pub_key: PublicKey::try_from(speed_test.pub_key.as_ref())?,
+            timestamp: speed_test.timestamp,
+            upload_speed: speed_test.upload_speed,
+            download_speed: speed_test.download_speed,
+            latency: speed_test.latency,
+            validity: ShareValidity::Valid,
+        })
+    }
 }
 
 impl From<SpeedShare> for SpeedShareProto {
