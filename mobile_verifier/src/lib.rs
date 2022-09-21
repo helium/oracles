@@ -16,7 +16,7 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::io;
 
-pub async fn write_json<T: ?Sized + serde::Serialize>(
+pub async fn write_message<T: prost::Message>(
     file_store: &FileStore,
     fname_prefix: &str,
     after_ts: u64,
@@ -24,9 +24,7 @@ pub async fn write_json<T: ?Sized + serde::Serialize>(
     data: &T,
 ) -> Result {
     let fname = format!("{}-{}-{}.json", fname_prefix, after_ts, before_ts);
-    file_store
-        .put_bytes(&fname, serde_json::to_string_pretty(data)?.into_bytes())
-        .await?;
+    file_store.put_bytes(&fname, data.encode_to_vec()).await?;
     Ok(())
 }
 

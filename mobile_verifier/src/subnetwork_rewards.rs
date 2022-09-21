@@ -5,7 +5,7 @@ use crate::{
         self, cell_shares, hotspot_shares, GatheredShares, OwnerEmissions, OwnerResolver,
     },
     reward_speed_share::SpeedShare,
-    write_json,
+    write_message,
 };
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
@@ -136,7 +136,7 @@ impl SubnetworkRewards {
             rewards,
         } = self;
 
-        write_json(
+        write_message(
             file_store,
             "file_list",
             after_ts,
@@ -155,7 +155,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "shares",
             after_ts,
@@ -176,7 +176,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "speed_shares",
             after_ts,
@@ -193,7 +193,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "invalid_shares",
             after_ts,
@@ -202,7 +202,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "invalid_speed_shares",
             after_ts,
@@ -223,7 +223,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "speed_shares_moving_avg",
             after_ts,
@@ -251,7 +251,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "cell_shares",
             after_ts,
@@ -268,7 +268,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "hotspot_shares",
             after_ts,
@@ -285,7 +285,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "owner_shares",
             after_ts,
@@ -302,7 +302,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "missing_owner_shares",
             after_ts,
@@ -320,7 +320,7 @@ impl SubnetworkRewards {
         )
         .await?;
 
-        write_json(
+        write_message(
             file_store,
             "subnetwork_rewards",
             after_ts,
