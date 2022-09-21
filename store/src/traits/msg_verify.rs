@@ -40,7 +40,7 @@ mod test {
                 .as_ref(),
         )
         .expect("cell heartbeat");
-        let public_key = PublicKey::try_from(&msg.pub_key).expect("public key");
+        let public_key = PublicKey::from_bytes(&msg.pub_key).expect("public key");
         assert!(msg.verify(&public_key).is_ok());
     }
 
@@ -54,7 +54,7 @@ mod test {
                 .as_ref(),
         )
         .expect("cell speedtest");
-        let public_key = PublicKey::try_from(&msg.pub_key).expect("public key");
+        let public_key = PublicKey::from_bytes(&msg.pub_key).expect("public key");
         assert!(msg.verify(&public_key).is_ok());
     }
 }
