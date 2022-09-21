@@ -258,7 +258,7 @@ impl GatheredShares {
                 return;
             }
 
-            if let Ok(gw_pubkey) = PublicKey::try_from(hb_pub_key.as_ref()) {
+            if let Ok(gw_pubkey) = PublicKey::try_from(hb_pub_key.as_slice()) {
                 let share = Share::new(
                     hb_timestamp,
                     gw_pubkey,

@@ -1,4 +1,3 @@
-//use crate::PublicKey;
 use helium_proto::services::poc_mobile::{
     Average as AverageProto, ShareValidity, SpeedShare as SpeedShareProto, SpeedtestReqV1,
 };
