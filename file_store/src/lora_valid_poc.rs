@@ -9,7 +9,7 @@ use helium_proto::services::poc_lora::{
 };
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct LoraValidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
     pub location: String,
@@ -17,7 +17,7 @@ pub struct LoraValidBeaconReport {
     pub report: LoraBeaconReport,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct LoraValidWitnessReport {
     pub received_timestamp: DateTime<Utc>,
     pub location: String,
@@ -25,7 +25,7 @@ pub struct LoraValidWitnessReport {
     pub report: LoraWitnessReport,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct LoraValidPoc {
     pub poc_id: Vec<u8>,
     pub beacon_report: LoraValidBeaconReport,
@@ -48,6 +48,23 @@ impl TryFrom<LoraValidPocV1> for LoraValidPoc {
         Ok(Self {
             poc_id: v.poc_id,
             beacon_report,
+            witness_reports: witnesses,
+        })
+    }
+}
+
+impl TryFrom<LoraValidPoc> for LoraValidPocV1 {
+    type Error = Error;
+    fn try_from(v: LoraValidPoc) -> Result<Self> {
+        let beacon_report: LoraValidBeaconReportV1 = v.beacon_report.try_into()?;
+        let mut witnesses: Vec<LoraValidWitnessReportV1> = Vec::new();
+        for witness_proto in v.witness_reports {
+            let witness_report: LoraValidWitnessReportV1 = witness_proto.try_into()?;
+            witnesses.push(witness_report)
+        }
+        Ok(Self {
+            poc_id: v.poc_id,
+            beacon_report: Some(beacon_report),
             witness_reports: witnesses,
         })
     }

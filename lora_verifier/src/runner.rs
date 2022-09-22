@@ -1,6 +1,5 @@
 use crate::poc::VerifyWitnessesResult;
 use crate::{
-    datetime_from_epoch,
     entropy::Entropy,
     last_beacon::LastBeacon,
     mk_db_pool,
@@ -11,9 +10,14 @@ use crate::{
 };
 use file_store::{file_sink, file_sink::MessageSender, file_upload, FileType};
 use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraBeaconReportReqV1,
-    LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraValidBeaconReportV1, LoraValidPocV1,
-    LoraWitnessIngestReportV1,
+    InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
+    LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+};
+use poc_store::{
+    file_sink, file_sink::MessageSender, file_upload, lora_beacon_report::LoraBeaconIngestReport,
+    lora_beacon_report::LoraBeaconReport, lora_invalid_poc::LoraInvalidBeaconReport,
+    lora_invalid_poc::LoraInvalidWitnessReport, lora_valid_poc::LoraValidBeaconReport,
+    lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport, FileType,
 };
 use std::path::Path;
 
@@ -139,15 +143,20 @@ impl Runner {
         for db_beacon in db_beacon_reports {
             let packet_data = &db_beacon.packet_data;
             let beacon_buf: &[u8] = &db_beacon.report_data;
-            let beacon_report = LoraBeaconIngestReportV1::decode(beacon_buf)?;
-            let beacon = beacon_report.report.clone().unwrap();
+            let beacon_report = LoraBeaconIngestReport::try_from(
+                LoraBeaconIngestReportV1::decode(beacon_buf).unwrap(),
+            )?;
+            let beacon = &beacon_report.report;
             let beaconer_pub_key = &beacon.pub_key;
+
             let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
             // get the beacon and witness report PBs from the db reports
-            let mut witnesses: Vec<LoraWitnessIngestReportV1> = Vec::new();
+            let mut witnesses: Vec<LoraWitnessIngestReport> = Vec::new();
             for db_witness in db_witnesses {
                 let witness_buf: &[u8] = &db_witness.report_data;
-                witnesses.push(LoraWitnessIngestReportV1::decode(witness_buf)?)
+                witnesses.push(LoraWitnessIngestReport::try_from(
+                    LoraWitnessIngestReportV1::decode(witness_buf).unwrap(),
+                )?)
             }
 
             //
@@ -156,14 +165,14 @@ impl Runner {
 
             // is beaconer allower to beacon at this time ?
             // any irregularily timed beacons will be rejected
-            match LastBeacon::get(&self.pool, beaconer_pub_key).await? {
+            match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
                 Some(last_beacon) => {
-                    let beacon_received_ts = datetime_from_epoch(beacon_report.received_timestamp);
+                    let beacon_received_ts = beacon_report.received_timestamp;
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
                     if interval_since_last_beacon.num_minutes() < BEACON_INTERVAL {
                         tracing::info!("beacon is invalid, irregular interval");
                         self.handle_invalid_poc(
-                            beacon_report,
+                            &beacon_report,
                             witnesses,
                             InvalidReason::IrregularInterval,
                             &lora_valid_poc_tx,
@@ -207,7 +216,8 @@ impl Runner {
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
                     // beacon is valid, verify the witnesses
-                    let verified_witnesses_result = poc.verify_witnesses().await?;
+                    let beacon_info = beacon_verify_result.gateway_info.unwrap();
+                    let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
                     // and halt here, let things be reprocessed next tick
@@ -216,11 +226,11 @@ impl Runner {
                             // something went wrong whilst verifying witnesses
                             // halt here and allow things to be reprocessed next tick
                             tracing::warn!("failure whilst verifying witnesses");
-                            let failed_witness = failed_witness.report.unwrap();
+                            let failed_witness = failed_witness.report;
                             // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-                            let mut failed_witness_public_key = failed_witness.pub_key;
+                            let failed_witness_public_key = failed_witness.pub_key;
                             let mut failed_witness_id: Vec<u8> = failed_witness.data;
-                            failed_witness_id.append(&mut failed_witness_public_key);
+                            failed_witness_id.append(&mut failed_witness_public_key.to_vec());
                             let failed_witness_id_hash =
                                 Sha256::digest(&failed_witness_id).to_vec();
                             Report::update_attempts(
@@ -233,11 +243,11 @@ impl Runner {
                         return Ok(());
                     };
 
-                    let valid_beacon_report = LoraValidBeaconReportV1 {
+                    let valid_beacon_report = LoraValidBeaconReport {
                         received_timestamp: beacon_report.received_timestamp,
-                        location: beacon_verify_result.gateway_info.unwrap().location,
+                        location: beacon_info.location,
                         hex_scale: beacon_verify_result.hex_scale.unwrap(),
-                        report: Some(beacon.clone()),
+                        report: beacon.clone(),
                     };
                     self.handle_valid_poc(
                         beacon,
@@ -251,7 +261,7 @@ impl Runner {
                 VerificationStatus::Invalid => {
                     // the beacon is invalid, which in turn renders all witnesses invalid
                     self.handle_invalid_poc(
-                        beacon_report,
+                        &beacon_report,
                         witnesses,
                         InvalidReason::BadEntropy,
                         &lora_valid_poc_tx,
@@ -264,9 +274,9 @@ impl Runner {
                     // halt here and allow things to be reprocessed next tick
                     tracing::warn!("failure whilst verifying beacon");
                     // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-                    let mut failed_beacon_public_key = beacon.pub_key;
-                    let mut failed_beacon_id: Vec<u8> = beacon.data;
-                    failed_beacon_id.append(&mut failed_beacon_public_key);
+                    let failed_beacon_public_key = &beacon.pub_key;
+                    let mut failed_beacon_id: Vec<u8> = beacon.data.clone();
+                    failed_beacon_id.append(&mut failed_beacon_public_key.to_vec());
                     let failed_beacon_id_hash = Sha256::digest(&failed_beacon_id).to_vec();
                     Report::update_attempts(&self.pool, &failed_beacon_id_hash, Utc::now()).await?;
                 }
@@ -277,31 +287,34 @@ impl Runner {
 
     async fn handle_invalid_poc(
         &self,
-        beacon_report: LoraBeaconIngestReportV1,
-        witness_reports: Vec<LoraWitnessIngestReportV1>,
+        beacon_report: &LoraBeaconIngestReport,
+        witness_reports: Vec<LoraWitnessIngestReport>,
         invalid_reason: InvalidReason,
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
         tracing::warn!("handling invalid poc");
         // the beacon is invalid, which in turn renders all witnesses invalid
-        let beacon = beacon_report.report.unwrap();
+        let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
-        let invalid_poc: LoraInvalidBeaconReportV1 = LoraInvalidBeaconReportV1 {
+        let invalid_poc: LoraInvalidBeaconReport = LoraInvalidBeaconReport {
             received_timestamp: beacon_report.received_timestamp,
-            reason: invalid_reason as i32,
-            report: Some(beacon),
+            reason: invalid_reason,
+            report: beacon.clone(),
         };
-        file_sink::write(lora_valid_poc_tx, invalid_poc).await?;
+        let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.try_into()?;
+        file_sink::write(lora_valid_poc_tx, invalid_poc_proto).await?;
         for witness_report in witness_reports {
-            let witness = witness_report.report.unwrap();
-            let invalid_witness_report: LoraInvalidWitnessReportV1 = LoraInvalidWitnessReportV1 {
+            // let report: LoraBeaconReportReqV1 = v.report.into();
+            let invalid_witness_report: LoraInvalidWitnessReport = LoraInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
-                report: Some(witness),
-                reason: invalid_reason as i32,
-                participant_side: InvalidParticipantSide::Beaconer as i32,
+                report: witness_report.report,
+                reason: invalid_reason,
+                participant_side: InvalidParticipantSide::Beaconer,
             };
-            file_sink::write(lora_invalid_witness_tx, invalid_witness_report).await?;
+            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
+                invalid_witness_report.try_into()?;
+            file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
         }
         // update beacon and all witness reports in the db for this beacon id to invalid
         Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
@@ -310,41 +323,43 @@ impl Runner {
 
     async fn handle_valid_poc(
         &self,
-        beacon: LoraBeaconReportReqV1,
-        valid_beacon_report: LoraValidBeaconReportV1,
+        beacon: &LoraBeaconReport,
+        valid_beacon_report: LoraValidBeaconReport,
         witnesses_result: VerifyWitnessesResult,
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
         tracing::warn!("handling valid poc");
         let beacon_id = &beacon.data;
-        let valid_poc: LoraValidPocV1 = LoraValidPocV1 {
+        let valid_poc: LoraValidPoc = LoraValidPoc {
             poc_id: beacon_id.clone(),
-            beacon_report: Some(valid_beacon_report),
+            beacon_report: valid_beacon_report,
             witness_reports: witnesses_result.valid_witnesses.clone(),
         };
-        file_sink::write(lora_valid_poc_tx, valid_poc).await?;
+        let valid_poc_proto: LoraValidPocV1 = valid_poc.try_into()?;
+        file_sink::write(lora_valid_poc_tx, valid_poc_proto).await?;
 
         // update db for this beacon, pk is a hash of the poc id and the beaconer pub key
         // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-        let mut beacon_public_key = beacon.pub_key.clone();
+        let beacon_public_key = beacon.pub_key.clone();
         let mut beaconer_id: Vec<u8> = beacon.data.clone();
-        beaconer_id.append(&mut beacon_public_key);
+        beaconer_id.append(&mut beacon_public_key.to_vec());
         let beaconer_id_hash = Sha256::digest(&beaconer_id).to_vec();
         Report::update_status(&self.pool, &beaconer_id_hash, LoraStatus::Valid, Utc::now()).await?;
         // update last beacon time for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, &beacon_public_key.to_vec(), Utc::now())
             .await?;
         // write out any invalid witnesses
-        let invalid_witnesses = witnesses_result.invalid_witnesses;
-        for invalid_witness_report in invalid_witnesses {
-            file_sink::write(lora_invalid_witness_tx, invalid_witness_report.clone()).await?;
-            let invalid_witness = invalid_witness_report.report.unwrap();
+        for invalid_witness_report in witnesses_result.invalid_witnesses {
+            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
+                invalid_witness_report.clone().try_into()?;
+            file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
+            // let invalid_witness = invalid_witness_report.report;
             // update the witness record in the db
             // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-            let mut invalid_witness_public_key = invalid_witness.pub_key;
-            let mut invalid_witness_id: Vec<u8> = invalid_witness.data;
-            invalid_witness_id.append(&mut invalid_witness_public_key);
+            let invalid_witness_public_key = &invalid_witness_report.report.pub_key;
+            let mut invalid_witness_id: Vec<u8> = invalid_witness_report.report.data;
+            invalid_witness_id.append(&mut invalid_witness_public_key.to_vec());
             let invalid_witness_id_hash = Sha256::digest(&invalid_witness_id).to_vec();
             Report::update_status(
                 &self.pool,
@@ -356,11 +371,11 @@ impl Runner {
         }
         // update DB status of valid witnesses
         for valid_witness_report in witnesses_result.valid_witnesses {
-            let valid_witness = valid_witness_report.report.unwrap();
+            let valid_witness = valid_witness_report.report;
             // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-            let mut valid_witness_public_key = valid_witness.pub_key;
+            let valid_witness_public_key = valid_witness.pub_key;
             let mut valid_witness_id: Vec<u8> = valid_witness.data;
-            valid_witness_id.append(&mut valid_witness_public_key);
+            valid_witness_id.append(&mut valid_witness_public_key.to_vec());
             let valid_witness_id_hash = Sha256::digest(&valid_witness_id).to_vec();
             Report::update_status(
                 &self.pool,

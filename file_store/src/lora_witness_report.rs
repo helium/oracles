@@ -5,7 +5,7 @@ use helium_proto::services::poc_lora::{LoraWitnessIngestReportV1, LoraWitnessRep
 use helium_proto::DataRate;
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct LoraWitnessReport {
     #[serde(alias = "pubKey")]
     pub pub_key: PublicKey,
@@ -19,7 +19,7 @@ pub struct LoraWitnessReport {
     pub signature: Vec<u8>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct LoraWitnessIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: LoraWitnessReport,
