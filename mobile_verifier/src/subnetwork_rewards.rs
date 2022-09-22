@@ -280,7 +280,7 @@ impl SubnetworkRewards {
         )?;
 
         file_sink::write(
-            &shares_tx,
+            shares_tx,
             proto::Shares {
                 shares: shares
                     .into_iter()
@@ -298,7 +298,7 @@ impl SubnetworkRewards {
         .await?;
 
         file_sink::write(
-            &invalid_shares_tx,
+            invalid_shares_tx,
             proto::Shares {
                 shares: invalid_shares,
             },
@@ -306,7 +306,7 @@ impl SubnetworkRewards {
         .await?;
 
         file_sink::write(
-            &subnet_tx,
+            subnet_tx,
             proto::SubnetworkRewards {
                 start_epoch: after_ts,
                 end_epoch: before_ts,
