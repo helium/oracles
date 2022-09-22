@@ -1,15 +1,14 @@
 use crate::{
-    bones_to_u64, cell_share_to_u64,
+    bones_to_u64, 
     error::{Error, Result},
     reward_share::{
         self, cell_shares, hotspot_shares, GatheredShares, OwnerEmissions, OwnerResolver,
     },
-    reward_speed_share::SpeedShare,
 };
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
 use helium_proto::services::{follower, Channel};
-use poc_store::{FileInfo, FileStore, FileType};
+use poc_store::{file_sink, FileInfo, FileStore, FileType};
 use serde::Serialize;
 
 mod proto {
@@ -111,7 +110,12 @@ impl SubnetworkRewards {
     }
 
     /// Write output from each step to S3
-    pub async fn write(self, file_store: &FileStore) -> Result<()> {
+    pub async fn write(
+        self,
+        shares_tx: &file_sink::MessageSender,
+        invalid_shares_tx: &file_sink::MessageSender,
+        subnet_tx: &file_sink::MessageSender,
+    ) -> Result<()> {
         // TODO: Clean up these conversions
         // One possibility for the common cases would be to wrap in a macro.
         // Also, a lot of the meat of these conversion should be moved to helper
@@ -135,6 +139,7 @@ impl SubnetworkRewards {
             rewards,
         } = self;
 
+        /*
         write_message(
             file_store,
             "file_list",
@@ -329,22 +334,53 @@ impl SubnetworkRewards {
             &proto::SubnetworkRewards { rewards },
         )
         .await?;
+         */
+
+        file_sink::write(
+            &subnet_tx,
+            proto::Shares {
+                shares: shares
+                    .into_iter()
+                    .map(|(cbsd_id, share)| proto::Share {
+                        cbsd_id,
+                        timestamp: share.timestamp,
+                        pub_key: share.pub_key.to_vec(),
+                        weight: bones_to_u64(share.weight),
+                        cell_type: share.cell_type as i32,
+                        validity: proto::ShareValidity::Valid as i32,
+                    })
+                    .collect(),
+            },
+        )
+        .await?;
+
+        file_sink::write(
+            &subnet_tx,
+            proto::Shares {
+                shares: invalid_shares,
+            },
+        )
+        .await?;
+
+        file_sink::write(&subnet_tx, proto::SubnetworkRewards { rewards }).await?;
 
         Ok(())
     }
 }
 
-pub async fn write_message<T: prost::Message>(
+/*
+pub async fn write_json(
     file_store: &FileStore,
     fname_prefix: &str,
     after_ts: u64,
     before_ts: u64,
-    data: &T,
+    data: &impl Serialize,
 ) -> Result {
     let fname = format!("{}-{}-{}.json", fname_prefix, after_ts, before_ts);
-    file_store.put_bytes(&fname, data.encode_to_vec()).await?;
+    file_store.put_bytes(&fname, serde_json::to_vec_pretty(data))).await?;
     Ok(())
 }
+*/
 
 #[cfg(test)]
 mod test {

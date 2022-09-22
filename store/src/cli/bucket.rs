@@ -206,7 +206,7 @@ fn locate(
         FileType::CellSpeedtest => {
             CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(gateway))
         }
-        FileType::Entropy => Ok(None),
+        _ => Ok(None),
     }
 }
 

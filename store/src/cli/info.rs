@@ -67,6 +67,7 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::Entropy => {
             Entropy::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
+        _ => todo!()
     };
     Ok(result)
 }

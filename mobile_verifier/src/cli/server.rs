@@ -1,4 +1,4 @@
-use crate::{mk_db_pool, Result, Server};
+use crate::{run_server, Result};
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -11,11 +11,8 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
-        Server::new(mk_db_pool(10).await?)
-            .await?
-            .run(shutdown_listener)
-            .await?;
-
+        run_server(shutdown_listener).await?;
+        
         Ok(())
     }
 }

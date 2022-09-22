@@ -93,6 +93,9 @@ impl FileInfo {
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const ENTROPY: &str = "entropy";
+pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
+pub const SHARES: &str = "shares";
+pub const INVALID_SHARES: &str = "invalid_shares";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -100,6 +103,9 @@ pub enum FileType {
     CellHeartbeat = 0,
     CellSpeedtest = 1,
     Entropy = 2,
+    SubnetworkRewards = 3,
+    Shares = 4,
+    InvalidShares = 5, 
 }
 
 impl fmt::Display for FileType {
@@ -108,6 +114,9 @@ impl fmt::Display for FileType {
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::Entropy => ENTROPY,
+            Self::SubnetworkRewards => SUBNETWORK_REWARDS,
+            Self::Shares => SHARES,
+            Self::InvalidShares => INVALID_SHARES,
         };
         f.write_str(s)
     }
@@ -119,6 +128,9 @@ impl FileType {
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::Entropy => ENTROPY,
+            Self::SubnetworkRewards => SUBNETWORK_REWARDS,
+            Self::Shares => SHARES,
+            Self::InvalidShares => INVALID_SHARES,
         }
     }
 }
@@ -130,6 +142,9 @@ impl FromStr for FileType {
             CELL_HEARTBEAT => Self::CellHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
             ENTROPY => Self::Entropy,
+            SUBNETWORK_REWARDS => Self::SubnetworkRewards,
+            SHARES => Self::Shares,
+            INVALID_SHARES => Self::InvalidShares, 
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
