@@ -70,9 +70,26 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
             SpeedtestReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
         FileType::CellHeartbeatIngestReport => CellHeartbeatIngestReportV1::decode(buf)
-            .map(|entry| datetime_from_epoch(entry.report.unwrap().timestamp))?,
+            .map_err(|error| error.into())
+            .and_then(|ingest_report| {
+                ingest_report.report.ok_or_else(|| {
+                    Error::Custom(
+                        "CellHeartbeatIngestReportV1 does not contain a CellHeartbeatReqV1"
+                            .to_string(),
+                    )
+                })
+            })
+            .map(|heartbeat_req| datetime_from_epoch(heartbeat_req.timestamp))?,
         FileType::CellSpeedtestIngestReport => SpeedtestIngestReportV1::decode(buf)
-            .map(|entry| datetime_from_epoch(entry.report.unwrap().timestamp))?,
+            .map_err(|error| error.into())
+            .and_then(|ingest_report| {
+                ingest_report.report.ok_or_else(|| {
+                    Error::Custom(
+                        "SpeedtestIngestReportV1 does not contain a SpeedtestReqV1".to_string(),
+                    )
+                })
+            })
+            .map(|speedtest_req| datetime_from_epoch(speedtest_req.timestamp))?,
         FileType::Entropy => {
             Entropy::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
@@ -81,7 +98,15 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::LoraWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
             .map(|entry| datetime_from_epoch(entry.received_timestamp))?,
         FileType::LoraValidPoc => LoraValidPocV1::decode(buf)
-            .map(|entry| datetime_from_epoch(entry.beacon_report.unwrap().received_timestamp))?,
+            .map_err(|error| error.into())
+            .and_then(|report| {
+                report.beacon_report.ok_or_else(|| {
+                    Error::Custom(
+                        "LoraValidPocV1 does not contain a LoraBeaconIngestReportV1".to_string(),
+                    )
+                })
+            })
+            .map(|beacon_report| datetime_from_epoch(beacon_report.received_timestamp))?,
 
         _ => Utc::now(),
     };
