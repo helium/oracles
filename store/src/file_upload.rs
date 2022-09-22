@@ -32,7 +32,7 @@ impl FileUpload {
     }
 
     pub async fn run(self, shutdown: &triggered::Listener) -> Result {
-        tracing::info!("starting file uploader");
+        tracing::info!("starting file uploader 1");
 
         let uploads = self
             .messages
@@ -51,6 +51,7 @@ impl FileUpload {
                 let mut retry = 0;
                 const MAX_RETRIES: u8 = 5;
                 const RETRY_WAIT: Duration = Duration::from_secs(10);
+                tracing::info!("starting file uploader 2");
                 while retry <= MAX_RETRIES {
                     tracing::debug!("storing {path_str} in {bucket} retry {retry}");
                     match store.put(&path).await {

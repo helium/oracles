@@ -15,7 +15,7 @@ use tokio::{
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
-pub const DEFAULT_SINK_ROLL_MINS: i64 = 15;
+pub const DEFAULT_SINK_ROLL_MINS: i64 = 3;
 
 type Sink = GzipEncoder<BufWriter<File>>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
@@ -190,17 +190,19 @@ impl FileSink {
         let mut rollover_timer =
             time::interval(self.roll_time.to_std().expect("valid sink roll time"));
         rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
-
         loop {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
-                    Some(buf) => match self.write(Bytes::from(buf)).await {
+                    Some(buf) => {
+                        match self.write(Bytes::from(buf)).await {
                         Ok(_) => (),
                         Err(err) => tracing::error!("failed to store {}: {err:?}", &self.prefix),
-                    },
-                    None => break,
+                    }},
+                    None => {
+                        break
+                    }
                 }
             }
         }

@@ -1,5 +1,5 @@
 use clap::Parser;
-use poc_ingest::{server, Result};
+use poc_ingest::{server_5g, server_lora, Result};
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -8,7 +8,7 @@ pub enum Cmd {}
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Helium Mobile Ingest Server")]
+#[clap(about = "Helium Ingest Server")]
 pub struct Cli {}
 
 #[tokio::main]
@@ -33,6 +33,15 @@ async fn main() -> Result {
         shutdown_trigger.trigger()
     });
 
-    // run the grpc server
-    server::grpc_server(shutdown_listener).await
+    // run the grpc server in either lora or mobile 5g mode
+    let server_mode = dotenv::var("GRPC_SERVER_MODE")?;
+    match server_mode.as_str() {
+        "lora" => server_lora::grpc_server(shutdown_listener, server_mode).await,
+        "mobile" => server_5g::grpc_server(shutdown_listener, server_mode).await,
+        _ =>
+        //TODO: return proper error here
+        {
+            std::process::exit(9)
+        }
+    }
 }

@@ -1275,7 +1275,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#f41042dce0778f1997ef781c760d0f8152f75ca0"
+source = "git+https://github.com/helium/proto?branch=master#571b71f48faf45ce5d09a3245aa9a782b6fb2a6d"
 dependencies = [
  "bytes",
  "prost",
@@ -1302,6 +1302,12 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hex-literal"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 
 [[package]]
 name = "hkdf"
@@ -2140,6 +2146,7 @@ dependencies = [
  "futures-util",
  "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
  "helium-proto",
+ "hex-literal",
  "http",
  "lazy_static",
  "prost",
@@ -2190,6 +2197,39 @@ dependencies = [
  "tokio",
  "tonic",
  "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
+name = "poclora-verifier"
+version = "0.1.0"
+dependencies = [
+ "async-compression",
+ "async-trait",
+ "axum",
+ "base64",
+ "chrono",
+ "clap",
+ "dotenv",
+ "futures",
+ "futures-util",
+ "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-proto",
+ "http",
+ "hyper",
+ "lazy_static",
+ "once_cell",
+ "poc-store",
+ "prost",
+ "serde",
+ "serde_json",
+ "sha2 0.10.6",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "triggered",

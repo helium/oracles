@@ -186,9 +186,10 @@ mod test {
     use crate::{
         reward_share::{OwnerEmissions, Share, Shares},
         traits::owner_resolver::OwnerResolver,
-        CellType, PublicKey,
+        CellType,
     };
     use async_trait::async_trait;
+    use helium_crypto::PublicKey;
     use std::str::FromStr;
 
     use super::*;

@@ -11,3 +11,6 @@ pub struct CellAttachEvent {
     #[serde(alias = "iso_timestamp")]
     pub timestamp: DateTime<Utc>,
 }
+
+//TODO: shouldnt be any requirements here for lora beacon and witness reports
+//      but double check

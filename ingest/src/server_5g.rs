@@ -1,8 +1,10 @@
 use crate::{error::DecodeError, Error, EventId, Result};
+use chrono::Utc;
 use futures_util::TryFutureExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::{
-    self, CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
+    self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+    SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1,
 };
 use poc_store::traits::MsgVerify;
 use poc_store::{file_sink, file_upload, FileType};
@@ -23,6 +25,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<SpeedtestReqV1>,
     ) -> GrpcResult<SpeedtestRespV1> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
         let public_key = PublicKey::try_from(event.pub_key.as_ref())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
@@ -31,7 +34,13 @@ impl poc_mobile::PocMobile for GrpcServer {
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
         // Encode event digest, encode and return as the id
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.speedtest_tx, event).await {
+
+        let report = SpeedtestIngestReportV1 {
+            report: Some(event),
+            received_timestamp: timestamp,
+        };
+
+        match file_sink::write(&self.speedtest_tx, report).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store speedtest: {err:?}"),
         }
@@ -44,6 +53,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
         let public_key = PublicKey::try_from(event.pub_key.as_slice())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
@@ -51,7 +61,13 @@ impl poc_mobile::PocMobile for GrpcServer {
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.heartbeat_tx, event).await {
+
+        let report = CellHeartbeatIngestReportV1 {
+            report: Some(event),
+            received_timestamp: timestamp,
+        };
+
+        match file_sink::write(&self.heartbeat_tx, report).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
         }
@@ -62,7 +78,7 @@ impl poc_mobile::PocMobile for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
+pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> Result {
     let grpc_addr: SocketAddr = env::var("GRPC_SOCKET_ADDR")
         .map_or_else(
             |_| SocketAddr::from_str("0.0.0.0:9081"),
@@ -77,7 +93,6 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
     let store_path = std::env::var("INGEST_STORE")?;
     let store_base_path = Path::new(&store_path);
 
-    // heartbeats
     let (heartbeat_tx, heartbeat_rx) = file_sink::message_channel(50);
     let mut heartbeat_sink =
         file_sink::FileSinkBuilder::new(FileType::CellHeartbeat, store_base_path, heartbeat_rx)
@@ -93,7 +108,7 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
             .create()
             .await?;
 
-    let poc_mobile = GrpcServer {
+    let grpc_server = GrpcServer {
         speedtest_tx,
         heartbeat_tx,
     };
@@ -103,14 +118,20 @@ pub async fn grpc_server(shutdown: triggered::Listener) -> Result {
             .unwrap()
     })?;
 
-    tracing::info!("grpc listening on {}", grpc_addr);
+    tracing::info!(
+        "grpc listening on {} and server mode {}",
+        grpc_addr,
+        server_mode
+    );
 
+    //TODO start a service with either the poc mobile or poc lora endpoints only - not both
+    //     use _server_mode (set above ) to decide
     let server = transport::Server::builder()
         .layer(poc_metrics::ActiveRequestsLayer::new(
             "ingest_server_grpc_connection_count",
         ))
         .add_service(poc_mobile::Server::with_interceptor(
-            poc_mobile,
+            grpc_server,
             move |req: Request<()>| match req.metadata().get("authorization") {
                 Some(t) if api_token == t => Ok(req),
                 _ => Err(Status::unauthenticated("No valid auth token")),
