@@ -1,8 +1,10 @@
 use crate::{error::DecodeError, Error, EventId, Result};
+use chrono::Utc;
 use futures_util::TryFutureExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::{
-    self, CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
+    self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+    SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1,
 };
 use poc_store::traits::MsgVerify;
 use poc_store::{file_sink, file_upload, FileType};
@@ -23,6 +25,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<SpeedtestReqV1>,
     ) -> GrpcResult<SpeedtestRespV1> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
         let public_key = PublicKey::try_from(event.pub_key.as_ref())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
@@ -31,7 +34,13 @@ impl poc_mobile::PocMobile for GrpcServer {
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
         // Encode event digest, encode and return as the id
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.speedtest_tx, event).await {
+
+        let report = SpeedtestIngestReportV1 {
+            report: Some(event),
+            received_timestamp: timestamp,
+        };
+
+        match file_sink::write(&self.speedtest_tx, report).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store speedtest: {err:?}"),
         }
@@ -44,6 +53,7 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
+        let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
         let public_key = PublicKey::try_from(event.pub_key.as_slice())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
@@ -51,7 +61,13 @@ impl poc_mobile::PocMobile for GrpcServer {
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.heartbeat_tx, event).await {
+
+        let report = CellHeartbeatIngestReportV1 {
+            report: Some(event),
+            received_timestamp: timestamp,
+        };
+
+        match file_sink::write(&self.heartbeat_tx, report).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
         }
