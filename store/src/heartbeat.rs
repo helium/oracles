@@ -82,10 +82,9 @@ impl From<CellHeartbeat> for CellHeartbeatReqV1 {
 mod tests {
     use super::*;
     use prost::Message;
+    use hex_literal::hex;
 
-    fn bytes() -> Vec<u8> {
-        hex::decode("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1").unwrap()
-    }
+    const PK_BYTES: [u8; 33] = hex!("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1");
 
     #[test]
     fn decode_proto_heartbeat_ingest_report_to_internal_struct() {
@@ -93,7 +92,7 @@ mod tests {
         let report = CellHeartbeatIngestReportV1 {
             received_timestamp: now as u64,
             report: Some(CellHeartbeatReqV1 {
-                pub_key: bytes(),
+                pub_key: PK_BYTES.to_vec(),
                 hotspot_type: "hotspot".to_string(),
                 cell_id: 123,
                 timestamp: Utc::now().timestamp() as u64,

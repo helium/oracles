@@ -72,10 +72,9 @@ impl TryFrom<SpeedtestIngestReportV1> for CellSpeedtestIngestReport {
 mod tests {
     use super::*;
     use prost::Message;
+    use hex_literal::hex;
 
-    fn bytes() -> Vec<u8> {
-        hex::decode("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1").unwrap()
-    }
+    const PK_BYTES: [u8; 33] = hex!("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1");
 
     #[test]
     fn decode_proto_speed_test_ingest_report_to_internal_struct() {
@@ -83,7 +82,7 @@ mod tests {
         let report = SpeedtestIngestReportV1 {
             received_timestamp: now as u64,
             report: Some(SpeedtestReqV1 {
-                pub_key: bytes(),
+                pub_key: PK_BYTES.to_vec(),
                 serial: "serial".to_string(),
                 timestamp: now as u64,
                 upload_speed: 6,
