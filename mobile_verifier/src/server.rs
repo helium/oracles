@@ -6,10 +6,8 @@ use crate::{
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use futures_util::TryFutureExt;
 use helium_proto::services::{follower, Endpoint, Uri};
-use poc_store::{
-    file_sink, file_upload, FileStore, FileType, MetaValue,
-};
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use poc_store::{file_sink, file_upload, FileStore, FileType, MetaValue};
+use sqlx::postgres::PgPoolOptions;
 use tokio::{select, time::sleep};
 
 pub const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -36,10 +34,11 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
 
     // valid shares
     let (shares_tx, shares_rx) = file_sink::message_channel(50);
-    let mut shares_sink = file_sink::FileSinkBuilder::new(FileType::Shares, store_base_path, shares_rx)
-        .deposits(Some(file_upload_tx.clone()))
-        .create()
-        .await?;
+    let mut shares_sink =
+        file_sink::FileSinkBuilder::new(FileType::Shares, store_base_path, shares_rx)
+            .deposits(Some(file_upload_tx.clone()))
+            .create()
+            .await?;
 
     // invalid shares
     let (invalid_shares_tx, invalid_shares_rx) = file_sink::message_channel(50);
@@ -121,6 +120,6 @@ async fn flatten(handle: tokio::task::JoinHandle<Result>) -> Result {
     match handle.await {
         Ok(Ok(result)) => Ok(result),
         Ok(Err(err)) => Err(err),
-        Err(err) => todo!(),
+        Err(err) => Err(Error::JoinError(err)),
     }
 }

@@ -17,10 +17,6 @@ pub struct Cmd {
     before: NaiveDateTime,
     #[clap(long)]
     input_bucket: String,
-    #[clap(long)]
-    output_bucket: Option<String>,
-    #[clap(long)]
-    dump_to_stdout: bool,
 }
 
 impl Cmd {
@@ -29,8 +25,6 @@ impl Cmd {
             after,
             before,
             input_bucket,
-            output_bucket,
-            dump_to_stdout,
         } = self;
 
         tracing::info!(
@@ -54,17 +48,17 @@ impl Cmd {
         )
         .await?;
 
-        if dump_to_stdout {
-            println!("{:#?}", rewards);
-        }
+        println!("{:#?}", rewards);
 
+        /*
         if let Some(output_bucket) = output_bucket {
             todo!();
             /*
             let output_store = FileStore::new(None, "us-west-2", output_bucket).await?;
             rewards.write(&output_store).await?;
             */
-        }
+         }
+         */
 
         Ok(())
     }

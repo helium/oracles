@@ -30,6 +30,8 @@ pub enum Error {
     TransactionError(String),
     #[error("meta error")]
     MetaError(#[from] poc_store::MetaError),
+    #[error("join error")]
+    JoinError(tokio::task::JoinError),
 }
 
 #[derive(Error, Debug)]

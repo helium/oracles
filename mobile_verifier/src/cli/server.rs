@@ -12,7 +12,7 @@ impl Cmd {
         });
 
         run_server(shutdown_listener).await?;
-        
+
         Ok(())
     }
 }

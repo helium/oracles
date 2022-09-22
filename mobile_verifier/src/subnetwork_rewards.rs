@@ -1,15 +1,17 @@
 use crate::{
-    bones_to_u64, 
+    bones_to_u64, cell_share_to_u64,
     error::{Error, Result},
     reward_share::{
         self, cell_shares, hotspot_shares, GatheredShares, OwnerEmissions, OwnerResolver,
     },
+    reward_speed_share::SpeedShare,
 };
 use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
 use helium_proto::services::{follower, Channel};
 use poc_store::{file_sink, FileInfo, FileStore, FileType};
 use serde::Serialize;
+use std::path::Path;
 
 mod proto {
     pub use helium_proto::services::poc_mobile::*;
@@ -139,9 +141,7 @@ impl SubnetworkRewards {
             rewards,
         } = self;
 
-        /*
-        write_message(
-            file_store,
+        write_json(
             "file_list",
             after_ts,
             before_ts,
@@ -156,32 +156,9 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
+        )?;
 
-        write_message(
-            file_store,
-            "shares",
-            after_ts,
-            before_ts,
-            &proto::Shares {
-                shares: shares
-                    .into_iter()
-                    .map(|(cbsd_id, share)| proto::Share {
-                        cbsd_id,
-                        timestamp: share.timestamp,
-                        pub_key: share.pub_key.to_vec(),
-                        weight: bones_to_u64(share.weight),
-                        cell_type: share.cell_type as i32,
-                        validity: proto::ShareValidity::Valid as i32,
-                    })
-                    .collect(),
-            },
-        )
-        .await?;
-
-        write_message(
-            file_store,
+        write_json(
             "speed_shares",
             after_ts,
             before_ts,
@@ -194,22 +171,9 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
+        )?;
 
-        write_message(
-            file_store,
-            "invalid_shares",
-            after_ts,
-            before_ts,
-            &proto::Shares {
-                shares: invalid_shares,
-            },
-        )
-        .await?;
-
-        write_message(
-            file_store,
+        write_json(
             "invalid_speed_shares",
             after_ts,
             before_ts,
@@ -226,11 +190,9 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
+        )?;
 
-        write_message(
-            file_store,
+        write_json(
             "speed_shares_moving_avg",
             after_ts,
             before_ts,
@@ -254,11 +216,9 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
+        )?;
 
-        write_message(
-            file_store,
+        write_json(
             "cell_shares",
             after_ts,
             before_ts,
@@ -271,11 +231,9 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
+        )?;
 
-        write_message(
-            file_store,
+        write_json(
             "hotspot_shares",
             after_ts,
             before_ts,
@@ -288,11 +246,9 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
+        )?;
 
-        write_message(
-            file_store,
+        write_json(
             "owner_shares",
             after_ts,
             before_ts,
@@ -305,11 +261,9 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
+        )?;
 
-        write_message(
-            file_store,
+        write_json(
             "missing_owner_shares",
             after_ts,
             before_ts,
@@ -323,21 +277,10 @@ impl SubnetworkRewards {
                     })
                     .collect(),
             },
-        )
-        .await?;
-
-        write_message(
-            file_store,
-            "subnetwork_rewards",
-            after_ts,
-            before_ts,
-            &proto::SubnetworkRewards { rewards },
-        )
-        .await?;
-         */
+        )?;
 
         file_sink::write(
-            &subnet_tx,
+            &shares_tx,
             proto::Shares {
                 shares: shares
                     .into_iter()
@@ -355,32 +298,39 @@ impl SubnetworkRewards {
         .await?;
 
         file_sink::write(
-            &subnet_tx,
+            &invalid_shares_tx,
             proto::Shares {
                 shares: invalid_shares,
             },
         )
         .await?;
 
-        file_sink::write(&subnet_tx, proto::SubnetworkRewards { rewards }).await?;
+        file_sink::write(
+            &subnet_tx,
+            proto::SubnetworkRewards {
+                start_epoch: after_ts,
+                end_epoch: before_ts,
+                rewards,
+            },
+        )
+        .await?;
 
         Ok(())
     }
 }
 
-/*
-pub async fn write_json(
-    file_store: &FileStore,
+fn write_json(
     fname_prefix: &str,
     after_ts: u64,
     before_ts: u64,
-    data: &impl Serialize,
+    data: &impl serde::Serialize,
 ) -> Result {
+    let tmp_output_dir = std::env::var("TMP_OUTPUT_DIR").unwrap_or_else(|_| "/tmp".to_string());
     let fname = format!("{}-{}-{}.json", fname_prefix, after_ts, before_ts);
-    file_store.put_bytes(&fname, serde_json::to_vec_pretty(data))).await?;
+    let fpath = Path::new(&tmp_output_dir).join(&fname);
+    std::fs::write(Path::new(&fpath), serde_json::to_string_pretty(data)?)?;
     Ok(())
 }
-*/
 
 #[cfg(test)]
 mod test {

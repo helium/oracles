@@ -34,8 +34,6 @@ fn bones_to_u64(decimal: Decimal) -> u64 {
     (decimal * dec!(1_000_000)).to_u64().unwrap()
 }
 
-/*
 fn cell_share_to_u64(decimal: Decimal) -> u64 {
     (decimal * dec!(10)).to_u64().unwrap()
 }
-*/
