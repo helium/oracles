@@ -81,10 +81,11 @@ impl From<CellHeartbeat> for CellHeartbeatReqV1 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prost::Message;
     use hex_literal::hex;
+    use prost::Message;
 
-    const PK_BYTES: [u8; 33] = hex!("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1");
+    const PK_BYTES: [u8; 33] =
+        hex!("008f23e96ab6bbff48c8923cac831dc97111bcf33dba9f5a8539c00f9d93551af1");
 
     #[test]
     fn decode_proto_heartbeat_ingest_report_to_internal_struct() {
