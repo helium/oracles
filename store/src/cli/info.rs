@@ -70,7 +70,7 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
             SpeedtestReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
         FileType::CellHeartbeatIngestReport => CellHeartbeatIngestReportV1::decode(buf)
-            .map_err(|error| error.into())
+            .map_err(Error::from)
             .and_then(|ingest_report| {
                 ingest_report.report.ok_or_else(|| {
                     Error::Custom(
@@ -81,7 +81,7 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
             })
             .map(|heartbeat_req| datetime_from_epoch(heartbeat_req.timestamp))?,
         FileType::CellSpeedtestIngestReport => SpeedtestIngestReportV1::decode(buf)
-            .map_err(|error| error.into())
+            .map_err(Error::from)
             .and_then(|ingest_report| {
                 ingest_report.report.ok_or_else(|| {
                     Error::Custom(
@@ -98,7 +98,7 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::LoraWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
             .map(|entry| datetime_from_epoch(entry.received_timestamp))?,
         FileType::LoraValidPoc => LoraValidPocV1::decode(buf)
-            .map_err(|error| error.into())
+            .map_err(Error::from)
             .and_then(|report| {
                 report.beacon_report.ok_or_else(|| {
                     Error::Custom(
