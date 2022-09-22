@@ -93,11 +93,7 @@ mod tests {
             }),
         };
 
-        let mut buffer = vec![];
-
-        report
-            .encode(&mut buffer)
-            .expect("unable to encode speedtest");
+        let buffer = report.encode_to_vec();
 
         let speedtest_report = CellSpeedtestIngestReport::decode(buffer.as_slice())
             .expect("unable to decode in CellSpeedtestIngestReport");

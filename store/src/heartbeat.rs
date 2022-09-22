@@ -106,11 +106,7 @@ mod tests {
             }),
         };
 
-        let mut buffer = vec![];
-
-        report
-            .encode(&mut buffer)
-            .expect("unable to encode cell heartbeat request v1");
+        let buffer = report.encode_to_vec();
 
         let cellheartbeatreport = CellHeartbeatIngestReport::decode(buffer.as_slice())
             .expect("unable to decode into CellHeartbeat");
