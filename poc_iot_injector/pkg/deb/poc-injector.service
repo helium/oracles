@@ -11,6 +11,7 @@ User=helium
 PIDFile=/var/run/poc-iot-injector
 Restart=always
 RestartSec=15
+WorkingDirectory=/opt/poc-iot-injector
 
 [Install]
 WantedBy=multi-user.target
