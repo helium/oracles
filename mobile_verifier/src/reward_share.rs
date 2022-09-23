@@ -1,15 +1,17 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use futures::stream::StreamExt;
-use helium_proto::{
-    services::{
-        follower::{self, FollowerGatewayReqV1},
-        poc_mobile::{CellHeartbeatReqV1, Share as ShareProto, ShareValidity, SpeedtestReqV1},
-        Channel,
-    },
-    Message,
+use helium_proto::services::{
+    follower::{self, FollowerGatewayReqV1},
+    poc_mobile::{Share as ShareProto, ShareValidity},
+    Channel,
 };
 use lazy_static::lazy_static;
-use poc_store::BytesMutStream;
+use poc_store::{
+    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::MsgDecode,
+    BytesMutStream,
+};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
@@ -83,7 +85,7 @@ impl OwnerEmissions {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Share {
-    pub timestamp: u64,
+    pub timestamp: DateTime<Utc>,
     pub pub_key: PublicKey,
     pub weight: Decimal,
     pub cell_type: CellType,
@@ -92,7 +94,7 @@ pub struct Share {
 
 impl Share {
     pub fn new(
-        timestamp: u64,
+        timestamp: DateTime<Utc>,
         pub_key: PublicKey,
         weight: Decimal,
         cell_type: CellType,
@@ -196,8 +198,8 @@ pub struct GatheredShares {
 impl GatheredShares {
     pub async fn from_stream(
         stream: &mut BytesMutStream,
-        after_utc: u64,
-        before_utc: u64,
+        after_utc: DateTime<Utc>,
+        before_utc: DateTime<Utc>,
     ) -> Result<Self> {
         let mut shares = Self {
             shares: Shares::new(),
@@ -210,10 +212,11 @@ impl GatheredShares {
         while let Some(Ok(msg)) = stream.next().await {
             // NOTE: This will early exit with an error if we fail to decode
 
-            if let Ok(cell_heartbeat_req_v1) = CellHeartbeatReqV1::decode(msg.clone()) {
-                shares.gather_heartbeat(cell_heartbeat_req_v1, after_utc, before_utc)
-            } else if let Ok(speedtest_req_v1) = SpeedtestReqV1::decode(msg) {
-                shares.gather_speedtest(speedtest_req_v1, after_utc, before_utc)
+            if let Ok(cell_heartbeat_ingest_report) = CellHeartbeatIngestReport::decode(msg.clone())
+            {
+                shares.gather_heartbeat(cell_heartbeat_ingest_report.report, after_utc, before_utc)
+            } else if let Ok(speedtest_ingest_report) = CellSpeedtestIngestReport::decode(msg) {
+                shares.gather_speedtest(speedtest_ingest_report.report, after_utc, before_utc)
             } else {
                 continue;
             }
@@ -221,9 +224,14 @@ impl GatheredShares {
         Ok(shares)
     }
 
-    fn gather_speedtest(&mut self, speedtest_req: SpeedtestReqV1, after_utc: u64, before_utc: u64) {
+    fn gather_speedtest(
+        &mut self,
+        speedtest: CellSpeedtest,
+        after_utc: DateTime<Utc>,
+        before_utc: DateTime<Utc>,
+    ) {
         // TODO: Better error handling for bad public keys
-        let mut speed_share = match SpeedShare::try_from(speedtest_req) {
+        let mut speed_share = match SpeedShare::try_from(speedtest) {
             Ok(share) => share,
             Err(_) => return,
         };
@@ -242,23 +250,23 @@ impl GatheredShares {
 
     fn gather_heartbeat(
         &mut self,
-        cell_heartbeat_req_v1: CellHeartbeatReqV1,
-        after_utc: u64,
-        before_utc: u64,
+        cell_heartbeat: CellHeartbeat,
+        after_utc: DateTime<Utc>,
+        before_utc: DateTime<Utc>,
     ) {
-        let CellHeartbeatReqV1 {
-            pub_key: hb_pub_key,
+        let CellHeartbeat {
+            pubkey: hb_pub_key,
             cbsd_id: hb_cbsd_id,
             timestamp: hb_timestamp,
             ..
-        } = cell_heartbeat_req_v1;
+        } = cell_heartbeat;
 
         if let Some(cell_type) = CellType::from_cbsd_id(&hb_cbsd_id) {
             // TODO: Will only get inserted in invalid if cbsd_id is a valid cell_type
             if hb_timestamp < after_utc || hb_timestamp >= before_utc {
                 self.invalid_shares.push(ShareProto {
                     cbsd_id: hb_cbsd_id,
-                    timestamp: hb_timestamp,
+                    timestamp: hb_timestamp.timestamp() as u64,
                     pub_key: hb_pub_key.to_vec(),
                     weight: crate::bones_to_u64(cell_type.reward_weight()),
                     cell_type: cell_type as i32,
@@ -267,24 +275,20 @@ impl GatheredShares {
                 return;
             }
 
-            if let Ok(gw_pubkey) = PublicKey::try_from(hb_pub_key.as_slice()) {
-                let share = Share::new(
-                    hb_timestamp,
-                    gw_pubkey,
-                    cell_type.reward_weight(),
-                    cell_type,
-                    ShareValidity::Valid,
-                );
+            let share = Share::new(
+                hb_timestamp,
+                hb_pub_key,
+                cell_type.reward_weight(),
+                cell_type,
+                ShareValidity::Valid,
+            );
 
-                if self
-                    .shares
-                    .get(&hb_cbsd_id)
-                    .map_or(false, |found_share| found_share.timestamp > hb_timestamp)
-                {
-                    return;
-                }
-                self.shares.insert(hb_cbsd_id, share);
+            if self.shares.get(&hb_cbsd_id).map_or(false, |found_share| {
+                found_share.timestamp > hb_timestamp
+            }) {
+                return;
             }
+            self.shares.insert(hb_cbsd_id, share);
         }
     }
 }
