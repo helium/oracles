@@ -1256,23 +1256,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "helium-crypto"
-version = "0.4.4"
-source = "git+https://github.com/helium/helium-crypto-rs?branch=main#ba0ad9892d0485d14f1a94ba54ac5f24c7d18284"
-dependencies = [
- "base64",
- "bs58",
- "ed25519-dalek",
- "lazy_static",
- "p256",
- "rand_core 0.6.4",
- "serde",
- "sha2 0.10.6",
- "signature",
- "thiserror",
-]
-
-[[package]]
 name = "helium-proto"
 version = "0.1.0"
 source = "git+https://github.com/helium/proto?branch=master#4ffd91a0e7e8ee56e89b0115a4b01356acc8ba99"
@@ -1765,7 +1748,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-crypto",
  "helium-proto",
  "http",
  "lazy_static",
@@ -1801,7 +1784,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?branch=main)",
+ "helium-crypto",
  "helium-proto",
  "http",
  "lazy_static",
@@ -2040,7 +2023,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-crypto",
  "helium-proto",
  "http",
  "hyper",
@@ -2072,7 +2055,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-crypto",
  "helium-proto",
  "http",
  "metrics",
@@ -2100,7 +2083,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-crypto",
  "helium-proto",
  "http",
  "metrics",
@@ -2144,7 +2127,7 @@ dependencies = [
  "futures",
  "futures-core",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-crypto",
  "helium-proto",
  "hex-literal",
  "http",
@@ -2176,7 +2159,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-crypto",
  "helium-proto",
  "http",
  "hyper",
@@ -2215,7 +2198,7 @@ dependencies = [
  "dotenv",
  "futures",
  "futures-util",
- "helium-crypto 0.4.4 (git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4)",
+ "helium-crypto",
  "helium-proto",
  "http",
  "hyper",

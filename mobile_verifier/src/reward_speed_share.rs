@@ -1,6 +1,8 @@
+use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::{
-    Average as AverageProto, ShareValidity, SpeedShare as SpeedShareProto, SpeedtestReqV1,
+    Average as AverageProto, ShareValidity, SpeedShare as SpeedShareProto,
 };
+use poc_store::speedtest::CellSpeedtest;
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 
@@ -135,19 +137,19 @@ impl MovingAvg {
 #[derive(Debug, Serialize, Clone)]
 pub struct SpeedShare {
     pub pub_key: PublicKey,
-    pub timestamp: u64,
+    pub timestamp: DateTime<Utc>,
     pub upload_speed: u64,
     pub download_speed: u64,
     pub latency: u32,
     pub validity: ShareValidity,
 }
 
-impl TryFrom<SpeedtestReqV1> for SpeedShare {
+impl TryFrom<CellSpeedtest> for SpeedShare {
     type Error = helium_crypto::Error;
 
-    fn try_from(speed_test: SpeedtestReqV1) -> Result<Self, Self::Error> {
+    fn try_from(speed_test: CellSpeedtest) -> Result<Self, Self::Error> {
         Ok(Self {
-            pub_key: PublicKey::try_from(speed_test.pub_key.as_ref())?,
+            pub_key: speed_test.pubkey,
             timestamp: speed_test.timestamp,
             upload_speed: speed_test.upload_speed,
             download_speed: speed_test.download_speed,
@@ -161,7 +163,7 @@ impl From<SpeedShare> for SpeedShareProto {
     fn from(ss: SpeedShare) -> Self {
         Self {
             pub_key: ss.pub_key.to_vec(),
-            timestamp: ss.timestamp,
+            timestamp: ss.timestamp.timestamp() as u64,
             upload_speed_bps: ss.upload_speed,
             download_speed_bps: ss.download_speed,
             latency_ms: ss.latency,
@@ -173,7 +175,7 @@ impl From<SpeedShare> for SpeedShareProto {
 impl SpeedShare {
     pub fn new(
         pub_key: PublicKey,
-        timestamp: u64,
+        timestamp: DateTime<Utc>,
         upload_speed: u64,
         download_speed: u64,
         latency: u32,
@@ -193,13 +195,12 @@ impl SpeedShare {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::DateTime;
+    use chrono::{DateTime, TimeZone};
     use std::str::FromStr;
 
-    fn parse_dt(dt: &str) -> u64 {
-        DateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
+    fn parse_dt(dt: &str) -> DateTime<Utc> {
+        Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
             .expect("unable_to_parse")
-            .timestamp() as u64
     }
 
     fn bytes_per_s(mbps: u64) -> u64 {

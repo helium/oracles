@@ -54,11 +54,11 @@ impl SubnetworkRewards {
         let before_ts = before_utc.timestamp() as u64;
 
         let mut file_list = file_store
-            .list_all(FileType::CellHeartbeat, after_utc, before_utc)
+            .list_all(FileType::CellHeartbeatIngestReport, after_utc, before_utc)
             .await?;
         file_list.extend(
             file_store
-                .list_all(FileType::CellSpeedtest, after_utc, before_utc)
+                .list_all(FileType::CellSpeedtestIngestReport, after_utc, before_utc)
                 .await?,
         );
 
@@ -66,7 +66,7 @@ impl SubnetworkRewards {
 
         let mut stream = file_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
 
-        let gathered_shares = GatheredShares::from_stream(&mut stream, after_ts, before_ts).await?;
+        let gathered_shares = GatheredShares::from_stream(&mut stream, after_utc, before_utc).await?;
 
         let cell_shares = cell_shares(&gathered_shares.shares);
 
@@ -185,7 +185,7 @@ impl SubnetworkRewards {
                         upload_speed_bps: share.upload_speed,
                         download_speed_bps: share.download_speed,
                         latency_ms: share.latency,
-                        timestamp: share.timestamp,
+                        timestamp: share.timestamp.timestamp() as u64,
                         validity: share.validity as i32,
                     })
                     .collect(),
@@ -286,7 +286,7 @@ impl SubnetworkRewards {
                     .into_iter()
                     .map(|(cbsd_id, share)| proto::Share {
                         cbsd_id,
-                        timestamp: share.timestamp,
+                        timestamp: share.timestamp.timestamp() as u64,
                         pub_key: share.pub_key.to_vec(),
                         weight: bones_to_u64(share.weight),
                         cell_type: share.cell_type as i32,
@@ -340,6 +340,7 @@ mod test {
         reward_share::{OwnerEmissions, OwnerResolver, Share, Shares},
         reward_speed_share::{SpeedShare, SpeedShareMovingAvgs, SpeedShares},
     };
+    use chrono::TimeZone;
     use async_trait::async_trait;
     use helium_crypto::PublicKey;
     use std::str::FromStr;
@@ -377,10 +378,10 @@ mod test {
         let c3 = "P27-SCO4255PA102206DPT000207".to_string();
         let c4 = "2AG32MBS3100196N1202000240215KY0184".to_string();
 
-        let t1: u64 = 100;
-        let t2: u64 = 100;
-        let t3: u64 = 100;
-        let t4: u64 = 100;
+        let t1 = Utc.timestamp_millis(100);
+        let t2 = Utc.timestamp_millis(100);
+        let t3 = Utc.timestamp_millis(100);
+        let t4 = Utc.timestamp_millis(100);
 
         let ct1 = CellType::from_cbsd_id(&c1).expect("unable to get cell_type");
         let ct2 = CellType::from_cbsd_id(&c2).expect("unable to get cell_type");
@@ -433,7 +434,7 @@ mod test {
         let s1 = vec![
             SpeedShare::new(
                 g1.clone(),
-                1661578086,
+                Utc.timestamp_millis(1661578086),
                 2182223,
                 11739568,
                 118,
@@ -441,7 +442,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661581686,
+                Utc.timestamp_millis(1661581686),
                 2589229,
                 12618734,
                 30,
@@ -449,7 +450,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661585286,
+                Utc.timestamp_millis(1661585286),
                 11420942,
                 11376519,
                 8,
@@ -457,7 +458,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 7646683,
                 35517840,
                 6,
@@ -465,7 +466,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 7646683,
                 35517840,
                 6,
@@ -473,7 +474,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 8646683,
                 35517840,
                 6,
@@ -484,7 +485,7 @@ mod test {
         let s2 = vec![
             SpeedShare::new(
                 g2.clone(),
-                1661578086,
+                Utc.timestamp_millis(1661578086),
                 2182223,
                 11739568,
                 118,
@@ -492,7 +493,7 @@ mod test {
             ),
             SpeedShare::new(
                 g2.clone(),
-                1661581686,
+                Utc.timestamp_millis(1661581686),
                 2589229,
                 12618734,
                 30,
@@ -500,7 +501,7 @@ mod test {
             ),
             SpeedShare::new(
                 g2.clone(),
-                1661585286,
+                Utc.timestamp_millis(1661585286),
                 11420942,
                 11376519,
                 40,
@@ -508,7 +509,7 @@ mod test {
             ),
             SpeedShare::new(
                 g2.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 7646683,
                 35517840,
                 60,
@@ -516,7 +517,7 @@ mod test {
             ),
             SpeedShare::new(
                 g2.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 7646683,
                 35517840,
                 55,
@@ -524,7 +525,7 @@ mod test {
             ),
             SpeedShare::new(
                 g2.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 8646683,
                 35517840,
                 58,
@@ -535,7 +536,7 @@ mod test {
         let s3 = vec![
             SpeedShare::new(
                 g1.clone(),
-                1661578086,
+                Utc.timestamp_millis(1661578086),
                 182223,
                 11739568,
                 118,
@@ -543,7 +544,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661581686,
+                Utc.timestamp_millis(1661581686),
                 589229,
                 12618734,
                 30,
@@ -551,7 +552,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661585286,
+                Utc.timestamp_millis(1661585286),
                 1420942,
                 11376519,
                 8,
@@ -559,7 +560,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 646683,
                 35517840,
                 6,
@@ -567,7 +568,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 646683,
                 35517840,
                 6,
@@ -575,7 +576,7 @@ mod test {
             ),
             SpeedShare::new(
                 g1.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 646683,
                 35517840,
                 6,
@@ -586,7 +587,7 @@ mod test {
         let s4 = vec![
             SpeedShare::new(
                 g4.clone(),
-                1661578086,
+                Utc.timestamp_millis(1661578086),
                 2182223,
                 1739568,
                 118,
@@ -594,7 +595,7 @@ mod test {
             ),
             SpeedShare::new(
                 g4.clone(),
-                1661581686,
+                Utc.timestamp_millis(1661581686),
                 2589229,
                 2618734,
                 30,
@@ -602,7 +603,7 @@ mod test {
             ),
             SpeedShare::new(
                 g4.clone(),
-                1661585286,
+                Utc.timestamp_millis(1661585286),
                 11420942,
                 1376519,
                 8,
@@ -610,7 +611,7 @@ mod test {
             ),
             SpeedShare::new(
                 g4.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 7646683,
                 5517840,
                 6,
@@ -618,7 +619,7 @@ mod test {
             ),
             SpeedShare::new(
                 g4.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 7646683,
                 5517840,
                 6,
@@ -626,7 +627,7 @@ mod test {
             ),
             SpeedShare::new(
                 g4.clone(),
-                1661588886,
+                Utc.timestamp_millis(1661588886),
                 8646683,
                 5517840,
                 6,
