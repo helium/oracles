@@ -54,11 +54,11 @@ impl SubnetworkRewards {
         let before_ts = before_utc.timestamp() as u64;
 
         let mut file_list = file_store
-            .list_all(FileType::CellHeartbeat, after_utc, before_utc)
+            .list_all(FileType::CellHeartbeatIngestReport, after_utc, before_utc)
             .await?;
         file_list.extend(
             file_store
-                .list_all(FileType::CellSpeedtest, after_utc, before_utc)
+                .list_all(FileType::CellSpeedtestIngestReport, after_utc, before_utc)
                 .await?,
         );
 
