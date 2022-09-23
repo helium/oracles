@@ -34,12 +34,6 @@ jobs:
         with:
           key: ${{ runner.os }}-build
 
-      - name: Run tests
-        run: cargo test
-      - uses: Swatinem/rust-cache@v1
-        with:
-          key: ${{ runner.os }}-test
-
       - name: Check formatting
         run: cargo fmt  -- --check
       - uses: Swatinem/rust-cache@v1
@@ -54,6 +48,12 @@ jobs:
       - uses: Swatinem/rust-cache@v1
         with:
           key: ${{ runner.os }}-clippy
+
+      - name: Run tests
+        run: cargo test
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ runner.os }}-test
 
       - name: PackageIngestorServer
         id: build_ingestor
