@@ -53,7 +53,7 @@ async fn main() -> Result {
 
     let (entropy_tx, entropy_rx) = file_sink::message_channel(50);
     let mut entropy_sink =
-        file_sink::FileSinkBuilder::new(FileType::Entropy, store_base_path, entropy_rx)
+        file_sink::FileSinkBuilder::new(FileType::EntropyReport, store_base_path, entropy_rx)
             .deposits(Some(file_upload_tx.clone()))
             .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
             .create()
