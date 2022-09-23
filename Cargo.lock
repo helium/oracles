@@ -1515,11 +1515,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-<<<<<<< HEAD
-source = "git+https://github.com/helium/proto?branch=master#56a7055d16071c99339f69f352fea669b3894dc2"
-=======
-source = "git+https://github.com/helium/proto?branch=andymck/verifier-pass2#7bda64280824d70d49d70ea3269a42bf39878143"
->>>>>>> 4e1ba63 (refactor out proto usage, add mor validations, misc fixes)
+source = "git+https://github.com/helium/proto?branch=andymck/verifier-pass2#c57cdc442b3c43aa890e930ab1b3ad1adaae259a"
 dependencies = [
  "bytes",
  "prost",
@@ -2466,6 +2462,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "xorf",
 ]
 
 [[package]]
@@ -4058,6 +4055,16 @@ name = "xmlparser"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "114ba2b24d2167ef6d67d7d04c8cc86522b87f490025f39f0303b7db5bf5e3d8"
+
+[[package]]
+name = "xorf"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7afb3a52aef0211e557044386369919b033004fdcf4c56c5017710f97fa9aa3c"
+dependencies = [
+ "libm",
+ "rand",
+]
 
 [[package]]
 name = "zeroize"

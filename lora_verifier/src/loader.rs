@@ -190,6 +190,7 @@ impl Loader {
                     &id,
                     &event.data,
                     &datetime_from_epoch(event.timestamp),
+                    event.version as i32,
                 )
                 .await
             }

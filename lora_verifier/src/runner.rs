@@ -163,7 +163,7 @@ impl Runner {
             // top level checks, dont proceed to validate POC reports if these fail
             //
 
-            // is beaconer allower to beacon at this time ?
+            // is beaconer allowed to beacon at this time ?
             // any irregularily timed beacons will be rejected
             match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
                 Some(last_beacon) => {
@@ -183,12 +183,15 @@ impl Runner {
                     }
                 }
                 None => {
-                    tracing::info!("no last beacon timestamp available");
+                    tracing::info!(
+                        "no last beacon timestamp available for this hotspot, ignoring "
+                    );
                 }
             }
 
-            // Do we have the entropy included in the beacon report ?
+            // Do we have recognised entropy included in the beacon report ?
             // if not then go no further, await next tick
+            // if we never recognise it, the report will eventually be purged
             let entropy_hash = Sha256::digest(&beacon.remote_entropy).to_vec();
             let entropy_info = match Entropy::get(&self.pool, &entropy_hash).await? {
                 Some(res) => res,
@@ -305,7 +308,6 @@ impl Runner {
         let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.try_into()?;
         file_sink::write(lora_valid_poc_tx, invalid_poc_proto).await?;
         for witness_report in witness_reports {
-            // let report: LoraBeaconReportReqV1 = v.report.into();
             let invalid_witness_report: LoraInvalidWitnessReport = LoraInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
                 report: witness_report.report,

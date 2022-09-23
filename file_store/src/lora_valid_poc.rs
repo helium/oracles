@@ -8,11 +8,12 @@ use helium_proto::services::poc_lora::{
     LoraWitnessReportReqV1,
 };
 use serde::Serialize;
+use std::ops::Not;
 
 #[derive(Serialize, Clone)]
 pub struct LoraValidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
-    pub location: String,
+    pub location: Option<u64>,
     pub hex_scale: f32,
     pub report: LoraBeaconReport,
 }
@@ -20,7 +21,7 @@ pub struct LoraValidBeaconReport {
 #[derive(Serialize, Clone)]
 pub struct LoraValidWitnessReport {
     pub received_timestamp: DateTime<Utc>,
-    pub location: String,
+    pub location: Option<u64>,
     pub hex_scale: f32,
     pub report: LoraWitnessReport,
 }
@@ -73,9 +74,14 @@ impl TryFrom<LoraValidPoc> for LoraValidPocV1 {
 impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
     type Error = Error;
     fn try_from(v: LoraValidBeaconReportV1) -> Result<Self> {
+        let location = v
+            .location
+            .is_empty()
+            .not()
+            .then(|| v.location.parse::<u64>().unwrap());
         Ok(Self {
             received_timestamp: datetime_from_epoch(v.received_timestamp),
-            location: v.location,
+            location,
             hex_scale: v.hex_scale,
             report: LoraBeaconReport::try_from(v.report.unwrap())?,
         })
@@ -86,9 +92,13 @@ impl TryFrom<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
     type Error = Error;
     fn try_from(v: LoraValidBeaconReport) -> Result<Self> {
         let report: LoraBeaconReportReqV1 = v.report.into();
+        let location = match v.location {
+            None => String::new(),
+            Some(loc) => loc.to_string(),
+        };
         Ok(Self {
             received_timestamp: v.received_timestamp.timestamp() as u64,
-            location: v.location,
+            location,
             hex_scale: v.hex_scale,
             report: Some(report),
         })
@@ -98,9 +108,14 @@ impl TryFrom<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
 impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
     type Error = Error;
     fn try_from(v: LoraValidWitnessReportV1) -> Result<Self> {
+        let location = v
+            .location
+            .is_empty()
+            .not()
+            .then(|| v.location.parse::<u64>().unwrap());
         Ok(Self {
             received_timestamp: datetime_from_epoch(v.received_timestamp),
-            location: v.location,
+            location,
             hex_scale: v.hex_scale,
             report: LoraWitnessReport::try_from(v.report.unwrap())?,
         })
@@ -111,9 +126,13 @@ impl TryFrom<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
     type Error = Error;
     fn try_from(v: LoraValidWitnessReport) -> Result<Self> {
         let report: LoraWitnessReportReqV1 = v.report.into();
+        let location = match v.location {
+            None => String::new(),
+            Some(loc) => loc.to_string(),
+        };
         Ok(Self {
             received_timestamp: v.received_timestamp.timestamp() as u64,
-            location: v.location,
+            location,
             hex_scale: v.hex_scale,
             report: Some(report),
         })

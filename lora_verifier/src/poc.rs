@@ -1,12 +1,9 @@
-use crate::{entropy::Entropy, follower::FollowerService, Result};
+use crate::{entropy::Entropy, follower::FollowerGatewayResp, follower::FollowerService, Result};
 use chrono::{DateTime, Duration, Utc};
 use geo::point;
 use geo::prelude::*;
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
-use helium_proto::services::{
-    follower::FollowerGatewayRespV1,
-    poc_lora::{InvalidParticipantSide, InvalidReason},
-};
+use helium_proto::services::poc_lora::{InvalidParticipantSide, InvalidReason};
 use helium_proto::GatewayStakingMode;
 use poc_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
@@ -41,14 +38,14 @@ pub struct Poc {
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: Option<InvalidReason>,
-    pub gateway_info: Option<FollowerGatewayRespV1>,
+    pub gateway_info: Option<FollowerGatewayResp>,
     pub hex_scale: Option<f32>,
 }
 
 pub struct VerifyWitnessResult {
     result: VerificationStatus,
     invalid_reason: Option<InvalidReason>,
-    pub gateway_info: Option<FollowerGatewayRespV1>,
+    pub gateway_info: Option<FollowerGatewayResp>,
 }
 
 pub struct VerifyWitnessesResult {
@@ -98,7 +95,7 @@ impl Poc {
 
         // tmp hack below when testing locally with no actual real gateway
         // replace beaconer_info declaration above with that below
-        // let beaconer_info = FollowerGatewayRespV1 {
+        // let beaconer_info = FollowerGatewayResp {
         //     height: 130000,
         //     location: String::from("location1"),
         //     address: beacon.pub_key.clone(),
@@ -120,7 +117,7 @@ impl Poc {
         }
 
         //check beaconer has an asserted location
-        if beaconer_info.location.is_empty() {
+        if beaconer_info.location == None {
             let resp = VerifyBeaconResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::NotAsserted),
@@ -131,17 +128,20 @@ impl Poc {
         }
 
         // check beaconer is permitted to participate in POC
-        // TODO implement capabilities mask
-        let staking_mode = GatewayStakingMode::from_i32(beaconer_info.staking_mode);
-        if let Some(GatewayStakingMode::Dataonly) = staking_mode {
-            let resp = VerifyBeaconResult {
-                result: VerificationStatus::Invalid,
-                invalid_reason: Some(InvalidReason::InvalidCapability),
-                gateway_info: Some(beaconer_info),
-                hex_scale: None,
-            };
-            return Ok(resp);
+        match beaconer_info.staking_mode {
+            GatewayStakingMode::Dataonly => {
+                let resp = VerifyBeaconResult {
+                    result: VerificationStatus::Invalid,
+                    invalid_reason: Some(InvalidReason::InvalidCapability),
+                    gateway_info: Some(beaconer_info),
+                    hex_scale: None,
+                };
+                return Ok(resp);
+            }
+            GatewayStakingMode::Full => (),
+            GatewayStakingMode::Light => (),
         }
+
         // TODO: insert hex scale lookup here
         //       value hardcoded to 1.0 temporarily
 
@@ -158,7 +158,7 @@ impl Poc {
 
     pub async fn verify_witnesses(
         &mut self,
-        beacon_info: &FollowerGatewayRespV1,
+        beacon_info: &FollowerGatewayResp,
     ) -> Result<VerifyWitnessesResult> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
@@ -172,7 +172,7 @@ impl Poc {
                     let valid_witness = LoraValidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
                         location: witness_result.gateway_info.unwrap().location,
-                        hex_scale: 1.0,
+                        hex_scale: 1.0, //TODO: replace with actual hex scale when available
                         report: witness_report.report,
                     };
                     valid_witnesses.push(valid_witness)
@@ -212,7 +212,7 @@ impl Poc {
     async fn verify_witness(
         &mut self,
         witness_report: &LoraWitnessIngestReport,
-        beaconer_info: &FollowerGatewayRespV1,
+        beaconer_info: &FollowerGatewayResp,
     ) -> Result<VerifyWitnessResult> {
         // use pub key to get GW info from our follower and verify the witness
         let witness = &witness_report.report;
@@ -236,7 +236,7 @@ impl Poc {
 
         // tmp hack below when testing locally with no actual real gateway
         // replace witness_info declaration above with that below
-        // let witness_info = FollowerGatewayRespV1 {
+        // let witness_info = FollowerGatewayResp {
         //     height: 130000,
         //     location: String::from("location1"),
         //     address: witness.pub_key.clone(),
@@ -244,7 +244,7 @@ impl Poc {
         //     staking_mode: GatewayStakingMode::Full as i32,
         // };
 
-        // if beacon timestamp is outside of entopy start/end then reject the poc
+        // if witness report received timestamp is outside of entopy start/end then reject the poc
         let witness_received_time = witness_report.received_timestamp;
         if witness_received_time < self.entropy_start || witness_received_time > self.entropy_end {
             let resp = VerifyWitnessResult {
@@ -255,8 +255,8 @@ impl Poc {
             return Ok(resp);
         }
 
-        // check beaconer has an asserted location
-        if witness_info.location.is_empty() {
+        // check witness has an asserted location
+        if witness_info.location == None {
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::NotAsserted),
@@ -286,8 +286,8 @@ impl Poc {
         }
 
         // check witness does not exceed max distance from beaconer
-        let beaconer_loc: u64 = beaconer_info.location.parse().unwrap();
-        let witness_loc: u64 = witness_info.location.parse().unwrap();
+        let beaconer_loc = beaconer_info.location.unwrap();
+        let witness_loc = witness_info.location.unwrap();
         let witness_distance = calc_distance(beaconer_loc, witness_loc).unwrap();
         if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
             let resp = VerifyWitnessResult {
@@ -313,15 +313,17 @@ impl Poc {
         }
 
         // check witness is permitted to participate in POC
-        // TODO implement capabilities mask or is mode check sufficient these days?
-        let staking_mode = GatewayStakingMode::from_i32(witness_info.staking_mode);
-        if let Some(GatewayStakingMode::Dataonly) = staking_mode {
-            let resp = VerifyWitnessResult {
-                result: VerificationStatus::Invalid,
-                invalid_reason: Some(InvalidReason::InvalidCapability),
-                gateway_info: Some(witness_info),
-            };
-            return Ok(resp);
+        match witness_info.staking_mode {
+            GatewayStakingMode::Dataonly => {
+                let resp = VerifyWitnessResult {
+                    result: VerificationStatus::Invalid,
+                    invalid_reason: Some(InvalidReason::InvalidCapability),
+                    gateway_info: Some(witness_info),
+                };
+                return Ok(resp);
+            }
+            GatewayStakingMode::Full => (),
+            GatewayStakingMode::Light => (),
         }
 
         //TODO: Plugin Jay's crate here when ready
