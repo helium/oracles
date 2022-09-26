@@ -69,9 +69,9 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
             .connect_lazy(),
     );
 
-    let mut last_reward_end_time =
-        MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
-            env_var("LAST_REWARD_END_TIME", 0).unwrap()
+    let mut last_verified_end_time =
+        MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", || {
+            env_var("LAST_VERIFIED_END_TIME", 0).unwrap()
         })
         .await?;
     let lookup_delay = env_var("LOOKUP_DELAY", DEFAULT_LOOKUP_DELAY)?;
@@ -79,12 +79,14 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
     let shutdown_clone = shutdown.clone();
     let server = tokio::spawn(async move {
         loop {
-            let (start, stop) = get_time_range(*last_reward_end_time.value(), lookup_delay);
+            let (start, stop) = get_time_range(*last_verified_end_time.value(), lookup_delay);
             SubnetworkRewards::from_period(&file_store, follower_client.clone(), start, stop)
                 .await?
                 .write(&shares_tx, &invalid_shares_tx, &subnet_tx)
                 .await?;
-            last_reward_end_time.update(&pool, stop.timestamp()).await?;
+            last_verified_end_time
+                .update(&pool, stop.timestamp())
+                .await?;
             select! {
                 _ = sleep(std::time::Duration::from_secs(lookup_delay as u64 * 60 * 60)) => continue,
                 _ = shutdown_clone.clone() => break,
