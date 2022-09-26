@@ -5,8 +5,8 @@ use crate::{
     Result,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
+use file_store::FileStore;
 use helium_proto::services::{follower, Endpoint, Uri};
-use poc_store::FileStore;
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]

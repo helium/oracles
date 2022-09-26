@@ -26,7 +26,7 @@ futures = "*"
 futures-util = "*"
 prost = "*"
 once_cell = "1"
-poc-store = {path = "../store"}
+file-store = {path = "../file_store"}
 poc-metrics = {path = "../metrics"}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}

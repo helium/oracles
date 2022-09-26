@@ -7,9 +7,9 @@ use crate::{
     reward_speed_share::SpeedShare,
 };
 use chrono::{DateTime, Utc};
+use file_store::{file_sink, FileInfo, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_proto::services::{follower, Channel};
-use poc_store::{file_sink, FileInfo, FileStore, FileType};
 use serde::Serialize;
 use std::path::Path;
 

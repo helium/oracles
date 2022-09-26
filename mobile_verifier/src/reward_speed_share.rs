@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
+use file_store::speedtest::CellSpeedtest;
 use helium_proto::services::poc_mobile::{
     Average as AverageProto, ShareValidity, SpeedShare as SpeedShareProto,
 };
-use poc_store::speedtest::CellSpeedtest;
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 

@@ -1,5 +1,5 @@
 use clap::Parser;
-use poc_store::{
+use file_store::{
     cli::{bucket, dump, info},
     Result,
 };

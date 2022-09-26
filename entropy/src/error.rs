@@ -17,7 +17,7 @@ pub enum Error {
     #[error("http server error")]
     Server(#[from] hyper::Error),
     #[error("store error")]
-    Store(#[from] poc_store::Error),
+    Store(#[from] file_store::Error),
     #[error("env error")]
     Env(#[from] std::env::VarError),
     #[error("mpsc channel error")]

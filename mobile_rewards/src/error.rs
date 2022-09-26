@@ -25,7 +25,7 @@ pub enum Error {
     #[error("crypto error")]
     Crypto(#[from] helium_crypto::Error),
     #[error("store error")]
-    Store(#[from] poc_store::Error),
+    Store(#[from] file_store::Error),
     #[error("not found")]
     NotFound(String),
     #[error("transaction error")]
