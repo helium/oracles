@@ -15,7 +15,7 @@ pub mod traits;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
-pub use file_store::FileStore;
+pub use crate::file_store::FileStore;
 
 use bytes::BytesMut;
 use chrono::{DateTime, NaiveDateTime, Utc};
