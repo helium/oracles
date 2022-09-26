@@ -30,7 +30,7 @@ pub trait B64 {
 
 impl B64 for Vec<u8> {
     fn to_b64_config(&self, config: base64::Config) -> Result<String> {
-        Ok(base64::encode_config(&self, config))
+        Ok(base64::encode_config(self, config))
     }
 
     fn from_b64_config(b64: &str, config: base64::Config) -> Result<Self> {

@@ -98,6 +98,7 @@ pub const ENTROPY: &str = "entropy";
 pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
 pub const SHARES: &str = "shares";
 pub const INVALID_SHARES: &str = "invalid_shares";
+pub const ENTROPY_REPORT: &str = "entropy_report";
 pub const LORA_BEACON_INGEST_REPORT: &str = "lora_beacon_ingest_report";
 pub const LORA_WITNESS_INGEST_REPORT: &str = "lora_witness_ingest_report";
 pub const LORA_VALID_POC: &str = "lora_valid_poc";
@@ -115,6 +116,7 @@ pub enum FileType {
     InvalidShares = 5,
     CellHeartbeatIngestReport,
     CellSpeedtestIngestReport,
+    EntropyReport,
     LoraBeaconIngestReport,
     LoraWitnessIngestReport,
     LoraValidPoc,
@@ -133,6 +135,7 @@ impl fmt::Display for FileType {
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
             Self::Shares => SHARES,
             Self::InvalidShares => INVALID_SHARES,
+            Self::EntropyReport => ENTROPY_REPORT,
             Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
             Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
             Self::LoraValidPoc => LORA_VALID_POC,
@@ -154,6 +157,7 @@ impl FileType {
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
             Self::Shares => SHARES,
             Self::InvalidShares => INVALID_SHARES,
+            Self::EntropyReport => ENTROPY_REPORT,
             Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
             Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
             Self::LoraValidPoc => LORA_VALID_POC,
@@ -175,6 +179,7 @@ impl FromStr for FileType {
             SUBNETWORK_REWARDS => Self::SubnetworkRewards,
             SHARES => Self::Shares,
             INVALID_SHARES => Self::InvalidShares,
+            ENTROPY_REPORT => Self::EntropyReport,
             LORA_BEACON_INGEST_REPORT => Self::LoraBeaconIngestReport,
             LORA_WITNESS_INGEST_REPORT => Self::LoraWitnessIngestReport,
             LORA_VALID_POC => Self::LoraValidPoc,

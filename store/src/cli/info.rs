@@ -9,7 +9,7 @@ use helium_proto::{
     services::poc_mobile::{
         CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1, SpeedtestReqV1,
     },
-    Entropy, Message,
+    EntropyReportV1, Message,
 };
 use serde_json::json;
 use std::path::PathBuf;
@@ -90,8 +90,8 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
                 })
             })
             .map(|speedtest_req| datetime_from_epoch(speedtest_req.timestamp))?,
-        FileType::Entropy => {
-            Entropy::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
+        FileType::EntropyReport => {
+            EntropyReportV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
         }
         FileType::LoraBeaconIngestReport => LoraBeaconIngestReportV1::decode(buf)
             .map(|entry| datetime_from_epoch(entry.received_timestamp))?,

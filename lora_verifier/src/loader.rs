@@ -7,7 +7,7 @@ use crate::{
 };
 use chrono::{Duration, Utc};
 use futures::{stream, StreamExt};
-use helium_proto::Entropy as EntropyPB;
+use helium_proto::EntropyReportV1;
 use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     Message,
@@ -80,7 +80,7 @@ impl Loader {
         stream::iter(&[
             FileType::LoraBeaconIngestReport,
             FileType::LoraWitnessIngestReport,
-            FileType::Entropy,
+            FileType::EntropyReport,
         ])
         .map(|file_type| (file_type, shutdown.clone()))
         .for_each_concurrent(2, |(file_type, shutdown)| async move {
@@ -182,8 +182,8 @@ impl Loader {
                 )
                 .await
             }
-            FileType::Entropy => {
-                let event = EntropyPB::decode(buf)?;
+            FileType::EntropyReport => {
+                let event = EntropyReportV1::decode(buf)?;
                 let id = Sha256::digest(&event.data).to_vec();
                 Entropy::insert_into(
                     &self.pool,

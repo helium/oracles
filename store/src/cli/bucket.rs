@@ -217,7 +217,7 @@ fn locate(
         FileType::LoraValidPoc => {
             LoraValidPoc::decode(buf).and_then(|event| event.to_value_if(gateway))
         }
-        FileType::Entropy => Ok(None),
+        FileType::EntropyReport => Ok(None),
         _ => Ok(None),
     }
 }
