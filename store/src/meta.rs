@@ -86,22 +86,9 @@ where
             }
             None => {
                 let value = default_fn();
-                sqlx::query(
-                    r#"
-                    insert into meta (key, value) 
-                    values ($1, $2) 
-                    on conflict (key) do update set 
-                    value = EXCLUDED.value;
-                    "#,
-                )
-                .bind(key)
-                .bind(value.to_string())
-                .execute(exec)
-                .await?;
-                Ok(Self {
-                    key: key.to_string(),
-                    value,
-                })
+                let res = Self::new(key, value);
+                res.insert(exec).await?;
+                Ok(res)
             }
         }
     }
