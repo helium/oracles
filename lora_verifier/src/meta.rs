@@ -1,6 +1,6 @@
 use crate::{datetime_from_epoch, Error, Result};
 use chrono::{DateTime, Utc};
-use poc_store::FileType;
+use file_store::FileType;
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]

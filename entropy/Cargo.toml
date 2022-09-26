@@ -40,7 +40,7 @@ helium-proto = { git = "https://github.com/helium/proto", branch = "master", fea
   "services",
 ] }
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}
-poc-store = { path = "../store" }
+file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 
 [package.metadata.deb]

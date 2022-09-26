@@ -6,14 +6,10 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("environment error")]
     DotEnv(#[from] dotenv::Error),
-    #[error("env error")]
-    Env(#[from] std::env::VarError),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
     #[error("io error")]
     Io(#[from] std::io::Error),
-    #[error("join error")]
-    Join(#[from] tokio::task::JoinError),
     #[error("encode error")]
     Encode(#[from] EncodeError),
     #[error("decode error")]
@@ -24,16 +20,18 @@ pub enum Error {
     Service(#[from] helium_proto::services::Error),
     #[error("grpc {}", .0.message())]
     Grpc(#[from] tonic::Status),
-    #[error("http server error")]
-    Server(#[from] hyper::Error),
-    #[error("http server extension error")]
-    ServerExtension(#[from] axum::extract::rejection::ExtensionRejection),
     #[error("crypto error")]
     Crypto(#[from] helium_crypto::Error),
     #[error("store error")]
     Store(#[from] file_store::Error),
     #[error("not found")]
     NotFound(String),
+    #[error("transaction error")]
+    TransactionError(String),
+    #[error("meta error")]
+    MetaError(#[from] db_store::MetaError),
+    #[error("join error")]
+    JoinError(tokio::task::JoinError),
 }
 
 #[derive(Error, Debug)]
@@ -48,10 +46,8 @@ pub enum DecodeError {
     Chrono(#[from] chrono::ParseError),
     #[error("invalid decimals in {0}, only 8 allowed")]
     Decimals(String),
-    #[error("base64 error")]
+    #[error("base64 decode error")]
     Base64(#[from] base64::DecodeError),
-    #[error("socket addr error")]
-    SocketAddr(#[from] std::net::AddrParseError),
 }
 
 #[derive(Error, Debug)]
@@ -92,13 +88,4 @@ from_err!(EncodeError, serde_json::Error);
 from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);
 from_err!(DecodeError, chrono::ParseError);
-from_err!(DecodeError, std::net::AddrParseError);
-
-impl From<Error> for (http::StatusCode, String) {
-    fn from(v: Error) -> Self {
-        match v {
-            Error::NotFound(msg) => (http::StatusCode::NOT_FOUND, msg),
-            err => (http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
-        }
-    }
-}
+from_err!(DecodeError, base64::DecodeError);

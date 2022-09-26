@@ -30,6 +30,21 @@ impl FileStore {
         Self::new(endpoint, region, bucket).await
     }
 
+    // TODO: Figure out how to better deal with multiple file stores
+    pub async fn from_env_with_prefix(prefix: &str) -> Result<FileStore> {
+        let endpoint: Option<Endpoint> = match env::var(&format!("{prefix}_BUCKET_ENDPOINT")) {
+            Ok(endpoint_env) => Uri::from_str(&endpoint_env)
+                .map(Endpoint::immutable)
+                .map(Some)
+                .map_err(DecodeError::from)?,
+            _ => None,
+        };
+        let region = env::var(&format!("{prefix}_BUCKET_REGION"))
+            .map_or_else(|_| Region::new("us-west-2"), Region::new);
+        let bucket = env::var(&format!("{prefix}_BUCKET"))?;
+        Self::new(endpoint, region, bucket).await
+    }
+
     pub async fn new(
         endpoint: Option<Endpoint>,
         default_region: impl ProvideRegion + 'static,
@@ -114,6 +129,18 @@ impl FileStore {
             .bucket(&self.bucket)
             .key(file.file_name().map(|name| name.to_string_lossy()).unwrap())
             .body(byte_stream)
+            .send()
+            .map_ok(|_| ())
+            .map_err(Error::s3_error)
+            .await
+    }
+
+    pub async fn put_bytes(&self, file_name: &str, bytes: Vec<u8>) -> Result {
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(file_name)
+            .body(ByteStream::from(bytes))
             .send()
             .map_ok(|_| ())
             .map_err(Error::s3_error)

@@ -13,7 +13,7 @@ use helium_proto::{
     Message,
 };
 
-use poc_store::{datetime_from_epoch, FileStore, FileType};
+use file_store::{datetime_from_epoch, FileStore, FileType};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;

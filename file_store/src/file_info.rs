@@ -94,6 +94,10 @@ pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
 pub const CELL_SPEEDTEST_INGEST_REPORT: &str = "speedtest_report";
+pub const ENTROPY: &str = "entropy";
+pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
+pub const SHARES: &str = "shares";
+pub const INVALID_SHARES: &str = "invalid_shares";
 pub const ENTROPY_REPORT: &str = "entropy_report";
 pub const LORA_BEACON_INGEST_REPORT: &str = "lora_beacon_ingest_report";
 pub const LORA_WITNESS_INGEST_REPORT: &str = "lora_witness_ingest_report";
@@ -104,8 +108,12 @@ pub const LORA_INVALID_WITNESS_REPORT: &str = "lora_invalid_witness";
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
-    CellHeartbeat,
-    CellSpeedtest,
+    CellHeartbeat = 0,
+    CellSpeedtest = 1,
+    Entropy = 2,
+    SubnetworkRewards = 3,
+    Shares = 4,
+    InvalidShares = 5,
     CellHeartbeatIngestReport,
     CellSpeedtestIngestReport,
     EntropyReport,
@@ -123,6 +131,10 @@ impl fmt::Display for FileType {
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
+            Self::Entropy => ENTROPY,
+            Self::SubnetworkRewards => SUBNETWORK_REWARDS,
+            Self::Shares => SHARES,
+            Self::InvalidShares => INVALID_SHARES,
             Self::EntropyReport => ENTROPY_REPORT,
             Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
             Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
@@ -141,6 +153,10 @@ impl FileType {
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
+            Self::Entropy => ENTROPY,
+            Self::SubnetworkRewards => SUBNETWORK_REWARDS,
+            Self::Shares => SHARES,
+            Self::InvalidShares => INVALID_SHARES,
             Self::EntropyReport => ENTROPY_REPORT,
             Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
             Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
@@ -159,6 +175,10 @@ impl FromStr for FileType {
             CELL_SPEEDTEST => Self::CellSpeedtest,
             CELL_HEARTBEAT_INGEST_REPORT => Self::CellHeartbeatIngestReport,
             CELL_SPEEDTEST_INGEST_REPORT => Self::CellSpeedtestIngestReport,
+            ENTROPY => Self::Entropy,
+            SUBNETWORK_REWARDS => Self::SubnetworkRewards,
+            SHARES => Self::Shares,
+            INVALID_SHARES => Self::InvalidShares,
             ENTROPY_REPORT => Self::EntropyReport,
             LORA_BEACON_INGEST_REPORT => Self::LoraBeaconIngestReport,
             LORA_WITNESS_INGEST_REPORT => Self::LoraWitnessIngestReport,

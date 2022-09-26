@@ -72,6 +72,13 @@ jobs:
           toml_path: entropy
           cmd: cargo deb -p poc-entropy
 
+      - name: PackageVerifierServer
+        id: build_verifier
+        if: contains(github.ref, 'refs/tags/')
+        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
+        with:
+          toml_path: mobile_verifier 
+          cmd: cargo deb -p mobile-verifier
 
       - name: PackagecloudUpload
         if: contains(github.ref, 'refs/tags/') && steps.build_ingestor.outcome == 'success' && steps.build_rewards.outcome == 'success' && steps.build_status.outcome == 'success' && steps.build_entropy.outcome == 'success'

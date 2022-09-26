@@ -838,6 +838,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "db-store"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+ "thiserror",
+]
+
+[[package]]
 name = "der"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -984,6 +992,42 @@ checksum = "df689201f395c6b90dfe87127685f8dbfc083a5e779e613575d8bd7314300c3e"
 dependencies = [
  "rand_core 0.6.4",
  "subtle",
+]
+
+[[package]]
+name = "file-store"
+version = "0.1.0"
+dependencies = [
+ "async-compression",
+ "aws-config",
+ "aws-sdk-s3",
+ "base64",
+ "bytes",
+ "chrono",
+ "clap",
+ "csv",
+ "dotenv",
+ "futures",
+ "futures-core",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "hex-literal",
+ "http",
+ "lazy_static",
+ "prost",
+ "regex",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "triggered",
 ]
 
 [[package]]
@@ -1745,6 +1789,7 @@ dependencies = [
  "chrono",
  "clap",
  "dotenv",
+ "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
@@ -1755,7 +1800,43 @@ dependencies = [
  "metrics-exporter-prometheus",
  "once_cell",
  "poc-metrics",
- "poc-store",
+ "prost",
+ "rand",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.10.6",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
+name = "mobile-verifier"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "db-store",
+ "dotenv",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "once_cell",
+ "poc-metrics",
  "prost",
  "rand",
  "rust_decimal",
@@ -1984,6 +2065,7 @@ dependencies = [
  "chrono",
  "clap",
  "dotenv",
+ "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
@@ -1994,7 +2076,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
- "poc-store",
  "prost",
  "serde",
  "serde_json",
@@ -2016,6 +2097,7 @@ dependencies = [
  "chrono",
  "clap",
  "dotenv",
+ "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
@@ -2024,7 +2106,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
- "poc-store",
  "prost",
  "serde",
  "serde_json",
@@ -2032,6 +2113,33 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
+name = "poc-iot-injector"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "clap",
+ "dotenv",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "poc-metrics",
+ "prost",
+ "rand",
+ "serde",
+ "serde_json",
+ "sha2 0.10.6",
+ "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "triggered",
@@ -2048,42 +2156,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "poc-store"
-version = "0.1.0"
-dependencies = [
- "async-compression",
- "aws-config",
- "aws-sdk-s3",
- "base64",
- "bytes",
- "chrono",
- "clap",
- "csv",
- "dotenv",
- "futures",
- "futures-core",
- "futures-util",
- "helium-crypto",
- "helium-proto",
- "hex-literal",
- "http",
- "lazy_static",
- "prost",
- "regex",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
- "triggered",
-]
-
-[[package]]
 name = "poc5g-status"
 version = "0.1.0"
 dependencies = [
@@ -2092,6 +2164,7 @@ dependencies = [
  "chrono",
  "clap",
  "dotenv",
+ "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
@@ -2102,7 +2175,6 @@ dependencies = [
  "metrics",
  "once_cell",
  "poc-metrics",
- "poc-store",
  "prost",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2131,6 +2203,7 @@ dependencies = [
  "chrono",
  "clap",
  "dotenv",
+ "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
@@ -2139,7 +2212,6 @@ dependencies = [
  "hyper",
  "lazy_static",
  "once_cell",
- "poc-store",
  "prost",
  "serde",
  "serde_json",

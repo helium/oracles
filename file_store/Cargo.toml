@@ -1,9 +1,9 @@
 [package]
-name = "poc-store"
+name = "file-store"
 version = "0.1.0"
 edition = "2021"
-description = "Ingest Store Library"
-authors = ["Marc Nijdam <marc@nova-labe.com>"]
+description = "Ingest File Store Library"
+authors = ["Marc Nijdam <marc@nova-labs.com>"]
 license = "Apache-2.0"
 
 [dependencies]

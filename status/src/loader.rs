@@ -1,12 +1,12 @@
 use crate::{gateway::Gateway, meta::Meta, mk_db_pool, Result};
 use chrono::{Duration, Utc};
+use file_store::{datetime_from_epoch, FileStore, FileType};
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
     Message,
 };
-use poc_store::{datetime_from_epoch, FileStore, FileType};
 use sqlx::PgPool;
 use strum::EnumCount;
 use tokio::time;
