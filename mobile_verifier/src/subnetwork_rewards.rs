@@ -66,7 +66,8 @@ impl SubnetworkRewards {
 
         let mut stream = file_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
 
-        let gathered_shares = GatheredShares::from_stream(&mut stream, after_utc, before_utc).await?;
+        let gathered_shares =
+            GatheredShares::from_stream(&mut stream, after_utc, before_utc).await?;
 
         let cell_shares = cell_shares(&gathered_shares.shares);
 
@@ -340,8 +341,8 @@ mod test {
         reward_share::{OwnerEmissions, OwnerResolver, Share, Shares},
         reward_speed_share::{SpeedShare, SpeedShareMovingAvgs, SpeedShares},
     };
-    use chrono::TimeZone;
     use async_trait::async_trait;
+    use chrono::TimeZone;
     use helium_crypto::PublicKey;
     use std::str::FromStr;
 

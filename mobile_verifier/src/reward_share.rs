@@ -283,9 +283,11 @@ impl GatheredShares {
                 ShareValidity::Valid,
             );
 
-            if self.shares.get(&hb_cbsd_id).map_or(false, |found_share| {
-                found_share.timestamp > hb_timestamp
-            }) {
+            if self
+                .shares
+                .get(&hb_cbsd_id)
+                .map_or(false, |found_share| found_share.timestamp > hb_timestamp)
+            {
                 return;
             }
             self.shares.insert(hb_cbsd_id, share);
