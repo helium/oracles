@@ -50,16 +50,6 @@ impl Cmd {
 
         println!("{:#?}", rewards);
 
-        /*
-        if let Some(output_bucket) = output_bucket {
-            todo!();
-            /*
-            let output_store = FileStore::new(None, "us-west-2", output_bucket).await?;
-            rewards.write(&output_store).await?;
-            */
-         }
-         */
-
         Ok(())
     }
 }
