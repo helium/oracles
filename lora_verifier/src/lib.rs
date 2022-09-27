@@ -1,4 +1,3 @@
-pub mod denylist_runner;
 pub mod entropy;
 pub mod error;
 pub mod follower;

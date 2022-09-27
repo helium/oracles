@@ -88,9 +88,11 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
 
     // Initialize uploader
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-    let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
+    let file_upload =
+        file_upload::FileUpload::from_env_with_prefix("INGESTOR", file_upload_rx).await?;
 
-    let store_path = std::env::var("INGEST_STORE")?;
+    let store_path =
+        std::env::var("INGEST_STORE").unwrap_or_else(|_| String::from("/var/data/ingestor"));
     let store_base_path = Path::new(&store_path);
 
     let (heartbeat_tx, heartbeat_rx) = file_sink::message_channel(50);

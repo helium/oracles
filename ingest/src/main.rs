@@ -34,7 +34,6 @@ async fn main() -> Result {
     });
 
     // run the grpc server in either lora or mobile 5g mode
-    // let server_mode = dotenv::var("GRPC_SERVER_MODE")?;
     let server_mode = std::env::var("GRPC_SERVER_MODE")?;
     match server_mode.as_str() {
         "lora" => server_lora::grpc_server(shutdown_listener, server_mode).await,

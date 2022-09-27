@@ -36,8 +36,7 @@ impl Loader {
     pub async fn from_env() -> Result<Self> {
         tracing::info!("from_env verifier loader");
         let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
-        let store = FileStore::from_env().await?;
-        // let bucket = env_var("INGEST_BUCKET")?.unwrap_or_else(|| "poclora_ingest".to_string());
+        let store = FileStore::from_env_with_prefix("INGESTOR").await?;
         Ok(Self { pool, store })
     }
 

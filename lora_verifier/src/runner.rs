@@ -8,16 +8,15 @@ use crate::{
     poc_report::{LoraStatus, Report},
     Result,
 };
-use file_store::{file_sink, file_sink::MessageSender, file_upload, FileType};
-use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
-    LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
-};
-use poc_store::{
+use file_store::{
     file_sink, file_sink::MessageSender, file_upload, lora_beacon_report::LoraBeaconIngestReport,
     lora_beacon_report::LoraBeaconReport, lora_invalid_poc::LoraInvalidBeaconReport,
     lora_invalid_poc::LoraInvalidWitnessReport, lora_valid_poc::LoraValidBeaconReport,
     lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport, FileType,
+};
+use helium_proto::services::poc_lora::{
+    InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
+    LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
 };
 use std::path::Path;
 
@@ -40,7 +39,8 @@ pub struct Runner {
 impl Runner {
     pub async fn from_env() -> Result<Self> {
         let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
-        let store_path = dotenv::var("INGEST_STORE")?;
+        let store_path =
+            std::env::var("VERIFIER_STORE").unwrap_or_else(|_| String::from("/var/data/verifier"));
         Ok(Self { pool, store_path })
     }
 
@@ -56,7 +56,8 @@ impl Runner {
         let (lora_valid_poc_tx, lora_valid_poc_rx) = file_sink::message_channel(50);
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
+        let file_upload =
+            file_upload::FileUpload::from_env_with_prefix("VERIFIER", file_upload_rx).await?;
 
         let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraInvalidBeaconReport,
@@ -273,7 +274,7 @@ impl Runner {
                     .await?;
                 }
                 VerificationStatus::Failed => {
-                    // something went wrong whilst verifying witnesses
+                    // something went wrong whilst verifying the beacon report
                     // halt here and allow things to be reprocessed next tick
                     tracing::warn!("failure whilst verifying beacon");
                     // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
