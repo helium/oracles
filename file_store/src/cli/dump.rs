@@ -1,10 +1,19 @@
-use crate::{cli::print_json, file_source, heartbeat::CellHeartbeat, FileType, Result};
+use crate::{
+    cli::print_json,
+    file_source,
+    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    speedtest::CellSpeedtestIngestReport,
+    FileType, Result,
+};
 use csv::Writer;
 use futures::stream::StreamExt;
-use helium_proto::services::poc_lora::{
-    LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+use helium_proto::{
+    services::{
+        poc_lora::{LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1},
+        poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1},
+    },
+    Message,
 };
-use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
 use serde_json::json;
 use std::io;
 use std::path::PathBuf;
@@ -29,6 +38,14 @@ impl Cmd {
                 FileType::CellHeartbeat => {
                     let dec_msg = CellHeartbeatReqV1::decode(msg)?;
                     wtr.serialize(CellHeartbeat::try_from(dec_msg)?)?;
+                }
+                FileType::CellHeartbeatIngestReport => {
+                    let dec_msg = CellHeartbeatIngestReportV1::decode(msg)?;
+                    wtr.serialize(CellHeartbeatIngestReport::try_from(dec_msg)?)?;
+                }
+                FileType::CellSpeedtestIngestReport => {
+                    let dec_msg = SpeedtestIngestReportV1::decode(msg)?;
+                    wtr.serialize(CellSpeedtestIngestReport::try_from(dec_msg)?)?;
                 }
                 FileType::LoraBeaconIngestReport => {
                     let dec_msg = LoraBeaconIngestReportV1::decode(msg)?;
