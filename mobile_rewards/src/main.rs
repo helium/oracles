@@ -1,4 +1,4 @@
-use mobile_rewards::{keypair::load_from_file, mk_db_pool, Result, Server};
+use mobile_rewards::{mk_db_pool, Result, Server};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -35,4 +35,9 @@ async fn main() -> Result {
 
     reward_server.run(shutdown_listener.clone()).await?;
     Ok(())
+}
+
+pub fn load_from_file(path: &str) -> Result<helium_crypto::Keypair> {
+    let data = std::fs::read(path)?;
+    Ok(helium_crypto::Keypair::try_from(&data[..])?.into())
 }

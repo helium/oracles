@@ -1,5 +1,5 @@
-use crate::{Keypair, Result};
-use helium_crypto::{PublicKey, Verify};
+use crate::Result;
+use helium_crypto::{Keypair, PublicKey, Sign, Verify};
 use helium_proto::{BlockchainTxnSubnetworkRewardsV1, Message};
 
 pub trait TxnSign: Message + std::clone::Clone {
@@ -15,7 +15,7 @@ macro_rules! impl_sign {
             fn sign(&self, keypair: &Keypair) -> Result<Vec<u8>> {
                 let mut txn = self.clone();
                 $(txn.$sig = vec![];)+
-                keypair.sign(&txn.encode_to_vec())
+                Ok(keypair.sign(&txn.encode_to_vec())?)
             }
 
             fn verify(&self, pubkey: &PublicKey, signature: &[u8]) -> Result {

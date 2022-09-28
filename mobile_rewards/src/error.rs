@@ -31,7 +31,7 @@ pub enum Error {
     #[error("transaction error")]
     TransactionError(String),
     #[error("meta error")]
-    MetaError(#[from] crate::meta::MetaError),
+    MetaError(#[from] db_store::MetaError),
 }
 
 #[derive(Error, Debug)]

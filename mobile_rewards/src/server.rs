@@ -1,8 +1,6 @@
 use crate::{
     datetime_from_epoch,
     error::DecodeError,
-    keypair::Keypair,
-    meta::MetaValue,
     pending_txn::{PendingTxn, Status},
     traits::B64,
     transaction::TransactionService,
@@ -10,8 +8,10 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Duration, Utc};
-use file_store::FileStore;
-use futures::{stream, StreamExt, try_join};
+use db_store::MetaValue;
+use file_store::{FileStore, FileType};
+use futures::{stream, StreamExt};
+use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn,
     services::{
@@ -27,7 +27,6 @@ use helium_proto::{
 };
 use http::Uri;
 use poc_metrics::record_duration;
-use poc_store::{FileStore, FileType};
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
 use std::env;
@@ -480,5 +479,5 @@ fn hash_txn_b64_url(txn: &BlockchainTxnSubnetworkRewardsV1) -> String {
 fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result<Vec<u8>> {
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
-    keypair.sign(&txn.encode_to_vec())
+    Ok(keypair.sign(&txn.encode_to_vec())?)
 }

@@ -1,10 +1,7 @@
 mod cell_type;
 pub mod decimal_scalar;
 mod error;
-pub mod keypair;
-pub mod meta;
 pub mod pending_txn;
-pub mod reward_share;
 pub mod server;
 pub mod token_type;
 pub mod traits;
@@ -16,7 +13,7 @@ pub use cell_type::CellType;
 use chrono::{DateTime, NaiveDateTime, Utc};
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
-pub use keypair::Keypair;
+pub use server::Server;
 pub use uuid::Uuid;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
