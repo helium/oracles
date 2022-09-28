@@ -39,5 +39,5 @@ async fn main() -> Result {
 
 pub fn load_from_file(path: &str) -> Result<helium_crypto::Keypair> {
     let data = std::fs::read(path)?;
-    Ok(helium_crypto::Keypair::try_from(&data[..])?.into())
+    Ok(helium_crypto::Keypair::try_from(&data[..])?)
 }
