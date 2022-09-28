@@ -135,18 +135,6 @@ impl FileStore {
             .await
     }
 
-    pub async fn put_bytes(&self, file_name: &str, bytes: Vec<u8>) -> Result {
-        self.client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(file_name)
-            .body(ByteStream::from(bytes))
-            .send()
-            .map_ok(|_| ())
-            .map_err(Error::s3_error)
-            .await
-    }
-
     pub async fn remove(&self, key: &str) -> Result {
         self.client
             .delete_object()

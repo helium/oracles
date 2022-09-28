@@ -26,37 +26,35 @@ impl_hash!(BlockchainTxnSubnetworkRewardsV1, reward_server_signature);
 mod test {
     use super::*;
     use crate::{
-        subnetwork_reward::sorted_rewards,
         token_type::BlockchainTokenTypeV1,
         traits::{TxnSign, B64},
-        Keypair,
     };
-    use helium_crypto::PublicKey;
+    use helium_crypto::{Keypair, PublicKey};
     use helium_proto::SubnetworkReward;
     use std::str::FromStr;
 
     #[test]
     fn roundtrip() {
         let mut rewards: Vec<SubnetworkReward> = vec![];
-        let owner1 = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
+        let owner1 = PublicKey::from_str("1ZY8nysZz485qaaFEjCdBvduuUV326AZ5zeNFieZg3KrmR2VuPv")
             .unwrap()
             .to_vec();
 
-        let owner2 = PublicKey::from_str("1ZY8nysZz485qaaFEjCdBvduuUV326AZ5zeNFieZg3KrmR2VuPv")
+        let owner2 = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
             .unwrap()
             .to_vec();
 
         let r1 = SubnetworkReward {
             account: owner1,
-            amount: 100,
+            amount: 200,
         };
+
         let r2 = SubnetworkReward {
             account: owner2,
-            amount: 200,
+            amount: 100,
         };
         rewards.push(r1);
         rewards.push(r2);
-        rewards = sorted_rewards(rewards);
 
         let mut txn = BlockchainTxnSubnetworkRewardsV1 {
             rewards,
