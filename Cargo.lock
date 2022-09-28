@@ -936,6 +936,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "density-scaler"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "h3ron",
+ "helium-proto",
+ "http",
+ "itertools",
+ "lazy_static",
+ "prost",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "triggered",
+]
+
+[[package]]
 name = "der"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

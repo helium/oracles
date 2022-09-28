@@ -1,6 +1,17 @@
 [workspace]
-members = [ "ingest", "db_store", "file_store", "mobile_rewards", "poc_mobile_verifier", "entropy",
-"poc_iot_verifier", "poc_iot_injector", "node_follower"]
+members = [
+    "ingest",
+    "db_store",
+    "file_store",
+    "mobile_rewards",
+    "poc_mobile_verifier",
+    "entropy",
+    "poc_iot_verifier",
+    "poc_iot_injector",
+    "node_follower",
+    "density_scaler",
+    "metrics",
+]
 
 [workspace.package]
 authors = ["Nova Labs <info@nova-labs.com>"]
@@ -51,4 +62,3 @@ futures-util = "*"
 prost = "*"
 once_cell = "1"
 lazy_static = "1"
-
