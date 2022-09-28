@@ -28,7 +28,8 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
         .await?;
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-    let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
+    let file_upload =
+        file_upload::FileUpload::from_env_with_prefix("OUTPUT", file_upload_rx).await?;
 
     let store_path = dotenv::var("VERIFIER_STORE")?;
     let store_base_path = std::path::Path::new(&store_path);
@@ -60,7 +61,7 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
             .create()
             .await?;
 
-    let file_store = FileStore::from_env().await?;
+    let file_store = FileStore::from_env_with_prefix("INPUT").await?;
 
     let follower_client = follower::Client::new(
         Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
