@@ -1,13 +1,13 @@
 use crate::{Error, Result};
 use chrono::Utc;
+use file_store::file_sink;
 use futures::TryFutureExt;
-use helium_proto::Entropy as ProtoEntropy;
+use helium_proto::EntropyReportV1;
 use jsonrpsee::{
     core::client::ClientT,
     http_client::{HttpClient, HttpClientBuilder},
     rpc_params,
 };
-use poc_store::file_sink;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
@@ -19,12 +19,15 @@ const ENTROPY_TIMEOUT: time::Duration = time::Duration::from_secs(5);
 pub type MessageSender = watch::Sender<Entropy>;
 pub type MessageReceiver = watch::Receiver<Entropy>;
 
+pub const ENTROPY_VERSION: u32 = 0;
+
 pub fn message_channel(init: Entropy) -> (MessageSender, MessageReceiver) {
     watch::channel(init)
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Entropy {
+    pub version: u32,
     pub timestamp: i64,
     #[serde(serialize_with = "ser_base64")]
     pub data: Vec<u8>,
@@ -43,11 +46,12 @@ impl std::fmt::Display for Entropy {
     }
 }
 
-impl From<&Entropy> for ProtoEntropy {
+impl From<&Entropy> for EntropyReportV1 {
     fn from(v: &Entropy) -> Self {
         Self {
             data: v.data.clone(),
             timestamp: v.timestamp as u64,
+            version: v.version,
         }
     }
 }
@@ -79,6 +83,7 @@ impl EntropyGenerator {
             .map_ok(|data| Entropy {
                 data,
                 timestamp: Utc::now().timestamp(),
+                version: ENTROPY_VERSION,
             })
             .inspect_ok(|entropy| {
                 tracing::info!(
@@ -133,6 +138,7 @@ impl EntropyGenerator {
             Ok(data) => self.sender.send_modify(|entry| {
                 entry.timestamp = Utc::now().timestamp();
                 entry.data = data;
+                entry.version = ENTROPY_VERSION;
             }),
             Err(err) => {
                 tracing::warn!("failed to get entropy: {err:?}");
@@ -146,7 +152,7 @@ impl EntropyGenerator {
             entropy.to_string(),
             entropy.timestamp
         );
-        file_sink::write(file_sink, ProtoEntropy::from(entropy)).await?;
+        file_sink::write(file_sink, EntropyReportV1::from(entropy)).await?;
         Ok(())
     }
 

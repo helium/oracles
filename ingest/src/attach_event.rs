@@ -1,5 +1,6 @@
-use crate::{Imsi, PublicKey};
+use crate::Imsi;
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKey;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -10,3 +11,6 @@ pub struct CellAttachEvent {
     #[serde(alias = "iso_timestamp")]
     pub timestamp: DateTime<Utc>,
 }
+
+//TODO: shouldnt be any requirements here for lora beacon and witness reports
+//      but double check

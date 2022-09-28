@@ -9,3 +9,4 @@ flamegraph.*
 .env
 
 !/minio/bucket-policy.json
+*.bak

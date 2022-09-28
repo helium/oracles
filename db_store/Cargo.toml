@@ -1,0 +1,11 @@
+[package]
+name = "db-store"
+version = "0.1.0"
+edition = "2021"
+description = "Database Store Library"
+authors = ["Marc Nijdam <marc@nova-labs.com>"]
+license = "Apache-2.0"
+
+[dependencies]
+thiserror = "1"
+sqlx = {version = "0", features = ["postgres", "uuid", "decimal", "chrono", "migrate", "macros", "runtime-tokio-rustls"]}

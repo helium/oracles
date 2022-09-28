@@ -4,7 +4,7 @@ mod error;
 pub mod keypair;
 pub mod meta;
 pub mod pending_txn;
-mod public_key;
+pub mod reward_share;
 pub mod server;
 pub mod token_type;
 pub mod traits;
@@ -17,8 +17,6 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
 pub use keypair::Keypair;
-pub use public_key::PublicKey;
-pub use server::Server;
 pub use uuid::Uuid;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};

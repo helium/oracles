@@ -10,7 +10,8 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Duration, Utc};
-use futures::{stream, StreamExt};
+use file_store::FileStore;
+use futures::{stream, StreamExt, try_join};
 use helium_proto::{
     blockchain_txn::Txn,
     services::{

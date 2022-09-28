@@ -4,11 +4,8 @@ pub mod loader;
 pub mod meta;
 pub mod server;
 
-mod public_key;
-
 pub use error::{Error, Result};
-pub use poc_store::datetime_from_epoch;
-pub use public_key::PublicKey;
+pub use file_store::datetime_from_epoch;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 

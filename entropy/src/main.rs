@@ -1,8 +1,8 @@
 use chrono::Duration;
 use clap::Parser;
+use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
 use poc_entropy::{entropy_generator::EntropyGenerator, server::ApiServer, Error, Result};
-use poc_store::{file_sink, file_upload, FileType};
 use std::path;
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -53,7 +53,7 @@ async fn main() -> Result {
 
     let (entropy_tx, entropy_rx) = file_sink::message_channel(50);
     let mut entropy_sink =
-        file_sink::FileSinkBuilder::new(FileType::Entropy, store_base_path, entropy_rx)
+        file_sink::FileSinkBuilder::new(FileType::EntropyReport, store_base_path, entropy_rx)
             .deposits(Some(file_upload_tx.clone()))
             .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
             .create()

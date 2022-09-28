@@ -17,7 +17,7 @@ pub enum Error {
     #[error("service error")]
     Service(#[from] helium_proto::services::Error),
     #[error("store error")]
-    Store(#[from] poc_store::Error),
+    Store(#[from] file_store::Error),
     #[error("env error")]
     Env(#[from] std::env::VarError),
     #[error("not found")]
