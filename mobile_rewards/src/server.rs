@@ -7,7 +7,7 @@ use crate::{
     txn_status::TxnStatus,
     Error, Result,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::{stream, StreamExt};
@@ -313,7 +313,11 @@ impl Server {
         while let Some(Ok(msg)) = stream.next().await {
             let subnet_rewards = SubnetworkRewards::decode(msg);
             if let Ok(subnet_rewards) = subnet_rewards {
-                rewards.extend(subnet_rewards.rewards);
+                if time_range.contains(&Utc.timestamp(subnet_rewards.start_epoch as i64, 0))
+                    && time_range.contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0))
+                {
+                    rewards.extend(subnet_rewards.rewards);
+                }
             }
         }
 
