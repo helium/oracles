@@ -15,6 +15,7 @@ pub struct Entropy {
     pub id: Vec<u8>,
     pub data: Vec<u8>,
     pub timestamp: DateTime<Utc>,
+    pub version: i32,
     pub created_at: DateTime<Utc>,
 }
 
@@ -24,6 +25,7 @@ impl Entropy {
         id: &Vec<u8>,
         data: &Vec<u8>,
         timestamp: &DateTime<Utc>,
+        version: i32,
     ) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -33,13 +35,15 @@ impl Entropy {
         insert into entropy (
             id
             data,
-            timestamp
-        ) values ($1, $2, $3)
+            timestamp,
+            version
+        ) values ($1, $2, $3, $4)
             "#,
         )
         .bind(id)
         .bind(data)
         .bind(timestamp)
+        .bind(version)
         .execute(executor)
         .await
         .map(|_| ())

@@ -6,6 +6,9 @@ description = "PoC Verifier Server for the Helium Lora Network"
 authors = ["Andrew McKenzie <andrewm@nova.xyz>"]
 license = "Apache-2.0"
 
+[build-dependencies]
+cmake = "0.1"
+
 [dependencies]
 dotenv = "0"
 thiserror = "1"
@@ -30,8 +33,12 @@ axum = "0"
 async-compression = {version = "0", features = ["tokio", "gzip"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4"}
-file-store = { path = "../file_store" }
+file-store = {path = "../file_store"}
 async-trait = "*"
 lazy_static = "*"
 once_cell = "1"
+h3ron = "*"
+geo-types = "*"
+geo = "*"
+xorf = "*"
 

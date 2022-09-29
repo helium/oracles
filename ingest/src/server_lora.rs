@@ -89,9 +89,11 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
 
     // Initialize uploader
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-    let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
+    let file_upload =
+        file_upload::FileUpload::from_env_with_prefix("INGESTOR", file_upload_rx).await?;
 
-    let store_path = dotenv::var("INGEST_STORE")?;
+    let store_path =
+        std::env::var("INGEST_STORE").unwrap_or_else(|_| String::from("/var/data/ingestor"));
     let store_base_path = Path::new(&store_path);
 
     // lora beacon reports
@@ -121,7 +123,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
         lora_witness_report_tx,
     };
 
-    let api_token = dotenv::var("API_TOKEN").map(|token| {
+    let api_token = env::var("API_TOKEN").map(|token| {
         format!("Bearer {}", token)
             .parse::<MetadataValue<_>>()
             .unwrap()

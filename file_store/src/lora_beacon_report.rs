@@ -5,7 +5,7 @@ use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconRepor
 use helium_proto::DataRate;
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct LoraBeaconReport {
     #[serde(alias = "pubKey")]
     pub pub_key: PublicKey,
@@ -20,7 +20,7 @@ pub struct LoraBeaconReport {
     pub signature: Vec<u8>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct LoraBeaconIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: LoraBeaconReport,

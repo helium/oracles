@@ -6,6 +6,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("environment error")]
     DotEnv(#[from] dotenv::Error),
+    #[error("custom error")]
+    Custom(String),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
     #[error("io error")]
@@ -59,6 +61,9 @@ pub enum EncodeError {
 impl Error {
     pub fn not_found<E: ToString>(msg: E) -> Self {
         Self::NotFound(msg.to_string())
+    }
+    pub fn custom<E: ToString>(msg: E) -> Self {
+        Self::Custom(msg.to_string())
     }
 }
 

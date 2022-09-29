@@ -313,12 +313,11 @@ mod tests {
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (sender, receiver) = message_channel(10);
 
-        let mut file_sink =
-            FileSinkBuilder::new(FileType::EntropyReport, &tmp_dir.path(), receiver)
-                .roll_time(chrono::Duration::milliseconds(100))
-                .create()
-                .await
-                .expect("failed to create file sink");
+        let mut file_sink = FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), receiver)
+            .roll_time(chrono::Duration::milliseconds(100))
+            .create()
+            .await
+            .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink

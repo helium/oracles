@@ -7,6 +7,7 @@ pub mod file_store;
 pub mod file_upload;
 pub mod heartbeat;
 pub mod lora_beacon_report;
+pub mod lora_invalid_poc;
 pub mod lora_valid_poc;
 pub mod lora_witness_report;
 pub mod speedtest;
