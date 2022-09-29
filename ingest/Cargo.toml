@@ -7,20 +7,19 @@ edition.workspace = true
 license.workspace  = true
 
 [dependencies]
-dotenv = {worksace = true}
+dotenv = {workspace = true}
 clap = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
-base64 = "0"
-sha2 = "*"
-http = "*"
-tonic = "0"
-triggered = "0"
-futures = "*"
-futures-util = "*"
-prost = "*"
-async-compression = { version = "0", features = ["tokio", "gzip"] }
+base64 = {workspace = true}
+sha2 = {workspace = true}
+http = {workspace = true}
+tonic = {workspace = true}
+triggered = {workspace = true}
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -7,26 +7,27 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-dotenv = {worksace = true}
+dotenv = {workspace = true}
 clap = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
-base64 = "0"
-sha2 = "*"
-http = "*"
+base64 = {workspace = true}
+sha2 = {workspace = true}
+http = {workspace = true}
 hyper = "*"
 axum = { version = "0", features = ["headers"] }
 jsonrpsee = { version = "0", features = ["async-client", "http-client"] }
-triggered = "0"
-futures = "*"
-futures-util = "*"
-prost = "*"
+tower-http = {version = "*", features = ["trace"]}
+triggered = {workspace = true}
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
 bs58 = "*"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 metrics = {workspace = true }
-metrics-exporter-prometheus = { worksace = true }
+metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }

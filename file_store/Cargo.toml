@@ -7,29 +7,28 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-dotenv = {worksace = true}
+dotenv = {workspace = true}
 clap = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
-thiserror = "1"
+thiserror = {workspace = true}
 tokio = { workspace = true }
 tokio-util = "0"
 tokio-stream = "0"
-triggered = "0"
+triggered = {workspace = true}
 async-compression = {version = "0", features = ["tokio", "gzip"]}
-futures = "*"
-futures-core = "*"
-futures-util = "*"
-prost = "0"
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
 bytes = "*"
 regex = "1"
-lazy_static = "1"
+lazy_static = {workspace = true}
 tracing = { workspace = true }
 chrono = { workspace = true }
 helium-proto = {workspace = true}
 helium-crypto = {workspace = true}
 csv = "*"
-http = "*"
+http = {workspace = true}
 aws-config = "0"
 aws-sdk-s3 = "0"
 strum = {version = "0", features = ["derive"]}

@@ -22,10 +22,6 @@ pub enum Error {
     Service(#[from] helium_proto::services::Error),
     #[error("grpc {}", .0.message())]
     Grpc(#[from] tonic::Status),
-    #[error("http server error")]
-    Server(#[from] hyper::Error),
-    #[error("http server extension error")]
-    ServerExtension(#[from] axum::extract::rejection::ExtensionRejection),
     #[error("crypto error")]
     Crypto(#[from] helium_crypto::Error),
     #[error("store error")]
