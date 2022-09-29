@@ -1,44 +1,35 @@
 [package]
 name = "poc-ingest"
 version = "0.1.0"
-edition = "2021"
 description = "PoC Ingest Server for the Helium Network"
-authors = ["Marc Nijdam <marc@nova-labs.com>"]
-license = "Apache-2.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace  = true
 
 [dependencies]
-dotenv = "0"
-thiserror = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-clap = { version = "3", features = ["derive"] }
-tokio = { version = "1", default-features = false, features = [
-  "fs",
-  "macros",
-  "signal",
-  "rt-multi-thread",
-  "rt",
-] }
-tracing = "0"
-tracing-subscriber = { version = "0", features = ["env-filter"] }
-base64 = "0"
-sha2 = "*"
-http = "*"
-tonic = "0"
-chrono = { version = "0", features = ["serde"] }
-triggered = "0"
-futures = "*"
-futures-util = "*"
-prost = "*"
-async-compression = { version = "0", features = ["tokio", "gzip"] }
-helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
-  "services",
-] }
-helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}
+dotenv = {workspace = true}
+clap = {workspace = true}
+thiserror = {workspace = true}
+serde =  {workspace = true}
+serde_json = {workspace = true}
+base64 = {workspace = true}
+sha2 = {workspace = true}
+http = {workspace = true}
+tonic = {workspace = true}
+triggered = {workspace = true}
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+helium-proto = { workspace = true }
+helium-crypto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
-metrics = "0.20"
-metrics-exporter-prometheus = "0.11.0"
+metrics = {workspace = true }
+metrics-exporter-prometheus = { workspace = true }
 
 [package.metadata.deb]
 depends = "$auto"

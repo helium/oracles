@@ -1,35 +1,34 @@
 [package]
 name = "file-store"
 version = "0.1.0"
-edition = "2021"
-description = "Ingest File Store Library"
-authors = ["Marc Nijdam <marc@nova-labs.com>"]
-license = "Apache-2.0"
+description = "Ingest Store Library"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
-dotenv = "0"
-clap = {version = "3", features = ["derive"]}
-serde =  {version = "1", features=["derive"]}
-serde_json = "1"
-thiserror = "1"
-tokio = { version = "1", default-features=false, features=["fs", "rt-multi-thread"] }
+dotenv = {workspace = true}
+clap = {workspace = true}
+serde =  {workspace = true}
+serde_json = {workspace = true}
+thiserror = {workspace = true}
+tokio = { workspace = true }
 tokio-util = "0"
 tokio-stream = "0"
-tracing = "0"
-triggered = "0"
+triggered = {workspace = true}
 async-compression = {version = "0", features = ["tokio", "gzip"]}
-futures = "*"
-futures-core = "*"
-futures-util = "*"
-prost = "0"
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
 bytes = "*"
 regex = "1"
-lazy_static = "1"
-chrono = {version = "0", features = ["serde"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
-helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}
+lazy_static = {workspace = true}
+tracing = { workspace = true }
+chrono = { workspace = true }
+helium-proto = {workspace = true}
+helium-crypto = {workspace = true}
 csv = "*"
-http = "*"
+http = {workspace = true}
 aws-config = "0"
 aws-sdk-s3 = "0"
 strum = {version = "0", features = ["derive"]}

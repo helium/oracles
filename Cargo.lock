@@ -1108,7 +1108,6 @@ dependencies = [
  "csv",
  "dotenv",
  "futures",
- "futures-core",
  "futures-util",
  "helium-crypto",
  "helium-proto",
@@ -2327,7 +2326,6 @@ dependencies = [
 name = "poc-ingest"
 version = "0.1.0"
 dependencies = [
- "async-compression",
  "base64",
  "chrono",
  "clap",
@@ -2431,9 +2429,7 @@ dependencies = [
 name = "poclora-verifier"
 version = "0.1.0"
 dependencies = [
- "async-compression",
  "async-trait",
- "axum",
  "base64",
  "chrono",
  "clap",
@@ -2448,7 +2444,6 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "http",
- "hyper",
  "lazy_static",
  "once_cell",
  "prost",
