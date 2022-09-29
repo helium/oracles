@@ -36,7 +36,7 @@ prost = "*"
 bs58 = "*"
 metrics = "0"
 metrics-exporter-prometheus = "0"
-helium-proto = { git = "https://github.com/helium/proto", branch = "andymck/verifier-pass2", features = [
+helium-proto = { git = "https://github.com/helium/proto", branch = "master", features = [
   "services",
 ] }
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}

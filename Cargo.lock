@@ -1111,7 +1111,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck/verifier-pass2)",
+ "helium-proto",
  "hex-literal",
  "http",
  "lazy_static",
@@ -1515,23 +1515,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/verifier-pass2#c57cdc442b3c43aa890e930ab1b3ad1adaae259a"
-dependencies = [
- "bytes",
- "prost",
- "prost-build",
- "protoc-bin-vendored",
- "serde",
- "serde_derive",
- "serde_json",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "helium-proto"
-version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#56a7055d16071c99339f69f352fea669b3894dc2"
+source = "git+https://github.com/helium/proto?branch=master#4e6f1f84452fe2cfaef43fdbe0f0c01262f351d5"
 dependencies = [
  "bytes",
  "prost",
@@ -2028,7 +2012,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck/verifier-pass2)",
+ "helium-proto",
  "http",
  "lazy_static",
  "metrics",
@@ -2065,7 +2049,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
+ "helium-proto",
  "http",
  "lazy_static",
  "metrics",
@@ -2320,7 +2304,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck/verifier-pass2)",
+ "helium-proto",
  "http",
  "hyper",
  "jsonrpsee",
@@ -2352,7 +2336,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck/verifier-pass2)",
+ "helium-proto",
  "http",
  "metrics",
  "metrics-exporter-prometheus",
@@ -2379,7 +2363,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck/verifier-pass2)",
+ "helium-proto",
  "http",
  "metrics",
  "metrics-exporter-prometheus",
@@ -2419,7 +2403,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck/verifier-pass2)",
+ "helium-proto",
  "http",
  "hyper",
  "lazy_static",
@@ -2462,7 +2446,7 @@ dependencies = [
  "geo-types",
  "h3ron",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=andymck/verifier-pass2)",
+ "helium-proto",
  "http",
  "hyper",
  "lazy_static",

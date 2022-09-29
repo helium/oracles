@@ -26,7 +26,7 @@ bytes = "*"
 regex = "1"
 lazy_static = "1"
 chrono = {version = "0", features = ["serde"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "andymck/verifier-pass2", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}
 csv = "*"
 http = "*"

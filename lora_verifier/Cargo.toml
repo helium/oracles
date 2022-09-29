@@ -31,7 +31,7 @@ prost = "*"
 hyper = "*"
 axum = "0"
 async-compression = {version = "0", features = ["tokio", "gzip"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "andymck/verifier-pass2", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4"}
 file-store = {path = "../file_store"}
 async-trait = "*"
