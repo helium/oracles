@@ -54,20 +54,19 @@ impl TryFrom<LoraValidPocV1> for LoraValidPoc {
     }
 }
 
-impl TryFrom<LoraValidPoc> for LoraValidPocV1 {
-    type Error = Error;
-    fn try_from(v: LoraValidPoc) -> Result<Self> {
-        let beacon_report: LoraValidBeaconReportV1 = v.beacon_report.try_into()?;
+impl From<LoraValidPoc> for LoraValidPocV1 {
+    fn from(v: LoraValidPoc) -> Self {
+        let beacon_report: LoraValidBeaconReportV1 = v.beacon_report.into();
         let mut witnesses: Vec<LoraValidWitnessReportV1> = Vec::new();
         for witness_proto in v.witness_reports {
-            let witness_report: LoraValidWitnessReportV1 = witness_proto.try_into()?;
+            let witness_report: LoraValidWitnessReportV1 = witness_proto.into();
             witnesses.push(witness_report)
         }
-        Ok(Self {
+        Self {
             poc_id: v.poc_id,
             beacon_report: Some(beacon_report),
             witness_reports: witnesses,
-        })
+        }
     }
 }
 
@@ -88,20 +87,19 @@ impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
     }
 }
 
-impl TryFrom<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
-    type Error = Error;
-    fn try_from(v: LoraValidBeaconReport) -> Result<Self> {
+impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
+    fn from(v: LoraValidBeaconReport) -> Self {
         let report: LoraBeaconReportReqV1 = v.report.into();
         let location = match v.location {
             None => String::new(),
             Some(loc) => loc.to_string(),
         };
-        Ok(Self {
+        Self {
             received_timestamp: v.received_timestamp.timestamp() as u64,
             location,
             hex_scale: v.hex_scale,
             report: Some(report),
-        })
+        }
     }
 }
 
@@ -122,19 +120,18 @@ impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
     }
 }
 
-impl TryFrom<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
-    type Error = Error;
-    fn try_from(v: LoraValidWitnessReport) -> Result<Self> {
+impl From<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
+    fn from(v: LoraValidWitnessReport) -> Self {
         let report: LoraWitnessReportReqV1 = v.report.into();
         let location = match v.location {
             None => String::new(),
             Some(loc) => loc.to_string(),
         };
-        Ok(Self {
+        Self {
             received_timestamp: v.received_timestamp.timestamp() as u64,
             location,
             hex_scale: v.hex_scale,
             report: Some(report),
-        })
+        }
     }
 }

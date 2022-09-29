@@ -306,7 +306,7 @@ impl Runner {
             reason: invalid_reason,
             report: beacon.clone(),
         };
-        let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.try_into()?;
+        let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
         file_sink::write(lora_valid_poc_tx, invalid_poc_proto).await?;
         for witness_report in witness_reports {
             let invalid_witness_report: LoraInvalidWitnessReport = LoraInvalidWitnessReport {
@@ -316,7 +316,7 @@ impl Runner {
                 participant_side: InvalidParticipantSide::Beaconer,
             };
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
-                invalid_witness_report.try_into()?;
+                invalid_witness_report.into();
             file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
         }
         // update beacon and all witness reports in the db for this beacon id to invalid
@@ -339,7 +339,7 @@ impl Runner {
             beacon_report: valid_beacon_report,
             witness_reports: witnesses_result.valid_witnesses.clone(),
         };
-        let valid_poc_proto: LoraValidPocV1 = valid_poc.try_into()?;
+        let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
         file_sink::write(lora_valid_poc_tx, valid_poc_proto).await?;
 
         // update db for this beacon, pk is a hash of the poc id and the beaconer pub key
@@ -355,7 +355,7 @@ impl Runner {
         // write out any invalid witnesses
         for invalid_witness_report in witnesses_result.invalid_witnesses {
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
-                invalid_witness_report.clone().try_into()?;
+                invalid_witness_report.clone().into();
             file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
             // let invalid_witness = invalid_witness_report.report;
             // update the witness record in the db

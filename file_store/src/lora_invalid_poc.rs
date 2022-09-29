@@ -45,15 +45,14 @@ impl TryFrom<LoraInvalidBeaconReportV1> for LoraInvalidBeaconReport {
     }
 }
 
-impl TryFrom<LoraInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
-    type Error = Error;
-    fn try_from(v: LoraInvalidBeaconReport) -> Result<Self> {
+impl From<LoraInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
+    fn from(v: LoraInvalidBeaconReport) -> Self {
         let report: LoraBeaconReportReqV1 = v.report.into();
-        Ok(Self {
+        Self {
             received_timestamp: v.received_timestamp.timestamp() as u64,
             reason: v.reason as i32,
             report: Some(report),
-        })
+        }
     }
 }
 
@@ -73,15 +72,14 @@ impl TryFrom<LoraInvalidWitnessReportV1> for LoraInvalidWitnessReport {
         })
     }
 }
-impl TryFrom<LoraInvalidWitnessReport> for LoraInvalidWitnessReportV1 {
-    type Error = Error;
-    fn try_from(v: LoraInvalidWitnessReport) -> Result<Self> {
+impl From<LoraInvalidWitnessReport> for LoraInvalidWitnessReportV1 {
+    fn from(v: LoraInvalidWitnessReport) -> Self {
         let report: LoraWitnessReportReqV1 = v.report.into();
-        Ok(Self {
+        Self {
             received_timestamp: v.received_timestamp.timestamp() as u64,
             reason: v.reason as i32,
             report: Some(report),
             participant_side: v.participant_side as i32,
-        })
+        }
     }
 }
