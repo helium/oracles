@@ -15,10 +15,10 @@ use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct GrpcServer {
-    heartbeat_req_tx: file_sink::MessageSender,
-    speedtest_req_tx: file_sink::MessageSender,
-    heartbeat_report_tx: file_sink::MessageSender,
-    speedtest_report_tx: file_sink::MessageSender,
+    heartbeat_req_tx: file_sink::MessageSender<CellHeartbeatReqV1>,
+    speedtest_req_tx: file_sink::MessageSender<SpeedtestReqV1>,
+    heartbeat_report_tx: file_sink::MessageSender<CellHeartbeatIngestReportV1>,
+    speedtest_report_tx: file_sink::MessageSender<SpeedtestIngestReportV1>,
 }
 
 #[tonic::async_trait]
@@ -42,12 +42,12 @@ impl poc_mobile::PocMobile for GrpcServer {
             received_timestamp: timestamp,
         };
 
-        match file_sink::write(&self.speedtest_req_tx, event).await {
+        match self.speedtest_req_tx.write(event).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store speedtest: {err:?}"),
         }
 
-        match file_sink::write(&self.speedtest_report_tx, report).await {
+        match self.speedtest_report_tx.write(report).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store speedtest: {err:?}"),
         }
@@ -74,12 +74,12 @@ impl poc_mobile::PocMobile for GrpcServer {
             received_timestamp: timestamp,
         };
 
-        match file_sink::write(&self.heartbeat_req_tx, event).await {
+        match self.heartbeat_req_tx.write(event).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
         }
 
-        match file_sink::write(&self.heartbeat_report_tx, report).await {
+        match self.heartbeat_report_tx.write(report).await {
             Ok(_) => (),
             Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
         }
@@ -107,40 +107,34 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
         std::env::var("INGEST_STORE").unwrap_or_else(|_| String::from("/var/data/ingestor"));
     let store_base_path = Path::new(&store_path);
 
-    let (heartbeat_req_tx, heartbeat_req_rx) = file_sink::message_channel(50);
-    let mut heartbeat_req_sink =
-        file_sink::FileSinkBuilder::new(FileType::CellHeartbeat, store_base_path, heartbeat_req_rx)
+    let (heartbeat_req_tx, heartbeat_req_rx) = file_sink::message_channel::<CellHeartbeatReqV1>(50);
+    let mut heartbeat_req_sink = file_sink::FileSinkBuilder::new(store_base_path, heartbeat_req_rx)
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
+
+    let (heartbeat_report_tx, heartbeat_report_rx) =
+        file_sink::message_channel::<CellHeartbeatIngestReportV1>(50);
+    let mut heartbeat_report_sink =
+        file_sink::FileSinkBuilder::new(store_base_path, heartbeat_report_rx)
             .deposits(Some(file_upload_tx.clone()))
             .create()
             .await?;
-
-    let (heartbeat_report_tx, heartbeat_report_rx) = file_sink::message_channel(50);
-    let mut heartbeat_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::CellHeartbeatIngestReport,
-        store_base_path,
-        heartbeat_report_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .create()
-    .await?;
 
     // speedtests
-    let (speedtest_req_tx, speedtest_req_rx) = file_sink::message_channel(50);
-    let mut speedtest_req_sink =
-        file_sink::FileSinkBuilder::new(FileType::CellSpeedtest, store_base_path, speedtest_req_rx)
+    let (speedtest_req_tx, speedtest_req_rx) = file_sink::message_channel::<SpeedtestReqV1>(50);
+    let mut speedtest_req_sink = file_sink::FileSinkBuilder::new(store_base_path, speedtest_req_rx)
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
+
+    let (speedtest_report_tx, speedtest_report_rx) =
+        file_sink::message_channel::<SpeedtestIngestReportV1>(50);
+    let mut speedtest_report_sink =
+        file_sink::FileSinkBuilder::new(store_base_path, speedtest_report_rx)
             .deposits(Some(file_upload_tx.clone()))
             .create()
             .await?;
-
-    let (speedtest_report_tx, speedtest_report_rx) = file_sink::message_channel(50);
-    let mut speedtest_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::CellSpeedtestIngestReport,
-        store_base_path,
-        speedtest_report_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .create()
-    .await?;
 
     let grpc_server = GrpcServer {
         speedtest_req_tx,

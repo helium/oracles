@@ -1,10 +1,11 @@
-use crate::{file_upload, Error, FileType, Result};
+use crate::{file_upload, Error, FileName, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use futures::SinkExt;
 use std::{
     io,
+    marker::PhantomData,
     path::{Path, PathBuf},
 };
 use tokio::{
@@ -28,32 +29,62 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
     transport.get_mut()
 }
 
-pub type MessageSender = mpsc::Sender<Vec<u8>>;
-pub type MessageReceiver = mpsc::Receiver<Vec<u8>>;
-
-pub fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
-    mpsc::channel(size)
+#[derive(Debug, Clone)]
+pub struct MessageSender<T> {
+    tx: mpsc::Sender<Vec<u8>>,
+    phantom: PhantomData<T>,
 }
 
+impl<T> MessageSender<T>
+where
+    T: prost::Message,
+{
+    pub async fn write(&self, item: T) -> Result {
+        let buf = item.encode_to_vec();
+        self.tx.send(buf).await.map_err(|_| Error::channel())
+    }
+}
+
+#[derive(Debug)]
+pub struct MessageReceiver<T> {
+    rx: mpsc::Receiver<Vec<u8>>,
+    phantom: PhantomData<T>,
+}
+
+pub fn message_channel<T>(size: usize) -> (MessageSender<T>, MessageReceiver<T>) {
+    let (tx, rx) = mpsc::channel(size);
+    (
+        MessageSender {
+            tx,
+            phantom: PhantomData,
+        },
+        MessageReceiver {
+            rx,
+            phantom: PhantomData,
+        },
+    )
+}
+
+/*
 pub async fn write<T: prost::Message>(tx: &MessageSender, item: T) -> Result {
     let buf = item.encode_to_vec();
-    tx.send(buf).await.map_err(|_| Error::channel())
-}
 
-pub struct FileSinkBuilder {
-    prefix: String,
+tx.send(buf).await.map_err(|_| Error::channel())
+}
+ */
+
+pub struct FileSinkBuilder<T> {
     target_path: PathBuf,
     tmp_path: PathBuf,
     max_size: usize,
     roll_time: Duration,
-    messages: MessageReceiver,
+    messages: MessageReceiver<T>,
     deposits: Option<file_upload::MessageSender>,
 }
 
-impl FileSinkBuilder {
-    pub fn new(file_type: FileType, target_path: &Path, messages: MessageReceiver) -> Self {
+impl<T> FileSinkBuilder<T> {
+    pub fn new(target_path: &Path, messages: MessageReceiver<T>) -> Self {
         Self {
-            prefix: file_type.to_string(),
             target_path: target_path.to_path_buf(),
             tmp_path: target_path.join("tmp"),
             max_size: 50_000_000,
@@ -91,12 +122,16 @@ impl FileSinkBuilder {
             ..self
         }
     }
+}
 
-    pub async fn create(self) -> Result<FileSink> {
+impl<T> FileSinkBuilder<T>
+where
+    T: FileName,
+{
+    pub async fn create(self) -> Result<FileSink<T>> {
         let mut sink = FileSink {
             target_path: self.target_path,
             tmp_path: self.tmp_path,
-            prefix: self.prefix,
             max_size: self.max_size,
             deposits: self.deposits,
             roll_time: self.roll_time,
@@ -110,14 +145,13 @@ impl FileSinkBuilder {
 }
 
 #[derive(Debug)]
-pub struct FileSink {
+pub struct FileSink<T> {
     target_path: PathBuf,
     tmp_path: PathBuf,
-    prefix: String,
     max_size: usize,
     roll_time: Duration,
 
-    messages: MessageReceiver,
+    messages: MessageReceiver<T>,
     deposits: Option<file_upload::MessageSender>,
 
     active_sink: Option<ActiveSink>,
@@ -138,7 +172,10 @@ impl ActiveSink {
     }
 }
 
-impl FileSink {
+impl<T> FileSink<T>
+where
+    T: FileName,
+{
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
@@ -150,7 +187,7 @@ impl FileSink {
                     if entry
                         .file_name()
                         .to_string_lossy()
-                        .starts_with(&self.prefix) =>
+                        .starts_with(T::FILE_NAME) =>
                 {
                     let _ = self.deposit_sink(&entry.path()).await;
                 }
@@ -168,7 +205,7 @@ impl FileSink {
                         if entry
                             .file_name()
                             .to_string_lossy()
-                            .starts_with(&self.prefix) =>
+                            .starts_with(T::FILE_NAME) =>
                     {
                         file_upload::upload_file(deposits, &entry.path()).await?;
                     }
@@ -183,7 +220,7 @@ impl FileSink {
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!(
             "starting file sink {} in {}",
-            self.prefix,
+            T::FILE_NAME,
             self.target_path.display()
         );
 
@@ -194,11 +231,11 @@ impl FileSink {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
-                msg = self.messages.recv() => match msg {
+                msg = self.messages.rx.recv() => match msg {
                     Some(buf) => {
                         match self.write(Bytes::from(buf)).await {
                         Ok(_) => (),
-                        Err(err) => tracing::error!("failed to store {}: {err:?}", &self.prefix),
+                        Err(err) => tracing::error!("failed to store {}: {err:?}", T::FILE_NAME),
                     }},
                     None => {
                         break
@@ -206,7 +243,7 @@ impl FileSink {
                 }
             }
         }
-        tracing::info!("stopping file sink {}", &self.prefix);
+        tracing::info!("stopping file sink {}", T::FILE_NAME);
         if let Some(active_sink) = self.active_sink.as_mut() {
             let _ = active_sink.shutdown().await;
             self.active_sink = None;
@@ -216,7 +253,7 @@ impl FileSink {
 
     async fn new_sink(&self) -> Result<ActiveSink> {
         let sink_time = Utc::now();
-        let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
+        let filename = format!("{}.{}.gz", T::FILE_NAME, sink_time.timestamp_millis());
         let new_path = self.tmp_path.join(filename);
         let writer = GzipEncoder::new(BufWriter::new(
             OpenOptions::new()

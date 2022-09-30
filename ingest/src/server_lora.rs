@@ -16,8 +16,8 @@ use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct GrpcServer {
-    lora_beacon_report_tx: file_sink::MessageSender,
-    lora_witness_report_tx: file_sink::MessageSender,
+    lora_beacon_report_tx: file_sink::MessageSender<LoraBeaconIngestReportV1>,
+    lora_witness_report_tx: file_sink::MessageSender<LoraWitnessIngestReportV1>,
 }
 
 #[tonic::async_trait]
@@ -39,7 +39,7 @@ impl poc_lora::PocLora for GrpcServer {
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
 
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.lora_beacon_report_tx, report).await {
+        match self.lora_beacon_report_tx.write(report).await {
             Ok(_) => tracing::debug!(
                 "successfully processed beacon report, returning response {}",
                 event_id.to_string()
@@ -67,7 +67,7 @@ impl poc_lora::PocLora for GrpcServer {
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
 
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.lora_witness_report_tx, report).await {
+        match self.lora_witness_report_tx.write(report).await {
             Ok(_) => tracing::debug!(
                 "successfully processed witness report, returning response {}",
                 event_id.to_string()
@@ -97,26 +97,22 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     let store_base_path = Path::new(&store_path);
 
     // lora beacon reports
-    let (lora_beacon_report_tx, lora_beacon_report_rx) = file_sink::message_channel(50);
-    let mut lora_beacon_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::LoraBeaconIngestReport,
-        store_base_path,
-        lora_beacon_report_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .create()
-    .await?;
+    let (lora_beacon_report_tx, lora_beacon_report_rx) =
+        file_sink::message_channel::<LoraBeaconIngestReportV1>(50);
+    let mut lora_beacon_report_sink =
+        file_sink::FileSinkBuilder::new(store_base_path, lora_beacon_report_rx)
+            .deposits(Some(file_upload_tx.clone()))
+            .create()
+            .await?;
 
     // lora witness reports
-    let (lora_witness_report_tx, lora_witness_report_rx) = file_sink::message_channel(50);
-    let mut lora_witness_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::LoraWitnessIngestReport,
-        store_base_path,
-        lora_witness_report_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .create()
-    .await?;
+    let (lora_witness_report_tx, lora_witness_report_rx) =
+        file_sink::message_channel::<LoraWitnessIngestReportV1>(50);
+    let mut lora_witness_report_sink =
+        file_sink::FileSinkBuilder::new(store_base_path, lora_witness_report_rx)
+            .deposits(Some(file_upload_tx.clone()))
+            .create()
+            .await?;
 
     let grpc_server = GrpcServer {
         lora_beacon_report_tx,

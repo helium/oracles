@@ -90,6 +90,35 @@ impl FileInfo {
     }
 }
 
+pub trait FileName {
+    const FILE_NAME: &'static str;
+}
+
+macro_rules! file_names {
+    ( $( $proto:ty => $file_name:literal, )+ ) => {
+        $(
+            impl FileName for $proto {
+                const FILE_NAME: &'static str = $file_name;
+            }
+        )+
+    };
+}
+
+file_names! {
+    helium_proto::EntropyReportV1 => "entropy",
+    helium_proto::SubnetworkRewards => "subnetwork_rewards",
+    helium_proto::services::poc_mobile::Shares => "shares",
+    helium_proto::services::poc_mobile::CellHeartbeatReqV1 => "cell_heartbeat",
+    helium_proto::services::poc_mobile::SpeedtestReqV1 => "cell_speedtest",
+    helium_proto::services::poc_mobile::CellHeartbeatIngestReportV1 => "heartbeat_report",
+    helium_proto::services::poc_mobile::SpeedtestIngestReportV1 => "speedtest_report",
+    helium_proto::services::poc_lora::LoraBeaconIngestReportV1 => "lora_beacon_ingest_report",
+    helium_proto::services::poc_lora::LoraWitnessIngestReportV1 => "lora_witness_ingest_report",
+    helium_proto::services::poc_lora::LoraValidPocV1 => "lora_valid_poc",
+    helium_proto::services::poc_lora::LoraInvalidBeaconReportV1 => "lora_invalid_beacon_report",
+    helium_proto::services::poc_lora::LoraInvalidWitnessReportV1 => "lora_invalid_witness",
+}
+
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";

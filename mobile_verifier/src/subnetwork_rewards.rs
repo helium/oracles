@@ -9,7 +9,11 @@ use crate::{
 use chrono::{DateTime, Utc};
 use file_store::{file_sink, FileInfo, FileStore, FileType};
 use futures::stream::{self, StreamExt};
-use helium_proto::services::{follower, Channel};
+use helium_proto::services::{
+    follower,
+    poc_mobile::{CellHeartbeatIngestReportV1, SpeedtestIngestReportV1},
+    Channel,
+};
 use serde::Serialize;
 use std::path::Path;
 
@@ -53,21 +57,34 @@ impl SubnetworkRewards {
         let after_ts = after_utc.timestamp() as u64;
         let before_ts = before_utc.timestamp() as u64;
 
-        let mut file_list = file_store
-            .list_all(FileType::CellHeartbeatIngestReport, after_utc, before_utc)
-            .await?;
-        file_list.extend(
-            file_store
-                .list_all(FileType::CellSpeedtestIngestReport, after_utc, before_utc)
-                .await?,
-        );
+        let mut processed_files = 0_usize;
+        let mut gathered_shares = GatheredShares::new();
+        let mut file_list = Vec::new();
 
-        metrics::histogram!("verifier_server_processed_files", file_list.len() as f64);
+        let mut heartbeats = file_store
+            .list_contents::<CellHeartbeatIngestReportV1>(Some(after_utc), Some(before_utc));
 
-        let mut stream = file_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
+        while let Some(Ok((info, CellHeartbeatIngestReportV1 { report, .. }))) =
+            heartbeats.next().await
+        {
+            if let Some(Ok(report)) = report.map(file_store::heartbeat::CellHeartbeat::try_from) {
+                gathered_shares.gather_heartbeat(report, after_utc, before_utc);
+            }
+            file_list.push(info);
+        }
 
-        let gathered_shares =
-            GatheredShares::from_stream(&mut stream, after_utc, before_utc).await?;
+        let mut speedtests =
+            file_store.list_contents::<SpeedtestIngestReportV1>(Some(after_utc), Some(before_utc));
+
+        while let Some(Ok((info, SpeedtestIngestReportV1 { report, .. }))) = speedtests.next().await
+        {
+            if let Some(Ok(report)) = report.map(file_store::speedtest::CellSpeedtest::try_from) {
+                gathered_shares.gather_speedtest(report, after_utc, before_utc);
+            }
+            file_list.push(info);
+        }
+
+        metrics::histogram!("verifier_server_processed_files", processed_files as f64);
 
         let cell_shares = cell_shares(&gathered_shares.shares);
 
@@ -115,9 +132,9 @@ impl SubnetworkRewards {
     /// Write output from each step to S3
     pub async fn write(
         self,
-        shares_tx: &file_sink::MessageSender,
-        invalid_shares_tx: &file_sink::MessageSender,
-        subnet_tx: &file_sink::MessageSender,
+        shares_tx: &file_sink::MessageSender<proto::Shares>,
+        _invalid_shares_tx: &file_sink::MessageSender<proto::Shares>,
+        subnet_tx: &file_sink::MessageSender<proto::SubnetworkRewards>,
     ) -> Result<()> {
         // TODO: Clean up these conversions
         // One possibility for the common cases would be to wrap in a macro.
@@ -280,9 +297,8 @@ impl SubnetworkRewards {
             },
         )?;
 
-        file_sink::write(
-            shares_tx,
-            proto::Shares {
+        shares_tx
+            .write(proto::Shares {
                 shares: shares
                     .into_iter()
                     .map(|(cbsd_id, share)| proto::Share {
@@ -294,27 +310,26 @@ impl SubnetworkRewards {
                         validity: proto::ShareValidity::Valid as i32,
                     })
                     .collect(),
-            },
-        )
-        .await?;
+            })
+            .await?;
 
-        file_sink::write(
-            invalid_shares_tx,
+        /*
+        // TODO: Need to make an InvalidShares type in order to write to a separate file
+        invalid_shares_tx.write(
             proto::Shares {
                 shares: invalid_shares,
             },
         )
         .await?;
+        */
 
-        file_sink::write(
-            subnet_tx,
-            proto::SubnetworkRewards {
+        subnet_tx
+            .write(proto::SubnetworkRewards {
                 start_epoch: after_ts,
                 end_epoch: before_ts,
                 rewards,
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         Ok(())
     }

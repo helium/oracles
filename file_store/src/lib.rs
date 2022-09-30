@@ -1,6 +1,7 @@
 pub mod cli;
 mod error;
 mod file_info;
+// mod file_name;
 pub mod file_sink;
 pub mod file_source;
 pub mod file_store;
@@ -15,7 +16,7 @@ pub mod traits;
 
 pub use crate::file_store::FileStore;
 pub use error::{Error, Result};
-pub use file_info::{FileInfo, FileType};
+pub use file_info::{FileInfo, FileName, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
 
 use bytes::BytesMut;
@@ -24,6 +25,7 @@ use futures::stream::BoxStream;
 
 pub type Stream<T> = BoxStream<'static, Result<T>>;
 pub type FileInfoStream = Stream<FileInfo>;
+pub type FileContentStream<T> = Stream<(FileInfo, T)>;
 pub type BytesMutStream = Stream<BytesMut>;
 
 pub fn datetime_from_epoch(secs: u64) -> DateTime<Utc> {

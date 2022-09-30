@@ -1,5 +1,5 @@
 use crate::{
-    datetime_from_naive, heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconIngestReport,
+    heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconIngestReport,
     lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport,
     speedtest::CellSpeedtest, traits::MsgDecode, Error, FileInfoStream, FileStore, FileType,
     Result,
@@ -63,11 +63,14 @@ struct FileFilter {
 
 impl FileFilter {
     fn list(&self, store: &FileStore) -> FileInfoStream {
-        store.list(
-            self.file_type,
-            self.after.map(datetime_from_naive),
-            self.before.map(datetime_from_naive),
+        /*
+            store.list(
+                self.file_type,
+                self.after.map(datetime_from_naive),
+                self.before.map(datetime_from_naive),
         )
+             */
+        todo!()
     }
 }
 

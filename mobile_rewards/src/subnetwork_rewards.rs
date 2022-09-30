@@ -97,6 +97,7 @@ async fn get_rewards(
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
 ) -> Result<Option<Vec<ProtoSubnetworkReward>>> {
+    /*
     if before_utc <= after_utc {
         tracing::error!(
             "cannot reward future period, before: {:?}, after: {:?}",
@@ -169,6 +170,7 @@ async fn get_rewards(
         let subnetwork_rewards = SubnetworkRewards::from(owner_emissions);
         return Ok(Some(subnetwork_rewards.into()));
     }
+    */
 
     Ok(None)
 }

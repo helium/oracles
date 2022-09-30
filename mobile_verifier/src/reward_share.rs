@@ -196,6 +196,16 @@ pub struct GatheredShares {
 }
 
 impl GatheredShares {
+    pub fn new() -> Self {
+        Self {
+            shares: Shares::new(),
+            invalid_shares: InvalidShares::new(),
+            speed_shares: SpeedShares::new(),
+            speed_shares_moving_avg: SpeedShareMovingAvgs::default(),
+            invalid_speed_shares: InvalidSpeedShares::new(),
+        }
+    }
+
     pub async fn from_stream(
         stream: &mut BytesMutStream,
         after_utc: DateTime<Utc>,
@@ -224,7 +234,7 @@ impl GatheredShares {
         Ok(shares)
     }
 
-    fn gather_speedtest(
+    pub fn gather_speedtest(
         &mut self,
         speedtest: CellSpeedtest,
         after_utc: DateTime<Utc>,
@@ -248,7 +258,7 @@ impl GatheredShares {
         }
     }
 
-    fn gather_heartbeat(
+    pub fn gather_heartbeat(
         &mut self,
         cell_heartbeat: CellHeartbeat,
         after_utc: DateTime<Utc>,

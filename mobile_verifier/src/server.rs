@@ -7,7 +7,7 @@ use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
-use helium_proto::services::{follower, Endpoint, Uri};
+use helium_proto::services::{follower, poc_mobile as proto, Endpoint, Uri};
 use sqlx::postgres::PgPoolOptions;
 use tokio::{select, time::sleep};
 
@@ -35,31 +35,26 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
     let store_base_path = std::path::Path::new(&store_path);
 
     // valid shares
-    let (shares_tx, shares_rx) = file_sink::message_channel(50);
-    let mut shares_sink =
-        file_sink::FileSinkBuilder::new(FileType::Shares, store_base_path, shares_rx)
-            .deposits(Some(file_upload_tx.clone()))
-            .create()
-            .await?;
+    let (shares_tx, shares_rx) = file_sink::message_channel::<proto::Shares>(50);
+    let mut shares_sink = file_sink::FileSinkBuilder::new(store_base_path, shares_rx)
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
 
     // invalid shares
-    let (invalid_shares_tx, invalid_shares_rx) = file_sink::message_channel(50);
-    let mut invalid_shares_sink = file_sink::FileSinkBuilder::new(
-        FileType::InvalidShares,
-        store_base_path,
-        invalid_shares_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .create()
-    .await?;
-
-    // subnetwork rewards
-    let (subnet_tx, subnet_rx) = file_sink::message_channel(50);
-    let mut subnet_sink =
-        file_sink::FileSinkBuilder::new(FileType::SubnetworkRewards, store_base_path, subnet_rx)
+    let (invalid_shares_tx, invalid_shares_rx) = file_sink::message_channel::<proto::Shares>(50);
+    let mut invalid_shares_sink =
+        file_sink::FileSinkBuilder::new(store_base_path, invalid_shares_rx)
             .deposits(Some(file_upload_tx.clone()))
             .create()
             .await?;
+
+    // subnetwork rewards
+    let (subnet_tx, subnet_rx) = file_sink::message_channel::<helium_proto::SubnetworkRewards>(50);
+    let mut subnet_sink = file_sink::FileSinkBuilder::new(store_base_path, subnet_rx)
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
 
     let file_store = FileStore::from_env_with_prefix("INPUT").await?;
 

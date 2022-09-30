@@ -1,5 +1,7 @@
+use crate::file_info::FileName;
 use crate::{
-    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result,
+    error::DecodeError, BytesMutStream, Error, FileContentStream, FileInfo, FileInfoStream,
+    FileType, Result,
 };
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
@@ -65,29 +67,15 @@ impl FileStore {
         })
     }
 
-    pub async fn list_all<A, B, F>(
+    pub fn list<T>(
         &self,
-        file_type: F,
-        after: A,
-        before: B,
-    ) -> Result<Vec<FileInfo>>
+        after: Option<DateTime<Utc>>,
+        before: Option<DateTime<Utc>>,
+    ) -> FileInfoStream
     where
-        F: Into<FileType> + Copy,
-        A: Into<Option<DateTime<Utc>>> + Copy,
-        B: Into<Option<DateTime<Utc>>> + Copy,
+        T: FileName,
     {
-        self.list(file_type, after, before).try_collect().await
-    }
-
-    pub fn list<A, B, F>(&self, file_type: F, after: A, before: B) -> FileInfoStream
-    where
-        F: Into<FileType> + Copy,
-        A: Into<Option<DateTime<Utc>>> + Copy,
-        B: Into<Option<DateTime<Utc>>> + Copy,
-    {
-        let prefix = file_type.into().to_string();
-        let before = before.into();
-        let after = after.into();
+        let prefix = T::FILE_NAME;
 
         let stream = self
             .client
@@ -117,6 +105,22 @@ impl FileStore {
                 }
                 Err(err) => stream::once(async move { Err(Error::s3_error(err)) }).boxed(),
             })
+            .boxed()
+    }
+
+    pub fn list_contents<T>(
+        &self,
+        after: Option<DateTime<Utc>>,
+        before: Option<DateTime<Utc>>,
+    ) -> FileContentStream<T>
+    where
+        T: FileName + prost::Message + Default,
+    {
+        let bucket = self.bucket.clone();
+        let client = self.client.clone();
+        self.list::<T>(after, before)
+            .map_ok(move |info| get_with_info::<T>(client.clone(), bucket.clone(), info))
+            .try_buffered(2)
             .boxed()
     }
 
@@ -162,21 +166,7 @@ impl FileStore {
     where
         K: Into<String>,
     {
-        Self::_get(self.client.clone(), self.bucket.clone(), key).await
-    }
-
-    async fn _get<K>(client: Client, bucket: String, key: K) -> Result<ByteStream>
-    where
-        K: Into<String>,
-    {
-        client
-            .get_object()
-            .bucket(bucket)
-            .key(key)
-            .send()
-            .map_ok(|output| output.body)
-            .map_err(Error::s3_error)
-            .await
+        get(self.client.clone(), self.bucket.clone(), key).await
     }
 
     /// Stream a series of ordered items from the store from remote files with
@@ -185,7 +175,7 @@ impl FileStore {
         let bucket = self.bucket.clone();
         let client = self.client.clone();
         infos
-            .map_ok(move |info| Self::_get(client.clone(), bucket.clone(), info.key))
+            .map_ok(move |info| get(client.clone(), bucket.clone(), info.key))
             .try_buffered(2)
             .flat_map(|stream| match stream {
                 Ok(stream) => stream_source(stream),
@@ -202,7 +192,7 @@ impl FileStore {
         let bucket = self.bucket.clone();
         let client = self.client.clone();
         infos
-            .map_ok(move |info| Self::_get(client.clone(), bucket.clone(), info.key))
+            .map_ok(move |info| get(client.clone(), bucket.clone(), info.key))
             .try_buffer_unordered(workers)
             .flat_map(|stream| match stream {
                 Ok(stream) => stream_source(stream),
@@ -210,6 +200,33 @@ impl FileStore {
             })
             .boxed()
     }
+}
+
+async fn get<K>(client: Client, bucket: String, key: K) -> Result<ByteStream>
+where
+    K: Into<String>,
+{
+    client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .map_ok(|output| output.body)
+        .map_err(Error::s3_error)
+        .await
+}
+
+async fn get_with_info<T>(client: Client, bucket: String, info: FileInfo) -> Result<(FileInfo, T)>
+where
+    T: Default + prost::Message,
+{
+    let res = get(client, bucket, info.key.clone()).await?;
+    let mut t = stream_source(res);
+    let mut res = Vec::new();
+    while let Some(Ok(msg)) = t.next().await {
+        res.extend(msg);
+    }
+    Ok((info, T::decode(&*res)?))
 }
 
 fn stream_source(stream: ByteStream) -> BytesMutStream {

@@ -103,7 +103,7 @@ impl EntropyGenerator {
 
     pub async fn run(
         &mut self,
-        file_sink: file_sink::MessageSender,
+        file_sink: file_sink::MessageSender<EntropyReportV1>,
         shutdown: &triggered::Listener,
     ) -> Result {
         tracing::info!("started entropy generator");
@@ -133,7 +133,10 @@ impl EntropyGenerator {
         self.receiver.clone()
     }
 
-    async fn handle_entropy_tick(&mut self, file_sink: &file_sink::MessageSender) -> Result {
+    async fn handle_entropy_tick(
+        &mut self,
+        file_sink: &file_sink::MessageSender<EntropyReportV1>,
+    ) -> Result {
         match Self::get_entropy(&self.client).await {
             Ok(data) => self.sender.send_modify(|entry| {
                 entry.timestamp = Utc::now().timestamp();
@@ -152,7 +155,7 @@ impl EntropyGenerator {
             entropy.to_string(),
             entropy.timestamp
         );
-        file_sink::write(file_sink, EntropyReportV1::from(entropy)).await?;
+        file_sink.write(EntropyReportV1::from(entropy)).await?;
         Ok(())
     }
 

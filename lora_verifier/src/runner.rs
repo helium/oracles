@@ -51,40 +51,34 @@ impl Runner {
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         let store_base_path = Path::new(&self.store_path);
-        let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
-        let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
-        let (lora_valid_poc_tx, lora_valid_poc_rx) = file_sink::message_channel(50);
+        let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) =
+            file_sink::message_channel::<LoraInvalidBeaconReportV1>(50);
+        let (lora_invalid_witness_tx, lora_invalid_witness_rx) =
+            file_sink::message_channel::<LoraInvalidWitnessReportV1>(50);
+        let (lora_valid_poc_tx, lora_valid_poc_rx) =
+            file_sink::message_channel::<LoraValidPocV1>(50);
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
             file_upload::FileUpload::from_env_with_prefix("VERIFIER", file_upload_rx).await?;
 
-        let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraInvalidBeaconReport,
-            store_base_path,
-            lora_invalid_beacon_rx,
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .create()
-        .await?;
+        let mut lora_invalid_beacon_sink =
+            file_sink::FileSinkBuilder::new(store_base_path, lora_invalid_beacon_rx)
+                .deposits(Some(file_upload_tx.clone()))
+                .create()
+                .await?;
 
-        let mut lora_invalid_witness_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraInvalidWitnessReport,
-            store_base_path,
-            lora_invalid_witness_rx,
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .create()
-        .await?;
+        let mut lora_invalid_witness_sink =
+            file_sink::FileSinkBuilder::new(store_base_path, lora_invalid_witness_rx)
+                .deposits(Some(file_upload_tx.clone()))
+                .create()
+                .await?;
 
-        let mut lora_valid_poc_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraValidPoc,
-            store_base_path,
-            lora_valid_poc_rx,
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .create()
-        .await?;
+        let mut lora_valid_poc_sink =
+            file_sink::FileSinkBuilder::new(store_base_path, lora_valid_poc_rx)
+                .deposits(Some(file_upload_tx.clone()))
+                .create()
+                .await?;
 
         // spawn off the file sinks
         // TODO: how to avoid all da cloning?
@@ -125,9 +119,9 @@ impl Runner {
     async fn handle_db_tick(
         &self,
         _shutdown: triggered::Listener,
-        _lora_invalid_beacon_tx: MessageSender,
-        lora_invalid_witness_tx: MessageSender,
-        lora_valid_poc_tx: MessageSender,
+        lora_invalid_beacon_tx: MessageSender<LoraInvalidBeaconReportV1>,
+        lora_invalid_witness_tx: MessageSender<LoraInvalidWitnessReportV1>,
+        lora_valid_poc_tx: MessageSender<LoraValidPocV1>,
     ) -> Result {
         let db_beacon_reports = Report::get_next_beacons(&self.pool).await?;
         if db_beacon_reports.is_empty() {
@@ -176,7 +170,7 @@ impl Runner {
                             &beacon_report,
                             witnesses,
                             InvalidReason::IrregularInterval,
-                            &lora_valid_poc_tx,
+                            &lora_invalid_beacon_tx,
                             &lora_invalid_witness_tx,
                         )
                         .await?;
@@ -268,7 +262,7 @@ impl Runner {
                         &beacon_report,
                         witnesses,
                         InvalidReason::BadEntropy,
-                        &lora_valid_poc_tx,
+                        &lora_invalid_beacon_tx,
                         &lora_invalid_witness_tx,
                     )
                     .await?;
@@ -294,20 +288,19 @@ impl Runner {
         beacon_report: &LoraBeaconIngestReport,
         witness_reports: Vec<LoraWitnessIngestReport>,
         invalid_reason: InvalidReason,
-        lora_valid_poc_tx: &MessageSender,
-        lora_invalid_witness_tx: &MessageSender,
+        lora_invalid_beacon_tx: &MessageSender<LoraInvalidBeaconReportV1>,
+        lora_invalid_witness_tx: &MessageSender<LoraInvalidWitnessReportV1>,
     ) -> Result {
         tracing::warn!("handling invalid poc");
         // the beacon is invalid, which in turn renders all witnesses invalid
         let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
-        let invalid_poc: LoraInvalidBeaconReport = LoraInvalidBeaconReport {
+        let invalid_beacon = LoraInvalidBeaconReport {
             received_timestamp: beacon_report.received_timestamp,
             reason: invalid_reason,
             report: beacon.clone(),
         };
-        let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
-        file_sink::write(lora_valid_poc_tx, invalid_poc_proto).await?;
+        lora_invalid_beacon_tx.write(invalid_beacon.into()).await?;
         for witness_report in witness_reports {
             let invalid_witness_report: LoraInvalidWitnessReport = LoraInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
@@ -317,7 +310,9 @@ impl Runner {
             };
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.into();
-            file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
+            lora_invalid_witness_tx
+                .write(invalid_witness_report_proto)
+                .await?;
         }
         // update beacon and all witness reports in the db for this beacon id to invalid
         Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
@@ -329,8 +324,8 @@ impl Runner {
         beacon: &LoraBeaconReport,
         valid_beacon_report: LoraValidBeaconReport,
         witnesses_result: VerifyWitnessesResult,
-        lora_valid_poc_tx: &MessageSender,
-        lora_invalid_witness_tx: &MessageSender,
+        lora_valid_poc_tx: &MessageSender<LoraValidPocV1>,
+        lora_invalid_witness_tx: &MessageSender<LoraInvalidWitnessReportV1>,
     ) -> Result {
         tracing::warn!("handling valid poc");
         let beacon_id = &beacon.data;
@@ -340,7 +335,7 @@ impl Runner {
             witness_reports: witnesses_result.valid_witnesses.clone(),
         };
         let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
-        file_sink::write(lora_valid_poc_tx, valid_poc_proto).await?;
+        lora_valid_poc_tx.write(valid_poc_proto).await?;
 
         // update db for this beacon, pk is a hash of the poc id and the beaconer pub key
         // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
@@ -356,7 +351,9 @@ impl Runner {
         for invalid_witness_report in witnesses_result.invalid_witnesses {
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.clone().into();
-            file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
+            lora_invalid_witness_tx
+                .write(invalid_witness_report_proto)
+                .await?;
             // let invalid_witness = invalid_witness_report.report;
             // update the witness record in the db
             // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?

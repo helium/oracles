@@ -90,6 +90,8 @@ impl Loader {
     }
 
     async fn process_events(&self, file_type: FileType, shutdown: triggered::Listener) -> Result {
+        todo!()
+        /*
         let recent_time = Utc::now() - Duration::hours(2);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
@@ -137,6 +139,7 @@ impl Loader {
         }
 
         Ok(())
+        */
     }
 
     async fn handle_store_update(&self, file_type: FileType, buf: &[u8]) -> Result {
