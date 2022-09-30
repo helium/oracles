@@ -27,7 +27,8 @@ const STORE_WORKERS: usize = 5;
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;
 
 pub struct Loader {
-    store: FileStore,
+    ingest_store: FileStore,
+    entropy_store: FileStore,
     // bucket: String,
     pool: PgPool,
 }
@@ -36,8 +37,13 @@ impl Loader {
     pub async fn from_env() -> Result<Self> {
         tracing::info!("from_env verifier loader");
         let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
-        let store = FileStore::from_env_with_prefix("INGESTOR").await?;
-        Ok(Self { pool, store })
+        let ingest_store = FileStore::from_env_with_prefix("INGESTOR").await?;
+        let entropy_store = FileStore::from_env_with_prefix("ENTROPY").await?;
+        Ok(Self {
+            pool,
+            ingest_store,
+            entropy_store,
+        })
     }
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
@@ -55,14 +61,14 @@ impl Loader {
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = report_timer.tick() => match self.handle_store_tick(shutdown.clone()).await {
+                _ = report_timer.tick() => match self.handle_tick(&self.ingest_store, shutdown.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal report loader error: {err:?}");
                         return Err(err)
                     }
                 },
-                _ = entropy_timer.tick() => match self.handle_store_tick(shutdown.clone()).await {
+                _ = entropy_timer.tick() => match self.handle_tick(&self.entropy_store, shutdown.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal entropy loader error: {err:?}");
@@ -75,7 +81,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_store_tick(&self, shutdown: triggered::Listener) -> Result {
+    async fn handle_tick(&self, store: &FileStore, shutdown: triggered::Listener) -> Result {
         stream::iter(&[
             FileType::LoraBeaconIngestReport,
             FileType::LoraWitnessIngestReport,
@@ -83,13 +89,18 @@ impl Loader {
         ])
         .map(|file_type| (file_type, shutdown.clone()))
         .for_each_concurrent(2, |(file_type, shutdown)| async move {
-            let _ = self.process_events(*file_type, shutdown).await;
+            let _ = self.process_events(*file_type, store, shutdown).await;
         })
         .await;
         Ok(())
     }
 
-    async fn process_events(&self, file_type: FileType, shutdown: triggered::Listener) -> Result {
+    async fn process_events(
+        &self,
+        file_type: FileType,
+        store: &FileStore,
+        shutdown: triggered::Listener,
+    ) -> Result {
         let recent_time = Utc::now() - Duration::hours(2);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
@@ -98,7 +109,7 @@ impl Loader {
 
         tracing::info!("fetching {file_type} info");
 
-        let infos = self.store.list_all(file_type, last_time, None).await?;
+        let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
             tracing::info!("no ingest {file_type} files to process from: {last_time}");
             return Ok(());
@@ -113,8 +124,7 @@ impl Loader {
 
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} {file_type} files");
-        let handler = self
-            .store
+        let handler = store
             .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
             .for_each_concurrent(STORE_WORKERS, |msg| async move {
                 match msg {
