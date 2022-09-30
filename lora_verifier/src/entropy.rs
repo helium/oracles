@@ -33,7 +33,7 @@ impl Entropy {
         sqlx::query(
             r#"
         insert into entropy (
-            id
+            id,
             data,
             timestamp,
             version
