@@ -117,7 +117,7 @@ impl Poc {
         }
 
         //check beaconer has an asserted location
-        if beaconer_info.location == None {
+        if beaconer_info.location.is_none() {
             let resp = VerifyBeaconResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::NotAsserted),
@@ -256,7 +256,7 @@ impl Poc {
         }
 
         // check witness has an asserted location
-        if witness_info.location == None {
+        if witness_info.location.is_none() {
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::NotAsserted),
