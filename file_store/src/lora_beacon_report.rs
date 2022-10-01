@@ -1,5 +1,5 @@
 use crate::{datetime_from_epoch, traits::MsgDecode, Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconReportReqV1};
 use helium_proto::DataRate;
@@ -64,7 +64,7 @@ impl TryFrom<LoraBeaconIngestReportV1> for LoraBeaconIngestReport {
         let data_rate: DataRate = DataRate::from_i32(report.datarate)
             .ok_or_else(|| Error::custom("unsupported datarate"))?;
         Ok(Self {
-            received_timestamp: datetime_from_epoch(report.timestamp),
+            received_timestamp: Utc.timestamp_millis(report.timestamp as i64),
             report: LoraBeaconReport {
                 pub_key: PublicKey::try_from(report.pub_key)?,
                 local_entropy: report.local_entropy,
@@ -137,25 +137,3 @@ impl From<LoraBeaconReport> for LoraBeaconReportReqV1 {
         }
     }
 }
-
-// impl From<LoraBeaconIngestReportV1> for LoraBeaconIngestReport {
-//     fn from(v: LoraBeaconIngestReportV1) -> Self {
-//         let report = v.report.unwrap();
-//         let data_rate: DataRate = DataRate::from_i32(report.datarate).unwrap();
-//         Self {
-//             received_timestamp: datetime_from_epoch(v.received_timestamp),
-//             report: BeaconPayload {
-//                 pub_key: PublicKey::try_from(report.pub_key).unwrap(),
-//                 local_entropy: report.local_entropy,
-//                 remote_entropy: report.remote_entropy,
-//                 data: report.data,
-//                 frequency: report.frequency,
-//                 channel: report.channel,
-//                 datarate: data_rate,
-//                 tx_power: report.tx_power,
-//                 timestamp: datetime_from_epoch(report.timestamp),
-//                 signature: report.signature,
-//             },
-//         }
-//     }
-// }

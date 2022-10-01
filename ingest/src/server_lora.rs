@@ -26,10 +26,9 @@ impl poc_lora::PocLora for GrpcServer {
         &self,
         request: Request<LoraBeaconReportReqV1>,
     ) -> GrpcResult<LoraBeaconReportRespV1> {
-        let timestamp: i64 = Utc::now().timestamp();
         let event = request.into_inner();
         let report = LoraBeaconIngestReportV1 {
-            received_timestamp: u64::try_from(timestamp).unwrap(),
+            received_timestamp: Utc::now().timestamp_millis() as u64,
             report: Some(event.clone()),
         };
         let public_key = PublicKey::try_from(event.pub_key.as_ref())
@@ -54,10 +53,9 @@ impl poc_lora::PocLora for GrpcServer {
         &self,
         request: Request<LoraWitnessReportReqV1>,
     ) -> GrpcResult<LoraWitnessReportRespV1> {
-        let timestamp: i64 = Utc::now().timestamp();
         let event = request.into_inner();
         let report = LoraWitnessIngestReportV1 {
-            received_timestamp: u64::try_from(timestamp).unwrap(),
+            received_timestamp: Utc::now().timestamp_millis() as u64,
             report: Some(event.clone()),
         };
         let public_key = PublicKey::try_from(event.pub_key.as_ref())

@@ -1,5 +1,5 @@
 use crate::{datetime_from_epoch, traits::MsgDecode, Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_lora::{LoraWitnessIngestReportV1, LoraWitnessReportReqV1};
 use helium_proto::DataRate;
@@ -61,7 +61,7 @@ impl TryFrom<LoraWitnessIngestReportV1> for LoraWitnessIngestReport {
         let data_rate: DataRate = DataRate::from_i32(report.datarate)
             .ok_or_else(|| Error::custom("unsupported datarate"))?;
         Ok(Self {
-            received_timestamp: datetime_from_epoch(report.timestamp),
+            received_timestamp: Utc.timestamp_millis(report.timestamp as i64),
             report: LoraWitnessReport {
                 pub_key: PublicKey::try_from(report.pub_key)?,
                 data: report.data,
@@ -128,25 +128,3 @@ impl From<LoraWitnessReport> for LoraWitnessReportReqV1 {
         }
     }
 }
-
-// impl From<LoraWitnessIngestReportV1> for LoraWitnessIngestReport {
-//     fn from(v: LoraWitnessIngestReportV1) -> Self {
-//         let ts = datetime_from_epoch(v.received_timestamp);
-//         let report = v.report.unwrap();
-//         let data_rate: DataRate = DataRate::from_i32(report.datarate).unwrap();
-//         Self {
-//             received_timestamp: ts,
-//             report: WitnessPayload {
-//                 pub_key: PublicKey::try_from(report.pub_key).unwrap(),
-//                 data: report.data,
-//                 timestamp: datetime_from_epoch(report.timestamp),
-//                 ts_res: report.ts_res,
-//                 signal: report.signal,
-//                 snr: report.snr,
-//                 frequency: report.frequency,
-//                 datarate: data_rate,
-//                 signature: vec![],
-//             },
-//         }
-//     }
-// }
