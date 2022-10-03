@@ -37,3 +37,12 @@ db-store = { path = "../db_store" }
 poc-metrics = {path = "../metrics"}
 rand = "*"
 async-trait = "*"
+
+[package.metadata.deb]
+depends = "$auto"
+assets = [
+    ["target/release/mobile-verifier", "/opt/mobile-verifier/bin/", "755"],
+    ["pkg/deb/env-template", "/usr/share/mobile-verifier/env-template", "644"]
+]
+maintainer-scripts = "pkg/deb/"
+systemd-units = { }

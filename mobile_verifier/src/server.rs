@@ -27,6 +27,8 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
         .connect(&db_connection_str)
         .await?;
 
+    sqlx::migrate!().run(&pool).await?;
+
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
         file_upload::FileUpload::from_env_with_prefix("OUTPUT", file_upload_rx).await?;
