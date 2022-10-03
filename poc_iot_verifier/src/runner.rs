@@ -31,6 +31,7 @@ use tokio::time;
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
+/// the cadence in seconds at which hotspots are permitted to beacon
 const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
 
 pub struct Runner {
@@ -235,6 +236,9 @@ impl Runner {
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
                     // and halt here, let things be reprocessed next tick
+                    // if a witness continues to fail it will eventually
+                    // be discarded from the list returned for the beacon
+                    // thus one of more failing witnesses will not block the overall POC
                     if !verified_witnesses_result.failed_witnesses.is_empty() {
                         for failed_witness_report in verified_witnesses_result.failed_witnesses {
                             // something went wrong whilst verifying witnesses

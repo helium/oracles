@@ -6,6 +6,7 @@ pub mod loader;
 pub mod meta;
 pub mod poc;
 pub mod poc_report;
+pub mod purger;
 pub mod runner;
 pub mod traits;
 
