@@ -8,6 +8,7 @@ use crate::{
     poc_report::{LoraStatus, Report},
     Result,
 };
+use ::denylist::denylist::DenyList;
 use file_store::{
     file_sink, file_sink::MessageSender, file_upload, lora_beacon_report::LoraBeaconIngestReport,
     lora_beacon_report::LoraBeaconReport, lora_invalid_poc::LoraInvalidBeaconReport,
@@ -27,6 +28,7 @@ use sqlx::PgPool;
 use tokio::time;
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);
+const DENYLIST_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 const BEACON_INTERVAL: i64 = 60; //minutes
@@ -34,6 +36,8 @@ const BEACON_INTERVAL: i64 = 60; //minutes
 pub struct Runner {
     pool: PgPool,
     store_path: String,
+    deny_list_latest_url: String,
+    deny_list: DenyList,
 }
 
 impl Runner {
@@ -41,14 +45,29 @@ impl Runner {
         let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
         let store_path =
             std::env::var("VERIFIER_STORE").unwrap_or_else(|_| String::from("/var/data/verifier"));
-        Ok(Self { pool, store_path })
+        let denylist_url = std::env::var("DENYLIST_URL").unwrap_or_else(|_| {
+            String::from("https://api.github.com/repos/helium/denylist/releases/latest")
+        });
+        let mut deny_list = DenyList::new();
+        //TODO: have the denylist initialize with from a file packaged with the verifier
+        //      this way should github be down we always have a denylist of some sort
+        deny_list.update_to_latest(&denylist_url).await;
+        Ok(Self {
+            pool,
+            store_path,
+            deny_list_latest_url: denylist_url,
+            deny_list,
+        })
     }
 
-    pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting runner");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
+        let mut denylist_timer = time::interval(DENYLIST_POLL_TIME);
+        denylist_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         let store_base_path = Path::new(&self.store_path);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
@@ -113,10 +132,25 @@ impl Runner {
                         tracing::error!("fatal db runner error: {err:?}");
                         return Err(err)
                     }
+                },
+                _ = denylist_timer.tick() =>
+                    match self.handle_denylist_tick().await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::error!("fatal db runner error: {err:?}");
+                        return Err(err)
+                    }
                 }
             }
         }
         tracing::info!("stopping runner");
+        Ok(())
+    }
+
+    async fn handle_denylist_tick(&mut self) -> Result {
+        self.deny_list
+            .update_to_latest(&self.deny_list_latest_url)
+            .await;
         Ok(())
     }
 
@@ -200,15 +234,6 @@ impl Runner {
                 }
             };
 
-            // tmp hack below when testing locally with no entropy server
-            // replace entropy_info declaration above with that below
-            // let entropy_info = Entropy {
-            //     id: entropy_hash.clone(),
-            //     data: entropy_hash.clone(),
-            //     timestamp: Utc::now() - Duration::seconds(40000),
-            //     created_at: Utc::now(),
-            // };
-
             //
             // top level checks complete, verify the POC reports
             //
@@ -217,12 +242,13 @@ impl Runner {
             let mut poc = Poc::new(beacon_report.clone(), witnesses.clone(), entropy_info).await?;
 
             // verify beacon
-            let beacon_verify_result = poc.verify_beacon().await?;
+            let beacon_verify_result = poc.verify_beacon(&self.deny_list).await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
                     // beacon is valid, verify the witnesses
                     let beacon_info = beacon_verify_result.gateway_info.unwrap();
-                    let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
+                    let verified_witnesses_result =
+                        poc.verify_witnesses(&beacon_info, &self.deny_list).await?;
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
                     // and halt here, let things be reprocessed next tick

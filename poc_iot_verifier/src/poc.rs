@@ -1,4 +1,5 @@
 use crate::{entropy::Entropy, follower::FollowerGatewayResp, follower::FollowerService, Result};
+use ::denylist::denylist::DenyList;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
@@ -72,10 +73,23 @@ impl Poc {
         })
     }
 
-    pub async fn verify_beacon(&mut self) -> Result<VerifyBeaconResult> {
+    pub async fn verify_beacon(&mut self, deny_list: &DenyList) -> Result<VerifyBeaconResult> {
         let beacon = &self.beacon_report.report;
         // use pub key to get GW info from our follower
         let beaconer_pub_key = beacon.pub_key.clone();
+
+        // check if beaconer is on the deny list
+        if deny_list.check_key(&beaconer_pub_key).await {
+            let resp = VerifyBeaconResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::Denied),
+                gateway_info: None,
+                hex_scale: None,
+            };
+            return Ok(resp);
+        }
+
+        // pull the beaconer info from our follower
         let beaconer_info = match self
             .follower_service
             .query_gateway_info(&beaconer_pub_key)
@@ -96,16 +110,6 @@ impl Poc {
                 return Ok(resp);
             }
         };
-
-        // tmp hack below when testing locally with no actual real gateway
-        // replace beaconer_info declaration above with that below
-        // let beaconer_info = FollowerGatewayResp {
-        //     height: 130000,
-        //     location: String::from("location1"),
-        //     address: beacon.pub_key.clone(),
-        //     owner: beacon.pub_key.clone(),
-        //     staking_mode: GatewayStakingMode::Full as i32,
-        // };
 
         // verify the beaconer's remote entropy
         // if beacon received timestamp is outside of entopy start/end then reject the poc
@@ -176,13 +180,16 @@ impl Poc {
     pub async fn verify_witnesses(
         &mut self,
         beacon_info: &FollowerGatewayResp,
+        deny_list: &DenyList,
     ) -> Result<VerifyWitnessesResult> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            let witness_result = self.verify_witness(&witness_report, beacon_info).await?;
+            let witness_result = self
+                .verify_witness(&witness_report, beacon_info, deny_list)
+                .await?;
             match witness_result.result {
                 VerificationStatus::Valid => {
                     // TODO: perform hex density check here for a valid witness
@@ -230,11 +237,23 @@ impl Poc {
         &mut self,
         witness_report: &LoraWitnessIngestReport,
         beaconer_info: &FollowerGatewayResp,
+        deny_list: &DenyList,
     ) -> Result<VerifyWitnessResult> {
-        // use pub key to get GW info from our follower and verify the witness
         let witness = &witness_report.report;
         let beacon = &self.beacon_report.report;
         let witness_pub_key = witness.pub_key.clone();
+
+        // check if witness is on the deny list
+        if deny_list.check_key(&witness_pub_key).await {
+            let resp = VerifyWitnessResult {
+                result: VerificationStatus::Failed,
+                invalid_reason: Some(InvalidReason::Denied),
+                gateway_info: None,
+            };
+            return Ok(resp);
+        }
+
+        // use pub key to get GW info from our follower and verify the witness
         let witness_info = match self
             .follower_service
             .query_gateway_info(&witness_pub_key)
@@ -254,16 +273,6 @@ impl Poc {
                 return Ok(resp);
             }
         };
-
-        // tmp hack below when testing locally with no actual real gateway
-        // replace witness_info declaration above with that below
-        // let witness_info = FollowerGatewayResp {
-        //     height: 130000,
-        //     location: String::from("location1"),
-        //     address: witness.pub_key.clone(),
-        //     owner: witness.pub_key.clone(),
-        //     staking_mode: GatewayStakingMode::Full as i32,
-        // };
 
         // if witness report received timestamp is outside of entopy start/end then reject the poc
         let witness_received_time = witness_report.received_timestamp;

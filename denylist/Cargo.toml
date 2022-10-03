@@ -1,0 +1,27 @@
+[package]
+name = "denylist"
+version = "0.1.0"
+edition = "2021"
+description = "Maintains latest denylist"
+authors = ["Andrew McKenzie <andrewm@nova.xyz>"]
+license = "Apache-2.0"
+
+[build-dependencies]
+cmake = "0.1"
+
+[dependencies]
+dotenv = "0"
+thiserror = "1"
+tracing = "0"
+reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
+helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4"}
+base64 = "0"
+sha2 = "0"
+bytes = "*"
+structopt = "0"
+bincode = "1"
+twox-hash = "1"
+xorf = {version = "0", features = ["serde"] }
+serde = {version = "1", features = ["derive"]}
+serde_json = "1"
+
