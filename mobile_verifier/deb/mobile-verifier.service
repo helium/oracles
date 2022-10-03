@@ -1,0 +1,17 @@
+[Unit]
+Description=mobile-verifier
+After=network.target
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/opt/mobile-rewards/bin/mobile-verifier
+User=helium
+PIDFile=/var/run/mobile-verifier
+Restart=always
+RestartSec=15
+WorkingDirectory=/opt/mobile-verifier
+
+[Install]
+WantedBy=multi-user.target
