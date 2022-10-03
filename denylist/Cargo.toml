@@ -1,0 +1,26 @@
+[package]
+name = "denylist"
+version = "0.1.0"
+edition = "2021"
+description = "Maintains latest denylist"
+authors = ["Andrew McKenzie <andrewm@nova.xyz>"]
+license = "Apache-2.0"
+
+[build-dependencies]
+cmake = "0.1"
+
+[dependencies]
+thiserror = {workspace = true}
+tracing = {workspace = true}
+reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
+helium-crypto = {workspace = true}
+base64 = {workspace = true}
+sha2 = {workspace = true}
+bytes = "*"
+structopt = "0"
+bincode = "1"
+twox-hash = "1"
+xorf = {version = "0", features = ["serde"] }
+serde = {workspace = true}
+serde_json = {workspace = true}
+config = {workspace = true}

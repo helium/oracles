@@ -5,12 +5,13 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
-    /// RUST_LOG compatible settings string. Defsault to
-    /// "mobile_verifier=debug,poc_store=info"
+    /// RUST_LOG compatible settings string. Default to
+    /// "poc_iot_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
+
     pub database: db_store::Settings,
     pub follower: node_follower::Settings,
     pub ingest: file_store::Settings,
@@ -18,6 +19,7 @@ pub struct Settings {
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub density_scaler: density_scaler::Settings,
+    pub denylist: denylist::Settings,
 }
 
 pub fn default_log() -> String {
