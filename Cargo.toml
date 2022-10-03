@@ -1,5 +1,5 @@
 [workspace]
-members = [ "ingest", "db_store", "file_store", "mobile_rewards", "status", "mobile_verifier", "entropy",
+members = [ "ingest", "db_store", "file_store", "mobile_rewards", "status", "poc_mobile_verifier", "entropy",
 "lora_verifier", "poc_iot_injector"]
 
 [workspace.package]

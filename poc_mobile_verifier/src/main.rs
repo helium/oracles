@@ -1,5 +1,5 @@
 use clap::Parser;
-use mobile_verifier::{
+use poc_mobile_verifier::{
     cli::{generate, server},
     Result,
 };

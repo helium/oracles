@@ -1,5 +1,5 @@
 [package]
-name = "mobile-verifier"
+name = "poc-mobile-verifier"
 version = "0.1.0"
 edition = "2021"
 description = "Heartbeat and speed share verification for rewards"
@@ -41,8 +41,8 @@ async-trait = "*"
 [package.metadata.deb]
 depends = "$auto"
 assets = [
-    ["target/release/mobile-verifier", "/opt/mobile-verifier/bin/", "755"],
-    ["pkg/deb/env-template", "/usr/share/mobile-verifier/env-template", "644"]
+    ["target/release/poc-mobile-verifier", "/opt/poc-mobile-verifier/bin/", "755"],
+    ["pkg/deb/env-template", "/usr/share/poc-mobile-verifier/env-template", "644"]
 ]
 maintainer-scripts = "pkg/deb/"
 systemd-units = { }
