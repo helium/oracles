@@ -1,4 +1,4 @@
-use poclora_verifier::{loader, mk_db_pool, runner, Result};
+use poc_iot_verifier::{loader, mk_db_pool, runner, Result};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

@@ -1,13 +1,13 @@
 [workspace]
 members = [ "ingest", "db_store", "file_store", "mobile_rewards", "status", "poc_mobile_verifier", "entropy",
-"lora_verifier", "poc_iot_injector"]
+"poc_iot_verifier", "poc_iot_injector"]
 
 [workspace.package]
 authors = ["Nova Labs <info@nova-labs.com>"]
 license = "Apache-2.0"
 edition = "2021"
 
-[workspace.dependencies] 
+[workspace.dependencies]
 dotenv = "0"
 thiserror = "1"
 clap = {version = "3", features = ["derive"]}
@@ -24,12 +24,12 @@ tokio = { version = "1", default-features = false, features = [
   "time"
 ] }
 sqlx = {version = "0", features = [
-  "postgres", 
-  "uuid", 
-  "decimal", 
-  "chrono", 
-  "migrate", 
-  "macros", 
+  "postgres",
+  "uuid",
+  "decimal",
+  "chrono",
+  "migrate",
+  "macros",
   "runtime-tokio-rustls"
 ]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}

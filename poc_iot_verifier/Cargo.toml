@@ -1,10 +1,10 @@
 [package]
-name = "poclora-verifier"
+name = "poc-iot-verifier"
 version = "0.1.0"
 description = "PoC Verifier Server for the Helium Lora Network"
 edition.workspace = true
 authors.workspace = true
-license.workspace = true 
+license.workspace = true
 
 [build-dependencies]
 cmake = "0.1"
