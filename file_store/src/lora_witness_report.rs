@@ -34,7 +34,7 @@ impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessIngestReport {
     fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
         Ok(Self {
             received_timestamp: Utc::now(),
-            report: TryFrom::try_from(v)?,
+            report: v.try_into()?,
         })
     }
 }
@@ -42,15 +42,12 @@ impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessIngestReport {
 impl TryFrom<LoraWitnessIngestReportV1> for LoraWitnessIngestReport {
     type Error = Error;
     fn try_from(v: LoraWitnessIngestReportV1) -> Result<Self> {
-        let report = v.report.ok_or_else(|| {
-            Error::Custom(
-                "LoraWitnessReportReqV1 not available inside LoraWitnessIngestReportV1".to_string(),
-            )
-        })?;
-
         Ok(Self {
             received_timestamp: v.received_timestamp.to_timestamp_millis()?,
-            report: TryFrom::try_from(report)?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("lora witness ingest report v1"))?
+                .try_into()?,
         })
     }
 }

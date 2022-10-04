@@ -35,7 +35,7 @@ impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconIngestReport {
     fn try_from(v: LoraBeaconReportReqV1) -> Result<Self> {
         Ok(Self {
             received_timestamp: Utc::now(),
-            report: TryFrom::try_from(v)?,
+            report: v.try_into()?,
         })
     }
 }
@@ -43,16 +43,12 @@ impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconIngestReport {
 impl TryFrom<LoraBeaconIngestReportV1> for LoraBeaconIngestReport {
     type Error = Error;
     fn try_from(v: LoraBeaconIngestReportV1) -> Result<Self> {
-        let report = v.report.ok_or_else(|| {
-            Error::Custom(
-                "LoraBeaconReportReqV1 was not available inside LoraBeaconIngestReportV1"
-                    .to_string(),
-            )
-        })?;
-
         Ok(Self {
             received_timestamp: v.received_timestamp.to_timestamp_millis()?,
-            report: TryFrom::try_from(report)?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("lora beacon ingest report"))?
+                .try_into()?,
         })
     }
 }
@@ -77,8 +73,8 @@ impl From<LoraBeaconIngestReport> for LoraBeaconReportReqV1 {
 impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconReport {
     type Error = Error;
     fn try_from(v: LoraBeaconReportReqV1) -> Result<Self> {
-        let data_rate: DataRate = DataRate::from_i32(v.datarate)
-            .ok_or_else(|| Error::Custom("unsupported datarate".to_string()))?;
+        let data_rate: DataRate =
+            DataRate::from_i32(v.datarate).ok_or_else(|| Error::custom("unsupported datarate"))?;
 
         Ok(Self {
             pub_key: PublicKey::try_from(v.pub_key)?,
