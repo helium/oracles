@@ -70,6 +70,7 @@ impl TryFrom<CellHeartbeatIngestReportV1> for CellHeartbeatIngestReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use hex_literal::hex;
     use prost::Message;
 
