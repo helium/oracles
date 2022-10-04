@@ -50,7 +50,7 @@ pub struct Server {
     keypair: Keypair,
     follower_client: follower::Client<Channel>,
     txn_service: TransactionService,
-    start_reward_block: i64,
+    last_follower_height: MetaValue<i64>,
     trigger_interval: Duration,
     reward_interval: Duration,
     verifier_store: FileStore,
@@ -58,21 +58,26 @@ pub struct Server {
 
 impl Server {
     pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
-        let result = Self {
-            pool,
+        let start_reward_block = env::var("FOLLOWER_START_BLOCK")
+            .unwrap_or_else(|_| DEFAULT_START_REWARD_BLOCK.to_string())
+            .parse()
+            .map_err(DecodeError::from)?;
+        Ok(Self {
             keypair,
             follower_client: new_client_from_env()?,
             txn_service: TransactionService::from_env()?,
-            start_reward_block: env::var("FOLLOWER_START_BLOCK")
-                .unwrap_or_else(|_| DEFAULT_START_REWARD_BLOCK.to_string())
-                .parse()
-                .map_err(DecodeError::from)?,
             trigger_interval: Duration::seconds(
                 env::var("TRIGGER_INTERVAL")
                     .unwrap_or_else(|_| DEFAULT_TRIGGER_INTERVAL_SECS.to_string())
                     .parse()
                     .map_err(DecodeError::from)?,
             ),
+            last_follower_height: MetaValue::<i64>::fetch_or_insert_with(
+                &pool,
+                "last_follower_height",
+                || start_reward_block,
+            )
+            .await?,
             reward_interval: Duration::seconds(
                 env::var("REWARD_INTERVAL")
                     .unwrap_or_else(|_| DEFAULT_REWARD_INTERVAL_SECS.to_string())
@@ -80,8 +85,8 @@ impl Server {
                     .map_err(DecodeError::from)?,
             ),
             verifier_store: FileStore::from_env().await?,
-        };
-        Ok(result)
+            pool,
+        })
     }
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
@@ -97,17 +102,11 @@ impl Server {
                 return Ok(());
             }
 
-            let follow_start =
-                *MetaValue::<i64>::fetch_or_insert_with(&self.pool, "last_follower_height", || {
-                    self.start_reward_block
-                })
-                .await?
-                .value() as u64;
-
-            tracing::info!("connecting to blockchain txn stream at height {follow_start}");
+            let curr_height = *self.last_follower_height.value() as u64;
+            tracing::info!("connecting to blockchain txn stream at height {curr_height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
-                stream_result = txn_stream(&mut self.follower_client, follow_start, &[], TXN_TYPES) => match stream_result {
+                stream_result = txn_stream(&mut self.follower_client, curr_height, &[], TXN_TYPES) => match stream_result {
                     Ok(txn_stream) => {
                         tracing::info!("connected to txn stream");
                         self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
@@ -213,7 +212,9 @@ impl Server {
             now.to_string()
         );
 
-        update_last_follower(&self.pool, current_height).await?;
+        self.last_follower_height
+            .update(&self.pool, current_height as i64)
+            .await?;
 
         // Early exit if we found failed pending txns
         match self.check_pending().await {
@@ -398,14 +399,6 @@ impl Server {
 const CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const RPC_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 const DEFAULT_URI: &str = "http://127.0.0.1:8080";
-
-async fn update_last_follower(pool: &Pool<Postgres>, last_height: u64) -> Result {
-    metrics::gauge!("reward_server_last_reward_height", last_height as f64);
-    MetaValue::new("last_follower_height", last_height)
-        .insert(pool)
-        .await?;
-    Ok(())
-}
 
 fn new_client_from_env() -> Result<follower::Client<Channel>> {
     let uri: Uri = env::var("FOLLOWER_URI")
