@@ -44,7 +44,7 @@ impl TryFrom<LoraValidPocV1> for LoraValidPoc {
         let witnesses = v
             .witness_reports
             .into_iter()
-            .map(TryFrom::try_from)
+            .map(LoraValidWitnessReport::try_from)
             .collect::<Result<Vec<LoraValidWitnessReport>>>()?;
 
         Ok(Self {
