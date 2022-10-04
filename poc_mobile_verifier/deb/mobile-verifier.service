@@ -1,0 +1,17 @@
+[Unit]
+Description=poc-mobile-verifier
+After=network.target
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/opt/poc-mobile-rewards/bin/poc-mobile-verifier
+User=helium
+PIDFile=/var/run/poc-mobile-verifier
+Restart=always
+RestartSec=15
+WorkingDirectory=/opt/poc-mobile-verifier
+
+[Install]
+WantedBy=multi-user.target

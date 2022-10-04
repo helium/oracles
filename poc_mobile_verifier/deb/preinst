@@ -1,0 +1,4 @@
+# add system user for file ownership and systemd user, if not exists
+useradd --system --home-dir /opt/helium --create-home helium || true
+
+#DEBHELPER#

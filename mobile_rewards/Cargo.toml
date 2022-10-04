@@ -1,42 +1,42 @@
 [package]
 name = "mobile-rewards"
 version = "0.1.0"
-edition = "2021"
 description = "Reward Server for the Helium Mobile Network"
-authors = ["Marc Nijdam <marc@nova-labs.com>"]
-license = "Apache-2.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 
 
 [dependencies]
-dotenv = "0"
-thiserror = "1"
-serde =  {version = "1", features=["derive"]}
-serde_json = "1"
-clap = {version = "3", features = ["derive"]}
-sqlx = {version = "0", features = ["postgres", "uuid", "decimal", "chrono", "migrate", "macros", "runtime-tokio-rustls"]}
-tokio = { version = "1", default-features=false, features=["fs", "macros", "signal", "rt", "process", "time"] }
-tracing = "0"
-tracing-subscriber = { version = "0", features = ["env-filter"] }
-base64 = "0"
-sha2 = "*"
-lazy_static = "*"
-chrono = {version = "0", features = ["serde"]}
-triggered = "0"
-futures = "*"
-futures-util = "*"
-prost = "*"
-once_cell = "1"
+dotenv = {workspace = true}
+clap = {workspace = true}
+thiserror = {workspace = true}
+serde =  {workspace = true}
+serde_json = {workspace = true}
+sqlx = {workspace = true}
+base64 = {workspace = true}
+sha2 = {workspace = true}
+lazy_static = {workspace = true}
+triggered = {workspace = true}
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
+once_cell = {workspace = true}
 file-store = {path = "../file_store"}
 db-store = { path = "../db_store" }
 poc-metrics = {path = "../metrics"}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
-helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.4.4", features=["sqlx-postgres"]}
-rust_decimal = "1"
-rust_decimal_macros = "1"
-tonic = "0"
-http = "*"
-metrics = "0.20"
-metrics-exporter-prometheus = "0.11.0"
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+metrics = {workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+helium-proto = { workspace = true }
+helium-crypto = { workspace = true }
+rust_decimal = {workspace = true}
+rust_decimal_macros = {workspace = true}
+tonic = {workspace = true}
+http = {workspace = true}
 rand = "*"
 async-trait = "*"
 

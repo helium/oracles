@@ -19,26 +19,41 @@ jobs:
           default: true
           override: true
           components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ runner.os }}-checkout
 
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.5.0
         with:
           access_token: ${{ github.token }}
 
-      - name: Run tests
-        run: cargo test
+      - name: Build
+        run: cargo build --all --release
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ runner.os }}-build
 
       - name: Check formatting
         run: cargo fmt  -- --check
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ runner.os }}-fmt
 
       - name: Clippy
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: -- -Dclippy::all
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ runner.os }}-clippy
 
-      - name: Build
-        run: cargo build --all --release
+      - name: Run tests
+        run: cargo test
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ runner.os }}-test
 
       - name: PackageIngestorServer
         id: build_ingestor
@@ -77,8 +92,8 @@ jobs:
         if: contains(github.ref, 'refs/tags/')
         uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
         with:
-          toml_path: mobile_verifier 
-          cmd: cargo deb -p mobile-verifier
+          toml_path: poc_mobile_verifier
+          cmd: cargo deb -p poc-mobile-verifier
 
       - name: PackagecloudUpload
         if: contains(github.ref, 'refs/tags/') && steps.build_ingestor.outcome == 'success' && steps.build_rewards.outcome == 'success' && steps.build_status.outcome == 'success' && steps.build_entropy.outcome == 'success'

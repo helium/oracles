@@ -1,13 +1,13 @@
 [package]
 name = "poc-metrics"
 version = "0.1.0"
-edition = "2021"
 description = "Metrics for Helium Mobile Network servers"
-authors = ["Matthew Plant <matty@nova-labs.com>"]
-license = "Apache-2.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
-tracing = "0"
 tower = "0.4"
-metrics = "0.20"
-metrics-exporter-prometheus = "0.11.0"
+tracing = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }

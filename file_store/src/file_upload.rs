@@ -31,6 +31,13 @@ impl FileUpload {
         })
     }
 
+    pub async fn from_env_with_prefix(prefix: &str, messages: MessageReceiver) -> Result<Self> {
+        Ok(Self {
+            messages: UnboundedReceiverStream::new(messages),
+            store: FileStore::from_env_with_prefix(prefix).await?,
+        })
+    }
+
     pub async fn run(self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting file uploader 1");
 
