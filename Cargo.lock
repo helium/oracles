@@ -2035,43 +2035,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mobile-verifier"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64",
- "chrono",
- "clap",
- "db-store",
- "dotenv",
- "file-store",
- "futures",
- "futures-util",
- "helium-crypto",
- "helium-proto",
- "http",
- "lazy_static",
- "metrics",
- "metrics-exporter-prometheus",
- "once_cell",
- "poc-metrics",
- "prost",
- "rand",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "sha2 0.10.6",
- "sqlx",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "multimap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2386,6 +2349,43 @@ dependencies = [
  "metrics-exporter-prometheus",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "poc-mobile-verifier"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "db-store",
+ "dotenv",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "once_cell",
+ "poc-metrics",
+ "prost",
+ "rand",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
 ]
 
 [[package]]

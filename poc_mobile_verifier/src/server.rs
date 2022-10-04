@@ -8,7 +8,7 @@ use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
 use helium_proto::services::{follower, Endpoint, Uri};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{Pool, Postgres};
 use tokio::{select, time::sleep};
 
 pub const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -18,14 +18,8 @@ pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 /// Default hours to delay lookup from now
 pub const DEFAULT_LOOKUP_DELAY: i64 = 3;
 
-pub async fn run_server(shutdown: triggered::Listener) -> Result {
+pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> Result {
     tracing::info!("Starting verifier service");
-
-    let db_connection_str = dotenv::var("DATABASE_URL")?;
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&db_connection_str)
-        .await?;
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
@@ -70,9 +64,11 @@ pub async fn run_server(shutdown: triggered::Listener) -> Result {
             .connect_lazy(),
     );
 
+    let default_end_time = env_var("LAST_VERIFIED_END_TIME", 0)?;
+
     let mut last_verified_end_time =
-        MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", || {
-            env_var("LAST_VERIFIED_END_TIME", 0).unwrap()
+        MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", move || {
+            default_end_time
         })
         .await?;
     let lookup_delay = env_var("LOOKUP_DELAY", DEFAULT_LOOKUP_DELAY)?;
