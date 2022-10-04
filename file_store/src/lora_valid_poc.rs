@@ -41,11 +41,11 @@ impl MsgDecode for LoraValidPoc {
 impl TryFrom<LoraValidPocV1> for LoraValidPoc {
     type Error = Error;
     fn try_from(v: LoraValidPocV1) -> Result<Self> {
-        let mut witnesses: Vec<LoraValidWitnessReport> = Vec::new();
-        for witness_proto in v.witness_reports {
-            let witness_report: LoraValidWitnessReport = witness_proto.try_into()?;
-            witnesses.push(witness_report)
-        }
+        let witnesses = v
+            .witness_reports
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<LoraValidWitnessReport>>>()?;
 
         Ok(Self {
             poc_id: v.poc_id,
