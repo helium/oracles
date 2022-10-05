@@ -11,11 +11,11 @@ use helium_proto::{
     services::{
         poc_lora::{LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
-            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1,
+            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Shares, SpeedtestIngestReportV1,
             SpeedtestReqV1,
         },
     },
-    Message,
+    Message, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -89,6 +89,18 @@ impl Cmd {
                     // printing to json here as csv serializing failing due on header generation from struct
                     print_json(&json)?;
                     // wtr.serialize(LoraValidPoc::try_from(dec_msg)?)?;
+                }
+                FileType::InvalidShares => {
+                    let dec_msg = Shares::decode(msg)?;
+                    print_json(&dec_msg)?;
+                }
+                FileType::Shares => {
+                    let dec_msg = Shares::decode(msg)?;
+                    print_json(&dec_msg)?;
+                }
+                FileType::SubnetworkRewards => {
+                    let dec_msg = SubnetworkRewards::decode(msg)?;
+                    print_json(&dec_msg)?;
                 }
                 _ => (),
             }
