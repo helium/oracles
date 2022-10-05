@@ -107,8 +107,6 @@ impl Loader {
             .unwrap_or(recent_time)
             .max(recent_time);
 
-        tracing::info!("fetching {file_type} info");
-
         let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
             tracing::info!("no ingest {file_type} files to process from: {last_time}");

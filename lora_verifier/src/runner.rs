@@ -97,8 +97,6 @@ impl Runner {
         tokio::spawn(async move { lora_valid_poc_sink.run(&shutdown4).await });
         tokio::spawn(async move { file_upload.run(&shutdown5).await });
 
-        tracing::info!("sink setup complete");
-
         loop {
             if shutdown.is_triggered() {
                 break;
@@ -171,7 +169,7 @@ impl Runner {
                     let beacon_received_ts = beacon_report.received_timestamp;
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
                     if interval_since_last_beacon.num_minutes() < BEACON_INTERVAL {
-                        tracing::info!("beacon is invalid, irregular interval");
+                        tracing::debug!("beacon verification failed, reason: IrregularInterval");
                         self.handle_invalid_poc(
                             &beacon_report,
                             witnesses,
@@ -184,7 +182,7 @@ impl Runner {
                     }
                 }
                 None => {
-                    tracing::info!(
+                    tracing::debug!(
                         "no last beacon timestamp available for this hotspot, ignoring "
                     );
                 }
@@ -196,7 +194,10 @@ impl Runner {
             let entropy_hash = Sha256::digest(&beacon.remote_entropy).to_vec();
             let entropy_info = match Entropy::get(&self.pool, &entropy_hash).await? {
                 Some(res) => res,
-                None => return Ok(()),
+                None => {
+                    tracing::debug!("beacon verification failed, reason: EntropyNotFound");
+                    return Ok(());
+                }
             };
 
             // tmp hack below when testing locally with no entropy server
@@ -229,7 +230,6 @@ impl Runner {
                         for failed_witness in verified_witnesses_result.failed_witnesses {
                             // something went wrong whilst verifying witnesses
                             // halt here and allow things to be reprocessed next tick
-                            tracing::warn!("failure whilst verifying witnesses");
                             let failed_witness = failed_witness.report;
                             // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
                             let failed_witness_public_key = failed_witness.pub_key;
@@ -276,7 +276,7 @@ impl Runner {
                 VerificationStatus::Failed => {
                     // something went wrong whilst verifying the beacon report
                     // halt here and allow things to be reprocessed next tick
-                    tracing::warn!("failure whilst verifying beacon");
+                    tracing::info!("failure whilst verifying beacon");
                     // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
                     let failed_beacon_public_key = &beacon.pub_key;
                     let mut failed_beacon_id: Vec<u8> = beacon.data.clone();
@@ -297,7 +297,6 @@ impl Runner {
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
-        tracing::warn!("handling invalid poc");
         // the beacon is invalid, which in turn renders all witnesses invalid
         let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
@@ -332,7 +331,6 @@ impl Runner {
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
-        tracing::warn!("handling valid poc");
         let beacon_id = &beacon.data;
         let valid_poc: LoraValidPoc = LoraValidPoc {
             poc_id: beacon_id.clone(),

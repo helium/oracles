@@ -83,6 +83,10 @@ impl Poc {
         {
             Ok(res) => res,
             Err(_) => {
+                tracing::debug!(
+                    "beacon verification failed, reason: {:?}",
+                    InvalidReason::GatewayNotFound
+                );
                 let resp = VerifyBeaconResult {
                     result: VerificationStatus::Failed,
                     invalid_reason: Some(InvalidReason::GatewayNotFound),
@@ -107,6 +111,10 @@ impl Poc {
         // if beacon received timestamp is outside of entopy start/end then reject the poc
         let beacon_received_time = self.beacon_report.received_timestamp;
         if beacon_received_time < self.entropy_start || beacon_received_time > self.entropy_end {
+            tracing::debug!(
+                "beacon verification failed, reason: {:?}",
+                InvalidReason::BadEntropy
+            );
             let resp = VerifyBeaconResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::BadEntropy),
@@ -118,6 +126,10 @@ impl Poc {
 
         //check beaconer has an asserted location
         if beaconer_info.location.is_none() {
+            tracing::debug!(
+                "beacon verification failed, reason: {:?}",
+                InvalidReason::NotAsserted
+            );
             let resp = VerifyBeaconResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::NotAsserted),
@@ -130,6 +142,10 @@ impl Poc {
         // check beaconer is permitted to participate in POC
         match beaconer_info.staking_mode {
             GatewayStakingMode::Dataonly => {
+                tracing::debug!(
+                    "beacon verification failed, reason: {:?}",
+                    InvalidReason::InvalidCapability
+                );
                 let resp = VerifyBeaconResult {
                     result: VerificationStatus::Invalid,
                     invalid_reason: Some(InvalidReason::InvalidCapability),
@@ -145,6 +161,7 @@ impl Poc {
         // TODO: insert hex scale lookup here
         //       value hardcoded to 1.0 temporarily
 
+        tracing::debug!("beacon verification success");
         // all is good with the beacon
         let resp = VerifyBeaconResult {
             result: VerificationStatus::Valid,
@@ -225,6 +242,10 @@ impl Poc {
         {
             Ok(res) => res,
             Err(_) => {
+                tracing::debug!(
+                    "witness verification failed, reason: {:?}",
+                    InvalidReason::GatewayNotFound
+                );
                 let resp = VerifyWitnessResult {
                     result: VerificationStatus::Failed,
                     invalid_reason: Some(InvalidReason::GatewayNotFound),
@@ -247,6 +268,10 @@ impl Poc {
         // if witness report received timestamp is outside of entopy start/end then reject the poc
         let witness_received_time = witness_report.received_timestamp;
         if witness_received_time < self.entropy_start || witness_received_time > self.entropy_end {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::EntropyExpired
+            );
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::EntropyExpired),
@@ -257,6 +282,10 @@ impl Poc {
 
         // check witness has an asserted location
         if witness_info.location.is_none() {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::NotAsserted
+            );
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::NotAsserted),
@@ -267,6 +296,10 @@ impl Poc {
 
         // check witness is utilizing same freq and that of the beaconer
         if beacon.frequency != witness.frequency {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::InvalidFrequency
+            );
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::InvalidFrequency),
@@ -277,6 +310,10 @@ impl Poc {
 
         // check beaconer & witness are in the same region
         if beaconer_info.region != witness_info.region {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::InvalidRegion
+            );
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::InvalidRegion),
@@ -290,6 +327,10 @@ impl Poc {
         let witness_loc = witness_info.location.unwrap();
         let witness_distance = calc_distance(beaconer_loc, witness_loc).unwrap();
         if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::MaxDistanceExceeded
+            );
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::MaxDistanceExceeded),
@@ -304,6 +345,10 @@ impl Poc {
         let min_rcv_signal =
             calc_fspl(tx_power, witness.frequency, witness_distance, gain).unwrap();
         if witness.signal as f64 > min_rcv_signal {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::BadRssi
+            );
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::BadRssi),
@@ -315,6 +360,10 @@ impl Poc {
         // check witness is permitted to participate in POC
         match witness_info.staking_mode {
             GatewayStakingMode::Dataonly => {
+                tracing::debug!(
+                    "witness verification failed, reason: {:?}",
+                    InvalidReason::InvalidCapability
+                );
                 let resp = VerifyWitnessResult {
                     result: VerificationStatus::Invalid,
                     invalid_reason: Some(InvalidReason::InvalidCapability),
@@ -329,6 +378,10 @@ impl Poc {
         //TODO: Plugin Jay's crate here when ready
         let beacon = &self.beacon_report.report;
         if witness.data != beacon.data {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::InvalidPacket
+            );
             let resp = VerifyWitnessResult {
                 result: VerificationStatus::Invalid,
                 invalid_reason: Some(InvalidReason::InvalidPacket),
@@ -338,6 +391,7 @@ impl Poc {
         }
 
         // witness is good
+        tracing::debug!("witness verification success");
         let resp = VerifyWitnessResult {
             result: VerificationStatus::Valid,
             invalid_reason: None,
