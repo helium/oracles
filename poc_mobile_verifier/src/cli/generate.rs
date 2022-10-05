@@ -6,7 +6,9 @@ use crate::{
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
+use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
+use serde_json::json;
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]
@@ -48,7 +50,29 @@ impl Cmd {
         )
         .await?;
 
-        println!("{:#?}", rewards);
+        let total_rewards = rewards
+            .rewards
+            .iter()
+            .fold(0, |acc, reward| acc + reward.amount);
+        let rewards: Vec<(PublicKey, u64)> = rewards
+            .rewards
+            .iter()
+            .map(|r| {
+                (
+                    PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
+                    r.amount,
+                )
+            })
+            .collect();
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "rewards": rewards,
+                "total_rewards": total_rewards,
+            }))
+            .unwrap()
+        );
 
         Ok(())
     }
