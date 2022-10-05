@@ -1,6 +1,8 @@
 use crate::{
-    datetime_from_epoch, lora_beacon_report::LoraBeaconReport,
-    lora_witness_report::LoraWitnessReport, traits::MsgDecode, Error, Result,
+    lora_beacon_report::LoraBeaconReport,
+    lora_witness_report::LoraWitnessReport,
+    traits::{MsgDecode, MsgTimestamp},
+    Error, Result,
 };
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_lora::{
@@ -8,7 +10,6 @@ use helium_proto::services::poc_lora::{
     LoraWitnessReportReqV1,
 };
 use serde::Serialize;
-use std::ops::Not;
 
 #[derive(Serialize, Clone)]
 pub struct LoraValidBeaconReport {
@@ -40,31 +41,30 @@ impl MsgDecode for LoraValidPoc {
 impl TryFrom<LoraValidPocV1> for LoraValidPoc {
     type Error = Error;
     fn try_from(v: LoraValidPocV1) -> Result<Self> {
-        let beacon_report: LoraValidBeaconReport = v.beacon_report.unwrap().try_into()?;
-        let mut witnesses: Vec<LoraValidWitnessReport> = Vec::new();
-        for witness_proto in v.witness_reports {
-            let witness_report: LoraValidWitnessReport = witness_proto.try_into()?;
-            witnesses.push(witness_report)
-        }
+        let witnesses = v
+            .witness_reports
+            .into_iter()
+            .map(LoraValidWitnessReport::try_from)
+            .collect::<Result<Vec<LoraValidWitnessReport>>>()?;
+
         Ok(Self {
             poc_id: v.poc_id,
-            beacon_report,
             witness_reports: witnesses,
+            beacon_report: v
+                .beacon_report
+                .ok_or_else(|| Error::not_found("lora valid poc v1"))?
+                .try_into()?,
         })
     }
 }
 
 impl From<LoraValidPoc> for LoraValidPocV1 {
     fn from(v: LoraValidPoc) -> Self {
-        let beacon_report: LoraValidBeaconReportV1 = v.beacon_report.into();
-        let mut witnesses: Vec<LoraValidWitnessReportV1> = Vec::new();
-        for witness_proto in v.witness_reports {
-            let witness_report: LoraValidWitnessReportV1 = witness_proto.into();
-            witnesses.push(witness_report)
-        }
+        let witnesses = v.witness_reports.into_iter().map(From::from).collect();
+
         Self {
             poc_id: v.poc_id,
-            beacon_report: Some(beacon_report),
+            beacon_report: Some(v.beacon_report.into()),
             witness_reports: witnesses,
         }
     }
@@ -73,16 +73,14 @@ impl From<LoraValidPoc> for LoraValidPocV1 {
 impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
     type Error = Error;
     fn try_from(v: LoraValidBeaconReportV1) -> Result<Self> {
-        let location = v
-            .location
-            .is_empty()
-            .not()
-            .then(|| v.location.parse::<u64>().unwrap());
         Ok(Self {
-            received_timestamp: datetime_from_epoch(v.received_timestamp),
-            location,
+            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            location: v.location.parse().ok(),
             hex_scale: v.hex_scale,
-            report: LoraBeaconReport::try_from(v.report.unwrap())?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("lora valid beacon report v1"))?
+                .try_into()?,
         })
     }
 }
@@ -90,13 +88,13 @@ impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
 impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
     fn from(v: LoraValidBeaconReport) -> Self {
         let report: LoraBeaconReportReqV1 = v.report.into();
-        let location = match v.location {
-            None => String::new(),
-            Some(loc) => loc.to_string(),
-        };
+
         Self {
-            received_timestamp: v.received_timestamp.timestamp() as u64,
-            location,
+            received_timestamp: v.received_timestamp.timestamp_millis() as u64,
+            location: v
+                .location
+                .map(|l| l.to_string())
+                .unwrap_or_else(String::new),
             hex_scale: v.hex_scale,
             report: Some(report),
         }
@@ -106,16 +104,14 @@ impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
 impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
     type Error = Error;
     fn try_from(v: LoraValidWitnessReportV1) -> Result<Self> {
-        let location = v
-            .location
-            .is_empty()
-            .not()
-            .then(|| v.location.parse::<u64>().unwrap());
         Ok(Self {
-            received_timestamp: datetime_from_epoch(v.received_timestamp),
-            location,
+            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            location: v.location.parse().ok(),
             hex_scale: v.hex_scale,
-            report: LoraWitnessReport::try_from(v.report.unwrap())?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("lora valid witness port v1"))?
+                .try_into()?,
         })
     }
 }
@@ -123,13 +119,13 @@ impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
 impl From<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
     fn from(v: LoraValidWitnessReport) -> Self {
         let report: LoraWitnessReportReqV1 = v.report.into();
-        let location = match v.location {
-            None => String::new(),
-            Some(loc) => loc.to_string(),
-        };
+
         Self {
-            received_timestamp: v.received_timestamp.timestamp() as u64,
-            location,
+            received_timestamp: v.received_timestamp.timestamp_millis() as u64,
+            location: v
+                .location
+                .map(|l| l.to_string())
+                .unwrap_or_else(String::new),
             hex_scale: v.hex_scale,
             report: Some(report),
         }

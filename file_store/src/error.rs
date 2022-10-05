@@ -36,6 +36,8 @@ pub enum DecodeError {
     FileInfo(String),
     #[error("uri error")]
     Uri(#[from] http::uri::InvalidUri),
+    #[error("integer conversion error")]
+    FromInt(#[from] std::num::TryFromIntError),
 }
 
 #[derive(Error, Debug)]

@@ -1,14 +1,9 @@
 use crate::{Error, Result};
-use file_store::{
-    heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconReport,
-    lora_witness_report::LoraWitnessReport, speedtest::CellSpeedtest,
-};
+use file_store::{lora_beacon_report::LoraBeaconReport, lora_witness_report::LoraWitnessReport};
 use helium_proto::services::poc_lora::{
     LoraBeaconReportReqV1, LoraBeaconReportRespV1, LoraWitnessReportReqV1, LoraWitnessReportRespV1,
 };
-use helium_proto::services::poc_mobile::{
-    CellHeartbeatReqV1, CellHeartbeatRespV1, SpeedtestReqV1, SpeedtestRespV1,
-};
+use helium_proto::services::poc_mobile::{CellHeartbeatRespV1, SpeedtestRespV1};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -32,22 +27,6 @@ impl ToString for EventId {
 impl<M: helium_proto::Message> From<&M> for EventId {
     fn from(event: &M) -> Self {
         Self(base64::encode(Sha256::digest(&event.encode_to_vec())))
-    }
-}
-
-impl TryFrom<CellHeartbeat> for EventId {
-    type Error = Error;
-    fn try_from(event: CellHeartbeat) -> Result<Self> {
-        let req = CellHeartbeatReqV1::from(event);
-        Ok(Self::from(&req))
-    }
-}
-
-impl TryFrom<CellSpeedtest> for EventId {
-    type Error = Error;
-    fn try_from(event: CellSpeedtest) -> Result<Self> {
-        let req = SpeedtestReqV1::from(event);
-        Ok(Self::from(&req))
     }
 }
 

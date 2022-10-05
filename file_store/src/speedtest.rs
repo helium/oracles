@@ -1,5 +1,8 @@
-use crate::{datetime_from_epoch, traits::MsgDecode, Error, Result};
-use chrono::{DateTime, TimeZone, Utc};
+use crate::{
+    traits::{MsgDecode, MsgTimestamp},
+    Error, Result,
+};
+use chrono::{DateTime, Utc};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::{SpeedtestIngestReportV1, SpeedtestReqV1};
 use serde::{Deserialize, Serialize};
@@ -51,7 +54,7 @@ impl TryFrom<SpeedtestReqV1> for CellSpeedtest {
         Ok(Self {
             pubkey: PublicKey::try_from(value.pub_key)?,
             serial: value.serial,
-            timestamp: datetime_from_epoch(value.timestamp),
+            timestamp: value.timestamp.to_timestamp()?,
             upload_speed: value.upload_speed,
             download_speed: value.download_speed,
             latency: value.latency,
@@ -63,8 +66,11 @@ impl TryFrom<SpeedtestIngestReportV1> for CellSpeedtestIngestReport {
     type Error = Error;
     fn try_from(v: SpeedtestIngestReportV1) -> Result<Self> {
         Ok(Self {
-            received_timestamp: Utc.timestamp_millis(v.received_timestamp as i64),
-            report: TryFrom::try_from(v.report.unwrap())?,
+            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("ingest speedtest report"))?
+                .try_into()?,
         })
     }
 }
@@ -72,6 +78,7 @@ impl TryFrom<SpeedtestIngestReportV1> for CellSpeedtestIngestReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use hex_literal::hex;
     use prost::Message;
 

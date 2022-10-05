@@ -1,6 +1,8 @@
 use crate::{
-    datetime_from_epoch, lora_beacon_report::LoraBeaconReport,
-    lora_witness_report::LoraWitnessReport, traits::MsgDecode, Error, Result,
+    lora_beacon_report::LoraBeaconReport,
+    lora_witness_report::LoraWitnessReport,
+    traits::{MsgDecode, MsgTimestamp},
+    Error, Result,
 };
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_lora::{
@@ -37,10 +39,14 @@ impl TryFrom<LoraInvalidBeaconReportV1> for LoraInvalidBeaconReport {
     fn try_from(v: LoraInvalidBeaconReportV1) -> Result<Self> {
         let invalid_reason: InvalidReason = InvalidReason::from_i32(v.reason)
             .ok_or_else(|| Error::custom("unsupported invalid_reason"))?;
+
         Ok(Self {
-            received_timestamp: datetime_from_epoch(v.received_timestamp),
+            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
             reason: invalid_reason,
-            report: LoraBeaconReport::try_from(v.report.unwrap())?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("lora invalid beacon report v1"))?
+                .try_into()?,
         })
     }
 }
@@ -49,7 +55,7 @@ impl From<LoraInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
     fn from(v: LoraInvalidBeaconReport) -> Self {
         let report: LoraBeaconReportReqV1 = v.report.into();
         Self {
-            received_timestamp: v.received_timestamp.timestamp() as u64,
+            received_timestamp: v.received_timestamp.timestamp_millis() as u64,
             reason: v.reason as i32,
             report: Some(report),
         }
@@ -65,18 +71,22 @@ impl TryFrom<LoraInvalidWitnessReportV1> for LoraInvalidWitnessReport {
             .ok_or_else(|| Error::custom("unsupported participant_side"))?;
 
         Ok(Self {
-            received_timestamp: datetime_from_epoch(v.received_timestamp),
+            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
             reason: invalid_reason,
-            report: LoraWitnessReport::try_from(v.report.unwrap())?,
             participant_side: side,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("lora invalid witness report"))?
+                .try_into()?,
         })
     }
 }
+
 impl From<LoraInvalidWitnessReport> for LoraInvalidWitnessReportV1 {
     fn from(v: LoraInvalidWitnessReport) -> Self {
         let report: LoraWitnessReportReqV1 = v.report.into();
         Self {
-            received_timestamp: v.received_timestamp.timestamp() as u64,
+            received_timestamp: v.received_timestamp.timestamp_millis() as u64,
             reason: v.reason as i32,
             report: Some(report),
             participant_side: v.participant_side as i32,

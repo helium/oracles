@@ -1,5 +1,8 @@
-use crate::{datetime_from_epoch, traits::MsgDecode, Error, Result};
-use chrono::{DateTime, TimeZone, Utc};
+use crate::{
+    traits::{MsgDecode, MsgTimestamp},
+    Error, Result,
+};
+use chrono::{DateTime, Utc};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
 use serde::{Deserialize, Serialize};
@@ -38,10 +41,10 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
     type Error = Error;
     fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
         Ok(Self {
+            timestamp: v.timestamp.to_timestamp()?,
             pubkey: PublicKey::try_from(v.pub_key)?,
             hotspot_type: v.hotspot_type,
             cell_id: v.cell_id,
-            timestamp: datetime_from_epoch(v.timestamp),
             lon: v.lon,
             lat: v.lat,
             operation_mode: v.operation_mode,
@@ -55,32 +58,19 @@ impl TryFrom<CellHeartbeatIngestReportV1> for CellHeartbeatIngestReport {
     type Error = Error;
     fn try_from(v: CellHeartbeatIngestReportV1) -> Result<Self> {
         Ok(Self {
-            received_timestamp: Utc.timestamp_millis(v.received_timestamp as i64),
-            report: TryFrom::try_from(v.report.unwrap())?,
+            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("ingest heartbeat report"))?
+                .try_into()?,
         })
-    }
-}
-
-impl From<CellHeartbeat> for CellHeartbeatReqV1 {
-    fn from(v: CellHeartbeat) -> Self {
-        Self {
-            pub_key: v.pubkey.to_vec(),
-            hotspot_type: v.hotspot_type,
-            cell_id: v.cell_id,
-            timestamp: v.timestamp.timestamp() as u64,
-            lon: v.lon,
-            lat: v.lat,
-            operation_mode: v.operation_mode,
-            cbsd_category: v.cbsd_category,
-            cbsd_id: v.cbsd_id,
-            signature: vec![],
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use hex_literal::hex;
     use prost::Message;
 
