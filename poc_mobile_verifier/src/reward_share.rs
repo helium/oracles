@@ -133,10 +133,12 @@ pub fn cell_shares(shares: &Shares) -> CellShares {
 
 pub fn hotspot_shares(
     shares: &Shares,
-    speed_shares_moving_avg: &SpeedShareMovingAvgs,
+    _speed_shares_moving_avg: &SpeedShareMovingAvgs,
 ) -> HotspotShares {
     let mut hotspot_shares = HotspotShares::new();
     for share in shares.values() {
+        *hotspot_shares.entry(share.pub_key.clone()).or_default() += share.weight;
+        /*
         speed_shares_moving_avg.get(&share.pub_key).map_or_else(
             || (),
             |moving_avg| {
@@ -145,6 +147,7 @@ pub fn hotspot_shares(
                 }
             },
         )
+        */
     }
     hotspot_shares
 }
@@ -258,12 +261,13 @@ impl GatheredShares {
             pubkey: hb_pub_key,
             cbsd_id: hb_cbsd_id,
             timestamp: hb_timestamp,
+            operation_mode,
             ..
         } = cell_heartbeat;
 
         if let Some(cell_type) = CellType::from_cbsd_id(&hb_cbsd_id) {
             // TODO: Will only get inserted in invalid if cbsd_id is a valid cell_type
-            if hb_timestamp < after_utc || hb_timestamp >= before_utc {
+            if !operation_mode || hb_timestamp < after_utc || hb_timestamp >= before_utc {
                 self.invalid_shares.push(ShareProto {
                     cbsd_id: hb_cbsd_id,
                     timestamp: hb_timestamp.timestamp() as u64,
