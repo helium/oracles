@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::{
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    speedtest::CellSpeedtest,
     traits::MsgDecode,
     BytesMutStream,
 };
@@ -210,20 +210,15 @@ impl GatheredShares {
         };
 
         while let Some(Ok(msg)) = stream.next().await {
-            // NOTE: This will early exit with an error if we fail to decode
-
             if let Ok(cell_heartbeat_ingest_report) = CellHeartbeatIngestReport::decode(msg.clone())
             {
                 shares.gather_heartbeat(cell_heartbeat_ingest_report.report, after_utc, before_utc)
-            } else if let Ok(speedtest_ingest_report) = CellSpeedtestIngestReport::decode(msg) {
-                shares.gather_speedtest(speedtest_ingest_report.report, after_utc, before_utc)
-            } else {
-                continue;
             }
         }
         Ok(shares)
     }
 
+    #[allow(dead_code)]
     fn gather_speedtest(
         &mut self,
         speedtest: CellSpeedtest,
