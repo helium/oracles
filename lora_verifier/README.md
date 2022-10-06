@@ -3,13 +3,19 @@
 This crates takes beacon and witness reports as input from an S3 bucket and verifies their integrity against a range of validations and ouputs verified reports to another S3 bucket.  A verified report can either be of type valid or invalid.
 
 
+## S3 Inputs
+
+- `lora_beacon_ingest_report_v1`: a beacon report produced by the ingestor
+- `lora_witness_ingest_report_v1`: a witness report produced by the ingestor
+- `entropy_report_v1`: an entropy report produced by the entropy service
+
 ## Validations
 
-The verifier will periodically query the incoming S3 bucket and load any new beacon or witness reports.  These will be used to populate a postres DB.  The DB will then be periodically queried to retrieve any beacon reports with an expired entropy lifespan.  For each such beacon report a list of witnesses will be retrieved and both reports types will then be verified.
+The verifier will periodically query the incoming S3 bucket and load any new beacon, witness & entropy repots.  These will be used to populate a postres DB.  The DB will then be periodically queried to retrieve any beacon reports with an expired entropy lifespan.  For each such beacon report a list of witnesses will be retrieved and both reports types will then be verified against the following validations:
 
 beacon reports
 - `interval check`: is the beaconer permitted to beacon at the current time
-- `valid entropy check`:  is the entropy included in the beacon report valid
+- `valid entropy check`:  is the entropy included in the beacon report valid,
 - `assertion check`: has the beaconing hotspot been asserted
 - `entropy interval check`: was the beacon report received within the associated entropy's lifespan
 - `capability check`: is the beaconing hotspot permitted to participate in POC
@@ -26,7 +32,7 @@ witness reports
 - `packet check`: does the reported packet payload match that of the beaconers broadcast
 
 
-Outputs of the verification process are:
+## S3 Outputs
 
 - `valid_poc`: A report consisting of a single valid beacon report and all associated valid witness reports
 - `invalid_beacon`: A report consisting of a single invalid beacon report along with its invalid reason
