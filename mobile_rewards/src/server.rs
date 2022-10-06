@@ -28,8 +28,7 @@ use http::Uri;
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
-use std::env;
-use std::{ops::Range, time::Duration as StdDuration};
+use std::{env, ops::Range, time::Duration as StdDuration};
 use tokio::time;
 use tonic::Streaming;
 

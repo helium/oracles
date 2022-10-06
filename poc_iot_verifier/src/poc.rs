@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, follower::FollowerGatewayResp, follower::FollowerService, Result};
+use crate::{entropy::Entropy, traits::GatewayInfoResolver, Result};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
@@ -9,6 +9,7 @@ use geo::prelude::*;
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_proto::services::poc_lora::{InvalidParticipantSide, InvalidReason};
 use helium_proto::GatewayStakingMode;
+use node_follower::{gateway_resp::FollowerGatewayResp, FollowerService};
 use std::f64::consts::PI;
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
@@ -77,7 +78,7 @@ impl Poc {
         let beaconer_pub_key = beacon.pub_key.clone();
         let beaconer_info = match self
             .follower_service
-            .query_gateway_info(&beaconer_pub_key)
+            .resolve_gateway_info(&beaconer_pub_key)
             .await
         {
             Ok(res) => res,
@@ -237,7 +238,7 @@ impl Poc {
         let witness_pub_key = witness.pub_key.clone();
         let witness_info = match self
             .follower_service
-            .query_gateway_info(&witness_pub_key)
+            .resolve_gateway_info(&witness_pub_key)
             .await
         {
             Ok(res) => res,

@@ -1,6 +1,6 @@
 [workspace]
 members = [ "ingest", "db_store", "file_store", "mobile_rewards", "poc_mobile_verifier", "entropy",
-"poc_iot_verifier", "poc_iot_injector"]
+"poc_iot_verifier", "poc_iot_injector", "node_follower"]
 
 [workspace.package]
 authors = ["Nova Labs <info@nova-labs.com>"]

@@ -2003,6 +2003,7 @@ dependencies = [
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
+ "node-follower",
  "once_cell",
  "poc-metrics",
  "prost",
@@ -2041,6 +2042,19 @@ name = "nb"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "546c37ac5d9e56f55e73b677106873d9d9f5190605e41a856503623648488cae"
+
+[[package]]
+name = "node-follower"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dotenv",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "thiserror",
+ "tonic",
+]
 
 [[package]]
 name = "nom"
@@ -2355,6 +2369,7 @@ dependencies = [
  "helium-proto",
  "http",
  "lazy_static",
+ "node-follower",
  "once_cell",
  "prost",
  "serde",

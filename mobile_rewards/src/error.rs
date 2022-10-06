@@ -32,6 +32,8 @@ pub enum Error {
     TransactionError(String),
     #[error("meta error")]
     MetaError(#[from] db_store::MetaError),
+    #[error("follower error")]
+    Follower(#[from] node_follower::Error),
 }
 
 #[derive(Error, Debug)]

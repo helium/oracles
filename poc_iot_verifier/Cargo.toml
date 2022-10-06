@@ -31,6 +31,7 @@ chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = {workspace = true }
 file-store = { path = "../file_store" }
+node-follower = { path = "../node_follower" }
 async-trait = "*"
 h3ron = "*"
 geo-types = "*"
