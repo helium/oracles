@@ -1301,21 +1301,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geo"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b684179d4c034f9e6718692601a7ec77e4a3b654dbc09b5e4fd342f0e48f2ba1"
-dependencies = [
- "float_next_after",
- "geo-types",
- "geographiclib-rs",
- "log",
- "num-traits",
- "robust",
- "rstar",
-]
-
-[[package]]
 name = "geo-types"
 version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1400,7 +1385,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7d52875c47f35a0db141bef968682165623e7d1671a0da40b87f581a3a953fd"
 dependencies = [
  "ahash 0.8.0",
- "geo 0.22.1",
+ "geo",
  "geo-types",
  "h3ron-h3-sys",
  "hashbrown",
@@ -2342,6 +2327,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "poc-iot-verifier"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "cmake",
+ "dotenv",
+ "file-store",
+ "futures",
+ "futures-util",
+ "geo",
+ "geo-types",
+ "h3ron",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "lazy_static",
+ "once_cell",
+ "prost",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+ "xorf",
+]
+
+[[package]]
 name = "poc-metrics"
 version = "0.1.0"
 dependencies = [
@@ -2423,41 +2443,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
-]
-
-[[package]]
-name = "poclora-verifier"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64",
- "chrono",
- "clap",
- "cmake",
- "dotenv",
- "file-store",
- "futures",
- "futures-util",
- "geo 0.23.0",
- "geo-types",
- "h3ron",
- "helium-crypto",
- "helium-proto",
- "http",
- "lazy_static",
- "once_cell",
- "prost",
- "serde",
- "serde_json",
- "sha2 0.10.6",
- "sqlx",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "triggered",
- "xorf",
 ]
 
 [[package]]
