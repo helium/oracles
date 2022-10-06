@@ -7,6 +7,7 @@ use crate::{
 };
 use csv::Writer;
 use futures::stream::StreamExt;
+use helium_crypto::PublicKey;
 use helium_proto::{
     services::{
         poc_lora::{LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1},
@@ -99,8 +100,22 @@ impl Cmd {
                     print_json(&dec_msg)?;
                 }
                 FileType::SubnetworkRewards => {
-                    let dec_msg = SubnetworkRewards::decode(msg)?;
-                    print_json(&dec_msg)?;
+                    let proto_rewards = SubnetworkRewards::decode(msg)?.rewards;
+                    let total_rewards = proto_rewards
+                        .iter()
+                        .fold(0, |acc, reward| acc + reward.amount);
+
+                    let rewards: Vec<(PublicKey, u64)> = proto_rewards
+                        .iter()
+                        .map(|r| {
+                            (
+                                PublicKey::try_from(r.account.as_slice())
+                                    .expect("unable to get public key"),
+                                r.amount,
+                            )
+                        })
+                        .collect();
+                    print_json(&json!({ "rewards": rewards, "total_rewards": total_rewards }))?;
                 }
                 _ => (),
             }
