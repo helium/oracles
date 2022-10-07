@@ -11,7 +11,7 @@ use helium_proto::services::poc_lora::{
 use std::convert::TryFrom;
 use std::env;
 use std::{net::SocketAddr, path::Path, str::FromStr};
-use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
+use tonic::{transport, Request, Response, Status};
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
@@ -123,12 +123,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
         lora_witness_report_tx,
     };
 
-    let api_token = env::var("API_TOKEN").map(|token| {
-        format!("Bearer {}", token)
-            .parse::<MetadataValue<_>>()
-            .unwrap()
-    })?;
-
     tracing::info!(
         "grpc listening on {} and server mode {}",
         grpc_addr,
@@ -136,13 +130,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     );
 
     let server = transport::Server::builder()
-        .add_service(poc_lora::Server::with_interceptor(
-            grpc_server,
-            move |req: Request<()>| match req.metadata().get("authorization") {
-                Some(t) if api_token == t => Ok(req),
-                _ => Err(Status::unauthenticated("No valid auth token")),
-            },
-        ))
+        .add_service(poc_lora::Server::new(grpc_server))
         .serve_with_shutdown(grpc_addr, shutdown.clone())
         .map_err(Error::from);
 
