@@ -30,6 +30,8 @@ pub enum Error {
     NotFound(String),
     #[error("base64 decode error")]
     Base64DecodeError(#[from] base64::DecodeError),
+    #[error("denylist error")]
+    DenyList(#[from] denylist::Error),
 }
 
 #[derive(Error, Debug)]

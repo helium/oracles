@@ -28,7 +28,7 @@ use sqlx::PgPool;
 use tokio::time;
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);
-const DENYLIST_POLL_TIME: time::Duration = time::Duration::from_secs(30);
+const DENYLIST_POLL_TIME: time::Duration = time::Duration::from_secs(180);
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 const BEACON_INTERVAL: i64 = 60; //minutes
@@ -48,10 +48,7 @@ impl Runner {
         let denylist_url = std::env::var("DENYLIST_URL").unwrap_or_else(|_| {
             String::from("https://api.github.com/repos/helium/denylist/releases/latest")
         });
-        let mut deny_list = DenyList::new();
-        //TODO: have the denylist initialize with from a file packaged with the verifier
-        //      this way should github be down we always have a denylist of some sort
-        deny_list.update_to_latest(&denylist_url).await;
+        let deny_list = DenyList::new();
         Ok(Self {
             pool,
             store_path,

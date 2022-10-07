@@ -8,7 +8,7 @@ async fn main() -> Result {
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             dotenv::var("RUST_LOG").unwrap_or_else(|_| {
-                "poclora_report=info,poc_store=info,poclora_verifier=info,denylist=info".into()
+                "poclora_report=info,poc_store=info,poc_iot_verifier=info,denylist=info".into()
             }),
         ))
         .with(tracing_subscriber::fmt::layer())

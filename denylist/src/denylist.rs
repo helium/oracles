@@ -1,10 +1,12 @@
 use crate::denylist::client::DenyListClient;
+use crate::Result;
 use crate::{models::metadata::Asset, *};
 use bytes::Buf;
 use helium_crypto::{PublicKey, Verify};
 use serde::Serialize;
 use std::hash::Hasher;
 use std::str::FromStr;
+use std::{fs, path};
 use twox_hash::XxHash64;
 use xorf::{Filter as XorFilter, Xor32};
 
@@ -13,6 +15,9 @@ pub const SERIAL_SIZE: usize = 32;
 /// the pubkey used to verify the signature of denylist updates
 // TODO: is there a better home for this key ?
 const PUB_KEY_B58: &str = "1SbEYKju337P6aYsRd9DT2k4qgK5ZK62kXbSvnJgqeaxK3hqQrYURZjL";
+/// a copy of the last saved filter bin downloaded from github
+/// if present will be used to initialise the denylist upon verifier startup
+const FILTER_BIN_PATH: &str = "./tmp/last_saved_filter.bin";
 
 #[derive(Serialize)]
 pub struct DenyList {
@@ -30,9 +35,22 @@ impl Default for DenyList {
 impl DenyList {
     pub fn new() -> Self {
         tracing::debug!("initializing new denylist");
-        // default to an empty filter
-        let filter = Xor32::from(Vec::new());
+        // if exists default to the local saved filter bin,
+        // otherwise default to empty filter
+        // a local filter should always be present
+        // after the verifier has been run at least once
+        // in the current dir and has previously successfully downloaded
+        // a filter from github
+        let bin: Vec<u8> = fs::read(FILTER_BIN_PATH).unwrap_or_else(|_| {
+            tracing::warn!(
+                "failed to initialise with a denylist filter, filter is currently empty"
+            );
+            Vec::new()
+        });
+        let filter = filter_from_bin(&bin).unwrap_or_else(|_| Xor32::from(Vec::new()));
         Self {
+            // default tag to 0, proper tag name will be set on first
+            // call to update_to_latest
             tag_name: 0,
             filter,
         }
@@ -43,8 +61,8 @@ impl DenyList {
         // get a new client to fetch denylist metadata
         let mut dl_client = match DenyListClient::new() {
             Ok(res) => res,
-            Err(_) => {
-                tracing::error!("failing to initialize denylist client");
+            Err(e) => {
+                tracing::error!("failing to initialize denylist client: {e}");
                 return;
             }
         };
@@ -52,7 +70,7 @@ impl DenyList {
         let metadata = match dl_client.get_metadata(metadata_url).await {
             Some(res) => res,
             None => {
-                tracing::error!("failing to parse download denylist metadata");
+                tracing::error!("failing to parse downloaded denylist metadata");
                 return;
             }
         };
@@ -83,23 +101,10 @@ impl DenyList {
                     Some(res) => res,
                     None => return,
                 };
-                // slice the binary into its component parts
-                let mut buf: &[u8] = &bin;
-                let _version = buf.get_u8();
-                let signature_len = buf.get_u16_le() as usize;
-                let signature = buf.copy_to_bytes(signature_len).to_vec();
-                let pubkey = PublicKey::from_str(PUB_KEY_B58).expect("failed to decode pub key");
-                match pubkey.verify(buf, &signature) {
-                    Ok(_) => {
-                        tracing::info!("updating filter to new tag");
-                        let _serial = buf.get_u32_le();
-                        let filter = bincode::deserialize::<Xor32>(buf).unwrap();
-                        self.filter = filter;
-                        self.tag_name = new_tag_name;
-                    }
-                    _ => {
-                        tracing::warn!("filter signature verification failed");
-                    }
+                if let Ok(filter) = filter_from_bin(&bin) {
+                    self.filter = filter;
+                    self.tag_name = new_tag_name;
+                    save_local_filter_bin(&bin, FILTER_BIN_PATH);
                 }
             }
         }
@@ -110,8 +115,51 @@ impl DenyList {
     }
 }
 
+/// deconstruct bytes into the filter component parts
+pub fn filter_from_bin(bin: &Vec<u8>) -> Result<Xor32> {
+    if bin.is_empty() {
+        tracing::debug!("failed to initialize the denylist filter, filter is empty");
+        return Err(Error::InvalidBinary(
+            "invalid initial filter bin".to_string(),
+        ));
+    }
+    let mut buf: &[u8] = bin;
+    let _version = buf.get_u8();
+    let signature_len = buf.get_u16_le() as usize;
+    let signature = buf.copy_to_bytes(signature_len).to_vec();
+    let pubkey = PublicKey::from_str(PUB_KEY_B58)?;
+    match pubkey.verify(buf, &signature) {
+        Ok(_) => {
+            tracing::info!("updating filter to latest");
+            let _serial = buf.get_u32_le();
+            let xor = bincode::deserialize::<Xor32>(buf)?;
+            Ok(xor)
+        }
+        Err(_) => {
+            tracing::warn!("filter signature verification failed");
+            Err(Error::InvalidBinary(
+                "filter signature verification failed".to_string(),
+            ))
+        }
+    }
+}
+
 fn public_key_hash(public_key: &PublicKey) -> u64 {
     let mut hasher = XxHash64::default();
     hasher.write(&public_key.to_vec());
     hasher.finish()
+}
+
+/// save a copy of the xor file locally
+// the local copy will be used should during init
+// github be unreachable
+pub fn save_local_filter_bin(bin: &Vec<u8>, path: &str) {
+    if let Some(parent) = path::PathBuf::from(path).parent() {
+        if fs::create_dir_all(parent).is_ok() {
+            _ = fs::write(path, &bin)
+                .map_err(|_| tracing::warn!("failed to save filter to {path}"));
+        } else {
+            tracing::warn!("failed to create filter dir");
+        }
+    }
 }
