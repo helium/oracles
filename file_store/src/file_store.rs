@@ -50,7 +50,7 @@ impl FileStore {
         default_region: impl ProvideRegion + 'static,
         bucket: impl Into<String>,
     ) -> Result<Self> {
-        let region_provider = RegionProviderChain::default_provider().or_else(default_region);
+        let region_provider = RegionProviderChain::first_try(default_region).or_default_provider();
 
         let mut config = aws_config::from_env().region(region_provider);
         if let Some(endpoint) = endpoint {
