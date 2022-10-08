@@ -47,10 +47,10 @@ impl FileStore {
 
     pub async fn new(
         endpoint: Option<Endpoint>,
-        default_region: impl ProvideRegion + 'static,
+        region: impl ProvideRegion + 'static,
         bucket: impl Into<String>,
     ) -> Result<Self> {
-        let region_provider = RegionProviderChain::default_provider().or_else(default_region);
+        let region_provider = RegionProviderChain::first_try(region).or_default_provider();
 
         let mut config = aws_config::from_env().region(region_provider);
         if let Some(endpoint) = endpoint {
