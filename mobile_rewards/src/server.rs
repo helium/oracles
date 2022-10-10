@@ -22,8 +22,8 @@ use helium_proto::{
         transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
         Channel, Endpoint,
     },
-    BlockchainTokenTypeV1, BlockchainTokenTypeV1 as ProtoTokenType, BlockchainTxn,
-    BlockchainTxnSubnetworkRewardsV1, Message, SubnetworkReward, SubnetworkRewards,
+    BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
+    SubnetworkReward, SubnetworkRewards,
 };
 use http::Uri;
 use poc_metrics::record_duration;
@@ -430,11 +430,10 @@ where
 }
 
 async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u64>> {
-    let req = FollowerSubnetworkLastRewardHeightReqV1 {
-        token_type: ProtoTokenType::Mobile as i32,
-    };
     let res = client
-        .subnetwork_last_reward_height(req)
+        .subnetwork_last_reward_height(FollowerSubnetworkLastRewardHeightReqV1 {
+            token_type: BlockchainTokenTypeV1::Mobile as i32,
+        })
         .await?
         .into_inner();
 
