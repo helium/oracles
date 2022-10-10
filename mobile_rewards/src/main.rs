@@ -1,23 +1,6 @@
-use clap::Parser;
-use mobile_rewards::{
-    cli::{generate, server},
-    Result,
-};
+use mobile_rewards::{mk_db_pool, Result, Server};
+use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[derive(Debug, clap::Subcommand)]
-pub enum Cmd {
-    Generate(generate::Cmd),
-    Server(server::Cmd),
-}
-
-#[derive(Debug, clap::Parser)]
-#[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Helium Mobile Reward Server")]
-pub struct Cli {
-    #[clap(subcommand)]
-    cmd: Cmd,
-}
 
 #[tokio::main]
 async fn main() -> Result {
@@ -29,11 +12,32 @@ async fn main() -> Result {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cli = Cli::parse();
+    // Install the prometheus metrics exporter
+    poc_metrics::install_metrics();
 
-    match cli.cmd {
-        Cmd::Generate(cmd) => cmd.run().await?,
-        Cmd::Server(cmd) => cmd.run().await?,
-    }
+    // Create database pool
+    let pool = mk_db_pool(10).await?;
+    sqlx::migrate!().run(&pool).await?;
+
+    // Configure shutdown trigger
+    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+    tokio::spawn(async move {
+        let _ = signal::ctrl_c().await;
+        shutdown_trigger.trigger()
+    });
+
+    // Reward server keypair from env
+    let keypair_file = std::env::var("REWARD_SERVER_KEYPAIR")?;
+    let rs_keypair = load_from_file(&keypair_file)?;
+
+    // Reward server
+    let mut reward_server = Server::new(pool.clone(), rs_keypair).await?;
+
+    reward_server.run(shutdown_listener.clone()).await?;
     Ok(())
+}
+
+pub fn load_from_file(path: &str) -> Result<helium_crypto::Keypair> {
+    let data = std::fs::read(path)?;
+    Ok(helium_crypto::Keypair::try_from(&data[..])?)
 }

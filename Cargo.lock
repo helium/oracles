@@ -1991,6 +1991,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "db-store",
  "dotenv",
  "file-store",
  "futures",
