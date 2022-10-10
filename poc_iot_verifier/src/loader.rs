@@ -13,7 +13,7 @@ use helium_proto::{
     Message,
 };
 
-use file_store::{datetime_from_epoch, FileStore, FileType};
+use file_store::{traits::MsgTimestamp, FileStore, FileType};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
@@ -164,7 +164,7 @@ impl Loader {
                     id_hash,
                     packet_data,
                     buf_as_vec,
-                    &datetime_from_epoch(event.timestamp),
+                    &event.timestamp.to_timestamp_nanos()?,
                     ReportType::Beacon,
                 )
                 .await
@@ -184,7 +184,7 @@ impl Loader {
                     id_hash,
                     packet_data,
                     buf_as_vec,
-                    &datetime_from_epoch(event.timestamp),
+                    &event.timestamp.to_timestamp_nanos()?,
                     ReportType::Witness,
                 )
                 .await
@@ -196,7 +196,7 @@ impl Loader {
                     &self.pool,
                     &id,
                     &event.data,
-                    &datetime_from_epoch(event.timestamp),
+                    &event.timestamp.to_timestamp_nanos()?,
                     event.version as i32,
                 )
                 .await
