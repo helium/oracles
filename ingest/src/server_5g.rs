@@ -1,9 +1,9 @@
-use crate::{error::DecodeError, Error, EventId, Result};
+use crate::{error::DecodeError, required_network, Error, EventId, Result};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
-use helium_crypto::PublicKey;
+use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1,
@@ -19,6 +19,32 @@ pub struct GrpcServer {
     speedtest_req_tx: file_sink::MessageSender,
     heartbeat_report_tx: file_sink::MessageSender,
     speedtest_report_tx: file_sink::MessageSender,
+    required_network: Network,
+}
+
+impl GrpcServer {
+    fn new(
+        heartbeat_req_tx: file_sink::MessageSender,
+        speedtest_req_tx: file_sink::MessageSender,
+        heartbeat_report_tx: file_sink::MessageSender,
+        speedtest_report_tx: file_sink::MessageSender,
+    ) -> Result<Self> {
+        Ok(Self {
+            heartbeat_req_tx,
+            speedtest_req_tx,
+            heartbeat_report_tx,
+            speedtest_report_tx,
+            required_network: required_network()?,
+        })
+    }
+
+    fn verify_network(&self, public_key: &PublicKey) -> GrpcResult<()> {
+        if self.required_network == public_key.network {
+            Ok(Response::new(()))
+        } else {
+            Err(Status::invalid_argument("invalid network"))
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -29,8 +55,12 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<SpeedtestRespV1> {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+
         let public_key = PublicKey::try_from(event.pub_key.as_ref())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
+
+        self.verify_network(&public_key)?;
+
         event
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
@@ -62,8 +92,12 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<CellHeartbeatRespV1> {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+
         let public_key = PublicKey::try_from(event.pub_key.as_slice())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
+
+        self.verify_network(&public_key)?;
+
         event
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
@@ -142,12 +176,13 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     .create()
     .await?;
 
-    let grpc_server = GrpcServer {
-        speedtest_req_tx,
+    let grpc_server = GrpcServer::new(
         heartbeat_req_tx,
-        speedtest_report_tx,
+        speedtest_req_tx,
         heartbeat_report_tx,
-    };
+        speedtest_report_tx,
+    )?;
+
     let api_token = std::env::var("API_TOKEN").map(|token| {
         format!("Bearer {}", token)
             .parse::<MetadataValue<_>>()

@@ -22,6 +22,8 @@ pub enum Error {
     Env(#[from] std::env::VarError),
     #[error("not found")]
     NotFound(String),
+    #[error("crypto error")]
+    Crypto(#[from] helium_crypto::Error),
 }
 
 #[derive(Error, Debug)]

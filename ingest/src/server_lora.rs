@@ -1,9 +1,9 @@
-use crate::{error::DecodeError, Error, EventId, Result};
+use crate::{error::DecodeError, required_network, Error, EventId, Result};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
-use helium_crypto::PublicKey;
+use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_lora::{
     self, LoraBeaconIngestReportV1, LoraBeaconReportReqV1, LoraBeaconReportRespV1,
     LoraWitnessIngestReportV1, LoraWitnessReportReqV1, LoraWitnessReportRespV1,
@@ -11,13 +11,35 @@ use helium_proto::services::poc_lora::{
 use std::convert::TryFrom;
 use std::env;
 use std::{net::SocketAddr, path::Path, str::FromStr};
-use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
+use tonic::{transport, Request, Response, Status};
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct GrpcServer {
     lora_beacon_report_tx: file_sink::MessageSender,
     lora_witness_report_tx: file_sink::MessageSender,
+    required_network: Network,
+}
+
+impl GrpcServer {
+    fn new(
+        lora_beacon_report_tx: file_sink::MessageSender,
+        lora_witness_report_tx: file_sink::MessageSender,
+    ) -> Result<Self> {
+        Ok(Self {
+            lora_beacon_report_tx,
+            lora_witness_report_tx,
+            required_network: required_network()?,
+        })
+    }
+
+    fn verify_network(&self, public_key: &PublicKey) -> GrpcResult<()> {
+        if self.required_network == public_key.network {
+            Ok(Response::new(()))
+        } else {
+            Err(Status::invalid_argument("invalid network"))
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -32,8 +54,12 @@ impl poc_lora::PocLora for GrpcServer {
             received_timestamp: u64::try_from(timestamp).unwrap(),
             report: Some(event.clone()),
         };
+
         let public_key = PublicKey::try_from(event.pub_key.as_ref())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
+
+        self.verify_network(&public_key)?;
+
         event
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
@@ -60,8 +86,12 @@ impl poc_lora::PocLora for GrpcServer {
             received_timestamp: u64::try_from(timestamp).unwrap(),
             report: Some(event.clone()),
         };
+
         let public_key = PublicKey::try_from(event.pub_key.as_ref())
             .map_err(|_| Status::invalid_argument("invalid public key"))?;
+
+        self.verify_network(&public_key)?;
+
         event
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
@@ -118,16 +148,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     .create()
     .await?;
 
-    let grpc_server = GrpcServer {
-        lora_beacon_report_tx,
-        lora_witness_report_tx,
-    };
-
-    let api_token = env::var("API_TOKEN").map(|token| {
-        format!("Bearer {}", token)
-            .parse::<MetadataValue<_>>()
-            .unwrap()
-    })?;
+    let grpc_server = GrpcServer::new(lora_beacon_report_tx, lora_witness_report_tx)?;
 
     tracing::info!(
         "grpc listening on {} and server mode {}",
@@ -136,13 +157,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     );
 
     let server = transport::Server::builder()
-        .add_service(poc_lora::Server::with_interceptor(
-            grpc_server,
-            move |req: Request<()>| match req.metadata().get("authorization") {
-                Some(t) if api_token == t => Ok(req),
-                _ => Err(Status::unauthenticated("No valid auth token")),
-            },
-        ))
+        .add_service(poc_lora::Server::new(grpc_server))
         .serve_with_shutdown(grpc_addr, shutdown.clone())
         .map_err(Error::from);
 
