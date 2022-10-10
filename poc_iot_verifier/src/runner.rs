@@ -178,7 +178,7 @@ impl Runner {
                             &lora_invalid_witness_tx,
                         )
                         .await?;
-                        return Ok(());
+                        continue;
                     }
                 }
                 None => {
@@ -196,7 +196,7 @@ impl Runner {
                 Some(res) => res,
                 None => {
                     tracing::debug!("beacon verification failed, reason: EntropyNotFound");
-                    return Ok(());
+                    continue;
                 }
             };
 
@@ -244,7 +244,7 @@ impl Runner {
                             )
                             .await?;
                         }
-                        return Ok(());
+                        continue;
                     };
 
                     let valid_beacon_report = LoraValidBeaconReport {
