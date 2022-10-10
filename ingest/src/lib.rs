@@ -19,9 +19,6 @@ pub fn datetime_from_epoch(secs: i64) -> DateTime<Utc> {
 
 pub fn required_network() -> Result<Network> {
     env::var("REQUIRED_NETWORK")
-        .map_or_else(
-            |_| Ok(Network::MainNet),
-            |value| Network::from_str(value.as_str()),
-        )
+        .map_or_else(|_| Ok(Network::MainNet), |value| Network::from_str(&value))
         .map_err(Error::from)
 }

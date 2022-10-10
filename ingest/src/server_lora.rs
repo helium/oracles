@@ -33,9 +33,9 @@ impl GrpcServer {
         })
     }
 
-    fn verify_network(&self, public_key: &PublicKey) -> std::result::Result<(), Status> {
+    fn verify_network(&self, public_key: &PublicKey) -> GrpcResult<()> {
         if self.required_network == public_key.network {
-            Ok(())
+            Ok(Response::new(()))
         } else {
             Err(Status::invalid_argument("invalid network"))
         }
