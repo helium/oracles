@@ -42,16 +42,12 @@ impl GrpcServer {
     }
 
     fn required_network() -> Result<Network> {
-        env::var("REQUIRED_NETWORK").map_or_else(
-            |_| Ok(Network::MainNet),
-            |value| match value.to_lowercase().as_str() {
-                "mainnet" => Ok(Network::MainNet),
-                "testnet" => Ok(Network::TestNet),
-                _ => Err(Error::NotFound(format!(
-                    "REQUIRED_NETWORK env var set to (#{value}), not a known network"
-                ))),
-            },
-        )
+        env::var("REQUIRED_NETWORK")
+            .map_or_else(
+                |_| Ok(Network::MainNet),
+                |value| Network::from_str(value.as_str()),
+            )
+            .map_err(Error::from)
     }
 }
 
