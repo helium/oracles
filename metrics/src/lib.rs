@@ -32,7 +32,7 @@ pub fn install_metrics() {
 // function block. Such code is possible when async closures become stable.
 #[macro_export]
 macro_rules! record_duration {
-    ( $metric_name:literal, $e:expr ) => {{
+    ( $metric_name:expr, $e:expr ) => {{
         let timer = std::time::Instant::now();
         let res = $e;
         ::metrics::histogram!($metric_name, timer.elapsed());
@@ -40,38 +40,59 @@ macro_rules! record_duration {
     }};
 }
 
-/// A Layer that automatically tracks active requests, incrementing a corresponding
-/// Prometheus gauge when the request is received and decrementing it when it has
-/// been responded to.
+/// Request metrics layer. Measures:
+/// 1. Active requests.
+///    Incrementing a corresponding Prometheus gauge when the request is
+///    received and decrementing it when it has been responded to.
+/// 2. Request handling duration.
+///    Starting a timer before calling the handler and stoping after the
+///    handler returns.
 #[derive(Clone)]
-pub struct ActiveRequestsLayer {
-    metric_name: &'static str,
+pub struct RequestsLayer {
+    // XXX Fields marked public just so that they can be constructed from exported macro.
+    pub metric_name_count: &'static str,
+    pub metric_name_time: &'static str,
 }
 
-impl ActiveRequestsLayer {
-    pub fn new(metric_name: &'static str) -> Self {
-        Self { metric_name }
+#[macro_export]
+macro_rules! request_layer {
+    ( $metric_name:literal ) => {{
+        poc_metrics::RequestsLayer {
+            metric_name_count: concat!($metric_name, "_count"),
+            metric_name_time: concat!($metric_name, "_time"),
+        }
+    }};
+}
+
+impl RequestsLayer {
+    pub fn new(metric_name_count: &'static str, metric_name_time: &'static str) -> Self {
+        Self {
+            metric_name_count,
+            metric_name_time,
+        }
     }
 }
 
-impl<S> Layer<S> for ActiveRequestsLayer {
-    type Service = ActiveRequests<S>;
+impl<S> Layer<S> for RequestsLayer {
+    type Service = Requests<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        ActiveRequests {
-            metric_name: self.metric_name,
+        Requests {
+            metric_name_count: self.metric_name_count,
+            metric_name_time: self.metric_name_time,
             inner,
         }
     }
 }
 
 #[derive(Clone)]
-pub struct ActiveRequests<S> {
-    metric_name: &'static str,
+pub struct Requests<S> {
+    metric_name_count: &'static str,
+    metric_name_time: &'static str,
     inner: S,
 }
 
-impl<S, R> Service<R> for ActiveRequests<S>
+impl<S, R> Service<R> for Requests<S>
 where
     S: Service<R> + Clone + Send + 'static,
     R: Send + 'static,
@@ -87,8 +108,11 @@ where
     }
 
     fn call(&mut self, req: R) -> Self::Future {
-        let metric_name = self.metric_name;
-        metrics::increment_gauge!(metric_name, 1.0);
+        let metric_name_count = self.metric_name_count;
+        let metric_name_time = self.metric_name_time;
+
+        let timer = std::time::Instant::now();
+        metrics::increment_gauge!(metric_name_count, 1.0);
 
         let clone = self.inner.clone();
         // take the service that was ready
@@ -96,7 +120,11 @@ where
 
         Box::pin(async move {
             let res = inner.call(req).await;
-            metrics::decrement_gauge!(metric_name, 1.0);
+            metrics::decrement_gauge!(metric_name_count, 1.0);
+            let elapsed_time = timer.elapsed();
+            tracing::debug!("request processed in {elapsed_time:?}");
+            // TODO What units to use? Is f64 seconds appropriate?
+            ::metrics::histogram!(metric_name_time, elapsed_time.as_secs_f64());
             res
         })
     }

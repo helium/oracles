@@ -1,7 +1,7 @@
 use crate::{error::DecodeError, required_network, Error, EventId, Result};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
-use file_store::{file_sink, file_upload, FileType};
+use file_store::{file_sink, file_sink_write, file_upload, FileType};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_mobile::{
@@ -72,16 +72,8 @@ impl poc_mobile::PocMobile for GrpcServer {
             received_timestamp: timestamp,
         };
 
-        match file_sink::write(&self.speedtest_req_tx, event).await {
-            Ok(_) => (),
-            Err(err) => tracing::error!("failed to store speedtest: {err:?}"),
-        }
-
-        match file_sink::write(&self.speedtest_report_tx, report).await {
-            Ok(_) => (),
-            Err(err) => tracing::error!("failed to store speedtest: {err:?}"),
-        }
-
+        _ = file_sink_write!("speedtest_req", &self.speedtest_req_tx, event).await;
+        _ = file_sink_write!("speedtest_report", &self.speedtest_report_tx, report).await;
         metrics::increment_counter!("ingest_server_speedtest_count");
         Ok(Response::new(event_id.into()))
     }
@@ -107,17 +99,8 @@ impl poc_mobile::PocMobile for GrpcServer {
             report: Some(event.clone()),
             received_timestamp: timestamp,
         };
-
-        match file_sink::write(&self.heartbeat_req_tx, event).await {
-            Ok(_) => (),
-            Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
-        }
-
-        match file_sink::write(&self.heartbeat_report_tx, report).await {
-            Ok(_) => (),
-            Err(err) => tracing::error!("failed to store heartbeat: {err:?}"),
-        }
-
+        _ = file_sink_write!("heartbeat_req", &self.heartbeat_req_tx, event).await;
+        _ = file_sink_write!("heartbeat_report", &self.heartbeat_report_tx, report).await;
         metrics::increment_counter!("ingest_server_heartbeat_count");
         // Encode event digest, encode and return as the id
         Ok(Response::new(event_id.into()))
@@ -198,9 +181,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     //TODO start a service with either the poc mobile or poc lora endpoints only - not both
     //     use _server_mode (set above ) to decide
     let server = transport::Server::builder()
-        .layer(poc_metrics::ActiveRequestsLayer::new(
-            "ingest_server_grpc_connection_count",
-        ))
+        .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
         .add_service(poc_mobile::Server::with_interceptor(
             grpc_server,
             move |req: Request<()>| match req.metadata().get("authorization") {

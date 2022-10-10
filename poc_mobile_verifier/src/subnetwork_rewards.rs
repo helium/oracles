@@ -5,7 +5,7 @@ use crate::{
     speedtests::SpeedtestAverages,
 };
 use chrono::{DateTime, Utc};
-use file_store::file_sink;
+use file_store::{file_sink, file_sink_write};
 use helium_crypto::PublicKey;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -69,13 +69,14 @@ impl SubnetworkRewards {
         self,
         subnet_rewards_tx: &file_sink::MessageSender,
     ) -> file_store::Result<oneshot::Receiver<file_store::Result>> {
-        file_sink::write(
+        file_sink_write!(
+            "subnet_rewards",
             subnet_rewards_tx,
             proto::SubnetworkRewards {
                 start_epoch: self.epoch.start.timestamp() as u64,
                 end_epoch: self.epoch.end.timestamp() as u64,
                 rewards: self.rewards,
-            },
+            }
         )
         .await
     }

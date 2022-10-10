@@ -1,7 +1,7 @@
 use crate::{error::DecodeError, required_network, Error, EventId, Result};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
-use file_store::{file_sink, file_upload, FileType};
+use file_store::{file_sink, file_sink_write, file_upload, FileType};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_lora::{
@@ -65,13 +65,13 @@ impl poc_lora::PocLora for GrpcServer {
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
 
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.lora_beacon_report_tx, report).await {
-            Ok(_) => tracing::debug!(
-                "successfully processed beacon report, returning response {}",
-                event_id.to_string()
-            ),
-            Err(err) => tracing::error!("failed to store lora beacon report: {err:?}"),
-        }
+        let _ = file_sink_write!(
+            "beacon_report",
+            &self.lora_beacon_report_tx,
+            report,
+            format!("event_id:{:?}", event_id.to_string())
+        )
+        .await;
         // Encode event digest, encode and return as the id
         Ok(Response::new(event_id.into()))
     }
@@ -97,13 +97,13 @@ impl poc_lora::PocLora for GrpcServer {
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
 
         let event_id = EventId::from(&event);
-        match file_sink::write(&self.lora_witness_report_tx, report).await {
-            Ok(_) => tracing::debug!(
-                "successfully processed witness report, returning response {}",
-                event_id.to_string()
-            ),
-            Err(err) => tracing::error!("failed to store lora witness report: {err:?}"),
-        }
+        let _ = file_sink_write!(
+            "witness_report",
+            &self.lora_witness_report_tx,
+            report,
+            format!("event_id:{:?}", event_id.to_string())
+        )
+        .await;
         // Encode event digest, encode and return as the id
         Ok(Response::new(event_id.into()))
     }
@@ -157,6 +157,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     );
 
     let server = transport::Server::builder()
+        .layer(poc_metrics::request_layer!("ingest_server_lora_connection"))
         .add_service(poc_lora::Server::new(grpc_server))
         .serve_with_shutdown(grpc_addr, shutdown.clone())
         .map_err(Error::from);

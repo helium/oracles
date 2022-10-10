@@ -1,8 +1,9 @@
 use crate::{entropy::Entropy, mk_db_pool, poc_report::Report, Result};
 use file_store::{
-    file_sink, file_sink::MessageSender, file_upload, lora_beacon_report::LoraBeaconIngestReport,
-    lora_invalid_poc::LoraInvalidBeaconReport, lora_invalid_poc::LoraInvalidWitnessReport,
-    lora_witness_report::LoraWitnessIngestReport, FileType,
+    file_sink, file_sink::MessageSender, file_sink_write, file_upload,
+    lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidBeaconReport,
+    lora_invalid_poc::LoraInvalidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
+    FileType,
 };
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
@@ -162,7 +163,12 @@ impl Purger {
             report: beacon.clone(),
         }
         .into();
-        file_sink::write(lora_invalid_beacon_tx, invalid_beacon_proto).await?;
+        file_sink_write!(
+            "invalid_beacon",
+            lora_invalid_beacon_tx,
+            invalid_beacon_proto
+        )
+        .await?;
         // delete the report from the DB
         let public_key = beacon_report.report.pub_key.to_vec();
         self.delete_db_report(public_key, packet_data.clone()).await;
@@ -187,7 +193,12 @@ impl Purger {
             participant_side: InvalidParticipantSide::Witness,
         }
         .into();
-        file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
+        file_sink_write!(
+            "invalid_witness_report",
+            lora_invalid_witness_tx,
+            invalid_witness_report_proto
+        )
+        .await?;
 
         // delete the report from the DB
         self.delete_db_report(public_key, packet_data.clone()).await;

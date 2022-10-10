@@ -931,6 +931,8 @@ dependencies = [
 name = "db-store"
 version = "0.1.0"
 dependencies = [
+ "metrics",
+ "poc-metrics",
  "sqlx",
  "thiserror",
 ]
@@ -1137,11 +1139,13 @@ dependencies = [
  "hex-literal",
  "http",
  "lazy_static",
+ "metrics",
+ "poc-metrics",
  "prost",
  "regex",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "strum",
  "strum_macros",
  "tempfile",
@@ -2405,7 +2409,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2454,7 +2458,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",

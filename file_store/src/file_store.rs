@@ -124,26 +124,32 @@ impl FileStore {
         let byte_stream = ByteStream::from_path(&file)
             .await
             .map_err(|_| Error::not_found(format!("could not open {}", file.display())))?;
-        self.client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(file.file_name().map(|name| name.to_string_lossy()).unwrap())
-            .body(byte_stream)
-            .send()
-            .map_ok(|_| ())
-            .map_err(Error::s3_error)
-            .await
+        poc_metrics::record_duration!(
+            "file_store_put_duration",
+            self.client
+                .put_object()
+                .bucket(&self.bucket)
+                .key(file.file_name().map(|name| name.to_string_lossy()).unwrap())
+                .body(byte_stream)
+                .send()
+                .map_ok(|_| ())
+                .map_err(Error::s3_error)
+                .await
+        )
     }
 
     pub async fn remove(&self, key: &str) -> Result {
-        self.client
-            .delete_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .send()
-            .map_ok(|_| ())
-            .map_err(Error::s3_error)
-            .await
+        poc_metrics::record_duration!(
+            "file_store_remove_duration",
+            self.client
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .send()
+                .map_ok(|_| ())
+                .map_err(Error::s3_error)
+                .await
+        )
     }
 
     pub async fn get<K>(&self, key: K) -> Result<ByteStream>

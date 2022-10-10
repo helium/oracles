@@ -33,6 +33,7 @@ impl ApiServer {
             .route("/health", get(empty_handler))
             // entropy
             .route("/entropy", get(get_entropy))
+            .layer(poc_metrics::request_layer!("entropy_request"))
             .layer(TraceLayer::new_for_http())
             .layer(Extension(entropy_watch));
 

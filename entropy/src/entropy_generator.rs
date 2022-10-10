@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 use chrono::Utc;
-use file_store::file_sink;
+use file_store::{file_sink, file_sink_write};
 use futures::TryFutureExt;
 use helium_proto::EntropyReportV1;
 use jsonrpsee::{
@@ -152,7 +152,12 @@ impl EntropyGenerator {
             entropy.to_string(),
             entropy.timestamp
         );
-        file_sink::write(file_sink, EntropyReportV1::from(entropy)).await?;
+        file_sink_write!(
+            "report_submission",
+            file_sink,
+            EntropyReportV1::from(entropy)
+        )
+        .await?;
         Ok(())
     }
 
