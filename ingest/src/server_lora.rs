@@ -1,4 +1,4 @@
-use crate::{error::DecodeError, Error, EventId, Result};
+use crate::{error::DecodeError, required_network, Error, EventId, Result};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_upload, FileType};
@@ -29,7 +29,7 @@ impl GrpcServer {
         Ok(Self {
             lora_beacon_report_tx,
             lora_witness_report_tx,
-            required_network: Self::required_network()?,
+            required_network: required_network()?,
         })
     }
 
@@ -39,15 +39,6 @@ impl GrpcServer {
         } else {
             Err(Status::invalid_argument("invalid network"))
         }
-    }
-
-    fn required_network() -> Result<Network> {
-        env::var("REQUIRED_NETWORK")
-            .map_or_else(
-                |_| Ok(Network::MainNet),
-                |value| Network::from_str(value.as_str()),
-            )
-            .map_err(Error::from)
     }
 }
 
