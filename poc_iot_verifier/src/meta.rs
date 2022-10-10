@@ -1,6 +1,6 @@
 use crate::{Error, Result};
-use chrono::{DateTime, Utc};
-use file_store::{traits::TimestampDecode, FileType};
+use chrono::{DateTime, TimeZone, Utc};
+use file_store::FileType;
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -47,7 +47,7 @@ impl Meta {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let height = sqlx::query_scalar::<_, String>(
+        let last_timestamp = sqlx::query_scalar::<_, String>(
             r#"
             select value from meta
             where key = $1
@@ -58,12 +58,9 @@ impl Meta {
         .await?
         .and_then(|v| {
             v.parse::<u64>()
-                .map_or_else(|_| None, |secs| Some((secs + 10).to_timestamp()))
-            //TODO: remove the hardcoded + 10 above
-            //      fix resolution of datetime function, dropping millisecs resulting in files being reprocessed by loaded
-        })
-        .transpose()?;
-        Ok(height)
+                .map_or_else(|_| None, |ts| Some(Utc.timestamp_millis(ts as i64)))
+        });
+        Ok(last_timestamp)
     }
 
     pub async fn update_last_timestamp<'c, E>(
@@ -83,7 +80,7 @@ impl Meta {
             "#,
         )
         .bind(file_type.to_str())
-        .bind(timestamp.map(|v| v.timestamp().to_string()))
+        .bind(timestamp.map(|v| v.timestamp_millis().to_string()))
         .execute(executor)
         .await?;
         Ok(())

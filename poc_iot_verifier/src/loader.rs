@@ -13,13 +13,16 @@ use helium_proto::{
     Message,
 };
 
-use file_store::{traits::MsgTimestamp, FileStore, FileType};
+use file_store::{
+    lora_beacon_report::LoraBeaconIngestReport, lora_witness_report::LoraWitnessIngestReport,
+    traits::TimestampDecode, FileStore, FileType,
+};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
 
 const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60);
-const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(20);
+const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(90);
 const LOADER_WORKERS: usize = 2;
 const STORE_WORKERS: usize = 5;
 // DB pool size if the store worker count multiplied by the number of file types
@@ -104,8 +107,7 @@ impl Loader {
         let recent_time = Utc::now() - Duration::hours(2);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
-            .unwrap_or(recent_time)
-            .max(recent_time);
+            .unwrap_or(recent_time);
 
         let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
@@ -150,53 +152,46 @@ impl Loader {
     async fn handle_store_update(&self, file_type: FileType, buf: &[u8]) -> Result {
         match file_type {
             FileType::LoraBeaconIngestReport => {
-                let beacon = LoraBeaconIngestReportV1::decode(buf)?;
-                let event = beacon.report.unwrap();
-                let packet_data = event.data.clone();
-                let buf_as_vec = buf.to_vec();
-                let mut public_key = event.pub_key.clone();
-                // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-                let mut id: Vec<u8> = packet_data.clone();
-                id.append(&mut public_key);
-                let id_hash = Sha256::digest(&id).to_vec();
+                let beacon: LoraBeaconIngestReport =
+                    LoraBeaconIngestReportV1::decode(buf)?.try_into()?;
+                tracing::debug!("beacon report from ingestor: {:?}", &beacon);
+                let packet_data = beacon.report.data.clone();
+                tracing::debug!("beacon data: {:?}", &packet_data);
                 Report::insert_into(
                     &self.pool,
-                    id_hash,
+                    beacon.generate_id(),
                     packet_data,
-                    buf_as_vec,
-                    &event.timestamp()?,
+                    buf.to_vec(),
+                    &beacon.received_timestamp,
                     ReportType::Beacon,
                 )
                 .await
             }
             FileType::LoraWitnessIngestReport => {
-                let witness = LoraWitnessIngestReportV1::decode(buf)?;
-                let event = witness.report.unwrap();
-                let packet_data = event.data.clone();
-                let buf_as_vec = buf.to_vec();
-                // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-                let mut public_key = event.pub_key.clone();
-                let mut id: Vec<u8> = packet_data.clone();
-                id.append(&mut public_key);
-                let id_hash = Sha256::digest(&id).to_vec();
+                let witness: LoraWitnessIngestReport =
+                    LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
+                tracing::debug!("witness report from ingestor: {:?}", &witness);
+                let packet_data = witness.report.data.clone();
+                tracing::debug!("witness data: {:?}", &packet_data);
                 Report::insert_into(
                     &self.pool,
-                    id_hash,
+                    witness.generate_id(),
                     packet_data,
-                    buf_as_vec,
-                    &event.timestamp()?,
+                    buf.to_vec(),
+                    &witness.received_timestamp,
                     ReportType::Witness,
                 )
                 .await
             }
             FileType::EntropyReport => {
                 let event = EntropyReportV1::decode(buf)?;
+                tracing::debug!("entropy report: {:?}", event);
                 let id = Sha256::digest(&event.data).to_vec();
                 Entropy::insert_into(
                     &self.pool,
                     &id,
                     &event.data,
-                    &event.timestamp()?,
+                    &event.timestamp.to_timestamp()?,
                     event.version as i32,
                 )
                 .await

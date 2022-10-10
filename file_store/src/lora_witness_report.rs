@@ -8,8 +8,9 @@ use helium_crypto::PublicKey;
 use helium_proto::services::poc_lora::{LoraWitnessIngestReportV1, LoraWitnessReportReqV1};
 use helium_proto::DataRate;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct LoraWitnessReport {
     #[serde(alias = "pubKey")]
     pub pub_key: PublicKey,
@@ -23,7 +24,7 @@ pub struct LoraWitnessReport {
     pub signature: Vec<u8>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct LoraWitnessIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: LoraWitnessReport,
@@ -31,6 +32,26 @@ pub struct LoraWitnessIngestReport {
 
 impl MsgDecode for LoraWitnessIngestReport {
     type Msg = LoraWitnessIngestReportV1;
+}
+
+impl LoraWitnessIngestReport {
+    pub fn generate_id(&self) -> Vec<u8> {
+        let mut id: Vec<u8> = self.report.data.clone();
+        let mut public_key = self.report.pub_key.to_vec();
+        id.append(&mut self.received_timestamp.to_string().as_bytes().to_vec());
+        id.append(&mut public_key);
+        Sha256::digest(&id).to_vec()
+    }
+}
+
+impl LoraWitnessReport {
+    pub fn generate_id(&self, received_ts: DateTime<Utc>) -> Vec<u8> {
+        let mut id: Vec<u8> = self.data.clone();
+        let mut public_key = self.pub_key.to_vec();
+        id.append(&mut received_ts.to_string().as_bytes().to_vec());
+        id.append(&mut public_key);
+        Sha256::digest(&id).to_vec()
+    }
 }
 
 impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessIngestReport {

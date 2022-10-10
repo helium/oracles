@@ -10,7 +10,6 @@ use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_proto::services::poc_lora::{InvalidParticipantSide, InvalidReason};
 use helium_proto::GatewayStakingMode;
 use std::f64::consts::PI;
-
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
@@ -18,7 +17,7 @@ pub const R: f64 = 6.371e6;
 
 /// measurement in seconds of an entropy
 /// TODO: determine a sane value here, set high for testing
-const ENTROPY_LIFESPAN: i64 = 90000;
+const ENTROPY_LIFESPAN: i64 = 60;
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
@@ -82,11 +81,8 @@ impl Poc {
             .await
         {
             Ok(res) => res,
-            Err(_) => {
-                tracing::debug!(
-                    "beacon verification failed, reason: {:?}",
-                    InvalidReason::GatewayNotFound
-                );
+            Err(e) => {
+                tracing::debug!("beacon verification failed, reason: {:?}", e);
                 let resp = VerifyBeaconResult {
                     result: VerificationStatus::Failed,
                     invalid_reason: Some(InvalidReason::GatewayNotFound),
@@ -96,6 +92,7 @@ impl Poc {
                 return Ok(resp);
             }
         };
+        tracing::debug!("beacon info {:?}", beaconer_info);
 
         // tmp hack below when testing locally with no actual real gateway
         // replace beaconer_info declaration above with that below
@@ -112,8 +109,11 @@ impl Poc {
         let beacon_received_time = self.beacon_report.received_timestamp;
         if beacon_received_time < self.entropy_start || beacon_received_time > self.entropy_end {
             tracing::debug!(
-                "beacon verification failed, reason: {:?}",
-                InvalidReason::BadEntropy
+                "beacon verification failed, reason: {:?}. beacon_received_time: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
+                InvalidReason::BadEntropy,
+                beacon_received_time,
+                self.entropy_start,
+                self.entropy_end
             );
             let resp = VerifyBeaconResult {
                 result: VerificationStatus::Invalid,
@@ -265,6 +265,20 @@ impl Poc {
         //     staking_mode: GatewayStakingMode::Full as i32,
         // };
 
+        // check the beaconer is not self witnessing
+        if witness_report.report.pub_key == self.beacon_report.report.pub_key {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::SelfWitness
+            );
+            let resp = VerifyWitnessResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::SelfWitness),
+                gateway_info: Some(witness_info),
+            };
+            return Ok(resp);
+        }
+
         // if witness report received timestamp is outside of entopy start/end then reject the poc
         let witness_received_time = witness_report.received_timestamp;
         if witness_received_time < self.entropy_start || witness_received_time > self.entropy_end {
@@ -295,7 +309,8 @@ impl Poc {
         }
 
         // check witness is utilizing same freq and that of the beaconer
-        if beacon.frequency != witness.frequency {
+        // tolerance is 100Khz
+        if i32::unsigned_abs((beacon.frequency - witness.frequency) as i32) > 1000 * 100 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::InvalidFrequency
@@ -326,6 +341,7 @@ impl Poc {
         let beaconer_loc = beaconer_info.location.unwrap();
         let witness_loc = witness_info.location.unwrap();
         let witness_distance = calc_distance(beaconer_loc, witness_loc).unwrap();
+        tracing::debug!("witness distance: {:?}", witness_distance);
         if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
@@ -344,7 +360,12 @@ impl Poc {
         let gain = beaconer_info.gain;
         let min_rcv_signal =
             calc_fspl(tx_power, witness.frequency, witness_distance, gain).unwrap();
-        if witness.signal as f64 > min_rcv_signal {
+        tracing::debug!(
+            "signal: {:?}, min_rcv_signal: {:?}",
+            witness.signal,
+            min_rcv_signal
+        );
+        if witness.signal < min_rcv_signal as i32 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::BadRssi

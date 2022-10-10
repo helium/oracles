@@ -1118,6 +1118,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2 0.9.9",
  "strum",
  "strum_macros",
  "tempfile",
@@ -1499,7 +1500,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#2e110088b438153f8f7434c8edceb678e1ee137e"
+source = "git+https://github.com/helium/proto?branch=master#97d063d2eeec0e950e90f50f050e8048a5031a48"
 dependencies = [
  "bytes",
  "prost",
