@@ -48,10 +48,10 @@ impl poc_lora::PocLora for GrpcServer {
         &self,
         request: Request<LoraBeaconReportReqV1>,
     ) -> GrpcResult<LoraBeaconReportRespV1> {
-        let timestamp: i64 = Utc::now().timestamp();
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
         let report = LoraBeaconIngestReportV1 {
-            received_timestamp: u64::try_from(timestamp).unwrap(),
+            received_timestamp: timestamp,
             report: Some(event.clone()),
         };
 
@@ -80,10 +80,10 @@ impl poc_lora::PocLora for GrpcServer {
         &self,
         request: Request<LoraWitnessReportReqV1>,
     ) -> GrpcResult<LoraWitnessReportRespV1> {
-        let timestamp: i64 = Utc::now().timestamp();
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
         let report = LoraWitnessIngestReportV1 {
-            received_timestamp: u64::try_from(timestamp).unwrap(),
+            received_timestamp: timestamp,
             report: Some(event.clone()),
         };
 

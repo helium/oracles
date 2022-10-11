@@ -150,6 +150,7 @@ impl Loader {
         match file_type {
             FileType::LoraBeaconIngestReport => {
                 let beacon = LoraBeaconIngestReportV1::decode(buf)?;
+                tracing::debug!("beacon report from ingestor: {:?}", beacon);
                 let event = beacon.report.unwrap();
                 let packet_data = event.data.clone();
                 let buf_as_vec = buf.to_vec();
@@ -163,7 +164,7 @@ impl Loader {
                     id_hash,
                     packet_data,
                     buf_as_vec,
-                    &event.timestamp.to_timestamp_nanos()?,
+                    &event.timestamp.to_timestamp_millis()?,
                     ReportType::Beacon,
                 )
                 .await
