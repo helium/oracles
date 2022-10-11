@@ -71,14 +71,6 @@ jobs:
           toml_path: mobile_rewards
           cmd: cargo deb -p mobile-rewards
 
-      - name: PackageStatusServer
-        id: build_status
-        if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
-        with:
-          toml_path: status
-          cmd: cargo deb -p poc5g-status
-
       - name: PackageEntropyServer
         id: build_entropy
         if: contains(github.ref, 'refs/tags/')
