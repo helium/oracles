@@ -322,6 +322,13 @@ impl Server {
             }
         }
 
+        // Sort the rewards
+        rewards.sort_by(|a, b| {
+            a.account
+                .cmp(&b.account)
+                .then_with(|| a.amount.cmp(&b.amount))
+        });
+
         if !rewards.is_empty() {
             self.issue_rewards(rewards, reward_period).await?;
             last_reward_end_time

@@ -92,13 +92,6 @@ impl SubnetworkRewards {
             })
             .collect::<Vec<_>>();
 
-        // Sort the rewards
-        rewards.sort_by(|a, b| {
-            a.account
-                .cmp(&b.account)
-                .then_with(|| a.amount.cmp(&b.amount))
-        });
-
         Ok(Self {
             after_ts,
             before_ts,
