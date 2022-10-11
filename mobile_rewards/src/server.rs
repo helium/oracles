@@ -314,9 +314,7 @@ impl Server {
         while let Some(Ok(msg)) = stream.next().await {
             let subnet_rewards = SubnetworkRewards::decode(msg);
             if let Ok(subnet_rewards) = subnet_rewards {
-                if time_range.contains(&Utc.timestamp(subnet_rewards.start_epoch as i64, 0))
-                    && time_range.contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0))
-                {
+                if time_range.contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0)) {
                     rewards.extend(subnet_rewards.rewards);
                 }
             }
