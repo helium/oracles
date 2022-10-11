@@ -149,6 +149,9 @@ impl Runner {
             let beaconer_pub_key = &beacon.pub_key;
 
             let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
+            let witness_len = db_witnesses.len();
+            tracing::info!("found {witness_len} witness for beacon");
+
             // get the beacon and witness report PBs from the db reports
             let mut witnesses: Vec<LoraWitnessIngestReport> = Vec::new();
             for db_witness in db_witnesses {

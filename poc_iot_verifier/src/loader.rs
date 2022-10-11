@@ -164,13 +164,14 @@ impl Loader {
                     id_hash,
                     packet_data,
                     buf_as_vec,
-                    &event.timestamp.to_timestamp_millis()?,
+                    &beacon.received_timestamp.to_timestamp_millis()?,
                     ReportType::Beacon,
                 )
                 .await
             }
             FileType::LoraWitnessIngestReport => {
                 let witness = LoraWitnessIngestReportV1::decode(buf)?;
+                tracing::debug!("witness report from ingestor: {:?}", witness);
                 let event = witness.report.unwrap();
                 let packet_data = event.data.clone();
                 let buf_as_vec = buf.to_vec();
@@ -184,13 +185,14 @@ impl Loader {
                     id_hash,
                     packet_data,
                     buf_as_vec,
-                    &event.timestamp.to_timestamp_nanos()?,
+                    &witness.received_timestamp.to_timestamp()?,
                     ReportType::Witness,
                 )
                 .await
             }
             FileType::EntropyReport => {
                 let event = EntropyReportV1::decode(buf)?;
+                tracing::debug!("entropy report: {:?}", event);
                 let id = Sha256::digest(&event.data).to_vec();
                 Entropy::insert_into(
                     &self.pool,

@@ -18,7 +18,7 @@ pub const R: f64 = 6.371e6;
 
 /// measurement in seconds of an entropy
 /// TODO: determine a sane value here, set high for testing
-const ENTROPY_LIFESPAN: i64 = 90000;
+const ENTROPY_LIFESPAN: i64 = 60;
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
