@@ -2410,43 +2410,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "poc5g-status"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64",
- "chrono",
- "clap",
- "dotenv",
- "file-store",
- "futures",
- "futures-util",
- "helium-crypto",
- "helium-proto",
- "http",
- "hyper",
- "lazy_static",
- "metrics",
- "once_cell",
- "poc-metrics",
- "prost",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "sha2 0.10.6",
- "sqlx",
- "strum",
- "thiserror",
- "tokio",
- "tonic",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "portable-atomic"
 version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3595,7 +3558,6 @@ version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c530c8675c1dbf98facee631536fa116b5fb6382d7dd6dc1b118d970eafe3ba"
 dependencies = [
- "base64",
  "bitflags",
  "bytes",
  "futures-core",

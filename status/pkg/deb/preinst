@@ -1,3 +1,0 @@
-useradd --system --home-dir /opt/helium --create-home helium || true
-
-#DEBHELPER#
