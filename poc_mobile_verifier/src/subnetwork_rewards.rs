@@ -83,7 +83,7 @@ impl SubnetworkRewards {
         let owner_emissions =
             OwnerEmissions::new(owner_shares.clone(), after_utc, before_utc - after_utc);
 
-        let mut rewards = owner_emissions
+        let rewards = owner_emissions
             .into_inner()
             .into_iter()
             .map(|(owner, amt)| proto::SubnetworkReward {
