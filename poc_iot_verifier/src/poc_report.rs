@@ -3,8 +3,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 const POC_LIFESPAN: i16 = 5; //minutes TODO: determine a sane value here
-const BEACON_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
-const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
+const BEACON_MAX_RETRY_ATTEMPTS: i16 = 15; //TODO: determine a sane value here
+const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 15; //TODO: determine a sane value here
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]

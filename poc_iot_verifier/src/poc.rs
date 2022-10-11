@@ -82,11 +82,8 @@ impl Poc {
             .await
         {
             Ok(res) => res,
-            Err(_) => {
-                tracing::debug!(
-                    "beacon verification failed, reason: {:?}",
-                    InvalidReason::GatewayNotFound
-                );
+            Err(e) => {
+                tracing::debug!("beacon verification failed, reason: {:?}", e);
                 let resp = VerifyBeaconResult {
                     result: VerificationStatus::Failed,
                     invalid_reason: Some(InvalidReason::GatewayNotFound),
@@ -96,6 +93,7 @@ impl Poc {
                 return Ok(resp);
             }
         };
+        tracing::debug!("beacon info {:?}", beaconer_info);
 
         // tmp hack below when testing locally with no actual real gateway
         // replace beaconer_info declaration above with that below
@@ -112,8 +110,11 @@ impl Poc {
         let beacon_received_time = self.beacon_report.received_timestamp;
         if beacon_received_time < self.entropy_start || beacon_received_time > self.entropy_end {
             tracing::debug!(
-                "beacon verification failed, reason: {:?}",
-                InvalidReason::BadEntropy
+                "beacon verification failed, reason: {:?}. beacon_received_time: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
+                InvalidReason::BadEntropy,
+                beacon_received_time,
+                self.entropy_start,
+                self.entropy_end
             );
             let resp = VerifyBeaconResult {
                 result: VerificationStatus::Invalid,

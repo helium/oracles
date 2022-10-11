@@ -26,10 +26,10 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
 
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
-const BEACON_INTERVAL: i64 = 60; //minutes
+const BEACON_INTERVAL: i64 = 10; //minutes
 
 pub struct Runner {
     pool: PgPool,

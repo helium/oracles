@@ -19,7 +19,7 @@ use sqlx::PgPool;
 use tokio::time;
 
 const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60);
-const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(20);
+const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(90);
 const LOADER_WORKERS: usize = 2;
 const STORE_WORKERS: usize = 5;
 // DB pool size if the store worker count multiplied by the number of file types
@@ -104,8 +104,7 @@ impl Loader {
         let recent_time = Utc::now() - Duration::hours(2);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
-            .unwrap_or(recent_time)
-            .max(recent_time);
+            .unwrap_or(recent_time);
 
         let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
@@ -196,7 +195,7 @@ impl Loader {
                     &self.pool,
                     &id,
                     &event.data,
-                    &event.timestamp.to_timestamp_nanos()?,
+                    &event.timestamp.to_timestamp()?,
                     event.version as i32,
                 )
                 .await

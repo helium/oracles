@@ -58,9 +58,7 @@ impl Meta {
         .await?
         .and_then(|v| {
             v.parse::<u64>()
-                .map_or_else(|_| None, |secs| Some(datetime_from_epoch(secs + 10)))
-            //TODO: remove the hardcoded + 10 above
-            //      fix resolution of datetime function, dropping millisecs resulting in files being reprocessed by loaded
+                .map_or_else(|_| None, |secs| Some(datetime_from_epoch(secs)))
         });
         Ok(height)
     }
