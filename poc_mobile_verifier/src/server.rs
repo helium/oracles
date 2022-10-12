@@ -22,6 +22,7 @@ pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 pub const DEFAULT_REWARD_PERIOD_HOURS: i64 = 24;
 pub const DEFAULT_VERIFICATIONS_PER_PERIOD: i32 = 8;
 
+// TODO: This should all probably be moved into the server run function
 pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> Result {
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
@@ -100,26 +101,18 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
         last_rewarded_end_time,
     };
 
-    let server = tokio::spawn(async move { verifier.run().await });
-
-    // TODO: select with shutdown
     tokio::try_join!(
-        flatten(server),
         shares_sink.run(&shutdown).map_err(Error::from),
         invalid_shares_sink.run(&shutdown).map_err(Error::from),
         subnet_sink.run(&shutdown).map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
+        // I don't _think_ that this needs to be in a task.
+        verifier.run(&shutdown),
     )?;
 
-    Ok(())
-}
+    tracing::info!("Shutting down verifier server");
 
-async fn flatten(handle: tokio::task::JoinHandle<Result>) -> Result {
-    match handle.await {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(err)) => Err(err),
-        Err(err) => Err(Error::JoinError(err)),
-    }
+    Ok(())
 }
 
 struct Verifier {
@@ -136,7 +129,7 @@ struct Verifier {
 }
 
 impl Verifier {
-    async fn run(mut self) -> Result {
+    async fn run(mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("Starting verifier service");
 
         let reward_period = Duration::hours(self.reward_period_hours);
@@ -167,12 +160,16 @@ impl Verifier {
             }
 
             // TODO: Address drift in some way?
-            sleep(
-                sleep_duration
-                    .to_std()
-                    .map_err(|_| Error::OutOfRangeError)?,
-            )
-            .await;
+            tracing::info!("Sleeping...");
+            let shutdown = shutdown.clone();
+            tokio::select! {
+                _ = shutdown => return Ok(()),
+                _ = sleep(
+                    sleep_duration
+                        .to_std()
+                        .map_err(|_| Error::OutOfRangeError)?,
+                ) => (),
+            }
         }
     }
 
