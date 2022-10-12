@@ -94,7 +94,7 @@ impl Heartbeats {
                 }
             };
 
-            let validity = self.validate_heartbeat(&epoch, &report);
+            let validity = self.validate_heartbeat(epoch, &report);
             if validity != ShareValidity::Valid {
                 invalid_shares.push(Share {
                     cbsd_id: report.cbsd_id,

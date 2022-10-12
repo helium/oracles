@@ -50,31 +50,55 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
     .await?;
 
     // subnetwork rewards
-    let (subnet_tx, subnet_rx) = file_sink::message_channel(50);
-    let mut subnet_sink =
-        file_sink::FileSinkBuilder::new(FileType::SubnetworkRewards, store_base_path, subnet_rx)
-            .deposits(Some(file_upload_tx.clone()))
-            .create()
-            .await?;
+    let (subnet_rewards_tx, subnet_rewards_rx) = file_sink::message_channel(50);
+    let mut subnet_sink = file_sink::FileSinkBuilder::new(
+        FileType::SubnetworkRewards,
+        store_base_path,
+        subnet_rewards_rx,
+    )
+    .deposits(Some(file_upload_tx.clone()))
+    .create()
+    .await?;
 
-    let follower_client = follower::Client::new(
+    let follower = follower::Client::new(
         Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(RPC_TIMEOUT)
             .connect_lazy(),
     );
 
-    let verifier = Verifier::new(
+    let reward_period_hours = env_var("REWARD_PERIOD", DEFAULT_REWARD_PERIOD_HOURS)?;
+    let verifications_per_period =
+        env_var("VERIFICATIONS_PER_PERIOD", DEFAULT_VERIFICATIONS_PER_PERIOD)?;
+    let default_last_verified_end_time = env_var("LAST_VERIFIED_END_TIME", 0)?;
+    let default_last_rewarded_end_time = env_var("LAST_REWARDED_END_TIME", 0)?;
+
+    let last_verified_end_time =
+        MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", move || {
+            default_last_verified_end_time
+        })
+        .await?;
+    let last_rewarded_end_time =
+        MetaValue::<i64>::fetch_or_insert_with(&pool, "last_rewarded_end_time", move || {
+            default_last_rewarded_end_time
+        })
+        .await?;
+    let heartbeats =
+        Heartbeats::new(&pool, Utc.timestamp(*last_verified_end_time.value(), 0)).await?;
+    let file_store = FileStore::from_env_with_prefix("INPUT").await?;
+
+    let verifier = Verifier {
         pool,
-        follower_client,
+        follower,
         invalid_shares_tx,
-        subnet_tx,
-        env_var("REWARD_PERIOD", DEFAULT_REWARD_PERIOD_HOURS)?,
-        env_var("VERIFICATIONS_PER_PERIOD", DEFAULT_VERIFICATIONS_PER_PERIOD)?,
-        env_var("LAST_VERIFIED_END_TIME", 0)?,
-        env_var("LAST_REWARDED_END_TIME", 0)?,
-    )
-    .await?;
+        subnet_rewards_tx,
+        reward_period_hours,
+        verifications_per_period,
+        heartbeats,
+        file_store,
+        last_verified_end_time,
+        last_rewarded_end_time,
+    };
 
     let server = tokio::spawn(async move { verifier.run().await });
 
@@ -99,56 +123,19 @@ async fn flatten(handle: tokio::task::JoinHandle<Result>) -> Result {
 }
 
 struct Verifier {
-    pool: Pool<Postgres>,
-    follower: follower::Client<Channel>,
-    invalid_shares_tx: file_sink::MessageSender,
-    subnet_rewards_tx: file_sink::MessageSender,
-    reward_period_hours: i64,
-    verifications_per_period: i32,
-    heartbeats: Heartbeats,
-    file_store: FileStore,
-    last_verified_end_time: MetaValue<i64>,
-    last_rewarded_end_time: MetaValue<i64>,
+    pub pool: Pool<Postgres>,
+    pub follower: follower::Client<Channel>,
+    pub invalid_shares_tx: file_sink::MessageSender,
+    pub subnet_rewards_tx: file_sink::MessageSender,
+    pub reward_period_hours: i64,
+    pub verifications_per_period: i32,
+    pub heartbeats: Heartbeats,
+    pub file_store: FileStore,
+    pub last_verified_end_time: MetaValue<i64>,
+    pub last_rewarded_end_time: MetaValue<i64>,
 }
 
 impl Verifier {
-    async fn new(
-        pool: Pool<Postgres>,
-        follower: follower::Client<Channel>,
-        invalid_shares_tx: file_sink::MessageSender,
-        subnet_rewards_tx: file_sink::MessageSender,
-        reward_period_hours: i64,
-        verifications_per_period: i32,
-        default_last_verified_end_time: i64,
-        default_last_rewarded_end_time: i64,
-    ) -> Result<Self> {
-        let last_verified_end_time =
-            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", move || {
-                default_last_verified_end_time
-            })
-            .await?;
-        let last_rewarded_end_time =
-            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_rewarded_end_time", move || {
-                default_last_rewarded_end_time
-            })
-            .await?;
-        let heartbeats =
-            Heartbeats::new(&pool, Utc.timestamp(*last_verified_end_time.value(), 0)).await?;
-        let file_store = FileStore::from_env_with_prefix("INPUT").await?;
-        Ok(Self {
-            pool,
-            follower,
-            invalid_shares_tx,
-            subnet_rewards_tx,
-            reward_period_hours,
-            verifications_per_period,
-            heartbeats,
-            file_store,
-            last_verified_end_time,
-            last_rewarded_end_time,
-        })
-    }
-
     async fn run(mut self) -> Result {
         tracing::info!("Starting verifier service");
 
