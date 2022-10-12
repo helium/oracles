@@ -22,9 +22,10 @@ impl HexResConfig {
 
 type HexMap = HashMap<H3Cell, u64>;
 
-const MAX_RES: u8 = 11;
 const DENSITY_TGT_RES: u8 = 4;
+const MAX_RES: u8 = 11;
 const USED_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES;
+const SCALING_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES + 2;
 
 lazy_static! {
     static ref HIP17_RES_CONFIG: HashMap<u8, HexResConfig> = {
@@ -47,9 +48,8 @@ lazy_static! {
 pub struct ScalingMap(HashMap<String, f64>);
 
 impl ScalingMap {
-    pub fn new() -> ScalingMap {
-        let map: HashMap<String, f64> = HashMap::new();
-        ScalingMap(map)
+    pub fn new() -> Self {
+        Self(HashMap::new())
     }
 
     pub fn insert(&mut self, hex: &str, scale_factor: f64) -> Option<f64> {
@@ -93,7 +93,8 @@ impl GlobalHexMap {
     }
 
     pub fn reduce_global(&mut self) {
-        let starting_hexes: Vec<H3Cell> = self.unclipped_hexes.clone().into_keys().collect();
+        let starting_hexes: Vec<H3Cell> =
+            self.unclipped_hexes.clone().into_keys().unique().collect();
         reduce_hex_res(
             &mut self.unclipped_hexes,
             &mut self.clipped_hexes,
@@ -128,7 +129,6 @@ fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<H3
     for res in USED_RES.rev() {
         std::mem::take(&mut hexes_at_res)
             .into_iter()
-            .unique()
             .for_each(|cell| {
                 if let Ok(parent) = cell.get_parent(res) {
                     rollup_child_count(unclipped, clipped, cell, parent);
@@ -136,57 +136,60 @@ fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<H3
                 }
             });
         let density_tgt = get_res_tgt(res);
-        for parent_hex in &hexes_at_res {
-            let occupied_count = occupied_count(clipped, parent_hex, density_tgt);
-            let limit = limit(res, occupied_count);
-            if let Some(count) = unclipped.get(parent_hex) {
-                let actual = cmp::min(limit, *count);
-                clipped.insert(*parent_hex, actual);
-            }
-        }
+        hexes_at_res = hexes_at_res
+            .into_iter()
+            .unique()
+            .map(|parent_cell| {
+                let occupied_count = occupied_count(clipped, &parent_cell, density_tgt);
+                let limit = limit(res, occupied_count);
+                if let Some(count) = unclipped.get(&parent_cell) {
+                    let actual = cmp::min(limit, *count);
+                    clipped.insert(parent_cell, actual);
+                };
+                parent_cell
+            })
+            .collect()
     }
 }
 
 fn occupied_count(cell_map: &HexMap, hex: &H3Cell, density_tgt: u64) -> u64 {
     match hex.grid_disk(1) {
-        Ok(k_ring) => {
-            let mut count = 0;
-            for cell in k_ring.into_iter() {
-                if let Some(population) = cell_map.get(&cell) {
-                    if *population >= density_tgt {
-                        count += 1
-                    }
+        Ok(k_ring) => k_ring.into_iter().fold(0, |count, cell| {
+            cell_map.get(&cell).map_or(count, |population| {
+                if *population >= density_tgt {
+                    count + 1
+                } else {
+                    count
                 }
-            }
-            count
-        }
+            })
+        }),
         Err(_) => 0,
     }
 }
 
 fn limit(res: u8, occupied_count: u64) -> u64 {
-    match HIP17_RES_CONFIG.get(&res) {
-        Some(res_config) => {
-            let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
-            let max = cmp::max((occupied_neighbor_diff) + 1, 1);
-            cmp::min(res_config.max, res_config.target * max)
-        }
-        None => 1,
-    }
+    let res_config = HIP17_RES_CONFIG.get(&res).unwrap();
+    let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
+    let max = cmp::max((occupied_neighbor_diff) + 1, 1);
+    cmp::min(res_config.max, res_config.target * max)
 }
 
 pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingMap) {
     for hex in &global_map.asserted_hexes {
-        let mut scale: f64 = 1.0;
-        for res in USED_RES.rev() {
-            if let Ok(parent) = hex.get_parent(res) {
-                if let Some(unclipped) = global_map.unclipped_hexes.get(&parent) {
-                    if let Some(clipped) = global_map.clipped_hexes.get(&parent) {
-                        scale *= *clipped as f64 / *unclipped as f64;
+        let scale: f64 = SCALING_RES.rev().into_iter().fold(1.0, |scale, res| {
+            hex.get_parent(res).map_or(scale, |parent| {
+                match (
+                    global_map.unclipped_hexes.get(&parent),
+                    global_map.clipped_hexes.get(&parent),
+                ) {
+                    (Some(unclipped), Some(clipped)) => {
+                        scale * (*clipped as f64 / *unclipped as f64)
                     }
+                    (Some(unclipped), _) => scale * (0 as f64 / *unclipped as f64),
+                    _ => scale,
                 }
-            }
-        }
+            })
+        });
         scaling_map.insert(&hex.h3index().to_string(), scale);
     }
 }
