@@ -10,7 +10,6 @@ use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_proto::services::poc_lora::{InvalidParticipantSide, InvalidReason};
 use helium_proto::GatewayStakingMode;
 use std::f64::consts::PI;
-
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
@@ -296,7 +295,8 @@ impl Poc {
         }
 
         // check witness is utilizing same freq and that of the beaconer
-        if beacon.frequency != witness.frequency {
+        // tolerance is 100Khz
+        if i32::unsigned_abs((beacon.frequency - witness.frequency) as i32) > 1000 * 100 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::InvalidFrequency
@@ -345,6 +345,10 @@ impl Poc {
         let gain = beaconer_info.gain;
         let min_rcv_signal =
             calc_fspl(tx_power, witness.frequency, witness_distance, gain).unwrap();
+            tracing::debug!(
+                "signal: {:?}, min_rcv_signal: {:?}",
+                witness.signal, min_rcv_signal
+            );
         if witness.signal as f64 > min_rcv_signal {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",

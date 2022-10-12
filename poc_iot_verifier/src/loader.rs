@@ -153,6 +153,7 @@ impl Loader {
                 tracing::debug!("beacon report from ingestor: {:?}", beacon);
                 let event = beacon.report.unwrap();
                 let packet_data = event.data.clone();
+                tracing::debug!("beacon data: {:?}", packet_data);
                 let buf_as_vec = buf.to_vec();
                 let mut public_key = event.pub_key.clone();
                 // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
@@ -174,6 +175,7 @@ impl Loader {
                 tracing::debug!("witness report from ingestor: {:?}", witness);
                 let event = witness.report.unwrap();
                 let packet_data = event.data.clone();
+                tracing::debug!("witness data: {:?}", packet_data);
                 let buf_as_vec = buf.to_vec();
                 // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
                 let mut public_key = event.pub_key.clone();
@@ -185,7 +187,7 @@ impl Loader {
                     id_hash,
                     packet_data,
                     buf_as_vec,
-                    &witness.received_timestamp.to_timestamp()?,
+                    &witness.received_timestamp.to_timestamp_millis()?,
                     ReportType::Witness,
                 )
                 .await

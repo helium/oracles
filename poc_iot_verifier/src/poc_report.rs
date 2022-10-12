@@ -107,7 +107,6 @@ impl Report {
         .map_err(Error::from)
     }
 
-    // TODO: maybe use a join here and include the witnesses in along with the beacons above ?
     pub async fn get_witnesses_for_beacon<'c, E>(
         executor: E,
         packet_data: &Vec<u8>,
@@ -119,9 +118,9 @@ impl Report {
             r#"
             select * from poc_report
             where packet_data = $1
-            and report_type = 'witness'
+            and report_type = 'witness' and status = 'pending'
             and attempts < $2
-            order by created_at asc
+            order by report_timestamp asc
             "#,
         )
         .bind(packet_data)

@@ -199,6 +199,12 @@ impl Runner {
                 Some(res) => res,
                 None => {
                     tracing::debug!("beacon verification failed, reason: EntropyNotFound");
+                    let failed_beacon_public_key = beaconer_pub_key.clone();
+                    let mut failed_beacon_id: Vec<u8> = packet_data.clone();
+                    failed_beacon_id.append(&mut failed_beacon_public_key.to_vec());
+                    let failed_beacon_id_hash = Sha256::digest(&failed_beacon_id).to_vec();
+                    _ = Report::update_attempts(&self.pool, &failed_beacon_id_hash, Utc::now())
+                        .await;
                     continue;
                 }
             };
