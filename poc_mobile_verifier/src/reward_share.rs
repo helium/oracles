@@ -110,3 +110,73 @@ impl OwnerResolver for follower::Client<Channel> {
         Ok(None)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::cell_type::CellType;
+    use async_trait::async_trait;
+    use helium_crypto::PublicKey;
+    use std::str::FromStr;
+
+    use super::*;
+
+    struct FixedOwnerResolver {
+        owner: PublicKey,
+    }
+
+    #[async_trait]
+    impl OwnerResolver for FixedOwnerResolver {
+        async fn resolve_owner(&mut self, _address: &PublicKey) -> Result<Option<PublicKey>> {
+            Ok(Some(self.owner.clone()))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rewards() {
+        // SercommIndoor
+        let g1 = PublicKey::from_str("11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL")
+            .expect("unable to construct pubkey");
+        // Nova430I
+        let g2 = PublicKey::from_str("118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc")
+            .expect("unable to construct pubkey");
+        // SercommOutdoor
+        let g3 = PublicKey::from_str("112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ")
+            .expect("unable to construct pubkey");
+        // Nova436H
+        let g4 = PublicKey::from_str("11k712d9dSb8CAujzS4PdC7Hi8EEBZWsSnt4Zr1hgke4e1Efiag")
+            .expect("unable to construct pubkey");
+
+        let c1 = "P27-SCE4255W2107CW5000014".to_string();
+        let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
+        let c3 = "P27-SCO4255PA102206DPT000207".to_string();
+        let c4 = "2AG32MBS3100196N1202000240215KY0184".to_string();
+
+        let ct1 = CellType::from_cbsd_id(&c1).expect("unable to get cell_type");
+        let ct2 = CellType::from_cbsd_id(&c2).expect("unable to get cell_type");
+        let ct3 = CellType::from_cbsd_id(&c3).expect("unable to get cell_type");
+        let ct4 = CellType::from_cbsd_id(&c4).expect("unable to get cell_type");
+
+        let mut shares = HotspotShares::new();
+        shares.insert(g1, ct1.reward_weight());
+        shares.insert(g2, ct2.reward_weight());
+        shares.insert(g3, ct3.reward_weight());
+        shares.insert(g4, ct4.reward_weight());
+
+        let test_owner = PublicKey::from_str("1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r")
+            .expect("unable to get test pubkey");
+        let mut owner_resolver = FixedOwnerResolver { owner: test_owner };
+
+        let (owner_shares, _missing_owner_shares) = owner_resolver
+            .owner_shares(shares)
+            .await
+            .expect("unable to get owner_shares");
+
+        let start = Utc::now();
+        let duration = chrono::Duration::hours(24);
+        let owner_emissions = OwnerEmissions::new(owner_shares, start, duration);
+        let total_owner_emissions = owner_emissions.total_emissions();
+
+        // 100M in bones
+        assert_eq!(10000000000000000, u64::from(total_owner_emissions));
+    }
+}

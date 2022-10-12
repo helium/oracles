@@ -153,10 +153,10 @@ impl Verifier {
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
-            let rewards_epoch = self.get_rewards_epoch(now);
-            if epoch_duration(&rewards_epoch) >= reward_period {
-                tracing::info!("Rewarding epoch: {:?}", rewards_epoch);
-                self.reward_shares(rewards_epoch).await?;
+            let reward_epoch = self.get_reward_epoch(now);
+            if epoch_duration(&reward_epoch) >= reward_period {
+                tracing::info!("Rewarding epoch: {:?}", reward_epoch);
+                self.reward_shares(reward_epoch).await?;
             }
 
             // TODO: Address drift in some way?
@@ -251,7 +251,7 @@ impl Verifier {
         Utc.timestamp(*self.last_verified_end_time.value(), 0)..now
     }
 
-    fn get_rewards_epoch(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
+    fn get_reward_epoch(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
         Utc.timestamp(*self.last_rewarded_end_time.value(), 0)..now
     }
 }
