@@ -3,12 +3,14 @@ use std::ops::Range;
 use crate::{
     env_var,
     error::{Error, Result},
+    heartbeats::Heartbeats,
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
+use helium_proto::services::poc_mobile::Shares;
 use helium_proto::services::{follower, Channel, Endpoint, Uri};
 use sqlx::{Pool, Postgres, Transaction};
 use tokio::time::sleep;
@@ -37,7 +39,7 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
             .await?;
 
     // invalid shares
-    let (_invalid_shares_tx, invalid_shares_rx) = file_sink::message_channel(50);
+    let (invalid_shares_tx, invalid_shares_rx) = file_sink::message_channel(50);
     let mut invalid_shares_sink = file_sink::FileSinkBuilder::new(
         FileType::InvalidShares,
         store_base_path,
@@ -65,6 +67,7 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
     let verifier = Verifier::new(
         pool,
         follower_client,
+        invalid_shares_tx,
         subnet_tx,
         env_var("REWARD_PERIOD", DEFAULT_REWARD_PERIOD_HOURS)?,
         env_var("VERIFICATIONS_PER_PERIOD", DEFAULT_VERIFICATIONS_PER_PERIOD)?,
@@ -98,10 +101,11 @@ async fn flatten(handle: tokio::task::JoinHandle<Result>) -> Result {
 struct Verifier {
     pool: Pool<Postgres>,
     follower: follower::Client<Channel>,
+    invalid_shares_tx: file_sink::MessageSender,
     subnet_rewards_tx: file_sink::MessageSender,
     reward_period_hours: i64,
     verifications_per_period: i32,
-    heartbeats: crate::heartbeats::Heartbeats,
+    heartbeats: Heartbeats,
     file_store: FileStore,
     last_verified_end_time: MetaValue<i64>,
     last_rewarded_end_time: MetaValue<i64>,
@@ -111,6 +115,7 @@ impl Verifier {
     async fn new(
         pool: Pool<Postgres>,
         follower: follower::Client<Channel>,
+        invalid_shares_tx: file_sink::MessageSender,
         subnet_rewards_tx: file_sink::MessageSender,
         reward_period_hours: i64,
         verifications_per_period: i32,
@@ -122,25 +127,25 @@ impl Verifier {
                 default_last_verified_end_time
             })
             .await?;
+        let last_rewarded_end_time =
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_rewarded_end_time", move || {
+                default_last_rewarded_end_time
+            })
+            .await?;
+        let heartbeats =
+            Heartbeats::new(&pool, Utc.timestamp(*last_verified_end_time.value(), 0)).await?;
+        let file_store = FileStore::from_env_with_prefix("INPUT").await?;
         Ok(Self {
-            reward_period_hours,
-            verifications_per_period,
-            heartbeats: crate::heartbeats::Heartbeats::new(
-                &pool,
-                Utc.timestamp(*last_verified_end_time.value(), 0),
-            )
-            .await?,
-            file_store: FileStore::from_env_with_prefix("INPUT").await?,
-            last_rewarded_end_time: MetaValue::<i64>::fetch_or_insert_with(
-                &pool,
-                "last_rewarded_end_time",
-                move || default_last_rewarded_end_time,
-            )
-            .await?,
             pool,
             follower,
-            last_verified_end_time,
+            invalid_shares_tx,
             subnet_rewards_tx,
+            reward_period_hours,
+            verifications_per_period,
+            heartbeats,
+            file_store,
+            last_verified_end_time,
+            last_rewarded_end_time,
         })
     }
 
@@ -202,7 +207,8 @@ impl Verifier {
         epoch: Range<DateTime<Utc>>,
     ) -> Result {
         // Validate the heartbeats in the current epoch
-        self.heartbeats
+        let invalid_shares = self
+            .heartbeats
             .validate_heartbeats(exec, &epoch, &self.file_store)
             .await?;
 
@@ -212,6 +218,15 @@ impl Verifier {
         self.last_verified_end_time
             .update(exec, epoch.end.timestamp() as i64)
             .await?;
+
+        // Write out invalid shares:
+        file_sink::write(
+            &self.invalid_shares_tx,
+            Shares {
+                shares: invalid_shares,
+            },
+        )
+        .await?;
 
         Ok(())
     }
