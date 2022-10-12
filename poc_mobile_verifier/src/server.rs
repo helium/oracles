@@ -154,10 +154,13 @@ impl Verifier {
             let now = Utc::now();
             let verify_epoch = self.get_verify_epoch(now);
 
-            tracing::info!("Verifying epoch: {:?}", verify_epoch);
-
-            // Attempt to verify the current epoch:
-            self.verify_epoch(verify_epoch).await?;
+            // If we started up and the last verification epoch was too recent,
+            // we do not want to re-verify.
+            if epoch_duration(&verify_epoch) >= verification_period {
+                tracing::info!("Verifying epoch: {:?}", verify_epoch);
+                // Attempt to verify the current epoch:
+                self.verify_epoch(verify_epoch).await?;
+            }
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
