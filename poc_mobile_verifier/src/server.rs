@@ -85,7 +85,7 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
         })
         .await?;
     let heartbeats =
-        Heartbeats::new(&pool, Utc.timestamp(*last_verified_end_time.value(), 0)).await?;
+        Heartbeats::new(&pool, Utc.timestamp(*last_rewarded_end_time.value(), 0)).await?;
     let file_store = FileStore::from_env_with_prefix("INPUT").await?;
 
     let verifier = Verifier {

@@ -43,6 +43,8 @@ pub enum ValidateHeartbeatsError {
 }
 
 impl Heartbeats {
+    /// Constructs a new heartbeats collection, starting by polling every heartbeat
+    /// since the end of the last rewardable period (`starting`).
     pub async fn new(pool: &Pool<Postgres>, starting: DateTime<Utc>) -> Result<Self, sqlx::Error> {
         let mut heartbeats = HashMap::new();
         let mut rows =
@@ -61,6 +63,7 @@ impl Heartbeats {
         Ok(Self { heartbeats })
     }
 
+    /// Clears the heartbeats in the collection and the database.
     pub async fn clear(&mut self, conn: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
         // TODO: should the truncation be bound to a given epoch?
         // It's not intended that any heartbeats will exists outside the
@@ -72,6 +75,8 @@ impl Heartbeats {
         Ok(())
     }
 
+    /// Validates all of the heartbeats in a given epoch, updating all of the corresponding
+    /// entries in the database.
     pub async fn validate_heartbeats(
         &mut self,
         conn: &mut Transaction<'_, Postgres>,
@@ -145,8 +150,7 @@ impl Heartbeats {
         ShareValidity::Valid
     }
 
-    /// Update all of the heartbeat values in the database. This operation is
-    /// not atomic.
+    /// Update all of the heartbeat values in the database.
     pub async fn update(self, exec: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
         for (pub_key, HeartbeatValue { weight, timestamp }) in self.heartbeats {
             sqlx::query(
