@@ -3,7 +3,7 @@ use crate::{
     error::{Error, Result},
     subnetwork_rewards::SubnetworkRewards,
 };
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
@@ -73,7 +73,7 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
             default_end_time
         })
         .await?;
-    
+
     let lookup_delay = env_var("LOOKUP_DELAY", DEFAULT_LOOKUP_DELAY)?;
     let epoch_length = env_var("EPOCH_LENGTH", DEFAULT_EPOCH_LENGTH)?;
 
@@ -108,14 +108,9 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
     Ok(())
 }
 
-fn get_time_range(
-    last_reward_end_time: i64, 
-    lookup_delay: i64,
-) -> (DateTime<Utc>, DateTime<Utc>) {
-    let after_utc =
-        DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(last_reward_end_time, 0), Utc);
-    let now = Utc::now();
-    let stop_utc = now - Duration::minutes(lookup_delay);
+fn get_time_range(last_reward_end_time: i64, lookup_delay: i64) -> (DateTime<Utc>, DateTime<Utc>) {
+    let after_utc = Utc.timestamp(last_reward_end_time, 0);
+    let stop_utc = Utc::now() - Duration::minutes(lookup_delay);
     let start_utc = after_utc.min(stop_utc);
     (start_utc, stop_utc)
 }
