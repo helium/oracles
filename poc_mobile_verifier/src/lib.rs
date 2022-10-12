@@ -2,7 +2,8 @@ mod cell_type;
 mod error;
 mod mobile;
 mod reward_share;
-mod reward_speed_share;
+// mod reward_speed_share;
+mod heartbeats;
 
 pub mod cli;
 pub mod server;
@@ -11,8 +12,10 @@ pub mod subnetwork_rewards;
 pub use error::{Error, Result};
 pub use server::run_server;
 
+/*
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+*/
 use std::io;
 
 pub fn env_var<T>(key: &str, default: T) -> Result<T>
@@ -29,6 +32,7 @@ where
     }
 }
 
+/*
 fn bones_to_u64(decimal: Decimal) -> u64 {
     // One bone is one million mobiles
     (decimal * dec!(1_000_000)).to_u64().unwrap()
@@ -37,3 +41,4 @@ fn bones_to_u64(decimal: Decimal) -> u64 {
 fn cell_share_to_u64(decimal: Decimal) -> u64 {
     (decimal * dec!(10)).to_u64().unwrap()
 }
+*/
