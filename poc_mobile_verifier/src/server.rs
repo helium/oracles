@@ -156,11 +156,15 @@ impl Verifier {
 
             // If we started up and the last verification epoch was too recent,
             // we do not want to re-verify.
-            if epoch_duration(&verify_epoch) >= verification_period {
+            let verify_epoch_duration = epoch_duration(&verify_epoch);
+            let sleep_duration = if verify_epoch_duration >= verification_period {
                 tracing::info!("Verifying epoch: {:?}", verify_epoch);
                 // Attempt to verify the current epoch:
                 self.verify_epoch(verify_epoch).await?;
-            }
+                verification_period
+            } else {
+                verification_period - verify_epoch_duration
+            };
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
@@ -170,8 +174,9 @@ impl Verifier {
                 self.reward_shares(rewards_epoch).await?;
             }
 
+            // TODO: Address drift in some way?
             sleep(
-                verification_period
+                sleep_duration
                     .to_std()
                     .map_err(|_| Error::OutOfRangeError)?,
             )
