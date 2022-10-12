@@ -13,7 +13,7 @@ pub struct LoraWitnessReport {
     pub timestamp: DateTime<Utc>,
     pub ts_res: u32,
     pub signal: u32,
-    pub snr: f32,
+    pub snr: i32,
     pub frequency: u64,
     pub datarate: DataRate,
     pub signature: Vec<u8>,
