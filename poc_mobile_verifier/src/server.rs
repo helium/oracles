@@ -193,8 +193,11 @@ impl Verifier {
         // Validate the heartbeats in the current epoch
         let invalid_shares = self
             .heartbeats
-            .validate_heartbeats(exec, &epoch, &self.file_store)
+            .validate_heartbeats(&epoch, &self.file_store)
             .await?;
+
+        // Push the results to the database
+        self.heartbeats.update_db(exec).await?;
 
         // TODO: Add speedtests
 

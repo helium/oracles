@@ -29,17 +29,9 @@ pub struct HeartbeatValue {
     pub timestamp: NaiveDateTime,
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Heartbeats {
     pub heartbeats: HashMap<PublicKey, HeartbeatValue>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ValidateHeartbeatsError {
-    #[error("Database error: {0}")]
-    DbError(#[from] sqlx::Error),
-    #[error("File store error: {0}")]
-    FileStoreError(#[from] file_store::Error),
 }
 
 impl Heartbeats {
@@ -79,10 +71,9 @@ impl Heartbeats {
     /// entries in the database.
     pub async fn validate_heartbeats(
         &mut self,
-        conn: &mut Transaction<'_, Postgres>,
         epoch: &Range<DateTime<Utc>>,
         file_store: &FileStore,
-    ) -> Result<Vec<Share>, ValidateHeartbeatsError> {
+    ) -> Result<Vec<Share>, file_store::Error> {
         let mut invalid_shares = Vec::new();
 
         let file_list = file_store
@@ -111,9 +102,6 @@ impl Heartbeats {
                 });
             }
         }
-
-        // Update the heartbeat values in the database
-        self.clone().update(conn).await?;
 
         Ok(invalid_shares)
     }
@@ -151,8 +139,12 @@ impl Heartbeats {
     }
 
     /// Update all of the heartbeat values in the database.
-    pub async fn update(self, exec: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
-        for (pub_key, HeartbeatValue { weight, timestamp }) in self.heartbeats {
+    ///
+    /// Currently this updates every entry regardless of whether or not that values
+    /// has been updated. This is inefficient and could be improved, but for now it should
+    /// work just fine.
+    pub async fn update_db(&self, exec: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
+        for (pub_key, HeartbeatValue { weight, timestamp }) in &self.heartbeats {
             sqlx::query(
                 r#"
                     insert into heartbeats (id, weight, timestamp)
