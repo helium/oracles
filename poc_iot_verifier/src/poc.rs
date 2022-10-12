@@ -341,26 +341,26 @@ impl Poc {
         }
 
         // check free space path loss
-        let tx_power = beacon.tx_power;
-        let gain = beaconer_info.gain;
-        let min_rcv_signal =
-            calc_fspl(tx_power, witness.frequency, witness_distance, gain).unwrap();
-            tracing::debug!(
-                "signal: {:?}, min_rcv_signal: {:?}",
-                witness.signal, min_rcv_signal
-            );
-        if witness.signal as f64 > min_rcv_signal {
-            tracing::debug!(
-                "witness verification failed, reason: {:?}",
-                InvalidReason::BadRssi
-            );
-            let resp = VerifyWitnessResult {
-                result: VerificationStatus::Invalid,
-                invalid_reason: Some(InvalidReason::BadRssi),
-                gateway_info: Some(witness_info),
-            };
-            return Ok(resp);
-        }
+        // let tx_power = beacon.tx_power;
+        // let gain = beaconer_info.gain;
+        // let min_rcv_signal =
+        //     calc_fspl(tx_power, witness.frequency, witness_distance, gain).unwrap();
+        //     tracing::debug!(
+        //         "signal: {:?}, min_rcv_signal: {:?}",
+        //         witness.signal, min_rcv_signal
+        //     );
+        // if witness.signal as f64 > min_rcv_signal {
+        //     tracing::debug!(
+        //         "witness verification failed, reason: {:?}",
+        //         InvalidReason::BadRssi
+        //     );
+        //     let resp = VerifyWitnessResult {
+        //         result: VerificationStatus::Invalid,
+        //         invalid_reason: Some(InvalidReason::BadRssi),
+        //         gateway_info: Some(witness_info),
+        //     };
+        //     return Ok(resp);
+        // }
 
         // check witness is permitted to participate in POC
         match witness_info.staking_mode {
