@@ -170,7 +170,12 @@ impl Verifier {
                 self.reward_shares(rewards_epoch).await?;
             }
 
-            sleep(verification_period.to_std().unwrap()).await;
+            sleep(
+                verification_period
+                    .to_std()
+                    .map_err(|_| Error::OutOfRangeError)?,
+            )
+            .await;
         }
     }
 
