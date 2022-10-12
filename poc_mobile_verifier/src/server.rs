@@ -15,8 +15,10 @@ pub const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 pub const RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
-/// Default hours to delay lookup from now
-pub const DEFAULT_LOOKUP_DELAY: i64 = 3;
+/// Default minutes to wait for lookup
+pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
+/// Default length of epoch in hours
+pub const DEFAULT_EPOCH_LENGTH: i64 = 3;
 
 pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> Result {
     tracing::info!("Starting verifier service");
@@ -71,7 +73,9 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
             default_end_time
         })
         .await?;
+    
     let lookup_delay = env_var("LOOKUP_DELAY", DEFAULT_LOOKUP_DELAY)?;
+    let epoch_length = env_var("EPOCH_LENGTH", DEFAULT_EPOCH_LENGTH)?;
 
     let shutdown_clone = shutdown.clone();
     let server = tokio::spawn(async move {
@@ -85,7 +89,7 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
                 .update(&pool, stop.timestamp())
                 .await?;
             select! {
-                _ = sleep(std::time::Duration::from_secs(lookup_delay as u64 * 60 * 60)) => continue,
+                _ = sleep(std::time::Duration::from_secs(epoch_length as u64 * 60 * 60)) => continue,
                 _ = shutdown_clone.clone() => break,
             }
         }
@@ -105,13 +109,13 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
 }
 
 fn get_time_range(
-    last_reward_end_time: i64, // DateTime<Utc>,
+    last_reward_end_time: i64, 
     lookup_delay: i64,
 ) -> (DateTime<Utc>, DateTime<Utc>) {
     let after_utc =
         DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(last_reward_end_time, 0), Utc);
     let now = Utc::now();
-    let stop_utc = now - Duration::hours(lookup_delay);
+    let stop_utc = now - Duration::minutes(lookup_delay);
     let start_utc = after_utc.min(stop_utc);
     (start_utc, stop_utc)
 }
