@@ -26,6 +26,7 @@ pub struct Server {
 
 impl Server {
     pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
+        // TODO: Find this time in meta store db first
         let last_poc_submission_ts = env::var("LAST_POC_SUBMISSION_TS")
             .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS.to_string())
             .parse()

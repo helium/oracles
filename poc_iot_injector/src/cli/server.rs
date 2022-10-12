@@ -22,12 +22,12 @@ impl Cmd {
         });
 
         // injector server keypair from env
-        let poc_injector_kp_path = std::env::var("POC_IOT_INJECTOR_KEYPAIR")
-            .unwrap_or_else(|_| String::from("/tmp/poc_iot_injector_keypair"));
-        let poc_iot_injector_keypair = load_from_file(&poc_injector_kp_path)?;
+        let poc_injector_kp_path =
+            std::env::var("POC_ORACLE_KEY").unwrap_or_else(|_| String::from("/tmp/poc_oracle_key"));
+        let poc_oracle_key = load_from_file(&poc_injector_kp_path)?;
 
         // poc_iot_injector server
-        let mut poc_iot_injector_server = Server::new(pool, poc_iot_injector_keypair).await?;
+        let mut poc_iot_injector_server = Server::new(pool, poc_oracle_key).await?;
 
         poc_iot_injector_server
             .run(shutdown_listener.clone())
