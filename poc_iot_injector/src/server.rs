@@ -13,8 +13,9 @@ use tokio::time;
 
 // 30 mins
 pub const POC_IOT_TICK_TIME: time::Duration = time::Duration::from_secs(1800);
-// TODO: decide some default value, not that it really matters if we set it in the .env
-pub const DEFAULT_LAST_POC_SUBMISSION_TS: i64 = 0000000000;
+// Epoch time in secs when we decide to activate this server. To be decided later before
+// activation.
+pub const DEFAULT_LAST_POC_SUBMISSION_TS_SECS: i64 = 0000000000;
 
 pub struct Server {
     pool: Pool<Postgres>,
@@ -28,7 +29,7 @@ impl Server {
     pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
         // TODO: Find this time in meta store db first
         let last_poc_submission_ts = env::var("LAST_POC_SUBMISSION_TS")
-            .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS.to_string())
+            .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS_SECS.to_string())
             .parse()
             .map_err(DecodeError::from)?;
 

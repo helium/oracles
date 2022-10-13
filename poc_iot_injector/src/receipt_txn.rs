@@ -17,9 +17,6 @@ const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = dec!(2.0);
 
-// TODO: This should be done better?
-const MHZTOHZ: u32 = 1000000;
-
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
 pub fn handle_report_msg(
@@ -120,7 +117,6 @@ fn construct_poc_witnesses(
             let reward_shares = reward_shares.to_u32().unwrap_or_default();
 
             // NOTE: channel is irrelevant now
-            // TODO: Attach reward_share using witness_hex_scale
             let poc_witness = BlockchainPocWitnessV1 {
                 gateway: witness_pub_key,
                 timestamp: witness_timestamp,
@@ -141,7 +137,8 @@ fn construct_poc_witnesses(
 }
 
 fn hz_to_mhz(freq_hz: u64) -> f32 {
-    let freq_mhz = Decimal::from(freq_hz) / Decimal::from(MHZTOHZ);
+    // MHZTOHZ = 1000000;
+    let freq_mhz = Decimal::from(freq_hz) / Decimal::from(1000000);
     freq_mhz.to_f32().unwrap_or_default()
 }
 
@@ -178,7 +175,6 @@ fn construct_poc_receipt(
             let reward_shares = reward_shares.to_u32().unwrap_or_default();
 
             // NOTE: signal, origin, snr and addr_hash are irrelevant now
-            // TODO: Attach reward_share using beacon_hex_scale
             Ok(Some(BlockchainPocReceiptV1 {
                 gateway: beacon_pub_key,
                 timestamp: beacon_timestamp,
