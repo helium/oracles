@@ -1,4 +1,8 @@
-use crate::{traits::MsgDecode, traits::MsgTimestamp, Error, Result};
+use crate::{
+    traits::MsgDecode,
+    traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
+    Error, Result,
+};
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_lora::{LoraWitnessIngestReportV1, LoraWitnessReportReqV1};
@@ -43,7 +47,7 @@ impl TryFrom<LoraWitnessIngestReportV1> for LoraWitnessIngestReport {
     type Error = Error;
     fn try_from(v: LoraWitnessIngestReportV1) -> Result<Self> {
         Ok(Self {
-            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            received_timestamp: v.timestamp()?,
             report: v
                 .report
                 .ok_or_else(|| Error::not_found("lora witness ingest report v1"))?
@@ -54,10 +58,11 @@ impl TryFrom<LoraWitnessIngestReportV1> for LoraWitnessIngestReport {
 
 impl From<LoraWitnessIngestReport> for LoraWitnessReportReqV1 {
     fn from(v: LoraWitnessIngestReport) -> Self {
+        let timestamp = v.report.timestamp();
         Self {
             pub_key: v.report.pub_key.to_vec(),
             data: v.report.data,
-            timestamp: v.report.timestamp.timestamp_nanos() as u64,
+            timestamp,
             ts_res: v.report.ts_res,
             signal: v.report.signal,
             snr: v.report.snr,
@@ -73,11 +78,12 @@ impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessReport {
     fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
         let data_rate: DataRate = DataRate::from_i32(v.datarate)
             .ok_or_else(|| Error::Custom("unsupported datarate".to_string()))?;
+        let timestamp = v.timestamp()?;
 
         Ok(Self {
             pub_key: PublicKey::try_from(v.pub_key)?,
             data: v.data,
-            timestamp: v.timestamp.to_timestamp_nanos()?,
+            timestamp,
             ts_res: v.ts_res,
             signal: v.signal,
             snr: v.snr,
@@ -88,12 +94,37 @@ impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessReport {
     }
 }
 
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraWitnessReportReqV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp_nanos()
+    }
+}
+
+impl MsgTimestamp<u64> for LoraWitnessReport {
+    fn timestamp(&self) -> u64 {
+        self.timestamp.encode_timestamp_nanos()
+    }
+}
+
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraWitnessIngestReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.received_timestamp.to_timestamp_millis()
+    }
+}
+
+impl MsgTimestamp<u64> for LoraWitnessIngestReport {
+    fn timestamp(&self) -> u64 {
+        self.received_timestamp.encode_timestamp_millis()
+    }
+}
+
 impl From<LoraWitnessReport> for LoraWitnessReportReqV1 {
     fn from(v: LoraWitnessReport) -> Self {
+        let timestamp = v.timestamp();
         Self {
             pub_key: v.pub_key.to_vec(),
             data: v.data,
-            timestamp: v.timestamp.timestamp_nanos() as u64,
+            timestamp,
             ts_res: v.ts_res,
             signal: v.signal,
             snr: v.snr,

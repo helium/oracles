@@ -1,10 +1,10 @@
 use crate::{
-    datetime_from_naive, heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconIngestReport,
+    heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconIngestReport,
     lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport,
     speedtest::CellSpeedtest, traits::MsgDecode, Error, FileInfoStream, FileStore, FileType,
     Result,
 };
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, TimeZone, Utc};
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
 use helium_crypto::PublicKey;
 use serde::{ser::SerializeSeq, Serializer};
@@ -65,8 +65,8 @@ impl FileFilter {
     fn list(&self, store: &FileStore) -> FileInfoStream {
         store.list(
             self.file_type,
-            self.after.map(datetime_from_naive),
-            self.before.map(datetime_from_naive),
+            self.after.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
+            self.before.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
         )
     }
 }

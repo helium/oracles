@@ -10,7 +10,6 @@ pub mod runner;
 pub mod traits;
 
 pub use error::{Error, Result};
-pub use file_store::datetime_from_epoch;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::io;
 

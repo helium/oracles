@@ -1,4 +1,9 @@
-use crate::{cli::print_json, datetime_from_epoch, file_source, Error, FileInfo, FileType, Result};
+use crate::{
+    cli::print_json,
+    file_source,
+    traits::{MsgTimestamp, TimestampDecode},
+    Error, FileInfo, FileType, Result,
+};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
@@ -61,52 +66,55 @@ impl Cmd {
     }
 }
 
+impl MsgTimestamp<Result<DateTime<Utc>>> for EntropyReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp()
+    }
+}
+
 fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
     let result = match file_type {
-        FileType::CellHeartbeat => {
-            CellHeartbeatReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
-        }
-        FileType::CellSpeedtest => {
-            SpeedtestReqV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
-        }
+        FileType::CellHeartbeat => CellHeartbeatReqV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(|entry| entry.timestamp())?,
+        FileType::CellSpeedtest => SpeedtestReqV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(|entry| entry.timestamp())?,
         FileType::CellHeartbeatIngestReport => CellHeartbeatIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|ingest_report| {
                 ingest_report.report.ok_or_else(|| {
-                    Error::Custom(
-                        "CellHeartbeatIngestReportV1 does not contain a CellHeartbeatReqV1"
-                            .to_string(),
+                    Error::not_found(
+                        "CellHeartbeatIngestReportV1 does not contain a CellHeartbeatReqV1",
                     )
                 })
             })
-            .map(|heartbeat_req| datetime_from_epoch(heartbeat_req.timestamp))?,
+            .and_then(|heartbeat_req| heartbeat_req.timestamp())?,
         FileType::CellSpeedtestIngestReport => SpeedtestIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|ingest_report| {
                 ingest_report.report.ok_or_else(|| {
-                    Error::Custom(
-                        "SpeedtestIngestReportV1 does not contain a SpeedtestReqV1".to_string(),
-                    )
+                    Error::not_found("SpeedtestIngestReportV1 does not contain a SpeedtestReqV1")
                 })
             })
-            .map(|speedtest_req| datetime_from_epoch(speedtest_req.timestamp))?,
-        FileType::EntropyReport => {
-            EntropyReportV1::decode(buf).map(|entry| datetime_from_epoch(entry.timestamp))?
-        }
+            .and_then(|speedtest_req| speedtest_req.timestamp())?,
+        FileType::EntropyReport => EntropyReportV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(|entry| entry.timestamp())?,
         FileType::LoraBeaconIngestReport => LoraBeaconIngestReportV1::decode(buf)
-            .map(|entry| datetime_from_epoch(entry.received_timestamp))?,
+            .map_err(Error::from)
+            .and_then(|entry| entry.timestamp())?,
         FileType::LoraWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
-            .map(|entry| datetime_from_epoch(entry.received_timestamp))?,
+            .map_err(Error::from)
+            .and_then(|entry| entry.timestamp())?,
         FileType::LoraValidPoc => LoraValidPocV1::decode(buf)
             .map_err(Error::from)
             .and_then(|report| {
                 report.beacon_report.ok_or_else(|| {
-                    Error::Custom(
-                        "LoraValidPocV1 does not contain a LoraBeaconIngestReportV1".to_string(),
-                    )
+                    Error::not_found("LoraValidPocV1 does not contain a LoraBeaconIngestReportV1")
                 })
             })
-            .map(|beacon_report| datetime_from_epoch(beacon_report.received_timestamp))?,
+            .and_then(|beacon_report| beacon_report.timestamp())?,
 
         _ => Utc::now(),
     };

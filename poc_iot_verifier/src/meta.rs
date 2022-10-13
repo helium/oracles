@@ -1,6 +1,6 @@
-use crate::{datetime_from_epoch, Error, Result};
+use crate::{Error, Result};
 use chrono::{DateTime, Utc};
-use file_store::FileType;
+use file_store::{traits::TimestampDecode, FileType};
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -58,10 +58,11 @@ impl Meta {
         .await?
         .and_then(|v| {
             v.parse::<u64>()
-                .map_or_else(|_| None, |secs| Some(datetime_from_epoch(secs + 10)))
+                .map_or_else(|_| None, |secs| Some((secs + 10).to_timestamp()))
             //TODO: remove the hardcoded + 10 above
             //      fix resolution of datetime function, dropping millisecs resulting in files being reprocessed by loaded
-        });
+        })
+        .transpose()?;
         Ok(height)
     }
 

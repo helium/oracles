@@ -1,5 +1,4 @@
 use crate::{
-    datetime_from_epoch,
     error::DecodeError,
     pending_txn::{PendingTxn, Status},
     traits::B64,
@@ -9,7 +8,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
-use file_store::{FileStore, FileType};
+use file_store::{traits::TimestampDecode, FileStore, FileType};
 use futures::{stream, StreamExt};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
@@ -192,14 +191,8 @@ impl Server {
         }
 
         let txn_hash = &envelope.txn_hash.to_b64_url()?;
-        let txn_ts = envelope.timestamp;
-        PendingTxn::update(
-            &self.pool,
-            txn_hash,
-            Status::Cleared,
-            datetime_from_epoch(txn_ts as i64),
-        )
-        .await
+        let txn_ts = envelope.timestamp.to_timestamp()?;
+        PendingTxn::update(&self.pool, txn_hash, Status::Cleared, txn_ts).await
     }
 
     async fn process_clock_tick(&mut self) -> Result {
@@ -441,7 +434,7 @@ async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u
 }
 
 pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
-    let after_utc = datetime_from_epoch(last_reward_end_time);
+    let after_utc = Utc.timestamp(last_reward_end_time, 0);
     let now = Utc::now();
     let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
     let start_utc = after_utc.min(stop_utc);
