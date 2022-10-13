@@ -31,7 +31,6 @@ impl Shares {
     }
 
     pub async fn validate_heartbeats(
-        exec: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
         file_store: &FileStore,
         epoch: &Range<DateTime<Utc>>,
     ) -> Result<Self> {
