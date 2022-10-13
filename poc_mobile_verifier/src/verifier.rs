@@ -31,14 +31,21 @@ impl VerifierDaemon {
         let verification_period = reward_period / self.verifications_per_period;
 
         loop {
-            let now = Utc::now();
-            let verify_epoch = self.verifier.get_verify_epoch(now);
             let mut transaction = self.pool.begin().await?;
+
+            let now = Utc::now();
+            // Maybe name these "epoch_since_*" and "epoch_since_*_duration"
+            let verify_epoch = self.verifier.get_verify_epoch(now);
+            let reward_epoch = self.verifier.get_reward_epoch(now);
+            let verify_epoch_duration = epoch_duration(&verify_epoch);
+            let reward_epoch_duration = epoch_duration(&reward_epoch);
 
             // If we started up and the last verification epoch was too recent,
             // we do not want to re-verify.
-            let verify_epoch_duration = epoch_duration(&verify_epoch);
-            let sleep_duration = if verify_epoch_duration >= verification_period {
+            let mut sleep_duration = if verify_epoch_duration >= verification_period
+                // We always want to verify before a reward 
+                || reward_epoch_duration >= reward_period
+            {
                 tracing::info!("Verifying epoch: {:?}", verify_epoch);
                 // Attempt to verify the current epoch:
                 self.verifier
@@ -53,14 +60,18 @@ impl VerifierDaemon {
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
-            let reward_epoch = self.verifier.get_reward_epoch(now);
-            if epoch_duration(&reward_epoch) >= reward_period {
+            if reward_epoch_duration >= reward_period {
                 tracing::info!("Rewarding epoch: {:?}", reward_epoch);
                 self.verifier
                     .reward_epoch(&mut transaction, reward_epoch)
                     .await?
                     .write(&self.subnet_rewards_tx)
                     .await?;
+            } else if reward_epoch_duration + sleep_duration >= reward_period {
+                // If the next epoch is a reward period, cut off sleep duration.
+                // This ensures that verifying will always end up being aligned with
+                // the desired reward period.
+                sleep_duration = reward_period - reward_epoch_duration;
             }
 
             transaction.commit().await?;
