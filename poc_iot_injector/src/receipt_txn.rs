@@ -210,6 +210,9 @@ fn sign_txn(txn: &BlockchainTxnPocReceiptsV2, keypair: &Keypair) -> Result<Vec<u
     Ok(keypair.sign(&txn.encode_to_vec())?)
 }
 
+// TODO: Arguably this functionality should live in the poc-iot-verifier.
+// Once the hex_scale calculations are done, poc-iot-verifier should also attach the actual reward
+// share in the generated report.
 fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
     if num_witnesses == 0 {
         Err(Error::ZeroWitnesses)
