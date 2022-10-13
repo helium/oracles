@@ -30,7 +30,7 @@ use tokio::time;
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
-const BEACON_INTERVAL: i64 = 10; //minutes
+const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
 
 pub struct Runner {
     pool: PgPool,
@@ -169,7 +169,7 @@ impl Runner {
             match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
                 Some(last_beacon) => {
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-                    if interval_since_last_beacon.num_minutes() < BEACON_INTERVAL {
+                    if interval_since_last_beacon.num_seconds() < BEACON_INTERVAL {
                         tracing::debug!("beacon verification failed, reason: IrregularInterval");
                         self.handle_invalid_poc(
                             &beacon_report,
