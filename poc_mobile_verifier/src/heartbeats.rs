@@ -26,7 +26,7 @@ pub struct Heartbeats {
 }
 
 impl Heartbeats {
-    /// Constructs a new heartbeats collection, starting by polling every heartbeat
+    /// Constructs a new heartbeats collection, starting by pulling every heartbeat
     /// since the end of the last rewardable period (`starting`).
     pub async fn new(
         transaction: &mut Transaction<'_, Postgres>,
@@ -47,20 +47,5 @@ impl Heartbeats {
             heartbeats.insert(id, HeartbeatValue { weight, timestamp });
         }
         Ok(Self { heartbeats })
-    }
-
-    /// Clears the heartbeats in the collection and the database.
-    pub async fn clear(
-        &mut self,
-        transaction: &mut Transaction<'_, Postgres>,
-    ) -> Result<(), sqlx::Error> {
-        // TODO: should the truncation be bound to a given epoch?
-        // It's not intended that any heartbeats will exists outside the
-        // current epoch, but it might be better to code defensively.
-        sqlx::query("TRUNCATE TABLE heartbeats;")
-            .execute(transaction)
-            .await?;
-        self.heartbeats.clear();
-        Ok(())
     }
 }

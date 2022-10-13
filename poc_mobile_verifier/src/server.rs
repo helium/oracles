@@ -161,7 +161,6 @@ impl Verifier {
 
             transaction.commit().await?;
 
-            // TODO: Address drift in some way?
             tracing::info!("Sleeping...");
             let shutdown = shutdown.clone();
             tokio::select! {
@@ -175,7 +174,6 @@ impl Verifier {
         }
     }
 
-    // TODO: Return invalid shares
     async fn verify_epoch(
         &mut self,
         exec: &mut Transaction<'_, Postgres>,
@@ -219,7 +217,7 @@ impl Verifier {
         exec: &mut Transaction<'_, Postgres>,
         epoch: Range<DateTime<Utc>>,
     ) -> Result {
-        let mut heartbeats =
+        let heartbeats =
             Heartbeats::new(exec, Utc.timestamp(*self.last_rewarded_end_time.value(), 0)).await?;
 
         SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats)
@@ -228,7 +226,12 @@ impl Verifier {
             .await?;
 
         // Clear the heartbeats database
-        heartbeats.clear(exec).await?;
+        // TODO: should the truncation be bound to a given epoch?
+        // It's not intended that any heartbeats will exists outside the
+        // current epoch, but it might be better to code defensively.
+        sqlx::query("TRUNCATE TABLE heartbeats;")
+            .execute(&mut *exec)
+            .await?;
 
         // Update the last rewarded end time:
         self.last_rewarded_end_time
