@@ -56,7 +56,7 @@ impl Cmd {
         let mut now = after;
 
         for period in 0..periods {
-            let verify_epoch = verifier.get_verify_epoch(now);
+            let verify_epoch = verifier.epoch_since_last_verify(now);
             tracing::info!("Verifying epoch {period} of {periods}...");
             let _ = verifier
                 .verify_epoch(&mut transaction, verify_epoch)

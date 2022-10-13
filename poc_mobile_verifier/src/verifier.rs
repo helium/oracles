@@ -33,35 +33,35 @@ impl VerifierDaemon {
         loop {
             let now = Utc::now();
             // Maybe name these "epoch_since_*" and "epoch_since_*_duration"
-            let verify_epoch = self.verifier.get_verify_epoch(now);
-            let reward_epoch = self.verifier.get_reward_epoch(now);
-            let verify_epoch_duration = epoch_duration(&verify_epoch);
-            let reward_epoch_duration = epoch_duration(&reward_epoch);
+            let epoch_since_last_verify = self.verifier.epoch_since_last_verify(now);
+            let epoch_since_last_reward = self.verifier.epoch_since_last_reward(now);
+            let epoch_since_last_verify_duration = epoch_duration(&epoch_since_last_verify);
+            let epoch_since_last_reward_duration = epoch_duration(&epoch_since_last_reward);
 
             // If we started up and the last verification epoch was too recent,
             // we do not want to re-verify.
-            let mut sleep_duration = if verify_epoch_duration >= verification_period
+            let mut sleep_duration = if epoch_since_last_verify_duration >= verification_period
                 // We always want to verify before a reward 
-                || reward_epoch_duration >= reward_period
+                || epoch_since_last_reward_duration >= reward_period
             {
-                tracing::info!("Verifying epoch: {:?}", verify_epoch);
+                tracing::info!("Verifying epoch: {:?}", epoch_since_last_verify);
                 // Attempt to verify the current epoch:
-                self.verify_epoch(verify_epoch).await?;
+                self.verify_epoch(epoch_since_last_verify).await?;
                 verification_period
             } else {
-                verification_period - verify_epoch_duration
+                verification_period - epoch_since_last_verify_duration
             };
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
-            if reward_epoch_duration >= reward_period {
-                tracing::info!("Rewarding epoch: {:?}", reward_epoch);
-                self.reward_epoch(reward_epoch).await?
-            } else if reward_epoch_duration + sleep_duration >= reward_period {
+            if epoch_since_last_reward_duration >= reward_period {
+                tracing::info!("Rewarding epoch: {:?}", epoch_since_last_reward);
+                self.reward_epoch(epoch_since_last_reward).await?
+            } else if epoch_since_last_reward_duration + sleep_duration >= reward_period {
                 // If the next epoch is a reward period, cut off sleep duration.
                 // This ensures that verifying will always end up being aligned with
                 // the desired reward period.
-                sleep_duration = reward_period - reward_epoch_duration;
+                sleep_duration = reward_period - epoch_since_last_reward_duration;
             }
 
             tracing::info!("Sleeping...");
@@ -178,11 +178,11 @@ impl Verifier {
         SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await
     }
 
-    pub fn get_verify_epoch(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
+    pub fn epoch_since_last_verify(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
         Utc.timestamp(*self.last_verified_end_time.value(), 0)..now
     }
 
-    pub fn get_reward_epoch(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
+    pub fn epoch_since_last_reward(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
         Utc.timestamp(*self.last_rewarded_end_time.value(), 0)..now
     }
 }
