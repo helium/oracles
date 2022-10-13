@@ -1,17 +1,30 @@
 //! Heartbeat storage
 
 use crate::Result;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::heartbeat::CellHeartbeat;
 use file_store::{file_sink, FileStore};
+use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::ops::Range;
 
 use crate::cell_type::CellType;
 
 pub struct Shares {
-    pub invalid_shares: Vec<proto::Share>,
-    pub valid_shares: Vec<proto::Share>,
+    pub invalid_shares: Vec<Share>,
+    pub valid_shares: Vec<Share>,
+}
+
+#[derive(Clone)]
+pub struct Share {
+    pub cbsd_id: String,
+    pub pub_key: PublicKey,
+    pub weight: Decimal,
+    pub timestamp: NaiveDateTime,
+    pub cell_type: Option<CellType>,
+    pub validity: proto::ShareValidity,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +33,19 @@ pub enum ValidateHeartbeatsError {
     FileStoreError(#[from] file_store::Error),
     #[error("database error: {0}")]
     DbError(#[from] sqlx::Error),
+}
+
+impl From<Share> for proto::Share {
+    fn from(share: Share) -> Self {
+        Self {
+            timestamp: share.timestamp.timestamp() as u64,
+            pub_key: share.pub_key.to_vec(),
+            weight: crate::bones_to_u64(share.weight),
+            cell_type: share.cell_type.unwrap_or(CellType::Nova436H) as i32,
+            cbsd_id: share.cbsd_id,
+            validity: share.validity as i32,
+        }
+    }
 }
 
 impl Shares {
@@ -39,7 +65,7 @@ impl Shares {
             .iter()
             .map(|ingest_heartbeat| to_share(ingest_heartbeat, epoch))
             .fold(Shares::new(), |mut acc, share| {
-                if share.validity == proto::ShareValidity::Valid as i32 {
+                if share.validity == proto::ShareValidity::Valid {
                     acc.valid_shares.push(share);
                 } else {
                     acc.invalid_shares.push(share);
@@ -65,7 +91,7 @@ impl Shares {
         file_sink::write(
             valid_shares_tx,
             proto::Shares {
-                shares: valid_shares,
+                shares: valid_shares.into_iter().map(proto::Share::from).collect(),
             },
         )
         .await?;
@@ -73,7 +99,7 @@ impl Shares {
         file_sink::write(
             invalid_shares_tx,
             proto::Shares {
-                shares: invalid_shares,
+                shares: invalid_shares.into_iter().map(proto::Share::from).collect(),
             },
         )
         .await?;
@@ -82,23 +108,23 @@ impl Shares {
     }
 }
 
-fn to_share(heartbeat: &CellHeartbeat, epoch: &Range<DateTime<Utc>>) -> proto::Share {
+fn to_share(heartbeat: &CellHeartbeat, epoch: &Range<DateTime<Utc>>) -> Share {
     match validate_heartbeat(&heartbeat, epoch) {
-        Ok(cell_type) => proto::Share {
-            timestamp: heartbeat.timestamp.timestamp() as u64,
-            pub_key: heartbeat.pubkey.to_vec(),
-            weight: crate::bones_to_u64(cell_type.reward_weight()),
-            cell_type: cell_type as i32,
+        Ok(cell_type) => Share {
+            timestamp: heartbeat.timestamp.naive_utc(),
+            pub_key: heartbeat.pubkey,
+            weight: cell_type.reward_weight(),
+            cell_type: Some(cell_type),
             cbsd_id: heartbeat.cbsd_id,
-            validity: proto::ShareValidity::Valid as i32,
+            validity: proto::ShareValidity::Valid,
         },
-        Err(validity) => proto::Share {
+        Err(validity) => Share {
+            timestamp: heartbeat.timestamp.naive_utc(),
             cbsd_id: heartbeat.cbsd_id,
-            timestamp: heartbeat.timestamp.timestamp() as u64,
-            pub_key: heartbeat.pubkey.to_vec(),
-            weight: 0,
-            cell_type: 0,
-            validity: validity as i32,
+            pub_key: heartbeat.pubkey,
+            weight: dec!(0),
+            cell_type: None,
+            validity,
         },
     }
 }
