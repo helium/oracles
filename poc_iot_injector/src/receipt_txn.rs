@@ -24,9 +24,8 @@ pub fn handle_report_msg(
     keypair: &Keypair,
     timestamp: i64,
 ) -> Result<Option<(BlockchainTxnPocReceiptsV2, Vec<u8>, String)>> {
-    // NOTE: This is intentionally not Vec::with_capacity(1) since we _may_ add multi-hop PocPath
-    // in the future
-    let mut path: PocPath = vec![];
+    // Path is always single element, till we decide to change it at some point.
+    let mut path: PocPath = Vec::with_capacity(1);
 
     let LoraValidPocV1 {
         poc_id: _poc_id,
