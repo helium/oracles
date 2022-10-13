@@ -32,7 +32,6 @@ impl VerifierDaemon {
 
         loop {
             let now = Utc::now();
-            // Maybe name these "epoch_since_*" and "epoch_since_*_duration"
             let epoch_since_last_verify = self.verifier.epoch_since_last_verify(now);
             let epoch_since_last_reward = self.verifier.epoch_since_last_reward(now);
             let epoch_since_last_verify_duration = epoch_duration(&epoch_since_last_verify);
