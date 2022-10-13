@@ -77,21 +77,22 @@ impl VerifierDaemon {
     }
 
     pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let transaction = self.pool.begin().await?;
 
         let shares: Shares = self.verifier.verify_epoch(&epoch).await?;
+
+        let mut transaction = self.pool.begin().await?;
 
         // Should we remove the heartbeats that were not new
         // from valid shares
         for share in shares.valid_shares.clone() {
             let heartbeat = Heartbeat::from(share);
-            heartbeat.save(&self.pool).await?;
+            heartbeat.save(&mut transaction).await?;
         }
 
         // Update the last verified end time:
         self.verifier
             .last_verified_end_time
-            .update(&self.pool, epoch.end.timestamp() as i64)
+            .update(&mut transaction, epoch.end.timestamp() as i64)
             .await?;
 
         transaction.commit().await?;
@@ -112,20 +113,20 @@ impl VerifierDaemon {
 
         let rewards = self.verifier.reward_epoch(&epoch, heartbeats).await?;
 
-        let transaction = self.pool.begin().await?;
+        let mut transaction = self.pool.begin().await?;
 
         // Clear the heartbeats database
         // TODO: should the truncation be bound to a given epoch?
         // It's not intended that any heartbeats will exists outside the
         // current epoch, but it might be better to code defensively.
         sqlx::query("TRUNCATE TABLE heartbeats;")
-            .execute(&self.pool)
+            .execute(&mut transaction)
             .await?;
 
         // Update the last rewarded end time:
         self.verifier
             .last_rewarded_end_time
-            .update(&self.pool, epoch.end.timestamp() as i64)
+            .update(&mut transaction, epoch.end.timestamp() as i64)
             .await?;
 
         transaction.commit().await?;

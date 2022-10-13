@@ -58,7 +58,7 @@ struct HeartbeatSaveResult {
 impl Heartbeat {
     pub async fn save(
         &self,
-        exec: impl sqlx::Executor<'_, Database = sqlx::Postgres> + Copy,
+        exec: impl sqlx::PgExecutor<'_>,
     ) -> Result<bool> {
         sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
