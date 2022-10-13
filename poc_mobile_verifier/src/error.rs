@@ -36,6 +36,8 @@ pub enum Error {
     OutOfRangeError,
     #[error("heartbeat validation error")]
     HeartbeatValidationError(#[from] crate::shares::ValidateHeartbeatsError),
+    #[error("oneshot recv error")]
+    OneshotRecvError(#[from] tokio::sync::oneshot::error::RecvError),
 }
 
 #[derive(Error, Debug)]

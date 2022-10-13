@@ -2,8 +2,8 @@
 
 use crate::Result;
 use chrono::{DateTime, Utc};
-use file_store::{file_sink, FileStore};
 use file_store::heartbeat::CellHeartbeat;
+use file_store::{file_sink, FileStore};
 use helium_proto::services::poc_mobile as proto;
 use std::ops::Range;
 
@@ -34,7 +34,6 @@ impl Shares {
         file_store: &FileStore,
         epoch: &Range<DateTime<Utc>>,
     ) -> Result<Self> {
-
         let shares = crate::ingest::new_heartbeat_reports(file_store, epoch)
             .await?
             .iter()

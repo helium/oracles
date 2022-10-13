@@ -10,6 +10,7 @@ use helium_proto::services::{follower, Channel};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::ops::Range;
+use tokio::sync::oneshot;
 
 mod proto {
     pub use helium_proto::services::poc_mobile::*;
@@ -60,7 +61,10 @@ impl SubnetworkRewards {
         })
     }
 
-    pub async fn write(self, subnet_rewards_tx: &file_sink::MessageSender) -> Result {
+    pub async fn write(
+        self,
+        subnet_rewards_tx: &file_sink::MessageSender,
+    ) -> file_store::Result<oneshot::Receiver<file_store::Result>> {
         file_sink::write(
             subnet_rewards_tx,
             proto::SubnetworkRewards {
@@ -69,8 +73,6 @@ impl SubnetworkRewards {
                 rewards: self.rewards,
             },
         )
-        .await?;
-
-        Ok(())
+        .await
     }
 }

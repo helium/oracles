@@ -1,7 +1,7 @@
 use crate::Result;
 use chrono::{DateTime, Utc};
 use file_store::{
-    heartbeat::{CellHeartbeatIngestReport, CellHeartbeat},
+    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
     traits::MsgDecode,
     FileStore, FileType,
 };

@@ -77,10 +77,7 @@ impl VerifierDaemon {
         }
     }
 
-    pub async fn verify_epoch(
-        &mut self,
-        epoch: Range<DateTime<Utc>>,
-    ) -> Result {
+    pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
         let transaction = self.pool.begin().await?;
 
         let shares = self.verifier.verify_epoch(&epoch).await?;
@@ -93,23 +90,26 @@ impl VerifierDaemon {
         }
 
         // Update the last verified end time:
-        self.verifier.last_verified_end_time
+        self.verifier
+            .last_verified_end_time
             .update(&self.pool, epoch.end.timestamp() as i64)
             .await?;
 
         transaction.commit().await?;
 
-        shares.write(&self.valid_shares_tx, &self.invalid_shares_tx).await?;
+        shares
+            .write(&self.valid_shares_tx, &self.invalid_shares_tx)
+            .await?;
 
         Ok(())
     }
 
-    pub async fn reward_epoch(
-        &mut self,
-        epoch: Range<DateTime<Utc>>,
-    ) -> Result {
-        let heartbeats = Heartbeats::validated(&self.pool, Utc.timestamp(*self.verifier.last_rewarded_end_time.value(), 0))
-                .await?;
+    pub async fn reward_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
+        let heartbeats = Heartbeats::validated(
+            &self.pool,
+            Utc.timestamp(*self.verifier.last_rewarded_end_time.value(), 0),
+        )
+        .await?;
 
         let rewards = self.verifier.reward_epoch(&epoch, heartbeats).await?;
 
@@ -124,13 +124,18 @@ impl VerifierDaemon {
             .await?;
 
         // Update the last rewarded end time:
-        self.verifier.last_rewarded_end_time
+        self.verifier
+            .last_rewarded_end_time
             .update(&self.pool, epoch.end.timestamp() as i64)
             .await?;
 
         transaction.commit().await?;
 
-        rewards.write(&self.subnet_rewards_tx).await?;
+        rewards
+            .write(&self.subnet_rewards_tx)
+            .await?
+            // Await the returned one shot to ensure that we wrote the file
+            .await??;
 
         Ok(())
     }
@@ -161,11 +166,7 @@ impl Verifier {
         })
     }
 
-    pub async fn verify_epoch(
-        &mut self,
-        epoch: &Range<DateTime<Utc>>,
-    ) -> Result<Shares> {
-
+    pub async fn verify_epoch(&mut self, epoch: &Range<DateTime<Utc>>) -> Result<Shares> {
         let shares = Shares::validate_heartbeats(&self.file_store, &epoch).await?;
 
         Ok(shares)
@@ -176,7 +177,6 @@ impl Verifier {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
     ) -> Result<SubnetworkRewards> {
-
         let rewards =
             SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await?;
 

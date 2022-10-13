@@ -150,21 +150,7 @@ impl FileStore {
     where
         K: Into<String>,
     {
-        Self::_get(self.client.clone(), self.bucket.clone(), key).await
-    }
-
-    async fn _get<K>(client: Client, bucket: String, key: K) -> Result<ByteStream>
-    where
-        K: Into<String>,
-    {
-        client
-            .get_object()
-            .bucket(bucket)
-            .key(key)
-            .send()
-            .map_ok(|output| output.body)
-            .map_err(Error::s3_error)
-            .await
+        get_byte_stream(self.client.clone(), self.bucket.clone(), key).await
     }
 
     /// Stream a series of ordered items from the store from remote files with
@@ -173,7 +159,7 @@ impl FileStore {
         let bucket = self.bucket.clone();
         let client = self.client.clone();
         infos
-            .map_ok(move |info| Self::_get(client.clone(), bucket.clone(), info.key))
+            .map_ok(move |info| get_byte_stream(client.clone(), bucket.clone(), info.key))
             .try_buffered(2)
             .flat_map(|stream| match stream {
                 Ok(stream) => stream_source(stream),
@@ -190,7 +176,7 @@ impl FileStore {
         let bucket = self.bucket.clone();
         let client = self.client.clone();
         infos
-            .map_ok(move |info| Self::_get(client.clone(), bucket.clone(), info.key))
+            .map_ok(move |info| get_byte_stream(client.clone(), bucket.clone(), info.key))
             .try_buffer_unordered(workers)
             .flat_map(|stream| match stream {
                 Ok(stream) => stream_source(stream),
@@ -214,4 +200,18 @@ fn stream_source(stream: ByteStream) -> BytesMutStream {
         )
         .map_err(Error::from),
     )
+}
+
+async fn get_byte_stream<K>(client: Client, bucket: String, key: K) -> Result<ByteStream>
+where
+    K: Into<String>,
+{
+    client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .map_ok(|output| output.body)
+        .map_err(Error::s3_error)
+        .await
 }
