@@ -147,6 +147,7 @@ impl Runner {
             )?;
             let beacon = &beacon_report.report;
             let beaconer_pub_key = &beacon.pub_key;
+            let beacon_received_ts = beacon_report.received_timestamp;
 
             let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
             let witness_len = db_witnesses.len();
@@ -169,7 +170,6 @@ impl Runner {
             // any irregularily timed beacons will be rejected
             match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
                 Some(last_beacon) => {
-                    let beacon_received_ts = beacon_report.received_timestamp;
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
                     if interval_since_last_beacon.num_minutes() < BEACON_INTERVAL {
                         tracing::debug!("beacon verification failed, reason: IrregularInterval");
@@ -257,7 +257,7 @@ impl Runner {
                     };
 
                     let valid_beacon_report = LoraValidBeaconReport {
-                        received_timestamp: beacon_report.received_timestamp,
+                        received_timestamp: beacon_received_ts,
                         location: beacon_info.location,
                         hex_scale: beacon_verify_result.hex_scale.unwrap(),
                         report: beacon.clone(),
@@ -341,6 +341,7 @@ impl Runner {
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
         let beacon_id = &beacon.data;
+        let received_timestamp = valid_beacon_report.received_timestamp;
         let valid_poc: LoraValidPoc = LoraValidPoc {
             poc_id: beacon_id.clone(),
             beacon_report: valid_beacon_report,
@@ -357,8 +358,12 @@ impl Runner {
         let beaconer_id_hash = Sha256::digest(&beaconer_id).to_vec();
         Report::update_status(&self.pool, &beaconer_id_hash, LoraStatus::Valid, Utc::now()).await?;
         // update last beacon time for the beaconer
-        LastBeacon::update_last_timestamp(&self.pool, &beacon_public_key.to_vec(), Utc::now())
-            .await?;
+        LastBeacon::update_last_timestamp(
+            &self.pool,
+            &beacon_public_key.to_vec(),
+            received_timestamp,
+        )
+        .await?;
         // write out any invalid witnesses
         for invalid_witness_report in witnesses_result.invalid_witnesses {
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
