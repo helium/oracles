@@ -1,12 +1,10 @@
 //! Heartbeat storage
 
-use crate::{Error, Result};
+use crate::{Error, Result, shares::Share};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKey;
-use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
-use sqlx::{Postgres, Transaction};
 use std::collections::HashMap;
 
 #[derive(sqlx::FromRow)]
@@ -81,8 +79,8 @@ impl Heartbeat {
     }
 }
 
-impl From<proto::Share> for Heartbeat {
-    fn from(share: proto::Share) -> Self {
+impl From<Share> for Heartbeat {
+    fn from(share: Share) -> Self {
         Self {
             id: share.pub_key,
             weight: share.weight,

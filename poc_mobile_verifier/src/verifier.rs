@@ -80,7 +80,7 @@ impl VerifierDaemon {
     pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
         let transaction = self.pool.begin().await?;
 
-        let shares = self.verifier.verify_epoch(&epoch).await?;
+        let shares: Shares = self.verifier.verify_epoch(&epoch).await?;
 
         // Should we remove the heartbeats that were not new
         // from valid shares
@@ -167,9 +167,7 @@ impl Verifier {
     }
 
     pub async fn verify_epoch(&mut self, epoch: &Range<DateTime<Utc>>) -> Result<Shares> {
-        let shares = Shares::validate_heartbeats(&self.file_store, &epoch).await?;
-
-        Ok(shares)
+        Shares::validate_heartbeats(&self.file_store, &epoch).await
     }
 
     pub async fn reward_epoch(
@@ -177,10 +175,7 @@ impl Verifier {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
     ) -> Result<SubnetworkRewards> {
-        let rewards =
-            SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await?;
-
-        Ok(rewards)
+        SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await
     }
 
     pub fn get_verify_epoch(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
