@@ -108,8 +108,6 @@ impl Cmd {
 
         tracing::info!("Shutting down verifier server");
 
-        // run_server(pool, shutdown_listener).await?;
-
         Ok(())
     }
 }
