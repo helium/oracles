@@ -83,10 +83,9 @@ impl Cmd {
             env_var("VERIFICATIONS_PER_PERIOD", DEFAULT_VERIFICATIONS_PER_PERIOD)?;
         let file_store = FileStore::from_env_with_prefix("INPUT").await?;
 
-        let verifier = Verifier::new(&pool, file_store, follower).await?;
+        let verifier = Verifier::new(pool, file_store, follower).await?;
 
         let verifier_daemon = VerifierDaemon {
-            pool,
             valid_shares_tx,
             invalid_shares_tx,
             subnet_rewards_tx,

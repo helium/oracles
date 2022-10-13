@@ -14,7 +14,6 @@ use sqlx::{Pool, Postgres};
 use tokio::time::sleep;
 
 pub struct VerifierDaemon {
-    pub pool: Pool<Postgres>,
     pub valid_shares_tx: file_sink::MessageSender,
     pub invalid_shares_tx: file_sink::MessageSender,
     pub subnet_rewards_tx: file_sink::MessageSender,
@@ -48,7 +47,6 @@ impl VerifierDaemon {
                 // Attempt to verify the current epoch:
                 self.verifier
                     .verify_epoch(
-                        &self.pool,
                         verify_epoch,
                         &self.valid_shares_tx,
                         &self.invalid_shares_tx,
@@ -64,7 +62,7 @@ impl VerifierDaemon {
             if reward_epoch_duration >= reward_period {
                 tracing::info!("Rewarding epoch: {:?}", reward_epoch);
                 self.verifier
-                    .reward_epoch(&self.pool, reward_epoch, &self.subnet_rewards_tx)
+                    .reward_epoch(reward_epoch, &self.subnet_rewards_tx)
                     .await?
             } else if reward_epoch_duration + sleep_duration >= reward_period {
                 // If the next epoch is a reward period, cut off sleep duration.
@@ -88,6 +86,7 @@ impl VerifierDaemon {
 }
 
 pub struct Verifier {
+    pub pool: Pool<Postgres>,
     pub file_store: FileStore,
     pub follower: follower::Client<Channel>,
     pub last_verified_end_time: MetaValue<i64>,
@@ -96,15 +95,16 @@ pub struct Verifier {
 
 impl Verifier {
     pub async fn new(
-        exec: impl sqlx::Executor<'_, Database = sqlx::Postgres> + Copy,
+        pool: Pool<Postgres>,
         file_store: FileStore,
         follower: follower::Client<Channel>,
     ) -> Result<Self> {
         let last_verified_end_time =
-            MetaValue::<i64>::fetch_or_insert_with(exec, "last_verified_end_time", || 0).await?;
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", || 0).await?;
         let last_rewarded_end_time =
-            MetaValue::<i64>::fetch_or_insert_with(exec, "last_rewarded_end_time", || 0).await?;
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_rewarded_end_time", || 0).await?;
         Ok(Self {
+            pool,
             file_store,
             follower,
             last_verified_end_time,
@@ -114,25 +114,24 @@ impl Verifier {
 
     pub async fn verify_epoch(
         &mut self,
-        pool: &Pool<Postgres>,
         epoch: Range<DateTime<Utc>>,
         valid_shares_tx: &file_sink::MessageSender,
         invalid_shares_tx: &file_sink::MessageSender,
     ) -> Result {
-        let shares = Shares::validate_heartbeats(pool, &self.file_store, &epoch).await?;
+        let shares = Shares::validate_heartbeats(&self.pool, &self.file_store, &epoch).await?;
 
-        let transaction = pool.begin().await?;
+        let transaction = self.pool.begin().await?;
 
         // Should we remove the heartbeats that were not new
         // from valid shares
         for share in shares.valid_shares.clone() {
             let heartbeat = Heartbeat::from(share);
-            heartbeat.save(pool).await?;
+            heartbeat.save(&self.pool).await?;
         }
 
         // Update the last verified end time:
         self.last_verified_end_time
-            .update(pool, epoch.end.timestamp() as i64)
+            .update(&self.pool, epoch.end.timestamp() as i64)
             .await?;
 
         transaction.commit().await?;
@@ -144,30 +143,29 @@ impl Verifier {
 
     pub async fn reward_epoch(
         &mut self,
-        pool: &Pool<Postgres>,
         epoch: Range<DateTime<Utc>>,
         subnet_rewards_tx: &file_sink::MessageSender,
     ) -> Result {
         let heartbeats =
-            Heartbeats::validated(pool, Utc.timestamp(*self.last_rewarded_end_time.value(), 0))
+            Heartbeats::validated(&self.pool, Utc.timestamp(*self.last_rewarded_end_time.value(), 0))
                 .await?;
 
         let rewards =
             SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await?;
 
-        let transaction = pool.begin().await?;
+        let transaction = self.pool.begin().await?;
 
         // Clear the heartbeats database
         // TODO: should the truncation be bound to a given epoch?
         // It's not intended that any heartbeats will exists outside the
         // current epoch, but it might be better to code defensively.
         sqlx::query("TRUNCATE TABLE heartbeats;")
-            .execute(pool)
+            .execute(&self.pool)
             .await?;
 
         // Update the last rewarded end time:
         self.last_rewarded_end_time
-            .update(pool, epoch.end.timestamp() as i64)
+            .update(&self.pool, epoch.end.timestamp() as i64)
             .await?;
 
         transaction.commit().await?;
