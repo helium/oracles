@@ -41,7 +41,7 @@ impl Cmd {
                     txn: Some(Txn::PocReceiptsV2(txn)),
                 };
 
-                println!("txn_bin: {:?}", tx.encode_to_vec());
+                tracing::debug!("txn_bin: {:?}", tx.encode_to_vec());
             }
         }
         Ok(())
