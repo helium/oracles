@@ -77,7 +77,7 @@ mod test {
         txn.reward_server_signature = sig.clone();
 
         // Check that we can verify this signature
-        assert!(txn.verify(&kp.public_key(), &sig).is_ok());
+        assert!(txn.verify(kp.public_key(), &sig).is_ok());
 
         let txn_hash = txn.hash().expect("unable to hash");
         let txn_hash_b64url = txn_hash.to_b64_url().expect("unable to b64url enc");

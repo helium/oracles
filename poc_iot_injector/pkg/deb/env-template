@@ -1,6 +1,7 @@
 RUST_LOG=info
-API_SOCKET_ADDR=0.0.0.0:8080
-BUCKET=examplenet-poc-iot-injector
 METRICS_SCRAPE_ENDPOINT=127.0.0.1:19000
-ENTROPY_STORE=/tmp/
-ENTROPY_URL=https://quicknode.url.pro:443/token
+DATABASE_URL=db_url
+FOLLOWER_URI=http://127.0.0.1:8080
+BUCKET=examplenet-pociot-verified
+POC_ORACLE_KEY=/tmp/poc_oracle_key
+LAST_POC_SUBMISSION_TS=0000000000

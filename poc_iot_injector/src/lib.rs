@@ -1,22 +1,18 @@
+pub mod cli;
 mod error;
-pub mod follower;
 pub mod keypair;
-pub mod public_key;
+pub mod receipt_txn;
 pub mod server;
+pub mod txn_service;
 
 pub use error::{Error, Result};
-pub use public_key::PublicKey;
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
-pub fn env_var<T>(key: &str, default: T) -> Result<T>
-where
-    T: std::str::FromStr,
-    <T as std::str::FromStr>::Err: std::fmt::Debug,
-{
-    match dotenv::var(key) {
-        Ok(v) => v
-            .parse::<T>()
-            .map_err(|_err| Error::from(std::io::Error::from(std::io::ErrorKind::InvalidInput))),
-        Err(dotenv::Error::EnvVar(std::env::VarError::NotPresent)) => Ok(default),
-        Err(err) => Err(Error::from(err)),
-    }
+pub async fn mk_db_pool(size: u32) -> Result<Pool<Postgres>> {
+    let db_connection_str = std::env::var("DATABASE_URL")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(size)
+        .connect(&db_connection_str)
+        .await?;
+    Ok(pool)
 }
