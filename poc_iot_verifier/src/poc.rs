@@ -341,6 +341,7 @@ impl Poc {
         let beaconer_loc = beaconer_info.location.unwrap();
         let witness_loc = witness_info.location.unwrap();
         let witness_distance = calc_distance(beaconer_loc, witness_loc).unwrap();
+        tracing::debug!("witness distance: {:?}", witness_distance);
         if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
@@ -364,17 +365,17 @@ impl Poc {
             witness.signal,
             min_rcv_signal
         );
-        if witness.signal as f64 > min_rcv_signal {
+        if witness.signal < min_rcv_signal as i32 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::BadRssi
             );
-            // let resp = VerifyWitnessResult {
-            //     result: VerificationStatus::Invalid,
-            //     invalid_reason: Some(InvalidReason::BadRssi),
-            //     gateway_info: Some(witness_info),
-            // };
-            // return Ok(resp);
+            let resp = VerifyWitnessResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::BadRssi),
+                gateway_info: Some(witness_info),
+            };
+            return Ok(resp);
         }
 
         // check witness is permitted to participate in POC
