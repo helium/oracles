@@ -11,6 +11,7 @@ use helium_proto::{
 use rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 
 // TODO: These should ideally be coming in from some configuration service
 const WITNESS_REDUNDANCY: u32 = 4;
@@ -21,7 +22,7 @@ type PocPath = Vec<BlockchainPocPathElementV1>;
 
 pub fn handle_report_msg(
     msg: prost::bytes::BytesMut,
-    keypair: &Keypair,
+    keypair: Arc<Keypair>,
     timestamp: i64,
 ) -> Result<Option<(BlockchainTxnPocReceiptsV2, Vec<u8>, String)>> {
     // Path is always single element, till we decide to change it at some point.
@@ -43,7 +44,7 @@ pub fn handle_report_msg(
 
         path.push(path_element);
 
-        Ok(Some(construct_txn(path, timestamp, keypair)?))
+        Ok(Some(construct_txn(path, timestamp, &keypair)?))
     } else {
         Ok(None)
     }
