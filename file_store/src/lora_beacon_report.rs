@@ -37,7 +37,7 @@ impl LoraBeaconIngestReport {
         let mut public_key = self.report.pub_key.to_vec();
         id.append(&mut self.received_timestamp.to_string().as_bytes().to_vec());
         id.append(&mut public_key);
-        return (Sha256::digest(&id).to_vec());
+        Sha256::digest(&id).to_vec()
     }
 }
 
@@ -47,7 +47,7 @@ impl LoraBeaconReport {
         let mut public_key = self.pub_key.to_vec();
         id.append(&mut received_ts.to_string().as_bytes().to_vec());
         id.append(&mut public_key);
-        return (Sha256::digest(&id).to_vec());
+        Sha256::digest(&id).to_vec()
     }
 }
 

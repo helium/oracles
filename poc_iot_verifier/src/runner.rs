@@ -170,7 +170,11 @@ impl Runner {
                 Some(last_beacon) => {
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
                     if interval_since_last_beacon.num_seconds() < BEACON_INTERVAL {
-                        tracing::debug!("beacon verification failed, reason: IrregularInterval");
+                        tracing::debug!(
+                            "beacon verification failed, reason:
+                            IrregularInterval. Seconds since last beacon {:?}",
+                            interval_since_last_beacon.num_seconds()
+                        );
                         self.handle_invalid_poc(
                             &beacon_report,
                             witnesses,
