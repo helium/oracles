@@ -265,6 +265,20 @@ impl Poc {
         //     staking_mode: GatewayStakingMode::Full as i32,
         // };
 
+        // check the beaconer is not self witnessing
+        if witness_report.report.pub_key == self.beacon_report.report.pub_key {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}",
+                InvalidReason::SelfWitness
+            );
+            let resp = VerifyWitnessResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::SelfWitness),
+                gateway_info: Some(witness_info),
+            };
+            return Ok(resp);
+        }
+
         // if witness report received timestamp is outside of entopy start/end then reject the poc
         let witness_received_time = witness_report.received_timestamp;
         if witness_received_time < self.entropy_start || witness_received_time > self.entropy_end {
