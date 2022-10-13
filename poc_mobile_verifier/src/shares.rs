@@ -80,8 +80,7 @@ impl Shares {
         self,
         valid_shares_tx: &file_sink::MessageSender,
         invalid_shares_tx: &file_sink::MessageSender,
-    ) -> Result<()> {
-        // Validate the heartbeats in the current epoch
+    ) -> Result {
         let Shares {
             invalid_shares,
             valid_shares,
