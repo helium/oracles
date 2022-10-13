@@ -4,13 +4,14 @@ use crate::{
     env_var,
     error::{Error, Result},
     heartbeats::Heartbeats,
+    shares::Shares,
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
-use helium_proto::services::poc_mobile::Shares;
+use helium_proto::services::poc_mobile as proto;
 use helium_proto::services::{follower, Channel, Endpoint, Uri};
 use sqlx::{Pool, Postgres, Transaction};
 use tokio::time::sleep;
@@ -32,9 +33,9 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
     let store_base_path = std::path::Path::new(&store_path);
 
     // valid shares
-    let (_shares_tx, shares_rx) = file_sink::message_channel(50);
+    let (valid_shares_tx, valid_shares_rx) = file_sink::message_channel(50);
     let mut shares_sink =
-        file_sink::FileSinkBuilder::new(FileType::Shares, store_base_path, shares_rx)
+        file_sink::FileSinkBuilder::new(FileType::Shares, store_base_path, valid_shares_rx)
             .deposits(Some(file_upload_tx.clone()))
             .create()
             .await?;
@@ -84,18 +85,16 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
             default_last_rewarded_end_time
         })
         .await?;
-    let heartbeats =
-        Heartbeats::new(&pool, Utc.timestamp(*last_rewarded_end_time.value(), 0)).await?;
     let file_store = FileStore::from_env_with_prefix("INPUT").await?;
 
     let verifier = Verifier {
         pool,
         follower,
+        valid_shares_tx,
         invalid_shares_tx,
         subnet_rewards_tx,
         reward_period_hours,
         verifications_per_period,
-        heartbeats,
         file_store,
         last_verified_end_time,
         last_rewarded_end_time,
@@ -118,11 +117,11 @@ pub async fn run_server(pool: Pool<Postgres>, shutdown: triggered::Listener) -> 
 struct Verifier {
     pub pool: Pool<Postgres>,
     pub follower: follower::Client<Channel>,
+    pub valid_shares_tx: file_sink::MessageSender,
     pub invalid_shares_tx: file_sink::MessageSender,
     pub subnet_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
-    pub heartbeats: Heartbeats,
     pub file_store: FileStore,
     pub last_verified_end_time: MetaValue<i64>,
     pub last_rewarded_end_time: MetaValue<i64>,
@@ -138,6 +137,7 @@ impl Verifier {
         loop {
             let now = Utc::now();
             let verify_epoch = self.get_verify_epoch(now);
+            let mut transaction = self.pool.begin().await?;
 
             // If we started up and the last verification epoch was too recent,
             // we do not want to re-verify.
@@ -145,7 +145,7 @@ impl Verifier {
             let sleep_duration = if verify_epoch_duration >= verification_period {
                 tracing::info!("Verifying epoch: {:?}", verify_epoch);
                 // Attempt to verify the current epoch:
-                self.verify_epoch(verify_epoch).await?;
+                self.verify_epoch(&mut transaction, verify_epoch).await?;
                 verification_period
             } else {
                 verification_period - verify_epoch_duration
@@ -156,8 +156,10 @@ impl Verifier {
             let reward_epoch = self.get_reward_epoch(now);
             if epoch_duration(&reward_epoch) >= reward_period {
                 tracing::info!("Rewarding epoch: {:?}", reward_epoch);
-                self.reward_shares(reward_epoch).await?;
+                self.reward_epoch(&mut transaction, reward_epoch).await?;
             }
+
+            transaction.commit().await?;
 
             // TODO: Address drift in some way?
             tracing::info!("Sleeping...");
@@ -173,43 +175,37 @@ impl Verifier {
         }
     }
 
-    async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let mut transaction = self.pool.begin().await?;
-        let res = self.try_verify_epoch(&mut transaction, epoch).await;
-        if res.is_ok() {
-            transaction.commit().await?;
-        } else {
-            transaction.rollback().await?;
-        }
-        res
-    }
-
     // TODO: Return invalid shares
-    async fn try_verify_epoch(
+    async fn verify_epoch(
         &mut self,
         exec: &mut Transaction<'_, Postgres>,
         epoch: Range<DateTime<Utc>>,
     ) -> Result {
         // Validate the heartbeats in the current epoch
-        let invalid_shares = self
-            .heartbeats
-            .validate_heartbeats(&epoch, &self.file_store)
-            .await?;
+        let Shares {
+            invalid_shares,
+            valid_shares,
+        } = Shares::validate_heartbeats(exec, &self.file_store, &epoch).await?;
 
-        // Push the results to the database
-        self.heartbeats.update_db(exec).await?;
-
-        // TODO: Add speedtests
+        // TODO: Validate speedtests
 
         // Update the last verified end time:
         self.last_verified_end_time
             .update(exec, epoch.end.timestamp() as i64)
             .await?;
 
-        // Write out invalid shares:
+        // Write out shares:
+        file_sink::write(
+            &self.valid_shares_tx,
+            proto::Shares {
+                shares: valid_shares,
+            },
+        )
+        .await?;
+
         file_sink::write(
             &self.invalid_shares_tx,
-            Shares {
+            proto::Shares {
                 shares: invalid_shares,
             },
         )
@@ -218,29 +214,21 @@ impl Verifier {
         Ok(())
     }
 
-    async fn reward_shares(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let mut transaction = self.pool.begin().await?;
-        let res = self.try_reward_shares(&mut transaction, epoch).await;
-        if res.is_ok() {
-            transaction.commit().await?;
-        } else {
-            transaction.rollback().await?;
-        }
-        res
-    }
-
-    async fn try_reward_shares(
+    async fn reward_epoch(
         &mut self,
         exec: &mut Transaction<'_, Postgres>,
         epoch: Range<DateTime<Utc>>,
     ) -> Result {
-        SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &self.heartbeats)
+        let mut heartbeats =
+            Heartbeats::new(exec, Utc.timestamp(*self.last_rewarded_end_time.value(), 0)).await?;
+
+        SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats)
             .await?
             .write(&self.subnet_rewards_tx)
             .await?;
 
         // Clear the heartbeats database
-        self.heartbeats.clear(exec).await?;
+        heartbeats.clear(exec).await?;
 
         // Update the last rewarded end time:
         self.last_rewarded_end_time
