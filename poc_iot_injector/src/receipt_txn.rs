@@ -91,10 +91,9 @@ fn construct_poc_witnesses(
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(num_witnesses);
     for witness_report in witness_reports {
         let LoraValidWitnessReportV1 {
-            received_timestamp: _witness_received_timestamp,
-            location: _witness_location,
             hex_scale: witness_hex_scale,
             report: witness_report_req,
+            ..
         } = witness_report;
 
         if let Some(witness_report_req) = witness_report_req {
@@ -102,12 +101,12 @@ fn construct_poc_witnesses(
                 pub_key: witness_pub_key,
                 data: witness_packet,
                 timestamp: witness_timestamp,
-                ts_res: _witness_ts_res,
                 signal: witness_signal,
                 snr: witness_snr,
                 frequency: witness_frequency,
                 datarate: witness_datarate,
                 signature: witness_signature,
+                ..
             } = witness_report_req;
 
             let witness_hex_scale =
@@ -148,17 +147,14 @@ fn construct_poc_receipt(
 ) -> Result<Option<BlockchainPocReceiptV1>> {
     if let Some(beacon_report) = beacon_report {
         let LoraValidBeaconReportV1 {
-            received_timestamp: _beacon_received_ts,
-            location: _beacon_location,
             hex_scale: beacon_hex_scale,
             report: beacon_report_req,
+            ..
         } = beacon_report;
 
         if let Some(beacon_report_req) = beacon_report_req {
             let LoraBeaconReportReqV1 {
                 pub_key: beacon_pub_key,
-                local_entropy: _beacon_local_entropy,
-                remote_entropy: _beacon_remote_entropy,
                 data: beacon_data,
                 frequency: beacon_frequency,
                 channel: beacon_channel,
@@ -166,6 +162,7 @@ fn construct_poc_receipt(
                 tx_power: beacon_tx_power,
                 timestamp: beacon_timestamp,
                 signature: beacon_signature,
+                ..
             } = beacon_report_req;
 
             let beacon_hex_scale =
