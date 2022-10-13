@@ -7,11 +7,10 @@ mod heartbeats;
 mod shares;
 
 pub mod cli;
-pub mod server;
 pub mod subnetwork_rewards;
+pub mod verifier;
 
 pub use error::{Error, Result};
-pub use server::run_server;
 
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -35,9 +34,3 @@ fn bones_to_u64(decimal: Decimal) -> u64 {
     // One bone is one million mobiles
     (decimal * dec!(1_000_000)).to_u64().unwrap()
 }
-
-/*
-fn cell_share_to_u64(decimal: Decimal) -> u64 {
-    (decimal * dec!(10)).to_u64().unwrap()
-}
-*/

@@ -1,17 +1,12 @@
-use crate::{
-    env_var,
-    heartbeats::Heartbeats,
-    server::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT},
-    shares::Shares,
-    subnetwork_rewards::SubnetworkRewards,
-    Result,
-};
+use crate::{env_var, verifier::Verifier, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
+
+use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]
@@ -20,36 +15,61 @@ pub struct Cmd {
     after: NaiveDateTime,
     #[clap(long)]
     before: NaiveDateTime,
+    #[clap(long)]
+    periods: i32,
 }
 
 impl Cmd {
     pub async fn run(self) -> Result {
-        let Self { after, before } = self;
+        let Self {
+            after,
+            before,
+            periods,
+        } = self;
+
+        let after = DateTime::from_utc(after, Utc);
+        let before = DateTime::from_utc(before, Utc);
 
         tracing::info!("Verifying shares from the following time range: {after} to {before}");
 
-        let input_store = FileStore::from_env().await?;
+        let file_store = FileStore::from_env().await?;
 
-        let follower_service = follower::Client::new(
+        let follower = follower::Client::new(
             Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
                 .connect_timeout(CONNECT_TIMEOUT)
                 .timeout(RPC_TIMEOUT)
                 .connect_lazy(),
         );
 
-        let epoch = DateTime::from_utc(after, Utc)..DateTime::from_utc(before, Utc);
-
         let db_connection_str = dotenv::var("DATABASE_URL")?;
-
         let pool = PgPoolOptions::new()
             .max_connections(10)
             .connect(&db_connection_str)
             .await?;
+        sqlx::migrate!().run(&pool).await?;
+
+        let mut verifier = Verifier::new(&pool, file_store, follower).await?;
 
         let mut transaction = pool.begin().await?;
-        let _shares = Shares::validate_heartbeats(&mut transaction, &input_store, &epoch).await?;
-        let heartbeats = Heartbeats::new(&mut transaction, epoch.start).await?;
-        let rewards = SubnetworkRewards::from_epoch(follower_service, &epoch, &heartbeats).await?;
+        let reward_period = before - after;
+        let verification_period = reward_period / periods;
+        let mut now = after;
+
+        for period in 0..periods {
+            let verify_epoch = verifier.get_verify_epoch(now);
+            tracing::info!("Verifying epoch {period} of {periods}...");
+            let _ = verifier
+                .verify_epoch(&mut transaction, verify_epoch)
+                .await?;
+            now += verification_period;
+        }
+
+        tracing::info!("Calculating rewards...");
+
+        let rewards = verifier
+            .reward_epoch(&mut transaction, after..before)
+            .await?;
+
         transaction.rollback().await?;
 
         let total_rewards = rewards

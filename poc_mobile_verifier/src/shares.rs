@@ -1,21 +1,21 @@
 //! Heartbeat storage
 
 use chrono::{DateTime, Utc};
+use file_store::{file_sink, FileStore, FileType};
 use file_store::{
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
     traits::MsgDecode,
 };
-use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
-use helium_proto::services::poc_mobile::{Share, ShareValidity};
+use helium_proto::services::poc_mobile as proto;
 use sqlx::{Postgres, Transaction};
 use std::ops::Range;
 
 use crate::cell_type::CellType;
 
 pub struct Shares {
-    pub invalid_shares: Vec<Share>,
-    pub valid_shares: Vec<Share>,
+    pub invalid_shares: Vec<proto::Share>,
+    pub valid_shares: Vec<proto::Share>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -64,17 +64,17 @@ impl Shares {
                     .bind(heartbeat.timestamp.naive_utc())
                     .execute(&mut *exec)
                     .await?;
-                    valid_shares.push(Share {
+                    valid_shares.push(proto::Share {
                         timestamp: heartbeat.timestamp.timestamp() as u64,
                         pub_key: heartbeat.pubkey.to_vec(),
                         weight: crate::bones_to_u64(cell_type.reward_weight()),
                         cell_type: cell_type as i32,
                         cbsd_id: heartbeat.cbsd_id,
-                        validity: ShareValidity::Valid as i32,
+                        validity: proto::ShareValidity::Valid as i32,
                     });
                 }
                 Err(validity) => {
-                    invalid_shares.push(Share {
+                    invalid_shares.push(proto::Share {
                         cbsd_id: heartbeat.cbsd_id,
                         timestamp: heartbeat.timestamp.timestamp() as u64,
                         pub_key: heartbeat.pubkey.to_vec(),
@@ -91,25 +91,56 @@ impl Shares {
             invalid_shares,
         })
     }
+
+    pub async fn write(
+        self,
+        valid_shares_tx: &file_sink::MessageSender,
+        invalid_shares_tx: &file_sink::MessageSender,
+    ) -> Result<(), crate::Error> {
+        // Validate the heartbeats in the current epoch
+        let Shares {
+            invalid_shares,
+            valid_shares,
+        } = self;
+
+        // Write out shares:
+        file_sink::write(
+            valid_shares_tx,
+            proto::Shares {
+                shares: valid_shares,
+            },
+        )
+        .await?;
+
+        file_sink::write(
+            invalid_shares_tx,
+            proto::Shares {
+                shares: invalid_shares,
+            },
+        )
+        .await?;
+
+        Ok(())
+    }
 }
 
 /// Validate a heartbeat in the given epoch.
 fn validate_heartbeat(
     heartbeat: &CellHeartbeat,
     epoch: &Range<DateTime<Utc>>,
-) -> Result<CellType, ShareValidity> {
+) -> Result<CellType, proto::ShareValidity> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.cbsd_id) {
         Some(ty) => ty,
-        _ => return Err(ShareValidity::BadCbsdId),
+        _ => return Err(proto::ShareValidity::BadCbsdId),
     };
 
     if !heartbeat.operation_mode {
         // TODO: Add invalid reason for false operation mode
-        return Err(ShareValidity::HeartbeatOutsideRange);
+        return Err(proto::ShareValidity::HeartbeatOutsideRange);
     }
 
     if !epoch.contains(&heartbeat.timestamp) {
-        return Err(ShareValidity::HeartbeatOutsideRange);
+        return Err(proto::ShareValidity::HeartbeatOutsideRange);
     }
 
     Ok(cell_type)
