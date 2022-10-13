@@ -1,5 +1,5 @@
 use crate::{
-    traits::{MsgDecode, MsgTimestamp},
+    traits::{MsgDecode, MsgTimestamp, TimestampDecode},
     Error, Result,
 };
 use chrono::{DateTime, Utc};
@@ -54,16 +54,28 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
     }
 }
 
+impl MsgTimestamp<Result<DateTime<Utc>>> for CellHeartbeatReqV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp()
+    }
+}
+
 impl TryFrom<CellHeartbeatIngestReportV1> for CellHeartbeatIngestReport {
     type Error = Error;
     fn try_from(v: CellHeartbeatIngestReportV1) -> Result<Self> {
         Ok(Self {
-            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            received_timestamp: v.timestamp()?,
             report: v
                 .report
                 .ok_or_else(|| Error::not_found("ingest heartbeat report"))?
                 .try_into()?,
         })
+    }
+}
+
+impl MsgTimestamp<Result<DateTime<Utc>>> for CellHeartbeatIngestReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.received_timestamp.to_timestamp_millis()
     }
 }
 
@@ -104,6 +116,10 @@ mod tests {
         assert_eq!(
             cellheartbeatreport.received_timestamp,
             Utc.timestamp_millis(now)
+        );
+        assert_eq!(
+            report.timestamp().expect("timestamp"),
+            cellheartbeatreport.received_timestamp
         );
         assert_eq!(cellheartbeatreport.report.cell_id, 123);
     }

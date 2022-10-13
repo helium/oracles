@@ -1,7 +1,7 @@
 use crate::{
     lora_beacon_report::LoraBeaconReport,
     lora_witness_report::LoraWitnessReport,
-    traits::{MsgDecode, MsgTimestamp},
+    traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
     Error, Result,
 };
 use chrono::{DateTime, Utc};
@@ -36,6 +36,30 @@ pub struct LoraValidPoc {
 
 impl MsgDecode for LoraValidPoc {
     type Msg = LoraValidPocV1;
+}
+
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraValidBeaconReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.received_timestamp.to_timestamp_millis()
+    }
+}
+
+impl MsgTimestamp<u64> for LoraValidBeaconReport {
+    fn timestamp(&self) -> u64 {
+        self.received_timestamp.encode_timestamp_millis()
+    }
+}
+
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraValidWitnessReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.received_timestamp.to_timestamp_millis()
+    }
+}
+
+impl MsgTimestamp<u64> for LoraValidWitnessReport {
+    fn timestamp(&self) -> u64 {
+        self.received_timestamp.encode_timestamp_millis()
+    }
 }
 
 impl TryFrom<LoraValidPocV1> for LoraValidPoc {
@@ -74,7 +98,7 @@ impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
     type Error = Error;
     fn try_from(v: LoraValidBeaconReportV1) -> Result<Self> {
         Ok(Self {
-            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            received_timestamp: v.timestamp()?,
             location: v.location.parse().ok(),
             hex_scale: v.hex_scale,
             report: v
@@ -87,10 +111,11 @@ impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
 
 impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
     fn from(v: LoraValidBeaconReport) -> Self {
+        let received_timestamp = v.timestamp();
         let report: LoraBeaconReportReqV1 = v.report.into();
 
         Self {
-            received_timestamp: v.received_timestamp.timestamp_millis() as u64,
+            received_timestamp,
             location: v
                 .location
                 .map(|l| l.to_string())
@@ -104,8 +129,9 @@ impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
 impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
     type Error = Error;
     fn try_from(v: LoraValidWitnessReportV1) -> Result<Self> {
+        let received_timestamp = v.timestamp()?;
         Ok(Self {
-            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            received_timestamp,
             location: v.location.parse().ok(),
             hex_scale: v.hex_scale,
             report: v
@@ -115,13 +141,13 @@ impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
         })
     }
 }
-
 impl From<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
     fn from(v: LoraValidWitnessReport) -> Self {
+        let received_timestamp = v.timestamp();
         let report: LoraWitnessReportReqV1 = v.report.into();
 
         Self {
-            received_timestamp: v.received_timestamp.timestamp_millis() as u64,
+            received_timestamp,
             location: v
                 .location
                 .map(|l| l.to_string())

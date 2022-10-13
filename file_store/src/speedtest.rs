@@ -1,5 +1,5 @@
 use crate::{
-    traits::{MsgDecode, MsgTimestamp},
+    traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
     Error, Result,
 };
 use chrono::{DateTime, Utc};
@@ -34,12 +34,37 @@ impl MsgDecode for CellSpeedtestIngestReport {
     type Msg = SpeedtestIngestReportV1;
 }
 
+impl MsgTimestamp<Result<DateTime<Utc>>> for SpeedtestReqV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp()
+    }
+}
+
+impl MsgTimestamp<u64> for CellSpeedtest {
+    fn timestamp(&self) -> u64 {
+        self.timestamp.encode_timestamp()
+    }
+}
+
+impl MsgTimestamp<Result<DateTime<Utc>>> for SpeedtestIngestReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.received_timestamp.to_timestamp_millis()
+    }
+}
+
+impl MsgTimestamp<u64> for CellSpeedtestIngestReport {
+    fn timestamp(&self) -> u64 {
+        self.received_timestamp.encode_timestamp_millis()
+    }
+}
+
 impl From<CellSpeedtest> for SpeedtestReqV1 {
     fn from(v: CellSpeedtest) -> Self {
+        let timestamp = v.timestamp();
         SpeedtestReqV1 {
             pub_key: v.pubkey.to_vec(),
             serial: v.serial,
-            timestamp: v.timestamp.timestamp() as u64,
+            timestamp,
             upload_speed: v.upload_speed,
             download_speed: v.download_speed,
             latency: v.latency,
@@ -51,10 +76,11 @@ impl From<CellSpeedtest> for SpeedtestReqV1 {
 impl TryFrom<SpeedtestReqV1> for CellSpeedtest {
     type Error = Error;
     fn try_from(value: SpeedtestReqV1) -> Result<Self> {
+        let timestamp = value.timestamp()?;
         Ok(Self {
             pubkey: PublicKey::try_from(value.pub_key)?,
             serial: value.serial,
-            timestamp: value.timestamp.to_timestamp()?,
+            timestamp,
             upload_speed: value.upload_speed,
             download_speed: value.download_speed,
             latency: value.latency,
@@ -66,7 +92,7 @@ impl TryFrom<SpeedtestIngestReportV1> for CellSpeedtestIngestReport {
     type Error = Error;
     fn try_from(v: SpeedtestIngestReportV1) -> Result<Self> {
         Ok(Self {
-            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            received_timestamp: v.timestamp()?,
             report: v
                 .report
                 .ok_or_else(|| Error::not_found("ingest speedtest report"))?

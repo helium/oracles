@@ -405,7 +405,7 @@ impl Poc {
 fn calc_fspl(tx_power: i32, freq: u64, distance: f64, gain: i32) -> Result<f64> {
     let gt = 0.0;
     let gl = gain as f64 / 10.0;
-    let fpsl = (20.0 * (4.0 * PI as f64 * (distance as f64) * (freq as f64) / C).log10()) - gt - gl;
+    let fpsl = (20.0 * (4.0 * PI * distance * (freq as f64) / C).log10()) - gt - gl;
     Ok((tx_power as f64) - fpsl)
 }
 

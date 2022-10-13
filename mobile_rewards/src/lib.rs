@@ -10,7 +10,6 @@ pub mod txn_status;
 mod uuid;
 
 pub use cell_type::CellType;
-use chrono::{DateTime, NaiveDateTime, Utc};
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
 pub use server::Server;
@@ -18,10 +17,6 @@ pub use uuid::Uuid;
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::{env, path::Path};
-
-pub fn datetime_from_epoch(secs: i64) -> DateTime<Utc> {
-    DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(secs, 0), Utc)
-}
 
 pub fn write_json<T: ?Sized + serde::Serialize>(
     fname_prefix: &str,

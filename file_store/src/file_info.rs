@@ -1,4 +1,4 @@
-use crate::{datetime_from_epoch_millis, error::DecodeError, Error, Result};
+use crate::{error::DecodeError, traits::TimestampDecode, Error, Result};
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -25,10 +25,9 @@ impl FromStr for FileInfo {
             .captures(s)
             .ok_or_else(|| DecodeError::file_info("failed to decode file info"))?;
         let file_type = FileType::from_str(&cap[1])?;
-        let timestamp = datetime_from_epoch_millis(
-            u64::from_str(&cap[2])
-                .map_err(|_| DecodeError::file_info("faild to decode timestamp"))?,
-        );
+        let timestamp = u64::from_str(&cap[2])
+            .map_err(|_| DecodeError::file_info("faild to decode timestamp"))?
+            .to_timestamp_millis()?;
         Ok(Self {
             key,
             file_type,
