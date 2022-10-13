@@ -13,7 +13,10 @@ use helium_proto::{
     Message,
 };
 
-use file_store::{traits::MsgTimestamp, FileStore, FileType};
+use file_store::{
+    lora_beacon_report::LoraBeaconIngestReport, lora_witness_report::LoraWitnessIngestReport,
+    traits::MsgTimestamp, FileStore, FileType,
+};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
@@ -149,45 +152,33 @@ impl Loader {
     async fn handle_store_update(&self, file_type: FileType, buf: &[u8]) -> Result {
         match file_type {
             FileType::LoraBeaconIngestReport => {
-                let beacon = LoraBeaconIngestReportV1::decode(buf)?;
-                tracing::debug!("beacon report from ingestor: {:?}", beacon);
-                let event = beacon.report.unwrap();
-                let packet_data = event.data.clone();
-                tracing::debug!("beacon data: {:?}", packet_data);
-                let buf_as_vec = buf.to_vec();
-                let mut public_key = event.pub_key.clone();
-                // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-                let mut id: Vec<u8> = packet_data.clone();
-                id.append(&mut public_key);
-                let id_hash = Sha256::digest(&id).to_vec();
+                let beacon: LoraBeaconIngestReport =
+                    LoraBeaconIngestReportV1::decode(buf)?.try_into()?;
+                tracing::debug!("beacon report from ingestor: {:?}", &beacon);
+                let packet_data = beacon.report.data.clone();
+                tracing::debug!("beacon data: {:?}", &packet_data);
                 Report::insert_into(
                     &self.pool,
-                    id_hash,
+                    beacon.generate_id(),
                     packet_data,
-                    buf_as_vec,
-                    &beacon.received_timestamp.to_timestamp_millis()?,
+                    buf.to_vec(),
+                    &beacon.received_timestamp,
                     ReportType::Beacon,
                 )
                 .await
             }
             FileType::LoraWitnessIngestReport => {
-                let witness = LoraWitnessIngestReportV1::decode(buf)?;
-                tracing::debug!("witness report from ingestor: {:?}", witness);
-                let event = witness.report.unwrap();
-                let packet_data = event.data.clone();
-                tracing::debug!("witness data: {:?}", packet_data);
-                let buf_as_vec = buf.to_vec();
-                // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-                let mut public_key = event.pub_key.clone();
-                let mut id: Vec<u8> = packet_data.clone();
-                id.append(&mut public_key);
-                let id_hash = Sha256::digest(&id).to_vec();
+                let witness: LoraWitnessIngestReport =
+                    LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
+                tracing::debug!("witness report from ingestor: {:?}", &witness);
+                let packet_data = witness.report.data.clone();
+                tracing::debug!("witness data: {:?}", &packet_data);
                 Report::insert_into(
                     &self.pool,
-                    id_hash,
+                    witness.generate_id(),
                     packet_data,
-                    buf_as_vec,
-                    &witness.received_timestamp.to_timestamp_millis()?,
+                    buf.to_vec(),
+                    &witness.received_timestamp,
                     ReportType::Witness,
                 )
                 .await
