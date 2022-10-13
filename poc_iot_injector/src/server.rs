@@ -1,8 +1,8 @@
 use crate::{
-    datetime_from_epoch, error::DecodeError, keypair::Keypair, receipt_txn::handle_report_msg,
+    error::DecodeError, keypair::Keypair, receipt_txn::handle_report_msg,
     txn_service::TransactionService, Result,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
@@ -69,7 +69,10 @@ impl Server {
     }
 
     async fn handle_poc_tick(&mut self) -> Result {
-        let after_utc = datetime_from_epoch(*self.last_poc_submission_ts.value());
+        let after_utc = Utc.from_utc_datetime(&NaiveDateTime::from_timestamp(
+            *self.last_poc_submission_ts.value(),
+            0,
+        ));
         let before_utc = Utc::now();
 
         submit_txns(

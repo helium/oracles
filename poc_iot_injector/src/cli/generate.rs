@@ -1,5 +1,5 @@
-use crate::{datetime_from_naive, keypair::load_from_file, receipt_txn::handle_report_msg, Result};
-use chrono::NaiveDateTime;
+use crate::{keypair::load_from_file, receipt_txn::handle_report_msg, Result};
+use chrono::{NaiveDateTime, TimeZone, Utc};
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn, Message};
@@ -19,8 +19,8 @@ impl Cmd {
     pub async fn run(&self) -> Result {
         let store = FileStore::from_env().await?;
 
-        let after_utc = datetime_from_naive(self.after);
-        let before_utc = datetime_from_naive(self.before);
+        let after_utc = Utc.from_utc_datetime(&self.after);
+        let before_utc = Utc.from_utc_datetime(&self.before);
 
         let file_list = store
             .list_all(FileType::LoraValidPoc, after_utc, before_utc)
