@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::{
     error::{Error, Result},
-    heartbeats::Heartbeats,
+    heartbeats::{Heartbeat, Heartbeats},
     shares::Shares,
     subnetwork_rewards::SubnetworkRewards,
 };
@@ -10,7 +10,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{file_sink, FileStore};
 use helium_proto::services::{follower, Channel};
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{Pool, Postgres};
 use tokio::time::sleep;
 
 pub struct VerifierDaemon {
@@ -31,8 +31,6 @@ impl VerifierDaemon {
         let verification_period = reward_period / self.verifications_per_period;
 
         loop {
-            let mut transaction = self.pool.begin().await?;
-
             let now = Utc::now();
             // Maybe name these "epoch_since_*" and "epoch_since_*_duration"
             let verify_epoch = self.verifier.get_verify_epoch(now);
@@ -49,9 +47,12 @@ impl VerifierDaemon {
                 tracing::info!("Verifying epoch: {:?}", verify_epoch);
                 // Attempt to verify the current epoch:
                 self.verifier
-                    .verify_epoch(&mut transaction, verify_epoch)
-                    .await?
-                    .write(&self.valid_shares_tx, &self.invalid_shares_tx)
+                    .verify_epoch(
+                        &self.pool,
+                        verify_epoch,
+                        &self.valid_shares_tx,
+                        &self.invalid_shares_tx,
+                    )
                     .await?;
                 verification_period
             } else {
@@ -63,18 +64,14 @@ impl VerifierDaemon {
             if reward_epoch_duration >= reward_period {
                 tracing::info!("Rewarding epoch: {:?}", reward_epoch);
                 self.verifier
-                    .reward_epoch(&mut transaction, reward_epoch)
+                    .reward_epoch(&self.pool, reward_epoch, &self.subnet_rewards_tx)
                     .await?
-                    .write(&self.subnet_rewards_tx)
-                    .await?;
             } else if reward_epoch_duration + sleep_duration >= reward_period {
                 // If the next epoch is a reward period, cut off sleep duration.
                 // This ensures that verifying will always end up being aligned with
                 // the desired reward period.
                 sleep_duration = reward_period - reward_epoch_duration;
             }
-
-            transaction.commit().await?;
 
             tracing::info!("Sleeping...");
             let shutdown = shutdown.clone();
@@ -117,46 +114,67 @@ impl Verifier {
 
     pub async fn verify_epoch(
         &mut self,
-        exec: &mut Transaction<'_, Postgres>,
+        pool: &Pool<Postgres>,
         epoch: Range<DateTime<Utc>>,
-    ) -> Result<Shares> {
-        let shares = Shares::validate_heartbeats(exec, &self.file_store, &epoch).await?;
+        valid_shares_tx: &file_sink::MessageSender,
+        invalid_shares_tx: &file_sink::MessageSender,
+    ) -> Result {
+        let shares = Shares::validate_heartbeats(pool, &self.file_store, &epoch).await?;
 
-        // TODO: Validate speedtests
+        let transaction = pool.begin().await?;
+
+        // Should we remove the heartbeats that were not new
+        // from valid shares
+        for share in shares.valid_shares.clone() {
+            let heartbeat = Heartbeat::from(share);
+            heartbeat.save(pool).await?;
+        }
 
         // Update the last verified end time:
         self.last_verified_end_time
-            .update(exec, epoch.end.timestamp() as i64)
+            .update(pool, epoch.end.timestamp() as i64)
             .await?;
 
-        Ok(shares)
+        transaction.commit().await?;
+
+        shares.write(valid_shares_tx, invalid_shares_tx).await?;
+
+        Ok(())
     }
 
     pub async fn reward_epoch(
         &mut self,
-        exec: &mut Transaction<'_, Postgres>,
+        pool: &Pool<Postgres>,
         epoch: Range<DateTime<Utc>>,
-    ) -> Result<SubnetworkRewards> {
+        subnet_rewards_tx: &file_sink::MessageSender,
+    ) -> Result {
         let heartbeats =
-            Heartbeats::new(exec, Utc.timestamp(*self.last_rewarded_end_time.value(), 0)).await?;
+            Heartbeats::validated(pool, Utc.timestamp(*self.last_rewarded_end_time.value(), 0))
+                .await?;
 
         let rewards =
             SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await?;
+
+        let transaction = pool.begin().await?;
 
         // Clear the heartbeats database
         // TODO: should the truncation be bound to a given epoch?
         // It's not intended that any heartbeats will exists outside the
         // current epoch, but it might be better to code defensively.
         sqlx::query("TRUNCATE TABLE heartbeats;")
-            .execute(&mut *exec)
+            .execute(pool)
             .await?;
 
         // Update the last rewarded end time:
         self.last_rewarded_end_time
-            .update(exec, epoch.end.timestamp() as i64)
+            .update(pool, epoch.end.timestamp() as i64)
             .await?;
 
-        Ok(rewards)
+        transaction.commit().await?;
+
+        rewards.write(subnet_rewards_tx).await?;
+
+        Ok(())
     }
 
     pub fn get_verify_epoch(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {

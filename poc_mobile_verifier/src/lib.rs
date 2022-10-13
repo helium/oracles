@@ -3,6 +3,7 @@ mod error;
 mod mobile;
 mod reward_share;
 // mod reward_speed_share;
+mod ingest;
 mod heartbeats;
 mod shares;
 
