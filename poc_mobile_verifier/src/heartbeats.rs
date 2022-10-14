@@ -65,8 +65,8 @@ impl Heartbeat {
             insert into heartbeats (id, weight, timestamp)
             values ($1, $2, $3)
             on conflict (id) do update set
-            weight = EXCLUDED.weight, timestamp = EXCLUDED.timestamp;
-            returning (xmax = 0) as inserted
+            weight = EXCLUDED.weight, timestamp = EXCLUDED.timestamp
+            returning (xmax = 0) as inserted;
             "#,
         )
         .bind(&self.id)
