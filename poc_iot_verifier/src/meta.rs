@@ -1,6 +1,6 @@
 use crate::{Error, Result};
-use chrono::{DateTime, TimeZone, Utc};
-use file_store::FileType;
+use chrono::{DateTime, Utc};
+use file_store::{traits::TimestampDecode, FileType};
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -57,8 +57,10 @@ impl Meta {
         .fetch_optional(executor)
         .await?
         .and_then(|v| {
-            v.parse::<u64>()
-                .map_or_else(|_| None, |ts| Some(Utc.timestamp_millis(ts as i64)))
+            v.parse::<u64>().map_or_else(
+                |_| None,
+                |ts| ts.to_timestamp_millis().map_or_else(|_| None, Some),
+            )
         });
         Ok(last_timestamp)
     }
