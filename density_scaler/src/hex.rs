@@ -44,7 +44,7 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct ScalingMap(HashMap<String, f64>);
 
 impl ScalingMap {
@@ -93,6 +93,8 @@ impl GlobalHexMap {
     }
 
     pub fn reduce_global(&mut self) {
+        // At the point this reduce is triggered the only keys present in the unclipped
+        // hexmap are the res 11 parent keys
         let starting_hexes: Vec<H3Cell> =
             self.unclipped_hexes.clone().into_keys().unique().collect();
         reduce_hex_res(
@@ -135,20 +137,22 @@ fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<H3
                     hexes_at_res.push(parent);
                 }
             });
-        let density_tgt = get_res_tgt(res);
-        hexes_at_res = hexes_at_res
-            .into_iter()
-            .unique()
-            .map(|parent_cell| {
-                let occupied_count = occupied_count(clipped, &parent_cell, density_tgt);
-                let limit = limit(res, occupied_count);
-                if let Some(count) = unclipped.get(&parent_cell) {
-                    let actual = cmp::min(limit, *count);
-                    clipped.insert(parent_cell, actual);
-                };
-                parent_cell
-            })
-            .collect()
+        if let Some(density_tgt) = get_res_tgt(res) {
+            hexes_at_res = hexes_at_res
+                .into_iter()
+                .unique()
+                .map(|parent_cell| {
+                    let occupied_count = occupied_count(clipped, &parent_cell, density_tgt);
+                    if let (Some(limit), Some(count)) =
+                        (limit(res, occupied_count), unclipped.get(&parent_cell))
+                    {
+                        let actual = cmp::min(limit, *count);
+                        clipped.insert(parent_cell, actual);
+                    }
+                    parent_cell
+                })
+                .collect()
+        }
     }
 }
 
@@ -167,11 +171,13 @@ fn occupied_count(cell_map: &HexMap, hex: &H3Cell, density_tgt: u64) -> u64 {
     }
 }
 
-fn limit(res: u8, occupied_count: u64) -> u64 {
-    let res_config = HIP17_RES_CONFIG.get(&res).unwrap();
-    let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
-    let max = cmp::max((occupied_neighbor_diff) + 1, 1);
-    cmp::min(res_config.max, res_config.target * max)
+fn limit(res: u8, occupied_count: u64) -> Option<u64> {
+    if let Some(res_config) = HIP17_RES_CONFIG.get(&res) {
+        let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
+        let max = cmp::max((occupied_neighbor_diff) + 1, 1);
+        return Some(cmp::min(res_config.max, res_config.target * max));
+    }
+    None
 }
 
 pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingMap) {
@@ -185,20 +191,21 @@ pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingM
                     (Some(unclipped), Some(clipped)) => {
                         scale * (*clipped as f64 / *unclipped as f64)
                     }
-                    (Some(unclipped), _) => scale * (0 as f64 / *unclipped as f64),
                     _ => scale,
                 }
             })
         });
-        scaling_map.insert(&hex.h3index().to_string(), scale);
+        let trunc_scale = round_scale_factor(scale);
+        scaling_map.insert(&hex.h3index().to_string(), trunc_scale);
     }
 }
 
-fn get_res_tgt(res: u8) -> u64 {
-    HIP17_RES_CONFIG
-        .get(&res)
-        .map(|config| config.target)
-        .unwrap_or(1)
+fn round_scale_factor(scale: f64) -> f64 {
+    (scale * 10000.0).round() / 10000.0
+}
+
+fn get_res_tgt(res: u8) -> Option<u64> {
+    HIP17_RES_CONFIG.get(&res).map(|config| config.target)
 }
 
 #[cfg(test)]
@@ -208,17 +215,44 @@ mod tests {
     #[test]
     fn simple_scale_check() {
         let indexes: Vec<u64> = vec![
-            631210990515645439,
-            631210990515609087,
-            631210990516667903,
-            631210990528935935,
-            631210990528385535,
-            631210990528546815,
-            631210990529462783,
-            631210990529337343,
-            631210990524024831,
-            631210990524753919,
-            631210990525267455,
+            // Hex region generated from live ledger as the 2022-10-14
+            // population of from the res 8 882830D341FFFFF / 613196592008134655
+            631210990515536895, // note: 3
+            631210990515536895, // for this
+            631210990515536895, // res 12
+            631210990515537919, // 3
+            631210990515537919, // for this
+            631210990515537919, // res 12 as well
+            631210990515538431,
+            631210990515564031,
+            631210990515589631,
+            631210990515600383,
+            631210990515601919,
+            631210990515606527,
+            631210990515722239, // 2 hotspots
+            631210990515722239, // in this hex
+            631210990515727359,
+            631210990515728895,
+            631210990515739647,
+            631210990515874303,
+            631210990515924479,
+            631210990515987455,
+            631210990516363775,
+            631210990516590079,
+            631210990516612607,
+            631210990516613631,
+            631210990516640767,
+            631210990516876799,
+            631210990516885503,
+            631210990516888063,
+            631210990516907007,
+            631210990516912639,
+            631210990516955647,
+            631210990516996607,
+            631210990517011455,
+            631210990517016575,
+            631210990517144063,
+            631210990517264895,
         ];
         let mut gw_map = GlobalHexMap::new();
         for index in indexes {
@@ -227,6 +261,40 @@ mod tests {
         gw_map.reduce_global();
         let mut scale_map = ScalingMap::new();
         compute_scaling_map(&gw_map, &mut scale_map);
-        println!("Result {scale_map:?}");
+
+        let expected_map = HashMap::from([
+            ("631210990515538431".to_string(), 0.0065),
+            ("631210990515727359".to_string(), 0.0091),
+            ("631210990515924479".to_string(), 0.0606),
+            ("631210990515537919".to_string(), 0.0065),
+            ("631210990517011455".to_string(), 0.0152),
+            ("631210990516885503".to_string(), 0.0152),
+            ("631210990516888063".to_string(), 0.0152),
+            ("631210990516955647".to_string(), 0.0455),
+            ("631210990515728895".to_string(), 0.0091),
+            ("631210990517144063".to_string(), 0.0909),
+            ("631210990515739647".to_string(), 0.0091),
+            ("631210990516640767".to_string(), 0.0606),
+            ("631210990515601919".to_string(), 0.0114),
+            ("631210990516590079".to_string(), 0.0606),
+            ("631210990517264895".to_string(), 0.0909),
+            ("631210990515606527".to_string(), 0.0114),
+            ("631210990515874303".to_string(), 0.0606),
+            ("631210990516613631".to_string(), 0.0303),
+            ("631210990515589631".to_string(), 0.0114),
+            ("631210990515564031".to_string(), 0.0455),
+            ("631210990516612607".to_string(), 0.0303),
+            ("631210990516876799".to_string(), 0.0152),
+            ("631210990516363775".to_string(), 0.0909),
+            ("631210990516907007".to_string(), 0.0227),
+            ("631210990516912639".to_string(), 0.0227),
+            ("631210990515722239".to_string(), 0.0091),
+            ("631210990516996607".to_string(), 0.0152),
+            ("631210990515987455".to_string(), 0.0606),
+            ("631210990515600383".to_string(), 0.0114),
+            ("631210990517016575".to_string(), 0.0152),
+            ("631210990515536895".to_string(), 0.0065),
+        ]);
+        assert_eq!(scale_map, ScalingMap(expected_map));
     }
 }
