@@ -77,13 +77,13 @@ impl VerifierDaemon {
     }
 
     pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-
         let shares: Shares = self.verifier.verify_epoch(&epoch).await?;
 
         let mut transaction = self.pool.begin().await?;
 
         // Should we remove the heartbeats that were not new
         // from valid shares
+        // TODO: switch to a bulk transaction
         for share in shares.valid_shares.clone() {
             let heartbeat = Heartbeat::from(share);
             heartbeat.save(&mut transaction).await?;
