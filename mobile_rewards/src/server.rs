@@ -8,8 +8,8 @@ use crate::{
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
-use file_store::{traits::TimestampDecode, FileStore, FileType};
-use futures::{stream, StreamExt};
+use file_store::{traits::TimestampDecode, FileStore, FileType, Stream};
+use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn,
@@ -299,24 +299,33 @@ impl Server {
             )
             .await?;
 
-        // TODO: We need a better pattern for this:
-        let mut stream = self
+        let subnet_rewards: Stream<SubnetworkReward> = self
             .verifier_store
-            .source(stream::iter(file_list).map(Ok).boxed());
-        let mut rewards = vec![];
-        while let Some(Ok(msg)) = stream.next().await {
-            let subnet_rewards = SubnetworkRewards::decode(msg);
-            if let Ok(subnet_rewards) = subnet_rewards {
-                // We only care that the verified epoch ends in our rewards epoch,
-                // so that we include verified epochs that straddle two rewards epochs.
-                if time_range.contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0)) {
-                    rewards.extend(subnet_rewards.rewards);
-                }
-            }
-        }
+            .source(stream::iter(file_list).map(Ok).boxed())
+            .map_ok(move |msg| (msg, time_range.clone()))
+            // First decode each subnet rewards, filtering out non decodable
+            // messages
+            .try_filter_map(|(msg, time_range)| async move {
+                Ok(SubnetworkRewards::decode(msg).ok().zip(Some(time_range)))
+            })
+            // We only care that the verified epoch ends in our rewards epoch,
+            // so that we include verified epochs that straddle two rewards
+            // epochs. map the matching subnet rewards to a stream of their
+            // reward entries
+            .try_filter_map(|(subnet_rewards, time_range)| async move {
+                let reward_stream = time_range
+                    .contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0))
+                    .then(|| stream::iter(subnet_rewards.rewards).map(Ok::<_, file_store::Error>));
+                Ok(reward_stream)
+            })
+            .try_flatten()
+            .boxed();
 
-        if !rewards.is_empty() {
-            self.issue_rewards(rewards, reward_period).await?;
+        let (txn, txn_hash) =
+            construct_txn(&self.keypair, subnet_rewards, reward_period.clone()).await?;
+
+        if !txn.rewards.is_empty() {
+            self.issue_rewards(txn, txn_hash, reward_period).await?;
             last_reward_end_time
                 .update(&self.pool, time_range.end.timestamp())
                 .await?;
@@ -329,36 +338,35 @@ impl Server {
 
     async fn issue_rewards(
         &mut self,
-        rewards: Vec<SubnetworkReward>,
+        rewards_txn: BlockchainTxnSubnetworkRewardsV1,
+        rewards_txn_hash: String,
         reward_period: Range<u64>,
     ) -> Result {
-        if rewards.is_empty() {
+        if rewards_txn.rewards.is_empty() {
             tracing::info!("nothing to reward");
             return Ok(());
         }
 
-        let (txn, txn_hash_str) = construct_txn(&self.keypair, rewards, reward_period)?;
-
         // binary encode the txn for storage
-        let txn_encoded = txn.encode_to_vec();
+        let txn_encoded = rewards_txn.encode_to_vec();
 
         // insert in the pending_txn tbl (status: created)
-        let pt = PendingTxn::insert_new(&self.pool, &txn_hash_str, txn_encoded).await?;
-        tracing::info!("inserted pending_txn with hash: {txn_hash_str}");
+        let pt = PendingTxn::insert_new(&self.pool, &rewards_txn_hash, txn_encoded).await?;
+        tracing::info!("inserted pending_txn with hash: {rewards_txn_hash}");
 
         // submit the txn
         if let Ok(_resp) = self
             .txn_service
             .submit(
                 BlockchainTxn {
-                    txn: Some(Txn::SubnetworkRewards(txn)),
+                    txn: Some(Txn::SubnetworkRewards(rewards_txn)),
                 },
                 &pt.pending_key()?,
             )
             .await
         {
             metrics::increment_counter!("reward_server_emission");
-            PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending, Utc::now()).await?;
+            PendingTxn::update(&self.pool, &rewards_txn_hash, Status::Pending, Utc::now()).await?;
         }
         Ok(())
     }
@@ -441,11 +449,12 @@ pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc
     (start_utc, stop_utc)
 }
 
-pub fn construct_txn(
+pub async fn construct_txn(
     keypair: &Keypair,
-    rewards: Vec<SubnetworkReward>,
+    subnet_rewards: Stream<SubnetworkReward>,
     period: Range<u64>,
 ) -> Result<(BlockchainTxnSubnetworkRewardsV1, String)> {
+    let rewards = subnet_rewards.try_collect().await?;
     let mut txn = BlockchainTxnSubnetworkRewardsV1 {
         rewards,
         token_type: BlockchainTokenTypeV1::Mobile as i32,
