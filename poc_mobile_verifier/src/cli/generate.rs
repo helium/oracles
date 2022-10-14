@@ -1,3 +1,4 @@
+/*
 use crate::{env_var, verifier::Verifier, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
@@ -7,6 +8,10 @@ use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 
 use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
+ */
+
+use crate::Result;
+use chrono::NaiveDateTime;
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]
@@ -21,6 +26,7 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(self) -> Result {
+        /*
         let Self {
             after,
             before,
@@ -95,7 +101,8 @@ impl Cmd {
             }))
             .unwrap()
         );
-
+         */
+        
         Ok(())
     }
 }

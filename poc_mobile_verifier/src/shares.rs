@@ -108,16 +108,16 @@ fn to_share(heartbeat: &CellHeartbeat, epoch: &Range<DateTime<Utc>>) -> Share {
     match validate_heartbeat(&heartbeat, epoch) {
         Ok(cell_type) => Share {
             timestamp: heartbeat.timestamp.naive_utc(),
-            pub_key: heartbeat.pubkey,
+            pub_key: heartbeat.pubkey.clone(),
             weight: cell_type.reward_weight(),
             cell_type: Some(cell_type),
-            cbsd_id: heartbeat.cbsd_id,
+            cbsd_id: heartbeat.cbsd_id.clone(),
             validity: proto::ShareValidity::Valid,
         },
         Err(validity) => Share {
             timestamp: heartbeat.timestamp.naive_utc(),
-            cbsd_id: heartbeat.cbsd_id,
-            pub_key: heartbeat.pubkey,
+            cbsd_id: heartbeat.cbsd_id.clone(),
+            pub_key: heartbeat.pubkey.clone(),
             weight: dec!(0),
             cell_type: None,
             validity,
