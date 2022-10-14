@@ -1,4 +1,3 @@
-mod cell_type;
 pub mod decimal_scalar;
 mod error;
 pub mod pending_txn;
@@ -9,7 +8,6 @@ pub mod transaction;
 pub mod txn_status;
 mod uuid;
 
-pub use cell_type::CellType;
 pub use decimal_scalar::Mobile;
 pub use error::{Error, Result};
 pub use server::Server;
