@@ -34,7 +34,7 @@ impl Heartbeats {
     ) -> std::result::Result<Self, sqlx::Error> {
         let mut heartbeats = HashMap::new();
         let mut rows =
-            sqlx::query_as::<_, Heartbeat>("SELECT * FROM heartbeats WHERE timestamp >= ?")
+            sqlx::query_as::<_, Heartbeat>("SELECT * FROM heartbeats WHERE timestamp >= $1")
                 .bind(starting)
                 .fetch(exec);
 
