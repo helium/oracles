@@ -1,6 +1,6 @@
 //! Heartbeat storage
 
-use crate::{Error, Result, shares::Share};
+use crate::{shares::Share, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKey;
@@ -56,10 +56,7 @@ struct HeartbeatSaveResult {
 }
 
 impl Heartbeat {
-    pub async fn save(
-        &self,
-        exec: impl sqlx::PgExecutor<'_>,
-    ) -> Result<bool> {
+    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
         sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
             insert into heartbeats (id, weight, timestamp)
@@ -69,7 +66,7 @@ impl Heartbeat {
             returning (xmax = 0) as inserted;
             "#,
         )
-        .bind(&self.id)
+        .bind(self.id)
         .bind(self.weight)
         .bind(self.timestamp)
         .fetch_one(exec)
