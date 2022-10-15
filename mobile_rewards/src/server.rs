@@ -44,6 +44,8 @@ const STALE_PENDING_TIMEOUT_SECS: i64 = 1800; // 30 min
 
 pub const TXN_TYPES: &[&str] = &["blockchain_txn_subnetwork_rewards_v1"];
 
+type BlockRange = Range<u64>;
+
 pub struct Server {
     pool: Pool<Postgres>,
     keypair: Keypair,
@@ -197,8 +199,13 @@ impl Server {
 
     async fn process_clock_tick(&mut self) -> Result {
         let now = Utc::now();
-        let reward_period = reward_period(&mut self.follower_client).await?;
-        let current_height = reward_period.end;
+        // The current implementation of the SubnetworkRewardTxnV1 requires an exclusive block
+        // range as the starting and ending block heights of the chain for the "epoch" the subnetwork
+        // reward txn covers; we retrieve 1 + the block height of the _last_ subnetwork reward txn for
+        // the mobile network and the current chain height and pass them down to construct the final
+        // txn here before submitting
+        let reward_epoch = reward_txn_epoch(&mut self.follower_client).await?;
+        let current_height = reward_epoch.end;
         tracing::info!(
             "processing clock tick at height {} with time {}",
             current_height,
@@ -240,7 +247,7 @@ impl Server {
             // Handle rewards if we pass our duration
             record_duration!(
                 "reward_server_emission_duration",
-                self.handle_rewards(reward_period, last_reward_time, start_utc..end_utc)
+                self.handle_rewards(reward_epoch, last_reward_time, start_utc..end_utc)
                     .await?
             )
         }
@@ -284,7 +291,7 @@ impl Server {
 
     async fn handle_rewards(
         &mut self,
-        reward_period: Range<u64>,
+        reward_txn_epoch: BlockRange,
         mut last_reward_end_time: MetaValue<i64>,
         time_range: Range<DateTime<Utc>>,
     ) -> Result {
@@ -299,6 +306,7 @@ impl Server {
             )
             .await?;
 
+        let new_reward_end_time = time_range.end.timestamp();
         let subnet_rewards: Stream<SubnetworkReward> = self
             .verifier_store
             .source(stream::iter(file_list).map(Ok).boxed())
@@ -322,17 +330,13 @@ impl Server {
             .boxed();
 
         let (txn, txn_hash) =
-            construct_txn(&self.keypair, subnet_rewards, reward_period.clone()).await?;
+            construct_txn(&self.keypair, subnet_rewards, reward_txn_epoch).await?;
 
-        if !txn.rewards.is_empty() {
-            self.issue_rewards(txn, txn_hash, reward_period).await?;
-            last_reward_end_time
-                .update(&self.pool, time_range.end.timestamp())
-                .await?;
-        } else {
-            tracing::error!("cannot continue; unable to determine reward period!");
-            return Err(Error::NotFound("invalid reward period".to_string()));
-        }
+        self.issue_rewards(txn, txn_hash).await?;
+        last_reward_end_time
+            .update(&self.pool, new_reward_end_time)
+            .await?;
+
         Ok(())
     }
 
@@ -340,7 +344,6 @@ impl Server {
         &mut self,
         rewards_txn: BlockchainTxnSubnetworkRewardsV1,
         rewards_txn_hash: String,
-        reward_period: Range<u64>,
     ) -> Result {
         if rewards_txn.rewards.is_empty() {
             tracing::info!("nothing to reward");
@@ -430,7 +433,7 @@ where
     Ok(res)
 }
 
-async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u64>> {
+async fn reward_txn_epoch(client: &mut follower::Client<Channel>) -> Result<BlockRange> {
     let res = client
         .subnetwork_last_reward_height(FollowerSubnetworkLastRewardHeightReqV1 {
             token_type: BlockchainTokenTypeV1::Mobile as i32,
@@ -452,7 +455,7 @@ pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc
 pub async fn construct_txn(
     keypair: &Keypair,
     subnet_rewards: Stream<SubnetworkReward>,
-    period: Range<u64>,
+    period: BlockRange,
 ) -> Result<(BlockchainTxnSubnetworkRewardsV1, String)> {
     let rewards = subnet_rewards.try_collect().await?;
     let mut txn = BlockchainTxnSubnetworkRewardsV1 {
