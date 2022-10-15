@@ -1,4 +1,4 @@
-use crate::{error::DecodeError, keypair::Keypair, receipt_txn::handle_report_msg, Result};
+use crate::{keypair::Keypair, receipt_txn::handle_report_msg, Result};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
@@ -25,21 +25,22 @@ pub struct Server {
 
 impl Server {
     pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
-        // TODO: Find this time in meta store db first
-        let last_poc_submission_ts = env::var("LAST_POC_SUBMISSION_TS")
-            .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS_SECS.to_string())
-            .parse()
-            .map_err(DecodeError::from)?;
+        // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
+        let last_poc_submission_ts =
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
+                env::var("LAST_POC_SUBMISSION_TS")
+                    .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS_SECS.to_string())
+                    .parse()
+                    .unwrap_or_default()
+            })
+            .await?;
 
         let result = Self {
             pool: pool.clone(),
             keypair: Arc::new(keypair),
             txn_service: Arc::new(Mutex::new(TransactionService::from_env()?)),
             iot_verifier_store: FileStore::from_env().await?,
-            last_poc_submission_ts: MetaValue::new(
-                "last_poc_submission_ts",
-                last_poc_submission_ts,
-            ),
+            last_poc_submission_ts,
         };
         Ok(result)
     }
