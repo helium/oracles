@@ -332,10 +332,12 @@ impl Server {
         let (txn, txn_hash) =
             construct_txn(&self.keypair, subnet_rewards, reward_txn_epoch).await?;
 
-        self.issue_rewards(txn, txn_hash).await?;
-        last_reward_end_time
-            .update(&self.pool, new_reward_end_time)
-            .await?;
+        if !txn.rewards.is_empty() {
+            self.issue_rewards(txn, txn_hash).await?;
+            last_reward_end_time
+                .update(&self.pool, new_reward_end_time)
+                .await?;
+        }
 
         Ok(())
     }
@@ -345,11 +347,6 @@ impl Server {
         rewards_txn: BlockchainTxnSubnetworkRewardsV1,
         rewards_txn_hash: String,
     ) -> Result {
-        if rewards_txn.rewards.is_empty() {
-            tracing::info!("nothing to reward");
-            return Ok(());
-        }
-
         // binary encode the txn for storage
         let txn_encoded = rewards_txn.encode_to_vec();
 
