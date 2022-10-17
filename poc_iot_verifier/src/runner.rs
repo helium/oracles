@@ -9,6 +9,7 @@ use crate::{
     poc_report::{LoraStatus, Report},
     Result,
 };
+use file_store::traits::{IngestId, ReportId};
 use file_store::{
     file_sink, file_sink::MessageSender, file_upload, lora_beacon_report::LoraBeaconIngestReport,
     lora_beacon_report::LoraBeaconReport, lora_invalid_poc::LoraInvalidBeaconReport,
@@ -201,12 +202,8 @@ impl Runner {
                 Some(res) => res,
                 None => {
                     tracing::debug!("beacon verification failed, reason: EntropyNotFound");
-                    _ = Report::update_attempts(
-                        &self.pool,
-                        &beacon_report.generate_id(),
-                        Utc::now(),
-                    )
-                    .await;
+                    _ = Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now())
+                        .await;
                     continue;
                 }
             };
@@ -244,8 +241,8 @@ impl Runner {
                             // halt here and allow things to be reprocessed next tick
                             let failed_witness = failed_witness_report.report;
                             // have to construct the id manually here as dont have the ingest report handy
-                            let id = failed_witness
-                                .generate_id(failed_witness_report.received_timestamp);
+                            let id =
+                                failed_witness.report_id(failed_witness_report.received_timestamp);
                             Report::update_attempts(&self.pool, &id, Utc::now()).await?;
                         }
                         continue;
@@ -337,7 +334,7 @@ impl Runner {
     ) -> Result {
         let poc_id = &beacon.data;
         let received_timestamp = valid_beacon_report.received_timestamp;
-        let beacon_id = valid_beacon_report.report.generate_id(received_timestamp);
+        let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let valid_poc: LoraValidPoc = LoraValidPoc {
             poc_id: beacon_id.clone(),
             beacon_report: valid_beacon_report,
@@ -357,7 +354,7 @@ impl Runner {
             file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
             let invalid_witness_id = invalid_witness_report
                 .report
-                .generate_id(invalid_witness_report.received_timestamp);
+                .report_id(invalid_witness_report.received_timestamp);
             Report::update_status(
                 &self.pool,
                 &invalid_witness_id,
@@ -370,7 +367,7 @@ impl Runner {
         for valid_witness_report in witnesses_result.valid_witnesses {
             let valid_witness_id = valid_witness_report
                 .report
-                .generate_id(valid_witness_report.received_timestamp);
+                .report_id(valid_witness_report.received_timestamp);
             Report::update_status(&self.pool, &valid_witness_id, LoraStatus::Valid, Utc::now())
                 .await?;
         }

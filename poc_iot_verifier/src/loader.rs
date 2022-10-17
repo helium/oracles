@@ -14,8 +14,10 @@ use helium_proto::{
 };
 
 use file_store::{
-    lora_beacon_report::LoraBeaconIngestReport, lora_witness_report::LoraWitnessIngestReport,
-    traits::TimestampDecode, FileStore, FileType,
+    lora_beacon_report::LoraBeaconIngestReport,
+    lora_witness_report::LoraWitnessIngestReport,
+    traits::{IngestId, TimestampDecode},
+    FileStore, FileType,
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -159,7 +161,7 @@ impl Loader {
                 tracing::debug!("beacon data: {:?}", &packet_data);
                 Report::insert_into(
                     &self.pool,
-                    beacon.generate_id(),
+                    beacon.ingest_id(),
                     packet_data,
                     buf.to_vec(),
                     &beacon.received_timestamp,
@@ -175,7 +177,7 @@ impl Loader {
                 tracing::debug!("witness data: {:?}", &packet_data);
                 Report::insert_into(
                     &self.pool,
-                    witness.generate_id(),
+                    witness.ingest_id(),
                     packet_data,
                     buf.to_vec(),
                     &witness.received_timestamp,

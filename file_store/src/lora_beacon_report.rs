@@ -8,7 +8,6 @@ use helium_crypto::PublicKey;
 use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconReportReqV1};
 use helium_proto::DataRate;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LoraBeaconReport {
@@ -33,26 +32,6 @@ pub struct LoraBeaconIngestReport {
 
 impl MsgDecode for LoraBeaconIngestReport {
     type Msg = LoraBeaconIngestReportV1;
-}
-
-impl LoraBeaconIngestReport {
-    pub fn generate_id(&self) -> Vec<u8> {
-        let mut id: Vec<u8> = self.report.data.clone();
-        let mut public_key = self.report.pub_key.to_vec();
-        id.append(&mut self.received_timestamp.to_string().as_bytes().to_vec());
-        id.append(&mut public_key);
-        Sha256::digest(&id).to_vec()
-    }
-}
-
-impl LoraBeaconReport {
-    pub fn generate_id(&self, received_ts: DateTime<Utc>) -> Vec<u8> {
-        let mut id: Vec<u8> = self.data.clone();
-        let mut public_key = self.pub_key.to_vec();
-        id.append(&mut received_ts.to_string().as_bytes().to_vec());
-        id.append(&mut public_key);
-        Sha256::digest(&id).to_vec()
-    }
 }
 
 impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconIngestReport {
