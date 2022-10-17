@@ -159,7 +159,7 @@ impl Verifier {
     }
 
     pub async fn verify_epoch(&mut self, epoch: &Range<DateTime<Utc>>) -> Result<Shares> {
-        Shares::validate_heartbeats(&self.file_store, &epoch).await
+        Shares::validate_heartbeats(&self.file_store, epoch).await
     }
 
     pub async fn reward_epoch(
@@ -167,7 +167,7 @@ impl Verifier {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
     ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await
+        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, &heartbeats).await
     }
 }
 

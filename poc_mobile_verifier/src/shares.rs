@@ -105,7 +105,7 @@ impl Shares {
 }
 
 fn to_share(heartbeat: &CellHeartbeat, epoch: &Range<DateTime<Utc>>) -> Share {
-    match validate_heartbeat(&heartbeat, epoch) {
+    match validate_heartbeat(heartbeat, epoch) {
         Ok(cell_type) => Share {
             timestamp: heartbeat.timestamp.naive_utc(),
             pub_key: heartbeat.pubkey.clone(),
