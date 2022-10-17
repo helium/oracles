@@ -28,6 +28,7 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
     transport.get_mut()
 }
 
+#[derive(Debug)]
 pub struct Message {
     on_write_tx: oneshot::Sender<Result>,
     bytes: Vec<u8>,
@@ -343,8 +344,13 @@ mod tests {
                 .expect("failed to complete file sink");
         });
 
+        let (on_write_tx, _on_write_rx) = oneshot::channel();
+
         sender
-            .try_send(String::into_bytes("hello".to_string()))
+            .try_send(Message {
+                on_write_tx,
+                bytes: String::into_bytes("hello".to_string()),
+            })
             .expect("failed to send bytes to file sink");
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;
