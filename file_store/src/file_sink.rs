@@ -10,7 +10,7 @@ use std::{
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncWriteExt, BufWriter},
-    sync::mpsc,
+    sync::{mpsc, oneshot},
     time,
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
@@ -28,16 +28,29 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
     transport.get_mut()
 }
 
-pub type MessageSender = mpsc::Sender<Vec<u8>>;
-pub type MessageReceiver = mpsc::Receiver<Vec<u8>>;
+#[derive(Debug)]
+pub struct Message {
+    on_write_tx: oneshot::Sender<Result>,
+    bytes: Vec<u8>,
+}
+
+pub type MessageSender = mpsc::Sender<Message>;
+pub type MessageReceiver = mpsc::Receiver<Message>;
 
 pub fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
     mpsc::channel(size)
 }
 
-pub async fn write<T: prost::Message>(tx: &MessageSender, item: T) -> Result {
-    let buf = item.encode_to_vec();
-    tx.send(buf).await.map_err(|_| Error::channel())
+pub async fn write<T: prost::Message>(
+    tx: &MessageSender,
+    item: T,
+) -> Result<oneshot::Receiver<Result>> {
+    let (on_write_tx, on_write_rx) = oneshot::channel();
+    let bytes = item.encode_to_vec();
+    tx.send(Message { on_write_tx, bytes })
+        .await
+        .map_err(|_| Error::channel())
+        .map(move |_| on_write_rx)
 }
 
 pub struct FileSinkBuilder {
@@ -195,11 +208,16 @@ impl FileSink {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
-                    Some(buf) => {
-                        match self.write(Bytes::from(buf)).await {
-                        Ok(_) => (),
-                        Err(err) => tracing::error!("failed to store {}: {err:?}", &self.prefix),
-                    }},
+                    Some(Message { bytes, on_write_tx }) => {
+                        let res = match self.write(Bytes::from(bytes)).await {
+                            Ok(_) => Ok(()),
+                            Err(err) => {
+                                tracing::error!("failed to store {}: {err:?}", &self.prefix);
+                                Err(err)
+                            }
+                        };
+                        let _ = on_write_tx.send(res);
+                    },
                     None => {
                         break
                     }
@@ -326,8 +344,13 @@ mod tests {
                 .expect("failed to complete file sink");
         });
 
+        let (on_write_tx, _on_write_rx) = oneshot::channel();
+
         sender
-            .try_send(String::into_bytes("hello".to_string()))
+            .try_send(Message {
+                on_write_tx,
+                bytes: String::into_bytes("hello".to_string()),
+            })
             .expect("failed to send bytes to file sink");
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;

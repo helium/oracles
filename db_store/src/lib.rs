@@ -95,7 +95,7 @@ where
 
     pub async fn update<'c, E>(&mut self, exec: E, new_val: T) -> Result<T, MetaError>
     where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+        E: sqlx::PgExecutor<'c>,
     {
         sqlx::query(
             r#"

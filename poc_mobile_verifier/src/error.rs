@@ -32,6 +32,12 @@ pub enum Error {
     MetaError(#[from] db_store::MetaError),
     #[error("join error")]
     JoinError(tokio::task::JoinError),
+    #[error("time out of range error")]
+    OutOfRangeError,
+    #[error("heartbeat validation error")]
+    HeartbeatValidationError(#[from] crate::shares::ValidateHeartbeatsError),
+    #[error("oneshot recv error")]
+    OneshotRecvError(#[from] tokio::sync::oneshot::error::RecvError),
 }
 
 #[derive(Error, Debug)]

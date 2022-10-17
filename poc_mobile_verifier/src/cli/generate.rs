@@ -1,54 +1,57 @@
-use crate::{
-    env_var,
-    server::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT},
-    subnetwork_rewards::SubnetworkRewards,
-    Result,
-};
+use crate::{env_var, heartbeats::Heartbeats, verifier::Verifier, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
 use serde_json::json;
+use sqlx::postgres::PgPoolOptions;
+
+use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     #[clap(long)]
-    after: NaiveDateTime,
+    start: NaiveDateTime,
     #[clap(long)]
-    before: NaiveDateTime,
-    #[clap(long)]
-    input_bucket: String,
+    end: NaiveDateTime,
 }
 
 impl Cmd {
     pub async fn run(self) -> Result {
-        let Self {
-            after,
-            before,
-            input_bucket,
-        } = self;
+        let Self { start, end } = self;
 
-        tracing::info!(
-            "Verifying shares from bucket {input_bucket} within the following time range: {after} to {before}"
-        );
+        let start = DateTime::from_utc(start, Utc);
+        let end = DateTime::from_utc(end, Utc);
 
-        let input_store = FileStore::new(None, "us-west-2", input_bucket).await?;
+        tracing::info!("Verifying shares from the following time range: {start} to {end}");
+        let epoch = start..end;
 
-        let follower_service = follower::Client::new(
+        let file_store = FileStore::from_env().await?;
+
+        let follower = follower::Client::new(
             Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
                 .connect_timeout(CONNECT_TIMEOUT)
                 .timeout(RPC_TIMEOUT)
                 .connect_lazy(),
         );
 
-        let rewards = SubnetworkRewards::from_period(
-            &input_store,
-            follower_service,
-            DateTime::from_utc(after, Utc),
-            DateTime::from_utc(before, Utc),
-        )
-        .await?;
+        let db_connection_str = dotenv::var("DATABASE_URL")?;
+        let pool = PgPoolOptions::new()
+            .max_connections(10)
+            .connect(&db_connection_str)
+            .await?;
+        sqlx::migrate!().run(&pool).await?;
+
+        let mut verifier = Verifier::new(file_store, follower).await?;
+
+        let heartbeats: Heartbeats = verifier
+            .verify_epoch(&epoch)
+            .await?
+            .valid_shares
+            .into_iter()
+            .collect();
+        let rewards = verifier.reward_epoch(&epoch, heartbeats).await?;
 
         let total_rewards = rewards
             .rewards
