@@ -1,5 +1,4 @@
-/*
-use crate::{env_var, verifier::Verifier, Result};
+use crate::{env_var, heartbeats::Heartbeats, verifier::Verifier, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use helium_crypto::PublicKey;
@@ -8,35 +7,25 @@ use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 
 use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
- */
-
-use crate::Result;
-use chrono::NaiveDateTime;
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
     #[clap(long)]
-    after: NaiveDateTime,
+    start: NaiveDateTime,
     #[clap(long)]
-    before: NaiveDateTime,
-    #[clap(long)]
-    periods: i32,
+    end: NaiveDateTime,
 }
 
 impl Cmd {
     pub async fn run(self) -> Result {
-        /*
-        let Self {
-            after,
-            before,
-            periods,
-        } = self;
+        let Self { start, end } = self;
 
-        let after = DateTime::from_utc(after, Utc);
-        let before = DateTime::from_utc(before, Utc);
+        let start = DateTime::from_utc(start, Utc);
+        let end = DateTime::from_utc(end, Utc);
 
-        tracing::info!("Verifying shares from the following time range: {after} to {before}");
+        tracing::info!("Verifying shares from the following time range: {start} to {end}");
+        let epoch = start..end;
 
         let file_store = FileStore::from_env().await?;
 
@@ -54,29 +43,15 @@ impl Cmd {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let mut verifier = Verifier::new(&pool, file_store, follower).await?;
+        let mut verifier = Verifier::new(file_store, follower).await?;
 
-        let mut transaction = pool.begin().await?;
-        let reward_period = before - after;
-        let verification_period = reward_period / periods;
-        let mut now = after;
-
-        for period in 0..periods {
-            let verify_epoch = verifier.epoch_since_last_verify(now);
-            tracing::info!("Verifying epoch {period} of {periods}...");
-            let _ = verifier
-                .verify_epoch(&mut transaction, verify_epoch)
-                .await?;
-            now += verification_period;
-        }
-
-        tracing::info!("Calculating rewards...");
-
-        let rewards = verifier
-            .reward_epoch(&mut transaction, after..before)
-            .await?;
-
-        transaction.rollback().await?;
+        let heartbeats: Heartbeats = verifier
+            .verify_epoch(&epoch)
+            .await?
+            .valid_shares
+            .into_iter()
+            .collect();
+        let rewards = verifier.reward_epoch(&epoch, heartbeats).await?;
 
         let total_rewards = rewards
             .rewards
@@ -101,8 +76,7 @@ impl Cmd {
             }))
             .unwrap()
         );
-         */
-        
+
         Ok(())
     }
 }

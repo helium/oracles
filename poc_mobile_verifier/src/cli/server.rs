@@ -4,6 +4,7 @@ use crate::{
     error::Error,
     verifier::{Verifier, VerifierDaemon},
 };
+use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
 use helium_proto::services::{follower, Endpoint, Uri};
@@ -83,7 +84,12 @@ impl Cmd {
             env_var("VERIFICATIONS_PER_PERIOD", DEFAULT_VERIFICATIONS_PER_PERIOD)?;
         let file_store = FileStore::from_env_with_prefix("INPUT").await?;
 
-        let verifier = Verifier::new(&pool, file_store, follower).await?;
+        let last_verified_end_time =
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", || 0).await?;
+        let last_rewarded_end_time =
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_rewarded_end_time", || 0).await?;
+
+        let verifier = Verifier::new(file_store, follower).await?;
 
         let verifier_daemon = VerifierDaemon {
             pool,
@@ -92,6 +98,8 @@ impl Cmd {
             subnet_rewards_tx,
             reward_period_hours,
             verifications_per_period,
+            last_verified_end_time,
+            last_rewarded_end_time,
             verifier,
         };
 

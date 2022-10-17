@@ -10,13 +10,49 @@ use std::collections::HashMap;
 #[derive(sqlx::FromRow)]
 pub struct Heartbeat {
     pub id: PublicKey,
-    pub weight: Decimal,
+    pub reward_weight: Decimal,
     pub timestamp: NaiveDateTime,
+}
+
+#[derive(sqlx::FromRow)]
+struct HeartbeatSaveResult {
+    inserted: bool,
+}
+
+impl Heartbeat {
+    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
+        sqlx::query_as::<_, HeartbeatSaveResult>(
+            r#"
+            insert into heartbeats (id, reward_weight, timestamp)
+            values ($1, $2, $3)
+            on conflict (id) do update set
+            reward_weight = EXCLUDED.reward_weight, timestamp = EXCLUDED.timestamp
+            returning (xmax = 0) as inserted;
+            "#,
+        )
+        .bind(self.id)
+        .bind(self.reward_weight)
+        .bind(self.timestamp)
+        .fetch_one(exec)
+        .await
+        .map(|result| result.inserted)
+        .map_err(Error::from)
+    }
+}
+
+impl From<Share> for Heartbeat {
+    fn from(share: Share) -> Self {
+        Self {
+            id: share.pub_key,
+            reward_weight: share.reward_weight,
+            timestamp: share.timestamp,
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct HeartbeatValue {
-    pub weight: Decimal,
+    pub reward_weight: Decimal,
     pub timestamp: NaiveDateTime,
 }
 
@@ -40,48 +76,42 @@ impl Heartbeats {
 
         while let Some(Heartbeat {
             id,
-            weight,
+            reward_weight,
             timestamp,
         }) = rows.try_next().await?
         {
-            heartbeats.insert(id, HeartbeatValue { weight, timestamp });
+            heartbeats.insert(
+                id,
+                HeartbeatValue {
+                    reward_weight,
+                    timestamp,
+                },
+            );
         }
         Ok(Self { heartbeats })
     }
 }
 
-#[derive(sqlx::FromRow)]
-struct HeartbeatSaveResult {
-    inserted: bool,
-}
-
-impl Heartbeat {
-    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
-        sqlx::query_as::<_, HeartbeatSaveResult>(
-            r#"
-            insert into heartbeats (id, weight, timestamp)
-            values ($1, $2, $3)
-            on conflict (id) do update set
-            weight = EXCLUDED.weight, timestamp = EXCLUDED.timestamp
-            returning (xmax = 0) as inserted;
-            "#,
-        )
-        .bind(self.id)
-        .bind(self.weight)
-        .bind(self.timestamp)
-        .fetch_one(exec)
-        .await
-        .map(|result| result.inserted)
-        .map_err(Error::from)
-    }
-}
-
-impl From<Share> for Heartbeat {
-    fn from(share: Share) -> Self {
-        Self {
-            id: share.pub_key,
-            weight: share.weight,
-            timestamp: share.timestamp,
+impl FromIterator<Share> for Heartbeats {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Share>,
+    {
+        let mut heartbeats = HashMap::default();
+        for share in iter.into_iter() {
+            let Heartbeat {
+                id,
+                reward_weight,
+                timestamp,
+            } = Heartbeat::from(share);
+            heartbeats.insert(
+                id,
+                HeartbeatValue {
+                    reward_weight,
+                    timestamp,
+                },
+            );
         }
+        Self { heartbeats }
     }
 }

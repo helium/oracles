@@ -18,7 +18,7 @@ pub struct Shares {
 pub struct Share {
     pub cbsd_id: String,
     pub pub_key: PublicKey,
-    pub weight: Decimal,
+    pub reward_weight: Decimal,
     pub timestamp: NaiveDateTime,
     pub cell_type: Option<CellType>,
     pub validity: proto::ShareValidity,
@@ -37,7 +37,7 @@ impl From<Share> for proto::Share {
         Self {
             timestamp: share.timestamp.timestamp() as u64,
             pub_key: share.pub_key.to_vec(),
-            weight: crate::bones_to_u64(share.weight),
+            weight: crate::bones_to_u64(share.reward_weight),
             cell_type: share.cell_type.unwrap_or(CellType::Nova436H) as i32,
             cbsd_id: share.cbsd_id,
             validity: share.validity as i32,
@@ -109,7 +109,7 @@ fn to_share(heartbeat: &CellHeartbeat, epoch: &Range<DateTime<Utc>>) -> Share {
         Ok(cell_type) => Share {
             timestamp: heartbeat.timestamp.naive_utc(),
             pub_key: heartbeat.pubkey.clone(),
-            weight: cell_type.reward_weight(),
+            reward_weight: cell_type.reward_weight(),
             cell_type: Some(cell_type),
             cbsd_id: heartbeat.cbsd_id.clone(),
             validity: proto::ShareValidity::Valid,
@@ -118,7 +118,7 @@ fn to_share(heartbeat: &CellHeartbeat, epoch: &Range<DateTime<Utc>>) -> Share {
             timestamp: heartbeat.timestamp.naive_utc(),
             cbsd_id: heartbeat.cbsd_id.clone(),
             pub_key: heartbeat.pubkey.clone(),
-            weight: dec!(0),
+            reward_weight: dec!(0),
             cell_type: None,
             validity,
         },

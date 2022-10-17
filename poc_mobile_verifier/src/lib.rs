@@ -1,9 +1,9 @@
 mod cell_type;
 mod error;
-mod mobile;
-mod reward_share;
 mod heartbeats;
 mod ingest;
+mod mobile;
+mod reward_share;
 mod shares;
 
 pub mod cli;

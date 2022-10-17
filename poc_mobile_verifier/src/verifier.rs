@@ -20,6 +20,8 @@ pub struct VerifierDaemon {
     pub subnet_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
+    pub last_verified_end_time: MetaValue<i64>,
+    pub last_rewarded_end_time: MetaValue<i64>,
     pub verifier: Verifier,
 }
 
@@ -32,8 +34,8 @@ impl VerifierDaemon {
 
         loop {
             let now = Utc::now();
-            let epoch_since_last_verify = self.verifier.epoch_since_last_verify(now);
-            let epoch_since_last_reward = self.verifier.epoch_since_last_reward(now);
+            let epoch_since_last_verify = self.epoch_since_last_verify(now);
+            let epoch_since_last_reward = self.epoch_since_last_reward(now);
             let epoch_since_last_verify_duration = epoch_duration(&epoch_since_last_verify);
             let epoch_since_last_reward_duration = epoch_duration(&epoch_since_last_reward);
 
@@ -77,7 +79,7 @@ impl VerifierDaemon {
     }
 
     pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let shares: Shares = self.verifier.verify_epoch(&epoch).await?;
+        let shares = self.verifier.verify_epoch(&epoch).await?;
 
         let mut transaction = self.pool.begin().await?;
 
@@ -90,8 +92,7 @@ impl VerifierDaemon {
         }
 
         // Update the last verified end time:
-        self.verifier
-            .last_verified_end_time
+        self.last_verified_end_time
             .update(&mut transaction, epoch.end.timestamp() as i64)
             .await?;
 
@@ -105,11 +106,7 @@ impl VerifierDaemon {
     }
 
     pub async fn reward_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let heartbeats = Heartbeats::validated(
-            &self.pool,
-            Utc.timestamp(*self.verifier.last_rewarded_end_time.value(), 0),
-        )
-        .await?;
+        let heartbeats = Heartbeats::validated(&self.pool, epoch.start).await?;
 
         let rewards = self.verifier.reward_epoch(&epoch, heartbeats).await?;
 
@@ -124,8 +121,7 @@ impl VerifierDaemon {
             .await?;
 
         // Update the last rewarded end time:
-        self.verifier
-            .last_rewarded_end_time
+        self.last_rewarded_end_time
             .update(&mut transaction, epoch.end.timestamp() as i64)
             .await?;
 
@@ -139,30 +135,26 @@ impl VerifierDaemon {
 
         Ok(())
     }
+
+    pub fn epoch_since_last_verify(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
+        Utc.timestamp(*self.last_verified_end_time.value(), 0)..now
+    }
+
+    pub fn epoch_since_last_reward(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
+        Utc.timestamp(*self.last_rewarded_end_time.value(), 0)..now
+    }
 }
 
 pub struct Verifier {
     pub file_store: FileStore,
     pub follower: follower::Client<Channel>,
-    pub last_verified_end_time: MetaValue<i64>,
-    pub last_rewarded_end_time: MetaValue<i64>,
 }
 
 impl Verifier {
-    pub async fn new(
-        pool: &Pool<Postgres>,
-        file_store: FileStore,
-        follower: follower::Client<Channel>,
-    ) -> Result<Self> {
-        let last_verified_end_time =
-            MetaValue::<i64>::fetch_or_insert_with(pool, "last_verified_end_time", || 0).await?;
-        let last_rewarded_end_time =
-            MetaValue::<i64>::fetch_or_insert_with(pool, "last_rewarded_end_time", || 0).await?;
+    pub async fn new(file_store: FileStore, follower: follower::Client<Channel>) -> Result<Self> {
         Ok(Self {
             file_store,
             follower,
-            last_verified_end_time,
-            last_rewarded_end_time,
         })
     }
 
@@ -176,14 +168,6 @@ impl Verifier {
         heartbeats: Heartbeats,
     ) -> Result<SubnetworkRewards> {
         SubnetworkRewards::from_epoch(self.follower.clone(), &epoch, &heartbeats).await
-    }
-
-    pub fn epoch_since_last_verify(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
-        Utc.timestamp(*self.last_verified_end_time.value(), 0)..now
-    }
-
-    pub fn epoch_since_last_reward(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
-        Utc.timestamp(*self.last_rewarded_end_time.value(), 0)..now
     }
 }
 
