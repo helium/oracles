@@ -13,23 +13,25 @@ pub enum Cmd {
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Helium POC IOT Injector Server")]
+#[clap(about = env!("CARGO_PKG_DESCRIPTION"))]
 pub struct Cli {
     #[clap(subcommand)]
     cmd: Cmd,
+
+    #[clap(long = "dotenv-path", short = 'e', default_value = ".env")]
+    dotenv_path: std::path::PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> Result {
-    dotenv::dotenv()?;
+    let cli = Cli::parse();
+    dotenv::from_path(&cli.dotenv_path)?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             dotenv::var("RUST_LOG").unwrap_or_else(|_| "poc_iot_injector=debug".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
-
-    let cli = Cli::parse();
 
     match cli.cmd {
         Cmd::Generate(cmd) => cmd.run().await?,

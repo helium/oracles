@@ -14,20 +14,22 @@ pub enum Cmd {}
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Helium Entropy Server")]
-pub struct Cli {}
+#[clap(about = env!("CARGO_PKG_DESCRIPTION"))]
+pub struct Cli {
+    #[clap(long = "dotenv-path", short = 'e', default_value = ".env")]
+    dotenv_path: path::PathBuf,
+}
 
 #[tokio::main]
 async fn main() -> Result {
-    dotenv::dotenv()?;
+    let cli = Cli::parse();
+    dotenv::from_path(&cli.dotenv_path)?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| "poc_entropy=debug,poc_store=info".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
-
-    let _cli = Cli::parse();
 
     // Install the prometheus metrics exporter
     poc_metrics::install_metrics();

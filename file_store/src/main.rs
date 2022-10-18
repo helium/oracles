@@ -13,16 +13,19 @@ pub enum Cmd {
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Helium Ingest Server")]
+#[clap(about = env!("CARGO_PKG_DESCRIPTION"))]
 pub struct Cli {
     #[clap(subcommand)]
     cmd: Cmd,
+
+    #[clap(long = "dotenv-path", short = 'e', default_value = ".env")]
+    dotenv_path: std::path::PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> Result {
-    dotenv::dotenv()?;
     let cli = Cli::parse();
+    dotenv::from_path(&cli.dotenv_path)?;
 
     match cli.cmd {
         Cmd::Info(cmd) => cmd.run().await,

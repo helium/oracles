@@ -7,10 +7,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Verify Shares")]
+#[clap(about = env!("CARGO_PKG_DESCRIPTION"))]
 pub struct Cli {
     #[clap(subcommand)]
     cmd: Cmd,
+
+    #[clap(long = "dotenv-path", short = 'e', default_value = ".env")]
+    dotenv_path: std::path::PathBuf,
 }
 
 #[derive(clap::Subcommand)]
@@ -21,7 +24,8 @@ pub enum Cmd {
 
 #[tokio::main]
 async fn main() -> Result {
-    dotenv::dotenv()?;
+    let cli = Cli::parse();
+    dotenv::from_path(&cli.dotenv_path)?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             dotenv::var("RUST_LOG").unwrap_or_else(|_| "mobile_verifier=debug".into()),
@@ -29,7 +33,7 @@ async fn main() -> Result {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    match Cli::parse().cmd {
+    match cli.cmd {
         Cmd::Generate(cmd) => cmd.run().await?,
         Cmd::Server(cmd) => cmd.run().await?,
     }
