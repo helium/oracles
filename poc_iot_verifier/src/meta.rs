@@ -47,7 +47,7 @@ impl Meta {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let height = sqlx::query_scalar::<_, String>(
+        let last_timestamp = sqlx::query_scalar::<_, String>(
             r#"
             select value from meta
             where key = $1
@@ -57,13 +57,12 @@ impl Meta {
         .fetch_optional(executor)
         .await?
         .and_then(|v| {
-            v.parse::<u64>()
-                .map_or_else(|_| None, |secs| Some((secs + 10).to_timestamp()))
-            //TODO: remove the hardcoded + 10 above
-            //      fix resolution of datetime function, dropping millisecs resulting in files being reprocessed by loaded
-        })
-        .transpose()?;
-        Ok(height)
+            v.parse::<u64>().map_or_else(
+                |_| None,
+                |ts| ts.to_timestamp_millis().map_or_else(|_| None, Some),
+            )
+        });
+        Ok(last_timestamp)
     }
 
     pub async fn update_last_timestamp<'c, E>(
@@ -83,7 +82,7 @@ impl Meta {
             "#,
         )
         .bind(file_type.to_str())
-        .bind(timestamp.map(|v| v.timestamp().to_string()))
+        .bind(timestamp.map(|v| v.timestamp_millis().to_string()))
         .execute(executor)
         .await?;
         Ok(())

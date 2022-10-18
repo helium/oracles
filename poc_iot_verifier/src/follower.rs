@@ -7,7 +7,6 @@ use helium_proto::services::{
 };
 use helium_proto::{GatewayStakingMode, Region};
 use http::Uri;
-use std::ops::Not;
 use std::time::Duration;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -39,11 +38,7 @@ impl TryFrom<FollowerGatewayRespV1> for FollowerGatewayResp {
             .ok_or_else(|| Error::custom("unsupported staking_mode"))?;
         let region: Region =
             Region::from_i32(v.region).ok_or_else(|| Error::custom("unsupported region"))?;
-        let location = v
-            .location
-            .is_empty()
-            .not()
-            .then(|| v.location.parse::<u64>().unwrap());
+        let location = u64::from_str_radix(&v.location, 16).ok();
         Ok(Self {
             height: v.height,
             location,
@@ -96,6 +91,7 @@ impl FollowerService {
             address: address.to_vec(),
         };
         let proto = self.client.find_gateway(req).await?.into_inner();
+        tracing::debug!("gateway info: {:?}", proto);
         let res: FollowerGatewayResp = FollowerGatewayResp::try_from(proto).unwrap();
         Ok(res)
     }
