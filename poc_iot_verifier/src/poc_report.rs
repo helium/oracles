@@ -2,11 +2,6 @@ use crate::{entropy::ENTROPY_LIFESPAN, Error, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// the period in seconds after when a beacon or witness report in the DB will be deemed stale
-/// this period needs to be sufficiently long that we can be sure the beacon has
-/// zero change of validating
-/// NOTE: this period should permit the verifier to be down for an extended period
-const REPORT_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds;
 /// the max number of attempts a failed beacon report will be retried
 const BEACON_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 /// the max number of attempts a failed witness report will be retried
@@ -246,7 +241,7 @@ impl Report {
 
     pub async fn get_stale_pending_beacons<'c, E>(
         executor: E,
-        base_stale_period: i32,
+        stale_period: i32,
     ) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -267,7 +262,7 @@ impl Report {
             order by created_at asc
             "#,
         )
-        .bind(base_stale_period + REPORT_STALE_PERIOD)
+        .bind(stale_period)
         .fetch_all(executor)
         .await
         .map_err(Error::from)
@@ -275,7 +270,7 @@ impl Report {
 
     pub async fn get_stale_pending_witnesses<'c, E>(
         executor: E,
-        base_stale_period: i32,
+        stale_period: i32,
     ) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -295,7 +290,7 @@ impl Report {
             order by created_at asc
             "#,
         )
-        .bind(base_stale_period + REPORT_STALE_PERIOD)
+        .bind(stale_period)
         .fetch_all(executor)
         .await
         .map_err(Error::from)
