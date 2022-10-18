@@ -20,8 +20,10 @@ pub const DEFAULT_SINK_ROLL_MINS: i64 = 3;
 type Sink = GzipEncoder<BufWriter<File>>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
 
-fn new_transport(sink: Sink) -> Transport {
-    FramedWrite::new(sink, LengthDelimitedCodec::new())
+fn new_transport(sink: Sink, size: usize) -> Transport {
+    LengthDelimitedCodec::builder()
+        .max_frame_length(size)
+        .new_write(sink)
 }
 
 fn transport_sink(transport: &mut Transport) -> &mut Sink {
@@ -247,7 +249,7 @@ impl FileSink {
             path: new_path,
             size: 0,
             time: sink_time,
-            transport: new_transport(writer),
+            transport: new_transport(writer, self.max_size),
         })
     }
 
