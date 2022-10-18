@@ -22,17 +22,19 @@ use helium_proto::services::poc_lora::{
 };
 use std::path::Path;
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use helium_proto::Message;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
 
+/// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
-const LOADER_WORKERS: usize = 10;
-const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 /// the cadence in seconds at which hotspots are permitted to beacon
 const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
+
+const LOADER_WORKERS: usize = 10;
+const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
 pub struct Runner {
     pool: PgPool,
@@ -171,7 +173,7 @@ impl Runner {
             match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
                 Some(last_beacon) => {
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-                    if interval_since_last_beacon.num_seconds() < BEACON_INTERVAL {
+                    if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
                         tracing::debug!(
                             "beacon verification failed, reason:
                             IrregularInterval. Seconds since last beacon {:?}",

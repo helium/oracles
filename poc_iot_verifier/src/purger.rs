@@ -81,7 +81,6 @@ impl Purger {
         .await?;
 
         // spawn off the file sinks
-        // TODO: how to avoid all da cloning?
         let shutdown2 = shutdown.clone();
         let shutdown3 = shutdown.clone();
         let shutdown4 = shutdown.clone();
