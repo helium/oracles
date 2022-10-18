@@ -1,4 +1,7 @@
-use crate::{keypair::Keypair, receipt_txn::handle_report_msg, Result};
+use crate::{
+    error::DecodeError, keypair::Keypair, receipt_txn::handle_report_msg, Result, LOADER_WORKERS,
+    STORE_WORKERS,
+};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
@@ -7,7 +10,7 @@ use helium_proto::{blockchain_txn::Txn, BlockchainTxn};
 use node_follower::txn_service::TransactionService;
 use sqlx::{Pool, Postgres};
 use std::{env, sync::Arc};
-use tokio::{sync::Mutex, time};
+use tokio::time;
 
 // 30 mins
 pub const POC_IOT_TICK_TIME: time::Duration = time::Duration::from_secs(1800);
@@ -18,27 +21,29 @@ pub const DEFAULT_LAST_POC_SUBMISSION_TS_SECS: i64 = 0000000000;
 pub struct Server {
     pool: Pool<Postgres>,
     keypair: Arc<Keypair>,
-    txn_service: Arc<Mutex<TransactionService>>,
+    txn_service: TransactionService,
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
 }
 
 impl Server {
     pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
+        let env_last_poc_submission_ts = env::var("LAST_POC_SUBMISSION_TS")
+            .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS_SECS.to_string())
+            .parse()
+            .map_err(DecodeError::from)?;
+
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
             MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
-                env::var("LAST_POC_SUBMISSION_TS")
-                    .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS_SECS.to_string())
-                    .parse()
-                    .unwrap_or_default()
+                env_last_poc_submission_ts
             })
             .await?;
 
         let result = Self {
             pool: pool.clone(),
             keypair: Arc::new(keypair),
-            txn_service: Arc::new(Mutex::new(TransactionService::from_env()?)),
+            txn_service: TransactionService::from_env()?,
             iot_verifier_store: FileStore::from_env().await?,
             last_poc_submission_ts,
         };
@@ -76,7 +81,7 @@ impl Server {
         let before_utc = Utc::now();
 
         submit_txns(
-            self.txn_service.clone(),
+            &mut self.txn_service,
             &mut self.iot_verifier_store,
             self.keypair.clone(),
             after_utc,
@@ -98,7 +103,7 @@ impl Server {
 }
 
 async fn submit_txns(
-    txn_service: Arc<Mutex<TransactionService>>,
+    txn_service: &mut TransactionService,
     store: &mut FileStore,
     keypair: Arc<Keypair>,
     after_utc: DateTime<Utc>,
@@ -108,18 +113,20 @@ async fn submit_txns(
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
         .await?;
 
-    let stream = store.source(stream::iter(file_list).map(Ok).boxed());
     let before_ts = before_utc.timestamp_millis();
 
-    stream
-        .for_each_concurrent(10, |msg| {
-            let shared_txn_service = txn_service.clone();
+    store
+        .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
+        .for_each_concurrent(STORE_WORKERS, |msg| {
+            let mut shared_txn_service = txn_service.clone();
             let shared_key = keypair.clone();
             async move {
-                if let Ok(m) = msg {
-                    handle_txn_submission(m, shared_key, shared_txn_service, before_ts).await;
-                } else {
-                    tracing::error!("unable to process msg: {:?}", msg)
+                match msg {
+                    Ok(m) => {
+                        handle_txn_submission(m, shared_key, &mut shared_txn_service, before_ts)
+                            .await
+                    }
+                    Err(e) => tracing::error!("unable to process msg due to: {:?}", e),
                 }
             }
         })
@@ -130,11 +137,10 @@ async fn submit_txns(
 async fn handle_txn_submission(
     msg: prost::bytes::BytesMut,
     shared_key: Arc<Keypair>,
-    shared_txn_service: Arc<Mutex<TransactionService>>,
+    txn_service: &mut TransactionService,
     before_ts: i64,
 ) {
     if let Ok(Some((txn, hash, hash_b64_url))) = handle_report_msg(msg, shared_key, before_ts) {
-        let mut txn_service = shared_txn_service.lock().await;
         if txn_service
             .submit(
                 BlockchainTxn {
