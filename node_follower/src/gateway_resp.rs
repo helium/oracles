@@ -1,6 +1,12 @@
 use crate::{Error, Result};
+use async_trait::async_trait;
+use helium_crypto::PublicKey;
 use helium_proto::{services::follower::FollowerGatewayRespV1, GatewayStakingMode, Region};
-use std::ops::Not;
+
+#[async_trait]
+pub trait GatewayInfoResolver {
+    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<FollowerGatewayResp>;
+}
 
 #[derive(Debug, Clone)]
 pub struct FollowerGatewayResp {
@@ -20,11 +26,7 @@ impl TryFrom<FollowerGatewayRespV1> for FollowerGatewayResp {
             .ok_or_else(|| Error::custom("unsupported staking_mode"))?;
         let region: Region =
             Region::from_i32(v.region).ok_or_else(|| Error::custom("unsupported region"))?;
-        let location = v
-            .location
-            .is_empty()
-            .not()
-            .then(|| v.location.parse::<u64>().unwrap());
+        let location = u64::from_str_radix(&v.location, 16).ok();
         Ok(Self {
             height: v.height,
             location,

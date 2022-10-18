@@ -1,15 +1,19 @@
-use crate::{entropy::Entropy, traits::GatewayInfoResolver, Result};
+use crate::{entropy::Entropy, Result};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
     lora_valid_poc::LoraValidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
 };
-use geo::point;
-use geo::prelude::*;
+use geo::{point, prelude::*};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
-use helium_proto::services::poc_lora::{InvalidParticipantSide, InvalidReason};
-use helium_proto::GatewayStakingMode;
-use node_follower::{gateway_resp::FollowerGatewayResp, FollowerService};
+use helium_proto::{
+    services::poc_lora::{InvalidParticipantSide, InvalidReason},
+    GatewayStakingMode,
+};
+use node_follower::{
+    gateway_resp::{FollowerGatewayResp, GatewayInfoResolver},
+    FollowerService,
+};
 use std::f64::consts::PI;
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
