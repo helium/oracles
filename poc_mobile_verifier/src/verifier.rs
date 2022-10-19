@@ -72,7 +72,7 @@ impl VerifierDaemon {
                 sleep_duration = reward_period - epoch_since_last_reward_duration;
             }
 
-            tracing::info!("Sleeping...");
+            tracing::info!("Sleeping for {}", fmt_duration(&sleep_duration));
             let shutdown = shutdown.clone();
             tokio::select! {
                 _ = shutdown => return Ok(()),
@@ -180,4 +180,11 @@ impl Verifier {
 
 fn epoch_duration(epoch: &Range<DateTime<Utc>>) -> Duration {
     epoch.end - epoch.start
+}
+
+fn fmt_duration(duration: &Duration) -> String {
+    let seconds = duration.num_seconds() % 60;
+    let minutes = (seconds / 60) % 60;
+    let hours = (seconds / 60) / 60;
+    format!("{}:{}:{}", hours, minutes, seconds)
 }
