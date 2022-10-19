@@ -65,13 +65,13 @@ impl Heartbeats {
     /// Constructs a new heartbeats collection, starting by pulling every heartbeat
     /// since the end of the last rewardable period (`starting`).
     pub async fn validated(
-        exec: impl sqlx::Executor<'_, Database = sqlx::Postgres> + Copy,
+        exec: impl sqlx::PgExecutor<'_> + Copy,
         starting: DateTime<Utc>,
     ) -> std::result::Result<Self, sqlx::Error> {
         let mut heartbeats = HashMap::new();
         let mut rows =
             sqlx::query_as::<_, Heartbeat>("SELECT * FROM heartbeats WHERE timestamp >= $1")
-                .bind(starting)
+                .bind(starting.naive_utc())
                 .fetch(exec);
 
         while let Some(Heartbeat {

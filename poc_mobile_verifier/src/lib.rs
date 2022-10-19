@@ -5,6 +5,7 @@ mod ingest;
 mod mobile;
 mod reward_share;
 mod shares;
+mod speedtests;
 
 pub mod cli;
 pub mod subnetwork_rewards;

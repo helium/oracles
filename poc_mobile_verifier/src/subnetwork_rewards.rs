@@ -2,6 +2,7 @@ use crate::{
     error::Result,
     heartbeats::{HeartbeatValue, Heartbeats},
     reward_share::{OwnerEmissions, OwnerResolver},
+    speedtests::SpeedtestAverages,
 };
 use chrono::{DateTime, Utc};
 use file_store::file_sink;
@@ -27,11 +28,18 @@ impl SubnetworkRewards {
         mut follower_service: follower::Client<Channel>,
         epoch: &Range<DateTime<Utc>>,
         heartbeats: &Heartbeats,
+        speedtests: &SpeedtestAverages,
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
         for (pub_key, HeartbeatValue { reward_weight, .. }) in &heartbeats.heartbeats {
-            *hotspot_shares.entry(pub_key.clone()).or_default() += reward_weight;
+            // TODO: this is really should be much more complicated
+            if speedtests
+                .get_average(pub_key)
+                .map_or(false, |avg| avg.is_valid())
+            {
+                *hotspot_shares.entry(pub_key.clone()).or_default() += reward_weight;
+            }
         }
 
         let (owner_shares, _missing_owner_shares) =

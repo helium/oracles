@@ -46,12 +46,13 @@ impl Cmd {
         let mut verifier = Verifier::new(file_store, follower).await?;
 
         let heartbeats: Heartbeats = verifier
-            .verify_epoch(&epoch)
+            .verify_epoch(&pool, &epoch)
             .await?
+            .shares
             .valid_shares
             .into_iter()
             .collect();
-        let rewards = verifier.reward_epoch(&epoch, heartbeats).await?;
+        let rewards = verifier.reward_epoch(&epoch, heartbeats, todo!()).await?;
 
         let total_rewards = rewards
             .rewards

@@ -4,6 +4,7 @@ use crate::{
     error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
     shares::Shares,
+    speedtests::SpeedtestAverages,
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -79,7 +80,8 @@ impl VerifierDaemon {
     }
 
     pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let shares = self.verifier.verify_epoch(&epoch).await?;
+        let VerifiedEpoch { shares, speedtests } =
+            self.verifier.verify_epoch(&self.pool, &epoch).await?;
 
         let mut transaction = self.pool.begin().await?;
 
@@ -91,6 +93,10 @@ impl VerifierDaemon {
             heartbeat.save(&mut transaction).await?;
         }
 
+        for speedtest in speedtests.into_iter() {
+            speedtest.save(&mut transaction).await?;
+        }
+
         // Update the last verified end time:
         self.last_verified_end_time
             .update(&mut transaction, epoch.end.timestamp() as i64)
@@ -98,6 +104,7 @@ impl VerifierDaemon {
 
         transaction.commit().await?;
 
+        // TODO:
         shares
             .write(&self.valid_shares_tx, &self.invalid_shares_tx)
             .await?;
@@ -107,18 +114,27 @@ impl VerifierDaemon {
 
     pub async fn reward_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
         let heartbeats = Heartbeats::validated(&self.pool, epoch.start).await?;
+        let speedtests = SpeedtestAverages::validated(&self.pool, epoch.start).await?;
 
-        let rewards = self.verifier.reward_epoch(&epoch, heartbeats).await?;
+        let rewards = self
+            .verifier
+            .reward_epoch(&epoch, heartbeats, speedtests)
+            .await?;
 
         let mut transaction = self.pool.begin().await?;
 
-        // Clear the heartbeats database
+        // Clear the heartbeats and speedtest database
         // TODO: should the truncation be bound to a given epoch?
         // It's not intended that any heartbeats will exists outside the
         // current epoch, but it might be better to code defensively.
-        sqlx::query("TRUNCATE TABLE heartbeats;")
-            .execute(&mut transaction)
-            .await?;
+        sqlx::query(
+            r#"
+            TRUNCATE TABLE heartbeats;
+            TRUNCATE TABLE speedtests;
+            "#,
+        )
+        .execute(&mut transaction)
+        .await?;
 
         // Update the last rewarded end time:
         self.last_rewarded_end_time
@@ -158,17 +174,30 @@ impl Verifier {
         })
     }
 
-    pub async fn verify_epoch(&mut self, epoch: &Range<DateTime<Utc>>) -> Result<Shares> {
-        Shares::validate_heartbeats(&self.file_store, epoch).await
+    pub async fn verify_epoch(
+        &mut self,
+        pool: &Pool<Postgres>,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> Result<VerifiedEpoch> {
+        let shares = Shares::validate_heartbeats(&self.file_store, epoch).await?;
+        let speedtests =
+            SpeedtestAverages::validate_speedtests(pool, &self.file_store, epoch).await?;
+        Ok(VerifiedEpoch { shares, speedtests })
     }
 
     pub async fn reward_epoch(
         &mut self,
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
+        speedtests: SpeedtestAverages,
     ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, &heartbeats).await
+        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, &heartbeats, &speedtests).await
     }
+}
+
+pub struct VerifiedEpoch {
+    pub shares: Shares,
+    pub speedtests: SpeedtestAverages,
 }
 
 fn epoch_duration(epoch: &Range<DateTime<Utc>>) -> Duration {

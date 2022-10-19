@@ -2,6 +2,7 @@ use crate::Result;
 use chrono::{DateTime, Utc};
 use file_store::{
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
     FileStore, FileType,
 };
@@ -29,6 +30,32 @@ pub async fn new_heartbeat_reports(
         };
 
         reports.push(heartbeat_report);
+    }
+
+    Ok(reports)
+}
+
+pub async fn new_speedtest_reports(
+    file_store: &FileStore,
+    epoch: &Range<DateTime<Utc>>,
+) -> Result<Vec<CellSpeedtest>> {
+    let file_list = file_store
+        .list_all(FileType::CellSpeedtestIngestReport, epoch.start, epoch.end)
+        .await?;
+    let mut stream = file_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
+
+    let mut reports = vec![];
+
+    while let Some(Ok(msg)) = stream.next().await {
+        let speedtest_report = match CellSpeedtestIngestReport::decode(msg) {
+            Ok(report) => report.report,
+            Err(err) => {
+                tracing::error!("Could not decode cell heartbeat ingest report: {:?}", err);
+                continue;
+            }
+        };
+
+        reports.push(speedtest_report);
     }
 
     Ok(reports)
