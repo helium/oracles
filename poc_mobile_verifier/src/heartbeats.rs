@@ -4,6 +4,7 @@ use crate::{shares::Share, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
 use rust_decimal::Decimal;
+use std::collections::HashMap;
 
 #[derive(sqlx::FromRow, Clone)]
 pub struct Heartbeat {
@@ -13,16 +14,98 @@ pub struct Heartbeat {
     pub timestamp: NaiveDateTime,
 }
 
-pub async fn validated(
-    exec: impl sqlx::PgExecutor<'_> + Copy,
-    starting: DateTime<Utc>,
-) -> std::result::Result<Vec<Heartbeat>, sqlx::Error> {
-    let rows = sqlx::query_as::<_, Heartbeat>("SELECT * FROM heartbeats WHERE timestamp >= $1")
-        .bind(starting)
-        .fetch_all(exec)
-        .await?;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HeartbeatKey {
+    hotspot_key: PublicKey,
+    cbsd_id: String,
+}
 
-    Ok(rows)
+pub struct HeartbeatValue {
+    reward_weight: Decimal,
+    timestamp: NaiveDateTime,
+}
+
+pub struct Heartbeats {
+    pub heartbeats: HashMap<HeartbeatKey, HeartbeatValue>,
+}
+
+impl Heartbeats {
+    pub async fn validated(
+        exec: impl sqlx::PgExecutor<'_>,
+        starting: DateTime<Utc>,
+    ) -> std::result::Result<Self, sqlx::Error> {
+        let heartbeats =
+            sqlx::query_as::<_, Heartbeat>("SELECT * FROM heartbeats WHERE timestamp >= $1")
+                .bind(starting)
+                .fetch_all(exec)
+                .await?
+                .into_iter()
+                .map(
+                    |Heartbeat {
+                         hotspot_key,
+                         cbsd_id,
+                         reward_weight,
+                         timestamp,
+                     }| {
+                        (
+                            HeartbeatKey {
+                                hotspot_key,
+                                cbsd_id,
+                            },
+                            HeartbeatValue {
+                                reward_weight,
+                                timestamp,
+                            },
+                        )
+                    },
+                )
+                .collect();
+        Ok(Self { heartbeats })
+    }
+
+    pub fn into_iter(self) -> impl IntoIterator<Item = Heartbeat> {
+        self.heartbeats.into_iter().map(
+            |(
+                HeartbeatKey {
+                    hotspot_key,
+                    cbsd_id,
+                },
+                HeartbeatValue {
+                    reward_weight,
+                    timestamp,
+                },
+            )| Heartbeat {
+                hotspot_key,
+                cbsd_id,
+                reward_weight,
+                timestamp,
+            },
+        )
+    }
+}
+
+impl FromIterator<Share> for Heartbeats {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Share>,
+    {
+        let heartbeats = iter
+            .into_iter()
+            .map(|share| {
+                (
+                    HeartbeatKey {
+                        hotspot_key: share.pub_key,
+                        cbsd_id: share.cbsd_id,
+                    },
+                    HeartbeatValue {
+                        reward_weight: share.reward_weight,
+                        timestamp: share.timestamp,
+                    },
+                )
+            })
+            .collect();
+        Self { heartbeats }
+    }
 }
 
 #[derive(sqlx::FromRow)]

@@ -1,6 +1,6 @@
 use crate::{
     error::Result,
-    heartbeats::Heartbeat,
+    heartbeats::Heartbeats,
     reward_share::{OwnerEmissions, OwnerResolver},
 };
 use chrono::{DateTime, Utc};
@@ -26,11 +26,11 @@ impl SubnetworkRewards {
     pub async fn from_epoch(
         mut follower_service: follower::Client<Channel>,
         epoch: &Range<DateTime<Utc>>,
-        heartbeats: &Vec<Heartbeat>,
+        heartbeats: Heartbeats,
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
-        for heartbeat in heartbeats {
+        for heartbeat in heartbeats.into_iter() {
             *hotspot_shares
                 .entry(heartbeat.hotspot_key.clone())
                 .or_default() += heartbeat.reward_weight;

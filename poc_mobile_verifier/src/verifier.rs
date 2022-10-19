@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::{
     error::{Error, Result},
-    heartbeats::{self, Heartbeat},
+    heartbeats::{Heartbeat, Heartbeats},
     shares::Shares,
     subnetwork_rewards::SubnetworkRewards,
 };
@@ -106,7 +106,7 @@ impl VerifierDaemon {
     }
 
     pub async fn reward_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let heartbeats = heartbeats::validated(&self.pool, epoch.start).await?;
+        let heartbeats = Heartbeats::validated(&self.pool, epoch.start).await?;
 
         let rewards = self.verifier.reward_epoch(&epoch, heartbeats).await?;
 
@@ -165,9 +165,9 @@ impl Verifier {
     pub async fn reward_epoch(
         &mut self,
         epoch: &Range<DateTime<Utc>>,
-        heartbeats: Vec<Heartbeat>,
+        heartbeats: Heartbeats,
     ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, &heartbeats).await
+        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats).await
     }
 }
 

@@ -1,10 +1,9 @@
-use crate::{env_var, heartbeats::Heartbeat, verifier::Verifier, Result};
+use crate::{env_var, heartbeats::Heartbeats, verifier::Verifier, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
 use serde_json::json;
-use sqlx::postgres::PgPoolOptions;
 
 use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
@@ -36,21 +35,13 @@ impl Cmd {
                 .connect_lazy(),
         );
 
-        let db_connection_str = dotenv::var("DATABASE_URL")?;
-        let pool = PgPoolOptions::new()
-            .max_connections(10)
-            .connect(&db_connection_str)
-            .await?;
-        sqlx::migrate!().run(&pool).await?;
-
         let mut verifier = Verifier::new(file_store, follower).await?;
 
-        let heartbeats: Vec<Heartbeat> = verifier
+        let heartbeats: Heartbeats = verifier
             .verify_epoch(&epoch)
             .await?
             .valid_shares
             .into_iter()
-            .map(Heartbeat::from)
             .collect();
 
         let rewards = verifier.reward_epoch(&epoch, heartbeats).await?;
