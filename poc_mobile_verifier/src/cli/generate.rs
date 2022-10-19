@@ -4,7 +4,6 @@ use file_store::FileStore;
 use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
 use serde_json::json;
-use sqlx::postgres::PgPoolOptions;
 
 use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
@@ -36,13 +35,6 @@ impl Cmd {
                 .connect_lazy(),
         );
 
-        let db_connection_str = dotenv::var("DATABASE_URL")?;
-        let pool = PgPoolOptions::new()
-            .max_connections(10)
-            .connect(&db_connection_str)
-            .await?;
-        sqlx::migrate!().run(&pool).await?;
-
         let mut verifier = Verifier::new(file_store, follower).await?;
 
         let heartbeats: Heartbeats = verifier
@@ -51,6 +43,7 @@ impl Cmd {
             .valid_shares
             .into_iter()
             .collect();
+
         let rewards = verifier.reward_epoch(&epoch, heartbeats).await?;
 
         let total_rewards = rewards

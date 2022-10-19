@@ -167,7 +167,7 @@ impl Verifier {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
     ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, &heartbeats).await
+        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats).await
     }
 }
 
