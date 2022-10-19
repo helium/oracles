@@ -50,6 +50,7 @@ impl Cmd {
             .await?
             .valid_shares
             .into_iter()
+            .map(Heartbeat::from)
             .collect();
 
         let rewards = verifier.reward_epoch(&epoch, heartbeats).await?;

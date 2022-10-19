@@ -62,12 +62,3 @@ impl From<Share> for Heartbeat {
         }
     }
 }
-
-impl FromIterator<Share> for Vec<Heartbeat> {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = Share>,
-    {
-        iter.into_iter().map(Heartbeat::from).collect()
-    }
-}
