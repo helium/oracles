@@ -31,8 +31,9 @@ impl SubnetworkRewards {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
         for heartbeat in heartbeats {
-            *hotspot_shares.entry(heartbeat.hotspot_key.clone()).or_default() +=
-                heartbeat.reward_weight;
+            *hotspot_shares
+                .entry(heartbeat.hotspot_key.clone())
+                .or_default() += heartbeat.reward_weight;
         }
 
         let (owner_shares, _missing_owner_shares) =
