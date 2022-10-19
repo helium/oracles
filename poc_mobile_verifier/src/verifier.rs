@@ -123,7 +123,7 @@ impl VerifierDaemon {
 
         let mut transaction = self.pool.begin().await?;
 
-        // Clear the heartbeats and speedtest database
+        // Clear the heartbeats and speedtest tables:
         // TODO: should the truncation be bound to a given epoch?
         // It's not intended that any heartbeats will exists outside the
         // current epoch, but it might be better to code defensively.

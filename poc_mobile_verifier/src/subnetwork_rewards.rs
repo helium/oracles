@@ -33,7 +33,7 @@ impl SubnetworkRewards {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
         for (pub_key, HeartbeatValue { reward_weight, .. }) in &heartbeats.heartbeats {
-            // TODO: this is really should be much more complicated
+            // TODO: start here to properly fix speedtests
             if speedtests
                 .get_average(pub_key)
                 .map_or(false, |avg| avg.is_valid())

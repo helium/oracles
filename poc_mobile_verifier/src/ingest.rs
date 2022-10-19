@@ -50,7 +50,7 @@ pub async fn new_speedtest_reports(
         let speedtest_report = match CellSpeedtestIngestReport::decode(msg) {
             Ok(report) => report.report,
             Err(err) => {
-                tracing::error!("Could not decode cell heartbeat ingest report: {:?}", err);
+                tracing::error!("Could not decode cell speedtest ingest report: {:?}", err);
                 continue;
             }
         };

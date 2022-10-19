@@ -90,9 +90,7 @@ impl SpeedtestAverages {
     }
 
     pub fn get_average(&self, pub_key: &PublicKey) -> Option<Average> {
-        self.speedtests
-            .get(pub_key)
-            .map(Average::from)
+        self.speedtests.get(pub_key).map(Average::from)
     }
 
     pub async fn validated(
