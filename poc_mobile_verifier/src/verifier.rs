@@ -184,7 +184,7 @@ fn epoch_duration(epoch: &Range<DateTime<Utc>>) -> Duration {
 
 fn fmt_duration(duration: &Duration) -> String {
     let seconds = duration.num_seconds() % 60;
-    let minutes = (seconds / 60) % 60;
-    let hours = (seconds / 60) / 60;
+    let minutes = (duration.num_seconds() / 60) % 60;
+    let hours = (duration.num_seconds() / 60) / 60;
     format!("{}:{}:{}", hours, minutes, seconds)
 }
