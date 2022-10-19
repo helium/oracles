@@ -45,10 +45,17 @@ impl VerifierDaemon {
                 // We always want to verify before a reward 
                 || epoch_since_last_reward_duration >= reward_period
             {
-                tracing::info!("Verifying epoch: {:?}", epoch_since_last_verify);
+                let epoch_duration = epoch_since_last_verify_duration.min(verification_period);
+                let last_verified_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
+                let epoch = last_verified_end_time..(last_verified_end_time + epoch_duration);
+                tracing::info!("Verifying epoch: {:?}", epoch);
                 // Attempt to verify the current epoch:
-                self.verify_epoch(epoch_since_last_verify).await?;
-                verification_period
+                self.verify_epoch(epoch).await?;
+                if epoch_since_last_verify_duration - epoch_duration > verification_period {
+                    Duration::zero()
+                } else {
+                    verification_period
+                }
             } else {
                 verification_period - epoch_since_last_verify_duration
             };
