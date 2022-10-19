@@ -30,7 +30,7 @@ impl SubnetworkRewards {
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
-        for (pub_key, HeartbeatValue { reward_weight, .. }) in &heartbeats.heartbeats {
+        for ((pub_key, _cbsd_id), HeartbeatValue { reward_weight, .. }) in &heartbeats.heartbeats {
             *hotspot_shares.entry(pub_key.clone()).or_default() += reward_weight;
         }
 

@@ -9,7 +9,8 @@ use std::collections::HashMap;
 
 #[derive(sqlx::FromRow)]
 pub struct Heartbeat {
-    pub id: PublicKey,
+    pub pub_key: PublicKey,
+    pub cbsd_id: String,
     pub reward_weight: Decimal,
     pub timestamp: NaiveDateTime,
 }
@@ -23,14 +24,15 @@ impl Heartbeat {
     pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
         sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
-            insert into heartbeats (id, reward_weight, timestamp)
-            values ($1, $2, $3)
+            insert into heartbeats (pub_key, cbsd_id, reward_weight, timestamp)
+            values ($1, $2, $3, $4)
             on conflict (id) do update set
             reward_weight = EXCLUDED.reward_weight, timestamp = EXCLUDED.timestamp
             returning (xmax = 0) as inserted;
             "#,
         )
-        .bind(self.id)
+        .bind(self.pub_key)
+        .bind(self.cbsd_id)
         .bind(self.reward_weight)
         .bind(self.timestamp)
         .fetch_one(exec)
@@ -43,7 +45,8 @@ impl Heartbeat {
 impl From<Share> for Heartbeat {
     fn from(share: Share) -> Self {
         Self {
-            id: share.pub_key,
+            pub_key: share.pub_key,
+            cbsd_id: share.cbsd_id,
             reward_weight: share.reward_weight,
             timestamp: share.timestamp,
         }
@@ -56,9 +59,11 @@ pub struct HeartbeatValue {
     pub timestamp: NaiveDateTime,
 }
 
+type HeartbeatKey = (PublicKey, String);
+
 #[derive(Default, Clone)]
 pub struct Heartbeats {
-    pub heartbeats: HashMap<PublicKey, HeartbeatValue>,
+    pub heartbeats: HashMap<HeartbeatKey, HeartbeatValue>,
 }
 
 impl Heartbeats {
@@ -75,13 +80,14 @@ impl Heartbeats {
                 .fetch(exec);
 
         while let Some(Heartbeat {
-            id,
+            pub_key,
+            cbsd_id,
             reward_weight,
             timestamp,
         }) = rows.try_next().await?
         {
             heartbeats.insert(
-                id,
+                (pub_key, cbsd_id),
                 HeartbeatValue {
                     reward_weight,
                     timestamp,
@@ -100,12 +106,13 @@ impl FromIterator<Share> for Heartbeats {
         let mut heartbeats = HashMap::default();
         for share in iter.into_iter() {
             let Heartbeat {
-                id,
+                pub_key,
+                cbsd_id,
                 reward_weight,
                 timestamp,
             } = Heartbeat::from(share);
             heartbeats.insert(
-                id,
+                (pub_key, cbsd_id),
                 HeartbeatValue {
                     reward_weight,
                     timestamp,
