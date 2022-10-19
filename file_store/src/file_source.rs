@@ -1,4 +1,4 @@
-use crate::{BytesMutStream, Error};
+use crate::{file_sink, BytesMutStream, Error};
 use async_compression::tokio::bufread::GzipDecoder;
 use futures::{
     stream::{self},
@@ -23,7 +23,11 @@ where
         .flat_map(|file| match file {
             Ok(file) => {
                 let buf_reader = BufReader::new(file);
-                FramedRead::new(GzipDecoder::new(buf_reader), LengthDelimitedCodec::new())
+                let codec = LengthDelimitedCodec::builder()
+                    .max_frame_length(file_sink::MAX_FRAME_LENGTH)
+                    .new_codec();
+
+                FramedRead::new(GzipDecoder::new(buf_reader), codec)
                     .map_err(Error::from)
                     .boxed()
             }
