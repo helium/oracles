@@ -67,7 +67,7 @@ impl Shares {
         let file_list = file_store
             .list_all(FileType::CellHeartbeatIngestReport, epoch.start, epoch.end)
             .await?;
-        let mut stream = file_store.source(stream::iter(file_list.clone()).map(Ok).boxed());
+        let mut stream = file_store.source(stream::iter(file_list).map(Ok).boxed());
 
         while let Some(Ok(msg)) = stream.next().await {
             let heartbeat_report = match CellHeartbeatIngestReport::decode(msg) {
