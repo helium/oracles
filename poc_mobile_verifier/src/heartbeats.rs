@@ -36,7 +36,7 @@ impl Heartbeat {
             r#"
             insert into heartbeats (pub_key, cbsd_id, reward_weight, timestamp)
             values ($1, $2, $3, $4)
-            on conflict (id) do update set
+            on conflict (pub_key, cbsd_id) do update set
             reward_weight = EXCLUDED.reward_weight, timestamp = EXCLUDED.timestamp
             returning (xmax = 0) as inserted;
             "#,
