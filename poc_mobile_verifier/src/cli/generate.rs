@@ -26,7 +26,7 @@ impl Cmd {
         tracing::info!("Verifying shares from the following time range: {start} to {end}");
         let epoch = start..end;
 
-        let file_store = FileStore::from_env().await?;
+        let file_store = FileStore::from_env_with_prefix("INPUT").await?;
 
         let follower = follower::Client::new(
             Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
