@@ -78,15 +78,18 @@ impl VerifierDaemon {
                 sleep_duration = reward_period - epoch_since_last_reward_duration;
             }
 
-            tracing::info!("Sleeping for {}", fmt_duration(&sleep_duration));
+            let sleep_duration = sleep_duration
+                .to_std()
+                .map_err(|_| Error::OutOfRangeError)?;
+
+            tracing::info!(
+                "Sleeping for {}",
+                humantime::format_duration(sleep_duration)
+            );
             let shutdown = shutdown.clone();
             tokio::select! {
                 _ = shutdown => return Ok(()),
-                _ = sleep(
-                    sleep_duration
-                        .to_std()
-                        .map_err(|_| Error::OutOfRangeError)?,
-                ) => (),
+                _ = sleep(sleep_duration) => (),
             }
         }
     }
@@ -186,11 +189,4 @@ impl Verifier {
 
 fn epoch_duration(epoch: &Range<DateTime<Utc>>) -> Duration {
     epoch.end - epoch.start
-}
-
-fn fmt_duration(duration: &Duration) -> String {
-    let seconds = duration.num_seconds() % 60;
-    let minutes = (duration.num_seconds() / 60) % 60;
-    let hours = (duration.num_seconds() / 60) / 60;
-    format!("{}:{}:{}", hours, minutes, seconds)
 }

@@ -26,6 +26,7 @@ prost = {workspace = true}
 once_cell = {workspace = true}
 helium-proto = {workspace = true}
 helium-crypto = {workspace = true}
+humantime = {workspace = true}
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
