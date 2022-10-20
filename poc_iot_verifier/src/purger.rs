@@ -139,9 +139,8 @@ impl Purger {
     ) -> Result {
         let packet_data = &db_beacon.packet_data;
         let beacon_buf: &[u8] = &db_beacon.report_data;
-        let beacon_report = LoraBeaconIngestReport::try_from(
-            LoraBeaconIngestReportV1::decode(beacon_buf).unwrap(),
-        )?;
+        let beacon_report: LoraBeaconIngestReport =
+            LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
         let beacon = &beacon_report.report;
         let invalid_beacon_proto: LoraInvalidBeaconReportV1 = LoraInvalidBeaconReport {
             received_timestamp: beacon_report.received_timestamp,
@@ -163,9 +162,8 @@ impl Purger {
     ) -> Result {
         let packet_data = &db_witness.packet_data;
         let witness_buf: &[u8] = &db_witness.report_data;
-        let witness_report = LoraWitnessIngestReport::try_from(
-            LoraWitnessIngestReportV1::decode(witness_buf).unwrap(),
-        )?;
+        let witness_report: LoraWitnessIngestReport =
+            LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?;
         let witness = &witness_report.report;
         let public_key = witness.pub_key.to_vec().clone();
         let invalid_witness_report_proto: LoraInvalidWitnessReportV1 = LoraInvalidWitnessReport {
