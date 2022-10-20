@@ -23,9 +23,9 @@ impl TryFrom<FollowerGatewayRespV1> for FollowerGatewayResp {
     type Error = Error;
     fn try_from(v: FollowerGatewayRespV1) -> Result<Self> {
         let staking_mode: GatewayStakingMode = GatewayStakingMode::from_i32(v.staking_mode)
-            .ok_or_else(|| Error::custom("unsupported staking_mode"))?;
+            .ok_or_else(|| Error::StakingMode(format!("{:?}", v.staking_mode)))?;
         let region: Region =
-            Region::from_i32(v.region).ok_or_else(|| Error::custom("unsupported region"))?;
+            Region::from_i32(v.region).ok_or_else(|| Error::Region(format!("{:?}", v.region)))?;
         let location = u64::from_str_radix(&v.location, 16).ok();
         Ok(Self {
             height: v.height,

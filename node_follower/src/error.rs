@@ -8,12 +8,8 @@ pub enum Error {
     Uri(#[from] http::uri::InvalidUri),
     #[error("grpc {}", .0.message())]
     Grpc(#[from] tonic::Status),
-    #[error("custom error")]
-    Custom(String),
-}
-
-impl Error {
-    pub fn custom<E: ToString>(msg: E) -> Self {
-        Self::Custom(msg.to_string())
-    }
+    #[error("unsupported staking mode {0}")]
+    StakingMode(String),
+    #[error("unsupported region {0}")]
+    Region(String),
 }
