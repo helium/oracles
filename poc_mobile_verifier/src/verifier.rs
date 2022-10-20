@@ -50,7 +50,7 @@ impl VerifierDaemon {
                 let last_verified_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
                 let epoch = last_verified_end_time
                     ..(last_verified_end_time + epoch_duration)
-                        .min(last_rewarded_end_time + Duration::hours(24));
+                        .min(last_rewarded_end_time + Duration::hours(self.reward_period_hours));
                 tracing::info!("Verifying epoch: {:?}", epoch);
                 // Attempt to verify the current epoch:
                 self.verify_epoch(epoch).await?;
@@ -66,8 +66,9 @@ impl VerifierDaemon {
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
             if epoch_since_last_reward_duration >= reward_period {
-                let last_rewarded_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
-                let epoch = last_rewarded_end_time..(last_rewarded_end_time + Duration::hours(24));
+                let last_rewarded_end_time = Utc.timestamp(*self.last_rewarded_end_time.value(), 0);
+                let epoch = last_rewarded_end_time
+                    ..(last_rewarded_end_time + Duration::hours(self.reward_period_hours));
                 tracing::info!("Rewarding epoch: {:?}", epoch);
                 self.reward_epoch(epoch).await?
             } else if epoch_since_last_reward_duration + sleep_duration >= reward_period {
