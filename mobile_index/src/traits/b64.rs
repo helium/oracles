@@ -8,6 +8,7 @@ pub trait B64 {
     fn to_b64_url(&self) -> Result<String> {
         self.to_b64_config(base64::URL_SAFE_NO_PAD)
     }
+
     fn from_b64(str: &str) -> Result<Self>
     where
         Self: std::marker::Sized,

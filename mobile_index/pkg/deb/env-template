@@ -1,6 +1,0 @@
-RUST_LOG=info
-GRPC_SOCKET_ADDR=0.0.0.0:9081
-REWARD_INDEX_STORE=/var/data/mobile-index
-REWARDS_BUCKET=examplenet-poc-verified
-DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/mobile_index_db
-METRICS_SCRAPE_ENDPOINT=127.0.0.1:19000

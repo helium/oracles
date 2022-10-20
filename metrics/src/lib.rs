@@ -1,6 +1,7 @@
 //! Common code shared between the reward and ingest servers.
 
 use metrics_exporter_prometheus::PrometheusBuilder;
+use serde::Deserialize;
 use std::{
     future::Future,
     net::SocketAddr,
@@ -8,6 +9,17 @@ use std::{
     task::{Context, Poll},
 };
 use tower::{Layer, Service};
+
+#[derive(Debug, Deserialize)]
+pub struct MetricsSettings {
+    /// Scrape endpoint for metrics
+    #[serde(default = "default_metrics_endpoint")]
+    pub endpoint: String,
+}
+
+fn default_metrics_endpoint() -> String {
+    "127.0.0.1:19000".to_string()
+}
 
 /// Install the Prometheus export gateway
 pub fn install_metrics() {

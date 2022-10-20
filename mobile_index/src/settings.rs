@@ -14,6 +14,8 @@ pub struct Settings {
     pub interval: u64,
     pub database: Database,
     pub verifier: file_store::FileStoreSettings,
+    pub output: file_store::FileStoreSettings,
+    pub metrics: poc_metrics::MetricsSettings,
 }
 
 #[derive(Debug, Deserialize)]

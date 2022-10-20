@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 tower = "0.4"
+serde = { workspace = true }
 tracing = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
