@@ -11,6 +11,8 @@ create type reporttype  AS enum (
 
 create table poc_report (
     id bytea primary key not null,
+    -- remote_entropy: allow nulls as only beacon reports will populate this
+    remote_entropy bytea,
     packet_data bytea not null,
     report_data bytea not null,
     report_type reporttype,

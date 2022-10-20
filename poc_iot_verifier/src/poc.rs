@@ -365,7 +365,9 @@ impl Poc {
             witness.signal,
             min_rcv_signal
         );
-        if witness.signal / 10 < min_rcv_signal as i32 {
+        // signal is submitted as DBM * 10
+        // min_rcv_signal is plain old DBM
+        if (witness.signal / 10) < min_rcv_signal as i32 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::BadRssi

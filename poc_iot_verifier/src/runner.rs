@@ -22,16 +22,19 @@ use helium_proto::services::poc_lora::{
 };
 use std::path::Path;
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use helium_proto::Message;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
 
+/// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
+/// the cadence in seconds at which hotspots are permitted to beacon
+const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
+
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
-const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
 
 pub struct Runner {
     pool: PgPool,
@@ -170,7 +173,7 @@ impl Runner {
             match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
                 Some(last_beacon) => {
                     let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-                    if interval_since_last_beacon.num_seconds() < BEACON_INTERVAL {
+                    if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
                         tracing::debug!(
                             "beacon verification failed, reason:
                             IrregularInterval. Seconds since last beacon {:?}",
@@ -235,6 +238,9 @@ impl Runner {
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
                     // and halt here, let things be reprocessed next tick
+                    // if a witness continues to fail it will eventually
+                    // be discarded from the list returned for the beacon
+                    // thus one of more failing witnesses will not block the overall POC
                     if !verified_witnesses_result.failed_witnesses.is_empty() {
                         for failed_witness_report in verified_witnesses_result.failed_witnesses {
                             // something went wrong whilst verifying witnesses

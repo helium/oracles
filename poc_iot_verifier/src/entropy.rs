@@ -2,6 +2,13 @@ use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// measurement in seconds of a piece of entropy
+/// its lifespan will be valid from entropy.timestamp to entropy.timestamp + ENTROPY_LIFESPAN
+/// any beacon or witness report received after this period and before the ENTROPY_STALE_PERIOD
+/// defined below will be rejected due to being outside of the entropy lifespan
+/// TODO: determine a sane value here
+pub const ENTROPY_LIFESPAN: i32 = 90;
+
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "report_type", rename_all = "lowercase")]
 pub enum ReportType {
@@ -67,17 +74,17 @@ impl Entropy {
         .map_err(Error::from)
     }
 
-    pub async fn purge<'c, 'q, E>(executor: E, timestamp: &'q DateTime<Utc>) -> Result
+    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i32) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
         sqlx::query(
             r#"
             delete from entropy
-            where timestamp > $1
+            where timestamp < (NOW() - INTERVAL '$1 MINUTES')
             "#,
         )
-        .bind(timestamp)
+        .bind(stale_period)
         .execute(executor.clone())
         .await
         .map(|_| ())
