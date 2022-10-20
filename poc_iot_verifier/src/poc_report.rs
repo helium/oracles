@@ -107,7 +107,7 @@ impl Report {
             "#,
         )
         .bind(id)
-        .execute(executor.clone())
+        .execute(executor)
         .await
         .map(|_| ())
         .map_err(Error::from)
