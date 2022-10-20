@@ -244,7 +244,10 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn get_stale_pending_beacons<'c, E>(executor: E) -> Result<Vec<Self>>
+    pub async fn get_stale_pending_beacons<'c, E>(
+        executor: E,
+        base_stale_period: i32,
+    ) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -264,13 +267,16 @@ impl Report {
             order by created_at asc
             "#,
         )
-        .bind(REPORT_STALE_PERIOD)
+        .bind(base_stale_period + REPORT_STALE_PERIOD)
         .fetch_all(executor)
         .await
         .map_err(Error::from)
     }
 
-    pub async fn get_stale_pending_witnesses<'c, E>(executor: E) -> Result<Vec<Self>>
+    pub async fn get_stale_pending_witnesses<'c, E>(
+        executor: E,
+        base_stale_period: i32,
+    ) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -289,7 +295,7 @@ impl Report {
             order by created_at asc
             "#,
         )
-        .bind(REPORT_STALE_PERIOD)
+        .bind(base_stale_period + REPORT_STALE_PERIOD)
         .fetch_all(executor)
         .await
         .map_err(Error::from)

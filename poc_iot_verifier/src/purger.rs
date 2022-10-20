@@ -18,18 +18,17 @@ use tokio::time;
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(300);
 const LOADER_WORKERS: u32 = 10;
 const LOADER_DB_POOL_SIZE: u32 = 2 * LOADER_WORKERS;
-/// the fallback value to define the period in seconds after when a piece of entropy
-/// in the DB will be deemed stale and purged from the DB
-/// any beacon or witness using this entropy & received after this period will fail
-/// due to being stale
-/// the report itself will never be verified but instead handled by the stale purger
-/// NOTE: the verifier being down needs to be considered here
+/// the period of time in seconds after which entropy will be deemed stale
+/// and purged from the DB
+// any beacon or witness using this entropy & received after this period will fail
+// due to being stale
+// the report itself will never be verified but instead handled by the stale purger
 const ENTROPY_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds
 
 pub struct Purger {
     pool: PgPool,
     store_path: String,
-    entropy_stale_period: i32,
+    base_stale_period: i32,
 }
 
 impl Purger {
@@ -37,14 +36,16 @@ impl Purger {
         let pool = mk_db_pool(LOADER_DB_POOL_SIZE).await?;
         let store_path =
             std::env::var("VERIFIER_STORE").unwrap_or_else(|_| String::from("/var/data/verifier"));
-        let entropy_stale_period: i32 = std::env::var("ENTROPY_STALE_PERIOD").map_or_else(
-            |_| ENTROPY_STALE_PERIOD,
-            |v: String| v.parse::<i32>().unwrap_or(ENTROPY_STALE_PERIOD),
-        );
+        // get the base_stale period
+        // if the env var is set, this value will be added to the entropy and report
+        // stale periods and is to prevent data being unnecessarily purged
+        // in the event the verifier is down for an extended period of time
+        let base_stale_period: i32 = std::env::var("BASE_STALE_PERIOD")
+            .map_or_else(|_| 0, |v: String| v.parse::<i32>().unwrap_or(0));
         Ok(Self {
             pool,
             store_path,
-            entropy_stale_period,
+            base_stale_period,
         })
     }
 
@@ -117,18 +118,18 @@ impl Purger {
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        _ = Report::get_stale_pending_beacons(&self.pool)
+        _ = Report::get_stale_pending_beacons(&self.pool, self.base_stale_period)
             .await?
             .iter()
             .map(|report| self.handle_purged_beacon(report, &lora_invalid_beacon_tx));
 
-        _ = Report::get_stale_pending_witnesses(&self.pool)
+        _ = Report::get_stale_pending_witnesses(&self.pool, self.base_stale_period)
             .await?
             .iter()
             .map(|report| self.handle_purged_witness(report, &lora_invalid_witness_tx));
 
         // purge any stale entropy, no need to output anything to s3 here
-        _ = Entropy::purge(&self.pool, &self.entropy_stale_period).await;
+        _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
         Ok(())
     }
 
