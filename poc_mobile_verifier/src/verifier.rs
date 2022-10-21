@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
     shares::Shares,
-    speedtests::SpeedtestAverages,
+    speedtests::{SpeedtestStore, SpeedtestAverages},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -123,18 +123,10 @@ impl VerifierDaemon {
 
         let mut transaction = self.pool.begin().await?;
 
-        // Clear the heartbeats and speedtest tables:
-        // TODO: should the truncation be bound to a given epoch?
-        // It's not intended that any heartbeats will exists outside the
-        // current epoch, but it might be better to code defensively.
-        sqlx::query(
-            r#"
-            TRUNCATE TABLE heartbeats;
-            TRUNCATE TABLE speedtests;
-            "#,
-        )
-        .execute(&mut transaction)
-        .await?;
+        // Clear the heartbeats table:
+        sqlx::query("TRUNCATE TABLE heartbeats;")
+            .execute(&mut transaction)
+            .await?;
 
         // Update the last rewarded end time:
         self.last_rewarded_end_time
@@ -176,7 +168,7 @@ impl Verifier {
 
     pub async fn verify_epoch(
         &mut self,
-        pool: &Pool<Postgres>,
+        pool: impl SpeedtestStore + Copy,
         epoch: &Range<DateTime<Utc>>,
     ) -> Result<VerifiedEpoch> {
         let shares = Shares::validate_heartbeats(&self.file_store, epoch).await?;

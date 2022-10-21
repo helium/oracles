@@ -28,18 +28,13 @@ impl SubnetworkRewards {
         mut follower_service: follower::Client<Channel>,
         epoch: &Range<DateTime<Utc>>,
         heartbeats: &Heartbeats,
-        speedtests: &SpeedtestAverages,
+        // TODO: Use speedtests as part of the reward calculation
+        _speedtests: &SpeedtestAverages,
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
         for (pub_key, HeartbeatValue { reward_weight, .. }) in &heartbeats.heartbeats {
-            // TODO: start here to properly fix speedtests
-            if speedtests
-                .get_average(pub_key)
-                .map_or(false, |avg| avg.is_valid())
-            {
-                *hotspot_shares.entry(pub_key.clone()).or_default() += reward_weight;
-            }
+            *hotspot_shares.entry(pub_key.clone()).or_default() += reward_weight;
         }
 
         let (owner_shares, _missing_owner_shares) =
