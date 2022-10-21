@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
     shares::Shares,
-    speedtests::{SpeedtestStore, SpeedtestAverages},
+    speedtests::{SpeedtestAverages, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};

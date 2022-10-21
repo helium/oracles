@@ -389,12 +389,21 @@ mod test {
     #[test]
     fn check_known_valid() {
         let speedtests = known_speedtests();
-        for i in 0..=speedtests.len() {
-            if i > 4 {
-                assert!(Average::from(&speedtests[0..i]).is_valid());
-            } else {
-                assert!(!Average::from(&speedtests[0..i]).is_valid());
-            }
-        }
+        assert_eq!(Average::from(&speedtests[0..5]).is_valid(), false);
+        assert_eq!(Average::from(&speedtests[0..6]).is_valid(), true);
+    }
+
+    #[test]
+    fn check_minimum_known_valid() {
+        let speedtests = known_speedtests();
+        assert_eq!(Average::from(&speedtests[4..4]).is_valid(), false);
+        assert_eq!(dbg!(Average::from(&speedtests[4..=5])).is_valid(), true);
+        assert_eq!(Average::from(&speedtests[4..=6]).is_valid(), true);
+    }
+
+    #[test]
+    fn check_minimum_known_invalid() {
+        let speedtests = known_speedtests();
+        assert_eq!(Average::from(&speedtests[5..6]).is_valid(), false);
     }
 }
