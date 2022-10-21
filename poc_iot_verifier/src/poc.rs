@@ -11,8 +11,8 @@ use helium_proto::{
     GatewayStakingMode,
 };
 use node_follower::{
+    follower_service::FollowerService,
     gateway_resp::{FollowerGatewayResp, GatewayInfoResolver},
-    FollowerService,
 };
 use std::f64::consts::PI;
 /// C is the speed of light in air in meters per second

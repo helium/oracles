@@ -2332,6 +2332,7 @@ dependencies = [
  "http",
  "metrics",
  "metrics-exporter-prometheus",
+ "node-follower",
  "poc-metrics",
  "prost",
  "rand",

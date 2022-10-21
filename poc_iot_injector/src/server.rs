@@ -1,12 +1,10 @@
-use crate::{
-    error::DecodeError, keypair::Keypair, receipt_txn::handle_report_msg,
-    txn_service::TransactionService, Result,
-};
+use crate::{error::DecodeError, keypair::Keypair, receipt_txn::handle_report_msg, Result};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn};
+use node_follower::txn_service::TransactionService;
 use sqlx::{Pool, Postgres};
 use std::env;
 use tokio::time;

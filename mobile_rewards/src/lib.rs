@@ -5,7 +5,6 @@ pub mod pending_txn;
 pub mod server;
 pub mod token_type;
 pub mod traits;
-pub mod transaction;
 pub mod txn_status;
 mod uuid;
 

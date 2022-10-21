@@ -35,6 +35,7 @@ helium-proto = { workspace = true }
 poc-metrics = { path = "../metrics" }
 file-store = {path = "../file_store"}
 db-store = {path = "../db_store"}
+node-follower = {path = "../node_follower"}
 
 [package.metadata.deb]
 depends = "$auto"
