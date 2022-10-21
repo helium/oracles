@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 tower = "0.4"
+thiserror = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 metrics = { workspace = true }

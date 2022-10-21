@@ -2296,7 +2296,7 @@ dependencies = [
  "bs58",
  "chrono",
  "clap",
- "dotenv",
+ "config",
  "file-store",
  "futures",
  "futures-util",
@@ -2427,6 +2427,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "serde",
+ "thiserror",
  "tower",
  "tracing",
 ]

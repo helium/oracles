@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::{env, path::Path};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FileStoreSettings {
+pub struct Settings {
     /// Bucket name for the store. Required
     pub bucket: String,
     /// Optional api endpoint for the bucket. Default none
@@ -32,7 +32,7 @@ pub struct FileStore {
 }
 
 impl FileStore {
-    pub async fn from_settings(settings: &FileStoreSettings) -> Result<Self> {
+    pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let endpoint: Option<Endpoint> = match &settings.endpoint {
             Some(endpoint) => Uri::from_str(endpoint)
                 .map(Endpoint::immutable)

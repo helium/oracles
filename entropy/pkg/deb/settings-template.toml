@@ -1,0 +1,27 @@
+
+# log settings for the application (RUST_LOG format). Default below
+# 
+# log = "poc_entropy=debug,poc_store=info"
+
+[output]
+# Output bucket for entropy
+
+# Name of bucket to write details to. Required
+#
+bucket = "entropy-bucket"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

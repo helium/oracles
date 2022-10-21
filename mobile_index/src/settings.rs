@@ -13,9 +13,9 @@ pub struct Settings {
     #[serde(default = "default_interval")]
     pub interval: u64,
     pub database: Database,
-    pub verifier: file_store::FileStoreSettings,
-    pub output: file_store::FileStoreSettings,
-    pub metrics: poc_metrics::MetricsSettings,
+    pub verifier: file_store::Settings,
+    pub output: file_store::Settings,
+    pub metrics: poc_metrics::Settings,
 }
 
 #[derive(Debug, Deserialize)]

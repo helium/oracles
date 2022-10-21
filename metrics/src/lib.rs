@@ -1,7 +1,9 @@
 //! Common code shared between the reward and ingest servers.
 
+pub use error::{Error, Result};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use serde::Deserialize;
+pub use settings::Settings;
+use std::result::Result as StdResult;
 use std::{
     future::Future,
     net::SocketAddr,
@@ -10,15 +12,15 @@ use std::{
 };
 use tower::{Layer, Service};
 
-#[derive(Debug, Deserialize)]
-pub struct MetricsSettings {
-    /// Scrape endpoint for metrics
-    #[serde(default = "default_metrics_endpoint")]
-    pub endpoint: String,
-}
+mod error;
+pub mod settings;
 
-fn default_metrics_endpoint() -> String {
-    "127.0.0.1:19000".to_string()
+pub fn start_metrics(settings: &Settings) -> Result {
+    let socket: SocketAddr = settings.endpoint.parse()?;
+    PrometheusBuilder::new()
+        .with_http_listener(socket)
+        .install()?;
+    Ok(())
 }
 
 /// Install the Prometheus export gateway
@@ -113,9 +115,9 @@ where
     type Response = S::Response;
     type Error = S::Error;
     type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+        Pin<Box<dyn Future<Output = StdResult<Self::Response, Self::Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<StdResult<(), Self::Error>> {
         self.inner.poll_ready(ctx)
     }
 
