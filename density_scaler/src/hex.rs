@@ -1,6 +1,5 @@
 use h3ron::{FromH3Index, H3Cell, Index};
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use serde::Serialize;
 use std::{cmp, collections::HashMap, ops::Range};
 
@@ -11,7 +10,7 @@ pub struct HexResConfig {
 }
 
 impl HexResConfig {
-    pub fn new(neighbors: u64, target: u64, max: u64) -> Self {
+    pub const fn new(neighbors: u64, target: u64, max: u64) -> Self {
         Self {
             neighbors,
             target,
@@ -27,22 +26,21 @@ const MAX_RES: u8 = 11;
 const USED_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES;
 const SCALING_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES + 2;
 
-lazy_static! {
-    static ref HIP17_RES_CONFIG: HashMap<u8, HexResConfig> = {
-        let mut conf_map = HashMap::new();
-        // Hex resolutions 0 - 3 and 11 and 12 are currently ignored by the
-        // global hex population constructor, filtered by their target value.
-        // For completeness sake their on-chain settings are N=2, TGT=100_000, MAX=100_000
-        conf_map.insert(4, HexResConfig::new(1, 250, 800));
-        conf_map.insert(5, HexResConfig::new(1, 100, 400));
-        conf_map.insert(6, HexResConfig::new(1, 25, 100));
-        conf_map.insert(7, HexResConfig::new(2, 5, 20));
-        conf_map.insert(8, HexResConfig::new(2, 1, 4));
-        conf_map.insert(9, HexResConfig::new(2, 1, 2));
-        conf_map.insert(10, HexResConfig::new(2, 1, 1));
-        conf_map
-    };
-}
+static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
+    // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
+    // For completeness sake their on-chain settings are N=2, TGT=100_000, MAX=100_000
+    None,                                 // 0
+    None,                                 // 1
+    None,                                 // 2
+    None,                                 // 3
+    Some(HexResConfig::new(1, 250, 800)), // 4
+    Some(HexResConfig::new(1, 100, 400)), // 5
+    Some(HexResConfig::new(1, 25, 100)),  // 6
+    Some(HexResConfig::new(2, 5, 20)),    // 7
+    Some(HexResConfig::new(2, 1, 4)),     // 8
+    Some(HexResConfig::new(2, 1, 2)),     // 9
+    Some(HexResConfig::new(2, 1, 1)),     // 10
+];
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct ScalingMap(HashMap<String, f64>);
@@ -137,22 +135,20 @@ fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<H3
                     hexes_at_res.push(parent);
                 }
             });
-        if let Some(density_tgt) = get_res_tgt(res) {
-            hexes_at_res = hexes_at_res
-                .into_iter()
-                .unique()
-                .map(|parent_cell| {
-                    let occupied_count = occupied_count(clipped, &parent_cell, density_tgt);
-                    if let (Some(limit), Some(count)) =
-                        (limit(res, occupied_count), unclipped.get(&parent_cell))
-                    {
-                        let actual = cmp::min(limit, *count);
-                        clipped.insert(parent_cell, actual);
-                    }
-                    parent_cell
-                })
-                .collect()
-        }
+        let density_tgt = get_res_tgt(res);
+        hexes_at_res = hexes_at_res
+            .into_iter()
+            .unique()
+            .map(|parent_cell| {
+                let occupied_count = occupied_count(clipped, &parent_cell, density_tgt);
+                let limit = limit(res, occupied_count);
+                if let Some(count) = unclipped.get(&parent_cell) {
+                    let actual = cmp::min(limit, *count);
+                    clipped.insert(parent_cell, actual);
+                }
+                parent_cell
+            })
+            .collect()
     }
 }
 
@@ -171,13 +167,15 @@ fn occupied_count(cell_map: &HexMap, hex: &H3Cell, density_tgt: u64) -> u64 {
     }
 }
 
-fn limit(res: u8, occupied_count: u64) -> Option<u64> {
-    if let Some(res_config) = HIP17_RES_CONFIG.get(&res) {
-        let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
-        let max = cmp::max((occupied_neighbor_diff) + 1, 1);
-        return Some(cmp::min(res_config.max, res_config.target * max));
-    }
-    None
+fn limit(res: u8, occupied_count: u64) -> u64 {
+    let res_config = HIP17_RES_CONFIG
+        .get(res as usize)
+        .unwrap()
+        .as_ref()
+        .unwrap();
+    let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
+    let max = cmp::max((occupied_neighbor_diff) + 1, 1);
+    cmp::min(res_config.max, res_config.target * max)
 }
 
 pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingMap) {
@@ -204,8 +202,13 @@ fn round_scale_factor(scale: f64) -> f64 {
     (scale * 10000.0).round() / 10000.0
 }
 
-fn get_res_tgt(res: u8) -> Option<u64> {
-    HIP17_RES_CONFIG.get(&res).map(|config| config.target)
+fn get_res_tgt(res: u8) -> u64 {
+    HIP17_RES_CONFIG
+        .get(res as usize)
+        .unwrap()
+        .as_ref()
+        .map(|config| config.target)
+        .unwrap()
 }
 
 #[cfg(test)]

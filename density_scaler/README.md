@@ -35,7 +35,7 @@ Density scaler behavior is adjustable through the following environment variable
 
 - `FOLLOWER_URI`: The fully-qualified protocol, URL or IP and port of the gateway grpc location stream.
                   Defaults to `"http://127.0.0.1:8080"` when not defined in the environment.
-- `TRIGGER_INTERVAL_SECS`: The duration in seconds between runs of the server loop to regenerate the scaling
+- `DENSITY_TRIGGER_INTERVAL_SECS`: The duration in seconds between runs of the server loop to regenerate the scaling
                   factor map. Defaults to 1800 (30 min) when not defined in the environment.
-- `GW_STREAM_BATCH_SIZE`: The size of batches of gateway location info to request from the source of on-chain
+- `DENSITY_GW_STREAM_BATCH_SIZE`: The size of batches of gateway location info to request from the source of on-chain
                   location data in the grpc response stream. Defaults to 1000 when not defined in the environment.

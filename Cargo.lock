@@ -940,11 +940,12 @@ name = "density-scaler"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures",
  "h3ron",
  "helium-proto",
  "http",
  "itertools",
- "lazy_static",
+ "node-follower",
  "prost",
  "serde",
  "serde_json",
@@ -2075,6 +2076,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "dotenv",
+ "futures",
  "helium-crypto",
  "helium-proto",
  "http",

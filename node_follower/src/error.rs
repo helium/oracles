@@ -4,6 +4,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("parse batch size error")]
+    ParseInt(#[from] std::num::ParseIntError),
     #[error("uri error")]
     Uri(#[from] http::uri::InvalidUri),
     #[error("grpc {}", .0.message())]

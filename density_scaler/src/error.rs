@@ -14,20 +14,16 @@ pub enum Error {
     Decode(#[from] DecodeError),
     #[error("query channel error")]
     QueryChannel,
-    #[error("service error")]
-    Service(#[from] helium_proto::services::Error),
-    #[error("grpc {}", .0.message())]
-    Grpc(#[from] tonic::Status),
     #[error("not found")]
     NotFound(String),
+    #[error("follower error")]
+    Follower(#[from] node_follower::Error),
 }
 
 #[derive(Debug, Error)]
 pub enum DecodeError {
     #[error("prost error")]
     Prost(#[from] helium_proto::DecodeError),
-    #[error("uri error")]
-    Uri(#[from] http::uri::InvalidUri),
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
 }
@@ -65,5 +61,4 @@ from_err!(EncodeError, prost::EncodeError);
 from_err!(EncodeError, serde_json::Error);
 
 // Decode Errors
-from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);

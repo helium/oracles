@@ -5,36 +5,26 @@ use crate::{
     Result,
 };
 use chrono::Duration;
-use helium_proto::services::{
-    follower::{
-        self, FollowerGatewayRespV1, FollowerGatewayStreamReqV1, FollowerGatewayStreamRespV1,
-    },
-    Channel, Endpoint,
-};
-use http::Uri;
-use std::{env, time::Duration as StdDuration};
+use futures::stream::StreamExt;
+use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
+use std::env;
 use tokio::time;
-use tonic::Streaming;
 
 const DEFAULT_TRIGGER_INTERVAL_SECS: i64 = 1800; // 30 min
-const CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
-const RPC_TIMEOUT: StdDuration = StdDuration::from_secs(5);
-const DEFAULT_URI: &str = "http://127.0.0.1:8080";
-const DEFAULT_STREAM_BATCH_SIZE: u32 = 1000;
 
 pub struct Server {
     scaling_map: ScalingMap,
-    follower_client: follower::Client<Channel>,
+    follower: FollowerService,
     trigger_interval: Duration,
 }
 
 impl Server {
-    pub fn new() -> Result<Self> {
+    pub fn new(follower: FollowerService) -> Result<Self> {
         let result = Self {
             scaling_map: ScalingMap::new(),
-            follower_client: new_follower_from_env()?,
+            follower,
             trigger_interval: Duration::seconds(
-                env::var("TRIGGER_INTERVAL_SECS")
+                env::var("DENSITY_TRIGGER_INTERVAL_SECS")
                     .unwrap_or_else(|_| DEFAULT_TRIGGER_INTERVAL_SECS.to_string())
                     .parse()
                     .map_err(DecodeError::from)?,
@@ -84,12 +74,10 @@ impl Server {
 
     pub async fn refresh_scaling_map(&mut self) -> Result {
         let mut global_map = GlobalHexMap::new();
-        let mut gw_stream = active_gateways(&mut self.follower_client).await?;
-        while let Some(FollowerGatewayStreamRespV1 { gateways }) = gw_stream.message().await? {
-            for FollowerGatewayRespV1 { location, .. } in gateways {
-                if let Ok(h3index) = location.parse::<u64>() {
-                    global_map.increment_unclipped(h3index)
-                }
+        let mut gw_stream = self.follower.active_gateways().await?;
+        while let Some(GatewayInfo { location, .. }) = gw_stream.next().await {
+            if let Some(h3index) = location {
+                global_map.increment_unclipped(h3index)
             }
         }
         global_map.reduce_global();
@@ -98,28 +86,4 @@ impl Server {
         self.scaling_map = scaling_map;
         Ok(())
     }
-}
-
-fn new_follower_from_env() -> Result<follower::Client<Channel>> {
-    let uri: Uri = env::var("FOLLOWER_URI")
-        .unwrap_or_else(|_| DEFAULT_URI.to_string())
-        .parse()?;
-    let channel = Endpoint::from(uri)
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(RPC_TIMEOUT)
-        .connect_lazy();
-    Ok(follower::Client::new(channel))
-}
-
-async fn active_gateways(
-    client: &mut follower::Client<Channel>,
-) -> Result<Streaming<FollowerGatewayStreamRespV1>> {
-    let req = FollowerGatewayStreamReqV1 {
-        batch_size: env::var("GW_STREAM_BATCH_SIZE")
-            .unwrap_or_else(|_| DEFAULT_STREAM_BATCH_SIZE.to_string())
-            .parse()
-            .map_err(DecodeError::from)?,
-    };
-    let res = client.active_gateways(req).await?.into_inner();
-    Ok(res)
 }
