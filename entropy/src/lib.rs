@@ -3,5 +3,5 @@ mod error;
 pub mod server;
 pub mod settings;
 
-pub use error::{Error, Result};
+pub use error::{DecodeError, Error, Result};
 pub use settings::Settings;

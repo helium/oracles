@@ -3,6 +3,20 @@
 # 
 # log = "poc_entropy=debug,poc_store=info"
 
+# Source URL for entropy. Required
+source = "https://entropy.source.url"
+
+# Listen addres for public api. Default below
+#
+# listen = "0.0.0.0:8080"
+
+[cache]
+# Local cache for generated entropy 
+
+# Cache folder to use. Default blow
+#
+# cache = "/var/data/entropy"
+
 [output]
 # Output bucket for entropy
 

@@ -5,12 +5,34 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
-    /// RUST_LOG compatible settings string
-    pub log: Option<String>,
+    /// RUST_LOG compatible settings string. Default to
+    /// "poc_entropy=debug,poc_store=info"
+    #[serde(default = "default_log")]
+    pub log: String,
+    /// Listen address for http requests for entropy. Default "0.0.0.0:8080"
+    #[serde(default = "default_listen_addr")]
+    pub listen: String,
+    /// Source URL for entropy data. Required
+    pub source: String,
     /// Target output bucket details
     pub output: file_store::Settings,
+    /// Folder for locacl cache of ingest data
+    #[serde(default = "default_cache")]
+    pub cache: String,
     /// Metrics settings
     pub metrics: poc_metrics::Settings,
+}
+
+pub fn default_log() -> String {
+    "poc_entropy=debug,poc_store=info".to_string()
+}
+
+pub fn default_cache() -> String {
+    "/var/data/entropy".to_string()
+}
+
+pub fn default_listen_addr() -> String {
+    "0.0.0.0:8080".to_string()
 }
 
 impl Settings {

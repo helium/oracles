@@ -3,9 +3,9 @@ use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
 use poc_entropy::{
-    entropy_generator::EntropyGenerator, server::ApiServer, Error, Result, Settings,
+    entropy_generator::EntropyGenerator, server::ApiServer, DecodeError, Error, Result, Settings,
 };
-use std::path;
+use std::{net::SocketAddr, path};
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -51,12 +51,7 @@ pub struct Server {}
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result {
         tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(
-                settings
-                    .log
-                    .clone()
-                    .unwrap_or_else(|| "poc_entropy=debug,poc_store=info".to_string()),
-            ))
+            .with(tracing_subscriber::EnvFilter::new(&settings.log))
             .with(tracing_subscriber::fmt::layer())
             .init();
 
@@ -72,14 +67,13 @@ impl Server {
 
         // Initialize uploader
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload = file_upload::FileUpload::from_env(file_upload_rx).await?;
+        let file_upload =
+            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
 
-        let store_path =
-            std::env::var("ENTROPY_STORE").unwrap_or_else(|_| String::from("/var/data/entropy"));
-        let store_base_path = path::Path::new(&store_path);
+        let store_base_path = path::Path::new(&settings.cache);
 
         // entropy
-        let mut entropy_generator = EntropyGenerator::from_env().await?;
+        let mut entropy_generator = EntropyGenerator::new(&settings.source).await?;
         let entropy_watch = entropy_generator.receiver();
 
         let (entropy_tx, entropy_rx) = file_sink::message_channel(50);
@@ -91,7 +85,8 @@ impl Server {
                 .await?;
 
         // server
-        let api_server = ApiServer::from_env(entropy_watch).await?;
+        let socket_addr: SocketAddr = settings.listen.parse().map_err(DecodeError::from)?;
+        let api_server = ApiServer::new(socket_addr, entropy_watch).await?;
 
         tracing::info!("api listening on {}", api_server.socket_addr);
 

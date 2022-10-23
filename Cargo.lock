@@ -2327,7 +2327,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
- "dotenv",
+ "config",
  "file-store",
  "futures",
  "futures-util",
