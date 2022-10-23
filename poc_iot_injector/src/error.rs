@@ -20,8 +20,6 @@ pub enum Error {
     Encode(#[from] EncodeError),
     #[error("decode error")]
     Decode(#[from] DecodeError),
-    #[error("grpc {}", .0.message())]
-    Grpc(#[from] tonic::Status),
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
     #[error("env not found: {0}")]
@@ -34,6 +32,8 @@ pub enum Error {
     InvalidExponent(String),
     #[error("meta error")]
     MetaError(#[from] db_store::MetaError),
+    #[error("follower error")]
+    FollowerError(#[from] node_follower::Error),
 }
 
 #[derive(Error, Debug)]

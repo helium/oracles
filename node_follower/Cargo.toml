@@ -1,0 +1,16 @@
+[package]
+name = "node-follower"
+version = "0.1.0"
+description = "Blockchain Node Follower Library"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = {workspace = true}
+helium-proto = { workspace = true }
+helium-crypto = { workspace = true }
+http = {workspace = true}
+tonic = {workspace = true}
+dotenv = {workspace = true}
+async-trait = "*"

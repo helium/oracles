@@ -1,31 +1,32 @@
-use crate::follower::FollowerGatewayResp;
-use crate::poc::VerifyWitnessesResult;
 use crate::{
     entropy::Entropy,
     last_beacon::LastBeacon,
     mk_db_pool,
-    poc::Poc,
-    poc::VerificationStatus,
+    poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::{LoraStatus, Report},
     Result,
 };
-use file_store::traits::{IngestId, ReportId};
+use chrono::{Duration, Utc};
 use file_store::{
-    file_sink, file_sink::MessageSender, file_upload, lora_beacon_report::LoraBeaconIngestReport,
-    lora_beacon_report::LoraBeaconReport, lora_invalid_poc::LoraInvalidBeaconReport,
-    lora_invalid_poc::LoraInvalidWitnessReport, lora_valid_poc::LoraValidBeaconReport,
-    lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport, FileType,
+    file_sink,
+    file_sink::MessageSender,
+    file_upload,
+    lora_beacon_report::{LoraBeaconIngestReport, LoraBeaconReport},
+    lora_invalid_poc::{LoraInvalidBeaconReport, LoraInvalidWitnessReport},
+    lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc},
+    lora_witness_report::LoraWitnessIngestReport,
+    traits::{IngestId, ReportId},
+    FileType,
 };
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
     LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
 };
-use std::path::Path;
-
-use chrono::{Duration, Utc};
 use helium_proto::Message;
+use node_follower::gateway_resp::FollowerGatewayResp;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
+use std::path::Path;
 use tokio::time;
 
 /// the cadence in seconds at which the DB is polled for ready POCs

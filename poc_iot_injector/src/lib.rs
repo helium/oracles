@@ -3,7 +3,6 @@ mod error;
 pub mod keypair;
 pub mod receipt_txn;
 pub mod server;
-pub mod txn_service;
 
 pub use error::{Error, Result};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
