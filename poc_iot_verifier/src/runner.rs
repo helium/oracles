@@ -23,7 +23,7 @@ use helium_proto::services::poc_lora::{
     LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
 };
 use helium_proto::Message;
-use node_follower::gateway_resp::FollowerGatewayResp;
+use node_follower::gateway_resp::GatewayInfo;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::path::Path;
@@ -233,8 +233,7 @@ impl Runner {
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
                     // beacon is valid, verify the witnesses
-                    let beacon_info: FollowerGatewayResp =
-                        beacon_verify_result.gateway_info.unwrap();
+                    let beacon_info: GatewayInfo = beacon_verify_result.gateway_info.unwrap();
                     let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
                     // check if there are any failed witnesses
                     // if so update the DB attempts count

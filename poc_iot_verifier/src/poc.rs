@@ -12,7 +12,7 @@ use helium_proto::{
 };
 use node_follower::{
     follower_service::FollowerService,
-    gateway_resp::{FollowerGatewayResp, GatewayInfoResolver},
+    gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
 use std::f64::consts::PI;
 /// C is the speed of light in air in meters per second
@@ -42,14 +42,14 @@ pub struct Poc {
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: Option<InvalidReason>,
-    pub gateway_info: Option<FollowerGatewayResp>,
+    pub gateway_info: Option<GatewayInfo>,
     pub hex_scale: Option<f32>,
 }
 
 pub struct VerifyWitnessResult {
     result: VerificationStatus,
     invalid_reason: Option<InvalidReason>,
-    pub gateway_info: Option<FollowerGatewayResp>,
+    pub gateway_info: Option<GatewayInfo>,
 }
 
 pub struct VerifyWitnessesResult {
@@ -180,7 +180,7 @@ impl Poc {
 
     pub async fn verify_witnesses(
         &mut self,
-        beacon_info: &FollowerGatewayResp,
+        beacon_info: &GatewayInfo,
     ) -> Result<VerifyWitnessesResult> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
@@ -234,7 +234,7 @@ impl Poc {
     async fn verify_witness(
         &mut self,
         witness_report: &LoraWitnessIngestReport,
-        beaconer_info: &FollowerGatewayResp,
+        beaconer_info: &GatewayInfo,
     ) -> Result<VerifyWitnessResult> {
         // use pub key to get GW info from our follower and verify the witness
         let witness = &witness_report.report;

@@ -1,19 +1,15 @@
 use crate::{
-    gateway_resp::{FollowerGatewayResp, GatewayInfoResolver},
-    Result,
+    gateway_resp::{GatewayInfo, GatewayInfoResolver},
+    Error, Result, CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT,
 };
 use helium_crypto::PublicKey;
 use helium_proto::services::{
-    follower::{self, FollowerGatewayReqV1},
+    follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
     Channel, Endpoint,
 };
 use http::Uri;
-use std::{env, str::FromStr, time::Duration};
+use std::{env, str::FromStr};
 use tonic::Streaming;
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const RPC_TIMEOUT: Duration = Duration::from_secs(5);
-const DEFAULT_URI: &str = "http://127.0.0.1:8080";
 
 type FollowerClient = follower::Client<Channel>;
 
@@ -24,12 +20,15 @@ pub struct FollowerService {
 
 #[async_trait::async_trait]
 impl GatewayInfoResolver for FollowerService {
-    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<FollowerGatewayResp> {
+    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<GatewayInfo> {
         let req = FollowerGatewayReqV1 {
             address: address.to_vec(),
         };
         let res = self.client.find_gateway(req).await?.into_inner();
-        Ok(res.try_into()?)
+        match res.result {
+            Some(GatewayResult::Info(gateway_info)) => Ok(gateway_info.try_into()?),
+            _ => Err(Error::GatewayNotFound(format!("{address}"))),
+        }
     }
 }
 
