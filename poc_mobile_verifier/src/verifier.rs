@@ -70,9 +70,9 @@ impl VerifierDaemon {
                 tracing::info!("Rewarding epoch: {:?}", epoch);
                 self.reward_epoch(epoch).await?
             } else if now + sleep_duration >= next_rewarded_end_time {
-                // If the next epoch is a reward period, cut off sleep duration.
-                // This ensures that verifying will always end up being aligned with
-                // the desired reward period.
+                // If the next verification epoch straddles a reward epoch, cut off sleep
+                // duration. This ensures that verifying will always end up being aligned
+                // with the desired reward period.
                 sleep_duration = next_rewarded_end_time - now;
             }
 
