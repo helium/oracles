@@ -46,7 +46,7 @@ impl VerifierDaemon {
                 || epoch_since_last_reward_duration >= reward_period
             {
                 let epoch_duration = epoch_since_last_verify_duration.min(verification_period);
-                let last_rewarded_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
+                let last_rewarded_end_time = Utc.timestamp(*self.last_rewarded_end_time.value(), 0);
                 let last_verified_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
                 let epoch = last_verified_end_time
                     ..(last_verified_end_time + epoch_duration)
