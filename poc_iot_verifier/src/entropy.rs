@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// measurement in seconds of a piece of entropy
 /// its lifespan will be valid from entropy.timestamp to entropy.timestamp + ENTROPY_LIFESPAN
 /// any beacon or witness report received after this period and before the ENTROPY_STALE_PERIOD
-/// defined below will be rejected due to being outside of the entropy lifespan
+/// defined in the purger module will be rejected due to being outside of the entropy lifespan
 /// TODO: determine a sane value here
 pub const ENTROPY_LIFESPAN: i32 = 90;
 
@@ -45,6 +45,7 @@ impl Entropy {
             timestamp,
             version
         ) values ($1, $2, $3, $4)
+        on conflict (id) do nothing
             "#,
         )
         .bind(id)

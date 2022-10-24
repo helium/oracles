@@ -214,15 +214,6 @@ impl Runner {
                 }
             };
 
-            // tmp hack below when testing locally with no entropy server
-            // replace entropy_info declaration above with that below
-            // let entropy_info = Entropy {
-            //     id: entropy_hash.clone(),
-            //     data: entropy_hash.clone(),
-            //     timestamp: Utc::now() - Duration::seconds(40000),
-            //     created_at: Utc::now(),
-            // };
-
             //
             // top level checks complete, verify the POC reports
             //

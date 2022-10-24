@@ -105,10 +105,13 @@ impl Loader {
         store: &FileStore,
         shutdown: triggered::Listener,
     ) -> Result {
-        let recent_time = Utc::now() - Duration::hours(2);
+        // TODO: determine a sane value for oldest_event_time
+        // events older than this will not be processed
+        let oldest_event_time = Utc::now() - Duration::hours(2);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
-            .unwrap_or(recent_time);
+            .unwrap_or(oldest_event_time)
+            .max(oldest_event_time);
 
         let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
@@ -117,12 +120,6 @@ impl Loader {
         }
 
         let last_timestamp = infos.last().map(|v| v.timestamp);
-        let test = match last_timestamp {
-            Some(x) => x,
-            None => recent_time,
-        };
-        tracing::info!("meta {last_time}, files last timestamp {test}");
-
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} {file_type} files");
         let handler = store

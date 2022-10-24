@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 const BEACON_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 /// the max number of attempts a failed witness report will be retried
 const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
+/// a period of time in seconds which needs to pass after the ENTROPY_LIFESPAN expires
+/// before which any beacon & witness reports using that entropy will be processed
+//  this is bascially a buffer period which is added to ENTROPY_LIFESPAN
+//  to prevent POC reports being processed *immediately* after the entropy expires
+//  instead there will be a further delay which allows for any *fashionably* late
+//  reports to be processed as part of the overall POC
+//  ( processing of POCs occur by first pulling a beacon and then any witnesses
+//    for that beacon, if a witness comes in after the beacon has been processed
+//    then it does not get verified as part of the overall POC but instead will
+//    end up being deemed stale )
+const BEACON_PROCESSING_DELAY: i32 = 60;
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]
@@ -60,6 +71,7 @@ impl Report {
             report_timestamp,
             report_type
         ) values ($1, $2, $3, $4, $5, $6)
+        on conflict (id) do nothing
             "#,
         )
         .bind(id)
@@ -114,16 +126,16 @@ impl Report {
     {
         sqlx::query_as::<_, Self>(
             r#"
-            select  id,
-                    remote_entropy,
-                    packet_data,
-                    report_data,
-                    report_type,
-                    status,
-                    attempts,
-                    report_timestamp,
-                    last_processed,
-                    created_at
+            select  poc_report.id,
+            poc_report.remote_entropy,
+            poc_report.packet_data,
+            poc_report.report_data,
+            poc_report.report_type,
+            poc_report.status,
+            poc_report.attempts,
+            poc_report.report_timestamp,
+            poc_report.last_processed,
+            poc_report.created_at
             from poc_report
             left join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'pending'
@@ -133,7 +145,7 @@ impl Report {
             limit 500
             "#,
         )
-        .bind(ENTROPY_LIFESPAN)
+        .bind(ENTROPY_LIFESPAN + BEACON_PROCESSING_DELAY)
         .bind(BEACON_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
         .await
