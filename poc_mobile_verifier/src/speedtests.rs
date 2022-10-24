@@ -120,7 +120,7 @@ impl SpeedtestRollingAverage {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SpeedtestAverages {
     // I'm not sure that VecDeque is actually all that useful here, considering
     // we have to constantly convert between the two.
@@ -354,6 +354,7 @@ impl SpeedtestStore for EmptyDatabase {
 mod test {
     use super::*;
     use chrono::TimeZone;
+    use proto::SpeedtestAvgValidity;
 
     fn parse_dt(dt: &str) -> NaiveDateTime {
         Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
@@ -426,21 +427,39 @@ mod test {
     #[test]
     fn check_known_valid() {
         let speedtests = known_speedtests();
-        assert_eq!(Average::from(&speedtests[0..5]).is_valid(), false);
-        assert_eq!(Average::from(&speedtests[0..6]).is_valid(), true);
+        assert_ne!(
+            Average::from(&speedtests[0..5]).validity(),
+            SpeedtestAvgValidity::Valid
+        );
+        assert_eq!(
+            Average::from(&speedtests[0..6]).validity(),
+            SpeedtestAvgValidity::Valid
+        );
     }
 
     #[test]
     fn check_minimum_known_valid() {
         let speedtests = known_speedtests();
-        assert_eq!(Average::from(&speedtests[4..4]).is_valid(), false);
-        assert_eq!(dbg!(Average::from(&speedtests[4..=5])).is_valid(), true);
-        assert_eq!(Average::from(&speedtests[4..=6]).is_valid(), true);
+        assert_ne!(
+            Average::from(&speedtests[4..4]).validity(),
+            SpeedtestAvgValidity::Valid
+        );
+        assert_eq!(
+            Average::from(&speedtests[4..=5]).validity(),
+            SpeedtestAvgValidity::Valid
+        );
+        assert_eq!(
+            Average::from(&speedtests[4..=6]).validity(),
+            SpeedtestAvgValidity::Valid
+        );
     }
 
     #[test]
     fn check_minimum_known_invalid() {
         let speedtests = known_speedtests();
-        assert_eq!(Average::from(&speedtests[5..6]).is_valid(), false);
+        assert_ne!(
+            Average::from(&speedtests[5..6]).validity(),
+            SpeedtestAvgValidity::Valid
+        );
     }
 }
