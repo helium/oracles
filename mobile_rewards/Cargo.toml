@@ -25,6 +25,7 @@ once_cell = {workspace = true}
 file-store = {path = "../file_store"}
 db-store = { path = "../db_store" }
 poc-metrics = {path = "../metrics"}
+node-follower = {path = "../node_follower"}
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

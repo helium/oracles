@@ -2,7 +2,13 @@
 
 use crate::{cell_type::CellType, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use file_store::{file_sink, heartbeat::CellHeartbeat, FileStore};
+use file_store::{
+    file_sink,
+    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    traits::MsgDecode,
+    FileStore, FileType,
+};
+use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
@@ -57,18 +63,27 @@ impl Shares {
         file_store: &FileStore,
         epoch: &Range<DateTime<Utc>>,
     ) -> Result<Self> {
-        let shares = crate::ingest::new_heartbeat_reports(file_store, epoch)
-            .await?
-            .iter()
-            .map(|ingest_heartbeat| to_share(ingest_heartbeat, epoch))
-            .fold(Shares::new(), |mut acc, share| {
-                if share.validity == proto::ShareValidity::Valid {
-                    acc.valid_shares.push(share);
-                } else {
-                    acc.invalid_shares.push(share);
+        let mut shares = Shares::new();
+        let file_list = file_store
+            .list_all(FileType::CellHeartbeatIngestReport, epoch.start, epoch.end)
+            .await?;
+        let mut stream = file_store.source(stream::iter(file_list).map(Ok).boxed());
+
+        while let Some(Ok(msg)) = stream.next().await {
+            let heartbeat_report = match CellHeartbeatIngestReport::decode(msg) {
+                Ok(report) => report.report,
+                Err(err) => {
+                    tracing::error!("Could not decode cell heartbeat ingest report: {:?}", err);
+                    continue;
                 }
-                acc
-            });
+            };
+            let share = to_share(&heartbeat_report, epoch);
+            if share.validity == proto::ShareValidity::Valid {
+                shares.valid_shares.push(share);
+            } else {
+                shares.invalid_shares.push(share);
+            }
+        }
 
         Ok(shares)
     }

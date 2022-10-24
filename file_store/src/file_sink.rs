@@ -16,12 +16,15 @@ use tokio::{
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
 pub const DEFAULT_SINK_ROLL_MINS: i64 = 3;
+pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
 type Sink = GzipEncoder<BufWriter<File>>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
 
 fn new_transport(sink: Sink) -> Transport {
-    FramedWrite::new(sink, LengthDelimitedCodec::new())
+    LengthDelimitedCodec::builder()
+        .max_frame_length(MAX_FRAME_LENGTH)
+        .new_write(sink)
 }
 
 fn transport_sink(transport: &mut Transport) -> &mut Sink {

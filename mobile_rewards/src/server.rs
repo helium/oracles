@@ -2,7 +2,6 @@ use crate::{
     error::DecodeError,
     pending_txn::{PendingTxn, Status},
     traits::B64,
-    transaction::TransactionService,
     txn_status::TxnStatus,
     Error, Result,
 };
@@ -25,11 +24,11 @@ use helium_proto::{
     SubnetworkReward, SubnetworkRewards,
 };
 use http::Uri;
+use node_follower::txn_service::TransactionService;
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
-use std::env;
-use std::{ops::Range, time::Duration as StdDuration};
+use std::{env, ops::Range, time::Duration as StdDuration};
 use tokio::time;
 use tonic::Streaming;
 

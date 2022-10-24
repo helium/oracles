@@ -162,6 +162,7 @@ impl Loader {
                 Report::insert_into(
                     &self.pool,
                     beacon.ingest_id(),
+                    beacon.report.remote_entropy,
                     packet_data,
                     buf.to_vec(),
                     &beacon.received_timestamp,
@@ -178,6 +179,7 @@ impl Loader {
                 Report::insert_into(
                     &self.pool,
                     witness.ingest_id(),
+                    Vec::<u8>::with_capacity(0),
                     packet_data,
                     buf.to_vec(),
                     &witness.received_timestamp,

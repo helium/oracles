@@ -1,4 +1,4 @@
-use poc_iot_verifier::{loader, mk_db_pool, runner, Result};
+use poc_iot_verifier::{loader, mk_db_pool, purger, runner, Result};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -28,5 +28,11 @@ async fn main() -> Result {
 
     let loader = loader::Loader::from_env().await?;
     let runner = runner::Runner::from_env().await?;
-    tokio::try_join!(runner.run(&shutdown), loader.run(&shutdown)).map(|_| ())
+    let purger = purger::Purger::from_env().await?;
+    tokio::try_join!(
+        runner.run(&shutdown),
+        loader.run(&shutdown),
+        purger.run(&shutdown)
+    )
+    .map(|_| ())
 }

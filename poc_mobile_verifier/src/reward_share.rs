@@ -75,7 +75,7 @@ pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<
 }
 
 #[async_trait::async_trait]
-pub trait OwnerResolver {
+pub trait OwnerResolver: Send {
     async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>>;
 
     async fn owner_shares(

@@ -1,14 +1,19 @@
-use crate::{entropy::Entropy, follower::FollowerGatewayResp, follower::FollowerService, Result};
+use crate::{entropy::Entropy, Result};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
     lora_valid_poc::LoraValidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
 };
-use geo::point;
-use geo::prelude::*;
+use geo::{point, prelude::*};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
-use helium_proto::services::poc_lora::{InvalidParticipantSide, InvalidReason};
-use helium_proto::GatewayStakingMode;
+use helium_proto::{
+    services::poc_lora::{InvalidParticipantSide, InvalidReason},
+    GatewayStakingMode,
+};
+use node_follower::{
+    follower_service::FollowerService,
+    gateway_resp::{FollowerGatewayResp, GatewayInfoResolver},
+};
 use std::f64::consts::PI;
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
@@ -77,7 +82,7 @@ impl Poc {
         let beaconer_pub_key = beacon.pub_key.clone();
         let beaconer_info = match self
             .follower_service
-            .query_gateway_info(&beaconer_pub_key)
+            .resolve_gateway_info(&beaconer_pub_key)
             .await
         {
             Ok(res) => res,
@@ -237,7 +242,7 @@ impl Poc {
         let witness_pub_key = witness.pub_key.clone();
         let witness_info = match self
             .follower_service
-            .query_gateway_info(&witness_pub_key)
+            .resolve_gateway_info(&witness_pub_key)
             .await
         {
             Ok(res) => res,
@@ -365,7 +370,9 @@ impl Poc {
             witness.signal,
             min_rcv_signal
         );
-        if witness.signal / 10 < min_rcv_signal as i32 {
+        // signal is submitted as DBM * 10
+        // min_rcv_signal is plain old DBM
+        if (witness.signal / 10) < min_rcv_signal as i32 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::BadRssi
