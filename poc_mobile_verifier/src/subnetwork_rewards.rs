@@ -26,9 +26,9 @@ impl SubnetworkRewards {
     pub async fn from_epoch(
         mut follower_service: impl OwnerResolver,
         epoch: &Range<DateTime<Utc>>,
-        heartbeats: &Heartbeats,
+        heartbeats: Heartbeats,
         // TODO: Use speedtests as part of the reward calculation
-        _speedtests: &SpeedtestAverages,
+        _speedtests: SpeedtestAverages,
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();

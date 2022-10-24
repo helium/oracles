@@ -183,7 +183,7 @@ impl Verifier {
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
     ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, &heartbeats, &speedtests).await
+        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests).await
     }
 }
 
