@@ -42,28 +42,31 @@ impl Cmd {
         let store_path = dotenv::var("VERIFIER_STORE")?;
         let store_base_path = std::path::Path::new(&store_path);
 
-        // valid shares
-        let (valid_shares_tx, valid_shares_rx) = file_sink::message_channel(50);
-        let mut shares_sink =
-            file_sink::FileSinkBuilder::new(FileType::Shares, store_base_path, valid_shares_rx)
-                .deposits(Some(file_upload_tx.clone()))
-                .create()
-                .await?;
-
-        // invalid shares
-        let (invalid_shares_tx, invalid_shares_rx) = file_sink::message_channel(50);
-        let mut invalid_shares_sink = file_sink::FileSinkBuilder::new(
-            FileType::InvalidShares,
+        // Heartbeats
+        let (heartbeats_tx, heartbeats_rx) = file_sink::message_channel(50);
+        let mut heartbeats = file_sink::FileSinkBuilder::new(
+            FileType::ValidatedHeartbeat,
             store_base_path,
-            invalid_shares_rx,
+            heartbeats_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
         .create()
         .await?;
 
-        // subnetwork rewards
+        // Speedtest averages
+        let (speedtest_avg_tx, speedtest_avg_rx) = file_sink::message_channel(50);
+        let mut speedtest_avgs = file_sink::FileSinkBuilder::new(
+            FileType::SpeedtestAvg,
+            store_base_path,
+            speedtest_avg_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
+
+        // Subnetwork rewards
         let (subnet_rewards_tx, subnet_rewards_rx) = file_sink::message_channel(50);
-        let mut subnet_sink = file_sink::FileSinkBuilder::new(
+        let mut subnet_rewards = file_sink::FileSinkBuilder::new(
             FileType::SubnetworkRewards,
             store_base_path,
             subnet_rewards_rx,
@@ -93,8 +96,8 @@ impl Cmd {
 
         let verifier_daemon = VerifierDaemon {
             pool,
-            valid_shares_tx,
-            invalid_shares_tx,
+            heartbeats_tx,
+            speedtest_avg_tx,
             subnet_rewards_tx,
             reward_period_hours,
             verifications_per_period,
@@ -104,11 +107,9 @@ impl Cmd {
         };
 
         tokio::try_join!(
-            shares_sink.run(&shutdown_listener).map_err(Error::from),
-            invalid_shares_sink
-                .run(&shutdown_listener)
-                .map_err(Error::from),
-            subnet_sink.run(&shutdown_listener).map_err(Error::from),
+            heartbeats.run(&shutdown_listener).map_err(Error::from),
+            speedtest_avgs.run(&shutdown_listener).map_err(Error::from),
+            subnet_rewards.run(&shutdown_listener).map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             // I don't _think_ that this needs to be in a task.
             verifier_daemon.run(&shutdown_listener),

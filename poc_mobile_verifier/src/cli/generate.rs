@@ -1,6 +1,5 @@
 use crate::{
     env_var,
-    heartbeats::Heartbeats,
     speedtests::EmptyDatabase,
     verifier::{VerifiedEpoch, Verifier},
     Result,
@@ -43,13 +42,13 @@ impl Cmd {
 
         let mut verifier = Verifier::new(file_store, follower).await?;
 
-        let VerifiedEpoch { shares, speedtests } =
-            verifier.verify_epoch(EmptyDatabase, &epoch).await?;
-
-        let heartbeats: Heartbeats = shares.valid_shares.into_iter().collect();
+        let VerifiedEpoch {
+            heartbeats,
+            speedtests,
+        } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
         let rewards = verifier
-            .reward_epoch(&epoch, heartbeats, speedtests)
+            .reward_epoch(&epoch, heartbeats.into_iter().collect(), speedtests)
             .await?;
 
         let total_rewards = rewards

@@ -3,7 +3,6 @@ mod error;
 mod heartbeats;
 mod mobile;
 mod reward_share;
-mod shares;
 mod speedtests;
 
 pub mod cli;

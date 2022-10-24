@@ -34,8 +34,6 @@ pub enum Error {
     JoinError(tokio::task::JoinError),
     #[error("time out of range error")]
     OutOfRangeError,
-    #[error("heartbeat validation error")]
-    HeartbeatValidationError(#[from] crate::shares::ValidateHeartbeatsError),
     #[error("oneshot recv error")]
     OneshotRecvError(#[from] tokio::sync::oneshot::error::RecvError),
 }

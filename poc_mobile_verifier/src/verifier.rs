@@ -3,7 +3,6 @@ use std::ops::Range;
 use crate::{
     error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
-    shares::Shares,
     speedtests::{SpeedtestAverages, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
@@ -16,8 +15,8 @@ use tokio::time::sleep;
 
 pub struct VerifierDaemon {
     pub pool: Pool<Postgres>,
-    pub valid_shares_tx: file_sink::MessageSender,
-    pub invalid_shares_tx: file_sink::MessageSender,
+    pub heartbeats_tx: file_sink::MessageSender,
+    pub speedtest_avg_tx: file_sink::MessageSender,
     pub subnet_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
@@ -80,20 +79,21 @@ impl VerifierDaemon {
     }
 
     pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let VerifiedEpoch { shares, speedtests } =
-            self.verifier.verify_epoch(&self.pool, &epoch).await?;
+        let VerifiedEpoch {
+            heartbeats,
+            speedtests,
+        } = self.verifier.verify_epoch(&self.pool, &epoch).await?;
 
         let mut transaction = self.pool.begin().await?;
 
-        // Should we remove the heartbeats that were not new
-        // from valid shares
         // TODO: switch to a bulk transaction
-        for share in shares.valid_shares.clone() {
-            let heartbeat = Heartbeat::from(share);
+        for heartbeat in heartbeats.into_iter() {
+            heartbeat.write(&self.heartbeats_tx).await?;
             heartbeat.save(&mut transaction).await?;
         }
 
         for speedtest in speedtests.into_iter() {
+            speedtest.write(&self.speedtest_avg_tx).await?;
             speedtest.save(&mut transaction).await?;
         }
 
@@ -103,11 +103,6 @@ impl VerifierDaemon {
             .await?;
 
         transaction.commit().await?;
-
-        // TODO:
-        shares
-            .write(&self.valid_shares_tx, &self.invalid_shares_tx)
-            .await?;
 
         Ok(())
     }
@@ -171,10 +166,13 @@ impl Verifier {
         pool: impl SpeedtestStore + Copy,
         epoch: &Range<DateTime<Utc>>,
     ) -> Result<VerifiedEpoch> {
-        let shares = Shares::validate_heartbeats(&self.file_store, epoch).await?;
+        let heartbeats = Heartbeat::validate_heartbeats(&self.file_store, epoch).await?;
         let speedtests =
             SpeedtestAverages::validate_speedtests(pool, &self.file_store, epoch).await?;
-        Ok(VerifiedEpoch { shares, speedtests })
+        Ok(VerifiedEpoch {
+            heartbeats,
+            speedtests,
+        })
     }
 
     pub async fn reward_epoch(
@@ -188,7 +186,7 @@ impl Verifier {
 }
 
 pub struct VerifiedEpoch {
-    pub shares: Shares,
+    pub heartbeats: Vec<Heartbeat>,
     pub speedtests: SpeedtestAverages,
 }
 

@@ -1,12 +1,14 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use file_store::{
+    file_sink,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::MsgDecode,
+    traits::{MsgDecode, TimestampEncode},
     FileStore, FileType,
 };
 use futures::stream::{self, StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
+use helium_proto::services::poc_mobile as proto;
 use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
     FromRow, Type,
@@ -58,16 +60,6 @@ impl SpeedtestRollingAverage {
         Self { id, speedtests }
     }
 
-    /*
-    pub async fn fetch(exec: impl sqlx::PgExecutor<'_>, id: &PublicKey) -> Result<Self> {
-        sqlx::query_as::<_, Self>("SELECT * FROM speedtests WHERE id = $1")
-            .bind(id)
-            .fetch_one(exec)
-            .await
-            .map_err(Error::from)
-    }
-    */
-
     pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
         #[derive(FromRow)]
         struct SaveResult {
@@ -89,6 +81,42 @@ impl SpeedtestRollingAverage {
         .await
         .map(|result| result.inserted)
         .map_err(Error::from)
+    }
+
+    pub async fn write(&self, averages_tx: &file_sink::MessageSender) -> file_store::Result {
+        // Write out the speedtests to S3
+        let average = Average::from(&self.speedtests);
+        let validity = average.validity() as i32;
+        let Average {
+            upload_speed_avg_bps,
+            download_speed_avg_bps,
+            latency_avg_ms,
+            ..
+        } = average;
+        file_sink::write(
+            averages_tx,
+            proto::SpeedtestAvg {
+                pub_key: self.id.to_vec(),
+                upload_speed_avg_bps,
+                download_speed_avg_bps,
+                latency_avg_ms,
+                timestamp: Utc::now().encode_timestamp(),
+                speedtests: self
+                    .speedtests
+                    .iter()
+                    .map(|st| proto::Speedtest {
+                        timestamp: st.timestamp.timestamp() as u64,
+                        upload_speed_bps: st.upload_speed as u64,
+                        download_speed_bps: st.download_speed as u64,
+                        latency_ms: st.latency as u32,
+                    })
+                    .collect(),
+                validity,
+            },
+        )
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -272,11 +300,20 @@ pub const MIN_REQUIRED_SAMPLES: usize = 2;
 
 impl Average {
     // TODO: Change this to a multiplier
-    pub fn is_valid(&self) -> bool {
-        self.window_size >= MIN_REQUIRED_SAMPLES
-            && self.download_speed_avg_bps >= MIN_DOWNLOAD
-            && self.upload_speed_avg_bps >= MIN_UPLOAD
-            && self.latency_avg_ms <= MAX_LATENCY
+    pub fn validity(&self) -> proto::SpeedtestAvgValidity {
+        if self.window_size < MIN_REQUIRED_SAMPLES {
+            return proto::SpeedtestAvgValidity::TooFewSamples;
+        }
+        if self.download_speed_avg_bps < MIN_DOWNLOAD {
+            return proto::SpeedtestAvgValidity::SlowDownloadSpeed;
+        }
+        if self.upload_speed_avg_bps < MIN_UPLOAD {
+            return proto::SpeedtestAvgValidity::SlowUploadSpeed;
+        }
+        if self.latency_avg_ms > MAX_LATENCY {
+            return proto::SpeedtestAvgValidity::HighLatency;
+        }
+        proto::SpeedtestAvgValidity::Valid
     }
 }
 
