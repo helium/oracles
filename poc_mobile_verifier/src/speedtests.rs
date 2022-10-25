@@ -158,14 +158,14 @@ impl SpeedtestAverages {
 
     pub async fn validated(
         exec: impl sqlx::PgExecutor<'_> + Copy,
-        starting: DateTime<Utc>,
+        period_end: DateTime<Utc>,
     ) -> std::result::Result<Self, sqlx::Error> {
         let mut speedtests = HashMap::new();
 
         let mut rows = sqlx::query_as::<_, SpeedtestRollingAverage>(
             "SELECT * FROM speedtests where latest_timestamp >= $1",
         )
-        .bind(starting.naive_utc())
+        .bind((period_end - Duration::hours(12)).naive_utc())
         .fetch(exec);
 
         while let Some(SpeedtestRollingAverage {

@@ -123,7 +123,7 @@ impl VerifierDaemon {
 
     pub async fn reward_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
         let heartbeats = Heartbeats::validated(&self.pool, epoch.start).await?;
-        let speedtests = SpeedtestAverages::validated(&self.pool, epoch.start).await?;
+        let speedtests = SpeedtestAverages::validated(&self.pool, epoch.end).await?;
 
         let rewards = self
             .verifier
