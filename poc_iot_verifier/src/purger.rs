@@ -23,7 +23,14 @@ const LOADER_DB_POOL_SIZE: u32 = 2 * LOADER_WORKERS;
 // any beacon or witness using this entropy & received after this period will fail
 // due to being stale
 // the report itself will never be verified but instead handled by the stale purger
+// this value will be added to the env var BASE_STALE_PERIOD to determine final setting
 const ENTROPY_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds
+/// the period in seconds after when a beacon or witness report in the DB will be deemed stale
+// this period needs to be sufficiently long that we can be sure the beacon has had the
+// opportunity to be verified and after this point extremely unlikely to ever be verified
+// successfully
+// this value will be added to the env var BASE_STALE_PERIOD to determine final setting
+const REPORT_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds;
 
 pub struct Purger {
     pool: PgPool,
@@ -118,15 +125,21 @@ impl Purger {
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        _ = Report::get_stale_pending_beacons(&self.pool, self.base_stale_period)
-            .await?
-            .iter()
-            .map(|report| self.handle_purged_beacon(report, &lora_invalid_beacon_tx));
+        _ = Report::get_stale_pending_beacons(
+            &self.pool,
+            self.base_stale_period + REPORT_STALE_PERIOD,
+        )
+        .await?
+        .iter()
+        .map(|report| self.handle_purged_beacon(report, &lora_invalid_beacon_tx));
 
-        _ = Report::get_stale_pending_witnesses(&self.pool, self.base_stale_period)
-            .await?
-            .iter()
-            .map(|report| self.handle_purged_witness(report, &lora_invalid_witness_tx));
+        _ = Report::get_stale_pending_witnesses(
+            &self.pool,
+            self.base_stale_period + REPORT_STALE_PERIOD,
+        )
+        .await?
+        .iter()
+        .map(|report| self.handle_purged_witness(report, &lora_invalid_witness_tx));
 
         // purge any stale entropy, no need to output anything to s3 here
         _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
