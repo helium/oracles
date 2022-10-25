@@ -28,8 +28,3 @@ where
         Err(err) => Err(Error::from(err)),
     }
 }
-
-fn bones_to_u64(decimal: Decimal) -> u64 {
-    // One bone is one million mobiles
-    (decimal * dec!(1_000_000)).to_u64().unwrap()
-}

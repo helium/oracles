@@ -11,7 +11,7 @@ use file_store::{
 use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
 
@@ -181,7 +181,7 @@ impl Heartbeat {
             proto::Heartbeat {
                 cbsd_id: self.cbsd_id.clone(),
                 pub_key: self.hotspot_key.to_vec(),
-                weight: crate::bones_to_u64(self.reward_weight),
+                reward_multiplier: self.reward_weight.to_f32().unwrap_or(0.0),
                 cell_type,
                 validity: self.validity as i32,
                 timestamp: self.timestamp.timestamp() as u64,

@@ -87,6 +87,7 @@ impl SpeedtestRollingAverage {
         // Write out the speedtests to S3
         let average = Average::from(&self.speedtests);
         let validity = average.validity() as i32;
+        let reward_multiplier = average.reward_multiplier();
         let Average {
             upload_speed_avg_bps,
             download_speed_avg_bps,
@@ -112,6 +113,7 @@ impl SpeedtestRollingAverage {
                     })
                     .collect(),
                 validity,
+                reward_multiplier,
             },
         )
         .await?;
@@ -289,13 +291,9 @@ where
     }
 }
 
-// 12500000 bytes/sec = 100 Mbps
-const MIN_DOWNLOAD: u64 = 12500000;
-// 1250000 bytes/sec = 10 Mbps
-const MIN_UPLOAD: u64 = 1250000;
-// 50 ms
-const MAX_LATENCY: u32 = 50;
-// Minimum samples required to check validity
+const MIN_DOWNLOAD: u64 = mbps(30);
+const MIN_UPLOAD: u64 = mbps(2);
+const MAX_LATENCY: u32 = 100;
 pub const MIN_REQUIRED_SAMPLES: usize = 2;
 
 impl Average {
@@ -314,6 +312,81 @@ impl Average {
             return proto::SpeedtestAvgValidity::HighLatency;
         }
         proto::SpeedtestAvgValidity::Valid
+    }
+
+    pub fn reward_multiplier(&self) -> f32 {
+        SpeedtestTier::from_download_speed(self.download_speed_avg_bps)
+            .and(SpeedtestTier::from_upload_speed(self.upload_speed_avg_bps))
+            .and(SpeedtestTier::from_latency(self.latency_avg_ms))
+            .into_multiplier()
+    }
+}
+
+const fn mbps(mbps: u64) -> u64 {
+    mbps * 125000
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum SpeedtestTier {
+    Acceptable,
+    Degraded,
+    Poor,
+    Failed,
+}
+
+impl SpeedtestTier {
+    fn and(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (_, Self::Failed) | (Self::Failed, _) => Self::Failed,
+            (_, Self::Poor) | (Self::Poor, _) => Self::Poor,
+            (_, Self::Degraded) | (Self::Degraded, _) => Self::Degraded,
+            _ => Self::Acceptable,
+        }
+    }
+
+    fn into_multiplier(self) -> f32 {
+        match self {
+            Self::Acceptable => 1.0,
+            Self::Degraded => 0.5,
+            Self::Poor => 0.25,
+            Self::Failed => 0.0,
+        }
+    }
+
+    fn from_download_speed(download_speed: u64) -> Self {
+        if download_speed >= mbps(100) {
+            Self::Acceptable
+        } else if download_speed >= mbps(50) {
+            Self::Degraded
+        } else if download_speed >= mbps(30) {
+            Self::Poor
+        } else {
+            Self::Failed
+        }
+    }
+
+    fn from_upload_speed(upload_speed: u64) -> Self {
+        if upload_speed >= mbps(10) {
+            Self::Acceptable
+        } else if upload_speed >= mbps(5) {
+            Self::Degraded
+        } else if upload_speed >= mbps(2) {
+            Self::Poor
+        } else {
+            Self::Failed
+        }
+    }
+
+    fn from_latency(latency: u32) -> Self {
+        if latency <= 50 {
+            Self::Acceptable
+        } else if latency <= 75 {
+            Self::Degraded
+        } else if latency <= 100 {
+            Self::Poor
+        } else {
+            Self::Failed
+        }
     }
 }
 
