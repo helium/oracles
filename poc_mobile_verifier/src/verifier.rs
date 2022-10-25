@@ -65,7 +65,7 @@ impl VerifierDaemon {
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
-            if last_rewarded_end_time == Utc.timestamp(*self.last_verified_end_time.value(), 0) {
+            if self.next_rewarded_end_time.value() == self.last_verified_end_time.value() {
                 if now >= next_rewarded_end_time {
                     let epoch = last_rewarded_end_time..next_rewarded_end_time;
                     tracing::info!("Rewarding epoch: {:?}", epoch);
