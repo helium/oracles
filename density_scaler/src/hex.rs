@@ -1,5 +1,7 @@
 use h3ron::{FromH3Index, H3Cell, Index};
 use itertools::Itertools;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Serialize;
 use std::{cmp, collections::HashMap, ops::Range};
 
@@ -25,6 +27,7 @@ const DENSITY_TGT_RES: u8 = 4;
 const MAX_RES: u8 = 11;
 const USED_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES;
 const SCALING_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES + 2;
+const DEC_PRECISION: u32 = 4;
 
 static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
     // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
@@ -42,19 +45,19 @@ static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
     Some(HexResConfig::new(2, 1, 1)),     // 10
 ];
 
-#[derive(Debug, Serialize, PartialEq)]
-pub struct ScalingMap(HashMap<String, f64>);
+#[derive(Debug, Serialize, Eq, PartialEq)]
+pub struct ScalingMap(HashMap<String, Decimal>);
 
 impl ScalingMap {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    pub fn insert(&mut self, hex: &str, scale_factor: f64) -> Option<f64> {
+    pub fn insert(&mut self, hex: &str, scale_factor: Decimal) -> Option<Decimal> {
         self.0.insert(hex.to_string(), scale_factor)
     }
 
-    pub fn get(&self, hex: &str) -> Option<&f64> {
+    pub fn get(&self, hex: &str) -> Option<&Decimal> {
         self.0.get(hex)
     }
 }
@@ -180,26 +183,24 @@ fn limit(res: u8, occupied_count: u64) -> u64 {
 
 pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingMap) {
     for hex in &global_map.asserted_hexes {
-        let scale: f64 = SCALING_RES.rev().into_iter().fold(1.0, |scale, res| {
+        let scale: Decimal = SCALING_RES.rev().into_iter().fold(dec!(1.0), |scale, res| {
             hex.get_parent(res).map_or(scale, |parent| {
                 match (
                     global_map.unclipped_hexes.get(&parent),
                     global_map.clipped_hexes.get(&parent),
                 ) {
                     (Some(unclipped), Some(clipped)) => {
-                        scale * (*clipped as f64 / *unclipped as f64)
+                        scale
+                            * (Decimal::new(*clipped as i64, DEC_PRECISION)
+                                / Decimal::new(*unclipped as i64, DEC_PRECISION))
                     }
                     _ => scale,
                 }
             })
         });
-        let trunc_scale = round_scale_factor(scale);
+        let trunc_scale = scale.round_dp(DEC_PRECISION);
         scaling_map.insert(&hex.h3index().to_string(), trunc_scale);
     }
-}
-
-fn round_scale_factor(scale: f64) -> f64 {
-    (scale * 10000.0).round() / 10000.0
 }
 
 fn get_res_tgt(res: u8) -> u64 {
@@ -266,37 +267,37 @@ mod tests {
         compute_scaling_map(&gw_map, &mut scale_map);
 
         let expected_map = HashMap::from([
-            ("631210990515538431".to_string(), 0.0065),
-            ("631210990515727359".to_string(), 0.0091),
-            ("631210990515924479".to_string(), 0.0606),
-            ("631210990515537919".to_string(), 0.0065),
-            ("631210990517011455".to_string(), 0.0152),
-            ("631210990516885503".to_string(), 0.0152),
-            ("631210990516888063".to_string(), 0.0152),
-            ("631210990516955647".to_string(), 0.0455),
-            ("631210990515728895".to_string(), 0.0091),
-            ("631210990517144063".to_string(), 0.0909),
-            ("631210990515739647".to_string(), 0.0091),
-            ("631210990516640767".to_string(), 0.0606),
-            ("631210990515601919".to_string(), 0.0114),
-            ("631210990516590079".to_string(), 0.0606),
-            ("631210990517264895".to_string(), 0.0909),
-            ("631210990515606527".to_string(), 0.0114),
-            ("631210990515874303".to_string(), 0.0606),
-            ("631210990516613631".to_string(), 0.0303),
-            ("631210990515589631".to_string(), 0.0114),
-            ("631210990515564031".to_string(), 0.0455),
-            ("631210990516612607".to_string(), 0.0303),
-            ("631210990516876799".to_string(), 0.0152),
-            ("631210990516363775".to_string(), 0.0909),
-            ("631210990516907007".to_string(), 0.0227),
-            ("631210990516912639".to_string(), 0.0227),
-            ("631210990515722239".to_string(), 0.0091),
-            ("631210990516996607".to_string(), 0.0152),
-            ("631210990515987455".to_string(), 0.0606),
-            ("631210990515600383".to_string(), 0.0114),
-            ("631210990517016575".to_string(), 0.0152),
-            ("631210990515536895".to_string(), 0.0065),
+            ("631210990515538431".to_string(), dec!(0.0065)),
+            ("631210990515727359".to_string(), dec!(0.0091)),
+            ("631210990515924479".to_string(), dec!(0.0606)),
+            ("631210990515537919".to_string(), dec!(0.0065)),
+            ("631210990517011455".to_string(), dec!(0.0152)),
+            ("631210990516885503".to_string(), dec!(0.0152)),
+            ("631210990516888063".to_string(), dec!(0.0152)),
+            ("631210990516955647".to_string(), dec!(0.0455)),
+            ("631210990515728895".to_string(), dec!(0.0091)),
+            ("631210990517144063".to_string(), dec!(0.0909)),
+            ("631210990515739647".to_string(), dec!(0.0091)),
+            ("631210990516640767".to_string(), dec!(0.0606)),
+            ("631210990515601919".to_string(), dec!(0.0114)),
+            ("631210990516590079".to_string(), dec!(0.0606)),
+            ("631210990517264895".to_string(), dec!(0.0909)),
+            ("631210990515606527".to_string(), dec!(0.0114)),
+            ("631210990515874303".to_string(), dec!(0.0606)),
+            ("631210990516613631".to_string(), dec!(0.0303)),
+            ("631210990515589631".to_string(), dec!(0.0114)),
+            ("631210990515564031".to_string(), dec!(0.0455)),
+            ("631210990516612607".to_string(), dec!(0.0303)),
+            ("631210990516876799".to_string(), dec!(0.0152)),
+            ("631210990516363775".to_string(), dec!(0.0909)),
+            ("631210990516907007".to_string(), dec!(0.0227)),
+            ("631210990516912639".to_string(), dec!(0.0227)),
+            ("631210990515722239".to_string(), dec!(0.0091)),
+            ("631210990516996607".to_string(), dec!(0.0152)),
+            ("631210990515987455".to_string(), dec!(0.0606)),
+            ("631210990515600383".to_string(), dec!(0.0114)),
+            ("631210990517016575".to_string(), dec!(0.0152)),
+            ("631210990515536895".to_string(), dec!(0.0065)),
         ]);
         assert_eq!(scale_map, ScalingMap(expected_map));
     }

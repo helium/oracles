@@ -1,4 +1,5 @@
 use crate::{Error, Result};
+use rust_decimal::Decimal;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]
@@ -17,7 +18,7 @@ pub fn query_channel(size: usize) -> (QuerySender, QueryReceiver) {
 }
 
 impl QuerySender {
-    pub async fn query(&self, hex: String) -> Result<Option<f64>> {
+    pub async fn query(&self, hex: String) -> Result<Option<Decimal>> {
         let (tx, rx) = result_channel();
         let _ = self.0.send(QueryMsg { hex, response: tx }).await;
         rx.recv().await
@@ -31,8 +32,8 @@ impl QueryReceiver {
 }
 
 #[derive(Debug)]
-pub struct ResultSender(oneshot::Sender<Option<f64>>);
-pub struct ResultReceiver(oneshot::Receiver<Option<f64>>);
+pub struct ResultSender(oneshot::Sender<Option<Decimal>>);
+pub struct ResultReceiver(oneshot::Receiver<Option<Decimal>>);
 
 pub fn result_channel() -> (ResultSender, ResultReceiver) {
     let (tx, rx) = oneshot::channel();
@@ -40,7 +41,7 @@ pub fn result_channel() -> (ResultSender, ResultReceiver) {
 }
 
 impl ResultSender {
-    pub fn send(self, msg: Option<f64>) {
+    pub fn send(self, msg: Option<Decimal>) {
         match self.0.send(msg) {
             Ok(()) => (),
             Err(err) => tracing::warn!("failed to return result for reason : {err:?}"),
@@ -49,7 +50,7 @@ impl ResultSender {
 }
 
 impl ResultReceiver {
-    pub async fn recv(self) -> Result<Option<f64>> {
+    pub async fn recv(self) -> Result<Option<Decimal>> {
         self.0.await.map_err(|_| Error::channel())
     }
 }

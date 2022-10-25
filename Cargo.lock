@@ -947,6 +947,8 @@ dependencies = [
  "itertools",
  "node-follower",
  "prost",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "thiserror",
