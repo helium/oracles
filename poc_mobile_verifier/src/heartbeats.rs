@@ -58,25 +58,18 @@ impl Heartbeats {
                 .fetch_all(exec)
                 .await?
                 .into_iter()
-                .map(
-                    |HeartbeatRow {
-                         hotspot_key,
-                         cbsd_id,
-                         reward_weight,
-                         timestamp,
-                     }| {
-                        (
-                            HeartbeatKey {
-                                hotspot_key,
-                                cbsd_id,
-                            },
-                            HeartbeatValue {
-                                reward_weight,
-                                timestamp,
-                            },
-                        )
-                    },
-                )
+                .map(|hb| {
+                    (
+                        HeartbeatKey {
+                            hotspot_key: hb.hotspot_key,
+                            cbsd_id: hb.cbsd_id,
+                        },
+                        HeartbeatValue {
+                            reward_weight: hb.reward_weight,
+                            timestamp: hb.timestamp,
+                        },
+                    )
+                })
                 .collect();
         Ok(Self { heartbeats })
     }
