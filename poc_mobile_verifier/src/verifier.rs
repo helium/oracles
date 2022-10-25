@@ -22,6 +22,7 @@ pub struct VerifierDaemon {
     pub verifications_per_period: i32,
     pub last_verified_end_time: MetaValue<i64>,
     pub last_rewarded_end_time: MetaValue<i64>,
+    pub next_rewarded_end_time: MetaValue<i64>,
     pub verifier: Verifier,
 }
 
@@ -35,45 +36,58 @@ impl VerifierDaemon {
         loop {
             let now = Utc::now();
             let epoch_since_last_verify = self.epoch_since_last_verify(now);
-            let epoch_since_last_reward = self.epoch_since_last_reward(now);
             let epoch_since_last_verify_duration = epoch_duration(&epoch_since_last_verify);
-            let epoch_since_last_reward_duration = epoch_duration(&epoch_since_last_reward);
+
+            let last_rewarded_end_time = Utc.timestamp(*self.last_rewarded_end_time.value(), 0);
+            let next_rewarded_end_time = Utc.timestamp(*self.next_rewarded_end_time.value(), 0);
 
             // If we started up and the last verification epoch was too recent,
             // we do not want to re-verify.
             let mut sleep_duration = if epoch_since_last_verify_duration >= verification_period
                 // We always want to verify before a reward 
-                || epoch_since_last_reward_duration >= reward_period
+                || now >= next_rewarded_end_time
             {
-                tracing::info!("Verifying epoch: {:?}", epoch_since_last_verify);
+                let epoch_duration = epoch_since_last_verify_duration.min(verification_period);
+                let last_verified_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
+                let epoch = last_verified_end_time
+                    ..(last_verified_end_time + epoch_duration).min(next_rewarded_end_time);
+                tracing::info!("Verifying epoch: {:?}", epoch);
                 // Attempt to verify the current epoch:
-                self.verify_epoch(epoch_since_last_verify).await?;
-                verification_period
+                self.verify_epoch(epoch).await?;
+                if epoch_since_last_verify_duration - epoch_duration > verification_period {
+                    Duration::zero()
+                } else {
+                    verification_period
+                }
             } else {
                 verification_period - epoch_since_last_verify_duration
             };
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
-            if epoch_since_last_reward_duration >= reward_period {
-                tracing::info!("Rewarding epoch: {:?}", epoch_since_last_reward);
-                self.reward_epoch(epoch_since_last_reward).await?
-            } else if epoch_since_last_reward_duration + sleep_duration >= reward_period {
-                // If the next epoch is a reward period, cut off sleep duration.
-                // This ensures that verifying will always end up being aligned with
-                // the desired reward period.
-                sleep_duration = reward_period - epoch_since_last_reward_duration;
+            if now >= next_rewarded_end_time {
+                let epoch = last_rewarded_end_time..next_rewarded_end_time;
+                tracing::info!("Rewarding epoch: {:?}", epoch);
+                self.reward_epoch(epoch).await?
+            } else if now + sleep_duration >= next_rewarded_end_time {
+                // If the next verification epoch straddles a reward epoch, cut off sleep
+                // duration. This ensures that verifying will always end up being aligned
+                // with the desired reward period.
+                sleep_duration = next_rewarded_end_time - now;
             }
 
-            tracing::info!("Sleeping...");
+            let sleep_duration = sleep_duration
+                .to_std()
+                .map_err(|_| Error::OutOfRangeError)?;
+
+            tracing::info!(
+                "Sleeping for {}",
+                humantime::format_duration(sleep_duration)
+            );
             let shutdown = shutdown.clone();
             tokio::select! {
                 _ = shutdown => return Ok(()),
-                _ = sleep(
-                    sleep_duration
-                        .to_std()
-                        .map_err(|_| Error::OutOfRangeError)?,
-                ) => (),
+                _ = sleep(sleep_duration) => (),
             }
         }
     }
@@ -123,9 +137,16 @@ impl VerifierDaemon {
             .execute(&mut transaction)
             .await?;
 
-        // Update the last rewarded end time:
+        // Update the last and next rewarded end time:
         self.last_rewarded_end_time
             .update(&mut transaction, epoch.end.timestamp() as i64)
+            .await?;
+
+        self.next_rewarded_end_time
+            .update(
+                &mut transaction,
+                (epoch.end + Duration::hours(self.reward_period_hours)).timestamp() as i64,
+            )
             .await?;
 
         transaction.commit().await?;
@@ -141,10 +162,6 @@ impl VerifierDaemon {
 
     pub fn epoch_since_last_verify(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
         Utc.timestamp(*self.last_verified_end_time.value(), 0)..now
-    }
-
-    pub fn epoch_since_last_reward(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
-        Utc.timestamp(*self.last_rewarded_end_time.value(), 0)..now
     }
 }
 

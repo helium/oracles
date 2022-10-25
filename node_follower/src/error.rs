@@ -12,4 +12,6 @@ pub enum Error {
     StakingMode(String),
     #[error("unsupported region {0}")]
     Region(String),
+    #[error("hotspot not found {0}")]
+    GatewayNotFound(String),
 }

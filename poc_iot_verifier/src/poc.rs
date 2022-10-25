@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, Result};
+use crate::{entropy::Entropy, Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
@@ -12,7 +12,7 @@ use helium_proto::{
 };
 use node_follower::{
     follower_service::FollowerService,
-    gateway_resp::{FollowerGatewayResp, GatewayInfoResolver},
+    gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
 use std::f64::consts::PI;
 /// C is the speed of light in air in meters per second
@@ -42,14 +42,14 @@ pub struct Poc {
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: Option<InvalidReason>,
-    pub gateway_info: Option<FollowerGatewayResp>,
+    pub gateway_info: Option<GatewayInfo>,
     pub hex_scale: Option<f32>,
 }
 
 pub struct VerifyWitnessResult {
     result: VerificationStatus,
     invalid_reason: Option<InvalidReason>,
-    pub gateway_info: Option<FollowerGatewayResp>,
+    pub gateway_info: Option<GatewayInfo>,
 }
 
 pub struct VerifyWitnessesResult {
@@ -180,7 +180,7 @@ impl Poc {
 
     pub async fn verify_witnesses(
         &mut self,
-        beacon_info: &FollowerGatewayResp,
+        beacon_info: &GatewayInfo,
     ) -> Result<VerifyWitnessesResult> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
@@ -190,10 +190,13 @@ impl Poc {
             let witness_result = self.verify_witness(&witness_report, beacon_info).await?;
             match witness_result.result {
                 VerificationStatus::Valid => {
+                    let gw_info: GatewayInfo = witness_result.gateway_info.ok_or_else(|| {
+                        Error::not_found("invalid FollowerGatewayResp for witness")
+                    })?;
                     // TODO: perform hex density check here for a valid witness
                     let valid_witness = LoraValidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
-                        location: witness_result.gateway_info.unwrap().location,
+                        location: gw_info.location,
                         hex_scale: 1.0, //TODO: replace with actual hex scale when available
                         report: witness_report.report,
                     };
@@ -202,7 +205,9 @@ impl Poc {
                 VerificationStatus::Invalid => {
                     let invalid_witness = LoraInvalidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
-                        reason: witness_result.invalid_reason.unwrap(),
+                        reason: witness_result
+                            .invalid_reason
+                            .ok_or_else(|| Error::not_found("invalid invalid_reason"))?,
                         report: witness_report.report,
                         participant_side: InvalidParticipantSide::Witness,
                     };
@@ -214,7 +219,9 @@ impl Poc {
                     // and allow it to do its things
                     let failed_witness = LoraInvalidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
-                        reason: witness_result.invalid_reason.unwrap(),
+                        reason: witness_result
+                            .invalid_reason
+                            .ok_or_else(|| Error::not_found("invalid invalid_reason"))?,
                         report: witness_report.report,
                         participant_side: InvalidParticipantSide::Witness,
                     };
@@ -234,7 +241,7 @@ impl Poc {
     async fn verify_witness(
         &mut self,
         witness_report: &LoraWitnessIngestReport,
-        beaconer_info: &FollowerGatewayResp,
+        beaconer_info: &GatewayInfo,
     ) -> Result<VerifyWitnessResult> {
         // use pub key to get GW info from our follower and verify the witness
         let witness = &witness_report.report;
@@ -269,6 +276,24 @@ impl Poc {
         //     owner: witness.pub_key.clone(),
         //     staking_mode: GatewayStakingMode::Full as i32,
         // };
+
+        // check witness is permitted to participate in POC
+        match witness_info.staking_mode {
+            GatewayStakingMode::Dataonly => {
+                tracing::debug!(
+                    "witness verification failed, reason: {:?}",
+                    InvalidReason::InvalidCapability
+                );
+                let resp = VerifyWitnessResult {
+                    result: VerificationStatus::Invalid,
+                    invalid_reason: Some(InvalidReason::InvalidCapability),
+                    gateway_info: Some(witness_info),
+                };
+                return Ok(resp);
+            }
+            GatewayStakingMode::Full => (),
+            GatewayStakingMode::Light => (),
+        }
 
         // check the beaconer is not self witnessing
         if witness_report.report.pub_key == self.beacon_report.report.pub_key {
@@ -343,10 +368,14 @@ impl Poc {
         }
 
         // check witness does not exceed max distance from beaconer
-        let beaconer_loc = beaconer_info.location.unwrap();
-        let witness_loc = witness_info.location.unwrap();
-        let witness_distance = calc_distance(beaconer_loc, witness_loc).unwrap();
-        tracing::debug!("witness distance: {:?}", witness_distance);
+        let beaconer_loc = beaconer_info
+            .location
+            .ok_or_else(|| Error::not_found("invalid beaconer location"))?;
+        let witness_loc = witness_info
+            .location
+            .ok_or_else(|| Error::not_found("invalid witness location"))?;
+        let witness_distance = calc_distance(beaconer_loc, witness_loc)?;
+        tracing::debug!("witness distance in mtrs: {:?}", witness_distance);
         if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
@@ -363,16 +392,19 @@ impl Poc {
         // check free space path loss
         let tx_power = beacon.tx_power;
         let gain = beaconer_info.gain;
-        let min_rcv_signal =
-            calc_fspl(tx_power, witness.frequency, witness_distance, gain).unwrap();
+        let witness_signal = witness.signal / 10;
+        let min_rcv_signal = calc_fspl(tx_power, witness.frequency, witness_distance, gain);
         tracing::debug!(
-            "signal: {:?}, min_rcv_signal: {:?}",
-            witness.signal,
-            min_rcv_signal
+            "beaconer tx_power: {tx_power},
+            beaconer gain: {gain},
+            witness signal: {witness_signal},
+            witness freq: {:?},
+            min_rcv_signal: {min_rcv_signal}",
+            witness.frequency
         );
         // signal is submitted as DBM * 10
         // min_rcv_signal is plain old DBM
-        if (witness.signal / 10) < min_rcv_signal as i32 {
+        if witness_signal > min_rcv_signal as i32 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::BadRssi
@@ -383,24 +415,6 @@ impl Poc {
                 gateway_info: Some(witness_info),
             };
             return Ok(resp);
-        }
-
-        // check witness is permitted to participate in POC
-        match witness_info.staking_mode {
-            GatewayStakingMode::Dataonly => {
-                tracing::debug!(
-                    "witness verification failed, reason: {:?}",
-                    InvalidReason::InvalidCapability
-                );
-                let resp = VerifyWitnessResult {
-                    result: VerificationStatus::Invalid,
-                    invalid_reason: Some(InvalidReason::InvalidCapability),
-                    gateway_info: Some(witness_info),
-                };
-                return Ok(resp);
-            }
-            GatewayStakingMode::Full => (),
-            GatewayStakingMode::Light => (),
         }
 
         //TODO: Plugin Jay's crate here when ready
@@ -430,32 +444,32 @@ impl Poc {
     }
 }
 
-fn calc_fspl(tx_power: i32, freq: u64, distance: f64, gain: i32) -> Result<f64> {
+fn calc_fspl(tx_power: i32, freq: u64, distance: f64, gain: i32) -> f64 {
     let gt = 0.0;
     let gl = gain as f64 / 10.0;
     let fpsl = (20.0 * (4.0 * PI * distance * (freq as f64) / C).log10()) - gt - gl;
-    Ok((tx_power as f64) - fpsl)
+    (tx_power as f64) - fpsl
 }
 
 fn calc_distance(p1: u64, p2: u64) -> Result<f64> {
     let p1_cell = H3Cell::new(p1);
     let p2_cell = H3Cell::new(p2);
-    let p1_coord = H3Cell::to_coordinate(&p1_cell).unwrap();
-    let p2_coord = H3Cell::to_coordinate(&p2_cell).unwrap();
+    let p1_coord = H3Cell::to_coordinate(&p1_cell)?;
+    let p2_coord = H3Cell::to_coordinate(&p2_cell)?;
+
     let (p1_x, p1_y) = p1_coord.x_y();
     let (p2_x, p2_y) = p2_coord.x_y();
     let p1_geo = point!(x: p1_x, y: p1_y);
     let p2_geo = point!(x: p2_x, y: p2_y);
-    let distance = p1_geo.vincenty_distance(&p2_geo).unwrap();
-    let adj_distance =
-        distance - hex_adjustment(&p1_cell).unwrap() - hex_adjustment(&p2_cell).unwrap();
+    let distance = p1_geo.vincenty_distance(&p2_geo)?;
+    let adj_distance = distance - hex_adjustment(&p1_cell)? - hex_adjustment(&p2_cell)?;
     Ok(adj_distance.round())
 }
 
 fn hex_adjustment(loc: &H3Cell) -> Result<f64> {
     // Distance from hex center to edge, sqrt(3)*edge_length/2.
     let res = loc.resolution();
-    let edge_length = H3DirectedEdge::edge_length_avg_m(res).unwrap();
+    let edge_length = H3DirectedEdge::edge_length_avg_m(res)?;
     Ok(
         edge_length * (f64::round(f64::sqrt(3.0) * f64::powf(10.0, 3.0)) / f64::powf(10.0, 3.0))
             / 2.0,

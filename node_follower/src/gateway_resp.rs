@@ -1,16 +1,17 @@
 use crate::{Error, Result};
 use async_trait::async_trait;
 use helium_crypto::PublicKey;
-use helium_proto::{services::follower::FollowerGatewayRespV1, GatewayStakingMode, Region};
+use helium_proto::{
+    services::follower::GatewayInfo as GatewayInfoProto, GatewayStakingMode, Region,
+};
 
 #[async_trait]
 pub trait GatewayInfoResolver {
-    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<FollowerGatewayResp>;
+    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<GatewayInfo>;
 }
 
 #[derive(Debug, Clone)]
-pub struct FollowerGatewayResp {
-    pub height: u64,
+pub struct GatewayInfo {
     pub location: Option<u64>,
     pub address: Vec<u8>,
     pub owner: Vec<u8>,
@@ -19,16 +20,15 @@ pub struct FollowerGatewayResp {
     pub region: Region,
 }
 
-impl TryFrom<FollowerGatewayRespV1> for FollowerGatewayResp {
+impl TryFrom<GatewayInfoProto> for GatewayInfo {
     type Error = Error;
-    fn try_from(v: FollowerGatewayRespV1) -> Result<Self> {
+    fn try_from(v: GatewayInfoProto) -> Result<Self> {
         let staking_mode: GatewayStakingMode = GatewayStakingMode::from_i32(v.staking_mode)
             .ok_or_else(|| Error::StakingMode(format!("{:?}", v.staking_mode)))?;
         let region: Region =
             Region::from_i32(v.region).ok_or_else(|| Error::Region(format!("{:?}", v.region)))?;
         let location = u64::from_str_radix(&v.location, 16).ok();
         Ok(Self {
-            height: v.height,
             location,
             address: v.address,
             owner: v.owner,
@@ -39,15 +39,14 @@ impl TryFrom<FollowerGatewayRespV1> for FollowerGatewayResp {
     }
 }
 
-impl TryFrom<FollowerGatewayResp> for FollowerGatewayRespV1 {
+impl TryFrom<GatewayInfo> for GatewayInfoProto {
     type Error = Error;
-    fn try_from(v: FollowerGatewayResp) -> Result<Self> {
+    fn try_from(v: GatewayInfo) -> Result<Self> {
         let location = match v.location {
             None => String::new(),
             Some(loc) => loc.to_string(),
         };
         Ok(Self {
-            height: v.height,
             location,
             address: v.address,
             owner: v.owner,

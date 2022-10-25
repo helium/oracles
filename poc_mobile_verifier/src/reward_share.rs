@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use helium_proto::services::{
-    follower::{self, follower_gateway_resp_v1, FollowerGatewayReqV1},
+    follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
     Channel,
 };
 use lazy_static::lazy_static;
@@ -103,11 +103,10 @@ impl OwnerResolver for follower::Client<Channel> {
         };
         let res = self.find_gateway(req).await?.into_inner();
 
-        if let Some(Ok(pub_key)) = res.result.and_then(|result| match result {
-            follower_gateway_resp_v1::Result::Info(info) => Some(PublicKey::try_from(info.owner)),
-            _ => None,
-        }) {
-            return Ok(Some(pub_key));
+        if let Some(GatewayResult::Info(gateway_info)) = res.result {
+            if let Ok(pub_key) = PublicKey::try_from(gateway_info.owner) {
+                return Ok(Some(pub_key));
+            }
         }
 
         Ok(None)

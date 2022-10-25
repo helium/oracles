@@ -1,4 +1,4 @@
-use crate::Result;
+use crate::{Result, CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 use helium_proto::{
     services::{
         transaction::{self, TxnQueryReqV1, TxnQueryRespV1, TxnSubmitReqV1, TxnSubmitRespV1},
@@ -7,11 +7,7 @@ use helium_proto::{
     BlockchainTxn,
 };
 use http::Uri;
-use std::{env, str::FromStr, time::Duration};
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const RPC_TIMEOUT: Duration = Duration::from_secs(5);
-pub const DEFAULT_URI: &str = "http://127.0.0.1:8080";
+use std::{env, str::FromStr};
 
 type TransactionClient = transaction::Client<Channel>;
 

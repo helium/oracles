@@ -91,6 +91,8 @@ impl Cmd {
             MetaValue::<i64>::fetch_or_insert_with(&pool, "last_verified_end_time", || 0).await?;
         let last_rewarded_end_time =
             MetaValue::<i64>::fetch_or_insert_with(&pool, "last_rewarded_end_time", || 0).await?;
+        let next_rewarded_end_time =
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "next_rewarded_end_time", || 0).await?;
 
         let verifier = Verifier::new(file_store, follower).await?;
 
@@ -103,6 +105,7 @@ impl Cmd {
             verifications_per_period,
             last_verified_end_time,
             last_rewarded_end_time,
+            next_rewarded_end_time,
             verifier,
         };
 

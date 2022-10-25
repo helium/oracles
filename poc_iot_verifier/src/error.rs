@@ -32,6 +32,10 @@ pub enum Error {
     Base64DecodeError(#[from] base64::DecodeError),
     #[error("follower error")]
     Follower(#[from] node_follower::Error),
+    #[error("h3ron error")]
+    H3ron(#[from] h3ron::Error),
+    #[error("vincenty error")]
+    Geo(#[from] geo::vincenty_distance::FailedToConvergeError),
 }
 
 #[derive(Error, Debug)]

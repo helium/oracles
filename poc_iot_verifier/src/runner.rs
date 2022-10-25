@@ -23,7 +23,6 @@ use helium_proto::services::poc_lora::{
     LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
 };
 use helium_proto::Message;
-use node_follower::gateway_resp::FollowerGatewayResp;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::path::Path;
@@ -233,42 +232,43 @@ impl Runner {
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
                     // beacon is valid, verify the witnesses
-                    let beacon_info: FollowerGatewayResp =
-                        beacon_verify_result.gateway_info.unwrap();
-                    let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
-                    // check if there are any failed witnesses
-                    // if so update the DB attempts count
-                    // and halt here, let things be reprocessed next tick
-                    // if a witness continues to fail it will eventually
-                    // be discarded from the list returned for the beacon
-                    // thus one of more failing witnesses will not block the overall POC
-                    if !verified_witnesses_result.failed_witnesses.is_empty() {
-                        for failed_witness_report in verified_witnesses_result.failed_witnesses {
-                            // something went wrong whilst verifying witnesses
-                            // halt here and allow things to be reprocessed next tick
-                            let failed_witness = failed_witness_report.report;
-                            // have to construct the id manually here as dont have the ingest report handy
-                            let id =
-                                failed_witness.report_id(failed_witness_report.received_timestamp);
-                            Report::update_attempts(&self.pool, &id, Utc::now()).await?;
-                        }
-                        continue;
-                    };
+                    if let Some(beacon_info) = beacon_verify_result.gateway_info {
+                        let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
+                        // check if there are any failed witnesses
+                        // if so update the DB attempts count
+                        // and halt here, let things be reprocessed next tick
+                        // if a witness continues to fail it will eventually
+                        // be discarded from the list returned for the beacon
+                        // thus one of more failing witnesses will not block the overall POC
+                        if !verified_witnesses_result.failed_witnesses.is_empty() {
+                            for failed_witness_report in verified_witnesses_result.failed_witnesses
+                            {
+                                // something went wrong whilst verifying witnesses
+                                // halt here and allow things to be reprocessed next tick
+                                let failed_witness = failed_witness_report.report;
+                                // have to construct the id manually here as dont have the ingest report handy
+                                let id = failed_witness
+                                    .report_id(failed_witness_report.received_timestamp);
+                                Report::update_attempts(&self.pool, &id, Utc::now()).await?;
+                            }
+                            continue;
+                        };
 
-                    let valid_beacon_report = LoraValidBeaconReport {
-                        received_timestamp: beacon_received_ts,
-                        location: beacon_info.location,
-                        hex_scale: beacon_verify_result.hex_scale.unwrap(),
-                        report: beacon.clone(),
-                    };
-                    self.handle_valid_poc(
-                        beacon,
-                        valid_beacon_report,
-                        verified_witnesses_result,
-                        &lora_valid_poc_tx,
-                        &lora_invalid_witness_tx,
-                    )
-                    .await?;
+                        let valid_beacon_report = LoraValidBeaconReport {
+                            received_timestamp: beacon_received_ts,
+                            location: beacon_info.location,
+                            hex_scale: beacon_verify_result.hex_scale.unwrap_or(0.0),
+                            report: beacon.clone(),
+                        };
+                        self.handle_valid_poc(
+                            beacon,
+                            valid_beacon_report,
+                            verified_witnesses_result,
+                            &lora_valid_poc_tx,
+                            &lora_invalid_witness_tx,
+                        )
+                        .await?;
+                    }
                 }
                 VerificationStatus::Invalid => {
                     // the beacon is invalid, which in turn renders all witnesses invalid
