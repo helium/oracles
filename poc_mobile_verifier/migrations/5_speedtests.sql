@@ -6,6 +6,6 @@ CREATE TYPE speedtest AS (
 );
 
 CREATE TABLE speedtests (
-       id test primary key not null,
+       id text primary key not null,
        speedtests speedtest[] not null
 );
