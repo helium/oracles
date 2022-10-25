@@ -13,7 +13,7 @@ use helium_proto::{
         poc_lora::{LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
             CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1,
-            SpeedtestReqV1,
+            SpeedtestReqV1, SpeedtestAvg,
         },
     },
     Message, SubnetworkRewards,
@@ -108,6 +108,17 @@ impl Cmd {
                         })
                         .collect();
                     print_json(&json!({ "rewards": rewards, "total_rewards": total_rewards }))?;
+                }
+                FileType::SpeedtestAvg => {
+                    let speedtest_avg = SpeedtestAvg::decode(msg)?;
+                    print_json(&json!({
+                        "upload_speed_avg_bps": speedtest_avg.upload_speed_avg_bps,
+                        "download_speed_avg_bps": speedtest_avg.download_speed_avg_bps,
+                        "latency_avg_ms": speedtest_avg.latency_avg_ms,
+                        "validity": speedtest_avg.validity,
+                        "number_of_speedtests": speedtest_avg.speedtests.len(),
+                        "reward_multiplier": speedtest_avg.reward_multiplier,
+                    }))?;
                 }
                 _ => (),
             }

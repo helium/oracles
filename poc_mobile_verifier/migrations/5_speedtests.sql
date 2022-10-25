@@ -7,5 +7,6 @@ CREATE TYPE speedtest AS (
 
 CREATE TABLE speedtests (
        id text primary key not null,
-       speedtests speedtest[] not null
+       speedtests speedtest[] not null,
+       latest_timestamp timestamp not null
 );

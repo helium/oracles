@@ -53,11 +53,16 @@ impl PgHasArrayType for Speedtest {
 pub struct SpeedtestRollingAverage {
     pub id: PublicKey,
     pub speedtests: Vec<Speedtest>,
+    pub latest_timestamp: NaiveDateTime,
 }
 
 impl SpeedtestRollingAverage {
-    pub fn new(id: PublicKey, speedtests: Vec<Speedtest>) -> Self {
-        Self { id, speedtests }
+    pub fn new(id: PublicKey) -> Self {
+        Self {
+            id,
+            speedtests: Vec::new(),
+            latest_timestamp: NaiveDateTime::default(),
+        }
     }
 
     pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
@@ -68,8 +73,8 @@ impl SpeedtestRollingAverage {
 
         sqlx::query_as::<_, SaveResult>(
             r#"
-            insert into speedtests (id, speedtests)
-            values ($1, $2)
+            insert into speedtests (id, speedtests, latest_timestamp)
+            values ($1, $2, $3)
             on conflict (id) do update set
             speedtests = EXCLUDED.speedtests
             returning (xmax = 0) as inserted;
@@ -77,6 +82,7 @@ impl SpeedtestRollingAverage {
         )
         .bind(self.id)
         .bind(self.speedtests)
+        .bind(self.latest_timestamp)
         .fetch_one(exec)
         .await
         .map(|result| result.inserted)
@@ -137,6 +143,11 @@ impl SpeedtestAverages {
             .into_iter()
             .map(|(id, window)| SpeedtestRollingAverage {
                 id,
+                // window is guaranteed to be non-empty. For safety, we set the
+                // latest timestamp to epoch.
+                latest_timestamp: window
+                    .back()
+                    .map_or_else(NaiveDateTime::default, |st| st.timestamp),
                 speedtests: Vec::from(window),
             })
     }
@@ -152,7 +163,7 @@ impl SpeedtestAverages {
         let mut speedtests = HashMap::new();
 
         let mut rows = sqlx::query_as::<_, SpeedtestRollingAverage>(
-            "SELECT * FROM speedtests where timestamp >= $1",
+            "SELECT * FROM speedtests where latest_timestamp >= $1",
         )
         .bind(starting.naive_utc())
         .fetch(exec);
@@ -160,6 +171,7 @@ impl SpeedtestAverages {
         while let Some(SpeedtestRollingAverage {
             id,
             speedtests: window,
+            ..
         }) = rows.try_next().await?
         {
             speedtests.insert(id, VecDeque::from(window));
@@ -199,10 +211,11 @@ impl SpeedtestAverages {
                 let SpeedtestRollingAverage {
                     id,
                     speedtests: window,
+                    ..
                 } = exec
                     .fetch(&pubkey)
                     .await
-                    .unwrap_or_else(|_| SpeedtestRollingAverage::new(pubkey.clone(), Vec::new()));
+                    .unwrap_or_else(|_| SpeedtestRollingAverage::new(pubkey.clone()));
 
                 speedtests.insert(id, VecDeque::from(window));
             }
