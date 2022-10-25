@@ -11,8 +11,6 @@ pub mod verifier;
 
 pub use error::{Error, Result};
 
-use rust_decimal::prelude::*;
-use rust_decimal_macros::dec;
 use std::io;
 
 pub fn env_var<T>(key: &str, default: T) -> Result<T>
