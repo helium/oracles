@@ -76,7 +76,7 @@ impl SpeedtestRollingAverage {
             insert into speedtests (id, speedtests, latest_timestamp)
             values ($1, $2, $3)
             on conflict (id) do update set
-            speedtests = EXCLUDED.speedtests
+            speedtests = EXCLUDED.speedtests, latest_timestamp = EXCLUDED.latest_timestamp
             returning (xmax = 0) as inserted;
             "#,
         )
