@@ -65,15 +65,17 @@ impl VerifierDaemon {
 
             // If the current duration since the last reward is exceeded, attempt to
             // submit rewards
-            if now >= next_rewarded_end_time {
-                let epoch = last_rewarded_end_time..next_rewarded_end_time;
-                tracing::info!("Rewarding epoch: {:?}", epoch);
-                self.reward_epoch(epoch).await?
-            } else if now + sleep_duration >= next_rewarded_end_time {
-                // If the next verification epoch straddles a reward epoch, cut off sleep
-                // duration. This ensures that verifying will always end up being aligned
-                // with the desired reward period.
-                sleep_duration = next_rewarded_end_time - now;
+            if last_rewarded_end_time == Utc.timestamp(*self.last_verified_end_time.value(), 0) {
+                if now >= next_rewarded_end_time {
+                    let epoch = last_rewarded_end_time..next_rewarded_end_time;
+                    tracing::info!("Rewarding epoch: {:?}", epoch);
+                    self.reward_epoch(epoch).await?
+                } else if now + sleep_duration >= next_rewarded_end_time {
+                    // If the next verification epoch straddles a reward epoch, cut off sleep
+                    // duration. This ensures that verifying will always end up being aligned
+                    // with the desired reward period.
+                    sleep_duration = next_rewarded_end_time - now;
+                }
             }
 
             let sleep_duration = sleep_duration
