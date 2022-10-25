@@ -327,11 +327,18 @@ impl Average {
         proto::SpeedtestAvgValidity::Valid
     }
 
+    pub fn tier(&self) -> SpeedtestTier {
+        if self.window_size < MIN_REQUIRED_SAMPLES {
+            SpeedtestTier::Failed
+        } else {
+            SpeedtestTier::from_download_speed(self.download_speed_avg_bps)
+                .and(SpeedtestTier::from_upload_speed(self.upload_speed_avg_bps))
+                .and(SpeedtestTier::from_latency(self.latency_avg_ms))
+        }
+    }
+
     pub fn reward_multiplier(&self) -> f32 {
-        SpeedtestTier::from_download_speed(self.download_speed_avg_bps)
-            .and(SpeedtestTier::from_upload_speed(self.upload_speed_avg_bps))
-            .and(SpeedtestTier::from_latency(self.latency_avg_ms))
-            .into_multiplier()
+        self.tier().into_multiplier()
     }
 }
 
@@ -339,7 +346,7 @@ const fn mbps(mbps: u64) -> u64 {
     mbps * 125000
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SpeedtestTier {
     Acceptable,
     Degraded,
@@ -440,7 +447,6 @@ impl SpeedtestStore for EmptyDatabase {
 mod test {
     use super::*;
     use chrono::TimeZone;
-    use proto::SpeedtestAvgValidity;
 
     fn parse_dt(dt: &str) -> NaiveDateTime {
         Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
@@ -454,7 +460,7 @@ mod test {
 
     fn known_speedtests() -> Vec<Speedtest> {
         // This data is taken from the spreadsheet
-        // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Pass?
+        // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Acceptable?
         // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
         // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
         // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
@@ -514,12 +520,12 @@ mod test {
     fn check_known_valid() {
         let speedtests = known_speedtests();
         assert_ne!(
-            Average::from(&speedtests[0..5]).validity(),
-            SpeedtestAvgValidity::Valid
+            Average::from(&speedtests[0..5]).tier(),
+            SpeedtestTier::Acceptable,
         );
         assert_eq!(
-            Average::from(&speedtests[0..6]).validity(),
-            SpeedtestAvgValidity::Valid
+            Average::from(&speedtests[0..6]).tier(),
+            SpeedtestTier::Acceptable
         );
     }
 
@@ -527,16 +533,16 @@ mod test {
     fn check_minimum_known_valid() {
         let speedtests = known_speedtests();
         assert_ne!(
-            Average::from(&speedtests[4..4]).validity(),
-            SpeedtestAvgValidity::Valid
+            Average::from(&speedtests[4..4]).tier(),
+            SpeedtestTier::Acceptable
         );
         assert_eq!(
-            Average::from(&speedtests[4..=5]).validity(),
-            SpeedtestAvgValidity::Valid
+            Average::from(&speedtests[4..=5]).tier(),
+            SpeedtestTier::Acceptable
         );
         assert_eq!(
-            Average::from(&speedtests[4..=6]).validity(),
-            SpeedtestAvgValidity::Valid
+            Average::from(&speedtests[4..=6]).tier(),
+            SpeedtestTier::Acceptable
         );
     }
 
@@ -544,8 +550,8 @@ mod test {
     fn check_minimum_known_invalid() {
         let speedtests = known_speedtests();
         assert_ne!(
-            Average::from(&speedtests[5..6]).validity(),
-            SpeedtestAvgValidity::Valid
+            Average::from(&speedtests[5..6]).tier(),
+            SpeedtestTier::Acceptable
         );
     }
 }
