@@ -112,6 +112,7 @@ impl Cmd {
                 FileType::SpeedtestAvg => {
                     let speedtest_avg = SpeedtestAvg::decode(msg)?;
                     print_json(&json!({
+                        "pub_key": PublicKey::try_from(speedtest_avg.pub_key).unwrap(),
                         "upload_speed_avg_bps": speedtest_avg.upload_speed_avg_bps,
                         "download_speed_avg_bps": speedtest_avg.download_speed_avg_bps,
                         "latency_avg_ms": speedtest_avg.latency_avg_ms,
