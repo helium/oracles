@@ -6,8 +6,24 @@ use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{env, path::Path};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileStoreSettings {
+    /// Bucket name for the store. Required
+    pub bucket: String,
+    /// Optional api endpoint for the bucket. Default none
+    pub endpoint: Option<String>,
+    /// Optional region for the endpoint. Default: us-west-2
+    #[serde(default = "default_region")]
+    pub region: String,
+}
+
+fn default_region() -> String {
+    "us-west-2".to_string()
+}
 
 #[derive(Debug, Clone)]
 pub struct FileStore {
@@ -16,6 +32,18 @@ pub struct FileStore {
 }
 
 impl FileStore {
+    pub async fn from_settings(settings: &FileStoreSettings) -> Result<Self> {
+        let endpoint: Option<Endpoint> = match &settings.endpoint {
+            Some(endpoint) => Uri::from_str(endpoint)
+                .map(Endpoint::immutable)
+                .map(Some)
+                .map_err(DecodeError::from)?,
+            _ => None,
+        };
+        let region = Region::new(settings.region.clone());
+        Self::new(endpoint, region, &settings.bucket).await
+    }
+
     pub async fn from_env() -> Result<Self> {
         let endpoint: Option<Endpoint> = match env::var("BUCKET_ENDPOINT") {
             Ok(endpoint_env) => Uri::from_str(&endpoint_env)

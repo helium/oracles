@@ -13,7 +13,7 @@ pub mod lora_witness_report;
 pub mod speedtest;
 pub mod traits;
 
-pub use crate::file_store::FileStore;
+pub use crate::file_store::{FileStore, FileStoreSettings};
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};

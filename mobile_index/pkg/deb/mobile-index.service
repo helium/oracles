@@ -1,0 +1,17 @@
+[Unit]
+Description=mobile-index
+After=network.target
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/opt/mobile-mobile_index_db/bin/mobile-index
+User=helium
+PIDFile=/var/run/mobile-index
+Restart=always
+RestartSec=15
+WorkingDirectory=/opt/mobile-index
+
+[Install]
+WantedBy=multi-user.target

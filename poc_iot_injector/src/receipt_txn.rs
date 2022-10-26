@@ -119,7 +119,7 @@ fn construct_poc_witnesses(
             let poc_witness = BlockchainPocWitnessV1 {
                 gateway: witness_pub_key,
                 timestamp: witness_timestamp,
-                signal: witness_signal as i32,
+                signal: witness_signal,
                 packet_hash: witness_packet,
                 signature: witness_signature,
                 snr: witness_snr as f32,
