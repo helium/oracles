@@ -14,7 +14,7 @@ pub enum MetaError {
     SqlError(#[from] sqlx::Error),
     #[error("Failed to decode meta value")]
     DecodeError,
-    #[error("not found")]
+    #[error("meta key not found {0}")]
     NotFound(String),
 }
 

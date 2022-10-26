@@ -33,6 +33,6 @@ where
     .bind(key)
     .fetch_optional(exec)
     .await?
-    .ok_or_else(|| MetaError::NotFound(format!("{} not found in meta table", key)))
+    .ok_or_else(|| MetaError::NotFound(key.to_string()))
     .and_then(|value| value.parse().map_err(|_| MetaError::DecodeError))
 }
