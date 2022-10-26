@@ -1,6 +1,7 @@
 use crate::{
     env_var, heartbeats::Heartbeats, reward_share::get_scheduled_tokens,
-    speedtests::SpeedtestAverages, subnetwork_rewards::SubnetworkRewards, Result,
+    speedtests::SpeedtestAverages, subnetwork_rewards::SubnetworkRewards, 
+    Result, Settings,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
@@ -20,7 +21,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(self) -> Result {
+    pub async fn run(self, settings: &Settings) -> Result {
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);
@@ -32,7 +33,7 @@ impl Cmd {
             .expect("Couldn't get expected rewards");
 
         let follower = follower::Client::new(
-            Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
+            Endpoint::from(settings.follower.url)
                 .connect_timeout(CONNECT_TIMEOUT)
                 .timeout(RPC_TIMEOUT)
                 .connect_lazy(),

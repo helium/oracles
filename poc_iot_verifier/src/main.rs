@@ -7,9 +7,8 @@ async fn main() -> Result {
     dotenv::dotenv()?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            dotenv::var("RUST_LOG").unwrap_or_else(|_| {
-                "poclora_report=info,poc_store=info,poclora_verifier=info".into()
-            }),
+            dotenv::var("RUST_LOG")
+                .unwrap_or_else(|_| "poc-iot-verifier=info,poc_store=info".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
