@@ -5,19 +5,20 @@ use crate::{
     Result, Settings,
 };
 use chrono::{Duration, Utc};
-use futures::{stream, StreamExt};
-use helium_proto::EntropyReportV1;
-use helium_proto::{
-    services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
-    Message,
-};
-
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport,
     lora_witness_report::LoraWitnessIngestReport,
     traits::{IngestId, TimestampDecode},
     FileStore, FileType,
 };
+use futures::{stream, StreamExt};
+use helium_crypto::PublicKey;
+use helium_proto::EntropyReportV1;
+use helium_proto::{
+    services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
+    Message,
+};
+use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfoResolver};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
@@ -33,8 +34,8 @@ const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;
 pub struct Loader {
     ingest_store: FileStore,
     entropy_store: FileStore,
-    // bucket: String,
     pool: PgPool,
+    follower_service: FollowerService,
 }
 
 impl Loader {
@@ -43,10 +44,12 @@ impl Loader {
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
+        let follower_service = FollowerService::from_settings(&settings.follower)?;
         Ok(Self {
             pool,
             ingest_store,
             entropy_store,
+            follower_service,
         })
     }
 
@@ -154,34 +157,58 @@ impl Loader {
                     LoraBeaconIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);
                 let packet_data = beacon.report.data.clone();
-                tracing::debug!("beacon data: {:?}", &packet_data);
-                Report::insert_into(
-                    &self.pool,
-                    beacon.ingest_id(),
-                    beacon.report.remote_entropy,
-                    packet_data,
-                    buf.to_vec(),
-                    &beacon.received_timestamp,
-                    ReportType::Beacon,
-                )
-                .await
+                match self.check_valid_gateway(&beacon.report.pub_key).await {
+                    true => {
+                        tracing::debug!("beacon data: {:?}", &packet_data);
+                        Report::insert_into(
+                            &self.pool,
+                            beacon.ingest_id(),
+                            beacon.report.remote_entropy,
+                            packet_data,
+                            buf.to_vec(),
+                            &beacon.received_timestamp,
+                            ReportType::Beacon,
+                        )
+                        .await
+                    }
+                    false => {
+                        // if a gateway doesnt exist then drop the report
+                        tracing::warn!(
+                            "dropping beacon report as gateway not found: {:?}",
+                            &beacon
+                        );
+                        Ok(())
+                    }
+                }
             }
             FileType::LoraWitnessIngestReport => {
                 let witness: LoraWitnessIngestReport =
                     LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
                 let packet_data = witness.report.data.clone();
-                tracing::debug!("witness data: {:?}", &packet_data);
-                Report::insert_into(
-                    &self.pool,
-                    witness.ingest_id(),
-                    Vec::<u8>::with_capacity(0),
-                    packet_data,
-                    buf.to_vec(),
-                    &witness.received_timestamp,
-                    ReportType::Witness,
-                )
-                .await
+                match self.check_valid_gateway(&witness.report.pub_key).await {
+                    true => {
+                        tracing::debug!("witness data: {:?}", &packet_data);
+                        Report::insert_into(
+                            &self.pool,
+                            witness.ingest_id(),
+                            Vec::<u8>::with_capacity(0),
+                            packet_data,
+                            buf.to_vec(),
+                            &witness.received_timestamp,
+                            ReportType::Witness,
+                        )
+                        .await
+                    }
+                    false => {
+                        // if a gateway doesnt exist then drop the report
+                        tracing::warn!(
+                            "dropping witness report as gateway not found: {:?}",
+                            &witness
+                        );
+                        Ok(())
+                    }
+                }
             }
             FileType::EntropyReport => {
                 let event = EntropyReportV1::decode(buf)?;
@@ -201,5 +228,19 @@ impl Loader {
                 Ok(())
             }
         }
+    }
+
+    // TODO: maybe store any found GW in the DB, save having to refetch later during validation ?
+    async fn check_valid_gateway(&self, pub_key: &PublicKey) -> bool {
+        self
+            // TODO: I am cloning here to avoid having to use &mut self
+            //       as once i do that then i need to cascade the same
+            //       upwards through the stack
+            //       must be a better way to do this ?
+            .follower_service
+            .clone()
+            .resolve_gateway_info(pub_key)
+            .await
+            .is_ok()
     }
 }
