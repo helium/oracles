@@ -61,7 +61,7 @@ impl Server {
         Ok(Self {
             keypair,
             follower_client: settings.follower.connect_follower()?,
-            txn_service: TransactionService::from_settings(&settings.transacions)?,
+            txn_service: TransactionService::from_settings(&settings.transactions)?,
             trigger_interval: Duration::seconds(settings.trigger),
             last_follower_height: MetaValue::<i64>::fetch_or_insert_with(
                 &pool,

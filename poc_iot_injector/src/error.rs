@@ -4,8 +4,10 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("environment error")]
-    DotEnv(#[from] dotenv::Error),
+    #[error("config error")]
+    Config(#[from] config::ConfigError),
+    #[error("metrics error")]
+    Metrics(#[from] poc_metrics::Error),
     #[error("crypto error")]
     Crypto(#[from] helium_crypto::Error),
     #[error("io error")]
@@ -14,16 +16,10 @@ pub enum Error {
     Store(#[from] file_store::Error),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
-    #[error("env error")]
-    Env(#[from] std::env::VarError),
     #[error("encode error")]
     Encode(#[from] EncodeError),
     #[error("decode error")]
     Decode(#[from] DecodeError),
-    #[error("parse int error")]
-    ParseInt(#[from] std::num::ParseIntError),
-    #[error("env not found: {0}")]
-    EnvNotFound(String),
     #[error("migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
     #[error("zero witnesses error")]
@@ -33,7 +29,7 @@ pub enum Error {
     #[error("meta error")]
     MetaError(#[from] db_store::MetaError),
     #[error("follower error")]
-    FollowerError(#[from] node_follower::Error),
+    Follower(#[from] node_follower::Error),
 }
 
 #[derive(Error, Debug)]

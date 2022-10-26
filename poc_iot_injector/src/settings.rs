@@ -3,40 +3,39 @@ use config::{Config, Environment, File};
 use http::Uri;
 use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
-    /// "mobile_rewards=debug,poc_store=info"
+    /// "poc_iot_injector=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
     /// File to load keypair from
     pub keypair: String,
-    /// Trigger interval in seconds. (Default is 900; 15 minutes)
+    /// Trigger interval in seconds. (Default is 1800; 30 minutes)
     #[serde(default = "default_trigger_interval")]
-    pub trigger: i64,
-    /// Rewards interval in seconds. (Default is 86400; 24 hours)
-    #[serde(default = "default_rewards_interval")]
-    pub rewards: i64,
+    pub trigger: u64,
+    /// Last PoC submission timestamp in seconds since unix epoch. (Default is
+    /// unix epoch)
+    #[serde(default = "default_last_poc_submission")]
+    pub last_poc_submission: i64,
     pub database: Database,
-    pub follower: node_follower::Settings,
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
-    pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
 }
 
 pub fn default_log() -> String {
-    "mobile_rewards=debug,poc_store=info".to_string()
+    "poc_iot_injector=debug,poc_store=info".to_string()
 }
 
-fn default_trigger_interval() -> i64 {
-    900
+pub fn default_last_poc_submission() -> i64 {
+    0
 }
 
-fn default_rewards_interval() -> i64 {
-    86400
+fn default_trigger_interval() -> u64 {
+    1800
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,8 +58,8 @@ impl Settings {
     /// optional path and can be overriden with environment variables.
     ///
     /// Environemnt overrides have the same name as the entries in the settings
-    /// file in uppercase and prefixed with "MI_". For example "MI_DATABASE_URL"
-    /// will override the data base url.
+    /// file in uppercase and prefixed with "INJECT_". For example
+    /// "INJECT_DATABASE_URL" will override the data base url.
     pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
         let mut builder = Config::builder();
 
@@ -69,10 +68,10 @@ impl Settings {
             builder = builder
                 .add_source(File::with_name(&file.as_ref().to_string_lossy()).required(false));
         }
-        // Add in settings from the environment (with a prefix of MI)
-        // Eg.. `MI_DEBUG=1 ./target/app` would set the `debug` key
+        // Add in settings from the environment (with a prefix of INJECT)
+        // Eg.. `INJECT_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("MI").separator("_"))
+            .add_source(Environment::with_prefix("INJECT").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
             .map_err(Error::from)
@@ -81,6 +80,10 @@ impl Settings {
     pub fn keypair(&self) -> Result<helium_crypto::Keypair> {
         let data = std::fs::read(&self.keypair)?;
         Ok(helium_crypto::Keypair::try_from(&data[..])?)
+    }
+
+    pub fn trigger_interval(&self) -> Duration {
+        Duration::from_secs(self.trigger)
     }
 }
 

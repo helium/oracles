@@ -1,8 +1,4 @@
-use crate::{
-    keypair::{load_from_file, Keypair},
-    receipt_txn::handle_report_msg,
-    Result, LOADER_WORKERS, STORE_WORKERS,
-};
+use crate::{receipt_txn::handle_report_msg, Result, Settings};
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
@@ -21,8 +17,8 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
-        let store = FileStore::from_env().await?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let store = FileStore::from_settings(&settings.verifier).await?;
 
         let after_utc = Utc.from_utc_datetime(&self.after);
         let before_utc = Utc.from_utc_datetime(&self.before);
@@ -33,9 +29,7 @@ impl Cmd {
 
         let before_ts = before_utc.timestamp_millis();
 
-        let poc_injector_kp_path =
-            std::env::var("POC_ORACLE_KEY").unwrap_or_else(|_| String::from("/tmp/poc_oracle_key"));
-        let poc_oracle_key = load_from_file(&poc_injector_kp_path)?;
+        let poc_oracle_key = settings.keypair()?;
         let shared_key = Arc::new(poc_oracle_key);
 
         store
