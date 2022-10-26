@@ -11,3 +11,7 @@ metrics = {workspace = true }
 poc-metrics = { path = "../metrics" }
 thiserror = {workspace = true}
 sqlx = {workspace = true}
+serde = {workspace = true}
+http = {workspace = true}
+http-serde = {workspace = true}
+

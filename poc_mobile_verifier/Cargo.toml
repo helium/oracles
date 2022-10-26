@@ -31,7 +31,6 @@ humantime = {workspace = true}
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
-http = {workspace = true}
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
 file-store = {path = "../file_store"}

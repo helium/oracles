@@ -22,7 +22,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 base64 = {workspace = true}
 sha2 = {workspace = true}
-http = {workspace = true}
 tonic = {workspace = true}
 triggered = {workspace = true}
 futures = {workspace = true}
@@ -34,6 +33,7 @@ helium-crypto = {workspace = true }
 file-store = { path = "../file_store" }
 node-follower = { path = "../node_follower" }
 poc-metrics = { path = "../metrics" }
+db-store = {path = "../db_store"}
 async-trait = "*"
 h3ron = "*"
 geo-types = "*"

@@ -52,7 +52,7 @@ pub struct Server {
 
 impl Server {
     pub async fn new(settings: &Settings) -> Result<Self> {
-        let pool = settings.database.connect().await?;
+        let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let start_reward_block = settings
             .follower

@@ -21,7 +21,7 @@ pub struct Server {
 
 impl Server {
     pub async fn new(settings: &Settings) -> Result<Self> {
-        let pool = settings.database.connect().await?;
+        let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
         let last_poc_submission_ts = settings.last_poc_submission;

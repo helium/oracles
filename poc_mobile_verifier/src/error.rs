@@ -30,8 +30,8 @@ pub enum Error {
     NotFound(String),
     #[error("transaction error")]
     TransactionError(String),
-    #[error("meta error")]
-    MetaError(#[from] db_store::MetaError),
+    #[error("db error")]
+    DbError(#[from] db_store::Error),
     #[error("join error")]
     JoinError(tokio::task::JoinError),
     #[error("time out of range error")]
@@ -44,8 +44,6 @@ pub enum Error {
 pub enum DecodeError {
     #[error("prost error")]
     Prost(#[from] helium_proto::DecodeError),
-    #[error("uri error")]
-    Uri(#[from] http::uri::InvalidUri),
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
     #[error("datetime error")]
@@ -91,7 +89,6 @@ from_err!(EncodeError, prost::EncodeError);
 from_err!(EncodeError, serde_json::Error);
 
 // Decode Errors
-from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);
 from_err!(DecodeError, chrono::ParseError);
 from_err!(DecodeError, base64::DecodeError);

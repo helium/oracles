@@ -26,8 +26,8 @@ pub enum Error {
     ZeroWitnesses,
     #[error("invalid exponent {0} error")]
     InvalidExponent(String),
-    #[error("meta error")]
-    MetaError(#[from] db_store::MetaError),
+    #[error("db error")]
+    DbError(#[from] db_store::Error),
     #[error("follower error")]
     Follower(#[from] node_follower::Error),
 }
@@ -38,8 +38,6 @@ pub enum DecodeError {
     Prost(#[from] helium_proto::DecodeError),
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
-    #[error("uri error")]
-    Uri(#[from] http::uri::InvalidUri),
 }
 
 #[derive(Error, Debug)]
@@ -65,5 +63,4 @@ from_err!(EncodeError, prost::EncodeError);
 from_err!(EncodeError, serde_json::Error);
 
 // Decode Errors
-from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);

@@ -1,8 +1,6 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
-use http::Uri;
 use serde::Deserialize;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -19,7 +17,7 @@ pub struct Settings {
     /// Verifications per rewards period. Default is 8
     #[serde(default = "default_verifications")]
     pub verifications: i32,
-    pub database: Database,
+    pub database: db_store::Settings,
     pub follower: node_follower::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
@@ -36,21 +34,6 @@ pub fn default_reward_period() -> i64 {
 
 fn default_verifications() -> i32 {
     8
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Database {
-    /// Max open connections to the database. (Default 10)
-    #[serde(default = "default_db_connections")]
-    pub max_connections: u32,
-    /// URL to access the postgres database. For example:
-    /// postgres://postgres:postgres@127.0.0.1:5432/mobile_index_db
-    #[serde(with = "http_serde::uri")]
-    pub url: Uri,
-}
-
-fn default_db_connections() -> u32 {
-    10
 }
 
 impl Settings {
@@ -75,15 +58,5 @@ impl Settings {
             .build()
             .and_then(|config| config.try_deserialize())
             .map_err(Error::from)
-    }
-}
-
-impl Database {
-    pub async fn connect(&self) -> Result<Pool<Postgres>> {
-        let pool = PgPoolOptions::new()
-            .max_connections(self.max_connections)
-            .connect(&self.url.to_string())
-            .await?;
-        Ok(pool)
     }
 }

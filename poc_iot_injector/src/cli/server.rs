@@ -11,7 +11,7 @@ impl Cmd {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool
-        let pool = settings.database.connect().await?;
+        let pool = settings.database.connect(2).await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Configure shutdown trigger

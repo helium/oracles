@@ -20,7 +20,7 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
-        let pool = settings.database.connect().await?;
+        let pool = settings.database.connect(10).await?;
         sqlx::migrate!().run(&pool).await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();

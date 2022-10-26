@@ -51,8 +51,8 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        // Create database pool
-        let pool = settings.database.connect().await?;
+        // Create database pool and migrate
+        let pool = settings.database.connect(2).await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Configure shutdown trigger

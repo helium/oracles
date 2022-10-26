@@ -1,8 +1,6 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
-use http::Uri;
 use serde::Deserialize;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -19,7 +17,7 @@ pub struct Settings {
     /// Rewards interval in seconds. (Default is 86400; 24 hours)
     #[serde(default = "default_rewards_interval")]
     pub rewards: i64,
-    pub database: Database,
+    pub database: db_store::Settings,
     pub follower: node_follower::Settings,
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
@@ -37,21 +35,6 @@ fn default_trigger_interval() -> i64 {
 
 fn default_rewards_interval() -> i64 {
     86400
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Database {
-    /// Max open connections to the database. (Default 10)
-    #[serde(default = "default_db_connections")]
-    pub max_connections: u32,
-    /// URL to access the postgres database. For example:
-    /// postgres://postgres:postgres@127.0.0.1:5432/mobile_index_db
-    #[serde(with = "http_serde::uri")]
-    pub url: Uri,
-}
-
-fn default_db_connections() -> u32 {
-    10
 }
 
 impl Settings {
@@ -81,15 +64,5 @@ impl Settings {
     pub fn keypair(&self) -> Result<helium_crypto::Keypair> {
         let data = std::fs::read(&self.keypair)?;
         Ok(helium_crypto::Keypair::try_from(&data[..])?)
-    }
-}
-
-impl Database {
-    pub async fn connect(&self) -> Result<Pool<Postgres>> {
-        let pool = PgPoolOptions::new()
-            .max_connections(self.max_connections)
-            .connect(&self.url.to_string())
-            .await?;
-        Ok(pool)
     }
 }

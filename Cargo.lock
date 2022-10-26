@@ -945,8 +945,11 @@ dependencies = [
 name = "db-store"
 version = "0.1.0"
 dependencies = [
+ "http",
+ "http-serde",
  "metrics",
  "poc-metrics",
+ "serde",
  "sqlx",
  "thiserror",
 ]
@@ -2049,7 +2052,6 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
  "http-serde",
  "lazy_static",
  "metrics",
@@ -2388,7 +2390,6 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
  "http-serde",
  "metrics",
  "metrics-exporter-prometheus",
@@ -2420,6 +2421,7 @@ dependencies = [
  "clap",
  "cmake",
  "config",
+ "db-store",
  "file-store",
  "futures",
  "futures-util",
@@ -2428,7 +2430,6 @@ dependencies = [
  "h3ron",
  "helium-crypto",
  "helium-proto",
- "http",
  "http-serde",
  "lazy_static",
  "node-follower",
@@ -2475,7 +2476,6 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
  "http-serde",
  "humantime",
  "lazy_static",

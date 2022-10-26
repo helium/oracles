@@ -1,8 +1,6 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
-use http::Uri;
 use serde::Deserialize;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::{path::Path, time};
 
 #[derive(Debug, Deserialize)]
@@ -14,7 +12,7 @@ pub struct Settings {
     /// Check interval in seconds. (Default is 900; 15 minutes)
     #[serde(default = "default_interval")]
     pub interval: u64,
-    pub database: Database,
+    pub database: db_store::Settings,
     pub verifier: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
@@ -22,17 +20,6 @@ pub struct Settings {
 
 pub fn default_log() -> String {
     "mobile_index=debug,poc_store=info".to_string()
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Database {
-    /// Max open connections to the database. (Default 10)
-    #[serde(default = "default_db_connections")]
-    pub max_connections: u32,
-    /// URL to access the postgres database. For example:
-    /// =postgres://postgres:postgres@127.0.0.1:5432/mobile_index_db
-    #[serde(with = "http_serde::uri")]
-    pub url: Uri,
 }
 
 impl Settings {
@@ -64,20 +51,6 @@ impl Settings {
     }
 }
 
-fn default_db_connections() -> u32 {
-    10
-}
-
 fn default_interval() -> u64 {
     900
-}
-
-impl Database {
-    pub async fn connect(&self) -> Result<Pool<Postgres>> {
-        let pool = PgPoolOptions::new()
-            .max_connections(self.max_connections)
-            .connect(&self.url.to_string())
-            .await?;
-        Ok(pool)
-    }
 }

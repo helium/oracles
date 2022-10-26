@@ -37,7 +37,6 @@ helium-crypto = { workspace = true }
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
-http = {workspace = true}
 rand = "*"
 async-trait = "*"
 
