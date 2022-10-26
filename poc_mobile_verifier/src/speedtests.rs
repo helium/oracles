@@ -348,10 +348,10 @@ const fn mbps(mbps: u64) -> u64 {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SpeedtestTier {
-    Failed,
-    Poor,
-    Degraded,
-    Acceptable,
+    Failed = 0,
+    Poor = 1,
+    Degraded = 2,
+    Acceptable = 3,
 }
 
 impl SpeedtestTier {
