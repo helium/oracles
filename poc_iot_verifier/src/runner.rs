@@ -10,7 +10,7 @@ use chrono::{Duration, Utc};
 use file_store::{
     file_sink,
     file_sink::MessageSender,
-    file_upload,
+    file_sink_write, file_upload,
     lora_beacon_report::{LoraBeaconIngestReport, LoraBeaconReport},
     lora_invalid_poc::{LoraInvalidBeaconReport, LoraInvalidWitnessReport},
     lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc},
@@ -314,7 +314,7 @@ impl Runner {
             report: beacon.clone(),
         };
         let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
-        file_sink::write(lora_valid_poc_tx, invalid_poc_proto).await?;
+        _ = file_sink_write!("invalid_poc", lora_valid_poc_tx, invalid_poc_proto).await?;
         for witness_report in witness_reports {
             let invalid_witness_report: LoraInvalidWitnessReport = LoraInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
@@ -324,7 +324,12 @@ impl Runner {
             };
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.into();
-            file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
+            _ = file_sink_write!(
+                "invalid_witness_report",
+                lora_invalid_witness_tx,
+                invalid_witness_report_proto
+            )
+            .await?;
         }
         // update beacon and all witness reports in the db for this beacon id to invalid
         Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
@@ -348,7 +353,7 @@ impl Runner {
             witness_reports: witnesses_result.valid_witnesses.clone(),
         };
         let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
-        file_sink::write(lora_valid_poc_tx, valid_poc_proto).await?;
+        file_sink_write!("valid_poc", lora_valid_poc_tx, valid_poc_proto).await?;
 
         Report::update_status(&self.pool, poc_id, LoraStatus::Valid, Utc::now()).await?;
         // update last beacon time for the beaconer
@@ -358,7 +363,12 @@ impl Runner {
         for invalid_witness_report in witnesses_result.invalid_witnesses {
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.clone().into();
-            file_sink::write(lora_invalid_witness_tx, invalid_witness_report_proto).await?;
+            file_sink_write!(
+                "invalid_witness_report",
+                lora_invalid_witness_tx,
+                invalid_witness_report_proto
+            )
+            .await?;
             let invalid_witness_id = invalid_witness_report
                 .report
                 .report_id(invalid_witness_report.received_timestamp);

@@ -1,7 +1,7 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use file_store::{
-    file_sink,
+    file_sink, file_sink_write,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::{MsgDecode, TimestampEncode},
     FileStore, FileType,
@@ -100,7 +100,8 @@ impl SpeedtestRollingAverage {
             latency_avg_ms,
             ..
         } = average;
-        file_sink::write(
+        file_sink_write!(
+            "speedtest_average",
             averages_tx,
             proto::SpeedtestAvg {
                 pub_key: self.id.to_vec(),
@@ -120,7 +121,7 @@ impl SpeedtestRollingAverage {
                     .collect(),
                 validity,
                 reward_multiplier,
-            },
+            }
         )
         .await?;
 

@@ -34,6 +34,8 @@ aws-sdk-s3 = "0"
 strum = {version = "0", features = ["derive"]}
 strum_macros = "0"
 sha2 = {workspace = true}
+metrics = {workspace = true }
+poc-metrics = { path = "../metrics" }
 
 [dev-dependencies]
 base64 = "0"

@@ -3,7 +3,7 @@
 use crate::{cell_type::CellType, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{
-    file_sink,
+    file_sink, file_sink_write,
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
     traits::MsgDecode,
     FileStore, FileType,
@@ -169,7 +169,8 @@ impl Heartbeat {
 
     pub async fn write(&self, heartbeats_tx: &file_sink::MessageSender) -> file_store::Result {
         let cell_type = CellType::from_cbsd_id(&self.cbsd_id).unwrap_or(CellType::Nova436H) as i32;
-        file_sink::write(
+        file_sink_write!(
+            "heartbeat",
             heartbeats_tx,
             proto::Heartbeat {
                 cbsd_id: self.cbsd_id.clone(),
@@ -178,7 +179,7 @@ impl Heartbeat {
                 cell_type,
                 validity: self.validity as i32,
                 timestamp: self.timestamp.timestamp() as u64,
-            },
+            }
         )
         .await?;
         Ok(())
