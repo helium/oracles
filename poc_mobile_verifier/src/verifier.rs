@@ -1,17 +1,17 @@
 use std::ops::Range;
 
 use crate::{
-    error::Result,
+    error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
     scheduler::Scheduler,
     speedtests::{SpeedtestAverages, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use db_store::MetaValue;
+use db_store::meta;
 use file_store::{file_sink, FileStore};
 use helium_proto::services::{follower, Channel};
-use sqlx::{Pool, Postgres};
+use sqlx::{PgExecutor, Pool, Postgres};
 use tokio::time::sleep;
 
 pub struct VerifierDaemon {
@@ -21,9 +21,6 @@ pub struct VerifierDaemon {
     pub subnet_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
-    pub last_verified_end_time: MetaValue<i64>,
-    pub last_rewarded_end_time: MetaValue<i64>,
-    pub next_rewarded_end_time: MetaValue<i64>,
     pub verifier: Verifier,
 }
 
@@ -37,16 +34,12 @@ impl VerifierDaemon {
         loop {
             let now = Utc::now();
 
-            let last_verified_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
-            let last_rewarded_end_time = Utc.timestamp(*self.last_rewarded_end_time.value(), 0);
-            let next_rewarded_end_time = Utc.timestamp(*self.next_rewarded_end_time.value(), 0);
-
             let scheduler = Scheduler::new(
                 verification_period_length,
                 reward_period_length,
-                last_verified_end_time,
-                last_rewarded_end_time,
-                next_rewarded_end_time,
+                self.last_verified_end_time().await?,
+                self.last_rewarded_end_time().await?,
+                self.next_rewarded_end_time().await?,
             );
 
             if scheduler.should_verify(now) {
@@ -95,12 +88,7 @@ impl VerifierDaemon {
             speedtest.save(&mut transaction).await?;
         }
 
-        // Update the last verified end time:
-        self.last_verified_end_time
-            .update(
-                &mut transaction,
-                scheduler.verification_period.end.timestamp() as i64,
-            )
+        Self::save_last_verified_end_time(&mut transaction, &scheduler.verification_period.end)
             .await?;
 
         transaction.commit().await?;
@@ -125,19 +113,8 @@ impl VerifierDaemon {
             .execute(&mut transaction)
             .await?;
 
-        // Update the last and next rewarded end time:
-        self.last_rewarded_end_time
-            .update(
-                &mut transaction,
-                scheduler.reward_period.end.timestamp() as i64,
-            )
-            .await?;
-
-        self.next_rewarded_end_time
-            .update(
-                &mut transaction,
-                (scheduler.next_reward_period().end).timestamp() as i64,
-            )
+        Self::save_last_rewarded_end_time(&mut transaction, &scheduler.reward_period.end).await?;
+        Self::save_next_rewarded_end_time(&mut transaction, &scheduler.next_reward_period().end)
             .await?;
 
         transaction.commit().await?;
@@ -149,6 +126,45 @@ impl VerifierDaemon {
             .await??;
 
         Ok(())
+    }
+
+    async fn last_verified_end_time(&self) -> Result<DateTime<Utc>> {
+        Ok(Utc.timestamp(meta::get(&self.pool, "last_verified_end_time").await?, 0))
+    }
+
+    async fn save_last_verified_end_time(
+        exec: impl PgExecutor<'_>,
+        value: &DateTime<Utc>,
+    ) -> Result {
+        meta::save(exec, "last_verified_end_time", value.timestamp() as i64)
+            .await
+            .map_err(Error::from)
+    }
+
+    async fn last_rewarded_end_time(&self) -> Result<DateTime<Utc>> {
+        Ok(Utc.timestamp(meta::get(&self.pool, "last_rewarded_end_time").await?, 0))
+    }
+
+    async fn save_last_rewarded_end_time(
+        exec: impl PgExecutor<'_>,
+        value: &DateTime<Utc>,
+    ) -> Result {
+        meta::save(exec, "last_rewarded_end_time", value.timestamp() as i64)
+            .await
+            .map_err(Error::from)
+    }
+
+    async fn next_rewarded_end_time(&self) -> Result<DateTime<Utc>> {
+        Ok(Utc.timestamp(meta::get(&self.pool, "next_rewarded_end_time").await?, 0))
+    }
+
+    async fn save_next_rewarded_end_time(
+        exec: impl PgExecutor<'_>,
+        value: &DateTime<Utc>,
+    ) -> Result {
+        meta::save(exec, "next_rewarded_end_time", value.timestamp() as i64)
+            .await
+            .map_err(Error::from)
     }
 }
 

@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+pub mod meta;
+
 /// A key-value pair that is stored in the metadata table.
 pub struct MetaValue<T> {
     key: String,
@@ -12,6 +14,8 @@ pub enum MetaError {
     SqlError(#[from] sqlx::Error),
     #[error("Failed to decode meta value")]
     DecodeError,
+    #[error("not found")]
+    NotFound(String),
 }
 
 impl<T> MetaValue<T> {
