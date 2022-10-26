@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::{
     error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
-    shares::Shares,
+    speedtests::{SpeedtestAverages, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -15,8 +15,8 @@ use tokio::time::sleep;
 
 pub struct VerifierDaemon {
     pub pool: Pool<Postgres>,
-    pub valid_shares_tx: file_sink::MessageSender,
-    pub invalid_shares_tx: file_sink::MessageSender,
+    pub heartbeats_tx: file_sink::MessageSender,
+    pub speedtest_avg_tx: file_sink::MessageSender,
     pub subnet_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
@@ -93,16 +93,22 @@ impl VerifierDaemon {
     }
 
     pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let shares = self.verifier.verify_epoch(&epoch).await?;
+        let VerifiedEpoch {
+            heartbeats,
+            speedtests,
+        } = self.verifier.verify_epoch(&self.pool, &epoch).await?;
 
         let mut transaction = self.pool.begin().await?;
 
-        // Should we remove the heartbeats that were not new
-        // from valid shares
         // TODO: switch to a bulk transaction
-        for share in shares.valid_shares.clone() {
-            let heartbeat = Heartbeat::from(share);
+        for heartbeat in heartbeats.into_iter() {
+            heartbeat.write(&self.heartbeats_tx).await?;
             heartbeat.save(&mut transaction).await?;
+        }
+
+        for speedtest in speedtests.into_iter() {
+            speedtest.write(&self.speedtest_avg_tx).await?;
+            speedtest.save(&mut transaction).await?;
         }
 
         // Update the last verified end time:
@@ -112,24 +118,21 @@ impl VerifierDaemon {
 
         transaction.commit().await?;
 
-        shares
-            .write(&self.valid_shares_tx, &self.invalid_shares_tx)
-            .await?;
-
         Ok(())
     }
 
     pub async fn reward_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
         let heartbeats = Heartbeats::validated(&self.pool, epoch.start).await?;
+        let speedtests = SpeedtestAverages::validated(&self.pool, epoch.end).await?;
 
-        let rewards = self.verifier.reward_epoch(&epoch, heartbeats).await?;
+        let rewards = self
+            .verifier
+            .reward_epoch(&epoch, heartbeats, speedtests)
+            .await?;
 
         let mut transaction = self.pool.begin().await?;
 
-        // Clear the heartbeats database
-        // TODO: should the truncation be bound to a given epoch?
-        // It's not intended that any heartbeats will exists outside the
-        // current epoch, but it might be better to code defensively.
+        // Clear the heartbeats table:
         sqlx::query("TRUNCATE TABLE heartbeats;")
             .execute(&mut transaction)
             .await?;
@@ -175,17 +178,33 @@ impl Verifier {
         })
     }
 
-    pub async fn verify_epoch(&mut self, epoch: &Range<DateTime<Utc>>) -> Result<Shares> {
-        Shares::validate_heartbeats(&self.file_store, epoch).await
+    pub async fn verify_epoch(
+        &mut self,
+        pool: impl SpeedtestStore + Copy,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> Result<VerifiedEpoch> {
+        let heartbeats = Heartbeat::validate_heartbeats(&self.file_store, epoch).await?;
+        let speedtests =
+            SpeedtestAverages::validate_speedtests(pool, &self.file_store, epoch).await?;
+        Ok(VerifiedEpoch {
+            heartbeats,
+            speedtests,
+        })
     }
 
     pub async fn reward_epoch(
         &mut self,
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
+        speedtests: SpeedtestAverages,
     ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats).await
+        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests).await
     }
+}
+
+pub struct VerifiedEpoch {
+    pub heartbeats: Vec<Heartbeat>,
+    pub speedtests: SpeedtestAverages,
 }
 
 fn epoch_duration(epoch: &Range<DateTime<Utc>>) -> Duration {

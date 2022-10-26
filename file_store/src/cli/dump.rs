@@ -12,8 +12,8 @@ use helium_proto::{
     services::{
         poc_lora::{LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
-            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Shares, SpeedtestIngestReportV1,
-            SpeedtestReqV1,
+            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, SpeedtestAvg,
+            SpeedtestIngestReportV1, SpeedtestReqV1,
         },
     },
     Message, SubnetworkRewards,
@@ -91,14 +91,6 @@ impl Cmd {
                     print_json(&json)?;
                     // wtr.serialize(LoraValidPoc::try_from(dec_msg)?)?;
                 }
-                FileType::InvalidShares => {
-                    let dec_msg = Shares::decode(msg)?;
-                    print_json(&dec_msg)?;
-                }
-                FileType::Shares => {
-                    let dec_msg = Shares::decode(msg)?;
-                    print_json(&dec_msg)?;
-                }
                 FileType::SubnetworkRewards => {
                     let proto_rewards = SubnetworkRewards::decode(msg)?.rewards;
                     let total_rewards = proto_rewards
@@ -116,6 +108,29 @@ impl Cmd {
                         })
                         .collect();
                     print_json(&json!({ "rewards": rewards, "total_rewards": total_rewards }))?;
+                }
+                FileType::SpeedtestAvg => {
+                    let speedtest_avg = SpeedtestAvg::decode(msg)?;
+                    print_json(&json!({
+                        "pub_key": PublicKey::try_from(speedtest_avg.pub_key)?,
+                        "upload_speed_avg_bps": speedtest_avg.upload_speed_avg_bps,
+                        "download_speed_avg_bps": speedtest_avg.download_speed_avg_bps,
+                        "latency_avg_ms": speedtest_avg.latency_avg_ms,
+                        "validity": speedtest_avg.validity,
+                        "number_of_speedtests": speedtest_avg.speedtests.len(),
+                        "reward_multiplier": speedtest_avg.reward_multiplier,
+                    }))?;
+                }
+                FileType::ValidatedHeartbeat => {
+                    let heartbeat = Heartbeat::decode(msg)?;
+                    print_json(&json!({
+                        "cbsd_id": heartbeat.cbsd_id,
+                        "pub_key": PublicKey::try_from(heartbeat.pub_key)?,
+                        "reward_multiplier": heartbeat.reward_multiplier,
+                        "timestamp": heartbeat.timestamp,
+                        "cell_type": heartbeat.cell_type,
+                        "validity": heartbeat.validity,
+                    }))?;
                 }
                 _ => (),
             }

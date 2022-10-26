@@ -15,7 +15,7 @@ pub struct LoraWitnessReport {
     pub pub_key: PublicKey,
     pub data: Vec<u8>,
     pub timestamp: DateTime<Utc>,
-    pub ts_res: u32,
+    pub tmst: u32,
     pub signal: i32,
     pub snr: i32,
     pub frequency: u64,
@@ -63,12 +63,12 @@ impl From<LoraWitnessIngestReport> for LoraWitnessReportReqV1 {
             pub_key: v.report.pub_key.to_vec(),
             data: v.report.data,
             timestamp,
-            ts_res: v.report.ts_res,
             signal: v.report.signal,
             snr: v.report.snr,
             frequency: v.report.frequency,
             datarate: 0,
             signature: vec![],
+            tmst: v.report.tmst,
         }
     }
 }
@@ -84,12 +84,12 @@ impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessReport {
             pub_key: PublicKey::try_from(v.pub_key)?,
             data: v.data,
             timestamp,
-            ts_res: v.ts_res,
             signal: v.signal,
             snr: v.snr,
             frequency: v.frequency,
             datarate: data_rate,
             signature: v.signature,
+            tmst: v.tmst,
         })
     }
 }
@@ -125,12 +125,12 @@ impl From<LoraWitnessReport> for LoraWitnessReportReqV1 {
             pub_key: v.pub_key.to_vec(),
             data: v.data,
             timestamp,
-            ts_res: v.ts_res,
             signal: v.signal,
             snr: v.snr,
             frequency: v.frequency,
             datarate: 0,
             signature: vec![],
+            tmst: v.tmst,
         }
     }
 }

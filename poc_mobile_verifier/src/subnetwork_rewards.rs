@@ -2,6 +2,7 @@ use crate::{
     error::Result,
     heartbeats::Heartbeats,
     reward_share::{OwnerEmissions, OwnerResolver},
+    speedtests::SpeedtestAverages,
 };
 use chrono::{DateTime, Utc};
 use file_store::file_sink;
@@ -26,6 +27,8 @@ impl SubnetworkRewards {
         mut follower_service: impl OwnerResolver,
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
+        // TODO: Use speedtests as part of the reward calculation
+        _speedtests: SpeedtestAverages,
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
@@ -82,10 +85,13 @@ impl SubnetworkRewards {
 mod test {
     use super::*;
     use crate::{
-        cell_type::CellType, heartbeats::Heartbeats, reward_share::OwnerResolver, shares::Share,
+        cell_type::CellType,
+        heartbeats::{Heartbeat, Heartbeats},
+        reward_share::OwnerResolver,
+        speedtests::SpeedtestAverages,
     };
     use chrono::{Duration, Utc};
-    use helium_proto::services::poc_mobile::ShareValidity;
+    use helium_proto::services::poc_mobile::HeartbeatValidity;
     use std::collections::HashMap;
 
     struct MapResolver {
@@ -130,47 +136,44 @@ mod test {
         let now = Utc::now();
         let timestamp = now.naive_utc();
 
-        let shares = vec![
-            Share {
+        let heartbeats = vec![
+            Heartbeat {
                 cbsd_id: c1.clone(),
-                pub_key: g1.clone(),
+                hotspot_key: g1.clone(),
                 reward_weight: ct1.reward_weight(),
-                cell_type: Some(ct1),
-                validity: ShareValidity::Valid,
+                validity: HeartbeatValidity::Valid,
                 timestamp,
             },
-            Share {
+            Heartbeat {
                 cbsd_id: c2.clone(),
-                pub_key: g1.clone(),
+                hotspot_key: g1.clone(),
                 reward_weight: ct2.reward_weight(),
-                cell_type: Some(ct2),
-                validity: ShareValidity::Valid,
+                validity: HeartbeatValidity::Valid,
                 timestamp,
             },
-            Share {
+            Heartbeat {
                 cbsd_id: c1.clone(),
-                pub_key: g2.clone(),
+                hotspot_key: g2.clone(),
                 reward_weight: ct1.reward_weight(),
-                cell_type: Some(ct1),
-                validity: ShareValidity::Valid,
+                validity: HeartbeatValidity::Valid,
                 timestamp,
             },
-            Share {
+            Heartbeat {
                 cbsd_id: c1.clone(),
-                pub_key: g2.clone(),
+                hotspot_key: g2.clone(),
                 reward_weight: ct1.reward_weight(),
-                cell_type: Some(ct1),
-                validity: ShareValidity::Valid,
+                validity: HeartbeatValidity::Valid,
                 timestamp,
             },
         ];
 
-        let heartbeats: Heartbeats = shares.into_iter().collect();
+        let heartbeats: Heartbeats = heartbeats.into_iter().collect();
 
         let owner_rewards: HashMap<PublicKey, _> = SubnetworkRewards::from_epoch(
             resolver,
             &(now..(now + Duration::hours(24))),
             heartbeats,
+            SpeedtestAverages::default(),
         )
         .await
         .expect("Could not generate rewards")

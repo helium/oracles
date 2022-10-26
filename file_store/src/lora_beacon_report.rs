@@ -22,6 +22,7 @@ pub struct LoraBeaconReport {
     pub tx_power: i32,
     pub timestamp: DateTime<Utc>,
     pub signature: Vec<u8>,
+    pub tmst: u32,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -95,6 +96,7 @@ impl From<LoraBeaconIngestReport> for LoraBeaconReportReqV1 {
             tx_power: v.report.tx_power,
             timestamp,
             signature: vec![],
+            tmst: v.report.tmst,
         }
     }
 }
@@ -117,6 +119,7 @@ impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconReport {
             tx_power: v.tx_power,
             timestamp,
             signature: v.signature,
+            tmst: v.tmst,
         })
     }
 }
@@ -136,6 +139,7 @@ impl From<LoraBeaconReport> for LoraBeaconReportReqV1 {
             tx_power: v.tx_power,
             timestamp,
             signature: vec![],
+            tmst: v.tmst,
         }
     }
 }

@@ -1,4 +1,9 @@
-use crate::{env_var, heartbeats::Heartbeats, verifier::Verifier, Result};
+use crate::{
+    env_var,
+    speedtests::EmptyDatabase,
+    verifier::{VerifiedEpoch, Verifier},
+    Result,
+};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use helium_crypto::PublicKey;
@@ -37,14 +42,14 @@ impl Cmd {
 
         let mut verifier = Verifier::new(file_store, follower).await?;
 
-        let heartbeats: Heartbeats = verifier
-            .verify_epoch(&epoch)
-            .await?
-            .valid_shares
-            .into_iter()
-            .collect();
+        let VerifiedEpoch {
+            heartbeats,
+            speedtests,
+        } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
-        let rewards = verifier.reward_epoch(&epoch, heartbeats).await?;
+        let rewards = verifier
+            .reward_epoch(&epoch, heartbeats.into_iter().collect(), speedtests)
+            .await?;
 
         let total_rewards = rewards
             .rewards
