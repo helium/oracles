@@ -60,6 +60,7 @@ impl Report {
             report_timestamp,
             report_type
         ) values ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT DO NOTHING;
             "#,
         )
         .bind(id)

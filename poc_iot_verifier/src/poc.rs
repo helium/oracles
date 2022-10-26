@@ -99,16 +99,6 @@ impl Poc {
         };
         tracing::debug!("beacon info {:?}", beaconer_info);
 
-        // tmp hack below when testing locally with no actual real gateway
-        // replace beaconer_info declaration above with that below
-        // let beaconer_info = FollowerGatewayResp {
-        //     height: 130000,
-        //     location: String::from("location1"),
-        //     address: beacon.pub_key.clone(),
-        //     owner: beacon.pub_key.clone(),
-        //     staking_mode: GatewayStakingMode::Full as i32,
-        // };
-
         // verify the beaconer's remote entropy
         // if beacon received timestamp is outside of entopy start/end then reject the poc
         let beacon_received_time = self.beacon_report.received_timestamp;
@@ -267,15 +257,23 @@ impl Poc {
             }
         };
 
-        // tmp hack below when testing locally with no actual real gateway
-        // replace witness_info declaration above with that below
-        // let witness_info = FollowerGatewayResp {
-        //     height: 130000,
-        //     location: String::from("location1"),
-        //     address: witness.pub_key.clone(),
-        //     owner: witness.pub_key.clone(),
-        //     staking_mode: GatewayStakingMode::Full as i32,
-        // };
+        // check witness is permitted to participate in POC
+        match witness_info.staking_mode {
+            GatewayStakingMode::Dataonly => {
+                tracing::debug!(
+                    "witness verification failed, reason: {:?}",
+                    InvalidReason::InvalidCapability
+                );
+                let resp = VerifyWitnessResult {
+                    result: VerificationStatus::Invalid,
+                    invalid_reason: Some(InvalidReason::InvalidCapability),
+                    gateway_info: Some(witness_info),
+                };
+                return Ok(resp);
+            }
+            GatewayStakingMode::Full => (),
+            GatewayStakingMode::Light => (),
+        }
 
         // check witness is permitted to participate in POC
         match witness_info.staking_mode {
