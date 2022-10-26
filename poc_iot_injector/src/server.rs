@@ -4,7 +4,7 @@ use crate::{
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
-use file_store::{FileStore, FileType};
+use file_store::{file_sink::MessageSender, file_sink_write, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn};
 use node_follower::txn_service::TransactionService;
@@ -24,10 +24,15 @@ pub struct Server {
     txn_service: TransactionService,
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
+    poc_receipt_txn_tx: MessageSender,
 }
 
 impl Server {
-    pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
+    pub async fn new(
+        pool: Pool<Postgres>,
+        keypair: Keypair,
+        poc_receipt_txn_tx: MessageSender,
+    ) -> Result<Self> {
         let env_last_poc_submission_ts = env::var("LAST_POC_SUBMISSION_TS")
             .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS_SECS.to_string())
             .parse()
@@ -46,11 +51,12 @@ impl Server {
             txn_service: TransactionService::from_env()?,
             iot_verifier_store: FileStore::from_env().await?,
             last_poc_submission_ts,
+            poc_receipt_txn_tx,
         };
         Ok(result)
     }
 
-    pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting poc-iot-injector server");
         let mut poc_iot_timer = time::interval(POC_IOT_TICK_TIME);
         poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
@@ -84,6 +90,7 @@ impl Server {
             &mut self.txn_service,
             &mut self.iot_verifier_store,
             self.keypair.clone(),
+            &self.poc_receipt_txn_tx,
             after_utc,
             before_utc,
         )
@@ -106,6 +113,7 @@ async fn submit_txns(
     txn_service: &mut TransactionService,
     store: &mut FileStore,
     keypair: Arc<Keypair>,
+    poc_receipt_txn_tx: &MessageSender,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
 ) -> Result {
@@ -123,8 +131,24 @@ async fn submit_txns(
             async move {
                 match msg {
                     Ok(m) => {
-                        handle_txn_submission(m, shared_key, &mut shared_txn_service, before_ts)
+                        if let Some(txn) =
+                            handle_txn_submission(m, shared_key, &mut shared_txn_service, before_ts)
+                                .await
+                        {
+                            // TODO: Can the txn be written as is?
+                            match file_sink_write!(
+                                "signed_poc_receipt_txn",
+                                poc_receipt_txn_tx,
+                                txn
+                            )
                             .await
+                            {
+                                Ok(_) => tracing::debug!("txn written!"),
+                                Err(_) => tracing::error!("unable to write txn"),
+                            }
+                        } else {
+                            tracing::error!("unable to submit txn")
+                        }
                     }
                     Err(e) => tracing::error!("unable to process msg due to: {:?}", e),
                 }
@@ -139,21 +163,19 @@ async fn handle_txn_submission(
     shared_key: Arc<Keypair>,
     txn_service: &mut TransactionService,
     before_ts: i64,
-) {
+) -> Option<BlockchainTxn> {
     if let Ok(Some((txn, hash, hash_b64_url))) = handle_report_msg(msg, shared_key, before_ts) {
-        if txn_service
-            .submit(
-                BlockchainTxn {
-                    txn: Some(Txn::PocReceiptsV2(txn)),
-                },
-                &hash,
-            )
-            .await
-            .is_ok()
-        {
+        let wrapped_txn = BlockchainTxn {
+            txn: Some(Txn::PocReceiptsV2(txn)),
+        };
+        if txn_service.submit(wrapped_txn.clone(), &hash).await.is_ok() {
             tracing::debug!("txn submitted successfully, hash: {:?}", hash_b64_url);
+            Some(wrapped_txn)
         } else {
             tracing::warn!("txn submission failed!, hash: {:?}", hash_b64_url);
+            None
         }
+    } else {
+        None
     }
 }

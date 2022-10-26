@@ -33,8 +33,8 @@ impl Cmd {
 
         let before_ts = before_utc.timestamp_millis();
 
-        let poc_injector_kp_path =
-            std::env::var("POC_ORACLE_KEY").unwrap_or_else(|_| String::from("/tmp/poc_oracle_key"));
+        let poc_injector_kp_path = std::env::var("POC_IOT_ORACLE_KEY")
+            .unwrap_or_else(|_| String::from("/tmp/poc_iot_oracle_key"));
         let poc_oracle_key = load_from_file(&poc_injector_kp_path)?;
         let shared_key = Arc::new(poc_oracle_key);
 
