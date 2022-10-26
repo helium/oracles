@@ -1,5 +1,5 @@
-use crate::{keypair::Keypair, Error, Result};
-use helium_crypto::Sign;
+use crate::{Error, Result};
+use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     services::poc_lora::{
         LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidPocV1, LoraValidWitnessReportV1,

@@ -2,7 +2,7 @@ use crate::{
     heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconIngestReport,
     lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport,
     speedtest::CellSpeedtest, traits::MsgDecode, Error, FileInfoStream, FileStore, FileType,
-    Result,
+    Result, Settings,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
@@ -30,18 +30,18 @@ pub enum BucketCmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
-        self.cmd.run().await
+    pub async fn run(&self, settings: &Settings) -> Result {
+        self.cmd.run(settings).await
     }
 }
 
 impl BucketCmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result {
         match self {
-            Self::Ls(cmd) => cmd.run().await,
-            Self::Rm(cmd) => cmd.run().await,
-            Self::Put(cmd) => cmd.run().await,
-            Self::Get(cmd) => cmd.run().await,
+            Self::Ls(cmd) => cmd.run(settings).await,
+            Self::Rm(cmd) => cmd.run(settings).await,
+            Self::Put(cmd) => cmd.run(settings).await,
+            Self::Get(cmd) => cmd.run(settings).await,
         }
     }
 }
@@ -79,8 +79,8 @@ pub struct List {
 }
 
 impl List {
-    pub async fn run(&self) -> Result {
-        let store = FileStore::from_env().await?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let store = FileStore::from_settings(settings).await?;
         let mut file_infos = self.filter.list(&store);
         let mut ser = serde_json::Serializer::new(io::stdout());
         let mut seq = ser.serialize_seq(None)?;
@@ -101,8 +101,8 @@ pub struct Put {
 }
 
 impl Put {
-    pub async fn run(&self) -> Result {
-        let file_store = FileStore::from_env().await?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let file_store = FileStore::from_settings(settings).await?;
         for file in self.files.iter() {
             file_store.put(file).await?;
         }
@@ -120,8 +120,8 @@ pub struct Remove {
 }
 
 impl Remove {
-    pub async fn run(&self) -> Result {
-        let file_store = FileStore::from_env().await?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let file_store = FileStore::from_settings(settings).await?;
         for key in self.keys.iter() {
             file_store.remove(key).await?;
         }
@@ -139,8 +139,8 @@ pub struct Get {
 }
 
 impl Get {
-    pub async fn run(&self) -> Result {
-        let store = FileStore::from_env().await?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let store = FileStore::from_settings(settings).await?;
         let file_infos = self.filter.list(&store);
         file_infos
             .map_ok(|info| (store.clone(), info))
@@ -176,8 +176,8 @@ pub struct Locate {
 }
 
 impl Locate {
-    pub async fn run(&self) -> Result {
-        let store = FileStore::from_env().await?;
+    pub async fn run(&self, settings: &Settings) -> Result {
+        let store = FileStore::from_settings(settings).await?;
         let file_infos = self.filter.list(&store);
         let file_type = self.filter.file_type;
         let gateway = &self.gateway.clone();

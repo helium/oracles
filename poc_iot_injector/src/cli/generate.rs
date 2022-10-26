@@ -1,7 +1,8 @@
-use crate::{receipt_txn::handle_report_msg, Result, Settings};
+use crate::{receipt_txn::handle_report_msg, Result, Settings, LOADER_WORKERS, STORE_WORKERS};
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
+use helium_crypto::Keypair;
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn, Message};
 use std::sync::Arc;
 

@@ -3,7 +3,7 @@ use crate::{
     file_source,
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    FileType, Result,
+    FileType, Result, Settings,
 };
 use csv::Writer;
 use futures::stream::StreamExt;
@@ -32,7 +32,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self, _settings: &Settings) -> Result {
         let mut file_stream = file_source::source([&self.in_path]);
 
         let mut wtr = Writer::from_writer(io::stdout());

@@ -1141,6 +1141,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "config",
  "csv",
  "futures",
  "futures-util",
@@ -2035,6 +2036,43 @@ dependencies = [
  "log",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys",
+]
+
+[[package]]
+name = "mobile-index"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "config",
+ "db-store",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http-serde",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "once_cell",
+ "poc-metrics",
+ "prost",
+ "rand",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
 ]
 
 [[package]]

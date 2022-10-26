@@ -18,7 +18,7 @@ pub struct Settings {
     pub rpc: u64,
     /// batch size for gateway stream results. Default 100
     #[serde(default = "default_batch_size")]
-    pub batch: u64,
+    pub batch: u32,
 }
 
 pub fn default_url() -> http::Uri {
@@ -33,7 +33,7 @@ pub fn default_rpc_timeout() -> u64 {
     5
 }
 
-pub fn default_batch_size() -> u64 {
+pub fn default_batch_size() -> u32 {
     100
 }
 

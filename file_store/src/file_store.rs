@@ -1,29 +1,13 @@
 use crate::{
-    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result,
+    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings,
 };
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
-use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::str::FromStr;
-use std::{env, path::Path};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Settings {
-    /// Bucket name for the store. Required
-    pub bucket: String,
-    /// Optional api endpoint for the bucket. Default none
-    pub endpoint: Option<String>,
-    /// Optional region for the endpoint. Default: us-west-2
-    #[serde(default = "default_region")]
-    pub region: String,
-}
-
-fn default_region() -> String {
-    "us-west-2".to_string()
-}
 
 #[derive(Debug, Clone)]
 pub struct FileStore {
@@ -42,35 +26,6 @@ impl FileStore {
         };
         let region = Region::new(settings.region.clone());
         Self::new(endpoint, region, &settings.bucket).await
-    }
-
-    pub async fn from_env() -> Result<Self> {
-        let endpoint: Option<Endpoint> = match env::var("BUCKET_ENDPOINT") {
-            Ok(endpoint_env) => Uri::from_str(&endpoint_env)
-                .map(Endpoint::immutable)
-                .map(Some)
-                .map_err(DecodeError::from)?,
-            _ => None,
-        };
-        let region =
-            env::var("BUCKET_REGION").map_or_else(|_| Region::new("us-west-2"), Region::new);
-        let bucket = env::var("BUCKET")?;
-        Self::new(endpoint, region, bucket).await
-    }
-
-    // TODO: Figure out how to better deal with multiple file stores
-    pub async fn from_env_with_prefix(prefix: &str) -> Result<FileStore> {
-        let endpoint: Option<Endpoint> = match env::var(&format!("{prefix}_BUCKET_ENDPOINT")) {
-            Ok(endpoint_env) => Uri::from_str(&endpoint_env)
-                .map(Endpoint::immutable)
-                .map(Some)
-                .map_err(DecodeError::from)?,
-            _ => None,
-        };
-        let region = env::var(&format!("{prefix}_BUCKET_REGION"))
-            .map_or_else(|_| Region::new("us-west-2"), Region::new);
-        let bucket = env::var(&format!("{prefix}_BUCKET"))?;
-        Self::new(endpoint, region, bucket).await
     }
 
     pub async fn new(

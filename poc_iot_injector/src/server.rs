@@ -1,13 +1,14 @@
-use crate::{keypair::Keypair, receipt_txn::handle_report_msg, Result, Settings};
+use crate::{receipt_txn::handle_report_msg, Result, Settings, LOADER_WORKERS, STORE_WORKERS};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
+use helium_crypto::Keypair;
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn};
 use node_follower::txn_service::TransactionService;
 use sqlx::{Pool, Postgres};
+use std::sync::Arc;
 use std::time::Duration as StdDuration;
-use std::{env, sync::Arc};
 use tokio::time;
 
 pub struct Server {
@@ -24,12 +25,11 @@ impl Server {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
-        let last_poc_submission_ts = settings.last_poc_submission;
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
             MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
-                env_last_poc_submission_ts
+                settings.last_poc_submission
             })
             .await?;
 
