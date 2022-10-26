@@ -1,4 +1,4 @@
-use crate::{Result, CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
+use crate::{Result, Settings};
 use helium_proto::{
     services::{
         transaction::{self, TxnQueryReqV1, TxnQueryRespV1, TxnSubmitReqV1, TxnSubmitRespV1},
@@ -22,6 +22,11 @@ impl TransactionService {
             &env::var("TRANSACTION_URI").unwrap_or_else(|_| DEFAULT_URI.to_string()),
         )?;
         Self::new(uri)
+    }
+
+    pub fn from_settings(settings: &Settings) -> Result<Self> {
+        let client = settings.connect_transactions()?;
+        Ok(Self { client })
     }
 
     pub fn new(uri: Uri) -> Result<Self> {

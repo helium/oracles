@@ -3,25 +3,40 @@ use config::{Config, Environment, File};
 use http::Uri;
 use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use std::{path::Path, time};
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
-    /// RUST_LOG compatible settings string. Default to
-    /// "poc_entropy=debug,poc_store=info"
+    /// RUST_LOG compatible settings string. Defsault to
+    /// "mobile_rewards=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    /// Check interval in seconds. (Default is 900; 15 minutes)
-    #[serde(default = "default_interval")]
-    pub interval: u64,
+    /// File to load keypair from
+    pub keypair: String,
+    /// Trigger interval in seconds. (Default is 900; 15 minutes)
+    #[serde(default = "default_trigger_interval")]
+    pub trigger: i64,
+    /// Rewards interval in seconds. (Default is 86400; 24 hours)
+    #[serde(default = "default_rewards_interval")]
+    pub rewards: i64,
     pub database: Database,
+    pub follower: node_follower::Settings,
+    pub transacions: node_follower::Settings,
     pub verifier: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
 }
 
 pub fn default_log() -> String {
-    "mobile_index=debug,poc_store=info".to_string()
+    "mobile_rewards=debug,poc_store=info".to_string()
+}
+
+fn default_trigger_interval() -> i64 {
+    900
+}
+
+fn default_rewards_interval() -> i64 {
+    86400
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,9 +45,13 @@ pub struct Database {
     #[serde(default = "default_db_connections")]
     pub max_connections: u32,
     /// URL to access the postgres database. For example:
-    /// =postgres://postgres:postgres@127.0.0.1:5432/mobile_index_db
+    /// postgres://postgres:postgres@127.0.0.1:5432/mobile_index_db
     #[serde(with = "http_serde::uri")]
     pub url: Uri,
+}
+
+fn default_db_connections() -> u32 {
+    10
 }
 
 impl Settings {
@@ -59,17 +78,10 @@ impl Settings {
             .map_err(Error::from)
     }
 
-    pub fn interval(&self) -> time::Duration {
-        time::Duration::from_secs(self.interval)
+    pub fn keypair(&self) -> Result<helium_crypto::Keypair> {
+        let data = std::fs::read(&self.keypair)?;
+        Ok(helium_crypto::Keypair::try_from(&data[..])?)
     }
-}
-
-fn default_db_connections() -> u32 {
-    10
-}
-
-fn default_interval() -> u64 {
-    900
 }
 
 impl Database {

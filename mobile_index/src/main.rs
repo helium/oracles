@@ -44,12 +44,7 @@ pub struct Server {}
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result {
         tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(
-                settings
-                    .log
-                    .clone()
-                    .unwrap_or_else(|| "mobile_index=debug".to_string()),
-            ))
+            .with(tracing_subscriber::EnvFilter::new(&settings.log))
             .with(tracing_subscriber::fmt::layer())
             .init();
 

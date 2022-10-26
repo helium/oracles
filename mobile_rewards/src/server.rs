@@ -1,9 +1,8 @@
 use crate::{
-    error::DecodeError,
     pending_txn::{PendingTxn, Status},
     traits::B64,
     txn_status::TxnStatus,
-    Error, Result,
+    Error, Result, Settings,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
@@ -18,17 +17,16 @@ use helium_proto::{
             FollowerTxnStreamRespV1,
         },
         transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
-        Channel, Endpoint,
+        Channel,
     },
     BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
     SubnetworkReward, SubnetworkRewards,
 };
-use http::Uri;
 use node_follower::txn_service::TransactionService;
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
-use std::{env, ops::Range, time::Duration as StdDuration};
+use std::ops::Range;
 use tokio::time;
 use tonic::Streaming;
 
@@ -37,8 +35,6 @@ pub const DEFAULT_START_REWARD_BLOCK: i64 = 1477650;
 pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 
 const RECONNECT_WAIT_SECS: i64 = 5;
-const DEFAULT_TRIGGER_INTERVAL_SECS: i64 = 900; // 15 min
-const DEFAULT_REWARD_INTERVAL_SECS: i64 = 86400; // 24 hours
 const STALE_PENDING_TIMEOUT_SECS: i64 = 1800; // 30 min
 
 pub const TXN_TYPES: &[&str] = &["blockchain_txn_subnetwork_rewards_v1"];
@@ -55,34 +51,26 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
-        let start_reward_block = env::var("FOLLOWER_START_BLOCK")
-            .unwrap_or_else(|_| DEFAULT_START_REWARD_BLOCK.to_string())
-            .parse()
-            .map_err(DecodeError::from)?;
+    pub async fn new(settings: &Settings) -> Result<Self> {
+        let pool = settings.database.connect().await?;
+        let keypair = settings.keypair()?;
+        let start_reward_block = settings
+            .follower
+            .block
+            .unwrap_or(DEFAULT_START_REWARD_BLOCK);
         Ok(Self {
             keypair,
-            follower_client: new_client_from_env()?,
-            txn_service: TransactionService::from_env()?,
-            trigger_interval: Duration::seconds(
-                env::var("TRIGGER_INTERVAL")
-                    .unwrap_or_else(|_| DEFAULT_TRIGGER_INTERVAL_SECS.to_string())
-                    .parse()
-                    .map_err(DecodeError::from)?,
-            ),
+            follower_client: settings.follower.connect_follower()?,
+            txn_service: TransactionService::from_settings(&settings.transacions)?,
+            trigger_interval: Duration::seconds(settings.trigger),
             last_follower_height: MetaValue::<i64>::fetch_or_insert_with(
                 &pool,
                 "last_follower_height",
                 || start_reward_block,
             )
             .await?,
-            reward_interval: Duration::seconds(
-                env::var("REWARD_INTERVAL")
-                    .unwrap_or_else(|_| DEFAULT_REWARD_INTERVAL_SECS.to_string())
-                    .parse()
-                    .map_err(DecodeError::from)?,
-            ),
-            verifier_store: FileStore::from_env().await?,
+            reward_interval: Duration::seconds(settings.rewards),
+            verifier_store: FileStore::from_settings(&settings.verifier).await?,
             pool,
         })
     }
@@ -386,21 +374,6 @@ impl Server {
         }
         Ok(())
     }
-}
-
-const CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
-const RPC_TIMEOUT: StdDuration = StdDuration::from_secs(5);
-const DEFAULT_URI: &str = "http://127.0.0.1:8080";
-
-fn new_client_from_env() -> Result<follower::Client<Channel>> {
-    let uri: Uri = env::var("FOLLOWER_URI")
-        .unwrap_or_else(|_| DEFAULT_URI.to_string())
-        .parse()?;
-    let channel = Endpoint::from(uri)
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(RPC_TIMEOUT)
-        .connect_lazy();
-    Ok(follower::Client::new(channel))
 }
 
 async fn txn_stream<T>(
