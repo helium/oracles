@@ -1,10 +1,15 @@
 use crate::{
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
-    Error, Result, CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT,
+    Error, GatewayInfoStream, Result, CONNECT_TIMEOUT, DEFAULT_STREAM_BATCH_SIZE, DEFAULT_URI,
+    RPC_TIMEOUT,
 };
+use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::{
-    follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
+    follower::{
+        self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1,
+        FollowerGatewayStreamReqV1,
+    },
     Channel, Endpoint,
 };
 use http::Uri;
@@ -16,6 +21,7 @@ type FollowerClient = follower::Client<Channel>;
 #[derive(Debug, Clone)]
 pub struct FollowerService {
     pub client: FollowerClient,
+    batch_size: u32,
 }
 
 #[async_trait::async_trait]
@@ -39,16 +45,22 @@ impl FollowerService {
             Err(_) => Uri::from_static(DEFAULT_URI),
         };
 
-        Self::new(uri)
+        let batch_size = match env::var("GW_STREAM_BATCH_SIZE") {
+            Ok(batch_size) => batch_size.parse()?,
+            Err(_) => DEFAULT_STREAM_BATCH_SIZE,
+        };
+
+        Self::new(uri, batch_size)
     }
 
-    pub fn new(uri: Uri) -> Result<Self> {
+    pub fn new(uri: Uri, batch_size: u32) -> Result<Self> {
         let channel = Endpoint::from(uri)
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(RPC_TIMEOUT)
             .connect_lazy();
         Ok(Self {
             client: FollowerClient::new(channel),
+            batch_size,
         })
     }
 
@@ -68,5 +80,29 @@ impl FollowerService {
         };
         let res = self.client.txn_stream(req).await?.into_inner();
         Ok(res)
+    }
+
+    pub async fn active_gateways(&mut self) -> Result<GatewayInfoStream> {
+        let req = FollowerGatewayStreamReqV1 {
+            batch_size: self.batch_size,
+        };
+        let gw_stream = self
+            .client
+            .active_gateways(req)
+            .await?
+            .into_inner()
+            .filter_map(|resp| async move { resp.ok() })
+            .flat_map(|resp| stream::iter(resp.gateways.into_iter()))
+            .filter_map(|resp| async move {
+                match resp.result {
+                    Some(GatewayResult::Info(gateway_info)) => {
+                        GatewayInfo::try_from(gateway_info).ok()
+                    }
+                    _ => None,
+                }
+            })
+            .boxed();
+
+        Ok(gw_stream)
     }
 }

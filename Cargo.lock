@@ -936,6 +936,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "density-scaler"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "h3ron",
+ "helium-proto",
+ "http",
+ "itertools",
+ "node-follower",
+ "prost",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "triggered",
+]
+
+[[package]]
 name = "der"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2055,6 +2078,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "dotenv",
+ "futures",
  "helium-crypto",
  "helium-proto",
  "http",
