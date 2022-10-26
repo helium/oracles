@@ -9,7 +9,6 @@ license.workspace = true
 
 [dependencies]
 config = {workspace = true}
-dotenv = {workspace = true}
 clap = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
