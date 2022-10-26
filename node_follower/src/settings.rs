@@ -3,7 +3,7 @@ use helium_proto::services::{follower, transaction, Channel, Endpoint};
 use serde::Deserialize;
 use std::time::Duration;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     /// Local grpc url to node follower for rewards tracking and submission
     #[serde(with = "http_serde::uri", default = "default_url")]
@@ -16,6 +16,9 @@ pub struct Settings {
     /// RPC timeout for follower in seconds. Default 5
     #[serde(default = "default_rpc_timeout")]
     pub rpc: u64,
+    /// batch size for gateway stream results. Default 100
+    #[serde(default = "default_batch_size")]
+    pub batch: u64,
 }
 
 pub fn default_url() -> http::Uri {
@@ -28,6 +31,10 @@ pub fn default_connect_timeout() -> u64 {
 
 pub fn default_rpc_timeout() -> u64 {
     5
+}
+
+pub fn default_batch_size() -> u64 {
+    100
 }
 
 impl Settings {

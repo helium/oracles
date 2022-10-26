@@ -1,10 +1,9 @@
 use crate::{
     entropy::Entropy,
     last_beacon::LastBeacon,
-    mk_db_pool,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::{LoraStatus, Report},
-    Result,
+    Result, Settings,
 };
 use chrono::{Duration, Utc};
 use file_store::{
@@ -18,11 +17,14 @@ use file_store::{
     traits::{IngestId, ReportId},
     FileType,
 };
-use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
-    LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+use helium_proto::{
+    services::poc_lora::{
+        InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
+        LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+    },
+    Message,
 };
-use helium_proto::Message;
+use node_follower::follower_service;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::path::Path;
@@ -38,15 +40,16 @@ const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
 pub struct Runner {
     pool: PgPool,
-    store_path: String,
+    settings: Settings,
 }
 
 impl Runner {
-    pub async fn from_env() -> Result<Self> {
-        let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
-        let store_path =
-            std::env::var("VERIFIER_STORE").unwrap_or_else(|_| String::from("/var/data/verifier"));
-        Ok(Self { pool, store_path })
+    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        Ok(Self {
+            pool,
+            settings: settings.clone(),
+        })
     }
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
@@ -55,14 +58,14 @@ impl Runner {
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
-        let store_base_path = Path::new(&self.store_path);
+        let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
         let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
         let (lora_valid_poc_tx, lora_valid_poc_rx) = file_sink::message_channel(50);
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
-            file_upload::FileUpload::from_env_with_prefix("VERIFIER", file_upload_rx).await?;
+            file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
 
         let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraInvalidBeaconReport,
@@ -224,8 +227,16 @@ impl Runner {
             // top level checks complete, verify the POC reports
             //
 
+            let follower =
+                follower_service::FollowerService::from_settings(&self.settings.follower)?;
             // TODO: must be a better approach with this POC struct...
-            let mut poc = Poc::new(beacon_report.clone(), witnesses.clone(), entropy_info).await?;
+            let mut poc = Poc::new(
+                beacon_report.clone(),
+                witnesses.clone(),
+                entropy_info,
+                follower,
+            )
+            .await?;
 
             // verify beacon
             let beacon_verify_result = poc.verify_beacon().await?;

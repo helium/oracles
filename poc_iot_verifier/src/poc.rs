@@ -63,8 +63,8 @@ impl Poc {
         beacon_report: LoraBeaconIngestReport,
         witness_reports: Vec<LoraWitnessIngestReport>,
         entropy_info: Entropy,
+        follower_service: FollowerService,
     ) -> Result<Self> {
-        let follower_service = FollowerService::from_env()?;
         let entropy_start = entropy_info.timestamp;
         let entropy_end = entropy_info.timestamp + Duration::seconds(ENTROPY_LIFESPAN);
         Ok(Self {

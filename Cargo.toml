@@ -19,7 +19,6 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-dotenv = "0"
 thiserror = "1"
 clap = {version = "3", features = ["derive"]}
 serde =  {version = "1", features=["derive"]}

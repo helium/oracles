@@ -13,7 +13,7 @@ pub enum Cmd {
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Helium Ingest Server")]
+#[clap(about = "Helium Bucket Commands")]
 pub struct Cli {
     #[clap(subcommand)]
     cmd: Cmd,
@@ -21,7 +21,6 @@ pub struct Cli {
 
 #[tokio::main]
 async fn main() -> Result {
-    dotenv::dotenv()?;
     let cli = Cli::parse();
 
     match cli.cmd {
