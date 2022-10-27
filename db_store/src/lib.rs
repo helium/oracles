@@ -43,7 +43,7 @@ where
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        meta::save(exec, &self.key, &self.value.to_string()).await
+        meta::store(exec, &self.key, &self.value.to_string()).await
     }
 }
 
@@ -59,7 +59,7 @@ where
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Copy,
     {
-        let result: Result<String, MetaError> = meta::get::<String>(exec, key).await;
+        let result: Result<String, MetaError> = meta::fetch::<String>(exec, key).await;
 
         match result {
             Ok(str_val) => {
@@ -83,7 +83,7 @@ where
     where
         E: sqlx::PgExecutor<'c>,
     {
-        meta::save(exec, &self.key, new_val.to_string()).await?;
+        meta::store(exec, &self.key, new_val.to_string()).await?;
         Ok(std::mem::replace(&mut self.value, new_val))
     }
 }

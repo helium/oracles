@@ -17,7 +17,7 @@ macro_rules! query_exec_timed {
     }};
 }
 
-pub async fn save<T>(exec: impl sqlx::PgExecutor<'_>, key: &str, value: T) -> Result<(), MetaError>
+pub async fn store<T>(exec: impl sqlx::PgExecutor<'_>, key: &str, value: T) -> Result<(), MetaError>
 where
     T: ToString,
 {
@@ -31,10 +31,10 @@ where
     )
     .bind(key)
     .bind(value.to_string());
-    query_exec_timed!("db_store_meta_save", query, execute, exec).map(|_| ())
+    query_exec_timed!("db_store_meta_store", query, execute, exec).map(|_| ())
 }
 
-pub async fn get<T>(exec: impl sqlx::PgExecutor<'_>, key: &str) -> Result<T, MetaError>
+pub async fn fetch<T>(exec: impl sqlx::PgExecutor<'_>, key: &str) -> Result<T, MetaError>
 where
     T: FromStr,
 {
@@ -44,7 +44,7 @@ where
             "#,
     )
     .bind(key);
-    query_exec_timed!("db_store_meta_get", query, fetch_optional, exec)?
+    query_exec_timed!("db_store_meta_fetch", query, fetch_optional, exec)?
         .ok_or_else(|| MetaError::NotFound(key.to_string()))
         .and_then(|value| value.parse().map_err(|_| MetaError::DecodeError))
 }

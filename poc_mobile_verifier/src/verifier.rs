@@ -170,31 +170,31 @@ pub struct VerifiedEpoch {
 }
 
 async fn last_verified_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Utc>> {
-    Ok(Utc.timestamp(meta::get(exec, "last_verified_end_time").await?, 0))
+    Ok(Utc.timestamp(meta::fetch(exec, "last_verified_end_time").await?, 0))
 }
 
 async fn save_last_verified_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::save(exec, "last_verified_end_time", value.timestamp() as i64)
+    meta::store(exec, "last_verified_end_time", value.timestamp() as i64)
         .await
         .map_err(Error::from)
 }
 
 async fn last_rewarded_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Utc>> {
-    Ok(Utc.timestamp(meta::get(exec, "last_rewarded_end_time").await?, 0))
+    Ok(Utc.timestamp(meta::fetch(exec, "last_rewarded_end_time").await?, 0))
 }
 
 async fn save_last_rewarded_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::save(exec, "last_rewarded_end_time", value.timestamp() as i64)
+    meta::store(exec, "last_rewarded_end_time", value.timestamp() as i64)
         .await
         .map_err(Error::from)
 }
 
 async fn next_rewarded_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Utc>> {
-    Ok(Utc.timestamp(meta::get(exec, "next_rewarded_end_time").await?, 0))
+    Ok(Utc.timestamp(meta::fetch(exec, "next_rewarded_end_time").await?, 0))
 }
 
 async fn save_next_rewarded_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::save(exec, "next_rewarded_end_time", value.timestamp() as i64)
+    meta::store(exec, "next_rewarded_end_time", value.timestamp() as i64)
         .await
         .map_err(Error::from)
 }
