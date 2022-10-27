@@ -1,4 +1,5 @@
 pub mod generate;
+pub mod reward_from_db;
 pub mod server;
 
 pub const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);

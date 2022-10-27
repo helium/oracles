@@ -1,6 +1,6 @@
 use clap::Parser;
 use poc_mobile_verifier::{
-    cli::{generate, server},
+    cli::{generate, reward_from_db, server},
     Result,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -17,6 +17,7 @@ pub struct Cli {
 pub enum Cmd {
     Generate(generate::Cmd),
     Server(server::Cmd),
+    RewardFromDb(reward_from_db::Cmd),
 }
 
 #[tokio::main]
@@ -32,6 +33,7 @@ async fn main() -> Result {
     match Cli::parse().cmd {
         Cmd::Generate(cmd) => cmd.run().await?,
         Cmd::Server(cmd) => cmd.run().await?,
+        Cmd::RewardFromDb(cmd) => cmd.run().await?,
     }
 
     Ok(())
