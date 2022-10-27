@@ -20,6 +20,9 @@ pub struct Cmd {}
 
 impl Cmd {
     pub async fn run(self) -> Result {
+        // install prometheus metrics exporter
+        poc_metrics::install_metrics();
+
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
             let _ = tokio::signal::ctrl_c().await;
