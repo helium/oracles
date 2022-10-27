@@ -38,15 +38,26 @@ impl SubnetworkRewards {
                 .or_default() += heartbeat.reward_weight;
         }
 
-        for (pubkey, shares) in hotspot_shares.iter_mut() {
-            let speedmultiplier = speedtests
-                .get_average(pubkey)
-                .map_or(dec!(0.0), |avg| avg.reward_multiplier());
-            *shares *= speedmultiplier;
-        }
+        let filtered_shares = hotspot_shares
+            .into_iter()
+            .map(|(pubkey, mut shares)| {
+                let speedmultiplier = speedtests
+                    .get_average(&pubkey)
+                    .map_or(dec!(0.0), |avg| avg.reward_multiplier());
+                shares *= speedmultiplier;
+                (pubkey, shares)
+            })
+            .filter_map(|(pubkey, shares)| {
+                if shares > dec!(0.0) {
+                    Some((pubkey, shares))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         let (owner_shares, _missing_owner_shares) =
-            follower_service.owner_shares(hotspot_shares).await?;
+            follower_service.owner_shares(filtered_shares).await?;
 
         let owner_emissions =
             OwnerEmissions::new(owner_shares, epoch.start, epoch.end - epoch.start);
