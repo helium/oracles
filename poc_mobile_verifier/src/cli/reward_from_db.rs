@@ -1,6 +1,6 @@
 use crate::{
-    env_var, heartbeats::Heartbeats, speedtests::SpeedtestAverages,
-    subnetwork_rewards::SubnetworkRewards, Result,
+    env_var, heartbeats::Heartbeats, reward_share::get_scheduled_tokens,
+    speedtests::SpeedtestAverages, subnetwork_rewards::SubnetworkRewards, Result,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
@@ -28,6 +28,8 @@ impl Cmd {
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
+        let expected_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
+            .expect("Couldn't get expected rewards");
 
         let follower = follower::Client::new(
             Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
@@ -67,6 +69,7 @@ impl Cmd {
             serde_json::to_string_pretty(&json!({
                 "rewards": rewards,
                 "total_rewards": total_rewards,
+                "expected_rewards": expected_rewards,
             }))?
         );
 
