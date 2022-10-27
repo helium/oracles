@@ -333,8 +333,8 @@ impl Average {
             SpeedtestTier::Failed
         } else {
             SpeedtestTier::from_download_speed(self.download_speed_avg_bps)
-                .and(SpeedtestTier::from_upload_speed(self.upload_speed_avg_bps))
-                .and(SpeedtestTier::from_latency(self.latency_avg_ms))
+                .min(SpeedtestTier::from_upload_speed(self.upload_speed_avg_bps))
+                .min(SpeedtestTier::from_latency(self.latency_avg_ms))
         }
     }
 
@@ -347,24 +347,15 @@ const fn mbps(mbps: u64) -> u64 {
     mbps * 125000
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SpeedtestTier {
-    Acceptable,
-    Degraded,
-    Poor,
-    Failed,
+    Failed = 0,
+    Poor = 1,
+    Degraded = 2,
+    Acceptable = 3,
 }
 
 impl SpeedtestTier {
-    fn and(self, rhs: Self) -> Self {
-        match (self, rhs) {
-            (_, Self::Failed) | (Self::Failed, _) => Self::Failed,
-            (_, Self::Poor) | (Self::Poor, _) => Self::Poor,
-            (_, Self::Degraded) | (Self::Degraded, _) => Self::Degraded,
-            _ => Self::Acceptable,
-        }
-    }
-
     fn into_multiplier(self) -> f32 {
         match self {
             Self::Acceptable => 1.0,
@@ -515,6 +506,14 @@ mod test {
                 40,
             ),
         ]
+    }
+
+    #[test]
+    fn check_tier_cmp() {
+        assert_eq!(
+            SpeedtestTier::Acceptable.min(SpeedtestTier::Failed),
+            SpeedtestTier::Failed,
+        );
     }
 
     #[test]
