@@ -6,6 +6,7 @@ mod reward_share;
 mod speedtests;
 
 pub mod cli;
+pub mod scheduler;
 pub mod subnetwork_rewards;
 pub mod verifier;
 

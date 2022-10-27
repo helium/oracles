@@ -1,8 +1,9 @@
 use std::ops::Range;
 
 use crate::{
-    error::{Error, Result},
+    error::Result,
     heartbeats::{Heartbeat, Heartbeats},
+    scheduler::Scheduler,
     speedtests::{SpeedtestAverages, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
@@ -30,55 +31,35 @@ impl VerifierDaemon {
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("Starting verifier service");
 
-        let reward_period = Duration::hours(self.reward_period_hours);
-        let verification_period = reward_period / self.verifications_per_period;
+        let reward_period_length = Duration::hours(self.reward_period_hours);
+        let verification_period_length = reward_period_length / self.verifications_per_period;
 
         loop {
             let now = Utc::now();
-            let epoch_since_last_verify = self.epoch_since_last_verify(now);
-            let epoch_since_last_verify_duration = epoch_duration(&epoch_since_last_verify);
 
+            let last_verified_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
             let last_rewarded_end_time = Utc.timestamp(*self.last_rewarded_end_time.value(), 0);
             let next_rewarded_end_time = Utc.timestamp(*self.next_rewarded_end_time.value(), 0);
 
-            // If we started up and the last verification epoch was too recent,
-            // we do not want to re-verify.
-            let mut sleep_duration = if epoch_since_last_verify_duration >= verification_period
-                // We always want to verify before a reward 
-                || now >= next_rewarded_end_time
-            {
-                let epoch_duration = epoch_since_last_verify_duration.min(verification_period);
-                let last_verified_end_time = Utc.timestamp(*self.last_verified_end_time.value(), 0);
-                let epoch = last_verified_end_time
-                    ..(last_verified_end_time + epoch_duration).min(next_rewarded_end_time);
-                tracing::info!("Verifying epoch: {:?}", epoch);
-                // Attempt to verify the current epoch:
-                self.verify_epoch(epoch).await?;
-                if epoch_since_last_verify_duration - epoch_duration > verification_period {
-                    Duration::zero()
-                } else {
-                    verification_period
-                }
-            } else {
-                verification_period - epoch_since_last_verify_duration
-            };
+            let scheduler = Scheduler::new(
+                verification_period_length,
+                reward_period_length,
+                last_verified_end_time,
+                last_rewarded_end_time,
+                next_rewarded_end_time,
+            );
 
-            // If the current duration since the last reward is exceeded, attempt to
-            // submit rewards
-            if now >= next_rewarded_end_time {
-                let epoch = last_rewarded_end_time..next_rewarded_end_time;
-                tracing::info!("Rewarding epoch: {:?}", epoch);
-                self.reward_epoch(epoch).await?
-            } else if now + sleep_duration >= next_rewarded_end_time {
-                // If the next verification epoch straddles a reward epoch, cut off sleep
-                // duration. This ensures that verifying will always end up being aligned
-                // with the desired reward period.
-                sleep_duration = next_rewarded_end_time - now;
+            if scheduler.should_verify(now) {
+                tracing::info!("Verifying epoch: {:?}", scheduler.verification_period);
+                self.verify(&scheduler).await?;
             }
 
-            let sleep_duration = sleep_duration
-                .to_std()
-                .map_err(|_| Error::OutOfRangeError)?;
+            if scheduler.should_reward(now) {
+                tracing::info!("Rewarding epoch: {:?}", scheduler.reward_period);
+                self.reward(&scheduler).await?
+            }
+
+            let sleep_duration = scheduler.sleep_duration(Utc::now())?;
 
             tracing::info!(
                 "Sleeping for {}",
@@ -92,11 +73,14 @@ impl VerifierDaemon {
         }
     }
 
-    pub async fn verify_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
+    pub async fn verify(&mut self, scheduler: &Scheduler) -> Result {
         let VerifiedEpoch {
             heartbeats,
             speedtests,
-        } = self.verifier.verify_epoch(&self.pool, &epoch).await?;
+        } = self
+            .verifier
+            .verify_epoch(&self.pool, &scheduler.verification_period)
+            .await?;
 
         let mut transaction = self.pool.begin().await?;
 
@@ -113,7 +97,10 @@ impl VerifierDaemon {
 
         // Update the last verified end time:
         self.last_verified_end_time
-            .update(&mut transaction, epoch.end.timestamp() as i64)
+            .update(
+                &mut transaction,
+                scheduler.verification_period.end.timestamp() as i64,
+            )
             .await?;
 
         transaction.commit().await?;
@@ -121,13 +108,14 @@ impl VerifierDaemon {
         Ok(())
     }
 
-    pub async fn reward_epoch(&mut self, epoch: Range<DateTime<Utc>>) -> Result {
-        let heartbeats = Heartbeats::validated(&self.pool, epoch.start).await?;
-        let speedtests = SpeedtestAverages::validated(&self.pool, epoch.end).await?;
+    pub async fn reward(&mut self, scheduler: &Scheduler) -> Result {
+        let heartbeats = Heartbeats::validated(&self.pool, scheduler.reward_period.start).await?;
+        let speedtests =
+            SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
 
         let rewards = self
             .verifier
-            .reward_epoch(&epoch, heartbeats, speedtests)
+            .reward_epoch(&scheduler.reward_period, heartbeats, speedtests)
             .await?;
 
         let mut transaction = self.pool.begin().await?;
@@ -139,13 +127,16 @@ impl VerifierDaemon {
 
         // Update the last and next rewarded end time:
         self.last_rewarded_end_time
-            .update(&mut transaction, epoch.end.timestamp() as i64)
+            .update(
+                &mut transaction,
+                scheduler.reward_period.end.timestamp() as i64,
+            )
             .await?;
 
         self.next_rewarded_end_time
             .update(
                 &mut transaction,
-                (epoch.end + Duration::hours(self.reward_period_hours)).timestamp() as i64,
+                (scheduler.next_reward_period().end).timestamp() as i64,
             )
             .await?;
 
@@ -158,10 +149,6 @@ impl VerifierDaemon {
             .await??;
 
         Ok(())
-    }
-
-    pub fn epoch_since_last_verify(&self, now: DateTime<Utc>) -> Range<DateTime<Utc>> {
-        Utc.timestamp(*self.last_verified_end_time.value(), 0)..now
     }
 }
 
@@ -205,8 +192,4 @@ impl Verifier {
 pub struct VerifiedEpoch {
     pub heartbeats: Vec<Heartbeat>,
     pub speedtests: SpeedtestAverages,
-}
-
-fn epoch_duration(epoch: &Range<DateTime<Utc>>) -> Duration {
-    epoch.end - epoch.start
 }
