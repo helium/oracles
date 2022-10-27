@@ -6,6 +6,7 @@ description = "Heartbeat and speed share verification for rewards"
 license = "Apache-2.0"
 
 [dependencies]
+anyhow = {workspace = true}
 dotenv = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}

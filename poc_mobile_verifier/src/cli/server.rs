@@ -1,9 +1,8 @@
-use crate::Result;
 use crate::{
     env_var,
-    error::Error,
     verifier::{Verifier, VerifierDaemon},
 };
+use anyhow::{Error, Result};
 use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
@@ -19,7 +18,7 @@ pub const DEFAULT_VERIFICATIONS_PER_PERIOD: i32 = 8;
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(self) -> Result {
+    pub async fn run(self) -> Result<()> {
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
             let _ = tokio::signal::ctrl_c().await;

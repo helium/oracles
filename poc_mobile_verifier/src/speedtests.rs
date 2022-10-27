@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use file_store::{
     file_sink, file_sink_write,
@@ -65,7 +64,7 @@ impl SpeedtestRollingAverage {
         }
     }
 
-    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
+    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
         #[derive(FromRow)]
         struct SaveResult {
             inserted: bool,
@@ -86,7 +85,6 @@ impl SpeedtestRollingAverage {
         .fetch_one(exec)
         .await
         .map(|result| result.inserted)
-        .map_err(Error::from)
     }
 
     pub async fn write(&self, averages_tx: &file_sink::MessageSender) -> file_store::Result {
@@ -160,7 +158,7 @@ impl SpeedtestAverages {
     pub async fn validated(
         exec: impl sqlx::PgExecutor<'_> + Copy,
         period_end: DateTime<Utc>,
-    ) -> std::result::Result<Self, sqlx::Error> {
+    ) -> Result<Self, sqlx::Error> {
         let mut speedtests = HashMap::new();
 
         let mut rows = sqlx::query_as::<_, SpeedtestRollingAverage>(
@@ -185,7 +183,7 @@ impl SpeedtestAverages {
         exec: impl SpeedtestStore + Copy,
         file_store: &FileStore,
         epoch: &Range<DateTime<Utc>>,
-    ) -> Result<Self> {
+    ) -> file_store::Result<Self> {
         let mut speedtests = HashMap::new();
         let file_list = file_store
             .list_all(FileType::CellSpeedtestIngestReport, epoch.start, epoch.end)
@@ -216,6 +214,8 @@ impl SpeedtestAverages {
                 } = exec
                     .fetch(&pubkey)
                     .await
+                    // TODO: Match this error and only unwrap or else if the error is row
+                    // not found.
                     .unwrap_or_else(|_| SpeedtestRollingAverage::new(pubkey.clone()));
 
                 speedtests.insert(id, VecDeque::from(window));
@@ -408,7 +408,7 @@ impl SpeedtestTier {
 
 #[async_trait::async_trait]
 pub trait SpeedtestStore {
-    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage>;
+    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage, sqlx::Error>;
 }
 
 #[async_trait::async_trait]
@@ -416,12 +416,11 @@ impl<E> SpeedtestStore for E
 where
     for<'a> E: sqlx::PgExecutor<'a>,
 {
-    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage> {
+    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage, sqlx::Error> {
         sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
             .bind(id)
             .fetch_one(self)
             .await
-            .map_err(Error::from)
     }
 }
 
@@ -430,8 +429,8 @@ pub struct EmptyDatabase;
 
 #[async_trait::async_trait]
 impl SpeedtestStore for EmptyDatabase {
-    async fn fetch(self, _id: &PublicKey) -> Result<SpeedtestRollingAverage> {
-        Err(Error::from(sqlx::Error::RowNotFound))
+    async fn fetch(self, _id: &PublicKey) -> Result<SpeedtestRollingAverage, sqlx::Error> {
+        Err(sqlx::Error::RowNotFound)
     }
 }
 

@@ -1,5 +1,4 @@
 use crate::{
-    error::Result,
     heartbeats::Heartbeats,
     reward_share::{OwnerEmissions, OwnerResolver},
     speedtests::SpeedtestAverages,
@@ -29,7 +28,7 @@ impl SubnetworkRewards {
         heartbeats: Heartbeats,
         // TODO: Use speedtests as part of the reward calculation
         _speedtests: SpeedtestAverages,
-    ) -> Result<Self> {
+    ) -> Result<Self, tonic::Status> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
         for heartbeat in heartbeats.into_iter() {

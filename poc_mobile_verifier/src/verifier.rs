@@ -1,17 +1,16 @@
-use std::ops::Range;
-
 use crate::{
-    error::Result,
     heartbeats::{Heartbeat, Heartbeats},
     scheduler::Scheduler,
     speedtests::{SpeedtestAverages, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
+use anyhow::Result;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{file_sink, FileStore};
 use helium_proto::services::{follower, Channel};
 use sqlx::{Pool, Postgres};
+use std::ops::Range;
 use tokio::time::sleep;
 
 pub struct VerifierDaemon {
@@ -28,7 +27,7 @@ pub struct VerifierDaemon {
 }
 
 impl VerifierDaemon {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
         tracing::info!("Starting verifier service");
 
         let reward_period_length = Duration::hours(self.reward_period_hours);
@@ -73,7 +72,7 @@ impl VerifierDaemon {
         }
     }
 
-    pub async fn verify(&mut self, scheduler: &Scheduler) -> Result {
+    pub async fn verify(&mut self, scheduler: &Scheduler) -> Result<()> {
         let VerifiedEpoch {
             heartbeats,
             speedtests,
@@ -108,7 +107,7 @@ impl VerifierDaemon {
         Ok(())
     }
 
-    pub async fn reward(&mut self, scheduler: &Scheduler) -> Result {
+    pub async fn reward(&mut self, scheduler: &Scheduler) -> Result<()> {
         let heartbeats = Heartbeats::validated(&self.pool, scheduler.reward_period.start).await?;
         let speedtests =
             SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
@@ -185,7 +184,10 @@ impl Verifier {
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
     ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests).await
+        Ok(
+            SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests)
+                .await?,
+        )
     }
 }
 

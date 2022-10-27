@@ -2,8 +2,8 @@ use crate::{
     env_var,
     speedtests::EmptyDatabase,
     verifier::{VerifiedEpoch, Verifier},
-    Result,
 };
+use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use helium_crypto::PublicKey;
@@ -22,7 +22,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(self) -> Result {
+    pub async fn run(self) -> Result<()> {
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);

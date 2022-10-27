@@ -1,8 +1,23 @@
-use crate::{error::DecodeError, Error, Result};
 use core::fmt;
 use rust_decimal::prelude::*;
 use serde::{de::Deserializer, Deserialize, Serialize};
 use std::str::FromStr;
+
+#[derive(thiserror::Error, Debug)]
+pub enum DecodeError {
+    #[error("prost error")]
+    Prost(#[from] helium_proto::DecodeError),
+    #[error("uri error")]
+    Uri(#[from] http::uri::InvalidUri),
+    #[error("parse int error")]
+    ParseInt(#[from] std::num::ParseIntError),
+    #[error("datetime error")]
+    Chrono(#[from] chrono::ParseError),
+    #[error("invalid decimals in {0}, only 8 allowed")]
+    Decimals(String),
+    #[error("base64 decode error")]
+    Base64(#[from] base64::DecodeError),
+}
 
 macro_rules! decimal_scalar {
     ($stype:ident, $scalar:literal, $scale:literal) => {
@@ -10,13 +25,13 @@ macro_rules! decimal_scalar {
         pub struct $stype(Decimal);
 
         impl FromStr for $stype {
-            type Err = Error;
+            type Err = DecodeError;
 
-            fn from_str(s: &str) -> Result<Self> {
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match Decimal::from_str(s).or_else(|_| Decimal::from_scientific(s)) {
-                    Ok(data) if data.scale() > 8 => Err(DecodeError::decimals(s).into()),
+                    Ok(data) if data.scale() > 8 => Err(DecodeError::Decimals(s.to_string())),
                     Ok(data) => Ok(Self(data)),
-                    Err(_) => Err(DecodeError::decimals(s).into()),
+                    Err(_) => Err(DecodeError::Decimals(s.to_string())),
                 }
             }
         }

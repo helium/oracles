@@ -1,8 +1,6 @@
+use anyhow::Result;
 use clap::Parser;
-use poc_mobile_verifier::{
-    cli::{generate, server},
-    Result,
-};
+use poc_mobile_verifier::cli::{generate, server};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(clap::Parser)]
@@ -20,7 +18,7 @@ pub enum Cmd {
 }
 
 #[tokio::main]
-async fn main() -> Result {
+async fn main() -> Result<()> {
     dotenv::dotenv()?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(

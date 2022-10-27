@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use std::ops::Range;
 
@@ -9,6 +8,12 @@ pub struct Scheduler {
     pub verification_period: Range<DateTime<Utc>>,
     pub reward_period: Range<DateTime<Utc>>,
 }
+
+// I don't want to have to define this struct, but otherwise I'd have to
+// import the deprecated time crate.
+#[derive(thiserror::Error, Debug)]
+#[error("sleep duration cannot be converted to an std::time::Duration")]
+pub struct OutOfRangeError;
 
 impl Scheduler {
     pub fn new(
@@ -46,7 +51,10 @@ impl Scheduler {
         self.reward_period.end..(self.reward_period.end + self.reward_period_length)
     }
 
-    pub fn sleep_duration(&self, now: DateTime<Utc>) -> Result<std::time::Duration> {
+    pub fn sleep_duration(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<std::time::Duration, OutOfRangeError> {
         let next_verification_period = self.next_verification_period();
         let next_reward_period = self.next_reward_period();
 
@@ -56,7 +64,7 @@ impl Scheduler {
             (next_verification_period.end.min(next_reward_period.end)) - now
         };
 
-        duration.to_std().map_err(|_| Error::OutOfRangeError)
+        duration.to_std().map_err(|_| OutOfRangeError)
     }
 }
 

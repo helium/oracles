@@ -1,5 +1,4 @@
 mod cell_type;
-mod error;
 mod heartbeats;
 mod mobile;
 mod reward_share;
@@ -10,20 +9,14 @@ pub mod scheduler;
 pub mod subnetwork_rewards;
 pub mod verifier;
 
-pub use error::{Error, Result};
-
-use std::io;
-
-pub fn env_var<T>(key: &str, default: T) -> Result<T>
+pub fn env_var<T>(key: &str, default: T) -> anyhow::Result<T>
 where
     T: std::str::FromStr,
-    <T as std::str::FromStr>::Err: std::fmt::Debug,
+    <T as std::str::FromStr>::Err: std::fmt::Debug + Send + Sync + std::error::Error + 'static,
 {
     match dotenv::var(key) {
-        Ok(v) => v
-            .parse::<T>()
-            .map_err(|_err| Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
+        Ok(v) => Ok(v.parse::<T>()?),
         Err(dotenv::Error::EnvVar(std::env::VarError::NotPresent)) => Ok(default),
-        Err(err) => Err(Error::from(err)),
+        Err(err) => Err(anyhow::Error::from(err)),
     }
 }

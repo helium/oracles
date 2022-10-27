@@ -1,6 +1,6 @@
 //! Heartbeat storage
 
-use crate::{cell_type::CellType, Error, Result};
+use crate::cell_type::CellType;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{
     file_sink, file_sink_write,
@@ -43,7 +43,7 @@ impl Heartbeats {
     pub async fn validated(
         exec: impl sqlx::PgExecutor<'_>,
         starting: DateTime<Utc>,
-    ) -> std::result::Result<Self, sqlx::Error> {
+    ) -> Result<Self, sqlx::Error> {
         #[derive(sqlx::FromRow)]
         pub struct HeartbeatRow {
             pub hotspot_key: PublicKey,
@@ -133,7 +133,7 @@ impl Heartbeat {
     pub async fn validate_heartbeats(
         file_store: &FileStore,
         epoch: &Range<DateTime<Utc>>,
-    ) -> Result<Vec<Self>> {
+    ) -> file_store::Result<Vec<Self>> {
         let mut heartbeats = Vec::new();
         let file_list = file_store
             .list_all(FileType::CellHeartbeatIngestReport, epoch.start, epoch.end)
@@ -185,7 +185,7 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
+    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
         // If the heartbeat is not valid, do not save it
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);
@@ -207,7 +207,6 @@ impl Heartbeat {
         .fetch_one(exec)
         .await
         .map(|result| result.inserted)
-        .map_err(Error::from)
     }
 }
 
@@ -215,7 +214,7 @@ impl Heartbeat {
 fn validate_heartbeat(
     heartbeat: &CellHeartbeat,
     epoch: &Range<DateTime<Utc>>,
-) -> std::result::Result<CellType, proto::HeartbeatValidity> {
+) -> Result<CellType, proto::HeartbeatValidity> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.cbsd_id) {
         Some(ty) => ty,
         _ => return Err(proto::HeartbeatValidity::BadCbsdId),
