@@ -301,7 +301,7 @@ where
                 latency_avg_ms: sum_latency / window_size as u32,
             }
         } else {
-            Default::default()
+            Average::default()
         }
     }
 }
