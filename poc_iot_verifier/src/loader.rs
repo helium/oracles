@@ -202,6 +202,7 @@ impl Loader {
                     }
                     false => {
                         // if a gateway doesnt exist then drop the report
+                        // dont even insert into DB
                         tracing::warn!(
                             "dropping witness report as gateway not found: {:?}",
                             &witness
@@ -232,12 +233,7 @@ impl Loader {
 
     // TODO: maybe store any found GW in the DB, save having to refetch later during validation ?
     async fn check_valid_gateway(&self, pub_key: &PublicKey) -> bool {
-        self
-            // TODO: I am cloning here to avoid having to use &mut self
-            //       as once i do that then i need to cascade the same
-            //       upwards through the stack
-            //       must be a better way to do this ?
-            .follower_service
+        self.follower_service
             .clone()
             .resolve_gateway_info(pub_key)
             .await
