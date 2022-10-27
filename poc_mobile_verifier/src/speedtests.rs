@@ -9,6 +9,8 @@ use file_store::{
 use futures::stream::{self, StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
     FromRow, Type,
@@ -17,6 +19,8 @@ use std::{
     collections::{HashMap, VecDeque},
     ops::Range,
 };
+
+const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 
 #[derive(Debug, Clone, Type)]
 #[sqlx(type_name = "speedtest")]
@@ -93,7 +97,9 @@ impl SpeedtestRollingAverage {
         // Write out the speedtests to S3
         let average = Average::from(&self.speedtests);
         let validity = average.validity() as i32;
-        let reward_multiplier = average.reward_multiplier();
+        // this is guaratneed to safely convert and not panic as it can only be one of
+        // four possible decimal values based on the speedtest average tier
+        let reward_multiplier = average.reward_multiplier().try_into().unwrap();
         let Average {
             upload_speed_avg_bps,
             download_speed_avg_bps,
@@ -229,8 +235,8 @@ impl SpeedtestAverages {
             // Unwrap here is guaranteed never to panic
             let window = speedtests.get_mut(&pubkey).unwrap();
 
-            // If there are six speedtests in the window, remove the one in the front
-            while window.len() >= 6 {
+            // If there are N speedtests in the window, remove the one in the front
+            while window.len() >= SPEEDTEST_AVG_MAX_DATA_POINTS {
                 window.pop_front();
             }
 
@@ -295,12 +301,7 @@ where
                 latency_avg_ms: sum_latency / window_size as u32,
             }
         } else {
-            Average {
-                window_size,
-                upload_speed_avg_bps: 0,
-                download_speed_avg_bps: 0,
-                latency_avg_ms: 0,
-            }
+            Default::default()
         }
     }
 }
@@ -338,7 +339,7 @@ impl Average {
         }
     }
 
-    pub fn reward_multiplier(&self) -> f32 {
+    pub fn reward_multiplier(&self) -> Decimal {
         self.tier().into_multiplier()
     }
 }
@@ -356,12 +357,12 @@ pub enum SpeedtestTier {
 }
 
 impl SpeedtestTier {
-    fn into_multiplier(self) -> f32 {
+    fn into_multiplier(self) -> Decimal {
         match self {
-            Self::Acceptable => 1.0,
-            Self::Degraded => 0.5,
-            Self::Poor => 0.25,
-            Self::Failed => 0.0,
+            Self::Acceptable => dec!(1.0),
+            Self::Degraded => dec!(0.5),
+            Self::Poor => dec!(0.25),
+            Self::Failed => dec!(0.0),
         }
     }
 

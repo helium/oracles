@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink, file_sink_write};
 use helium_crypto::PublicKey;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 use tokio::sync::oneshot;
@@ -27,8 +28,7 @@ impl SubnetworkRewards {
         mut follower_service: impl OwnerResolver,
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
-        // TODO: Use speedtests as part of the reward calculation
-        _speedtests: SpeedtestAverages,
+        speedtests: SpeedtestAverages,
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
@@ -36,6 +36,13 @@ impl SubnetworkRewards {
             *hotspot_shares
                 .entry(heartbeat.hotspot_key.clone())
                 .or_default() += heartbeat.reward_weight;
+        }
+
+        for (pubkey, shares) in hotspot_shares.iter_mut() {
+            let speedmultiplier = speedtests
+                .get_average(pubkey)
+                .map_or(dec!(0.0), |avg| avg.reward_multiplier());
+            *shares *= speedmultiplier;
         }
 
         let (owner_shares, _missing_owner_shares) =
