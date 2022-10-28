@@ -55,7 +55,7 @@ impl Settings {
         // Add in settings from the environment (with a prefix of MI)
         // Eg.. `MI_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("MI").separator("_"))
+            .add_source(Environment::with_prefix("MR").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
             .map_err(Error::from)
