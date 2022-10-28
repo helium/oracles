@@ -16,9 +16,6 @@ mode = "lora"
 #
 # listen = "0.0.0.0:9081"
 
-[cache]
-# Local cache for ingested data 
-
 # Cache folder to use. Default blow
 #
 # cache = "/var/data/ingest"

@@ -14,10 +14,10 @@ mod settings;
 pub mod speedtest;
 pub mod traits;
 
+pub use crate::file_store::FileStore;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
-pub use crate::file_store::FileStore;
 pub use settings::Settings;
 
 use bytes::BytesMut;

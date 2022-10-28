@@ -10,9 +10,6 @@ source = "https://entropy.source.url"
 #
 # listen = "0.0.0.0:8080"
 
-[cache]
-# Local cache for generated entropy 
-
 # Cache folder to use. Default blow
 #
 # cache = "/var/data/entropy"
