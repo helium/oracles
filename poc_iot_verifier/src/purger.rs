@@ -156,12 +156,14 @@ impl Purger {
         let beacon_report: LoraBeaconIngestReport =
             LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
         let beacon = &beacon_report.report;
+        let received_timestamp = beacon_report.received_timestamp;
         let invalid_beacon_proto: LoraInvalidBeaconReportV1 = LoraInvalidBeaconReport {
-            received_timestamp: beacon_report.received_timestamp,
+            received_timestamp,
             reason: InvalidReason::Stale,
             report: beacon.clone(),
         }
         .into();
+        tracing::debug!("purging beacon with date: {received_timestamp}");
         file_sink_write!(
             "invalid_beacon",
             lora_invalid_beacon_tx,
@@ -185,13 +187,15 @@ impl Purger {
             LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?;
         let witness = &witness_report.report;
         let public_key = witness.pub_key.to_vec().clone();
+        let received_timestamp = witness_report.received_timestamp;
         let invalid_witness_report_proto: LoraInvalidWitnessReportV1 = LoraInvalidWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
+            received_timestamp,
             report: witness_report.report,
             reason: InvalidReason::Stale,
             participant_side: InvalidParticipantSide::Witness,
         }
         .into();
+        tracing::debug!("purging witness with date: {received_timestamp}");
         file_sink_write!(
             "invalid_witness_report",
             lora_invalid_witness_tx,
