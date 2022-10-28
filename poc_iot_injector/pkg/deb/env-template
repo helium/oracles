@@ -1,8 +1,9 @@
-RUST_LOG=info
+RUST_LOG=poc_iot_injector=info
+FOLLOWER_URI=http://127.0.0.1:8080
 METRICS_SCRAPE_ENDPOINT=127.0.0.1:19000
 DATABASE_URL=db_url
-FOLLOWER_URI=http://127.0.0.1:8080
-BUCKET=examplenet-pociot-verified
-POC_IOT_ORACLE_KEY=/tmp/poc_oracle_key
-POC_IOT_REWARDS_STORE=examplenet-pociot-rewards
+INPUT_BUCKET=examplenet-pociot-verified
+OUTPUT_BUCKET=examplenet-pociot-rewards
+POC_IOT_ORACLE_KEY=/path/to/poc_oracle_key
+POC_IOT_REWARDS_STORE=/path/to/poc_iot_rewards_store
 LAST_POC_SUBMISSION_TS=0000000000

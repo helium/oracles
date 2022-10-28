@@ -29,6 +29,7 @@ async fn main() -> Result {
     let loader = loader::Loader::from_env().await?;
     let runner = runner::Runner::from_env().await?;
     let purger = purger::Purger::from_env().await?;
+
     tokio::try_join!(
         runner.run(&shutdown),
         loader.run(&shutdown),

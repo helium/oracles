@@ -26,7 +26,7 @@ impl Cmd {
 
         // Configure poc iot rewards store
         let store_path = std::env::var("POC_IOT_REWARDS_STORE")
-            .unwrap_or_else(|_| String::from("/var/data/poc_iot_rewards"));
+            .unwrap_or_else(|_| String::from("/var/data/poc_iot_rewards_store"));
         let store_base_path = path::Path::new(&store_path);
 
         // Configure file_upload

@@ -49,7 +49,7 @@ impl Server {
             pool: pool.clone(),
             keypair: Arc::new(keypair),
             txn_service: TransactionService::from_env()?,
-            iot_verifier_store: FileStore::from_env().await?,
+            iot_verifier_store: FileStore::from_env_with_prefix("INPUT").await?,
             last_poc_submission_ts,
             poc_receipt_txn_tx,
         };
@@ -170,12 +170,10 @@ async fn handle_txn_submission(
         };
         if txn_service.submit(wrapped_txn.clone(), &hash).await.is_ok() {
             tracing::debug!("txn submitted successfully, hash: {:?}", hash_b64_url);
-            Some(wrapped_txn)
+            return Some(wrapped_txn);
         } else {
             tracing::warn!("txn submission failed!, hash: {:?}", hash_b64_url);
-            None
         }
-    } else {
-        None
     }
+    None
 }
