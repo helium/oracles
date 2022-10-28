@@ -16,7 +16,7 @@ const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 //    for that beacon, if a witness comes in after the beacon has been processed
 //    then it does not get verified as part of the overall POC but instead will
 //    end up being deemed stale )
-const BEACON_PROCESSING_DELAY: i32 = 60;
+const BEACON_PROCESSING_DELAY: i64 = 60;
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]

@@ -49,3 +49,22 @@ The verifier requires the following environmental variables:
 - `VERIFIER_BUCKET`: The S3 bucket to output the verified reports to
 - `ENTROPY_BUCKET`: The S3 bucket containing the input entropy reports
 
+
+## Tunable Consts
+
+The verifier requires the following consts to be sanely set and via which its operation can be tuned
+
+- `BEACON_INTERVAL` (runner) : Interval at which beaconers are permitted to beacon
+- `ENTROPY_LIFESPAN` (entropy) : The valid lifespan of a piece of entropy
+- `REPORTS_POLL_TIME` (loader) : The cadence at which S3 is queried for new beacon & witness reports
+- `ENTROPY_POLL_TIME` ( loader) : The cadence at which S3 is queried for new entropy reports
+- `MAX_REPORT_AGE` (loader) : The max age of beacon & witness reports to load from s3. Anything older will be ignored
+- `BEACON_MAX_RETRY_ATTEMPTS` (poc_report) : The max number of times the verifier will attempt to verify a beacon
+- `WITNESS_MAX_RETRY_ATTEMPTS` (poc_report) : The max number of times the verifier will attempt to verify a witness
+- `BEACON_PROCESSING_DELAY` (poc_report) : A period of time added to ENTROPY_LIFESPAN after when any associated beacons using the relevant entropy will become ready for verification
+- `POC_DISTANCE_LIMIT` (poc) : The max valid witness distance from the beaconer
+- `REPORT_STALE_PERIOD` ( purger) : Any beacon or witness report in the DB & not verified after this period will be deemed stale and purged
+- `ENTROPY_STALE_PERIOD( purger) : Any entropy report in the DB after this period will be deemed stale and purged
+- `DB_POLL_TIME` ( purger) : The cadence at which the DB is queried for stale reports
+- `DB_POLL_TIME` ( runner ) : The cadence at which the DB is queried for 'ready' POCs
+

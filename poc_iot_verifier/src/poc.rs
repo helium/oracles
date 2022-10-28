@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, Error, Result};
+use crate::{entropy::Entropy, entropy::ENTROPY_LIFESPAN, Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
@@ -20,9 +20,6 @@ pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
 pub const R: f64 = 6.371e6;
 
-/// measurement in seconds of an entropy
-/// TODO: determine a sane value here, set high for testing
-const ENTROPY_LIFESPAN: i64 = 60;
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 

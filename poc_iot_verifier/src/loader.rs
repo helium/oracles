@@ -13,18 +13,23 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKey;
-use helium_proto::EntropyReportV1;
 use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
-    Message,
+    EntropyReportV1, Message,
 };
 use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfoResolver};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
 
+/// cadence for how often to look for new beacon and witness reports from s3 bucket
 const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60);
+/// cadence for how often to look for new entropy reports from s3 bucket
 const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(90);
+/// max age in hours of reports loaded from S3 which will be processed
+/// any report older will be ignored
+const MAX_REPORT_AGE: i64 = 2;
+
 const LOADER_WORKERS: usize = 2;
 const STORE_WORKERS: usize = 5;
 // DB pool size if the store worker count multiplied by the number of file types
@@ -110,7 +115,7 @@ impl Loader {
     ) -> Result {
         // TODO: determine a sane value for oldest_event_time
         // events older than this will not be processed
-        let oldest_event_time = Utc::now() - Duration::hours(2);
+        let oldest_event_time = Utc::now() - Duration::hours(MAX_REPORT_AGE);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
             .unwrap_or(oldest_event_time)
@@ -159,7 +164,6 @@ impl Loader {
                 let packet_data = beacon.report.data.clone();
                 match self.check_valid_gateway(&beacon.report.pub_key).await {
                     true => {
-                        tracing::debug!("beacon data: {:?}", &packet_data);
                         Report::insert_into(
                             &self.pool,
                             beacon.ingest_id(),
@@ -188,7 +192,6 @@ impl Loader {
                 let packet_data = witness.report.data.clone();
                 match self.check_valid_gateway(&witness.report.pub_key).await {
                     true => {
-                        tracing::debug!("witness data: {:?}", &packet_data);
                         Report::insert_into(
                             &self.pool,
                             witness.ingest_id(),
