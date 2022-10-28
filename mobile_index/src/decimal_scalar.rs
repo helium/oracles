@@ -92,7 +92,7 @@ macro_rules! decimal_scalar {
                     data.set_scale($scale).unwrap();
                     return Self(data);
                 }
-                panic!("u64 could not be converted into Decimal")
+                panic!("i32 could not be converted into Decimal")
             }
         }
 
