@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+pub mod meta;
+
 /// A key-value pair that is stored in the metadata table.
 pub struct MetaValue<T> {
     key: String,
@@ -12,6 +14,8 @@ pub enum MetaError {
     SqlError(#[from] sqlx::Error),
     #[error("Failed to decode meta value")]
     DecodeError,
+    #[error("meta key not found {0}")]
+    NotFound(String),
 }
 
 impl<T> MetaValue<T> {
@@ -31,21 +35,6 @@ impl<T> MetaValue<T> {
     }
 }
 
-macro_rules! query_exec_timed {
-    ( $name:literal, $query:expr, $meth:ident, $exec:expr ) => {{
-        match poc_metrics::record_duration!(concat!($name, "_duration"), $query.$meth($exec).await) {
-            Ok(x) => {
-                metrics::increment_counter!(concat!($name, "_count"), "status" => "ok");
-                Ok(x)
-            }
-            Err(e) => {
-                metrics::increment_counter!(concat!($name, "_count"), "status" => "error");
-                Err(MetaError::SqlError(e))
-            }
-        }
-    }};
-}
-
 impl<T> MetaValue<T>
 where
     T: ToString,
@@ -54,17 +43,7 @@ where
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let query = sqlx::query(
-            r#"
-                insert into meta (key, value)
-                values ($1, $2)
-                on conflict (key) do update set
-                value = EXCLUDED.value;
-                "#,
-        )
-        .bind(&self.key)
-        .bind(self.value.to_string());
-        query_exec_timed!("db_store_metavalue_insert", query, execute, exec).map(|_| ())
+        meta::store(exec, &self.key, &self.value.to_string()).await
     }
 }
 
@@ -80,28 +59,23 @@ where
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Copy,
     {
-        let query = sqlx::query_scalar::<_, String>(
-            r#"
-            select value from meta where key = $1;
-            "#,
-        )
-        .bind(key);
-        let str_val = query_exec_timed!("db_store_metavalue_fetch", query, fetch_optional, exec)?;
+        let result: Result<String, MetaError> = meta::fetch::<String>(exec, key).await;
 
-        match str_val {
-            Some(str_val) => {
+        match result {
+            Ok(str_val) => {
                 let value = str_val.parse().map_err(|_| MetaError::DecodeError)?;
                 Ok(Self {
                     key: key.to_string(),
                     value,
                 })
             }
-            None => {
+            Err(MetaError::NotFound(_)) => {
                 let value = default_fn();
                 let res = Self::new(key, value);
                 res.insert(exec).await?;
                 Ok(res)
             }
+            Err(err) => Err(err),
         }
     }
 
@@ -109,17 +83,7 @@ where
     where
         E: sqlx::PgExecutor<'c>,
     {
-        let query = sqlx::query(
-            r#"
-            insert into meta (key, value) 
-            values ($1, $2) 
-            on conflict (key) do update set 
-            value = EXCLUDED.value;
-            "#,
-        )
-        .bind(&self.key)
-        .bind(new_val.to_string());
-        let _ = query_exec_timed!("db_store_metavalue_update", query, execute, exec)?;
+        meta::store(exec, &self.key, new_val.to_string()).await?;
         Ok(std::mem::replace(&mut self.value, new_val))
     }
 }
