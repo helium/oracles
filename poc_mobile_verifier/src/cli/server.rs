@@ -3,7 +3,6 @@ use crate::{
     verifier::{Verifier, VerifierDaemon},
 };
 use crate::{Result, Settings};
-use db_store::MetaValue;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
 
