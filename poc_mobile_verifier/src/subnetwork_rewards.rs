@@ -38,15 +38,20 @@ impl SubnetworkRewards {
                 .or_default() += heartbeat.reward_weight;
         }
 
-        for (pubkey, shares) in hotspot_shares.iter_mut() {
-            let speedmultiplier = speedtests
-                .get_average(pubkey)
-                .map_or(dec!(0.0), |avg| avg.reward_multiplier());
-            *shares *= speedmultiplier;
-        }
+        let filtered_shares = hotspot_shares
+            .into_iter()
+            .map(|(pubkey, mut shares)| {
+                let speedmultiplier = speedtests
+                    .get_average(&pubkey)
+                    .map_or(dec!(0.0), |avg| avg.reward_multiplier());
+                shares *= speedmultiplier;
+                (pubkey, shares)
+            })
+            .filter(|(_pubkey, shares)| shares > &dec!(0.0))
+            .collect();
 
         let (owner_shares, _missing_owner_shares) =
-            follower_service.owner_shares(hotspot_shares).await?;
+            follower_service.owner_shares(filtered_shares).await?;
 
         let owner_emissions =
             OwnerEmissions::new(owner_shares, epoch.start, epoch.end - epoch.start);
@@ -263,6 +268,9 @@ mod test {
         let owner3: PublicKey = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
             .parse()
             .expect("failed owner3 parse");
+        let owner4: PublicKey = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
+            .parse()
+            .expect("failed owner4 parse");
 
         // init hotspots
         let gw1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -286,6 +294,9 @@ mod test {
         let gw7: PublicKey = "11HdwRpQDrYM7LJtRGSzRF3vY2iwuumx1Z2MUhBYAVTwZdSh6Bi"
             .parse()
             .expect("failed gw7 parse");
+        let gw8: PublicKey = "112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ"
+            .parse()
+            .expect("failed gw8 parse");
 
         // link gws to owners
         let mut owners = HashMap::new();
@@ -296,6 +307,7 @@ mod test {
         owners.insert(gw5.clone(), owner2.clone());
         owners.insert(gw6.clone(), owner3.clone());
         owners.insert(gw7.clone(), owner3.clone());
+        owners.insert(gw8.clone(), owner4.clone());
         let resolver = MapResolver { owners };
 
         // init cells and cell_types
@@ -474,6 +486,7 @@ mod test {
         assert_eq!(*owner_rewards.get(&owner1).unwrap(), 99_715_099_715_100);
         assert_eq!(*owner_rewards.get(&owner2).unwrap(), 299_145_299_145_299);
         assert_eq!(*owner_rewards.get(&owner3).unwrap(), 17_806_267_806_268);
+        assert_eq!(owner_rewards.get(&owner4), None);
 
         let mut total = 0;
         for val in owner_rewards.values() {
