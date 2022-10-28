@@ -1,76 +1,49 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use crate::Result;
+use helium_crypto::PublicKey;
 use helium_proto::services::{
     follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
     Channel,
 };
-use lazy_static::lazy_static;
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::Serialize;
-
-use crate::{mobile::Mobile, Result};
-use helium_crypto::PublicKey;
 use std::collections::HashMap;
 
-/// Map from gw_public_key to accumulated_reward_weight (decimal)
-pub type HotspotShares = HashMap<PublicKey, Decimal>;
+/// Map from gw_public_key to accumulated reward shares
+pub type HotspotShares = HashMap<PublicKey, f64>;
 
-/// Map from owner_public_key to accumulated_reward_weight (decimal)
-pub type OwnerShares = HashMap<PublicKey, Decimal>;
+/// Map from owner_public_key to accumulated reward shares
+pub type OwnerShares = HashMap<PublicKey, f64>;
 
 /// Map from gw_public_key (without owners) to accumulated_reward_weight (decimal)
-pub type MissingOwnerShares = HashMap<PublicKey, Decimal>;
+pub type MissingOwnerShares = HashMap<PublicKey, f64>;
 
 /// Map from owner_public_key to accumulated_rewards (mobile)
 #[derive(Debug, Clone, Serialize)]
-pub struct OwnerEmissions(HashMap<PublicKey, Mobile>);
-
-// 100M genesis rewards per day
-const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
-
-lazy_static! {
-    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+pub struct OwnerEmissions {
+    emissions: HashMap<PublicKey, f64>,
 }
 
 impl OwnerEmissions {
-    pub fn new(owner_shares: OwnerShares, start: DateTime<Utc>, duration: Duration) -> Self {
-        let mut owner_emissions = HashMap::new();
-        let total_shares: Decimal = owner_shares.values().sum();
-        if total_shares > dec!(0) {
-            if let Some(actual_emissions) = get_scheduled_tokens(start, duration) {
-                let emissions_per_share = actual_emissions / total_shares;
-                for (owner, share) in owner_shares {
-                    owner_emissions.insert(owner, Mobile::from(share * emissions_per_share));
+    pub fn new(owner_shares: OwnerShares) -> Self {
+        let mut emissions = HashMap::new();
+        let total_shares: f64 = owner_shares.values().sum();
+        if total_shares > 0.0 {
+            for (owner, share) in owner_shares {
+                let reward_percent = share / total_shares;
+                if reward_percent.is_finite() {
+                    emissions.insert(owner, share / total_shares);
                 }
             }
         }
-        OwnerEmissions(owner_emissions)
+        OwnerEmissions { emissions }
     }
 
     #[allow(dead_code)]
-    pub fn total_emissions(&self) -> Mobile {
-        Mobile::from(
-            self.0
-                .values()
-                .fold(dec!(0), |acc, amt| acc + amt.into_inner()),
-        )
+    pub fn total_emissions(&self) -> f64 {
+        self.emissions.values().sum()
     }
 
-    pub fn into_inner(self) -> HashMap<PublicKey, Mobile> {
-        self.0
-    }
-}
-
-pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
-    if *GENESIS_START <= start {
-        // Get tokens from start - duration
-        Some(
-            (Decimal::from(GENESIS_REWARDS_PER_DAY)
-                / Decimal::from(Duration::hours(24).num_seconds()))
-                * Decimal::from(duration.num_seconds()),
-        )
-    } else {
-        None
+    pub fn into_iter(self) -> impl Iterator<Item = (PublicKey, f64)> {
+        self.emissions.into_iter()
     }
 }
 
@@ -174,11 +147,9 @@ mod test {
             .expect("unable to get owner_shares");
 
         let start = Utc::now();
-        let duration = chrono::Duration::hours(24);
-        let owner_emissions = OwnerEmissions::new(owner_shares, start, duration);
+        let owner_emissions = OwnerEmissions::new(owner_shares, start);
         let total_owner_emissions = owner_emissions.total_emissions();
 
-        // 100M in bones
-        assert_eq!(10000000000000000, u64::from(total_owner_emissions));
+        assert_eq!(1.0, total_owner_emissions);
     }
 }

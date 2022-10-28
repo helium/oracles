@@ -1,6 +1,4 @@
 use helium_proto::services::poc_mobile::CellType as CellTypeProto;
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::Serialize;
 
 pub const CELLTYPE_NOVA_436H: &str = "2AG32MBS3100196N";
@@ -30,13 +28,13 @@ impl CellType {
         }
     }
 
-    pub fn reward_weight(&self) -> Decimal {
+    pub fn reward_weight(&self) -> f64 {
         match self {
-            Self::Nova436H => dec!(4.0),
-            Self::Nova430I => dec!(2.5),
-            Self::Neutrino430 => dec!(1.0),
-            Self::SercommIndoor => dec!(1.0),
-            Self::SercommOutdoor => dec!(2.5),
+            Self::Nova436H => 4.0,
+            Self::Nova430I => 2.5,
+            Self::Neutrino430 => 1.0,
+            Self::SercommIndoor => 1.0,
+            Self::SercommOutdoor => 2.5,
         }
     }
 }

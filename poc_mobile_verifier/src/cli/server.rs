@@ -70,7 +70,7 @@ impl Cmd {
         // Subnetwork rewards
         let (subnet_rewards_tx, subnet_rewards_rx) = file_sink::message_channel(50);
         let mut subnet_rewards = file_sink::FileSinkBuilder::new(
-            FileType::SubnetworkRewards,
+            FileType::SubnetworkRewardShares,
             store_base_path,
             subnet_rewards_rx,
         )

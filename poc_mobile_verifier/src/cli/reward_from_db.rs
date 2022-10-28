@@ -1,6 +1,6 @@
 use crate::{
-    env_var, heartbeats::Heartbeats, reward_share::get_scheduled_tokens,
-    speedtests::SpeedtestAverages, subnetwork_rewards::SubnetworkRewards, Result,
+    env_var, heartbeats::Heartbeats, speedtests::SpeedtestAverages,
+    subnetwork_rewards::SubnetworkRewards, Result,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
@@ -28,8 +28,6 @@ impl Cmd {
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
-        let expected_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
-            .expect("Couldn't get expected rewards");
 
         let follower = follower::Client::new(
             Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
@@ -49,17 +47,17 @@ impl Cmd {
         let rewards =
             SubnetworkRewards::from_epoch(follower, &epoch, heartbeats, speedtests).await?;
 
-        let total_rewards = rewards
+        let sum_reward_percent = rewards
             .rewards
             .iter()
-            .fold(0, |acc, reward| acc + reward.amount);
-        let rewards: Vec<(PublicKey, u64)> = rewards
+            .fold(0.0, |acc, reward| acc + reward.reward_percent);
+        let rewards: Vec<(PublicKey, f64)> = rewards
             .rewards
             .iter()
             .map(|r| {
                 (
                     PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
-                    r.amount,
+                    r.reward_percent,
                 )
             })
             .collect();
@@ -68,8 +66,7 @@ impl Cmd {
             "{}",
             serde_json::to_string_pretty(&json!({
                 "rewards": rewards,
-                "total_rewards": total_rewards,
-                "expected_rewards": expected_rewards,
+                "sum_reward_percent": sum_reward_percent,
             }))?
         );
 

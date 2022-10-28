@@ -51,17 +51,18 @@ impl Cmd {
             .reward_epoch(&epoch, heartbeats.into_iter().collect(), speedtests)
             .await?;
 
-        let total_rewards = rewards
+        let reward_percent_sum = rewards
             .rewards
             .iter()
-            .fold(0, |acc, reward| acc + reward.amount);
-        let rewards: Vec<(PublicKey, u64)> = rewards
+            .fold(0.0, |acc, reward| acc + reward.reward_percent);
+
+        let rewards: Vec<(PublicKey, f64)> = rewards
             .rewards
             .iter()
             .map(|r| {
                 (
                     PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
-                    r.amount,
+                    r.reward_percent,
                 )
             })
             .collect();
@@ -70,9 +71,8 @@ impl Cmd {
             "{}",
             serde_json::to_string_pretty(&json!({
                 "rewards": rewards,
-                "total_rewards": total_rewards,
-            }))
-            .unwrap()
+                "reward_percent_sum": reward_percent_sum
+            }))?
         );
 
         Ok(())

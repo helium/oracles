@@ -1,26 +1,22 @@
 use crate::{
     error::Result,
     heartbeats::Heartbeats,
-    reward_share::{OwnerEmissions, OwnerResolver},
+    reward_share::{HotspotShares, OwnerEmissions, OwnerResolver},
     speedtests::SpeedtestAverages,
 };
 use chrono::{DateTime, Utc};
 use file_store::{file_sink, file_sink_write};
-use helium_crypto::PublicKey;
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
-use std::collections::HashMap;
 use std::ops::Range;
 use tokio::sync::oneshot;
 
 mod proto {
     pub use helium_proto::services::poc_mobile::*;
-    pub use helium_proto::{SubnetworkReward, SubnetworkRewards};
+    pub use helium_proto::{SubnetworkRewardShare, SubnetworkRewardShares};
 }
 
 pub struct SubnetworkRewards {
     pub epoch: Range<DateTime<Utc>>,
-    pub rewards: Vec<proto::SubnetworkReward>,
+    pub rewards: Vec<proto::SubnetworkRewardShare>,
 }
 
 impl SubnetworkRewards {
@@ -31,7 +27,7 @@ impl SubnetworkRewards {
         speedtests: SpeedtestAverages,
     ) -> Result<Self> {
         // Gather hotspot shares
-        let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
+        let mut hotspot_shares = HotspotShares::new();
         for heartbeat in heartbeats.into_iter() {
             *hotspot_shares
                 .entry(heartbeat.hotspot_key.clone())
@@ -43,37 +39,25 @@ impl SubnetworkRewards {
             .map(|(pubkey, mut shares)| {
                 let speedmultiplier = speedtests
                     .get_average(&pubkey)
-                    .map_or(dec!(0.0), |avg| avg.reward_multiplier());
+                    .map_or(0.0, |avg| avg.reward_multiplier());
                 shares *= speedmultiplier;
                 (pubkey, shares)
             })
-            .filter(|(_pubkey, shares)| shares > &dec!(0.0))
+            .filter(|(_, shares)| *shares > 0.0)
             .collect();
 
         let (owner_shares, _missing_owner_shares) =
             follower_service.owner_shares(filtered_shares).await?;
 
-        let owner_emissions =
-            OwnerEmissions::new(owner_shares, epoch.start, epoch.end - epoch.start);
-
-        let mut rewards = owner_emissions
-            .into_inner()
-            .into_iter()
-            .map(|(owner, amt)| proto::SubnetworkReward {
-                account: owner.to_vec(),
-                amount: u64::from(amt),
-            })
-            .collect::<Vec<_>>();
-
-        rewards.sort_by(|a, b| {
-            a.account
-                .cmp(&b.account)
-                .then_with(|| a.amount.cmp(&b.amount))
-        });
-
         Ok(Self {
             epoch: epoch.clone(),
-            rewards,
+            rewards: OwnerEmissions::new(owner_shares)
+                .into_iter()
+                .map(|(owner, reward_percent)| proto::SubnetworkRewardShare {
+                    account: owner.to_vec(),
+                    reward_percent,
+                })
+                .collect::<Vec<_>>(),
         })
     }
 
@@ -84,10 +68,10 @@ impl SubnetworkRewards {
         file_sink_write!(
             "subnet_rewards",
             subnet_rewards_tx,
-            proto::SubnetworkRewards {
+            proto::SubnetworkRewardShares {
                 start_epoch: self.epoch.start.timestamp() as u64,
                 end_epoch: self.epoch.end.timestamp() as u64,
-                rewards: self.rewards,
+                reward_shares: self.rewards,
             }
         )
         .await
@@ -122,7 +106,7 @@ mod test {
         mbps * 125000
     }
 
-    fn cell_type_weight(cbsd_id: &String) -> Decimal {
+    fn cell_type_weight(cbsd_id: &String) -> f64 {
         CellType::from_cbsd_id(cbsd_id)
             .expect("unable to get cell_type")
             .reward_weight()
@@ -249,7 +233,7 @@ mod test {
         .expect("Could not generate rewards")
         .rewards
         .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.amount))
+        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent))
         .collect();
 
         // The owner with two hotspots gets more rewards
@@ -480,18 +464,18 @@ mod test {
         .expect("failed to generate rewards")
         .rewards
         .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.amount))
+        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent))
         .collect();
 
-        assert_eq!(*owner_rewards.get(&owner1).unwrap(), 99_715_099_715_100);
-        assert_eq!(*owner_rewards.get(&owner2).unwrap(), 299_145_299_145_299);
-        assert_eq!(*owner_rewards.get(&owner3).unwrap(), 17_806_267_806_268);
+        assert_eq!(*owner_rewards.get(&owner1).unwrap(), 0.23931623931623933);
+        assert_eq!(*owner_rewards.get(&owner2).unwrap(), 0.717948717948718);
+        assert_eq!(*owner_rewards.get(&owner3).unwrap(), 0.042735042735042736);
         assert_eq!(owner_rewards.get(&owner4), None);
 
-        let mut total = 0;
+        let mut total = 0.0;
         for val in owner_rewards.values() {
             total += *val
         }
-        assert_eq!(total, 416_666_666_666_667); // total emissions for 1 hour
+        assert_eq!(total, 1.0);
     }
 }

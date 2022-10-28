@@ -3,7 +3,7 @@ use crate::{
     pending_txn::{PendingTxn, Status},
     traits::B64,
     txn_status::TxnStatus,
-    Error, Result,
+    Error, Mobile, Result,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::MetaValue;
@@ -21,14 +21,15 @@ use helium_proto::{
         Channel, Endpoint,
     },
     BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
-    SubnetworkReward, SubnetworkRewards,
+    SubnetworkReward, SubnetworkRewardShare, SubnetworkRewardShares,
 };
 use http::Uri;
 use node_follower::txn_service::TransactionService;
 use poc_metrics::record_duration;
+use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
-use std::{env, ops::Range, time::Duration as StdDuration};
+use std::{collections::HashMap, env, ops::Range, time::Duration as StdDuration};
 use tokio::time;
 use tonic::Streaming;
 
@@ -292,7 +293,7 @@ impl Server {
         let file_list = self
             .verifier_store
             .list_all(
-                FileType::SubnetworkRewards,
+                FileType::SubnetworkRewardShares,
                 time_range.start,
                 time_range.end,
             )
@@ -302,27 +303,54 @@ impl Server {
         let mut stream = self
             .verifier_store
             .source(stream::iter(file_list).map(Ok).boxed());
-        let mut rewards = vec![];
+        let mut rewards = HashMap::<_, Mobile>::new();
         while let Some(Ok(msg)) = stream.next().await {
-            let subnet_rewards = SubnetworkRewards::decode(msg);
-            if let Ok(subnet_rewards) = subnet_rewards {
-                // We only care that the verified epoch ends in our rewards epoch,
-                // so that we include verified epochs that straddle two rewards epochs.
-                if time_range.contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0)) {
-                    rewards.extend(subnet_rewards.rewards);
+            let reward_shares = SubnetworkRewardShares::decode(msg);
+            if let Ok(SubnetworkRewardShares {
+                start_epoch,
+                end_epoch,
+                reward_shares,
+            }) = reward_shares
+            {
+                let start = Utc.timestamp(start_epoch as i64, 0);
+                let end = Utc.timestamp(end_epoch as i64, 0);
+                if !time_range.contains(&end) {
+                    continue;
+                }
+                // TODO: Remove unwrap
+                let total_rewards = get_scheduled_tokens(start, end - start).unwrap();
+                for SubnetworkRewardShare {
+                    account,
+                    reward_percent,
+                } in reward_shares
+                {
+                    *rewards.entry(account).or_default() += Mobile::from(
+                        total_rewards * Decimal::try_from(reward_percent).unwrap_or_default(),
+                    );
                 }
             }
         }
 
-        if !rewards.is_empty() {
-            self.issue_rewards(rewards, reward_period).await?;
-            last_reward_end_time
-                .update(&self.pool, time_range.end.timestamp())
-                .await?;
-        } else {
+        if rewards.is_empty() {
             tracing::error!("cannot continue; unable to determine reward period!");
             return Err(Error::NotFound("invalid reward period".to_string()));
         }
+
+        let mut rewards = rewards
+            .into_iter()
+            .map(|(account, amount)| SubnetworkReward {
+                account,
+                amount: u64::from(amount),
+            })
+            .collect::<Vec<_>>();
+
+        rewards.sort_by(|a, b| a.account.cmp(&b.account));
+
+        self.issue_rewards(rewards, reward_period).await?;
+        last_reward_end_time
+            .update(&self.pool, time_range.end.timestamp())
+            .await?;
+
         Ok(())
     }
 
@@ -468,4 +496,24 @@ fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
     Ok(keypair.sign(&txn.encode_to_vec())?)
+}
+
+// 100M genesis rewards per day
+const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
+
+lazy_static::lazy_static! {
+    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+}
+
+pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
+    if *GENESIS_START <= start {
+        // Get tokens from start - duration
+        Some(
+            (Decimal::from(GENESIS_REWARDS_PER_DAY)
+                / Decimal::from(Duration::hours(24).num_seconds()))
+                * Decimal::from(duration.num_seconds()),
+        )
+    } else {
+        None
+    }
 }

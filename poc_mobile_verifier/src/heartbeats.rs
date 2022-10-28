@@ -11,15 +11,14 @@ use file_store::{
 use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
-use rust_decimal::{prelude::ToPrimitive, Decimal};
-use rust_decimal_macros::dec;
+use rust_decimal::prelude::ToPrimitive;
 use std::{collections::HashMap, ops::Range};
 
 #[derive(Clone)]
 pub struct Heartbeat {
     pub hotspot_key: PublicKey,
     pub cbsd_id: String,
-    pub reward_weight: Decimal,
+    pub reward_weight: f64,
     pub timestamp: NaiveDateTime,
     pub validity: proto::HeartbeatValidity,
 }
@@ -31,7 +30,7 @@ pub struct HeartbeatKey {
 }
 
 pub struct HeartbeatValue {
-    reward_weight: Decimal,
+    reward_weight: f64,
     timestamp: NaiveDateTime,
 }
 
@@ -48,7 +47,7 @@ impl Heartbeats {
         pub struct HeartbeatRow {
             pub hotspot_key: PublicKey,
             pub cbsd_id: String,
-            pub reward_weight: Decimal,
+            pub reward_weight: f64,
             pub timestamp: NaiveDateTime,
         }
 
@@ -153,7 +152,7 @@ impl Heartbeat {
                     let reward_weight = cell_type.reward_weight();
                     (reward_weight, proto::HeartbeatValidity::Valid)
                 }
-                Err(validity) => (dec!(0), validity),
+                Err(validity) => (0.0, validity),
             };
             heartbeats.push(Heartbeat {
                 hotspot_key: heartbeat_report.pubkey.clone(),

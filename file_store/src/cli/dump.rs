@@ -16,7 +16,7 @@ use helium_proto::{
             SpeedtestIngestReportV1, SpeedtestReqV1,
         },
     },
-    Message, SubnetworkRewards,
+    Message, SubnetworkRewardShares,
 };
 use serde_json::json;
 use std::io;
@@ -91,23 +91,20 @@ impl Cmd {
                     print_json(&json)?;
                     // wtr.serialize(LoraValidPoc::try_from(dec_msg)?)?;
                 }
-                FileType::SubnetworkRewards => {
-                    let proto_rewards = SubnetworkRewards::decode(msg)?.rewards;
-                    let total_rewards = proto_rewards
-                        .iter()
-                        .fold(0, |acc, reward| acc + reward.amount);
+                FileType::SubnetworkRewardShares => {
+                    let proto_rewards = SubnetworkRewardShares::decode(msg)?.reward_shares;
 
-                    let rewards: Vec<(PublicKey, u64)> = proto_rewards
+                    let rewards: Vec<(PublicKey, f64)> = proto_rewards
                         .iter()
                         .map(|r| {
                             (
                                 PublicKey::try_from(r.account.as_slice())
                                     .expect("unable to get public key"),
-                                r.amount,
+                                r.reward_percent,
                             )
                         })
                         .collect();
-                    print_json(&json!({ "rewards": rewards, "total_rewards": total_rewards }))?;
+                    print_json(&json!({ "rewards": rewards }))?;
                 }
                 FileType::SpeedtestAvg => {
                     let speedtest_avg = SpeedtestAvg::decode(msg)?;

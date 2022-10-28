@@ -1,7 +1,6 @@
 mod cell_type;
 mod error;
 mod heartbeats;
-mod mobile;
 mod reward_share;
 mod speedtests;
 
