@@ -9,7 +9,7 @@ pub struct Settings {
     /// "poc_ingest=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    /// Mode to run the server in (lora or mobile). Reuquired
+    /// Mode to run the server in (lora or mobile). Required
     pub mode: Mode,
     /// Listen address. Required. Default is 0.0.0.0:9081
     #[serde(default = "default_listen_addr")]
