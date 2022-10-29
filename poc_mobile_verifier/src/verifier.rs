@@ -83,8 +83,11 @@ impl VerifierDaemon {
             heartbeat.save(&mut transaction).await?;
         }
 
-        for speedtest in speedtests.into_iter() {
+        for speedtest in speedtests.clone().without_lapsed().into_iter() {
             speedtest.write(&self.speedtest_avg_tx).await?;
+        }
+
+        for speedtest in speedtests.into_iter() {
             speedtest.save(&mut transaction).await?;
         }
 
@@ -102,7 +105,11 @@ impl VerifierDaemon {
 
         let rewards = self
             .verifier
-            .reward_epoch(&scheduler.reward_period, heartbeats, speedtests)
+            .reward_epoch(
+                &scheduler.reward_period,
+                heartbeats,
+                speedtests.without_lapsed(),
+            )
             .await?;
 
         let mut transaction = self.pool.begin().await?;
