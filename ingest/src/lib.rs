@@ -10,12 +10,3 @@ pub use error::{Error, Result};
 pub use event_id::EventId;
 pub use imsi::Imsi;
 pub use settings::{Mode, Settings};
-
-use helium_crypto::Network;
-use std::{env, str::FromStr};
-
-pub fn required_network() -> Result<Network> {
-    env::var("REQUIRED_NETWORK")
-        .map_or_else(|_| Ok(Network::MainNet), |value| Network::from_str(&value))
-        .map_err(Error::from)
-}
