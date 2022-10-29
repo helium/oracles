@@ -1,6 +1,5 @@
 use crate::{
     entropy_generator::{Entropy, MessageReceiver, ENTROPY_TICK_TIME},
-    error::DecodeError,
     Error, Result,
 };
 use axum::{
@@ -23,11 +22,7 @@ pub struct ApiServer {
 }
 
 impl ApiServer {
-    pub async fn from_env(entropy_watch: MessageReceiver) -> Result<Self> {
-        let socket_addr_env =
-            std::env::var("API_SOCKET_ADDR").unwrap_or_else(|_| String::from("0.0.0.0:8080"));
-        let socket_addr: SocketAddr = socket_addr_env.parse().map_err(DecodeError::from)?;
-
+    pub async fn new(socket_addr: SocketAddr, entropy_watch: MessageReceiver) -> Result<Self> {
         let app = Router::new()
             // health
             .route("/health", get(empty_handler))

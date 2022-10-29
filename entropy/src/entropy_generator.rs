@@ -10,7 +10,6 @@ use jsonrpsee::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::env;
 use tokio::{sync::watch, time};
 
 pub const ENTROPY_TICK_TIME: time::Duration = time::Duration::from_secs(60);
@@ -70,11 +69,6 @@ pub struct EntropyGenerator {
 }
 
 impl EntropyGenerator {
-    pub async fn from_env() -> Result<Self> {
-        let url = env::var("ENTROPY_URL")?;
-        Self::new(url).await
-    }
-
     pub async fn new(url: impl AsRef<str>) -> Result<Self> {
         let client = HttpClientBuilder::default()
             .request_timeout(ENTROPY_TIMEOUT)

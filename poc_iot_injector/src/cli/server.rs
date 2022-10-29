@@ -1,4 +1,4 @@
-use crate::{keypair::load_from_file, mk_db_pool, server::Server, Result};
+use crate::{server::Server, Result, Settings};
 use tokio::signal;
 
 /// Start rewards server
@@ -6,12 +6,12 @@ use tokio::signal;
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result {
         // Install the prometheus metrics exporter
-        poc_metrics::install_metrics();
+        poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool
-        let pool = mk_db_pool(10).await?;
+        let pool = settings.database.connect(2).await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Configure shutdown trigger
@@ -21,13 +21,8 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
-        // injector server keypair from env
-        let poc_injector_kp_path =
-            std::env::var("POC_ORACLE_KEY").unwrap_or_else(|_| String::from("/tmp/poc_oracle_key"));
-        let poc_oracle_key = load_from_file(&poc_injector_kp_path)?;
-
         // poc_iot_injector server
-        let mut poc_iot_injector_server = Server::new(pool, poc_oracle_key).await?;
+        let mut poc_iot_injector_server = Server::new(settings).await?;
 
         poc_iot_injector_server
             .run(shutdown_listener.clone())

@@ -1,9 +1,8 @@
 use crate::{
     entropy::Entropy,
     meta::Meta,
-    mk_db_pool,
     poc_report::{Report, ReportType},
-    Result,
+    Result, Settings,
 };
 use chrono::{Duration, Utc};
 use futures::{stream, StreamExt};
@@ -39,11 +38,11 @@ pub struct Loader {
 }
 
 impl Loader {
-    pub async fn from_env() -> Result<Self> {
-        tracing::info!("from_env verifier loader");
-        let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
-        let ingest_store = FileStore::from_env_with_prefix("INGESTOR").await?;
-        let entropy_store = FileStore::from_env_with_prefix("ENTROPY").await?;
+    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+        tracing::info!("from_settings verifier loader");
+        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let ingest_store = FileStore::from_settings(&settings.ingest).await?;
+        let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         Ok(Self {
             pool,
             ingest_store,

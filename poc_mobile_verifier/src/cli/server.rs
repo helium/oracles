@@ -1,25 +1,16 @@
-use crate::Result;
 use crate::{
-    env_var,
     error::Error,
     verifier::{Verifier, VerifierDaemon},
 };
+use crate::{Result, Settings};
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
-use helium_proto::services::{follower, Endpoint, Uri};
-use sqlx::postgres::PgPoolOptions;
-
-use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
-
-pub const DEFAULT_REWARD_PERIOD_HOURS: i64 = 24;
-pub const DEFAULT_VERIFICATIONS_PER_PERIOD: i32 = 8;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(self) -> Result {
-        // install prometheus metrics exporter
+    pub async fn run(self, settings: &Settings) -> Result {
         poc_metrics::install_metrics();
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
@@ -28,21 +19,14 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
-        let db_connection_str = dotenv::var("DATABASE_URL")?;
-
-        let pool = PgPoolOptions::new()
-            .max_connections(10)
-            .connect(&db_connection_str)
-            .await?;
-
+        let pool = settings.database.connect(10).await?;
         sqlx::migrate!().run(&pool).await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
-            file_upload::FileUpload::from_env_with_prefix("OUTPUT", file_upload_rx).await?;
+            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
 
-        let store_path = dotenv::var("VERIFIER_STORE")?;
-        let store_base_path = std::path::Path::new(&store_path);
+        let store_base_path = std::path::Path::new(&settings.cache);
 
         // Heartbeats
         let (heartbeats_tx, heartbeats_rx) = file_sink::message_channel(50);
@@ -77,17 +61,11 @@ impl Cmd {
         .create()
         .await?;
 
-        let follower = follower::Client::new(
-            Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
-                .connect_timeout(CONNECT_TIMEOUT)
-                .timeout(RPC_TIMEOUT)
-                .connect_lazy(),
-        );
+        let follower = settings.follower.connect_follower()?;
 
-        let reward_period_hours = env_var("REWARD_PERIOD", DEFAULT_REWARD_PERIOD_HOURS)?;
-        let verifications_per_period =
-            env_var("VERIFICATIONS_PER_PERIOD", DEFAULT_VERIFICATIONS_PER_PERIOD)?;
-        let file_store = FileStore::from_env_with_prefix("INPUT").await?;
+        let reward_period_hours = settings.rewards;
+        let verifications_per_period = settings.verifications;
+        let file_store = FileStore::from_settings(&settings.ingest).await?;
 
         let verifier = Verifier::new(file_store, follower).await?;
 
@@ -106,7 +84,6 @@ impl Cmd {
             speedtest_avgs.run(&shutdown_listener).map_err(Error::from),
             subnet_rewards.run(&shutdown_listener).map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
-            // I don't _think_ that this needs to be in a task.
             verifier_daemon.run(&shutdown_listener),
         )?;
 

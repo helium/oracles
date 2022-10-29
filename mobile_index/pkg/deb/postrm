@@ -1,0 +1,3 @@
+rm -f /usr/local/bin/mobile-index
+
+#DEBHELPER#

@@ -4,8 +4,10 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("environment error")]
-    DotEnv(#[from] dotenv::Error),
+    #[error("config error")]
+    Config(#[from] config::ConfigError),
+    #[error("metrics error")]
+    Metrics(#[from] poc_metrics::Error),
     #[error("io error")]
     Io(#[from] std::io::Error),
     #[error("encode error")]
@@ -18,8 +20,6 @@ pub enum Error {
     Service(#[from] helium_proto::services::Error),
     #[error("store error")]
     Store(#[from] file_store::Error),
-    #[error("env error")]
-    Env(#[from] std::env::VarError),
     #[error("not found")]
     NotFound(String),
     #[error("crypto error")]

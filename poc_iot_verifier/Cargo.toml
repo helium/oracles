@@ -10,18 +10,18 @@ license.workspace = true
 cmake = "0.1"
 
 [dependencies]
-dotenv = {workspace = true}
+config = {workspace = true}
 clap = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
+http-serde = {workspace = true}
 sqlx = {workspace = true}
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 base64 = {workspace = true}
 sha2 = {workspace = true}
-http = {workspace = true}
 tonic = {workspace = true}
 triggered = {workspace = true}
 futures = {workspace = true}
@@ -32,6 +32,8 @@ helium-proto = { workspace = true }
 helium-crypto = {workspace = true }
 file-store = { path = "../file_store" }
 node-follower = { path = "../node_follower" }
+poc-metrics = { path = "../metrics" }
+db-store = {path = "../db_store"}
 async-trait = "*"
 h3ron = "*"
 geo-types = "*"

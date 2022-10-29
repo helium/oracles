@@ -8,10 +8,11 @@ license.workspace = true
 
 [dependencies]
 futures = {workspace = true}
+serde = {workspace = true}
+http-serde = {workspace = true}
 thiserror = {workspace = true}
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 http = {workspace = true}
 tonic = {workspace = true}
-dotenv = {workspace = true}
 async-trait = "*"

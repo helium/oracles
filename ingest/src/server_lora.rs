@@ -1,4 +1,4 @@
-use crate::{error::DecodeError, required_network, Error, EventId, Result};
+use crate::{required_network, Error, EventId, Result, Settings};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -8,9 +8,7 @@ use helium_proto::services::poc_lora::{
     self, LoraBeaconIngestReportV1, LoraBeaconReportReqV1, LoraBeaconReportRespV1,
     LoraWitnessIngestReportV1, LoraWitnessReportReqV1, LoraWitnessReportRespV1,
 };
-use std::convert::TryFrom;
-use std::env;
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::{convert::TryFrom, path::Path};
 use tonic::{transport, Request, Response, Status};
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
@@ -109,22 +107,15 @@ impl poc_lora::PocLora for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> Result {
-    let grpc_addr: SocketAddr = env::var("GRPC_SOCKET_ADDR")
-        .map_or_else(
-            |_| SocketAddr::from_str("0.0.0.0:9081"),
-            |str| SocketAddr::from_str(&str),
-        )
-        .map_err(DecodeError::from)?;
+pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result {
+    let grpc_addr = settings.listen_addr()?;
 
     // Initialize uploader
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
-        file_upload::FileUpload::from_env_with_prefix("INGESTOR", file_upload_rx).await?;
+        file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
 
-    let store_path =
-        std::env::var("INGEST_STORE").unwrap_or_else(|_| String::from("/var/data/ingestor"));
-    let store_base_path = Path::new(&store_path);
+    let store_base_path = Path::new(&settings.cache);
 
     // lora beacon reports
     let (lora_beacon_report_tx, lora_beacon_report_rx) = file_sink::message_channel(50);
@@ -151,9 +142,8 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     let grpc_server = GrpcServer::new(lora_beacon_report_tx, lora_witness_report_tx)?;
 
     tracing::info!(
-        "grpc listening on {} and server mode {}",
-        grpc_addr,
-        server_mode
+        "grpc listening on {grpc_addr} and server mode {:?}",
+        settings.mode
     );
 
     let server = transport::Server::builder()

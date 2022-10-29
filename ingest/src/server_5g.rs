@@ -1,4 +1,4 @@
-use crate::{error::DecodeError, required_network, Error, EventId, Result};
+use crate::{required_network, Error, EventId, Result, Settings};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -8,8 +8,7 @@ use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1,
 };
-use std::env;
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::path::Path;
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
@@ -107,22 +106,15 @@ impl poc_mobile::PocMobile for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> Result {
-    let grpc_addr: SocketAddr = env::var("GRPC_SOCKET_ADDR")
-        .map_or_else(
-            |_| SocketAddr::from_str("0.0.0.0:9081"),
-            |str| SocketAddr::from_str(&str),
-        )
-        .map_err(DecodeError::from)?;
+pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result {
+    let grpc_addr = settings.listen_addr()?;
 
     // Initialize uploader
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
-        file_upload::FileUpload::from_env_with_prefix("INGESTOR", file_upload_rx).await?;
+        file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
 
-    let store_path =
-        std::env::var("INGEST_STORE").unwrap_or_else(|_| String::from("/var/data/ingestor"));
-    let store_base_path = Path::new(&store_path);
+    let store_base_path = Path::new(&settings.cache);
 
     let (heartbeat_req_tx, heartbeat_req_rx) = file_sink::message_channel(50);
     let mut heartbeat_req_sink =
@@ -166,16 +158,19 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
         speedtest_report_tx,
     )?;
 
-    let api_token = std::env::var("API_TOKEN").map(|token| {
-        format!("Bearer {}", token)
-            .parse::<MetadataValue<_>>()
-            .unwrap()
-    })?;
+    let api_token = settings
+        .token
+        .as_ref()
+        .map(|token| {
+            format!("Bearer {}", token)
+                .parse::<MetadataValue<_>>()
+                .unwrap()
+        })
+        .ok_or_else(|| Error::not_found("expected api token in settings"))?;
 
     tracing::info!(
-        "grpc listening on {} and server mode {}",
-        grpc_addr,
-        server_mode
+        "grpc listening on {grpc_addr} and server mode {:?}",
+        settings.mode
     );
 
     //TODO start a service with either the poc mobile or poc lora endpoints only - not both

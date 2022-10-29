@@ -1,14 +1,10 @@
 use crate::{
-    env_var, heartbeats::Heartbeats, reward_share::get_scheduled_tokens,
-    speedtests::SpeedtestAverages, subnetwork_rewards::SubnetworkRewards, Result,
+    heartbeats::Heartbeats, reward_share::get_scheduled_tokens, speedtests::SpeedtestAverages,
+    subnetwork_rewards::SubnetworkRewards, Result, Settings,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
-use helium_proto::services::{follower, Endpoint, Uri};
 use serde_json::json;
-use sqlx::postgres::PgPoolOptions;
-
-use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
 /// Reward a period from the entries in the database
 #[derive(Debug, clap::Args)]
@@ -20,7 +16,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(self) -> Result {
+    pub async fn run(self, settings: &Settings) -> Result {
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);
@@ -31,18 +27,8 @@ impl Cmd {
         let expected_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
             .expect("Couldn't get expected rewards");
 
-        let follower = follower::Client::new(
-            Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
-                .connect_timeout(CONNECT_TIMEOUT)
-                .timeout(RPC_TIMEOUT)
-                .connect_lazy(),
-        );
-
-        let db_connection_str = dotenv::var("DATABASE_URL")?;
-        let pool = PgPoolOptions::new()
-            .max_connections(10)
-            .connect(&db_connection_str)
-            .await?;
+        let follower = settings.follower.connect_follower()?;
+        let pool = settings.database.connect(10).await?;
 
         let heartbeats = Heartbeats::validated(&pool, epoch.start).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;

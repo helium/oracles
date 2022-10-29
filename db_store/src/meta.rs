@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::MetaError;
+use crate::{Error, Result};
 
 macro_rules! query_exec_timed {
     ( $name:literal, $query:expr, $meth:ident, $exec:expr ) => {{
@@ -11,13 +11,13 @@ macro_rules! query_exec_timed {
             }
             Err(e) => {
                 metrics::increment_counter!(concat!($name, "_count"), "status" => "error");
-                Err(MetaError::SqlError(e))
+                Err(Error::SqlError(e))
             }
         }
     }};
 }
 
-pub async fn store<T>(exec: impl sqlx::PgExecutor<'_>, key: &str, value: T) -> Result<(), MetaError>
+pub async fn store<T>(exec: impl sqlx::PgExecutor<'_>, key: &str, value: T) -> Result
 where
     T: ToString,
 {
@@ -34,7 +34,7 @@ where
     query_exec_timed!("db_store_meta_store", query, execute, exec).map(|_| ())
 }
 
-pub async fn fetch<T>(exec: impl sqlx::PgExecutor<'_>, key: &str) -> Result<T, MetaError>
+pub async fn fetch<T>(exec: impl sqlx::PgExecutor<'_>, key: &str) -> Result<T>
 where
     T: FromStr,
 {
@@ -45,6 +45,6 @@ where
     )
     .bind(key);
     query_exec_timed!("db_store_meta_fetch", query, fetch_optional, exec)?
-        .ok_or_else(|| MetaError::NotFound(key.to_string()))
-        .and_then(|value| value.parse().map_err(|_| MetaError::DecodeError))
+        .ok_or_else(|| Error::NotFound(key.to_string()))
+        .and_then(|value| value.parse().map_err(|_| Error::DecodeError))
 }

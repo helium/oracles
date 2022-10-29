@@ -1,22 +1,15 @@
-use crate::{
-    error::DecodeError, keypair::Keypair, receipt_txn::handle_report_msg, Result, LOADER_WORKERS,
-    STORE_WORKERS,
-};
+use crate::{receipt_txn::handle_report_msg, Result, Settings, LOADER_WORKERS, STORE_WORKERS};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
+use helium_crypto::Keypair;
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn};
 use node_follower::txn_service::TransactionService;
 use sqlx::{Pool, Postgres};
-use std::{env, sync::Arc};
+use std::sync::Arc;
+use std::time::Duration as StdDuration;
 use tokio::time;
-
-// 30 mins
-pub const POC_IOT_TICK_TIME: time::Duration = time::Duration::from_secs(1800);
-// Epoch time in secs when we decide to activate this server. To be decided later before
-// activation.
-pub const DEFAULT_LAST_POC_SUBMISSION_TS_SECS: i64 = 0000000000;
 
 pub struct Server {
     pool: Pool<Postgres>,
@@ -24,27 +17,28 @@ pub struct Server {
     txn_service: TransactionService,
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
+    tick_time: StdDuration,
 }
 
 impl Server {
-    pub async fn new(pool: Pool<Postgres>, keypair: Keypair) -> Result<Self> {
-        let env_last_poc_submission_ts = env::var("LAST_POC_SUBMISSION_TS")
-            .unwrap_or_else(|_| DEFAULT_LAST_POC_SUBMISSION_TS_SECS.to_string())
-            .parse()
-            .map_err(DecodeError::from)?;
+    pub async fn new(settings: &Settings) -> Result<Self> {
+        let pool = settings.database.connect(10).await?;
+        let keypair = settings.keypair()?;
+        let tick_time = settings.trigger_interval();
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
             MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
-                env_last_poc_submission_ts
+                settings.last_poc_submission
             })
             .await?;
 
         let result = Self {
             pool: pool.clone(),
             keypair: Arc::new(keypair),
-            txn_service: TransactionService::from_env()?,
-            iot_verifier_store: FileStore::from_env().await?,
+            tick_time,
+            txn_service: TransactionService::from_settings(&settings.transactions)?,
+            iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
         };
         Ok(result)
@@ -52,7 +46,7 @@ impl Server {
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
         tracing::info!("starting poc-iot-injector server");
-        let mut poc_iot_timer = time::interval(POC_IOT_TICK_TIME);
+        let mut poc_iot_timer = time::interval(self.tick_time);
         poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {

@@ -1,6 +1,9 @@
 //! Common code shared between the reward and ingest servers.
 
+pub use error::{Error, Result};
 use metrics_exporter_prometheus::PrometheusBuilder;
+pub use settings::Settings;
+use std::result::Result as StdResult;
 use std::{
     future::Future,
     net::SocketAddr,
@@ -8,6 +11,17 @@ use std::{
     task::{Context, Poll},
 };
 use tower::{Layer, Service};
+
+mod error;
+pub mod settings;
+
+pub fn start_metrics(settings: &Settings) -> Result {
+    let socket: SocketAddr = settings.endpoint.parse()?;
+    PrometheusBuilder::new()
+        .with_http_listener(socket)
+        .install()?;
+    Ok(())
+}
 
 /// Install the Prometheus export gateway
 pub fn install_metrics() {
@@ -101,9 +115,9 @@ where
     type Response = S::Response;
     type Error = S::Error;
     type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+        Pin<Box<dyn Future<Output = StdResult<Self::Response, Self::Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<StdResult<(), Self::Error>> {
         self.inner.poll_ready(ctx)
     }
 

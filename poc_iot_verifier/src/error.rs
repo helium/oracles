@@ -4,8 +4,10 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("environment error")]
-    DotEnv(#[from] dotenv::Error),
+    #[error("config error")]
+    Config(#[from] config::ConfigError),
+    #[error("metrics error")]
+    Metrics(#[from] poc_metrics::Error),
     #[error("custom error")]
     Custom(String),
     #[error("sql error")]
@@ -30,6 +32,8 @@ pub enum Error {
     NotFound(String),
     #[error("base64 decode error")]
     Base64DecodeError(#[from] base64::DecodeError),
+    #[error("db error")]
+    DbError(#[from] db_store::Error),
     #[error("follower error")]
     Follower(#[from] node_follower::Error),
     #[error("h3ron error")]
@@ -42,8 +46,6 @@ pub enum Error {
 pub enum DecodeError {
     #[error("prost error")]
     Prost(#[from] helium_proto::DecodeError),
-    #[error("uri error")]
-    Uri(#[from] http::uri::InvalidUri),
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
     #[error("datetime error")]
@@ -90,15 +92,5 @@ from_err!(EncodeError, prost::EncodeError);
 from_err!(EncodeError, serde_json::Error);
 
 // Decode Errors
-from_err!(DecodeError, http::uri::InvalidUri);
 from_err!(DecodeError, prost::DecodeError);
 from_err!(DecodeError, chrono::ParseError);
-
-impl From<Error> for (http::StatusCode, String) {
-    fn from(v: Error) -> Self {
-        match v {
-            Error::NotFound(msg) => (http::StatusCode::NOT_FOUND, msg),
-            err => (http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
-        }
-    }
-}
