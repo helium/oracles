@@ -21,6 +21,7 @@ use std::{
 };
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
+const SPEEDTEST_LAPSE: i64 = 48;
 
 #[derive(Debug, Clone, Type)]
 #[sqlx(type_name = "speedtest")]
@@ -163,6 +164,28 @@ impl SpeedtestAverages {
         self.speedtests.get(pub_key).map(Average::from)
     }
 
+    pub fn without_lapsed(self) -> Self {
+        let mut speedtests = HashMap::new();
+
+        for (pubkey, window) in self.speedtests.into_iter() {
+            let mut contiguous_tests = VecDeque::new();
+            let mut window = window.iter().peekable();
+            while let Some(st) = window.next() {
+                match window.peek() {
+                    Some(next_st)
+                        if (st.timestamp - next_st.timestamp)
+                            > Duration::hours(SPEEDTEST_LAPSE) =>
+                    {
+                        break
+                    }
+                    _ => contiguous_tests.push_back(st.clone()),
+                }
+            }
+            speedtests.insert(pubkey.clone(), contiguous_tests);
+        }
+        Self { speedtests }
+    }
+
     pub async fn validated(
         exec: impl sqlx::PgExecutor<'_> + Copy,
         period_end: DateTime<Utc>,
@@ -172,7 +195,7 @@ impl SpeedtestAverages {
         let mut rows = sqlx::query_as::<_, SpeedtestRollingAverage>(
             "SELECT * FROM speedtests where latest_timestamp >= $1",
         )
-        .bind((period_end - Duration::hours(12)).naive_utc())
+        .bind((period_end - Duration::hours(SPEEDTEST_LAPSE)).naive_utc())
         .fetch(exec);
 
         while let Some(SpeedtestRollingAverage {
@@ -237,20 +260,11 @@ impl SpeedtestAverages {
 
             // If there are N speedtests in the window, remove the one in the front
             while window.len() >= SPEEDTEST_AVG_MAX_DATA_POINTS {
-                window.pop_front();
-            }
-
-            // If the duration between the last speedtest and the current is greater than
-            // 12 hours, then we clear the window.
-            if let Some(last_timestamp) = window.back().map(|b| b.timestamp) {
-                let duration_since = timestamp - last_timestamp;
-                if duration_since >= Duration::hours(12) {
-                    window.clear();
-                }
+                window.pop_back();
             }
 
             // Add the new speedtest to the back of the window
-            window.push_back(Speedtest {
+            window.push_front(Speedtest {
                 timestamp,
                 upload_speed,
                 download_speed,

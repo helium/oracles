@@ -28,7 +28,7 @@ impl SubnetworkRewards {
         mut follower_service: impl OwnerResolver,
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
-        speedtests: SpeedtestAverages,
+        _speedtests: SpeedtestAverages,
     ) -> Result<Self> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
@@ -38,20 +38,20 @@ impl SubnetworkRewards {
                 .or_default() += heartbeat.reward_weight;
         }
 
-        let filtered_shares = hotspot_shares
-            .into_iter()
-            .map(|(pubkey, mut shares)| {
-                let speedmultiplier = speedtests
-                    .get_average(&pubkey)
-                    .map_or(dec!(0.0), |avg| avg.reward_multiplier());
-                shares *= speedmultiplier;
-                (pubkey, shares)
-            })
-            .filter(|(_pubkey, shares)| shares > &dec!(0.0))
-            .collect();
+        // let filtered_shares = hotspot_shares
+        //     .into_iter()
+        //     .map(|(pubkey, mut shares)| {
+        //         let speedmultiplier = speedtests
+        //             .get_average(&pubkey)
+        //             .map_or(dec!(0.0), |avg| avg.reward_multiplier());
+        //         shares *= speedmultiplier;
+        //         (pubkey, shares)
+        //     })
+        //     .filter(|(_pubkey, shares)| shares > &dec!(0.0))
+        //     .collect();
 
         let (owner_shares, _missing_owner_shares) =
-            follower_service.owner_shares(filtered_shares).await?;
+            follower_service.owner_shares(hotspot_shares).await?; // <--- CHANGE HOTSPOT_SHARES BACK TO FILTERED_SHARES TO ENABLE
 
         let owner_emissions =
             OwnerEmissions::new(owner_shares, epoch.start, epoch.end - epoch.start);
@@ -256,6 +256,7 @@ mod test {
         assert!(owner_rewards.get(&owner1).unwrap() > owner_rewards.get(&owner2).unwrap());
     }
 
+    #[ignore]
     #[tokio::test]
     async fn reward_shares_with_speed_multiplier() {
         // init hotspots
