@@ -1,7 +1,10 @@
 use crate::{receipt_txn::handle_report_msg, Result, Settings, LOADER_WORKERS, STORE_WORKERS};
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use file_store::{FileStore, FileType};
-use futures::stream::{self, StreamExt};
+use futures::{
+    stream::{self, StreamExt},
+    TryStreamExt,
+};
 use helium_crypto::Keypair;
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn, Message};
 use std::sync::Arc;
@@ -35,22 +38,24 @@ impl Cmd {
 
         store
             .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
-            .for_each_concurrent(STORE_WORKERS, |msg| {
+            .try_for_each_concurrent(STORE_WORKERS, |msg| {
                 let shared_key_clone = shared_key.clone();
                 async move {
-                    match msg {
-                        Ok(m) => process_msg(m, shared_key_clone, before_ts).await,
-                        Err(e) => tracing::error!("unable to process msg due to: {:?}", e),
-                    }
+                    let _ = process_msg(msg, shared_key_clone, before_ts).await;
+                    Ok(())
                 }
             })
-            .await;
+            .await?;
 
         Ok(())
     }
 }
 
-async fn process_msg(msg: prost::bytes::BytesMut, shared_key_clone: Arc<Keypair>, before_ts: i64) {
+async fn process_msg(
+    msg: prost::bytes::BytesMut,
+    shared_key_clone: Arc<Keypair>,
+    before_ts: i64,
+) -> Result<()> {
     if let Ok(Some((txn, _hash, _hash_b64_url))) =
         handle_report_msg(msg.clone(), shared_key_clone, before_ts)
     {
@@ -62,4 +67,5 @@ async fn process_msg(msg: prost::bytes::BytesMut, shared_key_clone: Arc<Keypair>
     } else {
         tracing::error!("unable to construct txn for msg {:?}", msg)
     }
+    Ok(())
 }

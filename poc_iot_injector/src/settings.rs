@@ -1,5 +1,6 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
+use file_store::file_sink;
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
@@ -22,6 +23,9 @@ pub struct Settings {
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,
+    /// Local folder for storing intermediate files
+    pub cache: String,
+    pub output: file_store::Settings,
 }
 
 pub fn default_log() -> String {
@@ -67,5 +71,11 @@ impl Settings {
 
     pub fn trigger_interval(&self) -> Duration {
         Duration::from_secs(self.trigger)
+    }
+
+    pub fn receipt_sender_receiver(
+        &self,
+    ) -> (file_sink::MessageSender, file_sink::MessageReceiver) {
+        file_sink::message_channel(50)
     }
 }
