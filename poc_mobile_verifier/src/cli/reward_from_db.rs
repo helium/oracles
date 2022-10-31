@@ -1,6 +1,9 @@
 use crate::{
-    heartbeats::Heartbeats, reward_share::get_scheduled_tokens, speedtests::SpeedtestAverages,
-    subnetwork_rewards::SubnetworkRewards, Result, Settings,
+    heartbeats::Heartbeats,
+    reward_share::get_scheduled_tokens,
+    speedtests::{Average, SpeedtestAverages},
+    subnetwork_rewards::SubnetworkRewards,
+    Result, Settings,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
@@ -33,12 +36,17 @@ impl Cmd {
         let heartbeats = Heartbeats::validated(&pool, epoch.start).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
         let rewards =
-            SubnetworkRewards::from_epoch(follower, &epoch, heartbeats, speedtests).await?;
+            SubnetworkRewards::from_epoch(follower, &epoch, heartbeats, speedtests.clone()).await?;
 
         let total_rewards = rewards
             .rewards
             .iter()
             .fold(0, |acc, reward| acc + reward.amount);
+        let speedtest_multipliers: Vec<_> = speedtests
+            .speedtests
+            .into_iter()
+            .map(|(pub_key, avg)| (pub_key, Average::from(&avg).reward_multiplier()))
+            .collect();
         let rewards: Vec<(PublicKey, u64)> = rewards
             .rewards
             .iter()
@@ -53,6 +61,7 @@ impl Cmd {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
+                "speedtest_multipliers": speedtest_multipliers,
                 "rewards": rewards,
                 "total_rewards": total_rewards,
                 "expected_rewards": expected_rewards,
