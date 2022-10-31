@@ -6,13 +6,13 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use file_store::{file_sink, file_sink_write};
+use rust_decimal_macros::dec;
 use std::ops::Range;
 use tokio::sync::oneshot;
-use rust_decimal_macros::dec;
 
 mod proto {
-    pub use helium_proto::Decimal;
     pub use helium_proto::services::poc_mobile::*;
+    pub use helium_proto::Decimal;
     pub use helium_proto::{SubnetworkRewardShare, SubnetworkRewardShares};
 }
 
@@ -91,9 +91,9 @@ mod test {
     };
     use chrono::{Duration, NaiveDateTime, Utc};
     use helium_crypto::PublicKey;
+    use helium_proto::services::poc_mobile::HeartbeatValidity;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
-    use helium_proto::services::poc_mobile::HeartbeatValidity;
     use std::collections::{HashMap, VecDeque};
 
     struct MapResolver {
@@ -238,7 +238,12 @@ mod test {
         .expect("Could not generate rewards")
         .rewards
         .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent.map(Decimal::from).unwrap_or_default()))
+        .map(|p| {
+            (
+                PublicKey::try_from(p.account).unwrap(),
+                p.reward_percent.map(Decimal::from).unwrap_or_default(),
+            )
+        })
         .collect();
 
         assert!(owner_rewards.get(&owner1).unwrap() > owner_rewards.get(&owner2).unwrap());
@@ -468,18 +473,33 @@ mod test {
         .expect("failed to generate rewards")
         .rewards
         .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent.map(Decimal::from).unwrap_or_default()))
+        .map(|p| {
+            (
+                PublicKey::try_from(p.account).unwrap(),
+                p.reward_percent.map(Decimal::from).unwrap_or_default(),
+            )
+        })
         .collect();
 
-        assert_eq!(*owner_rewards.get(&owner1).unwrap(), dec!(0.2393162393162393162393162393));
-        assert_eq!(*owner_rewards.get(&owner2).unwrap(), dec!(0.7179487179487179487179487179));
-        assert_eq!(*owner_rewards.get(&owner3).unwrap(), dec!(0.0427350427350427350427350427));
+        assert_eq!(
+            *owner_rewards.get(&owner1).unwrap(),
+            dec!(0.2393162393162393162393162393)
+        );
+        assert_eq!(
+            *owner_rewards.get(&owner2).unwrap(),
+            dec!(0.7179487179487179487179487179)
+        );
+        assert_eq!(
+            *owner_rewards.get(&owner3).unwrap(),
+            dec!(0.0427350427350427350427350427)
+        );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let mut total = dec!(0.0);
         for val in owner_rewards.values() {
             total += val;
         }
-        assert_eq!(total, dec!(1.0));
+        let diff = (total - dec!(1.0)).abs();
+        assert!(diff <= dec!(0.0000000000000000000000000001));
     }
 }
