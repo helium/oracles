@@ -8,8 +8,10 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink, file_sink_write};
 use std::ops::Range;
 use tokio::sync::oneshot;
+use rust_decimal_macros::dec;
 
 mod proto {
+    pub use helium_proto::Decimal;
     pub use helium_proto::services::poc_mobile::*;
     pub use helium_proto::{SubnetworkRewardShare, SubnetworkRewardShares};
 }
@@ -39,11 +41,11 @@ impl SubnetworkRewards {
             .map(|(pubkey, mut shares)| {
                 let speedmultiplier = speedtests
                     .get_average(&pubkey)
-                    .map_or(0.0, |avg| avg.reward_multiplier());
+                    .map_or(dec!(0.0), |avg| avg.reward_multiplier());
                 shares *= speedmultiplier;
                 (pubkey, shares)
             })
-            .filter(|(_, shares)| *shares > 0.0)
+            .filter(|(_, shares)| *shares > dec!(0.0))
             .collect();
 
         let (owner_shares, _missing_owner_shares) =
@@ -55,7 +57,7 @@ impl SubnetworkRewards {
                 .into_iter()
                 .map(|(owner, reward_percent)| proto::SubnetworkRewardShare {
                     account: owner.to_vec(),
-                    reward_percent,
+                    reward_percent: Some(proto::Decimal::from(reward_percent)),
                 })
                 .collect::<Vec<_>>(),
         })
@@ -88,6 +90,9 @@ mod test {
         speedtests::{Speedtest, SpeedtestAverages},
     };
     use chrono::{Duration, NaiveDateTime, Utc};
+    use helium_crypto::PublicKey;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
     use helium_proto::services::poc_mobile::HeartbeatValidity;
     use std::collections::{HashMap, VecDeque};
 
@@ -106,7 +111,7 @@ mod test {
         mbps * 125000
     }
 
-    fn cell_type_weight(cbsd_id: &String) -> f64 {
+    fn cell_type_weight(cbsd_id: &String) -> Decimal {
         CellType::from_cbsd_id(cbsd_id)
             .expect("unable to get cell_type")
             .reward_weight()
@@ -233,10 +238,9 @@ mod test {
         .expect("Could not generate rewards")
         .rewards
         .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent))
+        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent.map(Decimal::from).unwrap_or_default()))
         .collect();
 
-        // The owner with two hotspots gets more rewards
         assert!(owner_rewards.get(&owner1).unwrap() > owner_rewards.get(&owner2).unwrap());
     }
 
@@ -464,18 +468,18 @@ mod test {
         .expect("failed to generate rewards")
         .rewards
         .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent))
+        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.reward_percent.map(Decimal::from).unwrap_or_default()))
         .collect();
 
-        assert_eq!(*owner_rewards.get(&owner1).unwrap(), 0.23931623931623933);
-        assert_eq!(*owner_rewards.get(&owner2).unwrap(), 0.717948717948718);
-        assert_eq!(*owner_rewards.get(&owner3).unwrap(), 0.042735042735042736);
+        assert_eq!(*owner_rewards.get(&owner1).unwrap(), dec!(0.2393162393162393162393162393));
+        assert_eq!(*owner_rewards.get(&owner2).unwrap(), dec!(0.7179487179487179487179487179));
+        assert_eq!(*owner_rewards.get(&owner3).unwrap(), dec!(0.0427350427350427350427350427));
         assert_eq!(owner_rewards.get(&owner4), None);
 
-        let mut total = 0.0;
+        let mut total = dec!(0.0);
         for val in owner_rewards.values() {
-            total += *val
+            total += val;
         }
-        assert_eq!(total, 1.0);
+        assert_eq!(total, dec!(1.0));
     }
 }

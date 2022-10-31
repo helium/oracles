@@ -6,6 +6,8 @@ use file_store::{
     traits::{MsgDecode, TimestampEncode},
     FileStore, FileType,
 };
+use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal_macros::dec;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
@@ -95,7 +97,7 @@ impl SpeedtestRollingAverage {
         // Write out the speedtests to S3
         let average = Average::from(&self.speedtests);
         let validity = average.validity() as i32;
-        let reward_multiplier = average.reward_multiplier() as f32;
+        let reward_multiplier = average.reward_multiplier().to_f32().unwrap_or_default();
         let Average {
             upload_speed_avg_bps,
             download_speed_avg_bps,
@@ -335,7 +337,7 @@ impl Average {
         }
     }
 
-    pub fn reward_multiplier(&self) -> f64 {
+    pub fn reward_multiplier(&self) -> Decimal {
         self.tier().into_multiplier()
     }
 }
@@ -353,12 +355,12 @@ pub enum SpeedtestTier {
 }
 
 impl SpeedtestTier {
-    fn into_multiplier(self) -> f64 {
+    fn into_multiplier(self) -> Decimal {
         match self {
-            Self::Acceptable => 1.0,
-            Self::Degraded => 0.5,
-            Self::Poor => 0.25,
-            Self::Failed => 0.0,
+            Self::Acceptable => dec!(1.0),
+            Self::Degraded => dec!(0.5),
+            Self::Poor => dec!(0.25),
+            Self::Failed => dec!(0.0),
         }
     }
 

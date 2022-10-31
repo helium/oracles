@@ -6,43 +6,42 @@ use helium_proto::services::{
 };
 use serde::Serialize;
 use std::collections::HashMap;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 /// Map from gw_public_key to accumulated reward shares
-pub type HotspotShares = HashMap<PublicKey, f64>;
+pub type HotspotShares = HashMap<PublicKey, Decimal>;
 
 /// Map from owner_public_key to accumulated reward shares
-pub type OwnerShares = HashMap<PublicKey, f64>;
+pub type OwnerShares = HashMap<PublicKey, Decimal>;
 
 /// Map from gw_public_key (without owners) to accumulated_reward_weight (decimal)
-pub type MissingOwnerShares = HashMap<PublicKey, f64>;
+pub type MissingOwnerShares = HashMap<PublicKey, Decimal>;
 
 /// Map from owner_public_key to accumulated_rewards (mobile)
 #[derive(Debug, Clone, Serialize)]
 pub struct OwnerEmissions {
-    emissions: HashMap<PublicKey, f64>,
+    emissions: HashMap<PublicKey, Decimal>,
 }
 
 impl OwnerEmissions {
     pub fn new(owner_shares: OwnerShares) -> Self {
         let mut emissions = HashMap::new();
-        let total_shares: f64 = owner_shares.values().sum();
-        if total_shares > 0.0 {
+        let total_shares: Decimal = owner_shares.values().sum();
+        if total_shares > dec!(0.0) {
             for (owner, share) in owner_shares {
-                let reward_percent = share / total_shares;
-                if reward_percent.is_finite() {
-                    emissions.insert(owner, share / total_shares);
-                }
+                emissions.insert(owner, share / total_shares);
             }
         }
         OwnerEmissions { emissions }
     }
 
     #[allow(dead_code)]
-    pub fn total_emissions(&self) -> f64 {
+    pub fn total_emissions(&self) -> Decimal {
         self.emissions.values().sum()
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = (PublicKey, f64)> {
+    pub fn into_iter(self) -> impl Iterator<Item = (PublicKey, Decimal)> {
         self.emissions.into_iter()
     }
 }
@@ -92,6 +91,7 @@ mod test {
     use async_trait::async_trait;
     use helium_crypto::PublicKey;
     use std::str::FromStr;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -146,10 +146,9 @@ mod test {
             .await
             .expect("unable to get owner_shares");
 
-        let start = Utc::now();
-        let owner_emissions = OwnerEmissions::new(owner_shares, start);
+        let owner_emissions = OwnerEmissions::new(owner_shares);
         let total_owner_emissions = owner_emissions.total_emissions();
 
-        assert_eq!(1.0, total_owner_emissions);
+        assert_eq!(dec!(1.0), total_owner_emissions);
     }
 }

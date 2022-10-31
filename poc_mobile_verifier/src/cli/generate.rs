@@ -9,6 +9,8 @@ use file_store::FileStore;
 use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
 use serde_json::json;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
@@ -54,15 +56,15 @@ impl Cmd {
         let reward_percent_sum = rewards
             .rewards
             .iter()
-            .fold(0.0, |acc, reward| acc + reward.reward_percent);
+            .fold(dec!(0.0), |acc, reward| acc + reward.reward_percent.clone().map(Decimal::from).unwrap_or_default());
 
-        let rewards: Vec<(PublicKey, f64)> = rewards
+        let rewards: Vec<(PublicKey, _)> = rewards
             .rewards
-            .iter()
+            .into_iter()
             .map(|r| {
                 (
                     PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
-                    r.reward_percent,
+                    r.reward_percent.map(Decimal::from).unwrap_or_default(),
                 )
             })
             .collect();

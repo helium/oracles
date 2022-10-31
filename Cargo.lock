@@ -1527,12 +1527,12 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=map/reward-percent#87c5e30048b1de33375db05c22c1fae3220fa269"
 dependencies = [
  "bytes",
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+ "rust_decimal",
  "serde",
  "serde_derive",
  "serde_json",

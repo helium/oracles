@@ -94,13 +94,13 @@ impl Cmd {
                 FileType::SubnetworkRewardShares => {
                     let proto_rewards = SubnetworkRewardShares::decode(msg)?.reward_shares;
 
-                    let rewards: Vec<(PublicKey, f64)> = proto_rewards
-                        .iter()
+                    let rewards: Vec<(PublicKey, _)> = proto_rewards
+                        .into_iter()
                         .map(|r| {
                             (
                                 PublicKey::try_from(r.account.as_slice())
                                     .expect("unable to get public key"),
-                                r.reward_percent,
+                                r.reward_percent.unwrap_or_default(),
                             )
                         })
                         .collect();
