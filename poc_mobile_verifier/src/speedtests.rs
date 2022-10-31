@@ -154,7 +154,7 @@ impl SpeedtestAverages {
                 // window is guaranteed to be non-empty. For safety, we set the
                 // latest timestamp to epoch.
                 latest_timestamp: window
-                    .back()
+                    .front()
                     .map_or_else(NaiveDateTime::default, |st| st.timestamp),
                 speedtests: Vec::from(window),
             })
