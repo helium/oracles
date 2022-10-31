@@ -4,10 +4,10 @@ use helium_proto::services::{
     follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
     Channel,
 };
-use serde::Serialize;
-use std::collections::HashMap;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::Serialize;
+use std::collections::HashMap;
 
 /// Map from gw_public_key to accumulated reward shares
 pub type HotspotShares = HashMap<PublicKey, Decimal>;
@@ -90,8 +90,8 @@ mod test {
     use crate::cell_type::CellType;
     use async_trait::async_trait;
     use helium_crypto::PublicKey;
-    use std::str::FromStr;
     use rust_decimal_macros::dec;
+    use std::str::FromStr;
 
     use super::*;
 

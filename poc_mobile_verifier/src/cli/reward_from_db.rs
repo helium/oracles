@@ -5,10 +5,10 @@ use crate::{
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
-use serde_json::json;
-use sqlx::postgres::PgPoolOptions;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde_json::json;
+use sqlx::postgres::PgPoolOptions;
 
 use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
@@ -49,10 +49,13 @@ impl Cmd {
         let rewards =
             SubnetworkRewards::from_epoch(follower, &epoch, heartbeats, speedtests).await?;
 
-        let sum_reward_percent = rewards
-            .rewards
-            .iter()
-            .fold(dec!(0.0), |acc, reward| acc + reward.reward_percent.clone().map(Decimal::from).unwrap_or_default());
+        let sum_reward_percent = rewards.rewards.iter().fold(dec!(0.0), |acc, reward| {
+            acc + reward
+                .reward_percent
+                .clone()
+                .map(Decimal::from)
+                .unwrap_or_default()
+        });
         let rewards: Vec<(PublicKey, _)> = rewards
             .rewards
             .into_iter()

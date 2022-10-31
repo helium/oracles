@@ -1,7 +1,7 @@
 use helium_proto::services::poc_mobile::CellType as CellTypeProto;
-use serde::Serialize;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::Serialize;
 
 pub const CELLTYPE_NOVA_436H: &str = "2AG32MBS3100196N";
 pub const CELLTYPE_NOVA_430I: &str = "2AG32PBS3101S";

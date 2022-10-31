@@ -8,9 +8,9 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use helium_crypto::PublicKey;
 use helium_proto::services::{follower, Endpoint, Uri};
-use serde_json::json;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde_json::json;
 
 use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
@@ -53,10 +53,13 @@ impl Cmd {
             .reward_epoch(&epoch, heartbeats.into_iter().collect(), speedtests)
             .await?;
 
-        let reward_percent_sum = rewards
-            .rewards
-            .iter()
-            .fold(dec!(0.0), |acc, reward| acc + reward.reward_percent.clone().map(Decimal::from).unwrap_or_default());
+        let reward_percent_sum = rewards.rewards.iter().fold(dec!(0.0), |acc, reward| {
+            acc + reward
+                .reward_percent
+                .clone()
+                .map(Decimal::from)
+                .unwrap_or_default()
+        });
 
         let rewards: Vec<(PublicKey, _)> = rewards
             .rewards
