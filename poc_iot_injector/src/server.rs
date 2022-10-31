@@ -27,7 +27,7 @@ impl Server {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
-        let (receipt_sender, _) = settings.receipt_sender_receiver();
+        let (receipt_sender, _) = file_sink::message_channel(50);
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =

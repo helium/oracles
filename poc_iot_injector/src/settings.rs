@@ -1,6 +1,5 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
-use file_store::file_sink;
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
@@ -71,11 +70,5 @@ impl Settings {
 
     pub fn trigger_interval(&self) -> Duration {
         Duration::from_secs(self.trigger)
-    }
-
-    pub fn receipt_sender_receiver(
-        &self,
-    ) -> (file_sink::MessageSender, file_sink::MessageReceiver) {
-        file_sink::message_channel(50)
     }
 }
