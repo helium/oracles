@@ -157,7 +157,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         speedtest_req_tx,
         heartbeat_report_tx,
         speedtest_report_tx,
-        settings.required_network()?,
+        settings.network,
     )?;
 
     let api_token = settings

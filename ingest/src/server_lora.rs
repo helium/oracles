@@ -143,7 +143,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     let grpc_server = GrpcServer::new(
         lora_beacon_report_tx,
         lora_witness_report_tx,
-        settings.required_network()?,
+        settings.network,
     )?;
 
     tracing::info!(
