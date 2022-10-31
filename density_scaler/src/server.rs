@@ -2,7 +2,7 @@ use crate::{
     error::DecodeError,
     hex::{compute_scaling_map, GlobalHexMap, ScalingMap},
     query::{QueryMsg, QueryReceiver},
-    Result,
+    Result, Settings,
 };
 use chrono::Duration;
 use futures::stream::StreamExt;
@@ -19,6 +19,14 @@ pub struct Server {
 }
 
 impl Server {
+    pub fn from_settings(settings: Settings) -> Result<Self> {
+        Ok(Self {
+            scaling_map: ScalingMap::new(),
+            follower: FollowerService::from_settings(&settings.follower)?,
+            trigger_interval: Duration::seconds(settings.trigger),
+        })
+    }
+
     pub fn new(follower: FollowerService) -> Result<Self> {
         let result = Self {
             scaling_map: ScalingMap::new(),

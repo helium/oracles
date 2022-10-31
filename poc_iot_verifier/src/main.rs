@@ -69,10 +69,16 @@ impl Server {
         let loader = loader::Loader::from_settings(settings).await?;
         let runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
+
+        // TODO: Construct density_scaler settings from verifier settings?
+        // let ds_settings = density_scaler::Settings::from(settings);
+        // let density_scaler = density_scaler::Server::from_settings(ds_settings)?;
+
         tokio::try_join!(
             runner.run(&shutdown),
             loader.run(&shutdown),
-            purger.run(&shutdown)
+            purger.run(&shutdown),
+            // density_scaler.run(&shutdown)
         )
         .map(|_| ())
     }

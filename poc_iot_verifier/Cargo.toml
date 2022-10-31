@@ -34,6 +34,7 @@ file-store = { path = "../file_store" }
 node-follower = { path = "../node_follower" }
 poc-metrics = { path = "../metrics" }
 db-store = {path = "../db_store"}
+density-scaler = {path = "../density_scaler"}
 async-trait = "*"
 h3ron = "*"
 geo-types = "*"
