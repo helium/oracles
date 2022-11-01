@@ -1,5 +1,6 @@
 use crate::{error::DecodeError, Error, Result};
 use config::{Config, Environment, File};
+use helium_crypto::Network;
 use serde::Deserialize;
 use std::{net::SocketAddr, path::Path, str::FromStr};
 
@@ -16,6 +17,8 @@ pub struct Settings {
     pub listen: String,
     /// Local folder for storing intermediate files
     pub cache: String,
+    /// Network required in all public keys:  mainnet | testnet
+    pub network: Network,
     /// Settings for exposed public API
     /// Target bucket for uploads
     pub output: file_store::Settings,

@@ -1,4 +1,4 @@
-use crate::{required_network, Error, EventId, Result, Settings};
+use crate::{Error, EventId, Result, Settings};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -23,11 +23,12 @@ impl GrpcServer {
     fn new(
         lora_beacon_report_tx: file_sink::MessageSender,
         lora_witness_report_tx: file_sink::MessageSender,
+        required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
             lora_beacon_report_tx,
             lora_witness_report_tx,
-            required_network: required_network()?,
+            required_network,
         })
     }
 
@@ -139,7 +140,11 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     .create()
     .await?;
 
-    let grpc_server = GrpcServer::new(lora_beacon_report_tx, lora_witness_report_tx)?;
+    let grpc_server = GrpcServer::new(
+        lora_beacon_report_tx,
+        lora_witness_report_tx,
+        settings.network,
+    )?;
 
     tracing::info!(
         "grpc listening on {grpc_addr} and server mode {:?}",

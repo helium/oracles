@@ -1604,17 +1604,18 @@ dependencies = [
 
 [[package]]
 name = "helium-crypto"
-version = "0.4.4"
-source = "git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4#ba0ad9892d0485d14f1a94ba54ac5f24c7d18284"
+version = "0.5.0"
+source = "git+https://github.com/helium/helium-crypto-rs?tag=v0.5.0#b0bd7910b7d6065d60c90465c5d679f54280470b"
 dependencies = [
  "base64",
  "bs58",
  "ed25519-dalek",
+ "k256",
  "lazy_static",
  "p256",
  "rand_core 0.6.4",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "signature",
  "sqlx",
  "thiserror",
@@ -1956,6 +1957,18 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "k256"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72c1e0b51e7ec0a97369623508396067a486bd0cbed95a2659a4b863d28cfc8b"
+dependencies = [
+ "cfg-if",
+ "ecdsa",
+ "elliptic-curve",
+ "sha2 0.10.6",
 ]
 
 [[package]]
