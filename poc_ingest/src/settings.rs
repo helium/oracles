@@ -22,9 +22,12 @@ pub struct Settings {
     /// Settings for exposed public API
     /// Target bucket for uploads
     pub output: file_store::Settings,
+
     /// API token required as part of a Bearer authentication GRPC request
     /// header. Used only by the mobile mode currently
     pub token: Option<String>,
+    // TODO: Redesign settings such that all required values are required - no need for this flaky option.
+
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
 }
@@ -61,6 +64,10 @@ impl Settings {
         let mut builder = Config::builder();
 
         if let Some(file) = path {
+            if !file.as_ref().exists() {
+                // TODO Generalize this check so that other settings impls warn as well?
+                tracing::warn!("Given settings file not found: {:?}", file.as_ref())
+            }
             // Add optional settings file
             builder = builder
                 .add_source(File::with_name(&file.as_ref().to_string_lossy()).required(false));
