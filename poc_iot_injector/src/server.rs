@@ -1,4 +1,6 @@
-use crate::{receipt_txn::handle_report_msg, Result, Settings, LOADER_WORKERS, STORE_WORKERS};
+use crate::{
+    receipt_txn::handle_report_msg, Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
+};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{file_sink, file_sink_write, FileStore, FileType};
@@ -121,16 +123,10 @@ async fn submit_txns(
             let mut shared_txn_service = txn_service.clone();
             let shared_key = keypair.clone();
             async move {
-                if let Some(txn) =
+                if let Ok(txn) =
                     handle_txn_submission(msg, shared_key, &mut shared_txn_service, before_ts).await
                 {
-                    // NOTE: Can the txn be written as is?
-                    match file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn).await {
-                        Ok(_) => tracing::debug!("txn written!"),
-                        Err(_) => tracing::error!("unable to write txn"),
-                    }
-                } else {
-                    tracing::error!("unable to submit txn")
+                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn).await?;
                 }
                 Ok(())
             }
@@ -144,14 +140,13 @@ async fn handle_txn_submission(
     shared_key: Arc<Keypair>,
     txn_service: &mut TransactionService,
     before_ts: i64,
-) -> Option<BlockchainTxn> {
-    if let Ok((txn, hash, hash_b64_url)) = handle_report_msg(msg, shared_key, before_ts) {
-        if txn_service.submit(txn.clone(), &hash).await.is_ok() {
-            tracing::debug!("txn submitted successfully, hash: {:?}", hash_b64_url);
-            return Some(txn);
-        } else {
-            tracing::warn!("txn submission failed!, hash: {:?}", hash_b64_url);
-        }
+) -> Result<BlockchainTxn> {
+    let (txn, hash, hash_b64_url) = handle_report_msg(msg, shared_key, before_ts)?;
+    if txn_service.submit(txn.clone(), &hash).await.is_ok() {
+        tracing::debug!("txn submitted successfully, hash: {:?}", hash_b64_url);
+        Ok(txn)
+    } else {
+        tracing::warn!("txn submission failed!, hash: {:?}", hash_b64_url);
+        Err(Error::TxnSubmission(hash_b64_url))
     }
-    None
 }
