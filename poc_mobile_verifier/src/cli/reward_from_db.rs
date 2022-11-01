@@ -1,10 +1,14 @@
 use crate::{
-    heartbeats::Heartbeats, reward_share::get_scheduled_tokens, speedtests::SpeedtestAverages,
-    subnetwork_rewards::SubnetworkRewards, Result, Settings,
+    heartbeats::Heartbeats,
+    reward_share::get_scheduled_tokens,
+    speedtests::{Average, SpeedtestAverages},
+    subnetwork_rewards::SubnetworkRewards,
+    Result, Settings,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
 use serde_json::json;
+use std::collections::HashMap;
 
 /// Reward a period from the entries in the database
 #[derive(Debug, clap::Args)]
@@ -33,12 +37,22 @@ impl Cmd {
         let heartbeats = Heartbeats::validated(&pool, epoch.start).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
         let rewards =
-            SubnetworkRewards::from_epoch(follower, &epoch, heartbeats, speedtests).await?;
+            SubnetworkRewards::from_epoch(follower, &epoch, heartbeats, speedtests.clone()).await?;
 
         let total_rewards = rewards
             .rewards
             .iter()
             .fold(0, |acc, reward| acc + reward.amount);
+        let mut multiplier_count = HashMap::<_, usize>::new();
+        let speedtest_multipliers: Vec<_> = speedtests
+            .speedtests
+            .into_iter()
+            .map(|(pub_key, avg)| {
+                let reward_multiplier = Average::from(&avg).reward_multiplier();
+                *multiplier_count.entry(reward_multiplier).or_default() += 1;
+                (pub_key, reward_multiplier)
+            })
+            .collect();
         let rewards: Vec<(PublicKey, u64)> = rewards
             .rewards
             .iter()
@@ -53,6 +67,8 @@ impl Cmd {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
+                "multiplier_count": multiplier_count,
+                "speedtest_multipliers": speedtest_multipliers,
                 "rewards": rewards,
                 "total_rewards": total_rewards,
                 "expected_rewards": expected_rewards,
