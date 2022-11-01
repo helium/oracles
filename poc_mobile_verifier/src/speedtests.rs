@@ -569,4 +569,21 @@ mod test {
             SpeedtestTier::Acceptable
         );
     }
+
+    #[test]
+    fn check_speedtest_rolling_avg() {
+        let owner: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let speedtests = VecDeque::from(known_speedtests());
+        let avgs = SpeedtestAverages {
+            speedtests: HashMap::from([(owner, speedtests)]),
+        }
+        .into_iter();
+        for avg in avgs {
+            if let Some(first) = avg.speedtests.first() {
+                assert_eq!(avg.latest_timestamp, first.timestamp);
+            }
+        }
+    }
 }
