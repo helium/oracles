@@ -2,7 +2,7 @@ use crate::{
     entropy::Entropy,
     last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
-    poc_report::Report,
+    poc_report::{LoraStatus, Report},
     Result, Settings,
 };
 use chrono::{Duration, Utc};
@@ -378,6 +378,7 @@ impl Runner {
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
+        let poc_id = &beacon.data;
         let received_timestamp = valid_beacon_report.received_timestamp;
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -397,18 +398,30 @@ impl Runner {
                 return Ok(());
             }
         }
+        // valid beacons and witness reports are kept in the DB
+        // until after they have been rewarded
+        // for now we just have to update their status to valid
+        Report::update_status(&self.pool, poc_id, LoraStatus::Valid, Utc::now()).await?;
         // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, &beacon.pub_key.to_vec(), received_timestamp)
             .await?;
 
+        // update DB status of valid witnesses
+        for valid_witness_report in witnesses_result.valid_witnesses {
+            let valid_witness_id = valid_witness_report
+                .report
+                .report_id(valid_witness_report.received_timestamp);
+            Report::update_status(&self.pool, &valid_witness_id, LoraStatus::Valid, Utc::now())
+                .await?
+        }
+
         // save invalid witnesses to s3, ignore any failed witness writes
         // taking the lossly approach here as if we re attempt the POC later
-        // we will have to clean out any sucessful write of the valid pod above
+        // we will have to clean out any sucessful write of the valid poc above
         // so if a report fails from this point on, it shall be lost for ever more
         for invalid_witness_report in witnesses_result.invalid_witnesses {
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.clone().into();
-
             match file_sink_write!(
                 "invalid_witness_report",
                 lora_invalid_witness_tx,
@@ -416,14 +429,19 @@ impl Runner {
             )
             .await
             {
-                Ok(_) => (),
+                Ok(_) => {
+                    // we dont need to reward invalid witness reports
+                    // so we can go ahead & delete from the DB
+                    let report_id = invalid_witness_report
+                        .report
+                        .report_id(invalid_witness_report.received_timestamp);
+                    _ = Report::delete_report(&self.pool, &report_id).await;
+                }
                 Err(err) => {
                     tracing::error!("failed to save invalid_witness_report to s3, {err}");
                 }
             }
         }
-        // done with these poc reports, purge em from the db
-        Report::delete_poc(&self.pool, &beacon_id).await?;
         Ok(())
     }
 }
