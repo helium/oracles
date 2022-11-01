@@ -5,7 +5,7 @@ use file_store::{file_sink, file_sink_write, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use futures::TryStreamExt;
 use helium_crypto::Keypair;
-use helium_proto::{blockchain_txn::Txn, BlockchainTxn};
+use helium_proto::BlockchainTxn;
 use node_follower::txn_service::TransactionService;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
@@ -145,13 +145,10 @@ async fn handle_txn_submission(
     txn_service: &mut TransactionService,
     before_ts: i64,
 ) -> Option<BlockchainTxn> {
-    if let Ok(Some((txn, hash, hash_b64_url))) = handle_report_msg(msg, shared_key, before_ts) {
-        let wrapped_txn = BlockchainTxn {
-            txn: Some(Txn::PocReceiptsV2(txn)),
-        };
-        if txn_service.submit(wrapped_txn.clone(), &hash).await.is_ok() {
+    if let Ok((txn, hash, hash_b64_url)) = handle_report_msg(msg, shared_key, before_ts) {
+        if txn_service.submit(txn.clone(), &hash).await.is_ok() {
             tracing::debug!("txn submitted successfully, hash: {:?}", hash_b64_url);
-            return Some(wrapped_txn);
+            return Some(txn);
         } else {
             tracing::warn!("txn submission failed!, hash: {:?}", hash_b64_url);
         }
