@@ -7,7 +7,7 @@ use futures::{
 };
 use helium_crypto::Keypair;
 use helium_proto::{blockchain_txn::Txn, BlockchainTxn, Message};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Generate poc rewards
 #[derive(Debug, clap::Args)]
@@ -36,16 +36,31 @@ impl Cmd {
         let poc_oracle_key = settings.keypair()?;
         let shared_key = Arc::new(poc_oracle_key);
 
+        let success_counter = Arc::new(Mutex::new(0));
+        let failure_counter = Arc::new(Mutex::new(0));
+
         store
             .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
             .try_for_each_concurrent(STORE_WORKERS, |msg| {
                 let shared_key_clone = shared_key.clone();
+                let success_counter_ref = Arc::clone(&success_counter);
+                let failure_counter_ref = Arc::clone(&failure_counter);
                 async move {
-                    let _ = process_msg(msg, shared_key_clone, before_ts).await;
+                    if process_msg(msg, shared_key_clone, before_ts)
+                        .await
+                        .is_some()
+                    {
+                        *success_counter_ref.lock().unwrap() += 1;
+                    } else {
+                        *failure_counter_ref.lock().unwrap() += 1;
+                    }
                     Ok(())
                 }
             })
             .await?;
+
+        tracing::debug!("success_counter: {:?}", success_counter.lock().unwrap());
+        tracing::debug!("failure_counter: {:?}", failure_counter.lock().unwrap());
 
         Ok(())
     }
@@ -55,7 +70,7 @@ async fn process_msg(
     msg: prost::bytes::BytesMut,
     shared_key_clone: Arc<Keypair>,
     before_ts: i64,
-) -> Result<()> {
+) -> Option<BlockchainTxn> {
     if let Ok(Some((txn, _hash, _hash_b64_url))) =
         handle_report_msg(msg.clone(), shared_key_clone, before_ts)
     {
@@ -64,8 +79,9 @@ async fn process_msg(
         };
 
         tracing::debug!("txn_bin: {:?}", tx.encode_to_vec());
+        return Some(tx);
     } else {
         tracing::error!("unable to construct txn for msg {:?}", msg)
     }
-    Ok(())
+    None
 }

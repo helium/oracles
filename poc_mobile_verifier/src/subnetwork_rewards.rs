@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink, file_sink_write};
 use helium_crypto::PublicKey;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 use tokio::sync::oneshot;
