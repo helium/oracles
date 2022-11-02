@@ -1915,6 +1915,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "integration_tests"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "helium-crypto",
+ "helium-proto",
+ "hex-literal",
+ "mobile-rewards",
+ "node-follower",
+ "poc-ingest",
+ "poc-mobile-verifier",
+ "rand_chacha",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

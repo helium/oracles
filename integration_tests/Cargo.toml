@@ -1,0 +1,21 @@
+[package]
+name = "integration_tests"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+chrono = { workspace = true }
+clap = {workspace = true}
+helium-crypto = { workspace = true }
+helium-proto = {workspace = true}
+hex-literal = "0.3.4"
+poc-ingest = { path = "../ingest" }
+poc-mobile-verifier = { path = "../poc_mobile_verifier" }
+mobile-rewards = { path = "../mobile_rewards" }
+node-follower = { path = "../node_follower" }
+rand_chacha = "0.3.1"
+tokio = { workspace = true }
+tonic = {workspace = true}
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+triggered = {workspace = true}

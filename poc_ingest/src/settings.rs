@@ -27,7 +27,6 @@ pub struct Settings {
     /// header. Used only by the mobile mode currently
     pub token: Option<String>,
     // TODO: Redesign settings such that all required values are required - no need for this flaky option.
-
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
 }

@@ -1,0 +1,38 @@
+# log settings for the application (RUST_LOG format).
+log = "poc_ingest=debug,poc_store=info"
+
+# Mode to run the ingest in.
+# This adjusts the allowed grpc endpoints. "lora" or "mobile".
+# Required.
+mode = "lora"  # "lora" | "mobile"
+
+# Token for ingest grpc endpoint bearer authentication.
+# Required for "mobile" mode and ignored for "lora". 
+token = "fake-api-token"
+
+# Listen addres for public grpc.
+listen = "0.0.0.0:9081"
+
+# Cache directory to use:
+cache = "data/ingest"
+
+[output]
+# Output bucket for ingested data
+
+# Name of bucket to write details to:
+#bucket = "ingest-bucket"
+bucket = "mobile-ingest"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+endpoint = "http://localhost:9000"
+
+[metrics]
+
+# Endpoint for metrics. Default below
+endpoint = "127.0.0.1:19000"

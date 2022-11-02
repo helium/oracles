@@ -1,6 +1,5 @@
 #! /bin/bash
 
-cd tests/local_infra || false
 . infra.sh
 
 case "$1" in
