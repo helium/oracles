@@ -1,15 +1,27 @@
 #! /bin/bash
 
-. infra.sh
+init() {
+    local -r pg_user='postgres'
+    local -r pg_db_name='index_db'
+    local -r pg_container_id=$(docker ps --filter=name=postgres --format='{{.ID}}')
+
+    docker exec -it "$pg_container_id" apt update
+    docker exec -it "$pg_container_id" apt install sudo
+    docker exec -it "$pg_container_id" sudo -u "$pg_user" createdb "$pg_db_name"
+}
 
 case "$1" in
     start)
         # XXX Assumes the following variables are already set:
         # - AWS_ACCESS_KEY_ID
         # - AWS_SECRET_ACCESS_KEY
+        . infra.sh
         infra-start;;
     stop)
+        . infra.sh
         infra-stop;;
+    init)
+        init;;
     *)
         printf 'usage: %s (start|stop)\n' "$0" >&2
         exit 1
