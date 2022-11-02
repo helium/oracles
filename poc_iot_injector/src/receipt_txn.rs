@@ -198,7 +198,7 @@ fn construct_poc_receipt(
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
     let mut txn = txn.clone();
     txn.signature = vec![];
-    let digest = Sha256::digest(&txn.encode_to_vec()).to_vec();
+    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
     (
         digest.clone(),
         base64::encode_config(&digest, base64::URL_SAFE_NO_PAD),
