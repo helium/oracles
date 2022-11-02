@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, Error, Result};
+use crate::{entropy::Entropy, entropy::ENTROPY_LIFESPAN, Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
@@ -20,9 +20,6 @@ pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
 pub const R: f64 = 6.371e6;
 
-/// measurement in seconds of an entropy
-/// TODO: determine a sane value here, set high for testing
-const ENTROPY_LIFESPAN: i64 = 60;
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
@@ -98,16 +95,6 @@ impl Poc {
             }
         };
         tracing::debug!("beacon info {:?}", beaconer_info);
-
-        // tmp hack below when testing locally with no actual real gateway
-        // replace beaconer_info declaration above with that below
-        // let beaconer_info = FollowerGatewayResp {
-        //     height: 130000,
-        //     location: String::from("location1"),
-        //     address: beacon.pub_key.clone(),
-        //     owner: beacon.pub_key.clone(),
-        //     staking_mode: GatewayStakingMode::Full as i32,
-        // };
 
         // verify the beaconer's remote entropy
         // if beacon received timestamp is outside of entopy start/end then reject the poc
@@ -266,16 +253,6 @@ impl Poc {
                 return Ok(resp);
             }
         };
-
-        // tmp hack below when testing locally with no actual real gateway
-        // replace witness_info declaration above with that below
-        // let witness_info = FollowerGatewayResp {
-        //     height: 130000,
-        //     location: String::from("location1"),
-        //     address: witness.pub_key.clone(),
-        //     owner: witness.pub_key.clone(),
-        //     staking_mode: GatewayStakingMode::Full as i32,
-        // };
 
         // check witness is permitted to participate in POC
         match witness_info.staking_mode {
