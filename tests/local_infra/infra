@@ -1,0 +1,17 @@
+#! /bin/bash
+
+cd tests/local_infra || false
+. infra.sh
+
+case "$1" in
+    start)
+        # XXX Assumes the following variables are already set:
+        # - AWS_ACCESS_KEY_ID
+        # - AWS_SECRET_ACCESS_KEY
+        infra-start;;
+    stop)
+        infra-stop;;
+    *)
+        printf 'usage: %s (start|stop)\n' "$0" >&2
+        exit 1
+esac
