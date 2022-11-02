@@ -13,7 +13,7 @@ use file_store::{
     lora_invalid_poc::{LoraInvalidBeaconReport, LoraInvalidWitnessReport},
     lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc},
     lora_witness_report::LoraWitnessIngestReport,
-    traits::ReportId,
+    traits::{IngestId, ReportId},
     FileType,
 };
 use helium_proto::{
@@ -24,7 +24,6 @@ use helium_proto::{
     Message,
 };
 use node_follower::follower_service::FollowerService;
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time;
