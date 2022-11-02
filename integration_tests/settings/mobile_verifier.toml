@@ -1,9 +1,8 @@
 # log settings for the application (RUST_LOG format). Default below
-# 
-# log = "poc-mobile-verifier=debug,poc_store=info"
+log = "poc-mobile-verifier=debug,poc_store=info"
 
 # Cache location for generated verified reports; Required
-cache = "/var/data/verfied-reports"
+cache = "data/verfied-reports"
 
 # Reward period in hours. (Default is 24)
 # rewards = 24
@@ -68,11 +67,9 @@ bucket = "mainnet-mobile-verified"
 
 # Optional URL for AWS api endpoint. Inferred from aws config settings or aws
 # IAM context by default
-#
-# endpoint = "https://aws-s3-bucket.aws.com"
+endpoint = "http://localhost:9000"
 
 [metrics]
 
 # Endpoint for metrics. Default below
-#
-# endpoint = "127.0.0.1:19000"
+ endpoint = "127.0.0.1:19000"

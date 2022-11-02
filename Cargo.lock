@@ -1920,6 +1920,7 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "clap",
+ "db-store",
  "helium-crypto",
  "helium-proto",
  "hex-literal",
@@ -1928,6 +1929,7 @@ dependencies = [
  "poc-ingest",
  "poc-mobile-verifier",
  "rand_chacha",
+ "sqlx",
  "tokio",
  "tonic",
  "tracing",
