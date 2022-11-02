@@ -1,11 +1,10 @@
 use crate::{
-    entropy::Entropy,
     last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::{LoraStatus, Report},
     Result, Settings,
 };
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use file_store::{
     file_sink,
     file_sink::MessageSender,
@@ -24,16 +23,13 @@ use helium_proto::{
     },
     Message,
 };
-use node_follower::follower_service;
-use sha2::{Digest, Sha256};
+use node_follower::follower_service::FollowerService;
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time;
 
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
-/// the cadence in seconds at which hotspots are permitted to beacon
-const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
 
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
@@ -41,14 +37,17 @@ const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 pub struct Runner {
     pool: PgPool,
     settings: Settings,
+    follower_service: FollowerService,
 }
 
 impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let follower_service = FollowerService::from_settings(&settings.follower)?;
         Ok(Self {
             pool,
             settings: settings.clone(),
+            follower_service,
         })
     }
 
@@ -149,11 +148,11 @@ impl Runner {
         tracing::info!("found {beacon_len} beacons ready for verification");
         for db_beacon in db_beacon_reports {
             let packet_data = &db_beacon.packet_data;
+            let entropy_start_time = db_beacon.entropy_start_time;
             let beacon_buf: &[u8] = &db_beacon.report_data;
             let beacon_report: LoraBeaconIngestReport =
                 LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
             let beacon = &beacon_report.report;
-            let beaconer_pub_key = &beacon.pub_key;
             let beacon_received_ts = beacon_report.received_timestamp;
 
             let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
@@ -167,73 +166,21 @@ impl Runner {
                 witnesses.push(LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?);
             }
 
-            //
-            // top level checks, dont proceed to validate POC reports if these fail
-            //
-
-            // is beaconer allowed to beacon at this time ?
-            // any irregularily timed beacons will be rejected
-            match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
-                Some(last_beacon) => {
-                    let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-                    if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
-                        tracing::debug!(
-                            "beacon verification failed, reason:
-                            IrregularInterval. Seconds since last beacon {:?}",
-                            interval_since_last_beacon.num_seconds()
-                        );
-                        self.handle_invalid_poc(
-                            &beacon_report,
-                            witnesses,
-                            InvalidReason::IrregularInterval,
-                            &lora_invalid_beacon_tx,
-                            &lora_invalid_witness_tx,
-                        )
-                        .await?;
-                        continue;
-                    }
-                }
-                None => {
-                    tracing::debug!(
-                        "no last beacon timestamp available for this hotspot, ignoring "
-                    );
-                }
-            }
-
-            // Do we have recognised entropy included in the beacon report ?
-            // if not then go no further, await next tick
-            // if we never recognise it, the report will eventually be purged
-            let entropy_hash = Sha256::digest(&beacon.remote_entropy).to_vec();
-            let entropy_info = match Entropy::get(&self.pool, &entropy_hash).await? {
-                Some(res) => res,
-                None => {
-                    tracing::debug!("beacon verification failed, reason: EntropyNotFound");
-                    _ = Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now())
-                        .await;
-                    continue;
-                }
-            };
-
-            //
-            // top level checks complete, verify the POC reports
-            //
-
-            let follower =
-                follower_service::FollowerService::from_settings(&self.settings.follower)?;
-            // TODO: must be a better approach with this POC struct...
+            // create the struct defining this POC
             let mut poc = Poc::new(
                 beacon_report.clone(),
                 witnesses.clone(),
-                entropy_info,
-                follower,
+                entropy_start_time,
+                self.follower_service.clone(),
+                self.pool.clone(),
             )
             .await?;
 
-            // verify beacon
+            // verify POC beacon
             let beacon_verify_result = poc.verify_beacon().await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
-                    // beacon is valid, verify the witnesses
+                    // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
                         let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
                         // check if there are any failed witnesses

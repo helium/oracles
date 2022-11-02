@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, entropy::ENTROPY_LIFESPAN, Error, Result};
+use crate::{last_beacon::LastBeacon, Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
@@ -14,12 +14,19 @@ use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
+use sqlx::PgPool;
 use std::f64::consts::PI;
+
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
 pub const R: f64 = 6.371e6;
 
+/// the cadence in seconds at which hotspots are permitted to beacon
+const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
+/// measurement in seconds of an entropy
+/// TODO: determine a sane value here, set high for testing
+const ENTROPY_LIFESPAN: i64 = 60;
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
@@ -29,11 +36,12 @@ pub enum VerificationStatus {
     Failed,
 }
 pub struct Poc {
-    follower_service: FollowerService,
     beacon_report: LoraBeaconIngestReport,
     witness_reports: Vec<LoraWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
+    follower_service: FollowerService,
+    pool: PgPool,
 }
 
 pub struct VerifyBeaconResult {
@@ -59,17 +67,18 @@ impl Poc {
     pub async fn new(
         beacon_report: LoraBeaconIngestReport,
         witness_reports: Vec<LoraWitnessIngestReport>,
-        entropy_info: Entropy,
+        entropy_start: DateTime<Utc>,
         follower_service: FollowerService,
+        pool: PgPool,
     ) -> Result<Self> {
-        let entropy_start = entropy_info.timestamp;
-        let entropy_end = entropy_info.timestamp + Duration::seconds(ENTROPY_LIFESPAN);
+        let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
         Ok(Self {
-            follower_service,
             beacon_report,
             witness_reports,
             entropy_start,
             entropy_end,
+            follower_service,
+            pool,
         })
     }
 
@@ -77,6 +86,8 @@ impl Poc {
         let beacon = &self.beacon_report.report;
         // use pub key to get GW info from our follower
         let beaconer_pub_key = beacon.pub_key.clone();
+        let beacon_received_ts = self.beacon_report.received_timestamp;
+
         let beaconer_info = match self
             .follower_service
             .resolve_gateway_info(&beaconer_pub_key)
@@ -96,14 +107,38 @@ impl Poc {
         };
         tracing::debug!("beacon info {:?}", beaconer_info);
 
+        // is beaconer allowed to beacon at this time ?
+        // any irregularily timed beacons will be rejected
+        match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
+            Some(last_beacon) => {
+                let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
+                if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
+                    tracing::debug!(
+                        "beacon verification failed, reason:
+                        IrregularInterval. Seconds since last beacon {:?}",
+                        interval_since_last_beacon.num_seconds()
+                    );
+                    let resp = VerifyBeaconResult {
+                        result: VerificationStatus::Invalid,
+                        invalid_reason: Some(InvalidReason::IrregularInterval),
+                        gateway_info: Some(beaconer_info),
+                        hex_scale: None,
+                    };
+                    return Ok(resp);
+                }
+            }
+            None => {
+                tracing::debug!("no last beacon timestamp available for this beaconer, ignoring ");
+            }
+        }
+
         // verify the beaconer's remote entropy
         // if beacon received timestamp is outside of entopy start/end then reject the poc
-        let beacon_received_time = self.beacon_report.received_timestamp;
-        if beacon_received_time < self.entropy_start || beacon_received_time > self.entropy_end {
+        if beacon_received_ts < self.entropy_start || beacon_received_ts > self.entropy_end {
             tracing::debug!(
-                "beacon verification failed, reason: {:?}. beacon_received_time: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
+                "beacon verification failed, reason: {:?}. beacon_received_ts: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
                 InvalidReason::BadEntropy,
-                beacon_received_time,
+                beacon_received_ts,
                 self.entropy_start,
                 self.entropy_end
             );
