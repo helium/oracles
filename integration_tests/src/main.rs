@@ -60,6 +60,7 @@ async fn test_heartbeat(cli: &Cli) {
     let api_token = ingestor_settings.token.clone().unwrap();
     let grpc_addr = ingestor_settings.listen.clone();
     let grpc_endpoint = format!("http://{grpc_addr}");
+    let net = ingestor_settings.network;
 
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
@@ -68,7 +69,7 @@ async fn test_heartbeat(cli: &Cli) {
     let rewarder = start_rewarder(rewarder_settings);
     let follower = start_follower(follower_settings);
 
-    send_heartbeat(grpc_endpoint, api_token).await;
+    send_heartbeat(net, grpc_endpoint, api_token).await;
 
     shutdown_trigger.trigger();
 
@@ -114,18 +115,22 @@ fn start_follower(_settings: node_follower::Settings) -> JoinHandle<()> {
     handle
 }
 
-fn make_keypair() -> helium_crypto::Keypair {
+fn make_keypair(net: helium_crypto::Network) -> helium_crypto::Keypair {
+    let key_tag = helium_crypto::KeyTag{
+        network: net,
+        key_type: helium_crypto::KeyType::Ed25519,
+    };
     let mut seed = rand_chacha::ChaCha8Rng::seed_from_u64(10);
-    helium_crypto::Keypair::generate(helium_crypto::KeyTag::default(), &mut seed)
+    helium_crypto::Keypair::generate(key_tag, &mut seed)
 }
 
-fn make_heartbeat() -> CellHeartbeatReqV1 {
+fn make_heartbeat(net: helium_crypto::Network) -> CellHeartbeatReqV1 {
     use helium_crypto::Sign;
 
     let hotspot_type = "fake_hotspot_type".to_string();
     let cbsd_category = "fake_cbsd_category".to_string();
     let cbsd_id = "fake_cbsd_id".to_string();
-    let keypair = make_keypair();
+    let keypair = make_keypair(net);
     let mut heartbeat = CellHeartbeatReqV1 {
         pub_key: keypair.public_key().to_vec(),
         hotspot_type,
@@ -146,7 +151,7 @@ fn make_heartbeat() -> CellHeartbeatReqV1 {
     heartbeat
 }
 
-async fn send_heartbeat(grpc_endpoint: String, api_token: String) {
+async fn send_heartbeat(net: helium_crypto::Network, grpc_endpoint: String, api_token: String) {
     // TODO Remove sleep. How? Client connect retries?
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
@@ -156,7 +161,7 @@ async fn send_heartbeat(grpc_endpoint: String, api_token: String) {
 
     tracing::debug!("connected to poc_mobile");
 
-    let heartbeat = make_heartbeat();
+    let heartbeat = make_heartbeat(net);
     let mut request = tonic::Request::new(heartbeat);
     request.metadata_mut().append(
         "authorization",
@@ -166,8 +171,8 @@ async fn send_heartbeat(grpc_endpoint: String, api_token: String) {
         .submit_cell_heartbeat(request)
         .await
         .expect("unable to submit cell heartbeat");
-    tracing::debug!("received response: {response:?}");
-    // tokio::time::sleep(tokio::time::Duration::from_millis(200000)).await;
+    tracing::info!("received response: {response:?}");
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 }
 
 fn assert_rewards() {

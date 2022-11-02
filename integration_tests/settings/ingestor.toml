@@ -16,6 +16,8 @@ listen = "0.0.0.0:9081"
 # Cache directory to use:
 cache = "data/ingest"
 
+network = "testnet"  # "testnet" | "mainnet"
+
 [output]
 # Output bucket for ingested data
 
