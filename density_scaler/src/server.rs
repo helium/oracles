@@ -1,13 +1,11 @@
 use crate::{
-    error::DecodeError,
     hex::{compute_scaling_map, GlobalHexMap, ScalingMap},
     query::{QueryMsg, QueryReceiver},
-    Result,
+    Result, Settings,
 };
 use chrono::Duration;
 use futures::stream::StreamExt;
 use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
-use std::env;
 use tokio::time;
 
 const DEFAULT_TRIGGER_INTERVAL_SECS: i64 = 1800; // 30 min
@@ -19,18 +17,12 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(follower: FollowerService) -> Result<Self> {
-        let result = Self {
+    pub fn from_settings(settings: Settings) -> Result<Self> {
+        Ok(Self {
             scaling_map: ScalingMap::new(),
-            follower,
-            trigger_interval: Duration::seconds(
-                env::var("DENSITY_TRIGGER_INTERVAL_SECS")
-                    .unwrap_or_else(|_| DEFAULT_TRIGGER_INTERVAL_SECS.to_string())
-                    .parse()
-                    .map_err(DecodeError::from)?,
-            ),
-        };
-        Ok(result)
+            follower: FollowerService::from_settings(&settings.follower)?,
+            trigger_interval: Duration::seconds(settings.trigger),
+        })
     }
 
     pub async fn run(

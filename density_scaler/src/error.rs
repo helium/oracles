@@ -4,6 +4,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("config error")]
+    Config(#[from] config::ConfigError),
     #[error("env error")]
     Env(#[from] std::env::VarError),
     #[error("io error")]
