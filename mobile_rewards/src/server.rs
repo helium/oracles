@@ -433,8 +433,8 @@ pub fn construct_txn(
 fn hash_txn_b64_url(txn: &BlockchainTxnSubnetworkRewardsV1) -> String {
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
-    let digest = Sha256::digest(&txn.encode_to_vec()).to_vec();
-    base64::encode_config(&digest, base64::URL_SAFE_NO_PAD)
+    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
+    base64::encode_config(digest, base64::URL_SAFE_NO_PAD)
 }
 
 fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result<Vec<u8>> {
