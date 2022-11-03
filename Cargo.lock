@@ -1915,32 +1915,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "integration_tests"
-version = "0.0.0"
-dependencies = [
- "aws-config",
- "aws-sdk-s3",
- "chrono",
- "clap",
- "db-store",
- "helium-crypto",
- "helium-proto",
- "hex-literal",
- "http",
- "mobile-rewards",
- "node-follower",
- "poc-ingest",
- "poc-mobile-verifier",
- "rand_chacha",
- "sqlx",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3807,6 +3781,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bab24d30b911b2376f3a13cc2cd443142f0c81dda04c118693e35b3835757755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "tests"
+version = "0.0.0"
+dependencies = [
+ "aws-config",
+ "aws-sdk-s3",
+ "chrono",
+ "clap",
+ "db-store",
+ "helium-crypto",
+ "helium-proto",
+ "hex-literal",
+ "http",
+ "mobile-rewards",
+ "node-follower",
+ "poc-ingest",
+ "poc-mobile-verifier",
+ "rand_chacha",
+ "sqlx",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
 ]
 
 [[package]]

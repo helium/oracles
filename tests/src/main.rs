@@ -27,7 +27,7 @@ async fn main() {
     // panic!("This is a tests-only crate. Please re-run as test.")
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            "integration_tests=debug",
+            "tests=debug",
         )) // TODO Maybe per-crate levels.
         .with(tracing_subscriber::fmt::layer())
         .init();

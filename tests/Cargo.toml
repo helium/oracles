@@ -1,5 +1,5 @@
 [package]
-name = "integration_tests"
+name = "tests"
 version = "0.0.0"
 edition = "2021"
 
