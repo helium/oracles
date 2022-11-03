@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use clap::Parser;
 use rand_chacha::rand_core::SeedableRng; // seed_from_u64
@@ -6,6 +7,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // use helium_crypto::Network;
 use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
+use http::Uri;
 use poc_ingest::server_5g;
 use tokio::task::JoinHandle;
 
@@ -62,6 +64,19 @@ async fn test_heartbeat(cli: &Cli) {
     let grpc_addr = ingestor_settings.listen.clone();
     let grpc_endpoint = format!("http://{grpc_addr}");
     let net = ingestor_settings.network;
+    let aws_region = "us-west-2"; // TODO Pull from settings. From which one?
+    let aws_endpoint = "http://localhost:9000";
+
+    // TODO Determine which service needs which, separate and grab from settings.
+    let aws_buckets = [
+        ingestor_settings.output.bucket.as_str(),
+        verifier_settings.output.bucket.as_str(),
+        verifier_settings.ingest.bucket.as_str(),
+        rewarder_settings.output.bucket.as_str(),
+    ];
+    s3_create_buckets(aws_endpoint, aws_region, &aws_buckets)
+        .await
+        .unwrap();
 
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
@@ -80,6 +95,77 @@ async fn test_heartbeat(cli: &Cli) {
     follower.await.unwrap();
 
     assert_rewards();
+}
+
+async fn s3_create_buckets(
+    endpoint: &str,
+    region: &str,
+    buckets: &[&str],
+) -> Result<(), aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CreateBucketError>> {
+    for bucket in buckets {
+        s3_create_bucket(endpoint, region, bucket).await?
+    }
+    Ok(())
+}
+
+async fn s3_create_bucket(
+    endpoint: &str,
+    region: &str,
+    bucket_name: &str,
+) -> Result<(), aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CreateBucketError>> {
+    tracing::debug!("bucket create BEGIN {bucket_name:?}");
+
+    let endpoint = Uri::from_str(endpoint)
+        .map(aws_sdk_s3::Endpoint::immutable)
+        .unwrap();
+    let config = aws_config::from_env()
+        .region(aws_sdk_s3::Region::new(region.to_string()))
+        .endpoint_resolver(endpoint)
+        .load()
+        .await;
+    let client = aws_sdk_s3::Client::new(&config);
+    let constraint = aws_sdk_s3::model::BucketLocationConstraint::from(region);
+    let cfg = aws_sdk_s3::model::CreateBucketConfiguration::builder()
+        .location_constraint(constraint)
+        .build();
+    let result = client
+        .create_bucket()
+        .create_bucket_configuration(cfg)
+        .bucket(bucket_name)
+        .send()
+        .await;
+    match result {
+        Ok(_) => {
+            tracing::info!("bucket create OK created {bucket_name:?}");
+            Ok(())
+        }
+        Err(aws_sdk_s3::types::SdkError::ServiceError {
+            err:
+                aws_sdk_s3::error::CreateBucketError {
+                    kind: aws_sdk_s3::error::CreateBucketErrorKind::BucketAlreadyOwnedByYou(_),
+                    ..
+                },
+            ..
+        }) => {
+            tracing::warn!("bucket create OK already owned {bucket_name:?}");
+            Ok(())
+        }
+        Err(aws_sdk_s3::types::SdkError::ServiceError {
+            err:
+                aws_sdk_s3::error::CreateBucketError {
+                    kind: aws_sdk_s3::error::CreateBucketErrorKind::BucketAlreadyExists(_),
+                    ..
+                },
+            ..
+        }) => {
+            tracing::warn!("bucket create OK already exists {bucket_name:?}");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("bucket create ERROR {bucket_name:?} {e:?}");
+            Err(e)
+        }
+    }
 }
 
 fn start_ingest(

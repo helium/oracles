@@ -1918,12 +1918,15 @@ dependencies = [
 name = "integration_tests"
 version = "0.0.0"
 dependencies = [
+ "aws-config",
+ "aws-sdk-s3",
  "chrono",
  "clap",
  "db-store",
  "helium-crypto",
  "helium-proto",
  "hex-literal",
+ "http",
  "mobile-rewards",
  "node-follower",
  "poc-ingest",

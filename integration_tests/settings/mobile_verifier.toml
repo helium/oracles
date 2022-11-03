@@ -2,7 +2,7 @@
 log = "poc-mobile-verifier=debug,poc_store=info"
 
 # Cache location for generated verified reports; Required
-cache = "data/verfied-reports"
+cache = "data/verified-reports"
 
 # Reward period in hours. (Default is 24)
 # rewards = 24
@@ -53,6 +53,7 @@ bucket = "mainnet-mobile-ingest"
 # IAM context by default
 #
 # endpoint = "https://aws-s3-bucket.aws.com"
+endpoint = "http://localhost:9000"
 
 [output]
 # Output bucket for verified reports

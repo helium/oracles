@@ -4,12 +4,15 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
+aws-config = "0"
+aws-sdk-s3 = "0"
 chrono = { workspace = true }
 clap = {workspace = true}
 db-store = { path = "../db_store" }
 helium-crypto = { workspace = true }
 helium-proto = {workspace = true}
 hex-literal = "0.3.4"
+http = {workspace = true}
 poc-ingest = { path = "../ingest" }
 poc-mobile-verifier = { path = "../poc_mobile_verifier" }
 mobile-rewards = { path = "../mobile_rewards" }

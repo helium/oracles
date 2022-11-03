@@ -76,6 +76,7 @@ bucket = "mainnet-verified-bucket"
 # IAM context by default
 #
 # endpoint = "https://aws-s3-bucket.aws.com"
+endpoint = "http://localhost:9000"
 
 [output]
 # Output bucket for reward reports
