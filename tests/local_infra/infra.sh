@@ -21,4 +21,3 @@ infra-stop() {
             for vol in "${volumes[@]}"; do docker volume rm $vol; done
     fi
 }
-"$@"

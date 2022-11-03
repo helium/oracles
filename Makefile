@@ -1,6 +1,14 @@
+MINIO_ROOT_USER     := novaadmin
+MINIO_ROOT_PASSWORD := $(MINIO_ROOT_USER)
+
+AWS_ACCESS_KEY_ID     := $(MINIO_ROOT_USER)
+AWS_SECRET_ACCESS_KEY := $(MINIO_ROOT_PASSWORD)
+
 .PHONY: test
 test:
 	cd integration_tests && \
+	AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) \
+	AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) \
 	cargo run --bin integration_tests -- \
 		--settings-ingest settings/ingestor.toml \
 		--settings-verifier settings/mobile_verifier.toml \
@@ -8,7 +16,12 @@ test:
 
 .PHONY: test_env_start
 test_env_start:
-	cd ./tests/local_infra/ && ./infra start
+	cd ./tests/local_infra/ && \
+	MINIO_ROOT_USER=$(MINIO_ROOT_USER) \
+	MINIO_ROOT_PASSWORD=$(MINIO_ROOT_PASSWORD) \
+	AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) \
+	AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) \
+	./infra start
 
 .PHONY: test_env_init
 test_env_init:
