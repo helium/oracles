@@ -46,7 +46,7 @@ pub struct Report {
     pub report_timestamp: Option<DateTime<Utc>>,
     pub last_processed: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
-    pub entropy_start_time: DateTime<Utc>,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl Report {
