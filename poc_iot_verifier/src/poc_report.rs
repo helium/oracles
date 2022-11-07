@@ -46,7 +46,7 @@ pub struct Report {
     pub report_timestamp: Option<DateTime<Utc>>,
     pub last_processed: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp:  Option<DateTime<Utc>>,
 }
 
 impl Report {
@@ -163,7 +163,7 @@ impl Report {
     {
         sqlx::query_as::<_, Self>(
             r#"
-            select * from poc_report, now() as timestamp
+            select * from poc_report
             where packet_data = $1
             and report_type = 'witness' and status = 'pending'
             and attempts < $2
@@ -268,12 +268,9 @@ impl Report {
         // if the entropy is not there the beacon will never be processed
         // Such beacons will eventually be handled by the purger and failed there
         // stale beacon reports, for this reason, are determined solely based on time
-        // NOTE2:  'now() as timestamp' below defaults the report entropy timestamp column
-        // for stale reports it is never user but we need the column to be present
-        // in order to cast to a Report struct
         sqlx::query_as::<_, Self>(
             r#"
-            select * from poc_report, now() as timestamp
+            select * from poc_report
             where poc_report.report_type = 'beacon' and status = 'pending'
             and created_at < (NOW() - INTERVAL '$1 SECONDS')
             order by created_at asc
@@ -299,12 +296,9 @@ impl Report {
         // as the verifier processes beacon reports and then pulls witness reports
         // linked to current beacon being processed
         // stale witness reports, for this reason, are determined solely based on time
-        // NOTE2:  'now() as timestamp' below defaults the report entropy timestamp column
-        // for stale reports it is never user but we need the column to be present
-        // in order to cast to a Report struct
         sqlx::query_as::<_, Self>(
             r#"
-            select * from poc_report, now() as timestamp
+            select * from poc_report
             where report_type = 'witness' and status = 'pending'
             and created_at < (NOW() - INTERVAL '$1 SECONDS')
             order by created_at asc
