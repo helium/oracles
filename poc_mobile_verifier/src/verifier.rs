@@ -3,15 +3,18 @@ use std::ops::Range;
 use crate::{
     error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
+    ingest,
     scheduler::Scheduler,
-    speedtests::{SpeedtestAverages, SpeedtestStore},
+    speedtests::{SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, FileStore};
+use futures::{stream::Stream, StreamExt};
 use helium_proto::services::{follower, Channel};
 use sqlx::{PgExecutor, Pool, Postgres};
+use tokio::pin;
 use tokio::time::sleep;
 
 pub struct VerifierDaemon {
@@ -77,19 +80,21 @@ impl VerifierDaemon {
 
         let mut transaction = self.pool.begin().await?;
 
+        pin!(heartbeats);
+        pin!(speedtests);
+
         // TODO: switch to a bulk transaction
-        for heartbeat in heartbeats.into_iter() {
+        while let Some(heartbeat) = heartbeats.next().await {
             heartbeat.write(&self.heartbeats_tx).await?;
             heartbeat.save(&mut transaction).await?;
         }
 
-        for speedtest in speedtests.into_iter() {
+        while let Some(speedtest) = speedtests.next().await.transpose()? {
             speedtest.write(&self.speedtest_avg_tx).await?;
             speedtest.save(&mut transaction).await?;
         }
 
         save_last_verified_end_time(&mut transaction, &scheduler.verification_period.end).await?;
-
         transaction.commit().await?;
 
         Ok(())
@@ -140,14 +145,28 @@ impl Verifier {
         })
     }
 
-    pub async fn verify_epoch(
+    pub async fn verify_epoch<'a>(
         &mut self,
-        pool: impl SpeedtestStore + Copy,
-        epoch: &Range<DateTime<Utc>>,
-    ) -> Result<VerifiedEpoch> {
-        let heartbeats = Heartbeat::validate_heartbeats(&self.file_store, epoch).await?;
-        let speedtests =
-            SpeedtestAverages::validate_speedtests(pool, &self.file_store, epoch).await?;
+        pool: impl SpeedtestStore + Copy + 'a,
+        epoch: &'a Range<DateTime<Utc>>,
+    ) -> Result<
+        VerifiedEpoch<
+            impl Stream<Item = Heartbeat> + 'a,
+            impl Stream<Item = Result<SpeedtestRollingAverage>> + 'a,
+        >,
+    > {
+        let heartbeats = Heartbeat::validate_heartbeats(
+            ingest::ingest_heartbeats(&self.file_store, epoch).await?,
+            epoch,
+        )
+        .await?;
+
+        let speedtests = SpeedtestRollingAverage::validate_speedtests(
+            ingest::ingest_speedtests(&self.file_store, epoch).await?,
+            pool,
+        )
+        .await?;
+
         Ok(VerifiedEpoch {
             heartbeats,
             speedtests,
@@ -164,9 +183,9 @@ impl Verifier {
     }
 }
 
-pub struct VerifiedEpoch {
-    pub heartbeats: Vec<Heartbeat>,
-    pub speedtests: SpeedtestAverages,
+pub struct VerifiedEpoch<H, S> {
+    pub heartbeats: H,
+    pub speedtests: S,
 }
 
 async fn last_verified_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Utc>> {

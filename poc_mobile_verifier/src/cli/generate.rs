@@ -5,6 +5,7 @@ use crate::{
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
+use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use serde_json::json;
 
@@ -38,7 +39,11 @@ impl Cmd {
         } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
         let rewards = verifier
-            .reward_epoch(&epoch, heartbeats.into_iter().collect(), speedtests)
+            .reward_epoch(
+                &epoch,
+                heartbeats.collect().await,
+                speedtests.filter_map(|x| async { x.ok() }).collect().await,
+            )
             .await?;
 
         let total_rewards = rewards

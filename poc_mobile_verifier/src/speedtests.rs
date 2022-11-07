@@ -1,12 +1,7 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use file_store::{
-    file_sink, file_sink_write,
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::{MsgDecode, TimestampEncode},
-    FileStore, FileType,
-};
-use futures::stream::{self, StreamExt, TryStreamExt};
+use file_store::{file_sink, file_sink_write, speedtest::CellSpeedtest, traits::TimestampEncode};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
@@ -15,10 +10,7 @@ use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
     FromRow, Type,
 };
-use std::{
-    collections::{HashMap, VecDeque},
-    ops::Range,
-};
+use std::collections::{HashMap, VecDeque};
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 const SPEEDTEST_LAPSE: i64 = 48;
@@ -48,6 +40,17 @@ impl Speedtest {
     }
 }
 
+impl From<CellSpeedtest> for Speedtest {
+    fn from(cell_speedtest: CellSpeedtest) -> Self {
+        Self {
+            timestamp: cell_speedtest.timestamp.naive_utc(),
+            upload_speed: cell_speedtest.upload_speed as i64,
+            download_speed: cell_speedtest.download_speed as i64,
+            latency: cell_speedtest.latency as i32,
+        }
+    }
+}
+
 impl PgHasArrayType for Speedtest {
     fn array_type_info() -> PgTypeInfo {
         PgTypeInfo::with_name("_speedtest")
@@ -68,6 +71,46 @@ impl SpeedtestRollingAverage {
             speedtests: Vec::new(),
             latest_timestamp: NaiveDateTime::default(),
         }
+    }
+
+    pub async fn validate_speedtests<'a>(
+        speedtests: impl Stream<Item = CellSpeedtest> + 'a,
+        exec: impl SpeedtestStore + Copy + 'a,
+    ) -> Result<impl Stream<Item = Result<Self>> + 'a> {
+        let tests_by_publickey = speedtests
+            .fold(
+                HashMap::<PublicKey, Vec<CellSpeedtest>>::new(),
+                |mut map, cell_speedtest| async move {
+                    map.entry(cell_speedtest.pubkey.clone())
+                        .or_default()
+                        .push(cell_speedtest);
+                    map
+                },
+            )
+            .await;
+
+        Ok(futures::stream::iter(tests_by_publickey.into_iter())
+            .then(move |(pubkey, cell_speedtests)| async move {
+                let rolling_average = exec
+                    .fetch(&pubkey)
+                    .await?
+                    .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
+                Ok((rolling_average, cell_speedtests))
+            })
+            .map_ok(|(rolling_average, cell_speedtests)| {
+                let speedtests = cell_speedtests
+                    .into_iter()
+                    .map(Speedtest::from)
+                    .chain(rolling_average.speedtests.into_iter())
+                    .take(SPEEDTEST_AVG_MAX_DATA_POINTS)
+                    .collect::<Vec<Speedtest>>();
+
+                Self {
+                    id: rolling_average.id,
+                    latest_timestamp: speedtests[0].timestamp,
+                    speedtests,
+                }
+            }))
     }
 
     pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
@@ -188,70 +231,16 @@ impl SpeedtestAverages {
 
         Ok(Self { speedtests })
     }
+}
 
-    pub async fn validate_speedtests(
-        exec: impl SpeedtestStore + Copy,
-        file_store: &FileStore,
-        epoch: &Range<DateTime<Utc>>,
-    ) -> Result<Self> {
-        let mut speedtests = HashMap::new();
-        let file_list = file_store
-            .list_all(FileType::CellSpeedtestIngestReport, epoch.start, epoch.end)
-            .await?;
-        let mut stream = file_store.source(stream::iter(file_list).map(Ok).boxed());
-
-        while let Some(Ok(msg)) = stream.next().await {
-            let CellSpeedtest {
-                pubkey,
-                timestamp,
-                upload_speed,
-                download_speed,
-                latency,
-                ..
-            } = match CellSpeedtestIngestReport::decode(msg) {
-                Ok(report) => report.report,
-                Err(err) => {
-                    tracing::error!("Could not decode cell speedtest ingest report: {:?}", err);
-                    continue;
-                }
-            };
-
-            if !speedtests.contains_key(&pubkey) {
-                let SpeedtestRollingAverage {
-                    id,
-                    speedtests: window,
-                    ..
-                } = exec
-                    .fetch(&pubkey)
-                    .await
-                    .unwrap_or_else(|_| SpeedtestRollingAverage::new(pubkey.clone()));
-
-                speedtests.insert(id, VecDeque::from(window));
-            }
-
-            let timestamp = timestamp.naive_utc();
-            let upload_speed = upload_speed as i64;
-            let download_speed = download_speed as i64;
-            let latency = latency as i32;
-
-            // Unwrap here is guaranteed never to panic
-            let window = speedtests.get_mut(&pubkey).unwrap();
-
-            // If there are N speedtests in the window, remove the one in the front
-            while window.len() >= SPEEDTEST_AVG_MAX_DATA_POINTS {
-                window.pop_back();
-            }
-
-            // Add the new speedtest to the back of the window
-            window.push_front(Speedtest {
-                timestamp,
-                upload_speed,
-                download_speed,
-                latency,
-            });
+impl Extend<SpeedtestRollingAverage> for SpeedtestAverages {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = SpeedtestRollingAverage>,
+    {
+        for SpeedtestRollingAverage { id, speedtests, .. } in iter.into_iter() {
+            self.speedtests.insert(id, VecDeque::from(speedtests));
         }
-
-        Ok(Self { speedtests })
     }
 }
 
@@ -416,7 +405,7 @@ impl SpeedtestTier {
 
 #[async_trait::async_trait]
 pub trait SpeedtestStore {
-    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage>;
+    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>>;
 }
 
 #[async_trait::async_trait]
@@ -424,10 +413,10 @@ impl<E> SpeedtestStore for E
 where
     for<'a> E: sqlx::PgExecutor<'a>,
 {
-    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage> {
+    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>> {
         sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
             .bind(id)
-            .fetch_one(self)
+            .fetch_optional(self)
             .await
             .map_err(Error::from)
     }
@@ -438,8 +427,8 @@ pub struct EmptyDatabase;
 
 #[async_trait::async_trait]
 impl SpeedtestStore for EmptyDatabase {
-    async fn fetch(self, _id: &PublicKey) -> Result<SpeedtestRollingAverage> {
-        Err(Error::from(sqlx::Error::RowNotFound))
+    async fn fetch(self, _id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>> {
+        Ok(None)
     }
 }
 
