@@ -82,7 +82,7 @@ impl SpeedtestRollingAverage {
                 HashMap::<PublicKey, Vec<CellSpeedtest>>::new(),
                 |mut map, cell_speedtest| async move {
                     map.entry(cell_speedtest.pubkey.clone())
-                        .or_insert(vec![])
+                        .or_default()
                         .push(cell_speedtest);
                     map
                 },
