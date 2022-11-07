@@ -85,6 +85,10 @@ impl DenyList {
     }
 
     pub async fn check_key(&self, pub_key: &PublicKey) -> bool {
+        if self.filter.len() == 0 {
+            tracing::warn!("empty denylist filter, rejecting key");
+            return false;
+        }
         self.filter.contains(&public_key_hash(pub_key))
     }
 }
