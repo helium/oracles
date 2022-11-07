@@ -176,8 +176,9 @@ fn construct_poc_receipt(
             let beacon_hex_scale =
                 Decimal::from_f32_retain(beacon_hex_scale).unwrap_or_else(|| dec!(1.0));
             let reward_unit = poc_challengee_reward_unit(num_witnesses)?;
-            let reward_shares = beacon_hex_scale * reward_unit;
-            let reward_shares = reward_shares.to_u32().unwrap_or_default();
+            let reward_shares = (beacon_hex_scale * reward_unit)
+                .to_u32()
+                .unwrap_or_default();
 
             // NOTE: signal, origin, snr and addr_hash are irrelevant now
             Ok(Some(BlockchainPocReceiptV1 {
@@ -224,7 +225,7 @@ fn sign_txn(txn: &BlockchainTxnPocReceiptsV2, keypair: &Keypair) -> Result<Vec<u
 // share in the generated report.
 fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
     if num_witnesses == 0 {
-        Err(Error::ZeroWitnesses)
+        Ok(Decimal::ZERO)
     } else if num_witnesses < WITNESS_REDUNDANCY {
         Ok(Decimal::from(WITNESS_REDUNDANCY / num_witnesses))
     } else {
