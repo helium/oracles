@@ -2,9 +2,10 @@ use crate::{
     last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::{LoraStatus, Report},
-    Result, Settings,
+    Error, Result, Settings,
 };
 use chrono::Utc;
+use density_scaler::QuerySender;
 use file_store::{
     file_sink,
     file_sink::MessageSender,
@@ -38,6 +39,7 @@ pub struct Runner {
     pool: PgPool,
     settings: Settings,
     follower_service: FollowerService,
+    density_queries: Option<QuerySender>,
 }
 
 impl Runner {
@@ -48,11 +50,18 @@ impl Runner {
             pool,
             settings: settings.clone(),
             follower_service,
+            density_queries: None,
         })
     }
 
-    pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(
+        &mut self,
+        density_queries: QuerySender,
+        shutdown: &triggered::Listener,
+    ) -> Result {
         tracing::info!("starting runner");
+
+        self.density_queries = Some(density_queries);
 
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
@@ -185,13 +194,18 @@ impl Runner {
             )
             .await?;
 
+            let density_queries = match &self.density_queries {
+                Some(density_queries) => density_queries.clone(),
+                None => return Err(Error::custom("missing density scaler query sender")),
+            };
             // verify POC beacon
-            let beacon_verify_result = poc.verify_beacon().await?;
+            let beacon_verify_result = poc.verify_beacon(density_queries.clone()).await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
                     // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                        let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
+                        let verified_witnesses_result =
+                            poc.verify_witnesses(&beacon_info, density_queries).await?;
                         // check if there are any failed witnesses
                         // if so update the DB attempts count
                         // and halt here, let things be reprocessed next tick
@@ -215,7 +229,7 @@ impl Runner {
                         let valid_beacon_report = LoraValidBeaconReport {
                             received_timestamp: beacon_received_ts,
                             location: beacon_info.location,
-                            hex_scale: beacon_verify_result.hex_scale.unwrap_or(0.0),
+                            hex_scale: beacon_verify_result.hex_scale.unwrap_or_default(),
                             report: beacon.clone(),
                         };
                         self.handle_valid_poc(

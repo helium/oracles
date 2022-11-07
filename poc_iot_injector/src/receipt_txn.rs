@@ -1,4 +1,5 @@
 use crate::{Error, Result};
+use density_scaler::SCALING_PRECISION;
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn,
@@ -128,8 +129,7 @@ fn construct_poc_witnesses(
                 ..
             } = witness_report_req;
 
-            let witness_hex_scale =
-                Decimal::from_f32_retain(witness_hex_scale).unwrap_or_else(|| dec!(1.0));
+            let witness_hex_scale = Decimal::new(witness_hex_scale as i64, SCALING_PRECISION);
             let reward_unit = poc_challengee_reward_unit(num_witnesses as u32)?;
             let reward_shares = witness_hex_scale * reward_unit;
             let reward_shares = reward_shares.to_u32().unwrap_or_default();
@@ -184,8 +184,7 @@ fn construct_poc_receipt(
                 ..
             } = beacon_report_req;
 
-            let beacon_hex_scale =
-                Decimal::from_f32_retain(beacon_hex_scale).unwrap_or_else(|| dec!(1.0));
+            let beacon_hex_scale = Decimal::new(beacon_hex_scale as i64, SCALING_PRECISION);
             let reward_unit = poc_challengee_reward_unit(num_witnesses)?;
             let reward_shares = (beacon_hex_scale * reward_unit)
                 .to_u32()

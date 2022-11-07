@@ -1,5 +1,6 @@
 use crate::{last_beacon::LastBeacon, Error, Result};
 use chrono::{DateTime, Duration, Utc};
+use density_scaler::QuerySender;
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
     lora_valid_poc::LoraValidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
@@ -14,6 +15,7 @@ use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::f64::consts::PI;
 
@@ -48,7 +50,7 @@ pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: Option<InvalidReason>,
     pub gateway_info: Option<GatewayInfo>,
-    pub hex_scale: Option<f32>,
+    pub hex_scale: Option<Decimal>,
 }
 
 pub struct VerifyWitnessResult {
@@ -82,7 +84,10 @@ impl Poc {
         })
     }
 
-    pub async fn verify_beacon(&mut self) -> Result<VerifyBeaconResult> {
+    pub async fn verify_beacon(
+        &mut self,
+        density_queries: QuerySender,
+    ) -> Result<VerifyBeaconResult> {
         let beacon = &self.beacon_report.report;
         // use pub key to get GW info from our follower
         let beaconer_pub_key = beacon.pub_key.clone();
@@ -152,19 +157,22 @@ impl Poc {
         }
 
         //check beaconer has an asserted location
-        if beaconer_info.location.is_none() {
-            tracing::debug!(
-                "beacon verification failed, reason: {:?}",
-                InvalidReason::NotAsserted
-            );
-            let resp = VerifyBeaconResult {
-                result: VerificationStatus::Invalid,
-                invalid_reason: Some(InvalidReason::NotAsserted),
-                gateway_info: Some(beaconer_info),
-                hex_scale: None,
-            };
-            return Ok(resp);
-        }
+        let beaconer_location = match beaconer_info.location {
+            Some(beaconer_location) => beaconer_location,
+            None => {
+                tracing::debug!(
+                    "beacon verification failed, reason: {:?}",
+                    InvalidReason::NotAsserted
+                );
+                let resp = VerifyBeaconResult {
+                    result: VerificationStatus::Invalid,
+                    invalid_reason: Some(InvalidReason::NotAsserted),
+                    gateway_info: Some(beaconer_info),
+                    hex_scale: None,
+                };
+                return Ok(resp);
+            }
+        };
 
         // check beaconer is permitted to participate in POC
         match beaconer_info.staking_mode {
@@ -185,8 +193,8 @@ impl Poc {
             GatewayStakingMode::Light => (),
         }
 
-        // TODO: insert hex scale lookup here
-        //       value hardcoded to 1.0 temporarily
+        // beaconer location is guaranteed to unwrap as we've already checked and returned early above when it's `None`
+        let scaling_factor = density_queries.query(beaconer_location.to_string()).await?;
 
         tracing::debug!("beacon verification success");
         // all is good with the beacon
@@ -194,7 +202,7 @@ impl Poc {
             result: VerificationStatus::Valid,
             invalid_reason: None,
             gateway_info: Some(beaconer_info),
-            hex_scale: Some(1.0),
+            hex_scale: scaling_factor,
         };
 
         Ok(resp)
@@ -203,6 +211,7 @@ impl Poc {
     pub async fn verify_witnesses(
         &mut self,
         beacon_info: &GatewayInfo,
+        density_queries: QuerySender,
     ) -> Result<VerifyWitnessesResult> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
@@ -215,11 +224,14 @@ impl Poc {
                     let gw_info: GatewayInfo = witness_result.gateway_info.ok_or_else(|| {
                         Error::not_found("invalid FollowerGatewayResp for witness")
                     })?;
-                    // TODO: perform hex density check here for a valid witness
+                    let scaling_factor = density_queries
+                        .query(gw_info.location.unwrap_or_default().to_string())
+                        .await?
+                        .unwrap_or(Decimal::ONE);
                     let valid_witness = LoraValidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
                         location: gw_info.location,
-                        hex_scale: 1.0, //TODO: replace with actual hex scale when available
+                        hex_scale: scaling_factor,
                         report: witness_report.report,
                     };
                     valid_witnesses.push(valid_witness)

@@ -27,7 +27,7 @@ const DENSITY_TGT_RES: u8 = 4;
 const MAX_RES: u8 = 11;
 const USED_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES;
 const SCALING_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES + 2;
-const DEC_PRECISION: u32 = 4;
+pub const SCALING_PRECISION: u32 = 4;
 
 static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
     // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
@@ -191,14 +191,14 @@ pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingM
                 ) {
                     (Some(unclipped), Some(clipped)) => {
                         scale
-                            * (Decimal::new(*clipped as i64, DEC_PRECISION)
-                                / Decimal::new(*unclipped as i64, DEC_PRECISION))
+                            * (Decimal::new(*clipped as i64, SCALING_PRECISION)
+                                / Decimal::new(*unclipped as i64, SCALING_PRECISION))
                     }
                     _ => scale,
                 }
             })
         });
-        let trunc_scale = scale.round_dp(DEC_PRECISION);
+        let trunc_scale = scale.round_dp(SCALING_PRECISION);
         scaling_map.insert(&hex.h3index().to_string(), trunc_scale);
     }
 }

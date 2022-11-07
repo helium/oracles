@@ -1,5 +1,7 @@
 use clap::Parser;
-use poc_iot_verifier::{loader, purger, runner, Result, Settings};
+use density_scaler::Server as DensityScaler;
+use futures::TryFutureExt;
+use poc_iot_verifier::{loader, purger, runner, Error, Result, Settings};
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -55,6 +57,9 @@ impl Server {
         let pool = settings.database.connect(2).await?;
         sqlx::migrate!().run(&pool).await?;
 
+        // Create the density scaler query messaging channel
+        let (density_tx, density_rx) = density_scaler::query_channel(50);
+
         // configure shutdown trigger
         let (shutdown_trigger, shutdown) = triggered::trigger();
         tokio::spawn(async move {
@@ -63,12 +68,16 @@ impl Server {
         });
 
         let loader = loader::Loader::from_settings(settings).await?;
-        let runner = runner::Runner::from_settings(settings).await?;
+        let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
+        let mut density_scaler = DensityScaler::from_settings(settings.density_scaler.clone())?;
         tokio::try_join!(
-            runner.run(&shutdown),
+            runner.run(density_tx, &shutdown),
             loader.run(&shutdown),
-            purger.run(&shutdown)
+            purger.run(&shutdown),
+            density_scaler
+                .run(density_rx, &shutdown)
+                .map_err(Error::from),
         )
         .map(|_| ())
     }

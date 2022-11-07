@@ -5,17 +5,22 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
+use density_scaler::SCALING_PRECISION;
 use helium_proto::services::poc_lora::{
     LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidPocV1, LoraValidWitnessReportV1,
     LoraWitnessReportReqV1,
 };
+use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal_macros::dec;
 use serde::Serialize;
+
+const SCALE_MULTIPLIER: Decimal = dec!(100);
 
 #[derive(Serialize, Clone)]
 pub struct LoraValidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
     pub location: Option<u64>,
-    pub hex_scale: f32,
+    pub hex_scale: Decimal,
     pub report: LoraBeaconReport,
 }
 
@@ -23,7 +28,7 @@ pub struct LoraValidBeaconReport {
 pub struct LoraValidWitnessReport {
     pub received_timestamp: DateTime<Utc>,
     pub location: Option<u64>,
-    pub hex_scale: f32,
+    pub hex_scale: Decimal,
     pub report: LoraWitnessReport,
 }
 
@@ -100,7 +105,7 @@ impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             location: v.location.parse().ok(),
-            hex_scale: v.hex_scale,
+            hex_scale: Decimal::new(v.hex_scale as i64, SCALING_PRECISION),
             report: v
                 .report
                 .ok_or_else(|| Error::not_found("lora valid beacon report v1"))?
@@ -120,7 +125,7 @@ impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
                 .location
                 .map(|l| l.to_string())
                 .unwrap_or_else(String::new),
-            hex_scale: v.hex_scale,
+            hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             report: Some(report),
         }
     }
@@ -133,7 +138,7 @@ impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
         Ok(Self {
             received_timestamp,
             location: v.location.parse().ok(),
-            hex_scale: v.hex_scale,
+            hex_scale: Decimal::new(v.hex_scale as i64, SCALING_PRECISION),
             report: v
                 .report
                 .ok_or_else(|| Error::not_found("lora valid witness port v1"))?
@@ -152,7 +157,7 @@ impl From<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
                 .location
                 .map(|l| l.to_string())
                 .unwrap_or_else(String::new),
-            hex_scale: v.hex_scale,
+            hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             report: Some(report),
         }
     }

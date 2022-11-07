@@ -8,8 +8,6 @@ use futures::stream::StreamExt;
 use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
 use tokio::time;
 
-const DEFAULT_TRIGGER_INTERVAL_SECS: i64 = 1800; // 30 min
-
 pub struct Server {
     scaling_map: ScalingMap,
     follower: FollowerService,
@@ -28,7 +26,7 @@ impl Server {
     pub async fn run(
         &mut self,
         mut queries: QueryReceiver,
-        shutdown: triggered::Listener,
+        shutdown: &triggered::Listener,
     ) -> Result {
         tracing::info!("starting density scaler process");
 
