@@ -147,8 +147,12 @@ impl Runner {
         let beacon_len = db_beacon_reports.len();
         tracing::info!("found {beacon_len} beacons ready for verification");
         for db_beacon in db_beacon_reports {
+            let entropy_start_time = match db_beacon.timestamp {
+                Some(v) => v,
+                None => return Ok(())
+            };
             let packet_data = &db_beacon.packet_data;
-            let entropy_start_time = db_beacon.timestamp;
+
             let beacon_buf: &[u8] = &db_beacon.report_data;
             let beacon_report: LoraBeaconIngestReport =
                 LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
