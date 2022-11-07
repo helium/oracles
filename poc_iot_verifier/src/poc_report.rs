@@ -163,7 +163,7 @@ impl Report {
     {
         sqlx::query_as::<_, Self>(
             r#"
-            select * from poc_report
+            select * from poc_report, now() as timestamp
             where packet_data = $1
             and report_type = 'witness' and status = 'pending'
             and attempts < $2
