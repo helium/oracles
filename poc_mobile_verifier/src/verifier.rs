@@ -107,11 +107,7 @@ impl VerifierDaemon {
 
         let rewards = self
             .verifier
-            .reward_epoch(
-                &scheduler.reward_period,
-                heartbeats,
-                speedtests.without_lapsed(),
-            )
+            .reward_epoch(&scheduler.reward_period, heartbeats, speedtests)
             .await?;
 
         let mut transaction = self.pool.begin().await?;
@@ -197,7 +193,7 @@ async fn last_verified_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Ut
 }
 
 async fn save_last_verified_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::store(exec, "last_verified_end_time", value.timestamp() as i64)
+    meta::store(exec, "last_verified_end_time", value.timestamp())
         .await
         .map_err(Error::from)
 }
@@ -207,7 +203,7 @@ async fn last_rewarded_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Ut
 }
 
 async fn save_last_rewarded_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::store(exec, "last_rewarded_end_time", value.timestamp() as i64)
+    meta::store(exec, "last_rewarded_end_time", value.timestamp())
         .await
         .map_err(Error::from)
 }
@@ -217,7 +213,7 @@ async fn next_rewarded_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Ut
 }
 
 async fn save_next_rewarded_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::store(exec, "next_rewarded_end_time", value.timestamp() as i64)
+    meta::store(exec, "next_rewarded_end_time", value.timestamp())
         .await
         .map_err(Error::from)
 }

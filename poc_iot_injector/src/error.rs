@@ -30,6 +30,10 @@ pub enum Error {
     DbError(#[from] db_store::Error),
     #[error("follower error")]
     Follower(#[from] node_follower::Error),
+    #[error("txn construction error")]
+    TxnConstruction,
+    #[error("txn submission error, hash: {0}")]
+    TxnSubmission(String),
 }
 
 #[derive(Error, Debug)]

@@ -20,6 +20,10 @@ mode = "lora"
 #
 # cache = "/var/data/ingest"
 
+# Network required by all public keys: mainnet | testnet
+#
+network = "mainnet"
+
 [output]
 # Output bucket for ingested data
 

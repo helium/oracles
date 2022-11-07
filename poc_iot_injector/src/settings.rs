@@ -22,6 +22,9 @@ pub struct Settings {
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,
+    /// Local folder for storing intermediate files
+    pub cache: String,
+    pub output: file_store::Settings,
 }
 
 pub fn default_log() -> String {

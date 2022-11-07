@@ -159,16 +159,17 @@ impl SpeedtestRollingAverage {
                 download_speed_avg_bps,
                 latency_avg_ms,
                 timestamp: Utc::now().encode_timestamp(),
-                speedtests: self
-                    .speedtests
-                    .iter()
-                    .map(|st| proto::Speedtest {
-                        timestamp: st.timestamp.timestamp() as u64,
-                        upload_speed_bps: st.upload_speed as u64,
-                        download_speed_bps: st.download_speed as u64,
-                        latency_ms: st.latency as u32,
-                    })
-                    .collect(),
+                speedtests: speedtests_without_lapsed(
+                    self.speedtests.iter(),
+                    Duration::hours(SPEEDTEST_LAPSE)
+                )
+                .map(|st| proto::Speedtest {
+                    timestamp: st.timestamp.timestamp() as u64,
+                    upload_speed_bps: st.upload_speed as u64,
+                    download_speed_bps: st.download_speed as u64,
+                    latency_ms: st.latency as u32,
+                })
+                .collect(),
                 validity,
                 reward_multiplier,
             }
@@ -207,28 +208,6 @@ impl SpeedtestAverages {
         self.speedtests.get(pub_key).map(Average::from)
     }
 
-    pub fn without_lapsed(self) -> Self {
-        let mut speedtests = HashMap::new();
-
-        for (pubkey, window) in self.speedtests.into_iter() {
-            let mut contiguous_tests = VecDeque::new();
-            let mut window = window.iter().peekable();
-            while let Some(st) = window.next() {
-                match window.peek() {
-                    Some(next_st)
-                        if (st.timestamp - next_st.timestamp)
-                            > Duration::hours(SPEEDTEST_LAPSE) =>
-                    {
-                        break
-                    }
-                    _ => contiguous_tests.push_back(st.clone()),
-                }
-            }
-            speedtests.insert(pubkey.clone(), contiguous_tests);
-        }
-        Self { speedtests }
-    }
-
     pub async fn validated(
         exec: impl sqlx::PgExecutor<'_> + Copy,
         period_end: DateTime<Utc>,
@@ -265,6 +244,20 @@ impl Extend<SpeedtestRollingAverage> for SpeedtestAverages {
     }
 }
 
+fn speedtests_without_lapsed<'a>(
+    iterable: impl Iterator<Item = &'a Speedtest>,
+    lapse_cliff: Duration,
+) -> impl Iterator<Item = &'a Speedtest> {
+    let mut last_timestamp = None;
+    iterable.take_while(move |speedtest| match last_timestamp {
+        Some(ts) if ts - speedtest.timestamp > lapse_cliff => false,
+        None | Some(_) => {
+            last_timestamp = Some(speedtest.timestamp);
+            true
+        }
+    })
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Average {
     pub window_size: usize,
@@ -288,7 +281,7 @@ where
             download_speed,
             latency,
             ..
-        } in iter.into_iter()
+        } in speedtests_without_lapsed(iter.into_iter(), Duration::hours(SPEEDTEST_LAPSE))
         {
             sum_upload += *upload_speed as u64;
             sum_download += *download_speed as u64;
@@ -457,30 +450,30 @@ mod test {
     fn known_speedtests() -> Vec<Speedtest> {
         // This data is taken from the spreadsheet
         // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Acceptable?
-        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
-        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
-        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
-        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
-        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
-        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
-        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
         // 2022-08-02 18:00:00	70	30	40	103.33	19.17	30.00	TRUE
+        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
+        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
+        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
+        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
+        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
+        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
+        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
         vec![
-            Speedtest::new(parse_dt("2022-08-01 0:00:00 +0000"), 0, 0, 0),
+            Speedtest::new(parse_dt("2022-08-02 18:00:00 +0000"), 0, 0, 0),
             Speedtest::new(
-                parse_dt("2022-08-01 6:00:00 +0000"),
+                parse_dt("2022-08-02 12:00:00 +0000"),
                 bytes_per_s(20),
                 bytes_per_s(150),
                 70,
             ),
             Speedtest::new(
-                parse_dt("2022-08-01 12:00:00 +0000"),
+                parse_dt("2022-08-02 6:00:00 +0000"),
                 bytes_per_s(10),
                 bytes_per_s(118),
                 50,
             ),
             Speedtest::new(
-                parse_dt("2022-08-01 18:00:00 +0000"),
+                parse_dt("2022-08-02 0:00:00 +0000"),
                 bytes_per_s(30),
                 bytes_per_s(112),
                 40,
@@ -492,19 +485,19 @@ mod test {
                 10,
             ),
             Speedtest::new(
-                parse_dt("2022-08-02 6:00:00 +0000"),
+                parse_dt("2022-08-01 18:00:00 +0000"),
                 bytes_per_s(20),
                 bytes_per_s(130),
                 10,
             ),
             Speedtest::new(
-                parse_dt("2022-08-02 12:00:00 +0000"),
+                parse_dt("2022-08-01 12:00:00 +0000"),
                 bytes_per_s(10),
                 bytes_per_s(100),
                 30,
             ),
             Speedtest::new(
-                parse_dt("2022-08-02 18:00:00 +0000"),
+                parse_dt("2022-08-01 6:00:00 +0000"),
                 bytes_per_s(30),
                 bytes_per_s(70),
                 40,
@@ -574,5 +567,39 @@ mod test {
                 assert_eq!(avg.latest_timestamp, first.timestamp);
             }
         }
+    }
+
+    #[test]
+    fn check_speedtest_without_lapsed() {
+        let speedtest_cutoff = Duration::hours(10);
+        let contiguos_speedtests = known_speedtests();
+        let contiguous_speedtests: Vec<&Speedtest> =
+            speedtests_without_lapsed(contiguos_speedtests.iter(), speedtest_cutoff).collect();
+
+        let disjoint_speedtests = vec![
+            Speedtest::new(
+                parse_dt("2022-08-02 6:00:00 +0000"),
+                bytes_per_s(20),
+                bytes_per_s(150),
+                70,
+            ),
+            Speedtest::new(
+                parse_dt("2022-08-01 18:00:00 +0000"),
+                bytes_per_s(10),
+                bytes_per_s(118),
+                50,
+            ),
+            Speedtest::new(
+                parse_dt("2022-08-01 12:00:00 +0000"),
+                bytes_per_s(30),
+                bytes_per_s(112),
+                40,
+            ),
+        ];
+        let disjoint_speedtests: Vec<&Speedtest> =
+            speedtests_without_lapsed(disjoint_speedtests.iter(), speedtest_cutoff).collect();
+
+        assert_eq!(contiguous_speedtests.len(), 8);
+        assert_eq!(disjoint_speedtests.len(), 1);
     }
 }

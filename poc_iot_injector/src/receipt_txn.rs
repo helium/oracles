@@ -1,11 +1,12 @@
 use crate::{Error, Result};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
+    blockchain_txn::Txn,
     services::poc_lora::{
         LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidPocV1, LoraValidWitnessReportV1,
         LoraWitnessReportReqV1,
     },
-    BlockchainPocPathElementV1, BlockchainPocReceiptV1, BlockchainPocWitnessV1,
+    BlockchainPocPathElementV1, BlockchainPocReceiptV1, BlockchainPocWitnessV1, BlockchainTxn,
     BlockchainTxnPocReceiptsV2, Message,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps};
@@ -24,7 +25,7 @@ pub fn handle_report_msg(
     msg: prost::bytes::BytesMut,
     keypair: Arc<Keypair>,
     timestamp: i64,
-) -> Result<Option<(BlockchainTxnPocReceiptsV2, Vec<u8>, String)>> {
+) -> Result<(BlockchainTxn, Vec<u8>, String)> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
 
@@ -44,13 +45,20 @@ pub fn handle_report_msg(
 
         path.push(path_element);
 
-        Ok(Some(construct_txn(path, timestamp, &keypair)?))
+        let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
+        Ok((wrap_txn(bare_txn), hash, hash_b64_url))
     } else {
-        Ok(None)
+        Err(Error::TxnConstruction)
     }
 }
 
-fn construct_txn(
+fn wrap_txn(txn: BlockchainTxnPocReceiptsV2) -> BlockchainTxn {
+    BlockchainTxn {
+        txn: Some(Txn::PocReceiptsV2(txn)),
+    }
+}
+
+fn construct_bare_txn(
     path: PocPath,
     timestamp: i64,
     keypair: &Keypair,
@@ -198,7 +206,7 @@ fn construct_poc_receipt(
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
     let mut txn = txn.clone();
     txn.signature = vec![];
-    let digest = Sha256::digest(&txn.encode_to_vec()).to_vec();
+    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
     (
         digest.clone(),
         base64::encode_config(&digest, base64::URL_SAFE_NO_PAD),

@@ -21,10 +21,6 @@ pub struct Cli {
 impl Cli {
     pub async fn run(self) -> Result {
         let settings = Settings::new(self.config)?;
-        tracing_subscriber::registry()
-            .with(tracing_subscriber::EnvFilter::new(&settings.log))
-            .with(tracing_subscriber::fmt::layer())
-            .init();
         self.cmd.run(settings).await
     }
 }

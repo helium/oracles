@@ -1,4 +1,4 @@
-use crate::{required_network, Error, EventId, Result, Settings};
+use crate::{Error, EventId, Result, Settings};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -27,13 +27,14 @@ impl GrpcServer {
         speedtest_req_tx: file_sink::MessageSender,
         heartbeat_report_tx: file_sink::MessageSender,
         speedtest_report_tx: file_sink::MessageSender,
+        required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
             heartbeat_req_tx,
             speedtest_req_tx,
             heartbeat_report_tx,
             speedtest_report_tx,
-            required_network: required_network()?,
+            required_network,
         })
     }
 
@@ -156,6 +157,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         speedtest_req_tx,
         heartbeat_report_tx,
         speedtest_report_tx,
+        settings.network,
     )?;
 
     let api_token = settings
