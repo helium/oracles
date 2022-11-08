@@ -18,6 +18,9 @@ pub struct Settings {
     /// unix epoch)
     #[serde(default = "default_last_poc_submission")]
     pub last_poc_submission: i64,
+    #[serde(default = "default_do_submission")]
+    /// Whether to submit txns to mainnet, default: false
+    pub do_submission: bool,
     pub database: db_store::Settings,
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
@@ -33,6 +36,10 @@ pub fn default_log() -> String {
 
 pub fn default_last_poc_submission() -> i64 {
     0
+}
+
+pub fn default_do_submission() -> bool {
+    false
 }
 
 fn default_trigger_interval() -> u64 {

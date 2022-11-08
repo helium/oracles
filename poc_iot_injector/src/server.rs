@@ -1,5 +1,6 @@
 use crate::{
-    receipt_txn::handle_report_msg, Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
+    receipt_txn::{handle_report_msg, TxnDetails},
+    Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
@@ -7,7 +8,6 @@ use file_store::{file_sink, file_sink_write, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use futures::TryStreamExt;
 use helium_crypto::Keypair;
-use helium_proto::BlockchainTxn;
 use node_follower::txn_service::TransactionService;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
@@ -22,6 +22,7 @@ pub struct Server {
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
     receipt_sender: file_sink::MessageSender,
+    do_submission: bool,
 }
 
 impl Server {
@@ -29,6 +30,7 @@ impl Server {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
+        let do_submission = settings.do_submission;
         let (receipt_sender, _) = file_sink::message_channel(50);
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
@@ -46,6 +48,7 @@ impl Server {
             iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
             receipt_sender,
+            do_submission,
         };
         Ok(result)
     }
@@ -87,6 +90,7 @@ impl Server {
             &self.receipt_sender,
             after_utc,
             before_utc,
+            self.do_submission,
         )
         .await?;
 
@@ -110,6 +114,7 @@ async fn submit_txns(
     receipt_sender: &file_sink::MessageSender,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
+    do_submission: bool,
 ) -> Result {
     let file_list = store
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
@@ -119,14 +124,19 @@ async fn submit_txns(
 
     store
         .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
+        .map_err(Error::from)
         .try_for_each_concurrent(STORE_WORKERS, |msg| {
             let mut shared_txn_service = txn_service.clone();
             let shared_key = keypair.clone();
             async move {
-                if let Ok(txn) =
-                    handle_txn_submission(msg, shared_key, &mut shared_txn_service, before_ts).await
-                {
-                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn).await?;
+                let txn_details = handle_report_msg(msg, shared_key, before_ts)?;
+                if do_submission {
+                    handle_txn_submission(txn_details.clone(), &mut shared_txn_service).await?;
+                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
+                        .await?;
+                } else {
+                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
+                        .await?;
                 }
                 Ok(())
             }
@@ -136,17 +146,24 @@ async fn submit_txns(
 }
 
 async fn handle_txn_submission(
-    msg: prost::bytes::BytesMut,
-    shared_key: Arc<Keypair>,
+    txn_details: TxnDetails,
     txn_service: &mut TransactionService,
-    before_ts: i64,
-) -> Result<BlockchainTxn> {
-    let (txn, hash, hash_b64_url) = handle_report_msg(msg, shared_key, before_ts)?;
-    if txn_service.submit(txn.clone(), &hash).await.is_ok() {
-        tracing::debug!("txn submitted successfully, hash: {:?}", hash_b64_url);
-        Ok(txn)
+) -> Result {
+    if txn_service
+        .submit(txn_details.txn, &txn_details.hash)
+        .await
+        .is_ok()
+    {
+        tracing::debug!(
+            "txn submitted successfully, hash: {:?}",
+            txn_details.hash_b64_url
+        );
+        Ok(())
     } else {
-        tracing::warn!("txn submission failed!, hash: {:?}", hash_b64_url);
-        Err(Error::TxnSubmission(hash_b64_url))
+        tracing::warn!(
+            "txn submission failed!, hash: {:?}",
+            txn_details.hash_b64_url
+        );
+        Err(Error::TxnSubmission(txn_details.hash_b64_url))
     }
 }

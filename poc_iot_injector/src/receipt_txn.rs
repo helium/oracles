@@ -21,11 +21,18 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = dec!(2.0);
 
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
+#[derive(Clone)]
+pub struct TxnDetails {
+    pub txn: BlockchainTxn,
+    pub hash: Vec<u8>,
+    pub hash_b64_url: String,
+}
+
 pub fn handle_report_msg(
     msg: prost::bytes::BytesMut,
     keypair: Arc<Keypair>,
     timestamp: i64,
-) -> Result<(BlockchainTxn, Vec<u8>, String)> {
+) -> Result<TxnDetails> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
 
@@ -46,7 +53,11 @@ pub fn handle_report_msg(
         path.push(path_element);
 
         let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
-        Ok((wrap_txn(bare_txn), hash, hash_b64_url))
+        Ok(TxnDetails {
+            txn: wrap_txn(bare_txn),
+            hash,
+            hash_b64_url,
+        })
     } else {
         Err(Error::TxnConstruction)
     }

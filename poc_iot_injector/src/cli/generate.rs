@@ -1,5 +1,6 @@
 use crate::{
-    receipt_txn::handle_report_msg, Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
+    receipt_txn::{handle_report_msg, TxnDetails},
+    Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use file_store::{FileStore, FileType};
@@ -8,7 +9,7 @@ use futures::{
     TryStreamExt,
 };
 use helium_crypto::Keypair;
-use helium_proto::{BlockchainTxn, Message};
+use helium_proto::Message;
 use std::sync::{Arc, Mutex};
 
 /// Generate poc rewards
@@ -69,12 +70,10 @@ async fn process_msg(
     msg: prost::bytes::BytesMut,
     shared_key_clone: Arc<Keypair>,
     before_ts: i64,
-) -> Result<BlockchainTxn> {
-    if let Ok((txn, _hash, _hash_b64_url)) =
-        handle_report_msg(msg.clone(), shared_key_clone, before_ts)
-    {
-        tracing::debug!("txn_bin: {:?}", txn.encode_to_vec());
-        Ok(txn)
+) -> Result<TxnDetails> {
+    if let Ok(txn_details) = handle_report_msg(msg.clone(), shared_key_clone, before_ts) {
+        tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
+        Ok(txn_details)
     } else {
         tracing::error!("unable to construct txn for msg {:?}", msg);
         Err(Error::TxnConstruction)
