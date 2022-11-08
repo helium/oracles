@@ -14,8 +14,6 @@ use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct GrpcServer {
-    heartbeat_req_tx: file_sink::MessageSender,
-    speedtest_req_tx: file_sink::MessageSender,
     heartbeat_report_tx: file_sink::MessageSender,
     speedtest_report_tx: file_sink::MessageSender,
     required_network: Network,
@@ -23,15 +21,11 @@ pub struct GrpcServer {
 
 impl GrpcServer {
     fn new(
-        heartbeat_req_tx: file_sink::MessageSender,
-        speedtest_req_tx: file_sink::MessageSender,
         heartbeat_report_tx: file_sink::MessageSender,
         speedtest_report_tx: file_sink::MessageSender,
         required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
-            heartbeat_req_tx,
-            speedtest_req_tx,
             heartbeat_report_tx,
             speedtest_report_tx,
             required_network,
@@ -68,11 +62,10 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event_id = EventId::from(&event);
 
         let report = SpeedtestIngestReportV1 {
-            report: Some(event.clone()),
+            report: Some(event),
             received_timestamp: timestamp,
         };
 
-        _ = file_sink_write!("speedtest_req", &self.speedtest_req_tx, event).await;
         _ = file_sink_write!("speedtest_report", &self.speedtest_report_tx, report).await;
         metrics::increment_counter!("ingest_server_speedtest_count");
         Ok(Response::new(event_id.into()))
@@ -96,10 +89,10 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event_id = EventId::from(&event);
 
         let report = CellHeartbeatIngestReportV1 {
-            report: Some(event.clone()),
+            report: Some(event),
             received_timestamp: timestamp,
         };
-        _ = file_sink_write!("heartbeat_req", &self.heartbeat_req_tx, event).await;
+
         _ = file_sink_write!("heartbeat_report", &self.heartbeat_report_tx, report).await;
         metrics::increment_counter!("ingest_server_heartbeat_count");
         // Encode event digest, encode and return as the id
@@ -117,13 +110,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     let store_base_path = Path::new(&settings.cache);
 
-    let (heartbeat_req_tx, heartbeat_req_rx) = file_sink::message_channel(50);
-    let mut heartbeat_req_sink =
-        file_sink::FileSinkBuilder::new(FileType::CellHeartbeat, store_base_path, heartbeat_req_rx)
-            .deposits(Some(file_upload_tx.clone()))
-            .create()
-            .await?;
-
     let (heartbeat_report_tx, heartbeat_report_rx) = file_sink::message_channel(50);
     let mut heartbeat_report_sink = file_sink::FileSinkBuilder::new(
         FileType::CellHeartbeatIngestReport,
@@ -135,13 +121,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     .await?;
 
     // speedtests
-    let (speedtest_req_tx, speedtest_req_rx) = file_sink::message_channel(50);
-    let mut speedtest_req_sink =
-        file_sink::FileSinkBuilder::new(FileType::CellSpeedtest, store_base_path, speedtest_req_rx)
-            .deposits(Some(file_upload_tx.clone()))
-            .create()
-            .await?;
-
     let (speedtest_report_tx, speedtest_report_rx) = file_sink::message_channel(50);
     let mut speedtest_report_sink = file_sink::FileSinkBuilder::new(
         FileType::CellSpeedtestIngestReport,
@@ -152,13 +131,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     .create()
     .await?;
 
-    let grpc_server = GrpcServer::new(
-        heartbeat_req_tx,
-        speedtest_req_tx,
-        heartbeat_report_tx,
-        speedtest_report_tx,
-        settings.network,
-    )?;
+    let grpc_server = GrpcServer::new(heartbeat_report_tx, speedtest_report_tx, settings.network)?;
 
     let api_token = settings
         .token
@@ -191,8 +164,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     tokio::try_join!(
         server,
-        heartbeat_req_sink.run(&shutdown).map_err(Error::from),
-        speedtest_req_sink.run(&shutdown).map_err(Error::from),
         heartbeat_report_sink.run(&shutdown).map_err(Error::from),
         speedtest_report_sink.run(&shutdown).map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
