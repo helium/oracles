@@ -1,6 +1,5 @@
 /// Run the primary counters.
 /// See a packet, count a packet for billing purposes.
-
 use crate::{Result, Settings};
 //use chrono::{Duration, Utc};
 use file_store::{file_sink, file_sink::MessageSender, file_sink_write, file_upload, FileType};
@@ -44,10 +43,7 @@ impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let counters = PacketCounters::new();
         let settings = settings.clone();
-        Ok(Self {
-            counters,
-            settings,
-        })
+        Ok(Self { counters, settings })
     }
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
@@ -63,19 +59,20 @@ impl Runner {
         let (rewards_upload_tx, rewards_upload_rx) = file_upload::message_channel();
         let (debits_upload_tx, debits_upload_rx) = file_upload::message_channel();
         let rewards_upload =
-            file_upload::FileUpload::from_settings(&self.settings.rewards, rewards_upload_rx).await?;
+            file_upload::FileUpload::from_settings(&self.settings.rewards, rewards_upload_rx)
+                .await?;
         let mut rewards_sink =
             file_sink::FileSinkBuilder::new(FileType::SubnetworkRewards, rewards_path, rewards_rx)
-        .deposits(Some(rewards_upload_tx.clone()))
-        .create()
-        .await?;
+                .deposits(Some(rewards_upload_tx.clone()))
+                .create()
+                .await?;
         let debits_upload =
             file_upload::FileUpload::from_settings(&self.settings.debits, debits_upload_rx).await?;
         let mut debits_sink =
             file_sink::FileSinkBuilder::new(FileType::SubnetworkDebits, debits_path, debits_rx)
-        .deposits(Some(debits_upload_tx.clone()))
-        .create()
-        .await?;
+                .deposits(Some(debits_upload_tx.clone()))
+                .create()
+                .await?;
 
         let shutdown2 = shutdown.clone();
         let shutdown3 = shutdown.clone();
@@ -90,10 +87,7 @@ impl Runner {
                 break;
             }
             tokio::select! {
-                _ = shutdown.clone() => {
-                    tracing::info!("shutdown requested");
-                    break
-                },
+                _ = shutdown.clone() => break,
                 _ = timer.tick() =>
                     match self.handle_tick(rewards_tx.clone(), debits_tx.clone()).await {
                         Ok(()) => (),

@@ -19,10 +19,10 @@ pub struct Calculations {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all="UPPERCASE")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum Units {
-    DC,                         // Data Credits
-    HNT,                        // in units of Bones
+    DC,  // Data Credits
+    HNT, // in units of Bones
     IOT,
     MOBILE,
 }
@@ -30,7 +30,7 @@ pub enum Units {
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
     /// RUST_LOG compatible setings string.
-    #[serde(default="default_log")]
+    #[serde(default = "default_log")]
     pub log: String,
     pub calculations: Calculations,
     pub ingest: file_store::Settings,
@@ -86,7 +86,7 @@ impl FromStr for Units {
             HNT => Self::HNT,
             IOT => Self::IOT,
             MOBILE => Self::MOBILE,
-            _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput)))
+            _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
     }

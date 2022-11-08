@@ -1,10 +1,10 @@
 use crate::{Result, Settings};
 use chrono::{DateTime, NaiveDateTime, Utc};
+use file_store::{FileStore, FileType};
+use futures::{stream, StreamExt};
 use helium_crypto::public_key::PublicKey;
 use helium_proto::services::router::PacketRouterPacketReportV1;
 use helium_proto::Message;
-use file_store::{FileStore, FileType};
-use futures::{stream, StreamExt};
 use tokio::time;
 
 /// cadence for how often to look for new beacon and witness reports from s3 bucket
@@ -21,9 +21,7 @@ impl Loader {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         tracing::info!("from_settings");
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
-        Ok(Self {
-            ingest_store,
-        })
+        Ok(Self { ingest_store })
     }
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
@@ -38,10 +36,7 @@ impl Loader {
                 break;
             }
             tokio::select! {
-                _ = shutdown.clone() => {
-                    tracing::info!("shutdown requested");
-                    break
-                },
+                _ = shutdown.clone() => break,
                 _ = report_timer.tick() => match self.process_events(&store, shutdown.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
@@ -69,7 +64,7 @@ impl Loader {
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} {file_type} files");
         let handler = store
-        // FIXME: increase concurrency beyond hardcoded `1`
+            // FIXME: increase concurrency beyond hardcoded `1`
             .source_unordered(1, stream::iter(infos).map(Ok).boxed())
             .for_each_concurrent(1, |msg| async move {
                 match msg {
@@ -78,11 +73,11 @@ impl Loader {
                         Ok(()) => {
                             tracing::info!("UPDATED last_time={last_time:?}"); // DELETE ME
                             ()
-                        },
+                        }
                         Err(err) => {
                             tracing::warn!("failed to update store: {err:?}")
                         }
-                    }
+                    },
                 }
             });
         tokio::select! {
@@ -113,7 +108,10 @@ impl Loader {
             "updating: oui={} netid=0x{:04x} hash=0x{}...",
             oui,
             net_id,
-            &payload_hash[0..5].iter().map(|x| format!("{x:02x}")).collect::<String>()
+            &payload_hash[0..5]
+                .iter()
+                .map(|x| format!("{x:02x}"))
+                .collect::<String>()
         );
         if let Ok(pubkeybin) = PublicKey::from_bytes(gateway) {
             println!("pubkeybin={:?}", pubkeybin);

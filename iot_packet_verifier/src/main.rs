@@ -10,7 +10,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub struct Cli {
     /// Optional settings.toml file for configuration.
     /// Environemnt vars override settings in .toml file.
-    #[clap(short='c')]
+    #[clap(short = 'c')]
     config: Option<path::PathBuf>,
 
     #[clap(subcommand)]
@@ -25,7 +25,7 @@ impl Cli {
             .with(tracing_subscriber::fmt::layer())
             .init();
         self.cmd.run(settings).await
-   }
+    }
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -43,10 +43,22 @@ impl Cmd {
 }
 
 #[derive(clap::Args, Debug)]
-pub struct Server {}
+pub struct Server {
+    /* FIXME: add timestamp fields for begin/end range
+    /// Required timestamp of range start (inclusive)
+    #[clap(long)]
+    after: NaiveDateTime,
+    /// Required timestamp of range end (inclusive)
+    #[clap(long)]
+    before: NaiveDateTime,
+    */
+}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result {
+        // Install the prometheus metrics exporter
+        // FIXME poc_metrics::start_metrics(&settings.metrics)?;
+
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
@@ -56,6 +68,7 @@ impl Server {
 
         let runner = runner::Runner::from_settings(settings).await?;
         let loader = loader::Loader::from_settings(settings).await?;
+        // FIXME add upload to S3
         tokio::try_join!(
             runner.run(&shutdown_listener),
             loader.run(&shutdown_listener),
