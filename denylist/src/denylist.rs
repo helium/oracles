@@ -1,6 +1,4 @@
-use crate::denylist::client::DenyListClient;
-use crate::Result;
-use crate::{models::metadata::Asset, *};
+use crate::{client::DenyListClient, models::metadata::Asset, Error, Result};
 use bytes::Buf;
 use helium_crypto::{PublicKey, Verify};
 use serde::Serialize;
@@ -21,17 +19,13 @@ const FILTER_BIN_PATH: &str = "./tmp/last_saved_filter.bin";
 pub struct DenyList {
     pub tag_name: u64,
     #[serde(skip_serializing)]
+    pub client: DenyListClient,
+    #[serde(skip_serializing)]
     pub filter: Xor32,
 }
 
-impl Default for DenyList {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DenyList {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         tracing::debug!("initializing new denylist");
         // if exists default to the local saved filter bin,
         // otherwise default to empty filter
@@ -46,21 +40,31 @@ impl DenyList {
             Vec::new()
         });
         let filter = filter_from_bin(&bin).unwrap_or_else(|_| Xor32::from(Vec::new()));
-        Self {
+        let client = DenyListClient::new()?;
+        Ok(Self {
             // default tag to 0, proper tag name will be set on first
             // call to update_to_latest
             tag_name: 0,
+            client,
             filter,
-        }
+        })
     }
 
     pub async fn update_to_latest(&mut self, metadata_url: &String) -> Result {
-        tracing::info!("checking for updated denylist");
-        let mut dl_client = DenyListClient::new()?;
-        let metadata = dl_client.get_metadata(metadata_url).await?;
+        tracing::info!("checking for updated denylist, url: {metadata_url} ");
+
+        let metadata = self.client.get_metadata(metadata_url).await?;
         let new_tag_name = metadata.tag_name.parse::<u64>()?;
+        tracing::info!(
+            "local denylist tag: {:?}, remote denylist tag: {:?}",
+            self.tag_name,
+            new_tag_name
+        );
         if new_tag_name > self.tag_name {
-            tracing::info!("updated denylist tag: {:?}", new_tag_name);
+            tracing::info!(
+                "remote tag is newer, updating denylist to {:?}",
+                new_tag_name
+            );
             // get the asset
             // filter out any assets which do not have a name == "filter.bin"
             let assets: Vec<Asset> = metadata
@@ -73,7 +77,7 @@ impl DenyList {
             if let Some(asset) = assets.first() {
                 tracing::debug!("found asset for tag");
                 let asset_url = &asset.browser_download_url;
-                let bin = dl_client.get_bin(asset_url).await?;
+                let bin = self.client.get_bin(asset_url).await?;
                 if let Ok(filter) = filter_from_bin(&bin) {
                     self.filter = filter;
                     self.tag_name = new_tag_name;
@@ -132,7 +136,7 @@ fn public_key_hash(public_key: &PublicKey) -> u64 {
 pub fn save_local_filter_bin(bin: &Vec<u8>, path: &str) -> Result {
     if let Some(parent) = path::PathBuf::from(path).parent() {
         fs::create_dir_all(parent)?;
-        fs::write(path, &bin)?;
+        fs::write(path, bin)?;
     }
     Ok(())
 }

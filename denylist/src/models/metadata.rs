@@ -11,7 +11,7 @@ pub struct DenyListMetaData {
     html_url: String,
     id: i64,
     author: Item,
-    pnode_id: String,
+    node_id: String,
     pub tag_name: String,
     target_commitish: String,
     name: String,
@@ -43,7 +43,7 @@ pub struct Asset {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Item {
+struct Item {
     login: String,
     id: i64,
     node_id: String,

@@ -18,7 +18,7 @@ pub struct Settings {
 }
 
 pub fn default_log() -> String {
-    "poc_entropy=debug,poc_store=info".to_string()
+    "denylist=debug".to_string()
 }
 
 pub fn default_denylist_url() -> String {

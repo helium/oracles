@@ -49,7 +49,7 @@ impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let follower_service = FollowerService::from_settings(&settings.follower)?;
-        let deny_list = DenyList::new();
+        let deny_list = DenyList::new()?;
         Ok(Self {
             pool,
             deny_list_latest_url: settings.denylist.denylist_url.clone(),
@@ -158,12 +158,14 @@ impl Runner {
         // sink any errors whilst updating the denylist
         // the verifier should not stop just because github
         // could not be reached for example
-        match self.deny_list
+        match self
+            .deny_list
             .update_to_latest(&self.deny_list_latest_url)
-            .await {
-                Ok(())=> (),
-                Err(e) => tracing::warn!("failed to update denylist: {e}")
-            }
+            .await
+        {
+            Ok(()) => (),
+            Err(e) => tracing::warn!("failed to update denylist: {e}"),
+        }
         Ok(())
     }
 
