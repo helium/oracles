@@ -1,6 +1,0 @@
-RUST_LOG=info
-API_SOCKET_ADDR=0.0.0.0:8080
-BUCKET=examplenet-poc-entropy
-METRICS_SCRAPE_ENDPOINT=127.0.0.1:19000
-ENTROPY_STORE=/tmp/
-ENTROPY_URL=https://quicknode.url.pro:443/token

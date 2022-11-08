@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "ingest",
+    "poc_ingest",
     "db_store",
     "file_store",
     "mobile_rewards",
     "poc_mobile_verifier",
-    "entropy",
+    "poc_entropy",
     "poc_iot_verifier",
     "poc_iot_injector",
     "node_follower",
