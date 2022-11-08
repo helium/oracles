@@ -17,7 +17,6 @@ pub struct GrpcServer {
     heartbeat_report_tx: file_sink::MessageSender,
     speedtest_report_tx: file_sink::MessageSender,
     required_network: Network,
-
 }
 impl GrpcServer {
     fn new(

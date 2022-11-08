@@ -1,6 +1,11 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Duration, Utc};
+use lazy_static::lazy_static;
 use std::ops::Range;
+
+lazy_static! {
+    static ref OFFSET: Duration = Duration::minutes(30);
+}
 
 #[derive(Debug)]
 pub struct Scheduler {
@@ -30,11 +35,12 @@ impl Scheduler {
     }
 
     pub fn should_verify(&self, now: DateTime<Utc>) -> bool {
-        now >= self.verification_period.end
+        now >= self.verification_period.end + *OFFSET
     }
 
     pub fn should_reward(&self, now: DateTime<Utc>) -> bool {
-        self.verification_period.end == self.reward_period.end && now >= self.reward_period.end
+        self.verification_period.end == self.reward_period.end
+            && now >= self.reward_period.end + *OFFSET
     }
 
     pub fn next_verification_period(&self) -> Range<DateTime<Utc>> {
@@ -51,11 +57,11 @@ impl Scheduler {
         let next_reward_period = self.next_reward_period();
 
         let duration = if self.verification_period.end > now {
-            self.verification_period.end - now
-        } else if next_verification_period.end <= now {
+            self.verification_period.end + *OFFSET - now
+        } else if next_verification_period.end + *OFFSET <= now {
             Duration::zero()
         } else {
-            (next_verification_period.end.min(next_reward_period.end)) - now
+            (next_verification_period.end.min(next_reward_period.end)) + *OFFSET - now
         };
 
         duration.to_std().map_err(|_| Error::OutOfRangeError)
@@ -102,7 +108,7 @@ mod tests {
         assert_eq!(false, scheduler.should_verify(now));
         assert_eq!(false, scheduler.should_reward(now));
         assert_eq!(
-            standard_duration(120).unwrap(),
+            standard_duration(150).unwrap(),
             scheduler.sleep_duration(now).unwrap()
         );
     }
@@ -117,7 +123,7 @@ mod tests {
             dt(2022, 10, 2, 0, 0, 0),
         );
 
-        let now = dt(2022, 10, 1, 3, 0, 0);
+        let now = dt(2022, 10, 1, 3, 30, 0);
 
         assert_eq!(
             dt(2022, 10, 1, 0, 0, 0)..dt(2022, 10, 1, 3, 0, 0),
@@ -141,7 +147,7 @@ mod tests {
             dt(2022, 10, 2, 0, 0, 0),
         );
 
-        let now = dt(2022, 10, 2, 0, 0, 0);
+        let now = dt(2022, 10, 2, 0, 30, 0);
 
         assert_eq!(
             dt(2022, 10, 1, 21, 0, 0)..dt(2022, 10, 2, 0, 0, 0),
@@ -165,7 +171,7 @@ mod tests {
             dt(2022, 10, 2, 0, 0, 0),
         );
 
-        let now = dt(2022, 10, 2, 0, 0, 0);
+        let now = dt(2022, 10, 2, 0, 30, 0);
 
         assert_eq!(
             dt(2022, 10, 1, 22, 0, 0)..dt(2022, 10, 2, 0, 0, 0),
@@ -189,7 +195,7 @@ mod tests {
             dt(2022, 10, 2, 0, 0, 0),
         );
 
-        let now = dt(2022, 10, 1, 18, 0, 0);
+        let now = dt(2022, 10, 1, 19, 0, 0);
 
         assert_eq!(
             dt(2022, 10, 1, 12, 0, 0)..dt(2022, 10, 1, 15, 0, 0),
@@ -237,7 +243,7 @@ mod tests {
             dt(2022, 10, 2, 0, 0, 0),
         );
 
-        let now = dt(2022, 10, 2, 0, 0, 0);
+        let now = dt(2022, 10, 2, 0, 30, 0);
 
         let schedules = futures::stream::unfold((init, false), |(sch, rewarded)| async move {
             if rewarded {
