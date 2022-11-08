@@ -1,0 +1,58 @@
+[package]
+name = "iot-packet-verifier"
+version = "0.1.0"
+description = "Verify LoRaWAN traffic for Helium Packet-Router (HPR) operations"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "iot_packet_verifier"
+path = "src/main.rs"
+doc = false
+
+# FIXME: re-enable
+# [[bin]]
+# name = "iot_packet_verifier_server"
+# path = "src/cli/server.rs"
+# doc = false
+
+[features]
+# Generate protobuf files via: cargo test --features=sample-data
+sample-data = ["async-compression", "futures-util"]
+
+[dependencies]
+async-compression = {version="*", optional=true}
+# bytes = "*"
+chrono = {workspace=true}
+clap = {workspace=true}
+config = {workspace=true}
+futures = {workspace=true}
+#futures-core = "*"
+# FIXME use of futures-util is deprecated
+futures-util = {workspace=true, optional=true}
+
+helium-crypto = {workspace=true}
+
+# FIXME
+# helium-proto = {workspace=true}
+#helium-proto = {git="https://github.com/helium/proto", branch="dpezely/packet-verifier", features=["services"]}
+helium-proto = {path="../../../helium/proto", features=["services"]}
+
+# lazy_static = {workspace=true}
+
+file-store = {path="../file_store"}
+poc-metrics = {path="../metrics"}
+
+prost = {workspace=true}
+
+serde = {workspace=true}
+#serde_json = {workspace=true}
+thiserror = {workspace=true}
+tokio = {workspace=true}
+#tokio-stream = {version="0", features=["fs"]}
+tokio-util = "0"
+tonic = {workspace=true}
+tracing = {workspace=true}
+tracing-subscriber = {workspace=true}
+triggered = {workspace=true}
