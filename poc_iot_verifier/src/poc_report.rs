@@ -46,7 +46,8 @@ pub struct Report {
     pub report_timestamp: Option<DateTime<Utc>>,
     pub last_processed: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
-    pub entropy_start_time: DateTime<Utc>,
+    #[sqlx(default)]
+    pub timestamp: Option<DateTime<Utc>>,
 }
 
 impl Report {
@@ -127,7 +128,7 @@ impl Report {
     {
         sqlx::query_as::<_, Self>(
             r#"
-            select  id,
+            select  poc_report.id,
                 poc_report.remote_entropy,
                 poc_report.packet_data,
                 poc_report.report_data,
@@ -136,7 +137,7 @@ impl Report {
                 poc_report.attempts,
                 poc_report.report_timestamp,
                 poc_report.last_processed,
-                poc_report.created_at
+                poc_report.created_at,
                 entropy.timestamp
             from poc_report
             left join entropy on poc_report.remote_entropy=entropy.data
