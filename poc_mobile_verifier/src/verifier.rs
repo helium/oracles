@@ -128,6 +128,8 @@ impl VerifierDaemon {
             // Await the returned one shot to ensure that we wrote the file
             .await??;
 
+        file_sink::flush(&self.subnet_rewards_tx).await?;
+
         Ok(())
     }
 }
