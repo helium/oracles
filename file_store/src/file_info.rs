@@ -124,7 +124,7 @@ pub enum FileType {
     SpeedtestAvg,
     ValidatedHeartbeat,
     SignedPocReceiptTxn,
-    RadioRewardShare, 
+    RadioRewardShare,
 }
 
 impl fmt::Display for FileType {

@@ -50,12 +50,12 @@ impl Cmd {
         .create()
         .await?;
 
-        // Subnetwork rewards
-        let (subnet_rewards_tx, subnet_rewards_rx) = file_sink::message_channel(50);
+        // Radio share rewards
+        let (radio_rewards_tx, radio_rewards_rx) = file_sink::message_channel(50);
         let mut subnet_rewards = file_sink::FileSinkBuilder::new(
-            FileType::SubnetworkRewards,
+            FileType::RadioRewardShare,
             store_base_path,
-            subnet_rewards_rx,
+            radio_rewards_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
         .create()
@@ -73,7 +73,7 @@ impl Cmd {
             pool,
             heartbeats_tx,
             speedtest_avg_tx,
-            subnet_rewards_tx,
+            radio_rewards_tx,
             reward_period_hours,
             verifications_per_period,
             verifier,

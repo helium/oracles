@@ -1,7 +1,5 @@
 use crate::{
-    error::Result,
-    heartbeats::Heartbeats,
-    reward_share::{OwnerEmissions, OwnerResolver},
+    error::Result, heartbeats::Heartbeats, reward_share::OwnerResolver,
     speedtests::SpeedtestAverages,
 };
 use chrono::{DateTime, Utc};
@@ -30,51 +28,54 @@ impl SubnetworkRewards {
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
     ) -> Result<Self> {
-        // Gather hotspot shares
-        let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
-        for heartbeat in heartbeats.into_iter() {
-            *hotspot_shares
-                .entry(heartbeat.hotspot_key.clone())
-                .or_default() += heartbeat.reward_weight;
-        }
+        /*
+            // Gather hotspot shares
+            let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
+            for heartbeat in heartbeats.into_iter() {
+                *hotspot_shares
+                    .entry(heartbeat.hotspot_key.clone())
+                    .or_default() += heartbeat.reward_weight;
+            }
 
-        let filtered_shares = hotspot_shares
-            .into_iter()
-            .map(|(pubkey, mut shares)| {
-                let speedmultiplier = speedtests
-                    .get_average(&pubkey)
-                    .map_or(dec!(0.0), |avg| avg.reward_multiplier());
-                shares *= speedmultiplier;
-                (pubkey, shares)
-            })
-            .filter(|(_pubkey, shares)| shares > &dec!(0.0))
-            .collect();
+            let filtered_shares = hotspot_shares
+                .into_iter()
+                .map(|(pubkey, mut shares)| {
+                    let speedmultiplier = speedtests
+                        .get_average(&pubkey)
+                        .map_or(dec!(0.0), |avg| avg.reward_multiplier());
+                    shares *= speedmultiplier;
+                    (pubkey, shares)
+                })
+                .filter(|(_pubkey, shares)| shares > &dec!(0.0))
+                .collect();
 
-        let (owner_shares, _missing_owner_shares) =
-            follower_service.owner_shares(filtered_shares).await?;
+            let (owner_shares, _missing_owner_shares) =
+                follower_service.owner_shares(filtered_shares).await?;
 
-        let owner_emissions =
-            OwnerEmissions::new(owner_shares, epoch.start, epoch.end - epoch.start);
+            let owner_emissions =
+                OwnerEmissions::new(owner_shares, epoch.start, epoch.end - epoch.start);
 
-        let mut rewards = owner_emissions
-            .into_inner()
-            .into_iter()
-            .map(|(owner, amt)| proto::SubnetworkReward {
-                account: owner.to_vec(),
-                amount: u64::from(amt),
-            })
-            .collect::<Vec<_>>();
+            let mut rewards = owner_emissions
+                .into_inner()
+                .into_iter()
+                .map(|(owner, amt)| proto::SubnetworkReward {
+                    account: owner.to_vec(),
+                    amount: u64::from(amt),
+                })
+                .collect::<Vec<_>>();
 
-        rewards.sort_by(|a, b| {
-            a.account
-                .cmp(&b.account)
-                .then_with(|| a.amount.cmp(&b.amount))
-        });
+            rewards.sort_by(|a, b| {
+                a.account
+                    .cmp(&b.account)
+                    .then_with(|| a.amount.cmp(&b.amount))
+            });
 
-        Ok(Self {
-            epoch: epoch.clone(),
-            rewards,
+            Ok(Self {
+                epoch: epoch.clone(),
+                rewards,
         })
+             */
+        todo!()
     }
 
     pub async fn write(

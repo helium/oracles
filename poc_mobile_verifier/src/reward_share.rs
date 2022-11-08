@@ -1,29 +1,69 @@
+use crate::{
+    heartbeats::Heartbeats,
+    mobile::Mobile,
+    speedtests::{Average, SpeedtestAverages},
+    Result,
+};
 use chrono::{DateTime, Duration, TimeZone, Utc};
+use helium_crypto::PublicKey;
 use helium_proto::services::{
     follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
-    Channel,
+    poc_mobile as proto, Channel,
 };
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
-
-use crate::{mobile::Mobile, Result};
-use helium_crypto::PublicKey;
 use std::collections::HashMap;
+use std::ops::Range;
 
-/// Map from gw_public_key to accumulated_reward_weight (decimal)
-pub type HotspotShares = HashMap<PublicKey, Decimal>;
+pub struct RadioShare {
+    hotspot_key: PublicKey,
+    cbsd_id: String,
+    amount: Decimal,
+}
 
-/// Map from owner_public_key to accumulated_reward_weight (decimal)
-pub type OwnerShares = HashMap<PublicKey, Decimal>;
+#[derive(Default)]
+pub struct OwnerShares {
+    shares: HashMap<PublicKey, Vec<RadioShare>>,
+}
 
-/// Map from gw_public_key (without owners) to accumulated_reward_weight (decimal)
-pub type MissingOwnerShares = HashMap<PublicKey, Decimal>;
+impl OwnerShares {
+    pub fn total_shares(&self) -> Decimal {
+        self.shares
+            .iter()
+            .fold(Decimal::ZERO, |sum, (_, radio_shares)| {
+                sum + radio_shares
+                    .iter()
+                    .fold(Decimal::ZERO, |sum, radio_share| sum + radio_share.amount)
+            })
+    }
 
-/// Map from owner_public_key to accumulated_rewards (mobile)
-#[derive(Debug, Clone, Serialize)]
-pub struct OwnerEmissions(HashMap<PublicKey, Mobile>);
+    pub fn into_radio_shares(
+        self,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = proto::RadioRewardShare> {
+        let total_shares = self.total_shares();
+        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap();
+        let rewards_per_share = total_rewards / total_shares;
+        self.shares
+            .into_iter()
+            .map(move |(owner_key, radio_shares)| {
+                let owner_key = owner_key.clone();
+                radio_shares
+                    .into_iter()
+                    .map(move |radio_share| proto::RadioRewardShare {
+                        owner_key: owner_key.to_vec(),
+                        hotspot_key: radio_share.hotspot_key.to_vec(),
+                        cbsd_id: radio_share.cbsd_id,
+                        amount: u64::from(Mobile::from(rewards_per_share * radio_share.amount)),
+                        start_epoch: todo!(),
+                        end_epoch: todo!(),
+                    })
+            })
+            .flatten()
+    }
+}
 
 // 100M genesis rewards per day
 const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
@@ -32,6 +72,7 @@ lazy_static! {
     static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
 }
 
+/*
 impl OwnerEmissions {
     pub fn new(owner_shares: OwnerShares, start: DateTime<Utc>, duration: Duration) -> Self {
         let mut owner_emissions = HashMap::new();
@@ -60,6 +101,7 @@ impl OwnerEmissions {
         self.0
     }
 }
+*/
 
 pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
     if *GENESIS_START <= start {
@@ -80,19 +122,46 @@ pub trait OwnerResolver: Send {
 
     async fn owner_shares(
         &mut self,
-        hotspot_shares: HotspotShares,
-    ) -> Result<(OwnerShares, MissingOwnerShares)> {
-        let mut owner_shares = OwnerShares::new();
-        let mut missing_owner_shares = MissingOwnerShares::new();
-        for (hotspot, share) in hotspot_shares {
-            if let Some(owner) = self.resolve_owner(&hotspot).await? {
-                *owner_shares.entry(owner).or_default() += share;
-            } else {
-                *missing_owner_shares.entry(hotspot).or_default() += share;
+        heartbeats: Heartbeats,
+        speedtests: SpeedtestAverages,
+    ) -> Result<OwnerShares> {
+        let mut owner_shares = OwnerShares::default();
+        for heartbeat in heartbeats.into_iter() {
+            if let Some(owner) = self.resolve_owner(&heartbeat.hotspot_key).await? {
+                let speedmultiplier = speedtests
+                    .get_average(&heartbeat.hotspot_key)
+                    .as_ref()
+                    .map_or(dec!(0.0), Average::reward_multiplier);
+                owner_shares
+                    .shares
+                    .entry(owner)
+                    .or_default()
+                    .push(RadioShare {
+                        hotspot_key: heartbeat.hotspot_key,
+                        cbsd_id: heartbeat.cbsd_id,
+                        amount: heartbeat.reward_weight * speedmultiplier,
+                    })
             }
         }
-        Ok((owner_shares, missing_owner_shares))
+        Ok(owner_shares)
     }
+    /*
+        async fn owner_shares(
+            &mut self,
+            hotspot_shares: HotspotShares,
+        ) -> Result<(OwnerShares, MissingOwnerShares)> {
+            let mut owner_shares = OwnerShares::new();
+            let mut missing_owner_shares = MissingOwnerShares::new();
+            for (hotspot, share) in hotspot_shares {
+                if let Some(owner) = self.resolve_owner(&hotspot).await? {
+                    *owner_shares.entry(owner).or_default() += share;
+                } else {
+                    *missing_owner_shares.entry(hotspot).or_default() += share;
+                }
+            }
+            Ok((owner_shares, missing_owner_shares))
+    }
+        */
 }
 
 #[async_trait::async_trait]

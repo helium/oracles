@@ -46,29 +46,31 @@ impl Cmd {
             )
             .await?;
 
-        let total_rewards = rewards
-            .rewards
-            .iter()
-            .fold(0, |acc, reward| acc + reward.amount);
-        let rewards: Vec<(PublicKey, u64)> = rewards
-            .rewards
-            .iter()
-            .map(|r| {
-                (
-                    PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
-                    r.amount,
-                )
-            })
+        /*
+            let total_rewards = rewards
+                .rewards
+                .iter()
+                .fold(0, |acc, reward| acc + reward.amount);
+            let rewards: Vec<(PublicKey, u64)> = rewards
+                .rewards
+                .iter()
+                .map(|r| {
+                    (
+                        PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
+                        r.amount,
+                    )
+                })
             .collect();
 
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "rewards": rewards,
-                "total_rewards": total_rewards,
-            }))
-            .unwrap()
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "rewards": rewards,
+                    "total_rewards": total_rewards,
+                }))
+                .unwrap()
         );
+            */
 
         Ok(())
     }

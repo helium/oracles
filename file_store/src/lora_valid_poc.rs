@@ -100,7 +100,7 @@ impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             location: v.location.parse().ok(),
-            hex_scale: v.hex_scale,
+            hex_scale: todo!(), // v.hex_scale,
             report: v
                 .report
                 .ok_or_else(|| Error::not_found("lora valid beacon report v1"))?
@@ -120,7 +120,7 @@ impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
                 .location
                 .map(|l| l.to_string())
                 .unwrap_or_else(String::new),
-            hex_scale: v.hex_scale,
+            hex_scale: todo!(), //v.hex_scale,
             report: Some(report),
         }
     }
@@ -133,7 +133,7 @@ impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
         Ok(Self {
             received_timestamp,
             location: v.location.parse().ok(),
-            hex_scale: v.hex_scale,
+            hex_scale: todo!(), //v.hex_scale,
             report: v
                 .report
                 .ok_or_else(|| Error::not_found("lora valid witness port v1"))?
@@ -152,7 +152,7 @@ impl From<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
                 .location
                 .map(|l| l.to_string())
                 .unwrap_or_else(String::new),
-            hex_scale: v.hex_scale,
+            hex_scale: todo!(), //v.hex_scale,
             report: Some(report),
         }
     }

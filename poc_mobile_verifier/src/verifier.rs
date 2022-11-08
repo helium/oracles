@@ -4,15 +4,16 @@ use crate::{
     error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
+    reward_share::{OwnerResolver, OwnerShares},
     scheduler::Scheduler,
     speedtests::{SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink, FileStore};
+use file_store::{file_sink, file_sink_write, FileStore};
 use futures::{stream::Stream, StreamExt};
-use helium_proto::services::{follower, Channel};
+use helium_proto::services::{follower, poc_mobile as proto, Channel};
 use sqlx::{PgExecutor, Pool, Postgres};
 use tokio::pin;
 use tokio::time::sleep;
@@ -21,7 +22,7 @@ pub struct VerifierDaemon {
     pub pool: Pool<Postgres>,
     pub heartbeats_tx: file_sink::MessageSender,
     pub speedtest_avg_tx: file_sink::MessageSender,
-    pub subnet_rewards_tx: file_sink::MessageSender,
+    pub radio_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
     pub verifier: Verifier,
@@ -122,11 +123,12 @@ impl VerifierDaemon {
 
         transaction.commit().await?;
 
-        rewards
-            .write(&self.subnet_rewards_tx)
-            .await?
-            // Await the returned one shot to ensure that we wrote the file
-            .await??;
+        for reward_share in rewards {
+            file_sink_write!("radio_reward_shares", &self.radio_rewards_tx, reward_share)
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+        }
 
         Ok(())
     }
@@ -178,8 +180,12 @@ impl Verifier {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
-    ) -> Result<SubnetworkRewards> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests).await
+    ) -> Result<impl Iterator<Item = proto::RadioRewardShare>> {
+        Ok(self
+            .follower
+            .owner_shares(heartbeats, speedtests)
+            .await?
+            .into_radio_shares(epoch))
     }
 }
 
