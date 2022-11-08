@@ -1,6 +1,6 @@
 //! Heartbeat storage
 
-use crate::{cell_type::CellType, Error, Result};
+use crate::{cell_type::CellType, Error, Result, speedtests::{SpeedtestAverages, Average}};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{file_sink, file_sink_write, heartbeat::CellHeartbeat};
 use futures::stream::{Stream, StreamExt};
@@ -68,6 +68,21 @@ impl Heartbeats {
                 })
                 .collect();
         Ok(Self { heartbeats })
+    }
+
+    pub fn radio_shares(self, speedtests: SpeedtestAverages) {
+        let mut total_shares = Decimal::ZERO;
+        let radio_shares = self.into_iter()
+            .map(|heartbeat| {
+                let speedmultiplier = speedtests
+                    .get_average(&heartbeat.hotspot_key)
+                    .as_ref()
+                    .map_or(Decimal::ZERO, Average::reward_multiplier);
+                let shares = heartbeat.reward_weight
+                    * speedmultiplier;
+                total_shares += shares;
+                (heartbeat, shares)
+            });
     }
 
     pub fn into_iter(self) -> impl IntoIterator<Item = Heartbeat> {
@@ -240,4 +255,17 @@ fn validate_heartbeat(
     }
 
     Ok(cell_type)
+}
+
+pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
+    if *GENESIS_START <= start {
+        // Get tokens from start - duration
+        Some(
+            (Decimal::from(GENESIS_REWARDS_PER_DAY)
+                / Decimal::from(Duration::hours(24).num_seconds()))
+                * Decimal::from(duration.num_seconds()),
+        )
+    } else {
+        None
+    }
 }
