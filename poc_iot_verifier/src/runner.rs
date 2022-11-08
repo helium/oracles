@@ -149,7 +149,7 @@ impl Runner {
         for db_beacon in db_beacon_reports {
             let entropy_start_time = match db_beacon.timestamp {
                 Some(v) => v,
-                None => continue
+                None => continue,
             };
             let packet_data = &db_beacon.packet_data;
 
