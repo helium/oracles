@@ -1,6 +1,6 @@
 use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
-    Result, Settings, LOADER_WORKERS, STORE_WORKERS,
+    Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
@@ -124,35 +124,19 @@ async fn submit_txns(
 
     store
         .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
+        .map_err(Error::from)
         .try_for_each_concurrent(STORE_WORKERS, |msg| {
             let mut shared_txn_service = txn_service.clone();
             let shared_key = keypair.clone();
             async move {
-                match (
-                    handle_report_msg(msg, shared_key.clone(), before_ts),
-                    do_submission,
-                ) {
-                    (Ok(txn_details), true) => {
-                        // do txn submission
-                        if handle_txn_submission(txn_details.clone(), &mut shared_txn_service)
-                            .await
-                            .is_ok()
-                        {
-                            // and write it out
-                            file_sink_write!(
-                                "signed_poc_receipt_txn",
-                                receipt_sender,
-                                txn_details.txn
-                            )
-                            .await?;
-                        }
-                    }
-                    (Ok(txn_details), false) => {
-                        // only write the transaction, no submission
-                        file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
-                            .await?;
-                    }
-                    (Err(e), _) => tracing::error!("Unexpected error: {:?}", e),
+                let txn_details = handle_report_msg(msg, shared_key, before_ts)?;
+                if do_submission {
+                    handle_txn_submission(txn_details.clone(), &mut shared_txn_service).await?;
+                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
+                        .await?;
+                } else {
+                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
+                        .await?;
                 }
                 Ok(())
             }
@@ -174,11 +158,12 @@ async fn handle_txn_submission(
             "txn submitted successfully, hash: {:?}",
             txn_details.hash_b64_url
         );
+        Ok(())
     } else {
         tracing::warn!(
             "txn submission failed!, hash: {:?}",
             txn_details.hash_b64_url
         );
+        Err(Error::TxnSubmission(txn_details.hash_b64_url))
     }
-    Ok(())
 }
