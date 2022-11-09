@@ -58,17 +58,16 @@ impl OwnerShares {
             })
     }
 
-    pub fn into_radio_shares<'a>(
+    pub fn into_radio_shares(
         self,
-        epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::RadioRewardShare> + 'a {
+        epoch: &'_ Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = proto::RadioRewardShare> + '_ {
         let total_shares = self.total_shares();
         let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap();
         let rewards_per_share = total_rewards / total_shares;
         self.shares
             .into_iter()
-            .map(move |(owner_key, radio_shares)| {
-                let owner_key = owner_key.clone();
+            .flat_map(move |(owner_key, radio_shares)| {
                 radio_shares
                     .into_iter()
                     .map(move |radio_share| proto::RadioRewardShare {
@@ -80,7 +79,6 @@ impl OwnerShares {
                         end_epoch: epoch.end.encode_timestamp(),
                     })
             })
-            .flatten()
     }
 }
 

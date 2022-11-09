@@ -176,7 +176,7 @@ impl Verifier {
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
     ) -> Result<OwnerShares> {
-        Ok(self.follower.owner_shares(heartbeats, speedtests).await?)
+        self.follower.owner_shares(heartbeats, speedtests).await
     }
 }
 

@@ -91,7 +91,6 @@ impl Heartbeats {
                     validity: proto::HeartbeatValidity::Valid,
                 },
             )
-            .into_iter()
     }
 }
 
