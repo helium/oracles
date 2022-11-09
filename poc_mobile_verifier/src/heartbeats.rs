@@ -1,10 +1,6 @@
 //! Heartbeat storage
 
-use crate::{
-    cell_type::CellType,
-    speedtests::{Average, SpeedtestAverages},
-    Error, Result,
-};
+use crate::{cell_type::CellType, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{file_sink, file_sink_write, heartbeat::CellHeartbeat};
 use futures::stream::{Stream, StreamExt};
