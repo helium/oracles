@@ -53,7 +53,7 @@ impl Server {
         Ok(result)
     }
 
-    pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting poc-iot-injector server");
         let mut poc_iot_timer = time::interval(self.tick_time);
         poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
@@ -82,6 +82,11 @@ impl Server {
             0,
         ));
         let before_utc = Utc::now();
+        tracing::debug!(
+            "handling poc_tick, after_utc: {:?}, before_utc: {:?}",
+            after_utc,
+            before_utc
+        );
 
         submit_txns(
             &mut self.txn_service,
@@ -130,6 +135,7 @@ async fn submit_txns(
             let shared_key = keypair.clone();
             async move {
                 let txn_details = handle_report_msg(msg, shared_key, before_ts)?;
+                tracing::debug!("txn_details: {:#?}", txn_details);
                 if do_submission {
                     handle_txn_submission(txn_details.clone(), &mut shared_txn_service).await?;
                     file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
