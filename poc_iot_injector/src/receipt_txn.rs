@@ -21,7 +21,7 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = dec!(2.0);
 
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TxnDetails {
     pub txn: BlockchainTxn,
     pub hash: Vec<u8>,
