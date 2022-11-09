@@ -53,6 +53,8 @@ impl Cmd {
                 .map_err(Error::from),
         )?;
 
+        tracing::info!("Shutting down injector server");
+
         Ok(())
     }
 }
