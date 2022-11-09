@@ -6,21 +6,19 @@ description = "Maintains latest denylist"
 authors = ["Andrew McKenzie <andrewm@nova.xyz>"]
 license = "Apache-2.0"
 
-[build-dependencies]
-cmake = "0.1"
 
 [dependencies]
 thiserror = {workspace = true}
 tracing = {workspace = true}
-reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
+reqwest = {workspace = true}
 helium-crypto = {workspace = true}
 base64 = {workspace = true}
 sha2 = {workspace = true}
-bytes = "*"
-structopt = "0"
-bincode = "1"
-twox-hash = "1"
-xorf = {version = "0", features = ["serde"] }
+bytes = {workspace = true}
+structopt = {workspace = true}
+bincode = {workspace = true}
+twox-hash = {workspace = true}
+xorf = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 config = {workspace = true}
