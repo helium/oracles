@@ -1,9 +1,10 @@
 use crate::{
     heartbeats::Heartbeats,
-    reward_share::get_scheduled_tokens,
+    // reward_share::get_scheduled_tokens,
     speedtests::{Average, SpeedtestAverages},
-    subnetwork_rewards::SubnetworkRewards,
-    Result, Settings,
+    // subnetwork_rewards::SubnetworkRewards,
+    Result,
+    Settings,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
@@ -21,6 +22,7 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result {
+        /*
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);
@@ -74,7 +76,7 @@ impl Cmd {
                 "expected_rewards": expected_rewards,
             }))?
         );
-
+        */
         Ok(())
     }
 }
