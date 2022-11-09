@@ -26,12 +26,14 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new(settings: &Settings) -> Result<Self> {
+    pub async fn new(
+        settings: &Settings,
+        receipt_sender: file_sink::MessageSender,
+    ) -> Result<Self> {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
         let do_submission = settings.do_submission;
-        let (receipt_sender, _) = file_sink::message_channel(50);
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
@@ -135,7 +137,7 @@ async fn submit_txns(
             let shared_key = keypair.clone();
             async move {
                 let txn_details = handle_report_msg(msg, shared_key, before_ts)?;
-                tracing::debug!("txn_details: {:#?}", txn_details);
+                tracing::debug!("txn_details: {:?}", txn_details);
                 if do_submission {
                     handle_txn_submission(txn_details.clone(), &mut shared_txn_service).await?;
                     file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
