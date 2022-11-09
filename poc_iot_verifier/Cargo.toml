@@ -29,7 +29,7 @@ futures-util = {workspace = true}
 prost = {workspace = true}
 chrono = { workspace = true }
 helium-proto = { workspace = true }
-helium-crypto = {workspace = true, features = [ "multisig" ] }
+helium-crypto = {workspace = true }
 file-store = { path = "../file_store" }
 metrics = {workspace = true}
 node-follower = { path = "../node_follower" }
