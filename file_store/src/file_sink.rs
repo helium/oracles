@@ -243,7 +243,7 @@ impl FileSink {
 
         let mut rollover_timer =
             time::interval(self.roll_time.to_std().expect("valid sink roll time"));
-        rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+        rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
         loop {
             tokio::select! {
                 _ = shutdown.clone() => break,
