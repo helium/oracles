@@ -3787,6 +3787,7 @@ dependencies = [
 name = "tests"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "aws-config",
  "aws-sdk-s3",
  "chrono",

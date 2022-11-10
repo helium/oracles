@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use rand_chacha::rand_core::SeedableRng; // seed_from_u64
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -9,7 +10,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
 use http::Uri;
 use poc_ingest::server_5g;
-use tokio::task::JoinHandle;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -23,11 +23,11 @@ struct Cli {
     rewarder_settings_path: PathBuf,
 }
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     // panic!("This is a tests-only crate. Please re-run as test.")
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            "tests=debug",
+            "tests=debug,poc_ingest=debug",
         )) // TODO Maybe per-crate levels.
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -37,10 +37,10 @@ async fn main() {
         env!("CARGO_PKG_NAME"),
         std::env::current_dir().unwrap()
     );
-    test_heartbeat(&cli).await
+    suite(&cli).await
 }
 
-async fn test_heartbeat(cli: &Cli) {
+async fn suite(cli: &Cli) -> Result<()> {
     // Test plan:
     // 1. env start (assuming already done via docker-compose before running this)
     //      - postgres
@@ -79,22 +79,25 @@ async fn test_heartbeat(cli: &Cli) {
         .unwrap();
 
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        shutdown_trigger.trigger()
+    });
 
-    let ingestor = start_ingest(shutdown_listener, ingestor_settings);
-    let verifier = start_verifier(verifier_settings);
-    let rewarder = start_rewarder(rewarder_settings);
-    let follower = start_follower(follower_settings);
+    tokio::try_join!(
+        start_ingest(shutdown_listener, ingestor_settings),
+        start_verifier(verifier_settings),
+        start_rewarder(rewarder_settings),
+        start_follower(follower_settings),
+        test(net, grpc_endpoint, api_token),
+    )?;
+    Ok(())
+}
 
-    send_heartbeat(net, grpc_endpoint, api_token).await;
-
-    shutdown_trigger.trigger();
-
-    ingestor.await.unwrap();
-    verifier.await; //.unwrap();
-    rewarder.await.unwrap();
-    follower.await.unwrap();
-
-    assert_rewards();
+async fn test(net: helium_crypto::Network, grpc_endpoint: String, api_token: String) -> Result<()> {
+    send_heartbeat(net, grpc_endpoint, api_token).await?;
+    assert_rewards().await?;
+    Ok(())
 }
 
 async fn s3_create_buckets(
@@ -168,46 +171,42 @@ async fn s3_create_bucket(
     }
 }
 
-fn start_ingest(
+async fn start_ingest(
     shutdown_listener: triggered::Listener,
     settings: poc_ingest::Settings,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        server_5g::grpc_server(shutdown_listener, &settings)
-            .await
-            .map(|_| tracing::info!("start_ingest OK"))
-            .map_err(|e| {
-                tracing::error!("start_ingest ERROR: {e:?}");
-                e
-            })
-            .unwrap();
-    })
+) -> Result<()> {
+    server_5g::grpc_server(shutdown_listener, &settings)
+        .await
+        .map(|_| tracing::info!("START start_ingest OK"))
+        .map_err(|e| {
+            tracing::error!("start_ingest ERROR: {e:?}");
+            e
+        })
+        .map_err(|e| anyhow!("ingestor failure: {e:?}"))
 }
 
-async fn start_verifier(settings: poc_mobile_verifier::Settings) {
+async fn start_verifier(settings: poc_mobile_verifier::Settings) -> Result<()> {
     seed_db_for_verifier(&settings).await;
     let srv_cmd = poc_mobile_verifier::cli::server::Cmd {};
     srv_cmd
         .run(&settings)
         .await
-        .map(|_| tracing::info!("start_verifier OK"))
+        .map(|_| tracing::info!("START start_verifier OK"))
         .map_err(|e| {
             tracing::error!("start_verifier ERROR: {e:?}");
             e
         })
-        .unwrap();
+        .map_err(|e| anyhow!("verifier failure: {e:?}"))
 }
 
-fn start_rewarder(_settings: mobile_rewards::Settings) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        tracing::error!("TODO start rewarder");
-    })
+async fn start_rewarder(_settings: mobile_rewards::Settings) -> Result<()> {
+    tracing::error!("START TODO start rewarder");
+    Ok(())
 }
 
-fn start_follower(_settings: node_follower::Settings) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        tracing::error!("TODO mock follower");
-    })
+async fn start_follower(_settings: node_follower::Settings) -> Result<()> {
+    tracing::error!("START TODO mock follower");
+    Ok(())
 }
 
 fn make_keypair(net: helium_crypto::Network) -> helium_crypto::Keypair {
@@ -246,10 +245,15 @@ fn make_heartbeat(net: helium_crypto::Network) -> CellHeartbeatReqV1 {
     heartbeat
 }
 
-async fn send_heartbeat(net: helium_crypto::Network, grpc_endpoint: String, api_token: String) {
+async fn send_heartbeat(
+    net: helium_crypto::Network,
+    grpc_endpoint: String,
+    api_token: String,
+) -> Result<()> {
     // TODO Remove sleep. How? Client connect retries?
-    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
 
+    tracing::debug!("connecting to grpc endpoint: {:?}", grpc_endpoint);
     let mut poc_client = helium_proto::services::poc_mobile::Client::connect(grpc_endpoint)
         .await
         .map(|c| {
@@ -259,15 +263,13 @@ async fn send_heartbeat(net: helium_crypto::Network, grpc_endpoint: String, api_
         .map_err(|e| {
             tracing::error!("poc_mobile connection ERROR: {e:?}");
             e
-        })
-        .unwrap();
+        })?;
 
     let heartbeat = make_heartbeat(net);
     let mut request = tonic::Request::new(heartbeat);
-    request.metadata_mut().append(
-        "authorization",
-        format!("Bearer {api_token}").parse().unwrap(),
-    );
+    request
+        .metadata_mut()
+        .append("authorization", format!("Bearer {api_token}").parse()?);
     poc_client
         .submit_cell_heartbeat(request)
         .await
@@ -278,13 +280,14 @@ async fn send_heartbeat(net: helium_crypto::Network, grpc_endpoint: String, api_
         .map_err(|e| {
             tracing::error!("response receive ERROR: {e:?}");
             e
-        })
-        .unwrap();
+        })?;
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    Ok(())
 }
 
-fn assert_rewards() {
-    todo!("assert rewards")
+async fn assert_rewards() -> Result<()> {
+    tracing::error!("TODO assert rewards");
+    Ok(())
 }
 
 async fn seed_db_for_verifier(settings: &poc_mobile_verifier::Settings) {
