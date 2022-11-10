@@ -18,9 +18,9 @@ use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 pub const DEFAULT_SINK_ROLL_MINS: i64 = 3;
 
 #[cfg(not(test))]
-pub const DEFAULT_SINK_CHECK_MILLIS: i64 = 60_000;
+pub const SINK_CHECK_MILLIS: i64 = 60_000;
 #[cfg(test)]
-pub const DEFAULT_SINK_CHECK_MILLIS: i64 = 50;
+pub const SINK_CHECK_MILLIS: i64 = 50;
 
 pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
@@ -247,7 +247,7 @@ impl FileSink {
         );
 
         let mut rollover_timer = time::interval(
-            Duration::milliseconds(DEFAULT_SINK_CHECK_MILLIS)
+            Duration::milliseconds(SINK_CHECK_MILLIS)
                 .to_std()
                 .expect("valid sink roll time"),
         );
