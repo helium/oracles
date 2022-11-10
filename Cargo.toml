@@ -44,7 +44,7 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", rev = "01cf4287e6ff501850fa9ebb7f22a0df19c2ba72", features = ["services"]}
 helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.5.0", features=["sqlx-postgres"]}
 humantime = "2"
 metrics = "0"

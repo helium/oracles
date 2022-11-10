@@ -145,7 +145,6 @@ impl Report {
             and entropy.timestamp < (NOW() - INTERVAL '$1 SECONDS')
             and attempts < $2
             order by report_timestamp asc
-            limit 500
             "#,
         )
         .bind(ENTROPY_LIFESPAN + BEACON_PROCESSING_DELAY)

@@ -145,7 +145,8 @@ impl Runner {
         // but a beacon could be valid whilst witnesses
         // can be a mix of both valid and invalid
         let beacon_len = db_beacon_reports.len();
-        tracing::info!("found {beacon_len} beacons ready for verification");
+        tracing::info!("{beacon_len} beacons ready for verification");
+        metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
         for db_beacon in db_beacon_reports {
             let entropy_start_time = match db_beacon.timestamp {
                 Some(v) => v,
@@ -161,7 +162,11 @@ impl Runner {
 
             let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
             let witness_len = db_witnesses.len();
-            tracing::info!("found {witness_len} witness for beacon");
+            tracing::debug!("found {witness_len} witness for beacon");
+            metrics::gauge!(
+                "oracles_poc_iot_verifier_witnesses_per_beacon",
+                witness_len as f64
+            );
 
             // get the beacon and witness report PBs from the db reports
             let mut witnesses: Vec<LoraWitnessIngestReport> = Vec::new();
