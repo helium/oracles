@@ -12,7 +12,7 @@ use helium_proto::services::{
     poc_mobile as proto, Channel,
 };
 use lazy_static::lazy_static;
-use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -49,6 +49,9 @@ pub struct OwnerShares {
     pub shares: HashMap<PublicKey, RadioShares>,
 }
 
+const REWARDS_PER_SHARE_PREC: u32 = 9;
+const MOBILE_SCALE: u32 = 100_000_000;
+
 impl OwnerShares {
     pub fn total_shares(&self) -> Decimal {
         self.shares
@@ -64,7 +67,8 @@ impl OwnerShares {
     ) -> impl Iterator<Item = proto::RadioRewardShare> + '_ {
         let total_shares = self.total_shares();
         let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap();
-        let rewards_per_share = total_rewards / total_shares;
+        let rewards_per_share = (total_rewards / total_shares)
+            .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity);
         self.shares
             .into_iter()
             .flat_map(move |(owner_key, radio_shares)| {
@@ -74,7 +78,12 @@ impl OwnerShares {
                         owner_key: owner_key.to_vec(),
                         hotspot_key: radio_share.hotspot_key.to_vec(),
                         cbsd_id: radio_share.cbsd_id,
-                        amount: u64::from(Mobile::from(rewards_per_share * radio_share.amount)),
+                        amount: {
+                            let rewards = rewards_per_share * radio_share.amount;
+                            let rewards = (rewards * Decimal::from(MOBILE_SCALE))
+                                .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+                            rewards.to_u64().unwrap_or(0)
+                        },
                         start_epoch: epoch.start.encode_timestamp(),
                         end_epoch: epoch.end.encode_timestamp(),
                     })
@@ -533,8 +542,8 @@ mod test {
                 .or_default() += radio_share.amount;
         }
 
-        assert_eq!(*owner_rewards.get(&owner1).unwrap(), 99_715_099_715_099);
-        assert_eq!(*owner_rewards.get(&owner2).unwrap(), 299_145_299_145_296);
+        assert_eq!(*owner_rewards.get(&owner1).unwrap(), 99_715_099_715_100);
+        assert_eq!(*owner_rewards.get(&owner2).unwrap(), 299_145_299_145_301);
         assert_eq!(*owner_rewards.get(&owner3).unwrap(), 17_806_267_806_268);
         assert_eq!(owner_rewards.get(&owner4), None);
 
@@ -543,6 +552,6 @@ mod test {
             total += *val
         }
 
-        assert_eq!(total, 416_666_666_666_663); // total emissions for 1 hour
+        assert_eq!(total, 416_666_666_666_669); // total emissions for 1 hour
     }
 }
