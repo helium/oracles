@@ -242,7 +242,7 @@ impl FileSink {
         );
 
         let mut rollover_timer =
-            time::interval(self.roll_time.to_std().expect("valid sink roll time"));
+            time::interval(Duration::minutes(1).to_std().expect("valid sink roll time"));
         rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
         loop {
             tokio::select! {
@@ -294,7 +294,7 @@ impl FileSink {
 
     pub async fn maybe_roll(&mut self) -> Result {
         if let Some(active_sink) = self.active_sink.as_mut() {
-            if active_sink.time + self.roll_time < Utc::now() {
+            if (active_sink.time + self.roll_time) <= Utc::now() {
                 active_sink.shutdown().await?;
                 let prev_path = active_sink.path.clone();
                 self.deposit_sink(&prev_path).await?;
