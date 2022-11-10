@@ -16,6 +16,12 @@ use tokio::{
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
 pub const DEFAULT_SINK_ROLL_MINS: i64 = 3;
+
+#[cfg(not(test))]
+pub const SINK_CHECK_MILLIS: i64 = 60_000;
+#[cfg(test)]
+pub const SINK_CHECK_MILLIS: i64 = 50;
+
 pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
 type Sink = GzipEncoder<BufWriter<File>>;
@@ -155,7 +161,6 @@ impl FileSinkBuilder {
             deposits: self.deposits,
             roll_time: self.roll_time,
             messages: self.messages,
-
             active_sink: None,
         };
         sink.init().await?;
@@ -241,9 +246,13 @@ impl FileSink {
             self.target_path.display()
         );
 
-        let mut rollover_timer =
-            time::interval(self.roll_time.to_std().expect("valid sink roll time"));
+        let mut rollover_timer = time::interval(
+            Duration::milliseconds(SINK_CHECK_MILLIS)
+                .to_std()
+                .expect("valid sink roll time"),
+        );
         rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
+
         loop {
             tokio::select! {
                 _ = shutdown.clone() => break,
@@ -294,7 +303,7 @@ impl FileSink {
 
     pub async fn maybe_roll(&mut self) -> Result {
         if let Some(active_sink) = self.active_sink.as_mut() {
-            if active_sink.time + self.roll_time > Utc::now() {
+            if (active_sink.time + self.roll_time) <= Utc::now() {
                 active_sink.shutdown().await?;
                 let prev_path = active_sink.path.clone();
                 self.deposit_sink(&prev_path).await?;
