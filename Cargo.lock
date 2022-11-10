@@ -2576,6 +2576,7 @@ dependencies = [
  "helium-proto",
  "http-serde",
  "lazy_static",
+ "metrics",
  "node-follower",
  "once_cell",
  "poc-metrics",
