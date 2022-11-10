@@ -26,7 +26,7 @@ impl ToString for EventId {
 
 impl<M: helium_proto::Message> From<&M> for EventId {
     fn from(event: &M) -> Self {
-        Self(base64::encode(Sha256::digest(&event.encode_to_vec())))
+        Self(base64::encode(Sha256::digest(event.encode_to_vec())))
     }
 }
 

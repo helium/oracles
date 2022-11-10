@@ -1,12 +1,10 @@
 use crate::{
-    entropy::Entropy,
     last_beacon::LastBeacon,
-    mk_db_pool,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::{LoraStatus, Report},
-    Result,
+    Result, Settings,
 };
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use file_store::{
     file_sink,
     file_sink::MessageSender,
@@ -18,35 +16,39 @@ use file_store::{
     traits::{IngestId, ReportId},
     FileType,
 };
-use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
-    LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+use helium_proto::{
+    services::poc_lora::{
+        InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
+        LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+    },
+    Message,
 };
-use helium_proto::Message;
-use sha2::{Digest, Sha256};
+use node_follower::follower_service::FollowerService;
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time;
 
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
-/// the cadence in seconds at which hotspots are permitted to beacon
-const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
 
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
 pub struct Runner {
     pool: PgPool,
-    store_path: String,
+    settings: Settings,
+    follower_service: FollowerService,
 }
 
 impl Runner {
-    pub async fn from_env() -> Result<Self> {
-        let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
-        let store_path =
-            std::env::var("VERIFIER_STORE").unwrap_or_else(|_| String::from("/var/data/verifier"));
-        Ok(Self { pool, store_path })
+    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let follower_service = FollowerService::from_settings(&settings.follower)?;
+        Ok(Self {
+            pool,
+            settings: settings.clone(),
+            follower_service,
+        })
     }
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
@@ -55,14 +57,14 @@ impl Runner {
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
-        let store_base_path = Path::new(&self.store_path);
+        let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
         let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
         let (lora_valid_poc_tx, lora_valid_poc_rx) = file_sink::message_channel(50);
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
-            file_upload::FileUpload::from_env_with_prefix("VERIFIER", file_upload_rx).await?;
+            file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
 
         let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraInvalidBeaconReport,
@@ -128,7 +130,7 @@ impl Runner {
     async fn handle_db_tick(
         &self,
         _shutdown: triggered::Listener,
-        _lora_invalid_beacon_tx: MessageSender,
+        lora_invalid_beacon_tx: MessageSender,
         lora_invalid_witness_tx: MessageSender,
         lora_valid_poc_tx: MessageSender,
     ) -> Result {
@@ -143,19 +145,28 @@ impl Runner {
         // but a beacon could be valid whilst witnesses
         // can be a mix of both valid and invalid
         let beacon_len = db_beacon_reports.len();
-        tracing::info!("found {beacon_len} beacons ready for verification");
+        tracing::info!("{beacon_len} beacons ready for verification");
+        metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
         for db_beacon in db_beacon_reports {
+            let entropy_start_time = match db_beacon.timestamp {
+                Some(v) => v,
+                None => continue,
+            };
             let packet_data = &db_beacon.packet_data;
+
             let beacon_buf: &[u8] = &db_beacon.report_data;
             let beacon_report: LoraBeaconIngestReport =
                 LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
             let beacon = &beacon_report.report;
-            let beaconer_pub_key = &beacon.pub_key;
             let beacon_received_ts = beacon_report.received_timestamp;
 
             let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
             let witness_len = db_witnesses.len();
-            tracing::info!("found {witness_len} witness for beacon");
+            tracing::debug!("found {witness_len} witness for beacon");
+            metrics::gauge!(
+                "oracles_poc_iot_verifier_witnesses_per_beacon",
+                witness_len as f64
+            );
 
             // get the beacon and witness report PBs from the db reports
             let mut witnesses: Vec<LoraWitnessIngestReport> = Vec::new();
@@ -164,74 +175,21 @@ impl Runner {
                 witnesses.push(LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?);
             }
 
-            //
-            // top level checks, dont proceed to validate POC reports if these fail
-            //
+            // create the struct defining this POC
+            let mut poc = Poc::new(
+                beacon_report.clone(),
+                witnesses.clone(),
+                entropy_start_time,
+                self.follower_service.clone(),
+                self.pool.clone(),
+            )
+            .await?;
 
-            // is beaconer allowed to beacon at this time ?
-            // any irregularily timed beacons will be rejected
-            match LastBeacon::get(&self.pool, &beaconer_pub_key.to_vec()).await? {
-                Some(last_beacon) => {
-                    let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-                    if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
-                        tracing::debug!(
-                            "beacon verification failed, reason:
-                            IrregularInterval. Seconds since last beacon {:?}",
-                            interval_since_last_beacon.num_seconds()
-                        );
-                        self.handle_invalid_poc(
-                            &beacon_report,
-                            witnesses,
-                            InvalidReason::IrregularInterval,
-                            &lora_valid_poc_tx,
-                            &lora_invalid_witness_tx,
-                        )
-                        .await?;
-                        continue;
-                    }
-                }
-                None => {
-                    tracing::debug!(
-                        "no last beacon timestamp available for this hotspot, ignoring "
-                    );
-                }
-            }
-
-            // Do we have recognised entropy included in the beacon report ?
-            // if not then go no further, await next tick
-            // if we never recognise it, the report will eventually be purged
-            let entropy_hash = Sha256::digest(&beacon.remote_entropy).to_vec();
-            let entropy_info = match Entropy::get(&self.pool, &entropy_hash).await? {
-                Some(res) => res,
-                None => {
-                    tracing::debug!("beacon verification failed, reason: EntropyNotFound");
-                    _ = Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now())
-                        .await;
-                    continue;
-                }
-            };
-
-            // tmp hack below when testing locally with no entropy server
-            // replace entropy_info declaration above with that below
-            // let entropy_info = Entropy {
-            //     id: entropy_hash.clone(),
-            //     data: entropy_hash.clone(),
-            //     timestamp: Utc::now() - Duration::seconds(40000),
-            //     created_at: Utc::now(),
-            // };
-
-            //
-            // top level checks complete, verify the POC reports
-            //
-
-            // TODO: must be a better approach with this POC struct...
-            let mut poc = Poc::new(beacon_report.clone(), witnesses.clone(), entropy_info).await?;
-
-            // verify beacon
+            // verify POC beacon
             let beacon_verify_result = poc.verify_beacon().await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
-                    // beacon is valid, verify the witnesses
+                    // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
                         let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
                         // check if there are any failed witnesses
@@ -276,7 +234,7 @@ impl Runner {
                         &beacon_report,
                         witnesses,
                         InvalidReason::BadEntropy,
-                        &lora_valid_poc_tx,
+                        &lora_invalid_beacon_tx,
                         &lora_invalid_witness_tx,
                     )
                     .await?;
@@ -285,12 +243,8 @@ impl Runner {
                     // something went wrong whilst verifying the beacon report
                     // halt here and allow things to be reprocessed next tick
                     tracing::info!("failure whilst verifying beacon");
-                    // TODO: maybe this ID construction can be pushed out to a trait or part of the report struct ?
-                    let failed_beacon_public_key = &beacon.pub_key;
-                    let mut failed_beacon_id: Vec<u8> = beacon.data.clone();
-                    failed_beacon_id.append(&mut failed_beacon_public_key.to_vec());
-                    let failed_beacon_id_hash = Sha256::digest(&failed_beacon_id).to_vec();
-                    Report::update_attempts(&self.pool, &failed_beacon_id_hash, Utc::now()).await?;
+                    Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now())
+                        .await?;
                 }
             }
         }
@@ -302,19 +256,40 @@ impl Runner {
         beacon_report: &LoraBeaconIngestReport,
         witness_reports: Vec<LoraWitnessIngestReport>,
         invalid_reason: InvalidReason,
-        lora_valid_poc_tx: &MessageSender,
+        lora_invalid_beacon_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
         // the beacon is invalid, which in turn renders all witnesses invalid
         let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
+        let beacon_report_id = beacon_report.ingest_id();
         let invalid_poc: LoraInvalidBeaconReport = LoraInvalidBeaconReport {
             received_timestamp: beacon_report.received_timestamp,
             reason: invalid_reason,
             report: beacon.clone(),
         };
         let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
-        _ = file_sink_write!("invalid_poc", lora_valid_poc_tx, invalid_poc_proto).await?;
+        // save invalid poc to s3, if write fails update attempts and go no further
+        // allow the poc to be reprocessed next tick
+        match file_sink_write!(
+            "invalid_beacon_report",
+            lora_invalid_beacon_tx,
+            invalid_poc_proto
+        )
+        .await
+        {
+            Ok(_) => (),
+            Err(err) => {
+                tracing::error!("failed to save invalid_poc to s3, {err}");
+                Report::update_attempts(&self.pool, &beacon_report_id, Utc::now()).await?;
+                return Ok(());
+            }
+        }
+        // save invalid witnesses to s3, ignore any failed witness writes
+        // taking the lossly approach here as if we re attempt the POC later
+        // we will have to clean out any sucessful writes of other witnesses
+        // and also the invalid poc
+        // so if a report fails from this point on, it shall be lost for ever more
         for witness_report in witness_reports {
             let invalid_witness_report: LoraInvalidWitnessReport = LoraInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
@@ -324,15 +299,21 @@ impl Runner {
             };
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.into();
-            _ = file_sink_write!(
+            match file_sink_write!(
                 "invalid_witness_report",
                 lora_invalid_witness_tx,
                 invalid_witness_report_proto
             )
-            .await?;
+            .await
+            {
+                Ok(_) => (),
+                Err(err) => {
+                    tracing::error!("ignoring failed s3 write of invalid_witness_report: {err}");
+                }
+            }
         }
-        // update beacon and all witness reports in the db for this beacon id to invalid
-        Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
+        // done with these poc reports, purge em from the db
+        Report::delete_poc(&self.pool, &beacon_id).await?;
         Ok(())
     }
 
@@ -347,48 +328,67 @@ impl Runner {
         let poc_id = &beacon.data;
         let received_timestamp = valid_beacon_report.received_timestamp;
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
+        let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
         let valid_poc: LoraValidPoc = LoraValidPoc {
             poc_id: beacon_id.clone(),
             beacon_report: valid_beacon_report,
             witness_reports: witnesses_result.valid_witnesses.clone(),
         };
         let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
-        file_sink_write!("valid_poc", lora_valid_poc_tx, valid_poc_proto).await?;
-
+        // save the poc to s3, if write fails update attempts and go no further
+        // allow the poc to be reprocessed next tick
+        match file_sink_write!("valid_poc", lora_valid_poc_tx, valid_poc_proto).await {
+            Ok(_) => (),
+            Err(err) => {
+                tracing::error!("failed to save invalid_witness_report to s3, {err}");
+                Report::update_attempts(&self.pool, &beacon_report_id, Utc::now()).await?;
+                return Ok(());
+            }
+        }
+        // valid beacons and witness reports are kept in the DB
+        // until after they have been rewarded
+        // for now we just have to update their status to valid
         Report::update_status(&self.pool, poc_id, LoraStatus::Valid, Utc::now()).await?;
-        // update last beacon time for the beaconer
+        // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, &beacon.pub_key.to_vec(), received_timestamp)
             .await?;
-        // write out any invalid witnesses
-        for invalid_witness_report in witnesses_result.invalid_witnesses {
-            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
-                invalid_witness_report.clone().into();
-            file_sink_write!(
-                "invalid_witness_report",
-                lora_invalid_witness_tx,
-                invalid_witness_report_proto
-            )
-            .await?;
-            let invalid_witness_id = invalid_witness_report
-                .report
-                .report_id(invalid_witness_report.received_timestamp);
-            Report::update_status(
-                &self.pool,
-                &invalid_witness_id,
-                LoraStatus::Invalid,
-                Utc::now(),
-            )
-            .await?;
-        }
+
         // update DB status of valid witnesses
         for valid_witness_report in witnesses_result.valid_witnesses {
             let valid_witness_id = valid_witness_report
                 .report
                 .report_id(valid_witness_report.received_timestamp);
             Report::update_status(&self.pool, &valid_witness_id, LoraStatus::Valid, Utc::now())
-                .await?;
+                .await?
         }
 
+        // save invalid witnesses to s3, ignore any failed witness writes
+        // taking the lossly approach here as if we re attempt the POC later
+        // we will have to clean out any sucessful write of the valid poc above
+        // so if a report fails from this point on, it shall be lost for ever more
+        for invalid_witness_report in witnesses_result.invalid_witnesses {
+            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
+                invalid_witness_report.clone().into();
+            match file_sink_write!(
+                "invalid_witness_report",
+                lora_invalid_witness_tx,
+                invalid_witness_report_proto
+            )
+            .await
+            {
+                Ok(_) => {
+                    // we dont need to reward invalid witness reports
+                    // so we can go ahead & delete from the DB
+                    let report_id = invalid_witness_report
+                        .report
+                        .report_id(invalid_witness_report.received_timestamp);
+                    _ = Report::delete_report(&self.pool, &report_id).await;
+                }
+                Err(err) => {
+                    tracing::error!("failed to save invalid_witness_report to s3, {err}");
+                }
+            }
+        }
         Ok(())
     }
 }

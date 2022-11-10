@@ -1,43 +1,77 @@
-use mobile_rewards::{mk_db_pool, Result, Server};
+use clap::Parser;
+use mobile_rewards::{Result, Server as MobileServer, Settings};
+use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-#[tokio::main]
-async fn main() -> Result {
-    dotenv::dotenv()?;
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "mobile_rewards=debug".into()),
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+#[derive(Debug, clap::Parser)]
+#[clap(version = env!("CARGO_PKG_VERSION"))]
+#[clap(about = "Helium Mobile Rewards Server")]
+pub struct Cli {
+    /// Optional configuration file to use. If present the toml file at the
+    /// given path will be loaded. Environemnt variables can override the
+    /// settins in the given file.
+    #[clap(short = 'c')]
+    config: Option<path::PathBuf>,
 
-    // Install the prometheus metrics exporter
-    poc_metrics::install_metrics();
-
-    // Create database pool
-    let pool = mk_db_pool(10).await?;
-    sqlx::migrate!().run(&pool).await?;
-
-    // Configure shutdown trigger
-    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-    tokio::spawn(async move {
-        let _ = signal::ctrl_c().await;
-        shutdown_trigger.trigger()
-    });
-
-    // Reward server keypair from env
-    let keypair_file = std::env::var("REWARD_SERVER_KEYPAIR")?;
-    let rs_keypair = load_from_file(&keypair_file)?;
-
-    // Reward server
-    let mut reward_server = Server::new(pool.clone(), rs_keypair).await?;
-
-    reward_server.run(shutdown_listener.clone()).await?;
-    Ok(())
+    #[clap(subcommand)]
+    cmd: Cmd,
 }
 
-pub fn load_from_file(path: &str) -> Result<helium_crypto::Keypair> {
-    let data = std::fs::read(path)?;
-    Ok(helium_crypto::Keypair::try_from(&data[..])?)
+impl Cli {
+    pub async fn run(self) -> Result {
+        let settings = Settings::new(self.config)?;
+        self.cmd.run(settings).await
+    }
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum Cmd {
+    Server(Server),
+}
+
+impl Cmd {
+    pub async fn run(&self, settings: Settings) -> Result {
+        match self {
+            Self::Server(cmd) => cmd.run(&settings).await,
+        }
+    }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct Server {}
+
+impl Server {
+    pub async fn run(&self, settings: &Settings) -> Result {
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::new(&settings.log))
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+
+        // Install the prometheus metrics exporter
+        poc_metrics::start_metrics(&settings.metrics)?;
+
+        // Create database pool and migrate
+        let pool = settings.database.connect(2).await?;
+        sqlx::migrate!().run(&pool).await?;
+
+        // Configure shutdown trigger
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        tokio::spawn(async move {
+            let _ = signal::ctrl_c().await;
+            shutdown_trigger.trigger()
+        });
+
+        // Reward server
+        let mut reward_server = MobileServer::new(settings).await?;
+
+        reward_server.run(shutdown_listener.clone()).await?;
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result {
+    let cli = Cli::parse();
+    cli.run().await
 }

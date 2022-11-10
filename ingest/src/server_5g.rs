@@ -1,4 +1,4 @@
-use crate::{error::DecodeError, required_network, Error, EventId, Result};
+use crate::{Error, EventId, Result, Settings};
 use chrono::Utc;
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -8,15 +8,12 @@ use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1,
 };
-use std::env;
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::path::Path;
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct GrpcServer {
-    heartbeat_req_tx: file_sink::MessageSender,
-    speedtest_req_tx: file_sink::MessageSender,
     heartbeat_report_tx: file_sink::MessageSender,
     speedtest_report_tx: file_sink::MessageSender,
     required_network: Network,
@@ -24,17 +21,14 @@ pub struct GrpcServer {
 
 impl GrpcServer {
     fn new(
-        heartbeat_req_tx: file_sink::MessageSender,
-        speedtest_req_tx: file_sink::MessageSender,
         heartbeat_report_tx: file_sink::MessageSender,
         speedtest_report_tx: file_sink::MessageSender,
+        required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
-            heartbeat_req_tx,
-            speedtest_req_tx,
             heartbeat_report_tx,
             speedtest_report_tx,
-            required_network: required_network()?,
+            required_network,
         })
     }
 
@@ -68,11 +62,10 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event_id = EventId::from(&event);
 
         let report = SpeedtestIngestReportV1 {
-            report: Some(event.clone()),
+            report: Some(event),
             received_timestamp: timestamp,
         };
 
-        _ = file_sink_write!("speedtest_req", &self.speedtest_req_tx, event).await;
         _ = file_sink_write!("speedtest_report", &self.speedtest_report_tx, report).await;
         metrics::increment_counter!("ingest_server_speedtest_count");
         Ok(Response::new(event_id.into()))
@@ -96,10 +89,10 @@ impl poc_mobile::PocMobile for GrpcServer {
         let event_id = EventId::from(&event);
 
         let report = CellHeartbeatIngestReportV1 {
-            report: Some(event.clone()),
+            report: Some(event),
             received_timestamp: timestamp,
         };
-        _ = file_sink_write!("heartbeat_req", &self.heartbeat_req_tx, event).await;
+
         _ = file_sink_write!("heartbeat_report", &self.heartbeat_report_tx, report).await;
         metrics::increment_counter!("ingest_server_heartbeat_count");
         // Encode event digest, encode and return as the id
@@ -107,29 +100,15 @@ impl poc_mobile::PocMobile for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> Result {
-    let grpc_addr: SocketAddr = env::var("GRPC_SOCKET_ADDR")
-        .map_or_else(
-            |_| SocketAddr::from_str("0.0.0.0:9081"),
-            |str| SocketAddr::from_str(&str),
-        )
-        .map_err(DecodeError::from)?;
+pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result {
+    let grpc_addr = settings.listen_addr()?;
 
     // Initialize uploader
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
-        file_upload::FileUpload::from_env_with_prefix("INGESTOR", file_upload_rx).await?;
+        file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
 
-    let store_path =
-        std::env::var("INGEST_STORE").unwrap_or_else(|_| String::from("/var/data/ingestor"));
-    let store_base_path = Path::new(&store_path);
-
-    let (heartbeat_req_tx, heartbeat_req_rx) = file_sink::message_channel(50);
-    let mut heartbeat_req_sink =
-        file_sink::FileSinkBuilder::new(FileType::CellHeartbeat, store_base_path, heartbeat_req_rx)
-            .deposits(Some(file_upload_tx.clone()))
-            .create()
-            .await?;
+    let store_base_path = Path::new(&settings.cache);
 
     let (heartbeat_report_tx, heartbeat_report_rx) = file_sink::message_channel(50);
     let mut heartbeat_report_sink = file_sink::FileSinkBuilder::new(
@@ -142,13 +121,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     .await?;
 
     // speedtests
-    let (speedtest_req_tx, speedtest_req_rx) = file_sink::message_channel(50);
-    let mut speedtest_req_sink =
-        file_sink::FileSinkBuilder::new(FileType::CellSpeedtest, store_base_path, speedtest_req_rx)
-            .deposits(Some(file_upload_tx.clone()))
-            .create()
-            .await?;
-
     let (speedtest_report_tx, speedtest_report_rx) = file_sink::message_channel(50);
     let mut speedtest_report_sink = file_sink::FileSinkBuilder::new(
         FileType::CellSpeedtestIngestReport,
@@ -159,23 +131,21 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
     .create()
     .await?;
 
-    let grpc_server = GrpcServer::new(
-        heartbeat_req_tx,
-        speedtest_req_tx,
-        heartbeat_report_tx,
-        speedtest_report_tx,
-    )?;
+    let grpc_server = GrpcServer::new(heartbeat_report_tx, speedtest_report_tx, settings.network)?;
 
-    let api_token = std::env::var("API_TOKEN").map(|token| {
-        format!("Bearer {}", token)
-            .parse::<MetadataValue<_>>()
-            .unwrap()
-    })?;
+    let api_token = settings
+        .token
+        .as_ref()
+        .map(|token| {
+            format!("Bearer {}", token)
+                .parse::<MetadataValue<_>>()
+                .unwrap()
+        })
+        .ok_or_else(|| Error::not_found("expected api token in settings"))?;
 
     tracing::info!(
-        "grpc listening on {} and server mode {}",
-        grpc_addr,
-        server_mode
+        "grpc listening on {grpc_addr} and server mode {:?}",
+        settings.mode
     );
 
     //TODO start a service with either the poc mobile or poc lora endpoints only - not both
@@ -194,8 +164,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, server_mode: String) -> 
 
     tokio::try_join!(
         server,
-        heartbeat_req_sink.run(&shutdown).map_err(Error::from),
-        speedtest_req_sink.run(&shutdown).map_err(Error::from),
         heartbeat_report_sink.run(&shutdown).map_err(Error::from),
         speedtest_report_sink.run(&shutdown).map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),

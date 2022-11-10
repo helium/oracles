@@ -5,10 +5,6 @@ use std::str::FromStr;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DecodeError {
-    #[error("prost error")]
-    Prost(#[from] helium_proto::DecodeError),
-    #[error("uri error")]
-    Uri(#[from] http::uri::InvalidUri),
     #[error("parse int error")]
     ParseInt(#[from] std::num::ParseIntError),
     #[error("datetime error")]

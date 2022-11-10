@@ -55,9 +55,7 @@ impl LastBeacon {
         .await?
         .and_then(|v| {
             v.parse::<u64>()
-                .map_or_else(|_| None, |secs| Some((secs + 10).to_timestamp()))
-            //TODO: remove the hardcoded + 10 above
-            //      fix resolution of datetime function, dropping millisecs resulting in files being reprocessed by loader
+                .map_or_else(|_| None, |secs| Some(secs.to_timestamp()))
         })
         .transpose()?;
         Ok(height)

@@ -1,7 +1,6 @@
 use crate::{
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
-    Error, GatewayInfoStream, Result, CONNECT_TIMEOUT, DEFAULT_STREAM_BATCH_SIZE, DEFAULT_URI,
-    RPC_TIMEOUT,
+    Error, GatewayInfoStream, Result, Settings,
 };
 use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKey;
@@ -10,10 +9,8 @@ use helium_proto::services::{
         self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1,
         FollowerGatewayStreamReqV1,
     },
-    Channel, Endpoint,
+    Channel,
 };
-use http::Uri;
-use std::{env, str::FromStr};
 use tonic::Streaming;
 
 type FollowerClient = follower::Client<Channel>;
@@ -39,28 +36,11 @@ impl GatewayInfoResolver for FollowerService {
 }
 
 impl FollowerService {
-    pub fn from_env() -> Result<Self> {
-        let uri = match env::var("FOLLOWER_URI") {
-            Ok(var) => Uri::from_str(&var)?,
-            Err(_) => Uri::from_static(DEFAULT_URI),
-        };
-
-        let batch_size = match env::var("GW_STREAM_BATCH_SIZE") {
-            Ok(batch_size) => batch_size.parse()?,
-            Err(_) => DEFAULT_STREAM_BATCH_SIZE,
-        };
-
-        Self::new(uri, batch_size)
-    }
-
-    pub fn new(uri: Uri, batch_size: u32) -> Result<Self> {
-        let channel = Endpoint::from(uri)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(RPC_TIMEOUT)
-            .connect_lazy();
+    pub fn from_settings(settings: &Settings) -> Result<Self> {
+        let client = settings.connect_follower()?;
         Ok(Self {
-            client: FollowerClient::new(channel),
-            batch_size,
+            client,
+            batch_size: settings.batch,
         })
     }
 

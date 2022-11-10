@@ -1,4 +1,6 @@
-use crate::{keypair::load_from_file, mk_db_pool, server::Server, Result};
+use crate::{server::Server, Error, Result, Settings};
+use file_store::{file_sink, file_upload, FileType};
+use futures_util::TryFutureExt;
 use tokio::signal;
 
 /// Start rewards server
@@ -6,12 +8,12 @@ use tokio::signal;
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(&self) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result {
         // Install the prometheus metrics exporter
-        poc_metrics::install_metrics();
+        poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool
-        let pool = mk_db_pool(10).await?;
+        let pool = settings.database.connect(2).await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Configure shutdown trigger
@@ -21,17 +23,38 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
-        // injector server keypair from env
-        let poc_injector_kp_path =
-            std::env::var("POC_ORACLE_KEY").unwrap_or_else(|_| String::from("/tmp/poc_oracle_key"));
-        let poc_oracle_key = load_from_file(&poc_injector_kp_path)?;
+        // file upload setup
+        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
+        let file_upload =
+            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+
+        // path for cache
+        let store_base_path = std::path::Path::new(&settings.cache);
+
+        // poc receipt txns
+        let (poc_receipt_txn_tx, poc_receipt_txn_rx) = file_sink::message_channel(50);
+        let mut poc_receipts = file_sink::FileSinkBuilder::new(
+            FileType::SignedPocReceiptTxn,
+            store_base_path,
+            poc_receipt_txn_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
 
         // poc_iot_injector server
-        let mut poc_iot_injector_server = Server::new(pool, poc_oracle_key).await?;
+        let mut poc_iot_injector_server = Server::new(settings, poc_receipt_txn_tx).await?;
 
-        poc_iot_injector_server
-            .run(shutdown_listener.clone())
-            .await?;
+        tokio::try_join!(
+            poc_receipts.run(&shutdown_listener).map_err(Error::from),
+            file_upload.run(&shutdown_listener).map_err(Error::from),
+            poc_iot_injector_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
+        )?;
+
+        tracing::info!("Shutting down injector server");
+
         Ok(())
     }
 }

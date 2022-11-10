@@ -1,21 +1,18 @@
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use file_store::{
-    file_sink, file_sink_write,
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
-    traits::{MsgDecode, TimestampEncode},
-    FileStore, FileType,
-};
-use futures::stream::{self, StreamExt, TryStreamExt};
+use file_store::{file_sink, file_sink_write, speedtest::CellSpeedtest, traits::TimestampEncode};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
     FromRow, Type,
 };
-use std::{
-    collections::{HashMap, VecDeque},
-    ops::Range,
-};
+use std::collections::{HashMap, VecDeque};
+
+const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
+const SPEEDTEST_LAPSE: i64 = 48;
 
 #[derive(Debug, Clone, Type)]
 #[sqlx(type_name = "speedtest")]
@@ -42,6 +39,17 @@ impl Speedtest {
     }
 }
 
+impl From<CellSpeedtest> for Speedtest {
+    fn from(cell_speedtest: CellSpeedtest) -> Self {
+        Self {
+            timestamp: cell_speedtest.timestamp.naive_utc(),
+            upload_speed: cell_speedtest.upload_speed as i64,
+            download_speed: cell_speedtest.download_speed as i64,
+            latency: cell_speedtest.latency as i32,
+        }
+    }
+}
+
 impl PgHasArrayType for Speedtest {
     fn array_type_info() -> PgTypeInfo {
         PgTypeInfo::with_name("_speedtest")
@@ -62,6 +70,46 @@ impl SpeedtestRollingAverage {
             speedtests: Vec::new(),
             latest_timestamp: NaiveDateTime::default(),
         }
+    }
+
+    pub async fn validate_speedtests<'a>(
+        speedtests: impl Stream<Item = CellSpeedtest> + 'a,
+        exec: impl SpeedtestStore + Copy + 'a,
+    ) -> impl Stream<Item = Result<Self, sqlx::Error>> + 'a {
+        let tests_by_publickey = speedtests
+            .fold(
+                HashMap::<PublicKey, Vec<CellSpeedtest>>::new(),
+                |mut map, cell_speedtest| async move {
+                    map.entry(cell_speedtest.pubkey.clone())
+                        .or_default()
+                        .push(cell_speedtest);
+                    map
+                },
+            )
+            .await;
+
+        futures::stream::iter(tests_by_publickey.into_iter())
+            .then(move |(pubkey, cell_speedtests)| async move {
+                let rolling_average = exec
+                    .fetch(&pubkey)
+                    .await?
+                    .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
+                Ok((rolling_average, cell_speedtests))
+            })
+            .map_ok(|(rolling_average, cell_speedtests)| {
+                let speedtests = cell_speedtests
+                    .into_iter()
+                    .map(Speedtest::from)
+                    .chain(rolling_average.speedtests.into_iter())
+                    .take(SPEEDTEST_AVG_MAX_DATA_POINTS)
+                    .collect::<Vec<Speedtest>>();
+
+                Self {
+                    id: rolling_average.id,
+                    latest_timestamp: speedtests[0].timestamp,
+                    speedtests,
+                }
+            })
     }
 
     pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
@@ -91,7 +139,9 @@ impl SpeedtestRollingAverage {
         // Write out the speedtests to S3
         let average = Average::from(&self.speedtests);
         let validity = average.validity() as i32;
-        let reward_multiplier = average.reward_multiplier();
+        // this is guaratneed to safely convert and not panic as it can only be one of
+        // four possible decimal values based on the speedtest average tier
+        let reward_multiplier = average.reward_multiplier().try_into().unwrap();
         let Average {
             upload_speed_avg_bps,
             download_speed_avg_bps,
@@ -107,16 +157,17 @@ impl SpeedtestRollingAverage {
                 download_speed_avg_bps,
                 latency_avg_ms,
                 timestamp: Utc::now().encode_timestamp(),
-                speedtests: self
-                    .speedtests
-                    .iter()
-                    .map(|st| proto::Speedtest {
-                        timestamp: st.timestamp.timestamp() as u64,
-                        upload_speed_bps: st.upload_speed as u64,
-                        download_speed_bps: st.download_speed as u64,
-                        latency_ms: st.latency as u32,
-                    })
-                    .collect(),
+                speedtests: speedtests_without_lapsed(
+                    self.speedtests.iter(),
+                    Duration::hours(SPEEDTEST_LAPSE)
+                )
+                .map(|st| proto::Speedtest {
+                    timestamp: st.timestamp.timestamp() as u64,
+                    upload_speed_bps: st.upload_speed as u64,
+                    download_speed_bps: st.download_speed as u64,
+                    latency_ms: st.latency as u32,
+                })
+                .collect(),
                 validity,
                 reward_multiplier,
             }
@@ -145,7 +196,7 @@ impl SpeedtestAverages {
                 // window is guaranteed to be non-empty. For safety, we set the
                 // latest timestamp to epoch.
                 latest_timestamp: window
-                    .back()
+                    .front()
                     .map_or_else(NaiveDateTime::default, |st| st.timestamp),
                 speedtests: Vec::from(window),
             })
@@ -164,7 +215,7 @@ impl SpeedtestAverages {
         let mut rows = sqlx::query_as::<_, SpeedtestRollingAverage>(
             "SELECT * FROM speedtests where latest_timestamp >= $1",
         )
-        .bind((period_end - Duration::hours(12)).naive_utc())
+        .bind((period_end - Duration::hours(SPEEDTEST_LAPSE)).naive_utc())
         .fetch(exec);
 
         while let Some(SpeedtestRollingAverage {
@@ -178,82 +229,31 @@ impl SpeedtestAverages {
 
         Ok(Self { speedtests })
     }
+}
 
-    pub async fn validate_speedtests(
-        exec: impl SpeedtestStore + Copy,
-        file_store: &FileStore,
-        epoch: &Range<DateTime<Utc>>,
-    ) -> file_store::Result<Self> {
-        let mut speedtests = HashMap::new();
-        let file_list = file_store
-            .list_all(FileType::CellSpeedtestIngestReport, epoch.start, epoch.end)
-            .await?;
-        let mut stream = file_store.source(stream::iter(file_list).map(Ok).boxed());
-
-        while let Some(Ok(msg)) = stream.next().await {
-            let CellSpeedtest {
-                pubkey,
-                timestamp,
-                upload_speed,
-                download_speed,
-                latency,
-                ..
-            } = match CellSpeedtestIngestReport::decode(msg) {
-                Ok(report) => report.report,
-                Err(err) => {
-                    tracing::error!("Could not decode cell speedtest ingest report: {:?}", err);
-                    continue;
-                }
-            };
-
-            if !speedtests.contains_key(&pubkey) {
-                let SpeedtestRollingAverage {
-                    id,
-                    speedtests: window,
-                    ..
-                } = exec
-                    .fetch(&pubkey)
-                    .await
-                    // TODO: Match this error and only unwrap or else if the error is row
-                    // not found.
-                    .unwrap_or_else(|_| SpeedtestRollingAverage::new(pubkey.clone()));
-
-                speedtests.insert(id, VecDeque::from(window));
-            }
-
-            let timestamp = timestamp.naive_utc();
-            let upload_speed = upload_speed as i64;
-            let download_speed = download_speed as i64;
-            let latency = latency as i32;
-
-            // Unwrap here is guaranteed never to panic
-            let window = speedtests.get_mut(&pubkey).unwrap();
-
-            // If there are six speedtests in the window, remove the one in the front
-            while window.len() >= 6 {
-                window.pop_front();
-            }
-
-            // If the duration between the last speedtest and the current is greater than
-            // 12 hours, then we clear the window.
-            if let Some(last_timestamp) = window.back().map(|b| b.timestamp) {
-                let duration_since = timestamp - last_timestamp;
-                if duration_since >= Duration::hours(12) {
-                    window.clear();
-                }
-            }
-
-            // Add the new speedtest to the back of the window
-            window.push_back(Speedtest {
-                timestamp,
-                upload_speed,
-                download_speed,
-                latency,
-            });
+impl Extend<SpeedtestRollingAverage> for SpeedtestAverages {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = SpeedtestRollingAverage>,
+    {
+        for SpeedtestRollingAverage { id, speedtests, .. } in iter.into_iter() {
+            self.speedtests.insert(id, VecDeque::from(speedtests));
         }
-
-        Ok(Self { speedtests })
     }
+}
+
+fn speedtests_without_lapsed<'a>(
+    iterable: impl Iterator<Item = &'a Speedtest>,
+    lapse_cliff: Duration,
+) -> impl Iterator<Item = &'a Speedtest> {
+    let mut last_timestamp = None;
+    iterable.take_while(move |speedtest| match last_timestamp {
+        Some(ts) if ts - speedtest.timestamp > lapse_cliff => false,
+        None | Some(_) => {
+            last_timestamp = Some(speedtest.timestamp);
+            true
+        }
+    })
 }
 
 #[derive(Clone, Debug, Default)]
@@ -279,7 +279,7 @@ where
             download_speed,
             latency,
             ..
-        } in iter.into_iter()
+        } in speedtests_without_lapsed(iter.into_iter(), Duration::hours(SPEEDTEST_LAPSE))
         {
             sum_upload += *upload_speed as u64;
             sum_download += *download_speed as u64;
@@ -295,12 +295,7 @@ where
                 latency_avg_ms: sum_latency / window_size as u32,
             }
         } else {
-            Average {
-                window_size,
-                upload_speed_avg_bps: 0,
-                download_speed_avg_bps: 0,
-                latency_avg_ms: 0,
-            }
+            Average::default()
         }
     }
 }
@@ -338,7 +333,7 @@ impl Average {
         }
     }
 
-    pub fn reward_multiplier(&self) -> f32 {
+    pub fn reward_multiplier(&self) -> Decimal {
         self.tier().into_multiplier()
     }
 }
@@ -356,12 +351,12 @@ pub enum SpeedtestTier {
 }
 
 impl SpeedtestTier {
-    fn into_multiplier(self) -> f32 {
+    fn into_multiplier(self) -> Decimal {
         match self {
-            Self::Acceptable => 1.0,
-            Self::Degraded => 0.5,
-            Self::Poor => 0.25,
-            Self::Failed => 0.0,
+            Self::Acceptable => dec!(1.0),
+            Self::Degraded => dec!(0.5),
+            Self::Poor => dec!(0.25),
+            Self::Failed => dec!(0.0),
         }
     }
 
@@ -408,7 +403,7 @@ impl SpeedtestTier {
 
 #[async_trait::async_trait]
 pub trait SpeedtestStore {
-    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage, sqlx::Error>;
+    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, sqlx::Error>;
 }
 
 #[async_trait::async_trait]
@@ -416,10 +411,10 @@ impl<E> SpeedtestStore for E
 where
     for<'a> E: sqlx::PgExecutor<'a>,
 {
-    async fn fetch(self, id: &PublicKey) -> Result<SpeedtestRollingAverage, sqlx::Error> {
+    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, sqlx::Error> {
         sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
             .bind(id)
-            .fetch_one(self)
+            .fetch_optional(self)
             .await
     }
 }
@@ -429,8 +424,8 @@ pub struct EmptyDatabase;
 
 #[async_trait::async_trait]
 impl SpeedtestStore for EmptyDatabase {
-    async fn fetch(self, _id: &PublicKey) -> Result<SpeedtestRollingAverage, sqlx::Error> {
-        Err(sqlx::Error::RowNotFound)
+    async fn fetch(self, _id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, sqlx::Error> {
+        Ok(None)
     }
 }
 
@@ -452,30 +447,30 @@ mod test {
     fn known_speedtests() -> Vec<Speedtest> {
         // This data is taken from the spreadsheet
         // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Acceptable?
-        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
-        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
-        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
-        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
-        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
-        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
-        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
         // 2022-08-02 18:00:00	70	30	40	103.33	19.17	30.00	TRUE
+        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
+        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
+        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
+        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
+        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
+        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
+        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
         vec![
-            Speedtest::new(parse_dt("2022-08-01 0:00:00 +0000"), 0, 0, 0),
+            Speedtest::new(parse_dt("2022-08-02 18:00:00 +0000"), 0, 0, 0),
             Speedtest::new(
-                parse_dt("2022-08-01 6:00:00 +0000"),
+                parse_dt("2022-08-02 12:00:00 +0000"),
                 bytes_per_s(20),
                 bytes_per_s(150),
                 70,
             ),
             Speedtest::new(
-                parse_dt("2022-08-01 12:00:00 +0000"),
+                parse_dt("2022-08-02 6:00:00 +0000"),
                 bytes_per_s(10),
                 bytes_per_s(118),
                 50,
             ),
             Speedtest::new(
-                parse_dt("2022-08-01 18:00:00 +0000"),
+                parse_dt("2022-08-02 0:00:00 +0000"),
                 bytes_per_s(30),
                 bytes_per_s(112),
                 40,
@@ -487,19 +482,19 @@ mod test {
                 10,
             ),
             Speedtest::new(
-                parse_dt("2022-08-02 6:00:00 +0000"),
+                parse_dt("2022-08-01 18:00:00 +0000"),
                 bytes_per_s(20),
                 bytes_per_s(130),
                 10,
             ),
             Speedtest::new(
-                parse_dt("2022-08-02 12:00:00 +0000"),
+                parse_dt("2022-08-01 12:00:00 +0000"),
                 bytes_per_s(10),
                 bytes_per_s(100),
                 30,
             ),
             Speedtest::new(
-                parse_dt("2022-08-02 18:00:00 +0000"),
+                parse_dt("2022-08-01 6:00:00 +0000"),
                 bytes_per_s(30),
                 bytes_per_s(70),
                 40,
@@ -552,5 +547,56 @@ mod test {
             Average::from(&speedtests[5..6]).tier(),
             SpeedtestTier::Acceptable
         );
+    }
+
+    #[test]
+    fn check_speedtest_rolling_avg() {
+        let owner: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let speedtests = VecDeque::from(known_speedtests());
+        let avgs = SpeedtestAverages {
+            speedtests: HashMap::from([(owner, speedtests)]),
+        }
+        .into_iter();
+        for avg in avgs {
+            if let Some(first) = avg.speedtests.first() {
+                assert_eq!(avg.latest_timestamp, first.timestamp);
+            }
+        }
+    }
+
+    #[test]
+    fn check_speedtest_without_lapsed() {
+        let speedtest_cutoff = Duration::hours(10);
+        let contiguos_speedtests = known_speedtests();
+        let contiguous_speedtests: Vec<&Speedtest> =
+            speedtests_without_lapsed(contiguos_speedtests.iter(), speedtest_cutoff).collect();
+
+        let disjoint_speedtests = vec![
+            Speedtest::new(
+                parse_dt("2022-08-02 6:00:00 +0000"),
+                bytes_per_s(20),
+                bytes_per_s(150),
+                70,
+            ),
+            Speedtest::new(
+                parse_dt("2022-08-01 18:00:00 +0000"),
+                bytes_per_s(10),
+                bytes_per_s(118),
+                50,
+            ),
+            Speedtest::new(
+                parse_dt("2022-08-01 12:00:00 +0000"),
+                bytes_per_s(30),
+                bytes_per_s(112),
+                40,
+            ),
+        ];
+        let disjoint_speedtests: Vec<&Speedtest> =
+            speedtests_without_lapsed(disjoint_speedtests.iter(), speedtest_cutoff).collect();
+
+        assert_eq!(contiguous_speedtests.len(), 8);
+        assert_eq!(disjoint_speedtests.len(), 1);
     }
 }

@@ -1,16 +1,14 @@
 use crate::{
-    env_var,
     speedtests::EmptyDatabase,
     verifier::{VerifiedEpoch, Verifier},
+    Settings,
 };
 use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
+use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
-use helium_proto::services::{follower, Endpoint, Uri};
 use serde_json::json;
-
-use super::{CONNECT_TIMEOUT, DEFAULT_URI, RPC_TIMEOUT};
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]
@@ -22,7 +20,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self, settings: &Settings) -> Result<()> {
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);
@@ -31,16 +29,10 @@ impl Cmd {
         tracing::info!("Verifying shares from the following time range: {start} to {end}");
         let epoch = start..end;
 
-        let file_store = FileStore::from_env_with_prefix("INPUT").await?;
+        let file_store = FileStore::from_settings(&settings.ingest).await?;
+        let follower = settings.follower.connect_follower()?;
 
-        let follower = follower::Client::new(
-            Endpoint::from(env_var("FOLLOWER_URI", Uri::from_static(DEFAULT_URI))?)
-                .connect_timeout(CONNECT_TIMEOUT)
-                .timeout(RPC_TIMEOUT)
-                .connect_lazy(),
-        );
-
-        let mut verifier = Verifier::new(file_store, follower).await?;
+        let mut verifier = Verifier::new(file_store, follower);
 
         let VerifiedEpoch {
             heartbeats,
@@ -48,7 +40,11 @@ impl Cmd {
         } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
         let rewards = verifier
-            .reward_epoch(&epoch, heartbeats.into_iter().collect(), speedtests)
+            .reward_epoch(
+                &epoch,
+                heartbeats.collect().await,
+                speedtests.filter_map(|x| async { x.ok() }).collect().await,
+            )
             .await?;
 
         let total_rewards = rewards

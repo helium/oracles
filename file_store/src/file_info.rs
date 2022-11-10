@@ -103,6 +103,7 @@ pub const LORA_INVALID_BEACON_REPORT: &str = "lora_invalid_beacon";
 pub const LORA_INVALID_WITNESS_REPORT: &str = "lora_invalid_witness";
 pub const SPEEDTEST_AVG: &str = "speedtest_avg";
 pub const VALIDATED_HEARTBEAT: &str = "validated_heartbeat";
+pub const SIGNED_POC_RECEIPT_TXN: &str = "signed_poc_receipt_txn";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -121,6 +122,7 @@ pub enum FileType {
     LoraInvalidWitnessReport,
     SpeedtestAvg,
     ValidatedHeartbeat,
+    SignedPocReceiptTxn,
 }
 
 impl fmt::Display for FileType {
@@ -140,6 +142,7 @@ impl fmt::Display for FileType {
             Self::LoraInvalidWitnessReport => LORA_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
+            Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
         };
         f.write_str(s)
     }
@@ -162,6 +165,7 @@ impl FileType {
             Self::LoraInvalidWitnessReport => LORA_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
+            Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
         }
     }
 }
@@ -184,6 +188,7 @@ impl FromStr for FileType {
             LORA_INVALID_WITNESS_REPORT => Self::LoraInvalidWitnessReport,
             SPEEDTEST_AVG => Self::SpeedtestAvg,
             VALIDATED_HEARTBEAT => Self::ValidatedHeartbeat,
+            SIGNED_POC_RECEIPT_TXN => Self::SignedPocReceiptTxn,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

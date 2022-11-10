@@ -2,13 +2,8 @@
 
 use crate::cell_type::CellType;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use file_store::{
-    file_sink, file_sink_write,
-    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
-    traits::MsgDecode,
-    FileStore, FileType,
-};
-use futures::stream::{self, StreamExt};
+use file_store::{file_sink, file_sink_write, heartbeat::CellHeartbeat};
+use futures::stream::{Stream, StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -35,6 +30,7 @@ pub struct HeartbeatValue {
     timestamp: NaiveDateTime,
 }
 
+#[derive(Default)]
 pub struct Heartbeats {
     pub heartbeats: HashMap<HeartbeatKey, HeartbeatValue>,
 }
@@ -96,6 +92,36 @@ impl Heartbeats {
     }
 }
 
+impl Extend<Heartbeat> for Heartbeats {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = Heartbeat>,
+    {
+        for Heartbeat {
+            hotspot_key,
+            cbsd_id,
+            reward_weight,
+            timestamp,
+            validity,
+        } in iter.into_iter()
+        {
+            if validity != proto::HeartbeatValidity::Valid {
+                continue;
+            }
+            self.heartbeats.insert(
+                HeartbeatKey {
+                    hotspot_key,
+                    cbsd_id,
+                },
+                HeartbeatValue {
+                    reward_weight,
+                    timestamp,
+                },
+            );
+        }
+    }
+}
+
 impl FromIterator<Heartbeat> for Heartbeats {
     fn from_iter<T>(iter: T) -> Self
     where
@@ -129,25 +155,11 @@ struct HeartbeatSaveResult {
 }
 
 impl Heartbeat {
-    // TODO: Convert this to a Stream of heartbeats
-    pub async fn validate_heartbeats(
-        file_store: &FileStore,
-        epoch: &Range<DateTime<Utc>>,
-    ) -> file_store::Result<Vec<Self>> {
-        let mut heartbeats = Vec::new();
-        let file_list = file_store
-            .list_all(FileType::CellHeartbeatIngestReport, epoch.start, epoch.end)
-            .await?;
-        let mut stream = file_store.source(stream::iter(file_list).map(Ok).boxed());
-
-        while let Some(Ok(msg)) = stream.next().await {
-            let heartbeat_report = match CellHeartbeatIngestReport::decode(msg) {
-                Ok(report) => report.report,
-                Err(err) => {
-                    tracing::error!("Could not decode cell heartbeat ingest report: {:?}", err);
-                    continue;
-                }
-            };
+    pub async fn validate_heartbeats<'a>(
+        heartbeats: impl Stream<Item = CellHeartbeat> + 'a,
+        epoch: &'a Range<DateTime<Utc>>,
+    ) -> impl Stream<Item = Self> + 'a {
+        heartbeats.map(move |heartbeat_report| {
             let (reward_weight, validity) = match validate_heartbeat(&heartbeat_report, epoch) {
                 Ok(cell_type) => {
                     let reward_weight = cell_type.reward_weight();
@@ -155,16 +167,14 @@ impl Heartbeat {
                 }
                 Err(validity) => (dec!(0), validity),
             };
-            heartbeats.push(Heartbeat {
+            Heartbeat {
                 hotspot_key: heartbeat_report.pubkey.clone(),
                 reward_weight,
                 cbsd_id: heartbeat_report.cbsd_id.clone(),
                 timestamp: heartbeat_report.timestamp.naive_utc(),
                 validity,
-            });
-        }
-
-        Ok(heartbeats)
+            }
+        })
     }
 
     pub async fn write(&self, heartbeats_tx: &file_sink::MessageSender) -> file_store::Result {

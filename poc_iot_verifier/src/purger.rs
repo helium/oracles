@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, mk_db_pool, poc_report::Report, Result};
+use crate::{entropy::Entropy, poc_report::Report, Result, Settings};
 use file_store::{
     file_sink, file_sink::MessageSender, file_sink_write, file_upload,
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidBeaconReport,
@@ -17,8 +17,8 @@ use sqlx::PgPool;
 use tokio::time;
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(300);
-const LOADER_WORKERS: u32 = 10;
-const LOADER_DB_POOL_SIZE: u32 = 2 * LOADER_WORKERS;
+const LOADER_WORKERS: usize = 10;
+const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 /// the period of time in seconds after which entropy will be deemed stale
 /// and purged from the DB
 // any beacon or witness using this entropy & received after this period will fail
@@ -35,15 +35,14 @@ const REPORT_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds;
 
 pub struct Purger {
     pool: PgPool,
-    store_path: String,
     base_stale_period: i32,
+    settings: Settings,
 }
 
 impl Purger {
-    pub async fn from_env() -> Result<Self> {
-        let pool = mk_db_pool(LOADER_DB_POOL_SIZE).await?;
-        let store_path =
-            std::env::var("VERIFIER_STORE").unwrap_or_else(|_| String::from("/var/data/verifier"));
+    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let settings = settings.clone();
         // get the base_stale period
         // if the env var is set, this value will be added to the entropy and report
         // stale periods and is to prevent data being unnecessarily purged
@@ -52,7 +51,7 @@ impl Purger {
             .map_or_else(|_| 0, |v: String| v.parse::<i32>().unwrap_or(0));
         Ok(Self {
             pool,
-            store_path,
+            settings,
             base_stale_period,
         })
     }
@@ -63,13 +62,13 @@ impl Purger {
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
-        let store_base_path = Path::new(&self.store_path);
+        let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
         let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
-            file_upload::FileUpload::from_env_with_prefix("VERIFIER", file_upload_rx).await?;
+            file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
 
         let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraInvalidBeaconReport,
@@ -157,12 +156,14 @@ impl Purger {
         let beacon_report: LoraBeaconIngestReport =
             LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
         let beacon = &beacon_report.report;
+        let received_timestamp = beacon_report.received_timestamp;
         let invalid_beacon_proto: LoraInvalidBeaconReportV1 = LoraInvalidBeaconReport {
-            received_timestamp: beacon_report.received_timestamp,
+            received_timestamp,
             reason: InvalidReason::Stale,
             report: beacon.clone(),
         }
         .into();
+        tracing::debug!("purging beacon with date: {received_timestamp}");
         file_sink_write!(
             "invalid_beacon",
             lora_invalid_beacon_tx,
@@ -186,13 +187,15 @@ impl Purger {
             LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?;
         let witness = &witness_report.report;
         let public_key = witness.pub_key.to_vec().clone();
+        let received_timestamp = witness_report.received_timestamp;
         let invalid_witness_report_proto: LoraInvalidWitnessReportV1 = LoraInvalidWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
+            received_timestamp,
             report: witness_report.report,
             reason: InvalidReason::Stale,
             participant_side: InvalidParticipantSide::Witness,
         }
         .into();
+        tracing::debug!("purging witness with date: {received_timestamp}");
         file_sink_write!(
             "invalid_witness_report",
             lora_invalid_witness_tx,

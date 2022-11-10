@@ -7,10 +7,11 @@ license = "Apache-2.0"
 
 [dependencies]
 anyhow = {workspace = true}
-dotenv = {workspace = true}
+config = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
+http-serde = {workspace = true}
 clap = {workspace = true}
 sqlx = {workspace = true}
 tokio = {workspace = true}
@@ -31,12 +32,12 @@ humantime = {workspace = true}
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
-http = {workspace = true}
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
 file-store = {path = "../file_store"}
 db-store = { path = "../db_store" }
 poc-metrics = {path = "../metrics"}
+node-follower = {path = "../node_follower"}
 rand = "*"
 async-trait = "*"
 

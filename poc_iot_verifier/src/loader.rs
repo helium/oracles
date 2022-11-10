@@ -1,30 +1,35 @@
 use crate::{
     entropy::Entropy,
     meta::Meta,
-    mk_db_pool,
     poc_report::{Report, ReportType},
-    Result,
+    Result, Settings,
 };
 use chrono::{Duration, Utc};
-use futures::{stream, StreamExt};
-use helium_proto::EntropyReportV1;
-use helium_proto::{
-    services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
-    Message,
-};
-
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport,
     lora_witness_report::LoraWitnessIngestReport,
     traits::{IngestId, TimestampDecode},
     FileStore, FileType,
 };
+use futures::{stream, StreamExt};
+use helium_crypto::PublicKey;
+use helium_proto::{
+    services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
+    EntropyReportV1, Message,
+};
+use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfoResolver};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
 
+/// cadence for how often to look for new beacon and witness reports from s3 bucket
 const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60);
+/// cadence for how often to look for new entropy reports from s3 bucket
 const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(90);
+/// max age in hours of reports loaded from S3 which will be processed
+/// any report older will be ignored
+const MAX_REPORT_AGE: i64 = 2;
+
 const LOADER_WORKERS: usize = 2;
 const STORE_WORKERS: usize = 5;
 // DB pool size if the store worker count multiplied by the number of file types
@@ -34,20 +39,22 @@ const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;
 pub struct Loader {
     ingest_store: FileStore,
     entropy_store: FileStore,
-    // bucket: String,
     pool: PgPool,
+    follower_service: FollowerService,
 }
 
 impl Loader {
-    pub async fn from_env() -> Result<Self> {
-        tracing::info!("from_env verifier loader");
-        let pool = mk_db_pool(LOADER_DB_POOL_SIZE as u32).await?;
-        let ingest_store = FileStore::from_env_with_prefix("INGESTOR").await?;
-        let entropy_store = FileStore::from_env_with_prefix("ENTROPY").await?;
+    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+        tracing::info!("from_settings verifier loader");
+        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let ingest_store = FileStore::from_settings(&settings.ingest).await?;
+        let entropy_store = FileStore::from_settings(&settings.entropy).await?;
+        let follower_service = FollowerService::from_settings(&settings.follower)?;
         Ok(Self {
             pool,
             ingest_store,
             entropy_store,
+            follower_service,
         })
     }
 
@@ -106,10 +113,13 @@ impl Loader {
         store: &FileStore,
         shutdown: triggered::Listener,
     ) -> Result {
-        let recent_time = Utc::now() - Duration::hours(2);
+        // TODO: determine a sane value for oldest_event_time
+        // events older than this will not be processed
+        let oldest_event_time = Utc::now() - Duration::hours(MAX_REPORT_AGE);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
-            .unwrap_or(recent_time);
+            .unwrap_or(oldest_event_time)
+            .max(oldest_event_time);
 
         let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
@@ -118,12 +128,6 @@ impl Loader {
         }
 
         let last_timestamp = infos.last().map(|v| v.timestamp);
-        let test = match last_timestamp {
-            Some(x) => x,
-            None => recent_time,
-        };
-        tracing::info!("meta {last_time}, files last timestamp {test}");
-
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} {file_type} files");
         let handler = store
@@ -158,34 +162,57 @@ impl Loader {
                     LoraBeaconIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);
                 let packet_data = beacon.report.data.clone();
-                tracing::debug!("beacon data: {:?}", &packet_data);
-                Report::insert_into(
-                    &self.pool,
-                    beacon.ingest_id(),
-                    beacon.report.remote_entropy,
-                    packet_data,
-                    buf.to_vec(),
-                    &beacon.received_timestamp,
-                    ReportType::Beacon,
-                )
-                .await
+                match self.check_valid_gateway(&beacon.report.pub_key).await {
+                    true => {
+                        Report::insert_into(
+                            &self.pool,
+                            beacon.ingest_id(),
+                            beacon.report.remote_entropy,
+                            packet_data,
+                            buf.to_vec(),
+                            &beacon.received_timestamp,
+                            ReportType::Beacon,
+                        )
+                        .await
+                    }
+                    false => {
+                        // if a gateway doesnt exist then drop the report
+                        tracing::warn!(
+                            "dropping beacon report as gateway not found: {:?}",
+                            &beacon
+                        );
+                        Ok(())
+                    }
+                }
             }
             FileType::LoraWitnessIngestReport => {
                 let witness: LoraWitnessIngestReport =
                     LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
                 let packet_data = witness.report.data.clone();
-                tracing::debug!("witness data: {:?}", &packet_data);
-                Report::insert_into(
-                    &self.pool,
-                    witness.ingest_id(),
-                    Vec::<u8>::with_capacity(0),
-                    packet_data,
-                    buf.to_vec(),
-                    &witness.received_timestamp,
-                    ReportType::Witness,
-                )
-                .await
+                match self.check_valid_gateway(&witness.report.pub_key).await {
+                    true => {
+                        Report::insert_into(
+                            &self.pool,
+                            witness.ingest_id(),
+                            Vec::<u8>::with_capacity(0),
+                            packet_data,
+                            buf.to_vec(),
+                            &witness.received_timestamp,
+                            ReportType::Witness,
+                        )
+                        .await
+                    }
+                    false => {
+                        // if a gateway doesnt exist then drop the report
+                        // dont even insert into DB
+                        tracing::warn!(
+                            "dropping witness report as gateway not found: {:?}",
+                            &witness
+                        );
+                        Ok(())
+                    }
+                }
             }
             FileType::EntropyReport => {
                 let event = EntropyReportV1::decode(buf)?;
@@ -205,5 +232,14 @@ impl Loader {
                 Ok(())
             }
         }
+    }
+
+    // TODO: maybe store any found GW in the DB, save having to refetch later during validation ?
+    async fn check_valid_gateway(&self, pub_key: &PublicKey) -> bool {
+        self.follower_service
+            .clone()
+            .resolve_gateway_info(pub_key)
+            .await
+            .is_ok()
     }
 }

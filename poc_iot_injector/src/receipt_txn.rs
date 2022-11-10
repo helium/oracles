@@ -1,11 +1,12 @@
-use crate::{keypair::Keypair, Error, Result};
-use helium_crypto::Sign;
+use crate::{Error, Result};
+use helium_crypto::{Keypair, Sign};
 use helium_proto::{
+    blockchain_txn::Txn,
     services::poc_lora::{
         LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidPocV1, LoraValidWitnessReportV1,
         LoraWitnessReportReqV1,
     },
-    BlockchainPocPathElementV1, BlockchainPocReceiptV1, BlockchainPocWitnessV1,
+    BlockchainPocPathElementV1, BlockchainPocReceiptV1, BlockchainPocWitnessV1, BlockchainTxn,
     BlockchainTxnPocReceiptsV2, Message,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps};
@@ -20,11 +21,18 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = dec!(2.0);
 
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
+#[derive(Clone, Debug)]
+pub struct TxnDetails {
+    pub txn: BlockchainTxn,
+    pub hash: Vec<u8>,
+    pub hash_b64_url: String,
+}
+
 pub fn handle_report_msg(
     msg: prost::bytes::BytesMut,
     keypair: Arc<Keypair>,
     timestamp: i64,
-) -> Result<Option<(BlockchainTxnPocReceiptsV2, Vec<u8>, String)>> {
+) -> Result<TxnDetails> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
 
@@ -44,13 +52,24 @@ pub fn handle_report_msg(
 
         path.push(path_element);
 
-        Ok(Some(construct_txn(path, timestamp, &keypair)?))
+        let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
+        Ok(TxnDetails {
+            txn: wrap_txn(bare_txn),
+            hash,
+            hash_b64_url,
+        })
     } else {
-        Ok(None)
+        Err(Error::TxnConstruction)
     }
 }
 
-fn construct_txn(
+fn wrap_txn(txn: BlockchainTxnPocReceiptsV2) -> BlockchainTxn {
+    BlockchainTxn {
+        txn: Some(Txn::PocReceiptsV2(txn)),
+    }
+}
+
+fn construct_bare_txn(
     path: PocPath,
     timestamp: i64,
     keypair: &Keypair,
@@ -119,7 +138,7 @@ fn construct_poc_witnesses(
             let poc_witness = BlockchainPocWitnessV1 {
                 gateway: witness_pub_key,
                 timestamp: witness_timestamp,
-                signal: witness_signal as i32,
+                signal: witness_signal,
                 packet_hash: witness_packet,
                 signature: witness_signature,
                 snr: witness_snr as f32,
@@ -168,8 +187,9 @@ fn construct_poc_receipt(
             let beacon_hex_scale =
                 Decimal::from_f32_retain(beacon_hex_scale).unwrap_or_else(|| dec!(1.0));
             let reward_unit = poc_challengee_reward_unit(num_witnesses)?;
-            let reward_shares = beacon_hex_scale * reward_unit;
-            let reward_shares = reward_shares.to_u32().unwrap_or_default();
+            let reward_shares = (beacon_hex_scale * reward_unit)
+                .to_u32()
+                .unwrap_or_default();
 
             // NOTE: signal, origin, snr and addr_hash are irrelevant now
             Ok(Some(BlockchainPocReceiptV1 {
@@ -198,7 +218,7 @@ fn construct_poc_receipt(
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
     let mut txn = txn.clone();
     txn.signature = vec![];
-    let digest = Sha256::digest(&txn.encode_to_vec()).to_vec();
+    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
     (
         digest.clone(),
         base64::encode_config(&digest, base64::URL_SAFE_NO_PAD),
@@ -216,7 +236,7 @@ fn sign_txn(txn: &BlockchainTxnPocReceiptsV2, keypair: &Keypair) -> Result<Vec<u
 // share in the generated report.
 fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
     if num_witnesses == 0 {
-        Err(Error::ZeroWitnesses)
+        Ok(Decimal::ZERO)
     } else if num_witnesses < WITNESS_REDUNDANCY {
         Ok(Decimal::from(WITNESS_REDUNDANCY / num_witnesses))
     } else {

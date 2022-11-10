@@ -767,6 +767,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "config"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11f1667b8320afa80d69d8bbe40830df2c8a06003d86f73d8e003b2c48df416d"
+dependencies = [
+ "async-trait",
+ "lazy_static",
+ "nom",
+ "pathdiff",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -958,8 +972,11 @@ dependencies = [
 name = "db-store"
 version = "0.1.0"
 dependencies = [
+ "http",
+ "http-serde",
  "metrics",
  "poc-metrics",
+ "serde",
  "sqlx",
  "thiserror",
 ]
@@ -1035,12 +1052,6 @@ dependencies = [
  "redox_users",
  "winapi",
 ]
-
-[[package]]
-name = "dotenv"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "dotenvy"
@@ -1157,8 +1168,8 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "config",
  "csv",
- "dotenv",
  "futures",
  "futures-util",
  "helium-crypto",
@@ -1172,7 +1183,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "strum",
  "strum_macros",
  "tempfile",
@@ -1541,12 +1552,13 @@ dependencies = [
 
 [[package]]
 name = "helium-crypto"
-version = "0.4.4"
-source = "git+https://github.com/helium/helium-crypto-rs?tag=v0.4.4#ba0ad9892d0485d14f1a94ba54ac5f24c7d18284"
+version = "0.5.0"
+source = "git+https://github.com/helium/helium-crypto-rs?tag=v0.5.0#b0bd7910b7d6065d60c90465c5d679f54280470b"
 dependencies = [
  "base64",
  "bs58",
  "ed25519-dalek",
+ "k256",
  "lazy_static",
  "p256",
  "rand_core 0.6.4",
@@ -1560,7 +1572,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#01cf4287e6ff501850fa9ebb7f22a0df19c2ba72"
+source = "git+https://github.com/helium/proto?rev=01cf4287e6ff501850fa9ebb7f22a0df19c2ba72#01cf4287e6ff501850fa9ebb7f22a0df19c2ba72"
 dependencies = [
  "bytes",
  "prost",
@@ -1639,6 +1651,16 @@ name = "http-range-header"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bfe8eed0a9285ef776bb792479ea3834e8b94e13d615c2f66d03dd50a435a29"
+
+[[package]]
+name = "http-serde"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e272971f774ba29341db2f686255ff8a979365a26fb9e4277f6b6d9ec0cdd5e"
+dependencies = [
+ "http",
+ "serde",
+]
 
 [[package]]
 name = "httparse"
@@ -1875,6 +1897,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "k256"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72c1e0b51e7ec0a97369623508396067a486bd0cbed95a2659a4b863d28cfc8b"
+dependencies = [
+ "cfg-if",
+ "ecdsa",
+ "elliptic-curve",
+ "sha2 0.10.6",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2051,6 +2085,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-index"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "config",
+ "db-store",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http-serde",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "once_cell",
+ "poc-metrics",
+ "prost",
+ "rand",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.10.6",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "mobile-rewards"
 version = "0.1.0"
 dependencies = [
@@ -2058,14 +2129,14 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "config",
  "db-store",
- "dotenv",
  "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
+ "http-serde",
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
@@ -2114,11 +2185,12 @@ name = "node-follower"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "dotenv",
  "futures",
  "helium-crypto",
  "helium-proto",
  "http",
+ "http-serde",
+ "serde",
  "thiserror",
  "tonic",
 ]
@@ -2282,6 +2354,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1de2e551fb905ac83f73f7aedf2f0cb4a0da7e35efa24a202a936269f1f18e1"
 
 [[package]]
+name = "pathdiff"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8835116a5c179084a830efb3adc117ab007512b535bc1a21c991d3b32a6b44dd"
+
+[[package]]
 name = "percent-encoding"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2338,7 +2416,7 @@ dependencies = [
  "bs58",
  "chrono",
  "clap",
- "dotenv",
+ "config",
  "file-store",
  "futures",
  "futures-util",
@@ -2369,7 +2447,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
- "dotenv",
+ "config",
  "file-store",
  "futures",
  "futures-util",
@@ -2398,14 +2476,14 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "config",
  "db-store",
- "dotenv",
  "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
+ "http-serde",
  "metrics",
  "metrics-exporter-prometheus",
  "node-follower",
@@ -2435,7 +2513,8 @@ dependencies = [
  "chrono",
  "clap",
  "cmake",
- "dotenv",
+ "config",
+ "db-store",
  "file-store",
  "futures",
  "futures-util",
@@ -2444,14 +2523,16 @@ dependencies = [
  "h3ron",
  "helium-crypto",
  "helium-proto",
- "http",
+ "http-serde",
  "lazy_static",
+ "metrics",
  "node-follower",
  "once_cell",
+ "poc-metrics",
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2468,6 +2549,8 @@ version = "0.1.0"
 dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
+ "serde",
+ "thiserror",
  "tower",
  "tracing",
 ]
@@ -2481,18 +2564,19 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "config",
  "db-store",
- "dotenv",
  "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
+ "http-serde",
  "humantime",
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
+ "node-follower",
  "once_cell",
  "poc-metrics",
  "prost",
@@ -2501,7 +2585,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3592,6 +3676,15 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "toml"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d82e1a7758622a465f8cee077614c73484dac5b836c02ff6a40d5d1010324d7"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

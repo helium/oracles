@@ -7,7 +7,7 @@ use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile::{SpeedtestIngestReportV1, SpeedtestReqV1};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct CellSpeedtest {
     #[serde(alias = "pubKey")]
     pub pubkey: PublicKey,
