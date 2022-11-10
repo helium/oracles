@@ -89,10 +89,10 @@ mod tests {
         Duration::hours(24)
     }
 
-    fn standard_duration(minutes: i64) -> Result<std::time::Duration> {
+    fn standard_duration(minutes: i64) -> Result<std::time::Duration, OutOfRangeError> {
         Duration::minutes(minutes)
             .to_std()
-            .map_err(|_| Error::OutOfRangeError)
+            .map_err(|_| OutOfRangeError)
     }
 
     #[test]

@@ -154,6 +154,10 @@ struct HeartbeatSaveResult {
     inserted: bool,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct SaveHeartbeatError(#[from] sqlx::Error);
+
 impl Heartbeat {
     pub async fn validate_heartbeats<'a>(
         heartbeats: impl Stream<Item = CellHeartbeat> + 'a,
@@ -195,13 +199,13 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
+    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, SaveHeartbeatError> {
         // If the heartbeat is not valid, do not save it
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);
         }
 
-        sqlx::query_as::<_, HeartbeatSaveResult>(
+        Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
             insert into heartbeats (hotspot_key, cbsd_id, reward_weight, timestamp)
             values ($1, $2, $3, $4)
@@ -215,8 +219,8 @@ impl Heartbeat {
         .bind(self.reward_weight)
         .bind(self.timestamp)
         .fetch_one(exec)
-        .await
-        .map(|result| result.inserted)
+        .await?
+        .inserted)
     }
 }
 
