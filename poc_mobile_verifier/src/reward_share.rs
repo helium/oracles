@@ -74,17 +74,21 @@ pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct ResolveError(#[from] tonic::Status);
+
 #[async_trait::async_trait]
 pub trait OwnerResolver: Send {
     async fn resolve_owner(
         &mut self,
         address: &PublicKey,
-    ) -> Result<Option<PublicKey>, tonic::Status>;
+    ) -> Result<Option<PublicKey>, ResolveError>;
 
     async fn owner_shares(
         &mut self,
         hotspot_shares: HotspotShares,
-    ) -> Result<(OwnerShares, MissingOwnerShares), tonic::Status> {
+    ) -> Result<(OwnerShares, MissingOwnerShares), ResolveError> {
         let mut owner_shares = OwnerShares::new();
         let mut missing_owner_shares = MissingOwnerShares::new();
         for (hotspot, share) in hotspot_shares {
@@ -103,7 +107,7 @@ impl OwnerResolver for follower::Client<Channel> {
     async fn resolve_owner(
         &mut self,
         address: &PublicKey,
-    ) -> Result<Option<PublicKey>, tonic::Status> {
+    ) -> Result<Option<PublicKey>, ResolveError> {
         let req = FollowerGatewayReqV1 {
             address: address.to_vec(),
         };
@@ -137,7 +141,7 @@ mod test {
         async fn resolve_owner(
             &mut self,
             _address: &PublicKey,
-        ) -> Result<Option<PublicKey>, tonic::Status> {
+        ) -> Result<Option<PublicKey>, ResolveError> {
             Ok(Some(self.owner.clone()))
         }
     }

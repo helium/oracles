@@ -1,8 +1,9 @@
 use crate::{
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
+    reward_share::ResolveError,
     scheduler::Scheduler,
-    speedtests::{SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
+    speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -150,7 +151,7 @@ impl Verifier {
     ) -> file_store::Result<
         VerifiedEpoch<
             impl Stream<Item = Heartbeat> + 'a,
-            impl Stream<Item = Result<SpeedtestRollingAverage, sqlx::Error>> + 'a,
+            impl Stream<Item = Result<SpeedtestRollingAverage, FetchError>> + 'a,
         >,
     > {
         let heartbeats = Heartbeat::validate_heartbeats(
@@ -176,7 +177,7 @@ impl Verifier {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
-    ) -> Result<SubnetworkRewards, tonic::Status> {
+    ) -> Result<SubnetworkRewards, ResolveError> {
         SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests).await
     }
 }
