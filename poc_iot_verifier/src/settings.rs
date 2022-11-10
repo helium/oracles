@@ -17,6 +17,7 @@ pub struct Settings {
     pub entropy: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
+    pub density_scaler: density_scaler::Settings,
 }
 
 pub fn default_log() -> String {

@@ -36,6 +36,9 @@ strum_macros = "0"
 sha2 = {workspace = true}
 metrics = {workspace = true }
 poc-metrics = { path = "../metrics" }
+rust_decimal = {workspace = true}
+rust_decimal_macros = {workspace = true}
+density-scaler = {path = "../density_scaler"}
 
 [dev-dependencies]
 base64 = "0"
