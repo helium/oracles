@@ -16,7 +16,7 @@ use serde::Serialize;
 
 const SCALE_MULTIPLIER: Decimal = dec!(100);
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct LoraValidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
     pub location: Option<u64>,
@@ -24,7 +24,7 @@ pub struct LoraValidBeaconReport {
     pub report: LoraBeaconReport,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct LoraValidWitnessReport {
     pub received_timestamp: DateTime<Utc>,
     pub location: Option<u64>,
@@ -32,7 +32,7 @@ pub struct LoraValidWitnessReport {
     pub report: LoraWitnessReport,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct LoraValidPoc {
     pub poc_id: Vec<u8>,
     pub beacon_report: LoraValidBeaconReport,

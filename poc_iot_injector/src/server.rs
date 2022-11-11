@@ -84,7 +84,7 @@ impl Server {
             0,
         ));
         let before_utc = Utc::now();
-        tracing::debug!(
+        tracing::info!(
             "handling poc_tick, after_utc: {:?}, before_utc: {:?}",
             after_utc,
             before_utc
@@ -101,6 +101,7 @@ impl Server {
         )
         .await?;
 
+        tracing::info!("updating last_poc_submission_ts to {:?}", before_utc);
         // NOTE: All the poc_receipt txns for the corresponding after-before period will be
         // submitted above, may take a while to do that but we need to
         // update_last_poc_submission_ts once we're done doing it. This should ensure that we have
@@ -139,10 +140,13 @@ async fn submit_txns(
                 let txn_details = handle_report_msg(msg, shared_key, before_ts)?;
                 tracing::debug!("txn_details: {:?}", txn_details);
                 if do_submission {
+                    tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
                     handle_txn_submission(txn_details.clone(), &mut shared_txn_service).await?;
+                    tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
                     file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
                         .await?;
                 } else {
+                    tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
                     file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
                         .await?;
                 }
