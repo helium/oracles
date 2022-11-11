@@ -2,7 +2,7 @@ use crate::{
     last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::{LoraStatus, Report},
-    Result, Settings,
+    Error, Result, Settings,
 };
 use chrono::Utc;
 use file_store::{
@@ -189,6 +189,11 @@ impl Runner {
             let beacon_verify_result = poc.verify_beacon().await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
+                    tracing::info!(
+                        "valid beacon. entropy: {:?}, addr: {:?}",
+                        beacon.data,
+                        beacon.pub_key.to_string()
+                    );
                     // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
                         let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
@@ -230,10 +235,19 @@ impl Runner {
                 }
                 VerificationStatus::Invalid => {
                     // the beacon is invalid, which in turn renders all witnesses invalid
+                    let invalid_reason = beacon_verify_result
+                        .invalid_reason
+                        .ok_or_else(|| Error::not_found("invalid invalid_reason for beacon"))?;
+                    tracing::info!(
+                        "invalid beacon. entropy: {:?}, addr: {:?}, reason: {:?}",
+                        beacon.data,
+                        beacon.pub_key.to_string(),
+                        invalid_reason
+                    );
                     self.handle_invalid_poc(
                         &beacon_report,
                         witnesses,
-                        InvalidReason::BadEntropy,
+                        invalid_reason,
                         &lora_invalid_beacon_tx,
                         &lora_invalid_witness_tx,
                     )
@@ -242,7 +256,11 @@ impl Runner {
                 VerificationStatus::Failed => {
                     // something went wrong whilst verifying the beacon report
                     // halt here and allow things to be reprocessed next tick
-                    tracing::info!("failure whilst verifying beacon");
+                    tracing::info!(
+                        "failed beacon. entropy: {:?}, addr: {:?}",
+                        beacon.data,
+                        beacon.pub_key.to_string()
+                    );
                     Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now())
                         .await?;
                 }
@@ -325,7 +343,6 @@ impl Runner {
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
-        let poc_id = &beacon.data;
         let received_timestamp = valid_beacon_report.received_timestamp;
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -348,7 +365,7 @@ impl Runner {
         // valid beacons and witness reports are kept in the DB
         // until after they have been rewarded
         // for now we just have to update their status to valid
-        Report::update_status(&self.pool, poc_id, LoraStatus::Valid, Utc::now()).await?;
+        Report::update_status(&self.pool, &beacon_id, LoraStatus::Valid, Utc::now()).await?;
         // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, &beacon.pub_key.to_vec(), received_timestamp)
             .await?;

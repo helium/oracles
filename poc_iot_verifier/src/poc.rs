@@ -23,10 +23,10 @@ pub const C: f64 = 2.998e8;
 pub const R: f64 = 6.371e6;
 
 /// the cadence in seconds at which hotspots are permitted to beacon
-const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
+const BEACON_INTERVAL: i64 = (10 * 60) - 10; // 10 mins ( minus 10 sec tolerance )
 /// measurement in seconds of an entropy
 /// TODO: determine a sane value here, set high for testing
-const ENTROPY_LIFESPAN: i64 = 60;
+const ENTROPY_LIFESPAN: i64 = 180;
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
@@ -115,8 +115,9 @@ impl Poc {
                 if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
                     tracing::debug!(
                         "beacon verification failed, reason:
-                        IrregularInterval. Seconds since last beacon {:?}",
-                        interval_since_last_beacon.num_seconds()
+                        IrregularInterval. Seconds since last beacon {:?}, entropy: {:?}",
+                        interval_since_last_beacon.num_seconds(),
+                        beacon.data
                     );
                     let resp = VerifyBeaconResult {
                         result: VerificationStatus::Invalid,
