@@ -71,26 +71,13 @@ impl Heartbeats {
     }
 
     pub fn into_iter(self) -> impl Iterator<Item = Heartbeat> + Send {
-        self.heartbeats
-            .into_iter()
-            .map(
-                |(
-                    HeartbeatKey {
-                        hotspot_key,
-                        cbsd_id,
-                    },
-                    HeartbeatValue {
-                        reward_weight,
-                        timestamp,
-                    },
-                )| Heartbeat {
-                    hotspot_key,
-                    cbsd_id,
-                    reward_weight,
-                    timestamp,
-                    validity: proto::HeartbeatValidity::Valid,
-                },
-            )
+        self.heartbeats.into_iter().map(|(key, value)| Heartbeat {
+            hotspot_key: key.hotspot_key,
+            cbsd_id: key.cbsd_id,
+            reward_weight: value.reward_weight,
+            timestamp: value.timestamp,
+            validity: proto::HeartbeatValidity::Valid,
+        })
     }
 }
 

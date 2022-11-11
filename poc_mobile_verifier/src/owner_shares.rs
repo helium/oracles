@@ -1,6 +1,5 @@
 use crate::{
     heartbeats::Heartbeats,
-    mobile::Mobile,
     speedtests::{Average, SpeedtestAverages},
     Result,
 };
