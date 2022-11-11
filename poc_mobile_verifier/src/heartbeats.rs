@@ -86,25 +86,18 @@ impl Extend<Heartbeat> for Heartbeats {
     where
         T: IntoIterator<Item = Heartbeat>,
     {
-        for Heartbeat {
-            hotspot_key,
-            cbsd_id,
-            reward_weight,
-            timestamp,
-            validity,
-        } in iter.into_iter()
-        {
-            if validity != proto::HeartbeatValidity::Valid {
+        for heartbeat in iter.into_iter() {
+            if heartbeat.validity != proto::HeartbeatValidity::Valid {
                 continue;
             }
             self.heartbeats.insert(
                 HeartbeatKey {
-                    hotspot_key,
-                    cbsd_id,
+                    hotspot_key: heartbeat.hotspot_key,
+                    cbsd_id: heartbeat.cbsd_id,
                 },
                 HeartbeatValue {
-                    reward_weight,
-                    timestamp,
+                    reward_weight: heartbeat.reward_weight,
+                    timestamp: heartbeat.timestamp,
                 },
             );
         }
