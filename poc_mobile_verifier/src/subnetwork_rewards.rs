@@ -112,7 +112,10 @@ mod test {
 
     #[async_trait::async_trait]
     impl OwnerResolver for MapResolver {
-        async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>> {
+        async fn resolve_owner(
+            &mut self,
+            address: &PublicKey,
+        ) -> Result<Option<PublicKey>, ResolveError> {
             Ok(self.owners.get(address).cloned())
         }
     }
