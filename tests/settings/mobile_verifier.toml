@@ -13,7 +13,7 @@ cache = "data/verified-reports"
 [database]
 
 # Url for database to write indexed rewards to
-url = "postgres://postgres:postgres@127.0.0.1:5432/index_db"
+url = "postgres://postgres:postgres@127.0.0.1:5432/test_mobile_verifier"
 
 # Max connections to the database. Default below
 #

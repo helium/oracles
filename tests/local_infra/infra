@@ -2,12 +2,19 @@
 
 init() {
     local -r pg_user='postgres'
-    local -r pg_db_name='index_db'
+    local -r pg_db_names=(
+        'test_mobile_rewards'
+        'test_mobile_verifier'
+    )
     local -r pg_container_id=$(docker ps --filter=name=postgres --format='{{.ID}}')
 
     docker exec -it "$pg_container_id" apt update
     docker exec -it "$pg_container_id" apt install sudo
-    docker exec -it "$pg_container_id" sudo -u "$pg_user" createdb "$pg_db_name"
+
+    local db
+    for db in "${pg_db_names[@]}"; do
+        docker exec -it "$pg_container_id" sudo -u "$pg_user" createdb "$db"
+    done
 }
 
 case "$1" in
@@ -19,7 +26,7 @@ case "$1" in
         infra-start;;
     stop)
         . infra.sh
-        infra-stop;;
+        infra-stop drop;;
     init)
         init;;
     *)
