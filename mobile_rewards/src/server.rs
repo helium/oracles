@@ -451,7 +451,7 @@ mod tests {
         let now = Utc.ymd(2022, 11, 2).and_hms(0, 0, 0);
         let (start, stop) = get_time_range(last_timestamp, now);
 
-        assert_eq!(start, Utc.ymd(2022, 11, 1).and_hms(0, 0, 0));
+        assert_eq!(start, Utc.timestamp(last_timestamp, 0));
         assert_eq!(stop, now);
     }
 
