@@ -46,10 +46,10 @@ async fn suite(cli: &Cli) -> Result<()> {
     //      - postgres
     //      - minio
     // 2. services start:
-    //      - [x] start_ingest
-    //      - [x] start_verifier
-    //      - [x] start_rewarder
-    //      - [/] start_follower
+    //      - [x] ingestor_start
+    //      - [x] verifier_start
+    //      - [x] rewarder_start
+    //      - [/] follower_start
     // 3. [x] send data through ingest
     // 4. [ ] ensure we get the proper reward calculated
 
@@ -91,10 +91,10 @@ async fn suite(cli: &Cli) -> Result<()> {
     });
 
     tokio::try_join!(
-        start_ingest(shutdown_listener.clone(), ingestor_settings),
-        start_verifier(verifier_settings),
-        start_rewarder(shutdown_listener.clone(), rewarder_settings, &keypair),
-        start_follower(follower_settings),
+        ingestor_start(shutdown_listener.clone(), ingestor_settings),
+        verifier_start(verifier_settings),
+        rewarder_start(shutdown_listener.clone(), rewarder_settings, &keypair),
+        follower_start(follower_settings),
         test(&keypair, grpc_endpoint, api_token),
     )?;
     Ok(())
@@ -181,21 +181,21 @@ async fn s3_create_bucket(
     }
 }
 
-async fn start_ingest(
+async fn ingestor_start(
     shutdown_listener: triggered::Listener,
     settings: poc_ingest::Settings,
 ) -> Result<()> {
     server_5g::grpc_server(shutdown_listener, &settings)
         .await
-        .map(|_| tracing::info!("START start_ingest OK"))
+        .map(|_| tracing::info!("START ingestor_start OK"))
         .map_err(|e| {
-            tracing::error!("start_ingest ERROR: {e:?}");
+            tracing::error!("ingestor_start ERROR: {e:?}");
             e
         })
         .map_err(|e| anyhow!("ingestor failure: {e:?}"))
 }
 
-async fn start_verifier(settings: poc_mobile_verifier::Settings) -> Result<()> {
+async fn verifier_start(settings: poc_mobile_verifier::Settings) -> Result<()> {
     // XXX While Cmd.run runs the migrations, it also calls things that
     //     fail without seeding, but seeding fails without migrations.
     let pool = settings.database.connect(10).await?;
@@ -203,22 +203,22 @@ async fn start_verifier(settings: poc_mobile_verifier::Settings) -> Result<()> {
         .run(&pool)
         .await
         .map_err(|e| {
-            tracing::error!("START start_verifier migration: {e:?}");
+            tracing::error!("START verifier_start migration: {e:?}");
             e
         })?;
-    seed_db_for_verifier(&settings).await;
+    verifier_seed_db(&settings).await;
     poc_mobile_verifier::cli::server::Cmd {}
         .run(&settings)
         .await
-        .map(|_| tracing::info!("START start_verifier OK"))
+        .map(|_| tracing::info!("START verifier_start OK"))
         .map_err(|e| {
-            tracing::error!("start_verifier ERROR: {e:?}");
+            tracing::error!("verifier_start ERROR: {e:?}");
             e
         })
         .map_err(|e| anyhow!("verifier failure: {e:?}"))
 }
 
-async fn start_rewarder(
+async fn rewarder_start(
     shutdown_listener: triggered::Listener,
     settings: mobile_rewards::Settings,
     keypair: &helium_crypto::Keypair,
@@ -232,23 +232,23 @@ async fn start_rewarder(
         .run(&pool)
         .await
         .map_err(|e| {
-            tracing::error!("START start_rewarder migration: {e:?}");
+            tracing::error!("START rewarder_start migration: {e:?}");
             e
         })?;
     let mut reward_server = mobile_rewards::server::Server::new(&settings)
         .await
         .map_err(|e| {
-            tracing::error!("START start_rewarder server construct: {e:?}");
+            tracing::error!("START rewarder_start server construct: {e:?}");
             e
         })?;
     reward_server.run(shutdown_listener).await.map_err(|e| {
-        tracing::error!("START start_rewarder server run: {e:?}");
+        tracing::error!("START rewarder_start server run: {e:?}");
         e
     })?;
     Ok(())
 }
 
-async fn start_follower(_settings: node_follower::Settings) -> Result<()> {
+async fn follower_start(_settings: node_follower::Settings) -> Result<()> {
     tracing::error!("START TODO mock follower");
     Ok(())
 }
@@ -333,7 +333,7 @@ async fn assert_rewards() -> Result<()> {
     Ok(())
 }
 
-async fn seed_db_for_verifier(settings: &poc_mobile_verifier::Settings) {
+async fn verifier_seed_db(settings: &poc_mobile_verifier::Settings) {
     let exec = settings.database.connect(1).await.unwrap();
     let now = chrono::Utc::now().timestamp() as i64;
     // FIXME What are good values to use?
