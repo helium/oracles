@@ -6,7 +6,6 @@ use clap::Parser;
 use rand_chacha::rand_core::SeedableRng; // seed_from_u64
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-// use helium_crypto::Network;
 use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
 use http::Uri;
 use poc_ingest::server_5g;
@@ -60,9 +59,8 @@ async fn suite(cli: &Cli) -> Result<()> {
         mobile_rewards::Settings::new(Some(&cli.rewarder_settings_path)).unwrap();
     let follower_settings = rewarder_settings.follower.clone();
 
-    // TODO Set manually here or get from settings? If settings then which ones?
     // TODO Ensure all settings have the same net set. Assert or override?
-    let net = ingestor_settings.network;
+    let net = helium_crypto::Network::TestNet;
 
     // TODO ensure keypair path is set correctly in all settings.
     let keypair = make_keypair(net);
