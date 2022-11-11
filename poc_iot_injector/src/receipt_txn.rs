@@ -1,14 +1,12 @@
 use crate::{Error, Result};
-use density_scaler::SCALING_PRECISION;
+use file_store::{
+    lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc, LoraValidWitnessReport},
+    traits::MsgDecode,
+};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
-    blockchain_txn::Txn,
-    services::poc_lora::{
-        LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidPocV1, LoraValidWitnessReportV1,
-        LoraWitnessReportReqV1,
-    },
-    BlockchainPocPathElementV1, BlockchainPocReceiptV1, BlockchainPocWitnessV1, BlockchainTxn,
-    BlockchainTxnPocReceiptsV2, Message,
+    blockchain_txn::Txn, BlockchainPocPathElementV1, BlockchainPocReceiptV1,
+    BlockchainPocWitnessV1, BlockchainTxn, BlockchainTxnPocReceiptsV2, Message,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
@@ -18,7 +16,7 @@ use std::sync::Arc;
 // TODO: These should ideally be coming in from some configuration service
 const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
-const HIP15_TX_REWARD_UNIT_CAP: Decimal = dec!(2.0);
+const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
@@ -37,30 +35,30 @@ pub fn handle_report_msg(
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
 
-    let LoraValidPocV1 {
-        poc_id: _poc_id,
-        beacon_report,
-        witness_reports,
-    } = LoraValidPocV1::decode(msg)?;
+    match LoraValidPoc::decode(msg) {
+        Ok(lora_valid_poc) => {
+            let poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports)?;
 
-    let poc_witnesses = construct_poc_witnesses(witness_reports)?;
+            let poc_receipt =
+                construct_poc_receipt(lora_valid_poc.beacon_report, poc_witnesses.len() as u32)?;
 
-    // We expect poc_receipt to always be here, once it is in a report
-    if let Some(poc_receipt) = construct_poc_receipt(beacon_report, poc_witnesses.len() as u32)? {
-        // TODO: Double check whether the gateway in the poc_receipt is challengee?
-        let path_element =
-            construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses)?;
+            // TODO: Double check whether the gateway in the poc_receipt is challengee?
+            let path_element =
+                construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses)?;
 
-        path.push(path_element);
+            path.push(path_element);
 
-        let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
-        Ok(TxnDetails {
-            txn: wrap_txn(bare_txn),
-            hash,
-            hash_b64_url,
-        })
-    } else {
-        Err(Error::TxnConstruction)
+            let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
+            Ok(TxnDetails {
+                txn: wrap_txn(bare_txn),
+                hash,
+                hash_b64_url,
+            })
+        }
+        Err(e) => {
+            tracing::error!("error: {:?}", e);
+            Err(Error::TxnConstruction)
+        }
     }
 }
 
@@ -105,51 +103,30 @@ fn construct_path_element(
 }
 
 fn construct_poc_witnesses(
-    witness_reports: Vec<LoraValidWitnessReportV1>,
+    witness_reports: Vec<LoraValidWitnessReport>,
 ) -> Result<Vec<BlockchainPocWitnessV1>> {
     let num_witnesses = witness_reports.len();
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(num_witnesses);
     for witness_report in witness_reports {
-        let LoraValidWitnessReportV1 {
-            hex_scale: witness_hex_scale,
-            report: witness_report_req,
-            ..
-        } = witness_report;
+        let reward_unit = poc_challengee_reward_unit(num_witnesses as u32)?;
+        let reward_shares = witness_report.hex_scale * reward_unit;
+        let reward_shares = reward_shares.to_u32().unwrap_or_default();
 
-        if let Some(witness_report_req) = witness_report_req {
-            let LoraWitnessReportReqV1 {
-                pub_key: witness_pub_key,
-                data: witness_packet,
-                timestamp: witness_timestamp,
-                signal: witness_signal,
-                snr: witness_snr,
-                frequency: witness_frequency,
-                datarate: witness_datarate,
-                signature: witness_signature,
-                ..
-            } = witness_report_req;
+        // NOTE: channel is irrelevant now
+        let poc_witness = BlockchainPocWitnessV1 {
+            gateway: witness_report.report.pub_key.to_vec(),
+            timestamp: witness_report.report.timestamp.timestamp() as u64,
+            signal: witness_report.report.signal,
+            packet_hash: witness_report.report.data,
+            signature: witness_report.report.signature,
+            snr: witness_report.report.snr as f32,
+            frequency: hz_to_mhz(witness_report.report.frequency),
+            datarate: witness_report.report.datarate.to_string(),
+            channel: 0,
+            reward_shares,
+        };
 
-            let witness_hex_scale = Decimal::new(witness_hex_scale as i64, SCALING_PRECISION);
-            let reward_unit = poc_challengee_reward_unit(num_witnesses as u32)?;
-            let reward_shares = witness_hex_scale * reward_unit;
-            let reward_shares = reward_shares.to_u32().unwrap_or_default();
-
-            // NOTE: channel is irrelevant now
-            let poc_witness = BlockchainPocWitnessV1 {
-                gateway: witness_pub_key,
-                timestamp: witness_timestamp,
-                signal: witness_signal,
-                packet_hash: witness_packet,
-                signature: witness_signature,
-                snr: witness_snr as f32,
-                frequency: hz_to_mhz(witness_frequency),
-                datarate: witness_datarate.to_string(),
-                channel: 0,
-                reward_shares,
-            };
-
-            poc_witnesses.push(poc_witness)
-        }
+        poc_witnesses.push(poc_witness)
     }
     Ok(poc_witnesses)
 }
@@ -161,57 +138,30 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
 }
 
 fn construct_poc_receipt(
-    beacon_report: Option<LoraValidBeaconReportV1>,
+    beacon_report: LoraValidBeaconReport,
     num_witnesses: u32,
-) -> Result<Option<BlockchainPocReceiptV1>> {
-    if let Some(beacon_report) = beacon_report {
-        let LoraValidBeaconReportV1 {
-            hex_scale: beacon_hex_scale,
-            report: beacon_report_req,
-            ..
-        } = beacon_report;
+) -> Result<BlockchainPocReceiptV1> {
+    let reward_unit = poc_challengee_reward_unit(num_witnesses)?;
+    let reward_shares = (beacon_report.hex_scale * reward_unit)
+        .to_u32()
+        .unwrap_or_default();
 
-        if let Some(beacon_report_req) = beacon_report_req {
-            let LoraBeaconReportReqV1 {
-                pub_key: beacon_pub_key,
-                data: beacon_data,
-                frequency: beacon_frequency,
-                channel: beacon_channel,
-                datarate: beacon_datarate,
-                tx_power: beacon_tx_power,
-                timestamp: beacon_timestamp,
-                signature: beacon_signature,
-                ..
-            } = beacon_report_req;
-
-            let beacon_hex_scale = Decimal::new(beacon_hex_scale as i64, SCALING_PRECISION);
-            let reward_unit = poc_challengee_reward_unit(num_witnesses)?;
-            let reward_shares = (beacon_hex_scale * reward_unit)
-                .to_u32()
-                .unwrap_or_default();
-
-            // NOTE: signal, origin, snr and addr_hash are irrelevant now
-            Ok(Some(BlockchainPocReceiptV1 {
-                gateway: beacon_pub_key,
-                timestamp: beacon_timestamp,
-                signal: 0,
-                data: beacon_data,
-                origin: 0,
-                signature: beacon_signature,
-                snr: 0.0,
-                frequency: hz_to_mhz(beacon_frequency),
-                channel: beacon_channel,
-                datarate: beacon_datarate.to_string(),
-                tx_power: beacon_tx_power,
-                addr_hash: vec![],
-                reward_shares,
-            }))
-        } else {
-            Ok(None)
-        }
-    } else {
-        Ok(None)
-    }
+    // NOTE: signal, origin, snr and addr_hash are irrelevant now
+    Ok(BlockchainPocReceiptV1 {
+        gateway: beacon_report.report.pub_key.to_vec(),
+        timestamp: beacon_report.report.timestamp.timestamp() as u64,
+        signal: 0,
+        data: beacon_report.report.data,
+        origin: 0,
+        signature: beacon_report.report.signature,
+        snr: 0.0,
+        frequency: hz_to_mhz(beacon_report.report.frequency),
+        channel: beacon_report.report.channel,
+        datarate: beacon_report.report.datarate.to_string(),
+        tx_power: beacon_report.report.tx_power,
+        addr_hash: vec![],
+        reward_shares,
+    })
 }
 
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
@@ -241,7 +191,7 @@ fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
     } else {
         let exp = WITNESS_REDUNDANCY - num_witnesses;
         if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
-            let unnormalized = dec!(2.0) - to_sub;
+            let unnormalized = Decimal::TWO - to_sub;
             let normalized_unit = normalize_reward_unit(unnormalized);
             Ok(normalized_unit)
         } else {
