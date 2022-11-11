@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     // panic!("This is a tests-only crate. Please re-run as test.")
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            "tests=debug,poc_ingest=debug",
+            "tests=debug,poc_ingest=debug,poc_mobile_verifier=debug,mobile_rewards=debug",
         )) // TODO Maybe per-crate levels.
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -47,8 +47,8 @@ async fn suite(cli: &Cli) -> Result<()> {
     //      - minio
     // 2. services start:
     //      - [x] start_ingest
-    //      - [/] start_verifier
-    //      - [/] start_rewards
+    //      - [x] start_verifier
+    //      - [x] start_rewarder
     //      - [/] start_follower
     // 3. [x] send data through ingest
     // 4. [ ] ensure we get the proper reward calculated
@@ -60,10 +60,16 @@ async fn suite(cli: &Cli) -> Result<()> {
         mobile_rewards::Settings::new(Some(&cli.rewarder_settings_path)).unwrap();
     let follower_settings = rewarder_settings.follower.clone();
 
+    // TODO Set manually here or get from settings? If settings then which ones?
+    // TODO Ensure all settings have the same net set. Assert or override?
+    let net = ingestor_settings.network;
+
+    // TODO ensure keypair path is set correctly in all settings.
+    let keypair = make_keypair(net);
+
     let api_token = ingestor_settings.token.clone().unwrap();
     let grpc_addr = ingestor_settings.listen.clone();
     let grpc_endpoint = format!("http://{grpc_addr}");
-    let net = ingestor_settings.network;
     let aws_region = "us-west-2"; // TODO Pull from settings. From which one?
     let aws_endpoint = "http://localhost:9000";
 
@@ -85,17 +91,21 @@ async fn suite(cli: &Cli) -> Result<()> {
     });
 
     tokio::try_join!(
-        start_ingest(shutdown_listener, ingestor_settings),
+        start_ingest(shutdown_listener.clone(), ingestor_settings),
         start_verifier(verifier_settings),
-        start_rewarder(rewarder_settings),
+        start_rewarder(shutdown_listener.clone(), rewarder_settings, &keypair),
         start_follower(follower_settings),
-        test(net, grpc_endpoint, api_token),
+        test(&keypair, grpc_endpoint, api_token),
     )?;
     Ok(())
 }
 
-async fn test(net: helium_crypto::Network, grpc_endpoint: String, api_token: String) -> Result<()> {
-    send_heartbeat(net, grpc_endpoint, api_token).await?;
+async fn test(
+    keypair: &helium_crypto::Keypair,
+    grpc_endpoint: String,
+    api_token: String,
+) -> Result<()> {
+    send_heartbeat(keypair, grpc_endpoint, api_token).await?;
     assert_rewards().await?;
     Ok(())
 }
@@ -186,9 +196,18 @@ async fn start_ingest(
 }
 
 async fn start_verifier(settings: poc_mobile_verifier::Settings) -> Result<()> {
+    // XXX While Cmd.run runs the migrations, it also calls things that
+    //     fail without seeding, but seeding fails without migrations.
+    let pool = settings.database.connect(10).await?;
+    sqlx::migrate!("../poc_mobile_verifier/migrations")
+        .run(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("START start_verifier migration: {e:?}");
+            e
+        })?;
     seed_db_for_verifier(&settings).await;
-    let srv_cmd = poc_mobile_verifier::cli::server::Cmd {};
-    srv_cmd
+    poc_mobile_verifier::cli::server::Cmd {}
         .run(&settings)
         .await
         .map(|_| tracing::info!("START start_verifier OK"))
@@ -199,8 +218,33 @@ async fn start_verifier(settings: poc_mobile_verifier::Settings) -> Result<()> {
         .map_err(|e| anyhow!("verifier failure: {e:?}"))
 }
 
-async fn start_rewarder(_settings: mobile_rewards::Settings) -> Result<()> {
-    tracing::error!("START TODO start rewarder");
+async fn start_rewarder(
+    shutdown_listener: triggered::Listener,
+    settings: mobile_rewards::Settings,
+    keypair: &helium_crypto::Keypair,
+) -> Result<()> {
+    // FIXME mobile_rewards::server: failed to connec to txn stream: grpc error trying to connect: tcp connect error: Connection refused (os error 111)
+    // TODO What grpc stream to connect to?
+    let pool = settings.database.connect(2).await?;
+    let keypair_filepath = &settings.keypair;
+    std::fs::write(keypair_filepath, keypair.to_vec())?;
+    sqlx::migrate!("../mobile_rewards/migrations")
+        .run(&pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("START start_rewarder migration: {e:?}");
+            e
+        })?;
+    let mut reward_server = mobile_rewards::server::Server::new(&settings)
+        .await
+        .map_err(|e| {
+            tracing::error!("START start_rewarder server construct: {e:?}");
+            e
+        })?;
+    reward_server.run(shutdown_listener).await.map_err(|e| {
+        tracing::error!("START start_rewarder server run: {e:?}");
+        e
+    })?;
     Ok(())
 }
 
@@ -218,13 +262,12 @@ fn make_keypair(net: helium_crypto::Network) -> helium_crypto::Keypair {
     helium_crypto::Keypair::generate(key_tag, &mut seed)
 }
 
-fn make_heartbeat(net: helium_crypto::Network) -> CellHeartbeatReqV1 {
+fn make_heartbeat(keypair: &helium_crypto::Keypair) -> CellHeartbeatReqV1 {
     use helium_crypto::Sign;
 
     let hotspot_type = "fake_hotspot_type".to_string();
     let cbsd_category = "fake_cbsd_category".to_string();
     let cbsd_id = "fake_cbsd_id".to_string();
-    let keypair = make_keypair(net);
     let mut heartbeat = CellHeartbeatReqV1 {
         pub_key: keypair.public_key().to_vec(),
         hotspot_type,
@@ -246,7 +289,7 @@ fn make_heartbeat(net: helium_crypto::Network) -> CellHeartbeatReqV1 {
 }
 
 async fn send_heartbeat(
-    net: helium_crypto::Network,
+    keypair: &helium_crypto::Keypair,
     grpc_endpoint: String,
     api_token: String,
 ) -> Result<()> {
@@ -265,7 +308,7 @@ async fn send_heartbeat(
             e
         })?;
 
-    let heartbeat = make_heartbeat(net);
+    let heartbeat = make_heartbeat(keypair);
     let mut request = tonic::Request::new(heartbeat);
     request
         .metadata_mut()

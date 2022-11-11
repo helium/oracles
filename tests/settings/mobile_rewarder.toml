@@ -4,7 +4,7 @@
 
 #file to load keypair from
 #
-keypair = "/path/to/key_pair"
+keypair = "data/keypair"
 
 # Tigger interval in seconds. (Default is 900; 15 minutes)
 #
