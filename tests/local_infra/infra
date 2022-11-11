@@ -18,18 +18,18 @@ init() {
 }
 
 case "$1" in
-    start)
+    create)
         # XXX Assumes the following variables are already set:
         # - AWS_ACCESS_KEY_ID
         # - AWS_SECRET_ACCESS_KEY
         . infra.sh
         infra-start;;
-    stop)
+    destroy)
         . infra.sh
         infra-stop drop;;
     init)
         init;;
     *)
-        printf 'usage: %s (start|stop)\n' "$0" >&2
+        printf 'usage: %s (create|init|destroy)\n' "$0" >&2
         exit 1
 esac
