@@ -2,7 +2,12 @@ use crate::{
     error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings,
 };
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
-use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
+use aws_sdk_s3::{
+    error::ListObjectsV2Error,
+    output::ListObjectsV2Output,
+    types::{ByteStream, SdkError},
+    Client, Endpoint, Region,
+};
 use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
@@ -68,36 +73,45 @@ impl FileStore {
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
-        let prefix = file_type.into().to_string();
         let before = before.into();
         let after = after.into();
 
-        let stream = self
-            .client
-            .list_objects_v2()
-            .bucket(&self.bucket)
-            .prefix(prefix)
-            .into_paginator()
-            .send();
-        stream
+        list_objects_v2(&self.client, &self.bucket, file_type.into(), None)
             .flat_map(move |entry| match entry {
-                Ok(output) => {
-                    let filtered = output
-                        .contents
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|obj| {
-                            if FileInfo::matches(obj.key().unwrap_or_default()) {
-                                Some(FileInfo::try_from(&obj).unwrap())
-                            } else {
-                                None
-                            }
-                        })
-                        .filter(move |info| after.map_or(true, |v| info.timestamp >= v))
-                        .filter(move |info| before.map_or(true, |v| info.timestamp <= v))
-                        .map(Ok);
-                    stream::iter(filtered).boxed()
-                }
+                Ok(output) => filter_file_list(output, after, before),
+                Err(err) => stream::once(async move { Err(Error::s3_error(err)) }).boxed(),
+            })
+            .boxed()
+    }
+
+    pub async fn list_all_after<A, B, F>(
+        &self,
+        file_type: F,
+        after: A,
+        before: B,
+    ) -> Result<Vec<FileInfo>>
+    where
+        F: Into<FileType> + Copy,
+        A: Into<DateTime<Utc>> + Copy,
+        B: Into<Option<DateTime<Utc>>> + Copy,
+    {
+        self.list_after(file_type, after, before)
+            .try_collect()
+            .await
+    }
+
+    pub fn list_after<A, B, F>(&self, file_type: F, after: A, before: B) -> FileInfoStream
+    where
+        F: Into<FileType> + Copy,
+        A: Into<DateTime<Utc>> + Copy,
+        B: Into<Option<DateTime<Utc>>> + Copy,
+    {
+        let before = before.into();
+        let after = after.into();
+
+        list_objects_v2(&self.client, &self.bucket, file_type.into(), Some(after))
+            .flat_map(move |entry| match entry {
+                Ok(output) => filter_file_list(output, None, before),
                 Err(err) => stream::once(async move { Err(Error::s3_error(err)) }).boxed(),
             })
             .boxed()
@@ -203,4 +217,43 @@ where
         .map_ok(|output| output.body)
         .map_err(Error::s3_error)
         .await
+}
+
+fn list_objects_v2(
+    client: &Client,
+    bucket: &str,
+    file_type: FileType,
+    start_after: Option<DateTime<Utc>>,
+) -> impl futures::stream::Stream<
+    Item = std::result::Result<ListObjectsV2Output, SdkError<ListObjectsV2Error>>,
+> + Unpin {
+    client
+        .list_objects_v2()
+        .bucket(bucket)
+        .prefix(file_type.to_string())
+        .set_start_after(start_after.map(|dt| FileInfo::from((file_type, dt)).into()))
+        .into_paginator()
+        .send()
+}
+
+fn filter_file_list<'a>(
+    output: ListObjectsV2Output,
+    after: Option<DateTime<Utc>>,
+    before: Option<DateTime<Utc>>,
+) -> futures::stream::BoxStream<'a, Result<FileInfo>> {
+    let filtered = output
+        .contents
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|obj| {
+            if FileInfo::matches(obj.key().unwrap_or_default()) {
+                Some(FileInfo::try_from(&obj).unwrap())
+            } else {
+                None
+            }
+        })
+        .filter(move |info| after.map_or(true, |v| info.timestamp >= v))
+        .filter(move |info| before.map_or(true, |v| info.timestamp <= v))
+        .map(Ok);
+    stream::iter(filtered).boxed()
 }

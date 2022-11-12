@@ -9,7 +9,7 @@ use file_store::{
     lora_beacon_report::LoraBeaconIngestReport,
     lora_witness_report::LoraWitnessIngestReport,
     traits::{IngestId, TimestampDecode},
-    FileStore, FileType,
+    FileInfo, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKey;
@@ -115,13 +115,23 @@ impl Loader {
     ) -> Result {
         // TODO: determine a sane value for oldest_event_time
         // events older than this will not be processed
-        let oldest_event_time = Utc::now() - Duration::hours(MAX_REPORT_AGE);
-        let last_time = Meta::last_timestamp(&self.pool, file_type)
-            .await?
-            .unwrap_or(oldest_event_time)
-            .max(oldest_event_time);
 
-        let infos = store.list_all(file_type, last_time, None).await?;
+        let (last_time, infos) = match Meta::last_timestamp(&self.pool, file_type).await? {
+            Some(last_timestamp) => (
+                last_timestamp,
+                store
+                    .list_all_after(file_type, last_timestamp, None)
+                    .await?,
+            ),
+            None => {
+                let oldest_event_time = Utc::now() - Duration::hours(MAX_REPORT_AGE);
+                (
+                    oldest_event_time,
+                    store.list_all(file_type, oldest_event_time, None).await?,
+                )
+            }
+        };
+
         if infos.is_empty() {
             tracing::info!("no ingest {file_type} files to process from: {last_time}");
             return Ok(());
