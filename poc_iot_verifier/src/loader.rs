@@ -9,7 +9,7 @@ use file_store::{
     lora_beacon_report::LoraBeaconIngestReport,
     lora_witness_report::LoraWitnessIngestReport,
     traits::{IngestId, TimestampDecode},
-    FileInfo, FileStore, FileType,
+    FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKey;
