@@ -6,9 +6,16 @@ use clap::Parser;
 use rand_chacha::rand_core::SeedableRng; // seed_from_u64
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use helium_proto::{services::poc_mobile::CellHeartbeatReqV1, Message};
-use http::Uri;
-use poc_ingest::server_5g;
+use helium_proto::services::follower::{
+    FollowerGatewayReqV1, FollowerGatewayRespV1, FollowerGatewayStreamReqV1,
+    FollowerGatewayStreamRespV1, FollowerSubnetworkLastRewardHeightReqV1,
+    FollowerSubnetworkLastRewardHeightRespV1, FollowerTxnStreamReqV1, FollowerTxnStreamRespV1,
+};
+use helium_proto::{
+    services::poc_mobile::CellHeartbeatReqV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1,
+    Message, SubnetworkReward,
+};
+use tonic::{Request, Status};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -26,7 +33,7 @@ async fn main() -> Result<()> {
     // panic!("This is a tests-only crate. Please re-run as test.")
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            "tests=debug,poc_ingest=debug,poc_mobile_verifier=debug,mobile_rewards=debug",
+            "tests=debug,poc_ingest=debug,poc_mobile_verifier=debug,mobile_rewards=debug,node_follower=debug",
         )) // TODO Maybe per-crate levels.
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -48,9 +55,14 @@ async fn suite(cli: &Cli) -> Result<()> {
     //      - [x] ingestor_start
     //      - [x] verifier_start
     //      - [x] rewarder_start
+    //      - [ ] txn_stream_start
     //      - [/] follower_start
     // 3. [x] send data through ingest
     // 4. [ ] ensure we get the proper reward calculated
+    //      - how?
+    //          - pg should have txn_hash_str set to Status::Pending
+    //          - mock node_follower::txn_service::TransactionService
+    //              intercepting submission of BlockchainTxn { txn: Some(Txn::SubnetworkRewards(txn)), }
 
     let ingestor_settings = poc_ingest::Settings::new(Some(&cli.ingestor_settings_path)).unwrap();
     let verifier_settings =
@@ -88,6 +100,12 @@ async fn suite(cli: &Cli) -> Result<()> {
         shutdown_trigger.trigger()
     });
 
+    // TODO Start before rewarder? Since it connects to txn_stream.
+    // TODO Pass addr and port args.
+    // TODO Actually correct implementation.
+    tokio::spawn(async move {
+        txn_stream_start().await.expect("txn streamer failed");
+    });
     tokio::try_join!(
         ingestor_start(shutdown_listener.clone(), ingestor_settings),
         verifier_start(verifier_settings),
@@ -95,6 +113,162 @@ async fn suite(cli: &Cli) -> Result<()> {
         follower_start(follower_settings),
         test(&keypair, grpc_endpoint, api_token),
     )?;
+    Ok(())
+}
+
+#[derive(Debug, Default)] // TODO Remove Default
+pub struct FollowerServerInstance {}
+
+#[derive(Debug, Default)] // TODO Remove Default
+pub struct TxnStream {
+    txs: Vec<BlockchainTxn>,
+}
+
+impl TxnStream {
+    pub fn new(tx: BlockchainTxn) -> TxnStream {
+        TxnStream { txs: vec![tx] }
+    }
+}
+
+impl futures::Stream for TxnStream {
+    type Item = std::result::Result<FollowerTxnStreamRespV1, Status>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        match self.txs.pop() {
+            None => std::task::Poll::Ready(None),
+            Some(tx) => {
+                let resp = FollowerTxnStreamRespV1 {
+                    height: 0,         // FIXME What's a good value?
+                    txn_hash: vec![0], // FIXME What's a good value?
+                    txn: Some(tx),     // FIXME What's a good value?
+                    timestamp: 0,      // FIXME What's a good value?
+                };
+                std::task::Poll::Ready(Some(Ok(resp)))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)] // TODO Remove Default
+pub struct GwStream {}
+
+impl futures::Stream for GwStream {
+    type Item = std::result::Result<FollowerGatewayStreamRespV1, Status>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        //let gw = GatewayInfo {
+        //    /// / The asserted h3 (string) location of the gateway. Empty string if the
+        //    /// gateway is not found
+        //    #[prost(string, tag = "1")]
+        //    pub location: ::prost::alloc::string::String,
+        //    /// / The pubkey_bin address of the requested gateway
+        //    #[prost(bytes = "vec", tag = "2")]
+        //    pub address: ::prost::alloc::vec::Vec<u8>,
+        //    /// / The pubkey_bin address of the current owner of the gateway. An empty bytes
+        //    /// / if the hotspot is not found
+        //    #[prost(bytes = "vec", tag = "3")]
+        //    pub owner: ::prost::alloc::vec::Vec<u8>,
+        //    /// / the staking mode of the gateway
+        //    #[prost(enumeration = "super::GatewayStakingMode", tag = "4")]
+        //    pub staking_mode: i32,
+        //    /// / the transmit gain value of the gateway in dbi x 10 For example 1 dbi = 10,
+        //    /// 15 dbi = 150
+        //    #[prost(int32, tag = "5")]
+        //    pub gain: i32,
+        //    /// / The region of the gateway's corresponding location
+        //    #[prost(enumeration = "super::Region", tag = "6")]
+        //    pub region: i32,
+        //};
+        // let resp = FollowerGatewayRespV1 {
+        //     /// / The height for at which the ownership was looked up
+        //     height: 1,
+        //     // result: Some(follower_gateway_resp_v1::Result::Info(gw)),
+        //     result: None,
+        // };
+        // let resps = FollowerGatewayStreamRespV1 {
+        //     gateways: vec![resp],
+        // };
+        // std::task::Poll::Ready(Some(Ok(resps)))
+        std::task::Poll::Ready(None)
+    }
+}
+
+#[tonic::async_trait]
+impl helium_proto::services::follower::follower_server::Follower for FollowerServerInstance {
+    type txn_streamStream = TxnStream;
+
+    async fn txn_stream(
+        &self,
+        req: Request<FollowerTxnStreamReqV1>,
+    ) -> std::result::Result<tonic::Response<Self::txn_streamStream>, Status> {
+        tracing::debug!("txn_stream. self:{self:?}, req:{req:?}");
+        let r = SubnetworkReward {
+            account: vec![0], // TODO pub key?
+            amount: 0,
+        };
+        let rs = BlockchainTxnSubnetworkRewardsV1 {
+            token_type: 0,
+            start_epoch: 0,
+            end_epoch: 0,
+            reward_server_signature: vec![0],
+            rewards: vec![r],
+        };
+        let tx0 = helium_proto::blockchain_txn::Txn::SubnetworkRewards(rs);
+        let tx = BlockchainTxn { txn: Some(tx0) };
+        let msg = TxnStream::new(tx);
+        Ok(tonic::Response::new(msg))
+    }
+
+    async fn find_gateway(
+        &self,
+        req: Request<FollowerGatewayReqV1>,
+    ) -> std::result::Result<tonic::Response<FollowerGatewayRespV1>, Status> {
+        tracing::debug!("find_gateway. self:{self:?}, req:{req:?}");
+        let msg = FollowerGatewayRespV1 {
+            height: 0,
+            result: None,
+        };
+        Ok(tonic::Response::new(msg))
+    }
+
+    type active_gatewaysStream = GwStream;
+
+    async fn active_gateways(
+        &self,
+        req: Request<FollowerGatewayStreamReqV1>,
+    ) -> std::result::Result<tonic::Response<Self::active_gatewaysStream>, Status> {
+        tracing::debug!("active_gateways. self:{self:?}, req:{req:?}");
+        let msg = GwStream::default();
+        Ok(tonic::Response::new(msg))
+    }
+
+    async fn subnetwork_last_reward_height(
+        &self,
+        _request: Request<FollowerSubnetworkLastRewardHeightReqV1>,
+    ) -> std::result::Result<tonic::Response<FollowerSubnetworkLastRewardHeightRespV1>, Status>
+    {
+        let msg = FollowerSubnetworkLastRewardHeightRespV1 {
+            height: 0,
+            reward_height: 0,
+        };
+        Ok(tonic::Response::new(msg))
+    }
+}
+
+async fn txn_stream_start() -> Result<()> {
+    let addr = "127.0.0.1:8080";
+    let addr: std::net::SocketAddr = addr.parse()?;
+    let follower_srv = FollowerServerInstance::default();
+    tonic::transport::Server::builder()
+        .add_service(helium_proto::services::follower::Server::new(follower_srv))
+        .serve(addr)
+        .await?;
     Ok(())
 }
 
@@ -126,7 +300,7 @@ async fn s3_create_bucket(
 ) -> Result<(), aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CreateBucketError>> {
     tracing::debug!("bucket create BEGIN {bucket_name:?}");
 
-    let endpoint = Uri::from_str(endpoint)
+    let endpoint = http::Uri::from_str(endpoint)
         .map(aws_sdk_s3::Endpoint::immutable)
         .unwrap();
     let config = aws_config::from_env()
@@ -183,7 +357,7 @@ async fn ingestor_start(
     shutdown_listener: triggered::Listener,
     settings: poc_ingest::Settings,
 ) -> Result<()> {
-    server_5g::grpc_server(shutdown_listener, &settings)
+    poc_ingest::server_5g::grpc_server(shutdown_listener, &settings)
         .await
         .map(|_| tracing::info!("START ingestor_start OK"))
         .map_err(|e| {
@@ -307,7 +481,7 @@ async fn send_heartbeat(
         })?;
 
     let heartbeat = make_heartbeat(keypair);
-    let mut request = tonic::Request::new(heartbeat);
+    let mut request = Request::new(heartbeat);
     request
         .metadata_mut()
         .append("authorization", format!("Bearer {api_token}").parse()?);

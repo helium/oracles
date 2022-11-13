@@ -9,6 +9,7 @@ aws-sdk-s3 = "0"
 chrono = { workspace = true }
 clap = {workspace = true}
 db-store = { path = "../db_store" }
+futures = {workspace = true}
 helium-crypto = { workspace = true }
 helium-proto = {workspace = true}
 hex-literal = "0.3.4"
@@ -21,7 +22,11 @@ rand_chacha = "0.3.1"
 sqlx = {workspace = true}
 tokio = { workspace = true }
 tonic = {workspace = true}
+prost  = {workspace = true}
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 triggered = {workspace = true}
 anyhow = "1.0.66"
+
+[build-dependencies]
+tonic-build = "0.8"
