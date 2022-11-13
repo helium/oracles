@@ -68,15 +68,15 @@ impl FileStore {
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
-        let prefix = file_type.into().to_string();
+        let file_type = file_type.into();
         let before = before.into();
         let after = after.into();
 
         self.client
             .list_objects_v2()
             .bucket(&self.bucket)
-            .prefix(prefix)
-            .set_start_after(after.map(|dt| FileInfo::from((file_type.into(), dt)).into()))
+            .prefix(file_type.to_string())
+            .set_start_after(after.map(|dt| FileInfo::from((file_type, dt)).into()))
             .into_paginator()
             .send()
             .flat_map(move |entry| match entry {
