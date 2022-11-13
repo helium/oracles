@@ -96,7 +96,7 @@ impl Server {
                         self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
                     }
                     Err(err) => {
-                        tracing::warn!("failed to connec to txn stream: {err}");
+                        tracing::warn!("failed to connec to txn stream: {err:?}");
                         self.reconnect_wait(shutdown.clone()).await
                     }
                 }
