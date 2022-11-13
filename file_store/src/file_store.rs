@@ -72,14 +72,13 @@ impl FileStore {
         let before = before.into();
         let after = after.into();
 
-        let stream = self
-            .client
+        self.client
             .list_objects_v2()
             .bucket(&self.bucket)
             .prefix(prefix)
+            .set_start_after(after.map(|dt| FileInfo::from((file_type.into(), dt)).into()))
             .into_paginator()
-            .send();
-        stream
+            .send()
             .flat_map(move |entry| match entry {
                 Ok(output) => {
                     let filtered = output
