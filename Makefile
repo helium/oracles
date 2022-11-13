@@ -7,7 +7,9 @@ AWS_ACCESS_KEY_ID     := $(MINIO_ROOT_USER)
 AWS_SECRET_ACCESS_KEY := $(MINIO_ROOT_PASSWORD)
 
 .PHONY: tests
-tests: tests_env_restart
+tests:
+	cargo check # Sanity check, to fail sooner.
+	$(MAKE) tests_env_restart
 	$(MAKE) tests_run
 
 .PHONY: tests_run
