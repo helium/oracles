@@ -16,3 +16,4 @@ helium-crypto = { workspace = true }
 http = {workspace = true}
 tonic = {workspace = true}
 async-trait = "*"
+tracing = { workspace = true }

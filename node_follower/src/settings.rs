@@ -39,7 +39,9 @@ pub fn default_batch_size() -> u32 {
 
 impl Settings {
     pub fn connect_follower(&self) -> Result<follower::Client<Channel>> {
-        let channel = Endpoint::from(self.url.clone())
+        let url = &self.url;
+        tracing::info!("connect_follower to {url:?}");
+        let channel = Endpoint::from(url.clone())
             .connect_timeout(Duration::from_secs(self.connect))
             .timeout(Duration::from_secs(self.rpc))
             .connect_lazy();
@@ -47,7 +49,9 @@ impl Settings {
     }
 
     pub fn connect_transactions(&self) -> Result<transaction::Client<Channel>> {
-        let channel = Endpoint::from(self.url.clone())
+        let url = &self.url;
+        tracing::info!("connect_transactions to {url:?}");
+        let channel = Endpoint::from(url.clone())
             .connect_timeout(Duration::from_secs(self.connect))
             .timeout(Duration::from_secs(self.rpc))
             .connect_lazy();
