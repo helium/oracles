@@ -1,4 +1,0 @@
-# add to /usr/local/bin it appears in path
-ln -s /opt/poc-iot-injector/bin/poc-iot-injector /usr/local/bin/poc-iot-injector || true
-
-#DEBHELPER#
