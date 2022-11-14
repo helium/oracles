@@ -232,7 +232,9 @@ impl Runner {
                 None => return Err(Error::custom("missing density scaler query sender")),
             };
             // verify POC beacon
-            let beacon_verify_result = poc.verify_beacon(density_queries.clone(), &self.deny_list).await?;
+            let beacon_verify_result = poc
+                .verify_beacon(density_queries.clone(), &self.deny_list)
+                .await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
                     tracing::info!(
@@ -242,8 +244,9 @@ impl Runner {
                     );
                     // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                        let verified_witnesses_result =
-                            poc.verify_witnesses(&beacon_info, density_queries, &self.deny_list).await?;
+                        let verified_witnesses_result = poc
+                            .verify_witnesses(&beacon_info, density_queries, &self.deny_list)
+                            .await?;
                         // check if there are any failed witnesses
                         // if so update the DB attempts count
                         // and halt here, let things be reprocessed next tick

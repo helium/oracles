@@ -11,7 +11,6 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
-
     pub database: db_store::Settings,
     pub follower: node_follower::Settings,
     pub ingest: file_store::Settings,

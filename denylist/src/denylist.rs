@@ -13,6 +13,7 @@ pub const SERIAL_SIZE: usize = 32;
 const PUB_KEY_B58: &str = "1SbEYKju337P6aYsRd9DT2k4qgK5ZK62kXbSvnJgqeaxK3hqQrYURZjL";
 /// a copy of the last saved filter bin downloaded from github
 /// if present will be used to initialise the denylist upon verifier startup
+// TODO: look at using the tempfile crate to handle this
 const FILTER_BIN_PATH: &str = "./tmp/last_saved_filter.bin";
 
 #[derive(Serialize)]
@@ -91,7 +92,7 @@ impl DenyList {
     pub async fn check_key(&self, pub_key: &PublicKey) -> bool {
         if self.filter.len() == 0 {
             tracing::warn!("empty denylist filter, rejecting key");
-            return false;
+            return true;
         }
         self.filter.contains(&public_key_hash(pub_key))
     }

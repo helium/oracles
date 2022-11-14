@@ -1110,7 +1110,6 @@ dependencies = [
  "base64",
  "bincode",
  "bytes",
- "cmake",
  "config",
  "helium-crypto",
  "reqwest",
