@@ -13,7 +13,7 @@ helium-crypto = { workspace = true }
 helium-proto = {workspace = true}
 hex-literal = "0.3.4"
 http = {workspace = true}
-poc-ingest = { path = "../ingest" }
+poc-ingest = { path = "../poc_ingest" }
 poc-mobile-verifier = { path = "../poc_mobile_verifier" }
 mobile-rewards = { path = "../mobile_rewards" }
 node-follower = { path = "../node_follower" }
