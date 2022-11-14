@@ -44,6 +44,8 @@ pub enum Error {
     DenyList(#[from] denylist::Error),
     #[error("density scaler query sender not found")]
     DensityScalerQuerySenderMissing,
+    #[error("invalid exponent {0} error")]
+    InvalidExponent(String),
 }
 
 #[derive(Error, Debug)]

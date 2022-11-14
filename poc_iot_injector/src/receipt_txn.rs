@@ -8,15 +8,9 @@ use helium_proto::{
     blockchain_txn::Txn, BlockchainPocPathElementV1, BlockchainPocReceiptV1,
     BlockchainPocWitnessV1, BlockchainTxn, BlockchainTxnPocReceiptsV2, Message,
 };
-use rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps};
-use rust_decimal_macros::dec;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-
-// TODO: These should ideally be coming in from some configuration service
-const WITNESS_REDUNDANCY: u32 = 4;
-const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
-const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
@@ -39,8 +33,7 @@ pub fn handle_report_msg(
         Ok(lora_valid_poc) => {
             let poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports)?;
 
-            let poc_receipt =
-                construct_poc_receipt(lora_valid_poc.beacon_report, poc_witnesses.len() as u32)?;
+            let poc_receipt = construct_poc_receipt(lora_valid_poc.beacon_report)?;
 
             // TODO: Double check whether the gateway in the poc_receipt is challengee?
             let path_element =
@@ -105,12 +98,11 @@ fn construct_path_element(
 fn construct_poc_witnesses(
     witness_reports: Vec<LoraValidWitnessReport>,
 ) -> Result<Vec<BlockchainPocWitnessV1>> {
-    let num_witnesses = witness_reports.len();
-    let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(num_witnesses);
+    let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
-        let reward_unit = poc_challengee_reward_unit(num_witnesses as u32)?;
-        let reward_shares = witness_report.hex_scale * reward_unit;
-        let reward_shares = reward_shares.to_u32().unwrap_or_default();
+        let reward_shares = (witness_report.hex_scale * witness_report.reward_unit)
+            .to_u32()
+            .unwrap_or_default();
 
         // NOTE: channel is irrelevant now
         let poc_witness = BlockchainPocWitnessV1 {
@@ -137,12 +129,8 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
     freq_mhz.to_f32().unwrap_or_default()
 }
 
-fn construct_poc_receipt(
-    beacon_report: LoraValidBeaconReport,
-    num_witnesses: u32,
-) -> Result<BlockchainPocReceiptV1> {
-    let reward_unit = poc_challengee_reward_unit(num_witnesses)?;
-    let reward_shares = (beacon_report.hex_scale * reward_unit)
+fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> Result<BlockchainPocReceiptV1> {
+    let reward_shares = (beacon_report.hex_scale * beacon_report.reward_unit)
         .to_u32()
         .unwrap_or_default();
 
@@ -178,32 +166,4 @@ fn sign_txn(txn: &BlockchainTxnPocReceiptsV2, keypair: &Keypair) -> Result<Vec<u
     let mut txn = txn.clone();
     txn.signature = vec![];
     Ok(keypair.sign(&txn.encode_to_vec())?)
-}
-
-// TODO: Arguably this functionality should live in the poc-iot-verifier.
-// Once the hex_scale calculations are done, poc-iot-verifier should also attach the actual reward
-// share in the generated report.
-fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
-    if num_witnesses == 0 {
-        Ok(Decimal::ZERO)
-    } else if num_witnesses < WITNESS_REDUNDANCY {
-        Ok(Decimal::from(WITNESS_REDUNDANCY / num_witnesses))
-    } else {
-        let exp = WITNESS_REDUNDANCY - num_witnesses;
-        if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
-            let unnormalized = Decimal::TWO - to_sub;
-            let normalized_unit = normalize_reward_unit(unnormalized);
-            Ok(normalized_unit)
-        } else {
-            Err(Error::InvalidExponent(exp.to_string()))
-        }
-    }
-}
-
-fn normalize_reward_unit(unnormalized: Decimal) -> Decimal {
-    if unnormalized >= HIP15_TX_REWARD_UNIT_CAP {
-        HIP15_TX_REWARD_UNIT_CAP
-    } else {
-        unnormalized
-    }
 }
