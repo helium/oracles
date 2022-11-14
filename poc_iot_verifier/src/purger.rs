@@ -16,7 +16,7 @@ use helium_proto::Message;
 use sqlx::PgPool;
 use tokio::time;
 
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(300);
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 30);
 const PURGER_WORKERS: usize = 10;
 const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
 
@@ -32,7 +32,7 @@ const ENTROPY_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds
 // opportunity to be verified and after this point extremely unlikely to ever be verified
 // successfully
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const REPORT_STALE_PERIOD: i32 = 60 * 60; // 1 hour in seconds;
+const REPORT_STALE_PERIOD: i32 = 60 * 60 * 2; // 2 hours in seconds;
 
 pub struct Purger {
     pool: PgPool,
