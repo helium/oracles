@@ -202,9 +202,9 @@ impl Heartbeat {
             return Ok(false);
         }
 
-        sqlx::query("DELETE FROM heartbeats WHERE hotspot_key != $1 AND cbsd_id = $2")
-            .bind(&self.hotspot_key)
+        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2 ")
             .bind(&self.cbsd_id)
+            .bind(&self.hotspot_key)
             .execute(&mut *exec)
             .await?;
 
