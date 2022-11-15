@@ -25,9 +25,9 @@ use std::time::Duration;
 use tokio::time;
 
 /// cadence for how often to look for new beacon and witness reports from s3 bucket
-const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60);
+const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 5 + 10);
 /// cadence for how often to look for new entropy reports from s3 bucket
-const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(90);
+const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(4 * 60 + 10);
 /// max age in hours of reports loaded from S3 which will be processed
 /// any report older will be ignored
 const MAX_REPORT_AGE: i64 = 2;
