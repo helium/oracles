@@ -226,7 +226,7 @@ impl Purger {
         .await?;
 
         // delete the report from the DB
-        _ = Report::delete_report(&self.pool, &witness_id).await;
+        Report::delete_report(&self.pool, &witness_id).await?;
         Ok(())
     }
 }
