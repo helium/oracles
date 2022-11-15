@@ -196,7 +196,7 @@ impl Purger {
         )
         .await?;
         // delete the report from the DB
-        _ = Report::delete_report(&self.pool, &beacon_id).await;
+        Report::delete_report(&self.pool, &beacon_id).await?;
         Ok(())
     }
 
