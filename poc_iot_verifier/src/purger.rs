@@ -16,8 +16,8 @@ use helium_proto::Message;
 use sqlx::PgPool;
 use tokio::time;
 
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 30);
-const PURGER_WORKERS: usize = 10;
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
+const PURGER_WORKERS: usize = 50;
 const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
 
 /// the period of time in seconds after which entropy will be deemed stale
@@ -26,13 +26,13 @@ const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
 // due to being stale
 // the report itself will never be verified but instead handled by the stale purger
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const ENTROPY_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds
+const ENTROPY_STALE_PERIOD: i32 = 60 * 45;
 /// the period in seconds after when a beacon or witness report in the DB will be deemed stale
 // this period needs to be sufficiently long that we can be sure the beacon has had the
 // opportunity to be verified and after this point extremely unlikely to ever be verified
 // successfully
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const REPORT_STALE_PERIOD: i32 = 60 * 60 * 2; // 2 hours in seconds;
+const REPORT_STALE_PERIOD: i32 = 60 * 45;
 
 pub struct Purger {
     pool: PgPool,
@@ -61,12 +61,10 @@ impl Purger {
         tracing::info!("starting purger");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
-        db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
         let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
-
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
             file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
@@ -126,32 +124,33 @@ impl Purger {
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        let stale_beacons = Report::get_stale_pending_beacons(
-            &self.pool,
-            self.base_stale_period + REPORT_STALE_PERIOD,
-        )
-        .await?;
-        tracing::info!("purging {:?} stale beacons", stale_beacons.len());
-        stream::iter(stale_beacons)
-            .for_each_concurrent(PURGER_WORKERS, |report| {
-                let tx = lora_invalid_beacon_tx.clone();
-                async move {
-                    match self.handle_purged_beacon(&report, tx).await {
-                        Ok(()) => (),
-                        Err(err) => {
-                            tracing::warn!("failed to purge beacon: {err:?}")
-                        }
-                    }
-                }
-            })
-            .await;
+        // let stale_beacons = Report::get_stale_pending_beacons(
+        //     &self.pool,
+        //     self.base_stale_period + REPORT_STALE_PERIOD,
+        // )
+        // .await?;
+        // tracing::info!("purging {:?} stale beacons", stale_beacons.len());
+        // stream::iter(stale_beacons)
+        //     .for_each_concurrent(PURGER_WORKERS, |report| {
+        //         let tx = lora_invalid_beacon_tx.clone();
+        //         async move {
+        //             match self.handle_purged_beacon(&report, tx).await {
+        //                 Ok(()) => (),
+        //                 Err(err) => {
+        //                     tracing::warn!("failed to purge beacon: {err:?}")
+        //                 }
+        //             }
+        //         }
+        //     })
+        //     .await;
 
         let stale_witnesses = Report::get_stale_pending_witnesses(
             &self.pool,
             self.base_stale_period + REPORT_STALE_PERIOD,
         )
         .await?;
-        tracing::info!("purging {:?} stale witnesses", stale_witnesses.len());
+        let num_stale_witnesses = stale_witnesses.len();
+        tracing::info!("purging {num_stale_witnesses} stale witnesses");
         stream::iter(stale_witnesses)
             .for_each_concurrent(PURGER_WORKERS, |report| {
                 let tx = lora_invalid_witness_tx.clone();
@@ -166,6 +165,7 @@ impl Purger {
             })
             .await;
 
+        tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
         // purge any stale entropy, no need to output anything to s3 here
         _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
         Ok(())

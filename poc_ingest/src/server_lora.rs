@@ -1,5 +1,5 @@
 use crate::{Error, EventId, Result, Settings};
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
 use futures_util::TryFutureExt;
@@ -126,6 +126,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         lora_beacon_report_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
+    .roll_time(Duration::minutes(5))
     .create()
     .await?;
 
@@ -137,6 +138,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         lora_witness_report_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
+    .roll_time(Duration::minutes(5))
     .create()
     .await?;
 

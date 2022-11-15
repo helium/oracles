@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// any beacon or witness report received after this period and before the ENTROPY_STALE_PERIOD
 /// defined in the purger module will be rejected due to being outside of the entropy lifespan
 /// TODO: determine a sane value here
-pub const ENTROPY_LIFESPAN: i64 = 90;
+pub const ENTROPY_LIFESPAN: i64 = 180;
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "report_type", rename_all = "lowercase")]
@@ -82,7 +82,7 @@ impl Entropy {
         sqlx::query(
             r#"
             delete from entropy
-            where timestamp < (NOW() - INTERVAL '$1 MINUTES')
+            where timestamp < (NOW() - INTERVAL '$1 SECONDS')
             "#,
         )
         .bind(stale_period)

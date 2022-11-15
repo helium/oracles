@@ -11,7 +11,7 @@ const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 //  this is bascially a buffer period which is added to ENTROPY_LIFESPAN
 //  to prevent POC reports being processed *immediately* after the entropy expires
 //  instead there will be a further delay which allows for any *fashionably* late
-//  reports to be processed as part of the overall POC
+//  witness reports to be processed as part of the overall POC
 //  ( processing of POCs occur by first pulling a beacon and then any witnesses
 //    for that beacon, if a witness comes in after the beacon has been processed
 //    then it does not get verified as part of the overall POC but instead will
@@ -128,7 +128,7 @@ impl Report {
     {
         sqlx::query_as::<_, Self>(
             r#"
-            select  poc_report.id,
+            select poc_report.id,
                 poc_report.remote_entropy,
                 poc_report.packet_data,
                 poc_report.report_data,
@@ -140,14 +140,17 @@ impl Report {
                 poc_report.created_at,
                 entropy.timestamp
             from poc_report
-            left join entropy on poc_report.remote_entropy=entropy.data
+            inner join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'pending'
             and entropy.timestamp < (NOW() - INTERVAL '$1 SECONDS')
-            and attempts < $2
-            order by report_timestamp asc
+            and poc_report.created_at < (NOW() - INTERVAL '$2 SECONDS')
+            and attempts < $3
+            order by created_at asc
+            limit 25000
             "#,
         )
-        .bind(ENTROPY_LIFESPAN + BEACON_PROCESSING_DELAY)
+        .bind(ENTROPY_LIFESPAN)
+        .bind(BEACON_PROCESSING_DELAY)
         .bind(BEACON_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
         .await
@@ -271,9 +274,8 @@ impl Report {
         sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
-            where poc_report.report_type = 'beacon' and status = 'pending'
+            where report_type = 'beacon' and status = 'pending'
             and created_at < (NOW() - INTERVAL '$1 SECONDS')
-            order by created_at asc
             "#,
         )
         .bind(stale_period)
@@ -301,7 +303,6 @@ impl Report {
             select * from poc_report
             where report_type = 'witness' and status = 'pending'
             and created_at < (NOW() - INTERVAL '$1 SECONDS')
-            order by created_at asc
             "#,
         )
         .bind(stale_period)
