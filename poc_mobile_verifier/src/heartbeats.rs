@@ -8,6 +8,7 @@ use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
+use sqlx::{Postgres, Transaction};
 use std::{collections::HashMap, ops::Range};
 
 #[derive(Clone)]
@@ -195,11 +196,17 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
+    pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> Result<bool> {
         // If the heartbeat is not valid, do not save it
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);
         }
+
+        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2 ")
+            .bind(&self.cbsd_id)
+            .bind(&self.hotspot_key)
+            .execute(&mut *exec)
+            .await?;
 
         sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
@@ -214,7 +221,7 @@ impl Heartbeat {
         .bind(self.cbsd_id)
         .bind(self.reward_weight)
         .bind(self.timestamp)
-        .fetch_one(exec)
+        .fetch_one(&mut *exec)
         .await
         .map(|result| result.inserted)
         .map_err(Error::from)
