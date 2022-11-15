@@ -24,6 +24,7 @@ pub struct VerifierDaemon {
     pub subnet_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
+    pub verification_offset: Duration,
     pub verifier: Verifier,
 }
 
@@ -43,6 +44,7 @@ impl VerifierDaemon {
                 last_verified_end_time(&self.pool).await?,
                 last_rewarded_end_time(&self.pool).await?,
                 next_rewarded_end_time(&self.pool).await?,
+                self.verification_offset,
             );
 
             if scheduler.should_verify(now) {
@@ -127,6 +129,8 @@ impl VerifierDaemon {
             .await?
             // Await the returned one shot to ensure that we wrote the file
             .await??;
+
+        file_sink::flush(&self.subnet_rewards_tx).await?;
 
         Ok(())
     }

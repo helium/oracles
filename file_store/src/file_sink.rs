@@ -38,9 +38,9 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 }
 
 #[derive(Debug)]
-pub struct Message {
-    on_write_tx: oneshot::Sender<Result>,
-    bytes: Vec<u8>,
+pub enum Message {
+    Data(oneshot::Sender<Result>, Vec<u8>),
+    Flush,
 }
 
 pub type MessageSender = mpsc::Sender<Message>;
@@ -84,7 +84,7 @@ pub async fn write<T: prost::Message>(
 ) -> Result<oneshot::Receiver<Result>> {
     let (on_write_tx, on_write_rx) = oneshot::channel();
     let bytes = item.encode_to_vec();
-    tx.send(Message { on_write_tx, bytes })
+    tx.send(Message::Data(on_write_tx, bytes))
         .await
         .map_err(|e| {
             metrics::increment_counter!(tag, "status" => "error");
@@ -98,6 +98,13 @@ pub async fn write<T: prost::Message>(
             tracing::debug!("file_sink write succeeded for {tag:?}. context: {log_context:?}");
             on_write_rx
         })
+}
+
+pub async fn flush(tx: &MessageSender) -> Result {
+    tx.send(Message::Flush).await.map_err(|e| {
+        tracing::error!("file_sink failed to flush with {e:?}");
+        Error::channel()
+    })
 }
 
 pub struct FileSinkBuilder {
@@ -258,7 +265,7 @@ impl FileSink {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
-                    Some(Message { bytes, on_write_tx }) => {
+                    Some(Message::Data(on_write_tx, bytes)) => {
                         let res = match self.write(Bytes::from(bytes)).await {
                             Ok(_) => Ok(()),
                             Err(err) => {
@@ -268,6 +275,7 @@ impl FileSink {
                         };
                         let _ = on_write_tx.send(res);
                     },
+                    Some(Message::Flush) => self.flush().await?,
                     None => {
                         break
                     }
@@ -299,6 +307,16 @@ impl FileSink {
             time: sink_time,
             transport: new_transport(writer),
         })
+    }
+
+    pub async fn flush(&mut self) -> Result {
+        if let Some(active_sink) = self.active_sink.as_mut() {
+            active_sink.shutdown().await?;
+            let prev_path = active_sink.path.clone();
+            self.deposit_sink(&prev_path).await?;
+            self.active_sink = None;
+        }
+        Ok(())
     }
 
     pub async fn maybe_roll(&mut self) -> Result {
@@ -397,10 +415,10 @@ mod tests {
         let (on_write_tx, _on_write_rx) = oneshot::channel();
 
         sender
-            .try_send(Message {
+            .try_send(Message::Data(
                 on_write_tx,
-                bytes: String::into_bytes("hello".to_string()),
-            })
+                String::into_bytes("hello".to_string()),
+            ))
             .expect("failed to send bytes to file sink");
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;

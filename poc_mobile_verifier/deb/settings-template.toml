@@ -12,6 +12,10 @@ cache = "/var/data/verfied-reports"
 # Verifications per rewards period. Default is 8
 # verifications = 8
 
+# Verification offset in minutes, verification will occur at the end of
+# the verification period + verification_offset_minutes; Default = 30
+# verification_offset_minutes = 30
+
 [database]
 
 # Url for database to write indexed rewards to
