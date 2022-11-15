@@ -16,6 +16,12 @@ use tokio::{
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
 
 pub const DEFAULT_SINK_ROLL_MINS: i64 = 3;
+
+#[cfg(not(test))]
+pub const SINK_CHECK_MILLIS: i64 = 60_000;
+#[cfg(test)]
+pub const SINK_CHECK_MILLIS: i64 = 50;
+
 pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
 type Sink = GzipEncoder<BufWriter<File>>;
@@ -32,9 +38,9 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 }
 
 #[derive(Debug)]
-pub struct Message {
-    on_write_tx: oneshot::Sender<Result>,
-    bytes: Vec<u8>,
+pub enum Message {
+    Data(oneshot::Sender<Result>, Vec<u8>),
+    Flush,
 }
 
 pub type MessageSender = mpsc::Sender<Message>;
@@ -78,7 +84,7 @@ pub async fn write<T: prost::Message>(
 ) -> Result<oneshot::Receiver<Result>> {
     let (on_write_tx, on_write_rx) = oneshot::channel();
     let bytes = item.encode_to_vec();
-    tx.send(Message { on_write_tx, bytes })
+    tx.send(Message::Data(on_write_tx, bytes))
         .await
         .map_err(|e| {
             metrics::increment_counter!(tag, "status" => "error");
@@ -92,6 +98,13 @@ pub async fn write<T: prost::Message>(
             tracing::debug!("file_sink write succeeded for {tag:?}. context: {log_context:?}");
             on_write_rx
         })
+}
+
+pub async fn flush(tx: &MessageSender) -> Result {
+    tx.send(Message::Flush).await.map_err(|e| {
+        tracing::error!("file_sink failed to flush with {e:?}");
+        Error::channel()
+    })
 }
 
 pub struct FileSinkBuilder {
@@ -155,7 +168,6 @@ impl FileSinkBuilder {
             deposits: self.deposits,
             roll_time: self.roll_time,
             messages: self.messages,
-
             active_sink: None,
         };
         sink.init().await?;
@@ -241,15 +253,19 @@ impl FileSink {
             self.target_path.display()
         );
 
-        let mut rollover_timer =
-            time::interval(self.roll_time.to_std().expect("valid sink roll time"));
-        rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+        let mut rollover_timer = time::interval(
+            Duration::milliseconds(SINK_CHECK_MILLIS)
+                .to_std()
+                .expect("valid sink roll time"),
+        );
+        rollover_timer.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
+
         loop {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
-                    Some(Message { bytes, on_write_tx }) => {
+                    Some(Message::Data(on_write_tx, bytes)) => {
                         let res = match self.write(Bytes::from(bytes)).await {
                             Ok(_) => Ok(()),
                             Err(err) => {
@@ -259,6 +275,7 @@ impl FileSink {
                         };
                         let _ = on_write_tx.send(res);
                     },
+                    Some(Message::Flush) => self.flush().await?,
                     None => {
                         break
                     }
@@ -292,9 +309,19 @@ impl FileSink {
         })
     }
 
+    pub async fn flush(&mut self) -> Result {
+        if let Some(active_sink) = self.active_sink.as_mut() {
+            active_sink.shutdown().await?;
+            let prev_path = active_sink.path.clone();
+            self.deposit_sink(&prev_path).await?;
+            self.active_sink = None;
+        }
+        Ok(())
+    }
+
     pub async fn maybe_roll(&mut self) -> Result {
         if let Some(active_sink) = self.active_sink.as_mut() {
-            if active_sink.time + self.roll_time > Utc::now() {
+            if (active_sink.time + self.roll_time) <= Utc::now() {
                 active_sink.shutdown().await?;
                 let prev_path = active_sink.path.clone();
                 self.deposit_sink(&prev_path).await?;
@@ -388,10 +415,10 @@ mod tests {
         let (on_write_tx, _on_write_rx) = oneshot::channel();
 
         sender
-            .try_send(Message {
+            .try_send(Message::Data(
                 on_write_tx,
-                bytes: String::into_bytes("hello".to_string()),
-            })
+                String::into_bytes("hello".to_string()),
+            ))
             .expect("failed to send bytes to file sink");
 
         tokio::time::sleep(time::Duration::from_millis(200)).await;

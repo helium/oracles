@@ -1,3 +1,0 @@
-rm -f /usr/local/bin/poc-ingest
-
-#DEBHELPER#

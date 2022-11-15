@@ -1,4 +1,6 @@
-use crate::{server::Server, Result, Settings};
+use crate::{server::Server, Error, Result, Settings};
+use file_store::{file_sink, file_upload, FileType};
+use futures_util::TryFutureExt;
 use tokio::signal;
 
 /// Start rewards server
@@ -21,12 +23,38 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
-        // poc_iot_injector server
-        let mut poc_iot_injector_server = Server::new(settings).await?;
+        // file upload setup
+        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
+        let file_upload =
+            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
 
-        poc_iot_injector_server
-            .run(shutdown_listener.clone())
-            .await?;
+        // path for cache
+        let store_base_path = std::path::Path::new(&settings.cache);
+
+        // poc receipt txns
+        let (poc_receipt_txn_tx, poc_receipt_txn_rx) = file_sink::message_channel(50);
+        let mut poc_receipts = file_sink::FileSinkBuilder::new(
+            FileType::SignedPocReceiptTxn,
+            store_base_path,
+            poc_receipt_txn_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
+
+        // poc_iot_injector server
+        let mut poc_iot_injector_server = Server::new(settings, poc_receipt_txn_tx).await?;
+
+        tokio::try_join!(
+            poc_receipts.run(&shutdown_listener).map_err(Error::from),
+            file_upload.run(&shutdown_listener).map_err(Error::from),
+            poc_iot_injector_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
+        )?;
+
+        tracing::info!("Shutting down injector server");
+
         Ok(())
     }
 }

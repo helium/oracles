@@ -1,7 +1,6 @@
 use crate::{
     heartbeats::Heartbeats,
     speedtests::{Average, SpeedtestAverages},
-    Result,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::traits::TimestampEncode;
@@ -110,15 +109,22 @@ pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct ResolveError(#[from] tonic::Status);
+
 #[async_trait::async_trait]
 pub trait OwnerResolver: Send {
-    async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>>;
+    async fn resolve_owner(
+        &mut self,
+        address: &PublicKey,
+    ) -> Result<Option<PublicKey>, ResolveError>;
 
     async fn owner_shares(
         &mut self,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
-    ) -> Result<OwnerShares> {
+    ) -> Result<OwnerShares, ResolveError> {
         let mut owner_shares = OwnerShares::default();
         for heartbeat in heartbeats.into_iter() {
             if let Some(owner) = self.resolve_owner(&heartbeat.hotspot_key).await? {
@@ -143,7 +149,10 @@ pub trait OwnerResolver: Send {
 
 #[async_trait::async_trait]
 impl OwnerResolver for follower::Client<Channel> {
-    async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>> {
+    async fn resolve_owner(
+        &mut self,
+        address: &PublicKey,
+    ) -> Result<Option<PublicKey>, ResolveError> {
         let req = FollowerGatewayReqV1 {
             address: address.to_vec(),
         };
@@ -177,7 +186,10 @@ mod test {
 
     #[async_trait::async_trait]
     impl OwnerResolver for MapResolver {
-        async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>> {
+        async fn resolve_owner(
+            &mut self,
+            address: &PublicKey,
+        ) -> Result<Option<PublicKey>, ResolveError> {
             Ok(self.owners.get(address).cloned())
         }
     }

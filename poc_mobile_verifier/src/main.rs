@@ -1,7 +1,8 @@
+use anyhow::Result;
 use clap::Parser;
 use poc_mobile_verifier::{
     cli::{generate, reward_from_db, server},
-    Result, Settings,
+    Settings,
 };
 use std::path;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -21,7 +22,7 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
         tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(&settings.log))
@@ -39,7 +40,7 @@ pub enum Cmd {
 }
 
 impl Cmd {
-    pub async fn run(self, settings: Settings) -> Result {
+    pub async fn run(self, settings: Settings) -> Result<()> {
         match self {
             Self::Generate(cmd) => cmd.run(&settings).await,
             Self::Server(cmd) => cmd.run(&settings).await,
@@ -49,7 +50,7 @@ impl Cmd {
 }
 
 #[tokio::main]
-async fn main() -> Result {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     cli.run().await
 }

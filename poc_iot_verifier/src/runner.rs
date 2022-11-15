@@ -2,9 +2,11 @@ use crate::{
     last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::{LoraStatus, Report},
-    Result, Settings,
+    Error, Result, Settings,
 };
 use chrono::Utc;
+use density_scaler::QuerySender;
+use denylist::DenyList;
 use file_store::{
     file_sink,
     file_sink::MessageSender,
@@ -25,37 +27,54 @@ use helium_proto::{
 };
 use node_follower::follower_service::FollowerService;
 use sqlx::PgPool;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 use tokio::time;
 
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
-
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
 pub struct Runner {
     pool: PgPool,
+    deny_list_latest_url: String,
+    deny_list_trigger_interval: Duration,
+    deny_list: DenyList,
     settings: Settings,
     follower_service: FollowerService,
+    density_queries: Option<QuerySender>,
 }
 
 impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let follower_service = FollowerService::from_settings(&settings.follower)?;
+        let deny_list = DenyList::new()?;
         Ok(Self {
             pool,
+            deny_list_latest_url: settings.denylist.denylist_url.clone(),
+            deny_list_trigger_interval: settings.denylist.trigger_interval(),
+            deny_list,
             settings: settings.clone(),
             follower_service,
+            density_queries: None,
         })
     }
 
-    pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(
+        &mut self,
+        density_queries: QuerySender,
+        shutdown: &triggered::Listener,
+    ) -> Result {
         tracing::info!("starting runner");
+
+        self.density_queries = Some(density_queries);
 
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
+        let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
+        denylist_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
@@ -120,10 +139,33 @@ impl Runner {
                         tracing::error!("fatal db runner error: {err:?}");
                         return Err(err)
                     }
+                },
+                _ = denylist_timer.tick() =>
+                    match self.handle_denylist_tick().await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::error!("fatal db runner error: {err:?}");
+                        return Err(err)
+                    }
                 }
             }
         }
         tracing::info!("stopping runner");
+        Ok(())
+    }
+
+    async fn handle_denylist_tick(&mut self) -> Result {
+        // sink any errors whilst updating the denylist
+        // the verifier should not stop just because github
+        // could not be reached for example
+        match self
+            .deny_list
+            .update_to_latest(&self.deny_list_latest_url)
+            .await
+        {
+            Ok(()) => (),
+            Err(e) => tracing::warn!("failed to update denylist: {e}"),
+        }
         Ok(())
     }
 
@@ -145,10 +187,15 @@ impl Runner {
         // but a beacon could be valid whilst witnesses
         // can be a mix of both valid and invalid
         let beacon_len = db_beacon_reports.len();
-        tracing::info!("found {beacon_len} beacons ready for verification");
+        tracing::info!("{beacon_len} beacons ready for verification");
+        metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
         for db_beacon in db_beacon_reports {
+            let entropy_start_time = match db_beacon.timestamp {
+                Some(v) => v,
+                None => continue,
+            };
             let packet_data = &db_beacon.packet_data;
-            let entropy_start_time = db_beacon.entropy_start_time;
+
             let beacon_buf: &[u8] = &db_beacon.report_data;
             let beacon_report: LoraBeaconIngestReport =
                 LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
@@ -157,7 +204,11 @@ impl Runner {
 
             let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
             let witness_len = db_witnesses.len();
-            tracing::info!("found {witness_len} witness for beacon");
+            tracing::debug!("found {witness_len} witness for beacon");
+            metrics::gauge!(
+                "oracles_poc_iot_verifier_witnesses_per_beacon",
+                witness_len as f64
+            );
 
             // get the beacon and witness report PBs from the db reports
             let mut witnesses: Vec<LoraWitnessIngestReport> = Vec::new();
@@ -176,13 +227,26 @@ impl Runner {
             )
             .await?;
 
+            let density_queries = match &self.density_queries {
+                Some(density_queries) => density_queries.clone(),
+                None => return Err(Error::custom("missing density scaler query sender")),
+            };
             // verify POC beacon
-            let beacon_verify_result = poc.verify_beacon().await?;
+            let beacon_verify_result = poc
+                .verify_beacon(density_queries.clone(), &self.deny_list)
+                .await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
+                    tracing::info!(
+                        "valid beacon. entropy: {:?}, addr: {:?}",
+                        beacon.data,
+                        beacon.pub_key.to_string()
+                    );
                     // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                        let verified_witnesses_result = poc.verify_witnesses(&beacon_info).await?;
+                        let verified_witnesses_result = poc
+                            .verify_witnesses(&beacon_info, density_queries, &self.deny_list)
+                            .await?;
                         // check if there are any failed witnesses
                         // if so update the DB attempts count
                         // and halt here, let things be reprocessed next tick
@@ -206,7 +270,7 @@ impl Runner {
                         let valid_beacon_report = LoraValidBeaconReport {
                             received_timestamp: beacon_received_ts,
                             location: beacon_info.location,
-                            hex_scale: beacon_verify_result.hex_scale.unwrap_or(0.0),
+                            hex_scale: beacon_verify_result.hex_scale.unwrap_or_default(),
                             report: beacon.clone(),
                         };
                         self.handle_valid_poc(
@@ -221,10 +285,19 @@ impl Runner {
                 }
                 VerificationStatus::Invalid => {
                     // the beacon is invalid, which in turn renders all witnesses invalid
+                    let invalid_reason = beacon_verify_result
+                        .invalid_reason
+                        .ok_or_else(|| Error::not_found("invalid invalid_reason for beacon"))?;
+                    tracing::info!(
+                        "invalid beacon. entropy: {:?}, addr: {:?}, reason: {:?}",
+                        beacon.data,
+                        beacon.pub_key.to_string(),
+                        invalid_reason
+                    );
                     self.handle_invalid_poc(
                         &beacon_report,
                         witnesses,
-                        InvalidReason::BadEntropy,
+                        invalid_reason,
                         &lora_invalid_beacon_tx,
                         &lora_invalid_witness_tx,
                     )
@@ -233,7 +306,11 @@ impl Runner {
                 VerificationStatus::Failed => {
                     // something went wrong whilst verifying the beacon report
                     // halt here and allow things to be reprocessed next tick
-                    tracing::info!("failure whilst verifying beacon");
+                    tracing::info!(
+                        "failed beacon. entropy: {:?}, addr: {:?}",
+                        beacon.data,
+                        beacon.pub_key.to_string()
+                    );
                     Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now())
                         .await?;
                 }
@@ -316,7 +393,6 @@ impl Runner {
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
-        let poc_id = &beacon.data;
         let received_timestamp = valid_beacon_report.received_timestamp;
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -339,7 +415,7 @@ impl Runner {
         // valid beacons and witness reports are kept in the DB
         // until after they have been rewarded
         // for now we just have to update their status to valid
-        Report::update_status(&self.pool, poc_id, LoraStatus::Valid, Utc::now()).await?;
+        Report::update_status(&self.pool, &beacon_id, LoraStatus::Valid, Utc::now()).await?;
         // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, &beacon.pub_key.to_vec(), received_timestamp)
             .await?;

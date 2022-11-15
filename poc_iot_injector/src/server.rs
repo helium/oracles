@@ -1,5 +1,6 @@
 use crate::{
-    receipt_txn::handle_report_msg, Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
+    receipt_txn::{handle_report_msg, TxnDetails},
+    Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
@@ -7,7 +8,6 @@ use file_store::{file_sink, file_sink_write, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use futures::TryStreamExt;
 use helium_crypto::Keypair;
-use helium_proto::BlockchainTxn;
 use node_follower::txn_service::TransactionService;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
@@ -22,14 +22,18 @@ pub struct Server {
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
     receipt_sender: file_sink::MessageSender,
+    do_submission: bool,
 }
 
 impl Server {
-    pub async fn new(settings: &Settings) -> Result<Self> {
+    pub async fn new(
+        settings: &Settings,
+        receipt_sender: file_sink::MessageSender,
+    ) -> Result<Self> {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
-        let (receipt_sender, _) = file_sink::message_channel(50);
+        let do_submission = settings.do_submission;
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
@@ -46,11 +50,12 @@ impl Server {
             iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
             receipt_sender,
+            do_submission,
         };
         Ok(result)
     }
 
-    pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting poc-iot-injector server");
         let mut poc_iot_timer = time::interval(self.tick_time);
         poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
@@ -79,6 +84,11 @@ impl Server {
             0,
         ));
         let before_utc = Utc::now();
+        tracing::info!(
+            "handling poc_tick, after_utc: {:?}, before_utc: {:?}",
+            after_utc,
+            before_utc
+        );
 
         submit_txns(
             &mut self.txn_service,
@@ -87,9 +97,11 @@ impl Server {
             &self.receipt_sender,
             after_utc,
             before_utc,
+            self.do_submission,
         )
         .await?;
 
+        tracing::info!("updating last_poc_submission_ts to {:?}", before_utc);
         // NOTE: All the poc_receipt txns for the corresponding after-before period will be
         // submitted above, may take a while to do that but we need to
         // update_last_poc_submission_ts once we're done doing it. This should ensure that we have
@@ -110,6 +122,7 @@ async fn submit_txns(
     receipt_sender: &file_sink::MessageSender,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
+    do_submission: bool,
 ) -> Result {
     let file_list = store
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
@@ -119,14 +132,23 @@ async fn submit_txns(
 
     store
         .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
+        .map_err(Error::from)
         .try_for_each_concurrent(STORE_WORKERS, |msg| {
             let mut shared_txn_service = txn_service.clone();
             let shared_key = keypair.clone();
             async move {
-                if let Ok(txn) =
-                    handle_txn_submission(msg, shared_key, &mut shared_txn_service, before_ts).await
-                {
-                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn).await?;
+                let txn_details = handle_report_msg(msg, shared_key, before_ts)?;
+                tracing::debug!("txn_details: {:?}", txn_details);
+                if do_submission {
+                    tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
+                    handle_txn_submission(txn_details.clone(), &mut shared_txn_service).await?;
+                    tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
+                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
+                        .await?;
+                } else {
+                    tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
+                    file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
+                        .await?;
                 }
                 Ok(())
             }
@@ -136,17 +158,24 @@ async fn submit_txns(
 }
 
 async fn handle_txn_submission(
-    msg: prost::bytes::BytesMut,
-    shared_key: Arc<Keypair>,
+    txn_details: TxnDetails,
     txn_service: &mut TransactionService,
-    before_ts: i64,
-) -> Result<BlockchainTxn> {
-    let (txn, hash, hash_b64_url) = handle_report_msg(msg, shared_key, before_ts)?;
-    if txn_service.submit(txn.clone(), &hash).await.is_ok() {
-        tracing::debug!("txn submitted successfully, hash: {:?}", hash_b64_url);
-        Ok(txn)
+) -> Result {
+    if txn_service
+        .submit(txn_details.txn, &txn_details.hash)
+        .await
+        .is_ok()
+    {
+        tracing::debug!(
+            "txn submitted successfully, hash: {:?}",
+            txn_details.hash_b64_url
+        );
+        Ok(())
     } else {
-        tracing::warn!("txn submission failed!, hash: {:?}", hash_b64_url);
-        Err(Error::TxnSubmission(hash_b64_url))
+        tracing::warn!(
+            "txn submission failed!, hash: {:?}",
+            txn_details.hash_b64_url
+        );
+        Err(Error::TxnSubmission(txn_details.hash_b64_url))
     }
 }

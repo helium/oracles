@@ -8,7 +8,7 @@ pub struct QueryMsg {
     pub response: ResultSender,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct QuerySender(mpsc::Sender<QueryMsg>);
 pub struct QueryReceiver(mpsc::Receiver<QueryMsg>);
 

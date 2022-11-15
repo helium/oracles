@@ -1,5 +1,4 @@
 mod cell_type;
-mod error;
 mod heartbeats;
 mod ingest;
 mod owner_shares;
@@ -10,5 +9,4 @@ pub mod cli;
 pub mod scheduler;
 pub mod verifier;
 
-pub use error::{Error, Result};
 pub use settings::Settings;

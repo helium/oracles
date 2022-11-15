@@ -1,8 +1,9 @@
 use crate::{
     speedtests::EmptyDatabase,
     verifier::{VerifiedEpoch, Verifier},
-    Result, Settings,
+    Settings,
 };
+use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
 use futures::stream::StreamExt;
@@ -20,7 +21,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(self, settings: &Settings) -> Result {
+    pub async fn run(self, settings: &Settings) -> Result<()> {
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);
@@ -32,7 +33,7 @@ impl Cmd {
         let file_store = FileStore::from_settings(&settings.ingest).await?;
         let follower = settings.follower.connect_follower()?;
 
-        let mut verifier = Verifier::new(file_store, follower).await?;
+        let mut verifier = Verifier::new(file_store, follower);
 
         let VerifiedEpoch {
             heartbeats,

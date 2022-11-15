@@ -36,6 +36,7 @@ poc-metrics = { path = "../metrics" }
 file-store = {path = "../file_store"}
 db-store = {path = "../db_store"}
 node-follower = {path = "../node_follower"}
+density-scaler = {path = "../density_scaler"}
 
 [package.metadata.deb]
 depends = "$auto"

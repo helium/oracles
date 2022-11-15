@@ -19,9 +19,6 @@ jobs:
           default: true
           override: true
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v1
-        with:
-          key: ${{ runner.os }}-checkout
 
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.5.0
@@ -30,67 +27,23 @@ jobs:
 
       - name: Build
         run: cargo build --all --release
-      - uses: Swatinem/rust-cache@v1
-        with:
-          key: ${{ runner.os }}-build
 
       - name: Check formatting
         run: cargo fmt  -- --check
-      - uses: Swatinem/rust-cache@v1
-        with:
-          key: ${{ runner.os }}-fmt
 
       - name: Clippy
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: -- -Dclippy::all
-      - uses: Swatinem/rust-cache@v1
-        with:
-          key: ${{ runner.os }}-clippy
+          args: --release -- -Dclippy::all
 
       - name: Run tests
-        run: cargo test
-      - uses: Swatinem/rust-cache@v1
-        with:
-          key: ${{ runner.os }}-test
+        run: cargo test -r
 
-      - name: PackageIngestorServer
-        id: build_ingestor
+      - name: Debian packaging
         if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
-        with:
-          toml_path: ingest
-          cmd: cargo deb -p poc-ingest
-
-      - name: PackageRewardsServer
-        id: build_rewards
-        if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
-        with:
-          toml_path: mobile_rewards
-          cmd: cargo deb -p mobile-rewards
-
-      - name: PackageEntropyServer
-        id: build_entropy
-        if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
-        with:
-          toml_path: entropy
-          cmd: cargo deb -p poc-entropy
-
-      - name: PackageVerifierServer
-        id: build_verifier
-        if: contains(github.ref, 'refs/tags/')
-        uses: novalabsxyz/cargo-deb-amd64-ubuntu@v2.7
-        with:
-          toml_path: poc_mobile_verifier
-          cmd: cargo deb -p poc-mobile-verifier
-
-      - name: PackagecloudUpload
-        if: contains(github.ref, 'refs/tags/') && steps.build_ingestor.outcome == 'success' && steps.build_rewards.outcome == 'success' && steps.build_entropy.outcome == 'success'
         env:
           PACKAGECLOUD_API_KEY: ${{ secrets.PACKAGECLOUD_API_KEY }}
         run: |
-          chmod +x ./.github/scripts/packagecloud_upload.sh
-          ./.github/scripts/packagecloud_upload.sh
+          chmod +x ./.github/scripts/make_debian.sh
+          ./.github/scripts/make_debian.sh

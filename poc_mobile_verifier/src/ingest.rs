@@ -1,4 +1,3 @@
-use crate::Result;
 use chrono::{DateTime, Utc};
 use file_store::{
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
@@ -12,7 +11,7 @@ use std::ops::Range;
 pub async fn ingest_heartbeats(
     file_store: &FileStore,
     epoch: &Range<DateTime<Utc>>,
-) -> Result<impl Stream<Item = CellHeartbeat>> {
+) -> file_store::Result<impl Stream<Item = CellHeartbeat>> {
     Ok(file_store
         .source(
             stream::iter(
@@ -44,7 +43,7 @@ pub async fn ingest_heartbeats(
 pub async fn ingest_speedtests(
     file_store: &FileStore,
     epoch: &Range<DateTime<Utc>>,
-) -> Result<impl Stream<Item = CellSpeedtest>> {
+) -> file_store::Result<impl Stream<Item = CellSpeedtest>> {
     Ok(file_store
         .source(
             stream::iter(

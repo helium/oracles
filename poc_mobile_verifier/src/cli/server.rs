@@ -1,8 +1,9 @@
 use crate::{
-    error::Error,
     verifier::{Verifier, VerifierDaemon},
+    Settings,
 };
-use crate::{Result, Settings};
+use anyhow::{Error, Result};
+use chrono::Duration;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
 
@@ -10,7 +11,7 @@ use futures_util::TryFutureExt;
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(self, settings: &Settings) -> Result {
+    pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::install_metrics();
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
@@ -36,6 +37,7 @@ impl Cmd {
             heartbeats_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
         .create()
         .await?;
 
@@ -47,6 +49,7 @@ impl Cmd {
             speedtest_avg_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
         .create()
         .await?;
 
@@ -67,7 +70,7 @@ impl Cmd {
         let verifications_per_period = settings.verifications;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let verifier = Verifier::new(file_store, follower).await?;
+        let verifier = Verifier::new(file_store, follower);
 
         let verifier_daemon = VerifierDaemon {
             pool,
@@ -76,6 +79,7 @@ impl Cmd {
             radio_rewards_tx,
             reward_period_hours,
             verifications_per_period,
+            verification_offset: settings.verification_offset_duration(),
             verifier,
         };
 

@@ -1,5 +1,7 @@
 use crate::{last_beacon::LastBeacon, Error, Result};
+use ::denylist::denylist::DenyList;
 use chrono::{DateTime, Duration, Utc};
+use density_scaler::QuerySender;
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
     lora_valid_poc::LoraValidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
@@ -14,6 +16,7 @@ use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::f64::consts::PI;
 
@@ -23,10 +26,10 @@ pub const C: f64 = 2.998e8;
 pub const R: f64 = 6.371e6;
 
 /// the cadence in seconds at which hotspots are permitted to beacon
-const BEACON_INTERVAL: i64 = 10 * 60; // 10 mins
+const BEACON_INTERVAL: i64 = (10 * 60) - 10; // 10 mins ( minus 10 sec tolerance )
 /// measurement in seconds of an entropy
 /// TODO: determine a sane value here, set high for testing
-const ENTROPY_LIFESPAN: i64 = 60;
+const ENTROPY_LIFESPAN: i64 = 180;
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
@@ -48,7 +51,7 @@ pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: Option<InvalidReason>,
     pub gateway_info: Option<GatewayInfo>,
-    pub hex_scale: Option<f32>,
+    pub hex_scale: Option<Decimal>,
 }
 
 pub struct VerifyWitnessResult {
@@ -82,12 +85,28 @@ impl Poc {
         })
     }
 
-    pub async fn verify_beacon(&mut self) -> Result<VerifyBeaconResult> {
+    pub async fn verify_beacon(
+        &mut self,
+        density_queries: QuerySender,
+        deny_list: &DenyList,
+    ) -> Result<VerifyBeaconResult> {
         let beacon = &self.beacon_report.report;
         // use pub key to get GW info from our follower
         let beaconer_pub_key = beacon.pub_key.clone();
         let beacon_received_ts = self.beacon_report.received_timestamp;
 
+        // check if beaconer is on the deny list
+        if deny_list.check_key(&beaconer_pub_key).await {
+            let resp = VerifyBeaconResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::Denied),
+                gateway_info: None,
+                hex_scale: None,
+            };
+            return Ok(resp);
+        }
+
+        // pull the beaconer info from our follower
         let beaconer_info = match self
             .follower_service
             .resolve_gateway_info(&beaconer_pub_key)
@@ -115,8 +134,9 @@ impl Poc {
                 if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
                     tracing::debug!(
                         "beacon verification failed, reason:
-                        IrregularInterval. Seconds since last beacon {:?}",
-                        interval_since_last_beacon.num_seconds()
+                        IrregularInterval. Seconds since last beacon {:?}, entropy: {:?}",
+                        interval_since_last_beacon.num_seconds(),
+                        beacon.data
                     );
                     let resp = VerifyBeaconResult {
                         result: VerificationStatus::Invalid,
@@ -152,19 +172,22 @@ impl Poc {
         }
 
         //check beaconer has an asserted location
-        if beaconer_info.location.is_none() {
-            tracing::debug!(
-                "beacon verification failed, reason: {:?}",
-                InvalidReason::NotAsserted
-            );
-            let resp = VerifyBeaconResult {
-                result: VerificationStatus::Invalid,
-                invalid_reason: Some(InvalidReason::NotAsserted),
-                gateway_info: Some(beaconer_info),
-                hex_scale: None,
-            };
-            return Ok(resp);
-        }
+        let beaconer_location = match beaconer_info.location {
+            Some(beaconer_location) => beaconer_location,
+            None => {
+                tracing::debug!(
+                    "beacon verification failed, reason: {:?}",
+                    InvalidReason::NotAsserted
+                );
+                let resp = VerifyBeaconResult {
+                    result: VerificationStatus::Invalid,
+                    invalid_reason: Some(InvalidReason::NotAsserted),
+                    gateway_info: Some(beaconer_info),
+                    hex_scale: None,
+                };
+                return Ok(resp);
+            }
+        };
 
         // check beaconer is permitted to participate in POC
         match beaconer_info.staking_mode {
@@ -185,8 +208,8 @@ impl Poc {
             GatewayStakingMode::Light => (),
         }
 
-        // TODO: insert hex scale lookup here
-        //       value hardcoded to 1.0 temporarily
+        // beaconer location is guaranteed to unwrap as we've already checked and returned early above when it's `None`
+        let scaling_factor = density_queries.query(beaconer_location.to_string()).await?;
 
         tracing::debug!("beacon verification success");
         // all is good with the beacon
@@ -194,7 +217,7 @@ impl Poc {
             result: VerificationStatus::Valid,
             invalid_reason: None,
             gateway_info: Some(beaconer_info),
-            hex_scale: Some(1.0),
+            hex_scale: scaling_factor,
         };
 
         Ok(resp)
@@ -203,23 +226,30 @@ impl Poc {
     pub async fn verify_witnesses(
         &mut self,
         beacon_info: &GatewayInfo,
+        density_queries: QuerySender,
+        deny_list: &DenyList,
     ) -> Result<VerifyWitnessesResult> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            let witness_result = self.verify_witness(&witness_report, beacon_info).await?;
+            let witness_result = self
+                .verify_witness(&witness_report, beacon_info, deny_list)
+                .await?;
             match witness_result.result {
                 VerificationStatus::Valid => {
                     let gw_info: GatewayInfo = witness_result.gateway_info.ok_or_else(|| {
                         Error::not_found("invalid FollowerGatewayResp for witness")
                     })?;
-                    // TODO: perform hex density check here for a valid witness
+                    let scaling_factor = density_queries
+                        .query(gw_info.location.unwrap_or_default().to_string())
+                        .await?
+                        .unwrap_or(Decimal::ONE);
                     let valid_witness = LoraValidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
                         location: gw_info.location,
-                        hex_scale: 1.0, //TODO: replace with actual hex scale when available
+                        hex_scale: scaling_factor,
                         report: witness_report.report,
                     };
                     valid_witnesses.push(valid_witness)
@@ -264,11 +294,23 @@ impl Poc {
         &mut self,
         witness_report: &LoraWitnessIngestReport,
         beaconer_info: &GatewayInfo,
+        deny_list: &DenyList,
     ) -> Result<VerifyWitnessResult> {
-        // use pub key to get GW info from our follower and verify the witness
         let witness = &witness_report.report;
         let beacon = &self.beacon_report.report;
         let witness_pub_key = witness.pub_key.clone();
+
+        // check if witness is on the deny list
+        if deny_list.check_key(&witness_pub_key).await {
+            let resp = VerifyWitnessResult {
+                result: VerificationStatus::Failed,
+                invalid_reason: Some(InvalidReason::Denied),
+                gateway_info: None,
+            };
+            return Ok(resp);
+        }
+
+        // use pub key to get GW info from our follower and verify the witness
         let witness_info = match self
             .follower_service
             .resolve_gateway_info(&witness_pub_key)

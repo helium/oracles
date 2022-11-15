@@ -7,6 +7,10 @@
 #
 cache = "/var/data/iot-verified"
 
+# Denylist url
+#
+# denylist_url = "https://api.github.com/repos/helium/denylist/releases/latest"
+
 
 [database]
 

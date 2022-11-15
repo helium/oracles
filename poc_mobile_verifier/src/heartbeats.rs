@@ -1,6 +1,6 @@
 //! Heartbeat storage
 
-use crate::{cell_type::CellType, Error, Result};
+use crate::cell_type::CellType;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::{file_sink, file_sink_write, heartbeat::CellHeartbeat};
 use futures::stream::{Stream, StreamExt};
@@ -8,6 +8,7 @@ use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
+use sqlx::{Postgres, Transaction};
 use std::{collections::HashMap, ops::Range};
 
 #[derive(Clone)]
@@ -39,7 +40,7 @@ impl Heartbeats {
     pub async fn validated(
         exec: impl sqlx::PgExecutor<'_>,
         starting: DateTime<Utc>,
-    ) -> std::result::Result<Self, sqlx::Error> {
+    ) -> Result<Self, sqlx::Error> {
         #[derive(sqlx::FromRow)]
         pub struct HeartbeatRow {
             pub hotspot_key: PublicKey,
@@ -136,12 +137,16 @@ struct HeartbeatSaveResult {
     inserted: bool,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct SaveHeartbeatError(#[from] sqlx::Error);
+
 impl Heartbeat {
     pub async fn validate_heartbeats<'a>(
         heartbeats: impl Stream<Item = CellHeartbeat> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> Result<impl Stream<Item = Self> + 'a> {
-        Ok(heartbeats.map(move |heartbeat_report| {
+    ) -> impl Stream<Item = Self> + 'a {
+        heartbeats.map(move |heartbeat_report| {
             let (reward_weight, validity) = match validate_heartbeat(&heartbeat_report, epoch) {
                 Ok(cell_type) => {
                     let reward_weight = cell_type.reward_weight();
@@ -156,7 +161,7 @@ impl Heartbeat {
                 timestamp: heartbeat_report.timestamp.naive_utc(),
                 validity,
             }
-        }))
+        })
     }
 
     pub async fn write(&self, heartbeats_tx: &file_sink::MessageSender) -> file_store::Result {
@@ -177,13 +182,22 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
+    pub async fn save(
+        self,
+        exec: &mut Transaction<'_, Postgres>,
+    ) -> Result<bool, SaveHeartbeatError> {
         // If the heartbeat is not valid, do not save it
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);
         }
 
-        sqlx::query_as::<_, HeartbeatSaveResult>(
+        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2 ")
+            .bind(&self.cbsd_id)
+            .bind(&self.hotspot_key)
+            .execute(&mut *exec)
+            .await?;
+
+        Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
             insert into heartbeats (hotspot_key, cbsd_id, reward_weight, timestamp)
             values ($1, $2, $3, $4)
@@ -196,10 +210,9 @@ impl Heartbeat {
         .bind(self.cbsd_id)
         .bind(self.reward_weight)
         .bind(self.timestamp)
-        .fetch_one(exec)
-        .await
-        .map(|result| result.inserted)
-        .map_err(Error::from)
+        .fetch_one(&mut *exec)
+        .await?
+        .inserted)
     }
 }
 
@@ -207,7 +220,7 @@ impl Heartbeat {
 fn validate_heartbeat(
     heartbeat: &CellHeartbeat,
     epoch: &Range<DateTime<Utc>>,
-) -> std::result::Result<CellType, proto::HeartbeatValidity> {
+) -> Result<CellType, proto::HeartbeatValidity> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.cbsd_id) {
         Some(ty) => ty,
         _ => return Err(proto::HeartbeatValidity::BadCbsdId),
