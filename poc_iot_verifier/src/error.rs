@@ -44,6 +44,8 @@ pub enum Error {
     DensityScaler(#[from] density_scaler::Error),
     #[error("denylist error")]
     DenyList(#[from] denylist::Error),
+    #[error("hotspot not found {0}")]
+    GatewayNotFound(String),
 }
 
 #[derive(Error, Debug)]
