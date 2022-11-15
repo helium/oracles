@@ -1,11 +1,6 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Duration, Utc};
-use lazy_static::lazy_static;
 use std::ops::Range;
-
-lazy_static! {
-    static ref OFFSET: Duration = Duration::minutes(30);
-}
 
 #[derive(Debug)]
 pub struct Scheduler {
@@ -13,6 +8,7 @@ pub struct Scheduler {
     pub reward_period_length: Duration,
     pub verification_period: Range<DateTime<Utc>>,
     pub reward_period: Range<DateTime<Utc>>,
+    pub verification_offset: Duration,
 }
 
 impl Scheduler {
@@ -22,6 +18,7 @@ impl Scheduler {
         last_verified_end_time: DateTime<Utc>,
         last_rewarded_end_time: DateTime<Utc>,
         next_rewarded_end_time: DateTime<Utc>,
+        verification_offset: Duration,
     ) -> Self {
         let verification_period = last_verified_end_time
             ..((last_verified_end_time + verification_period_length).min(next_rewarded_end_time));
@@ -31,16 +28,17 @@ impl Scheduler {
             reward_period_length,
             verification_period,
             reward_period: last_rewarded_end_time..next_rewarded_end_time,
+            verification_offset,
         }
     }
 
     pub fn should_verify(&self, now: DateTime<Utc>) -> bool {
-        now >= self.verification_period.end + *OFFSET
+        now >= self.verification_period.end + self.verification_offset
     }
 
     pub fn should_reward(&self, now: DateTime<Utc>) -> bool {
         self.verification_period.end == self.reward_period.end
-            && now >= self.reward_period.end + *OFFSET
+            && now >= self.reward_period.end + self.verification_offset
     }
 
     pub fn next_verification_period(&self) -> Range<DateTime<Utc>> {
@@ -57,11 +55,12 @@ impl Scheduler {
         let next_reward_period = self.next_reward_period();
 
         let duration = if self.verification_period.end > now {
-            self.verification_period.end + *OFFSET - now
-        } else if next_verification_period.end + *OFFSET <= now {
+            self.verification_period.end + self.verification_offset - now
+        } else if next_verification_period.end + self.verification_offset <= now {
             Duration::zero()
         } else {
-            (next_verification_period.end.min(next_reward_period.end)) + *OFFSET - now
+            (next_verification_period.end.min(next_reward_period.end)) + self.verification_offset
+                - now
         };
 
         duration.to_std().map_err(|_| Error::OutOfRangeError)
@@ -101,6 +100,7 @@ mod tests {
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
         );
 
         let now = dt(2022, 10, 1, 1, 0, 0);
@@ -121,6 +121,7 @@ mod tests {
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
         );
 
         let now = dt(2022, 10, 1, 3, 30, 0);
@@ -145,6 +146,7 @@ mod tests {
             dt(2022, 10, 1, 21, 0, 0),
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
         );
 
         let now = dt(2022, 10, 2, 0, 30, 0);
@@ -169,6 +171,7 @@ mod tests {
             dt(2022, 10, 1, 22, 0, 0),
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
         );
 
         let now = dt(2022, 10, 2, 0, 30, 0);
@@ -193,6 +196,7 @@ mod tests {
             dt(2022, 10, 1, 12, 0, 0),
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
         );
 
         let now = dt(2022, 10, 1, 19, 0, 0);
@@ -217,6 +221,7 @@ mod tests {
             dt(2022, 10, 1, 12, 0, 0),
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
         );
 
         let now = dt(2022, 10, 2, 0, 0, 0);
@@ -241,6 +246,7 @@ mod tests {
             dt(2022, 10, 1, 14, 38, 12),
             dt(2022, 10, 1, 0, 0, 0),
             dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
         );
 
         let now = dt(2022, 10, 2, 0, 30, 0);
@@ -263,6 +269,7 @@ mod tests {
                     } else {
                         sch.reward_period.end
                     },
+                    sch.verification_offset,
                 );
 
                 let rewarded = sch.should_reward(now);

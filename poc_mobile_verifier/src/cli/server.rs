@@ -79,6 +79,7 @@ impl Cmd {
             subnet_rewards_tx,
             reward_period_hours,
             verifications_per_period,
+            verification_offset: settings.verification_offset_duration(),
             verifier,
         };
 
