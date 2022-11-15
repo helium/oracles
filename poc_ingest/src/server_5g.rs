@@ -11,6 +11,8 @@ use helium_proto::services::poc_mobile::{
 use std::path::Path;
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 
+const INGEST_WAIT_DURATION_MINUTES: i64 = 15;
+
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
 pub struct GrpcServer {
@@ -116,7 +118,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         heartbeat_report_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
-    .roll_time(Duration::minutes(15))
+    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
     .create()
     .await?;
 
@@ -128,7 +130,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         speedtest_report_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
-    .roll_time(Duration::minutes(15))
+    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
     .create()
     .await?;
 
