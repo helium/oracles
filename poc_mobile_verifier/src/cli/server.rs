@@ -1,8 +1,8 @@
 use crate::{
-    error::Error,
     verifier::{Verifier, VerifierDaemon},
-    Result, Settings,
+    Settings,
 };
+use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
@@ -11,7 +11,7 @@ use futures_util::TryFutureExt;
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(self, settings: &Settings) -> Result {
+    pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::install_metrics();
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
@@ -70,7 +70,7 @@ impl Cmd {
         let verifications_per_period = settings.verifications;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let verifier = Verifier::new(file_store, follower).await?;
+        let verifier = Verifier::new(file_store, follower);
 
         let verifier_daemon = VerifierDaemon {
             pool,

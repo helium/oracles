@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use file_store::{file_sink, file_sink_write, speedtest::CellSpeedtest, traits::TimestampEncode};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
@@ -76,7 +75,7 @@ impl SpeedtestRollingAverage {
     pub async fn validate_speedtests<'a>(
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
         exec: impl SpeedtestStore + Copy + 'a,
-    ) -> Result<impl Stream<Item = Result<Self>> + 'a> {
+    ) -> impl Stream<Item = Result<Self, FetchError>> + 'a {
         let tests_by_publickey = speedtests
             .fold(
                 HashMap::<PublicKey, Vec<CellSpeedtest>>::new(),
@@ -89,7 +88,7 @@ impl SpeedtestRollingAverage {
             )
             .await;
 
-        Ok(futures::stream::iter(tests_by_publickey.into_iter())
+        futures::stream::iter(tests_by_publickey.into_iter())
             .then(move |(pubkey, cell_speedtests)| async move {
                 let rolling_average = exec
                     .fetch(&pubkey)
@@ -110,10 +109,10 @@ impl SpeedtestRollingAverage {
                     latest_timestamp: speedtests[0].timestamp,
                     speedtests,
                 }
-            }))
+            })
     }
 
-    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool> {
+    pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
         #[derive(FromRow)]
         struct SaveResult {
             inserted: bool,
@@ -134,7 +133,6 @@ impl SpeedtestRollingAverage {
         .fetch_one(exec)
         .await
         .map(|result| result.inserted)
-        .map_err(Error::from)
     }
 
     pub async fn write(&self, averages_tx: &file_sink::MessageSender) -> file_store::Result {
@@ -211,7 +209,7 @@ impl SpeedtestAverages {
     pub async fn validated(
         exec: impl sqlx::PgExecutor<'_> + Copy,
         period_end: DateTime<Utc>,
-    ) -> std::result::Result<Self, sqlx::Error> {
+    ) -> Result<Self, sqlx::Error> {
         let mut speedtests = HashMap::new();
 
         let mut rows = sqlx::query_as::<_, SpeedtestRollingAverage>(
@@ -403,9 +401,13 @@ impl SpeedtestTier {
 // we need is fetch from an actual database and mock fetch that returns
 // nothing.
 
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct FetchError(#[from] sqlx::Error);
+
 #[async_trait::async_trait]
 pub trait SpeedtestStore {
-    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>>;
+    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, FetchError>;
 }
 
 #[async_trait::async_trait]
@@ -413,12 +415,13 @@ impl<E> SpeedtestStore for E
 where
     for<'a> E: sqlx::PgExecutor<'a>,
 {
-    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>> {
-        sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
-            .bind(id)
-            .fetch_optional(self)
-            .await
-            .map_err(Error::from)
+    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
+        Ok(
+            sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
+                .bind(id)
+                .fetch_optional(self)
+                .await?,
+        )
     }
 }
 
@@ -427,7 +430,7 @@ pub struct EmptyDatabase;
 
 #[async_trait::async_trait]
 impl SpeedtestStore for EmptyDatabase {
-    async fn fetch(self, _id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>> {
+    async fn fetch(self, _id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
         Ok(None)
     }
 }

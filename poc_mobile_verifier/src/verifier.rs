@@ -1,11 +1,9 @@
-use std::ops::Range;
-
 use crate::{
-    error::{Error, Result},
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
+    reward_share::ResolveError,
     scheduler::Scheduler,
-    speedtests::{SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
+    speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
     subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -14,6 +12,7 @@ use file_store::{file_sink, FileStore};
 use futures::{stream::Stream, StreamExt};
 use helium_proto::services::{follower, Channel};
 use sqlx::{PgExecutor, Pool, Postgres};
+use std::ops::Range;
 use tokio::pin;
 use tokio::time::sleep;
 
@@ -29,7 +28,7 @@ pub struct VerifierDaemon {
 }
 
 impl VerifierDaemon {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("Starting verifier service");
 
         let reward_period_length = Duration::hours(self.reward_period_hours);
@@ -71,7 +70,7 @@ impl VerifierDaemon {
         }
     }
 
-    pub async fn verify(&mut self, scheduler: &Scheduler) -> Result {
+    pub async fn verify(&mut self, scheduler: &Scheduler) -> anyhow::Result<()> {
         let VerifiedEpoch {
             heartbeats,
             speedtests,
@@ -102,7 +101,7 @@ impl VerifierDaemon {
         Ok(())
     }
 
-    pub async fn reward(&mut self, scheduler: &Scheduler) -> Result {
+    pub async fn reward(&mut self, scheduler: &Scheduler) -> anyhow::Result<()> {
         let heartbeats = Heartbeats::validated(&self.pool, scheduler.reward_period.start).await?;
         let speedtests =
             SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
@@ -142,34 +141,34 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    pub async fn new(file_store: FileStore, follower: follower::Client<Channel>) -> Result<Self> {
-        Ok(Self {
+    pub fn new(file_store: FileStore, follower: follower::Client<Channel>) -> Self {
+        Self {
             file_store,
             follower,
-        })
+        }
     }
 
     pub async fn verify_epoch<'a>(
         &mut self,
         pool: impl SpeedtestStore + Copy + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> Result<
+    ) -> file_store::Result<
         VerifiedEpoch<
             impl Stream<Item = Heartbeat> + 'a,
-            impl Stream<Item = Result<SpeedtestRollingAverage>> + 'a,
+            impl Stream<Item = Result<SpeedtestRollingAverage, FetchError>> + 'a,
         >,
     > {
         let heartbeats = Heartbeat::validate_heartbeats(
             ingest::ingest_heartbeats(&self.file_store, epoch).await?,
             epoch,
         )
-        .await?;
+        .await;
 
         let speedtests = SpeedtestRollingAverage::validate_speedtests(
             ingest::ingest_speedtests(&self.file_store, epoch).await?,
             pool,
         )
-        .await?;
+        .await;
 
         Ok(VerifiedEpoch {
             heartbeats,
@@ -182,7 +181,7 @@ impl Verifier {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
-    ) -> Result<SubnetworkRewards> {
+    ) -> Result<SubnetworkRewards, ResolveError> {
         SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests).await
     }
 }
@@ -192,32 +191,35 @@ pub struct VerifiedEpoch<H, S> {
     pub speedtests: S,
 }
 
-async fn last_verified_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Utc>> {
+async fn last_verified_end_time(exec: impl PgExecutor<'_>) -> db_store::Result<DateTime<Utc>> {
     Ok(Utc.timestamp(meta::fetch(exec, "last_verified_end_time").await?, 0))
 }
 
-async fn save_last_verified_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::store(exec, "last_verified_end_time", value.timestamp())
-        .await
-        .map_err(Error::from)
+async fn save_last_verified_end_time(
+    exec: impl PgExecutor<'_>,
+    value: &DateTime<Utc>,
+) -> db_store::Result<()> {
+    meta::store(exec, "last_verified_end_time", value.timestamp()).await
 }
 
-async fn last_rewarded_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Utc>> {
+async fn last_rewarded_end_time(exec: impl PgExecutor<'_>) -> db_store::Result<DateTime<Utc>> {
     Ok(Utc.timestamp(meta::fetch(exec, "last_rewarded_end_time").await?, 0))
 }
 
-async fn save_last_rewarded_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::store(exec, "last_rewarded_end_time", value.timestamp())
-        .await
-        .map_err(Error::from)
+async fn save_last_rewarded_end_time(
+    exec: impl PgExecutor<'_>,
+    value: &DateTime<Utc>,
+) -> db_store::Result<()> {
+    meta::store(exec, "last_rewarded_end_time", value.timestamp()).await
 }
 
-async fn next_rewarded_end_time(exec: impl PgExecutor<'_>) -> Result<DateTime<Utc>> {
+async fn next_rewarded_end_time(exec: impl PgExecutor<'_>) -> db_store::Result<DateTime<Utc>> {
     Ok(Utc.timestamp(meta::fetch(exec, "next_rewarded_end_time").await?, 0))
 }
 
-async fn save_next_rewarded_end_time(exec: impl PgExecutor<'_>, value: &DateTime<Utc>) -> Result {
-    meta::store(exec, "next_rewarded_end_time", value.timestamp())
-        .await
-        .map_err(Error::from)
+async fn save_next_rewarded_end_time(
+    exec: impl PgExecutor<'_>,
+    value: &DateTime<Utc>,
+) -> db_store::Result<()> {
+    meta::store(exec, "next_rewarded_end_time", value.timestamp()).await
 }

@@ -3,8 +3,9 @@ use crate::{
     reward_share::get_scheduled_tokens,
     speedtests::{Average, SpeedtestAverages},
     subnetwork_rewards::SubnetworkRewards,
-    Result, Settings,
+    Settings,
 };
+use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
 use serde_json::json;
@@ -20,7 +21,7 @@ pub struct Cmd {
 }
 
 impl Cmd {
-    pub async fn run(self, settings: &Settings) -> Result {
+    pub async fn run(self, settings: &Settings) -> Result<()> {
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);

@@ -1,7 +1,6 @@
 use crate::{
-    error::Result,
     heartbeats::Heartbeats,
-    reward_share::{OwnerEmissions, OwnerResolver},
+    reward_share::{OwnerEmissions, OwnerResolver, ResolveError},
     speedtests::SpeedtestAverages,
 };
 use chrono::{DateTime, Utc};
@@ -28,7 +27,7 @@ impl SubnetworkRewards {
         epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
-    ) -> Result<Self> {
+    ) -> Result<Self, ResolveError> {
         // Gather hotspot shares
         let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
         for heartbeat in heartbeats.into_iter() {
@@ -112,7 +111,10 @@ mod test {
 
     #[async_trait::async_trait]
     impl OwnerResolver for MapResolver {
-        async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>> {
+        async fn resolve_owner(
+            &mut self,
+            address: &PublicKey,
+        ) -> Result<Option<PublicKey>, ResolveError> {
             Ok(self.owners.get(address).cloned())
         }
     }

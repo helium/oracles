@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
 
-use crate::{mobile::Mobile, Result};
+use crate::mobile::Mobile;
 use helium_crypto::PublicKey;
 use std::collections::HashMap;
 
@@ -74,14 +74,21 @@ pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct ResolveError(#[from] tonic::Status);
+
 #[async_trait::async_trait]
 pub trait OwnerResolver: Send {
-    async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>>;
+    async fn resolve_owner(
+        &mut self,
+        address: &PublicKey,
+    ) -> Result<Option<PublicKey>, ResolveError>;
 
     async fn owner_shares(
         &mut self,
         hotspot_shares: HotspotShares,
-    ) -> Result<(OwnerShares, MissingOwnerShares)> {
+    ) -> Result<(OwnerShares, MissingOwnerShares), ResolveError> {
         let mut owner_shares = OwnerShares::new();
         let mut missing_owner_shares = MissingOwnerShares::new();
         for (hotspot, share) in hotspot_shares {
@@ -97,7 +104,10 @@ pub trait OwnerResolver: Send {
 
 #[async_trait::async_trait]
 impl OwnerResolver for follower::Client<Channel> {
-    async fn resolve_owner(&mut self, address: &PublicKey) -> Result<Option<PublicKey>> {
+    async fn resolve_owner(
+        &mut self,
+        address: &PublicKey,
+    ) -> Result<Option<PublicKey>, ResolveError> {
         let req = FollowerGatewayReqV1 {
             address: address.to_vec(),
         };
@@ -128,7 +138,10 @@ mod test {
 
     #[async_trait]
     impl OwnerResolver for FixedOwnerResolver {
-        async fn resolve_owner(&mut self, _address: &PublicKey) -> Result<Option<PublicKey>> {
+        async fn resolve_owner(
+            &mut self,
+            _address: &PublicKey,
+        ) -> Result<Option<PublicKey>, ResolveError> {
             Ok(Some(self.owner.clone()))
         }
     }
