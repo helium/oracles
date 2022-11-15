@@ -26,7 +26,7 @@ const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
 // due to being stale
 // the report itself will never be verified but instead handled by the stale purger
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const ENTROPY_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds
+const ENTROPY_STALE_PERIOD: i32 = 60 * 60 * 4; // 8 hours in seconds
 /// the period in seconds after when a beacon or witness report in the DB will be deemed stale
 // this period needs to be sufficiently long that we can be sure the beacon has had the
 // opportunity to be verified and after this point extremely unlikely to ever be verified

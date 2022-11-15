@@ -4,7 +4,7 @@ use crate::{
     poc_report::{LoraStatus, Report},
     Error, Result, Settings,
 };
-use chrono::Utc;
+use chrono::{Duration as ChronoDuration, Utc};
 use density_scaler::QuerySender;
 use file_store::{
     file_sink,
@@ -30,7 +30,7 @@ use std::path::Path;
 use tokio::time;
 
 /// the cadence in seconds at which the DB is polled for ready POCs
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(6 * 60 + 10);
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
@@ -80,6 +80,7 @@ impl Runner {
             lora_invalid_beacon_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(ChronoDuration::minutes(1))
         .create()
         .await?;
 
@@ -89,6 +90,7 @@ impl Runner {
             lora_invalid_witness_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(ChronoDuration::minutes(5))
         .create()
         .await?;
 
@@ -98,6 +100,7 @@ impl Runner {
             lora_valid_poc_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(ChronoDuration::minutes(15))
         .create()
         .await?;
 
