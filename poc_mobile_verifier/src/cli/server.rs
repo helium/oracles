@@ -3,6 +3,7 @@ use crate::{
     Settings,
 };
 use anyhow::{Error, Result};
+use chrono::Duration;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
 
@@ -36,6 +37,7 @@ impl Cmd {
             heartbeats_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
         .create()
         .await?;
 
@@ -47,6 +49,7 @@ impl Cmd {
             speedtest_avg_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
         .create()
         .await?;
 
@@ -76,6 +79,7 @@ impl Cmd {
             subnet_rewards_tx,
             reward_period_hours,
             verifications_per_period,
+            verification_offset: settings.verification_offset_duration(),
             verifier,
         };
 

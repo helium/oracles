@@ -1,3 +1,4 @@
+use chrono::Duration;
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
@@ -16,6 +17,10 @@ pub struct Settings {
     /// Verifications per rewards period. Default is 8
     #[serde(default = "default_verifications")]
     pub verifications: i32,
+    /// Verification offset in minutes, verification will occur at the end of
+    /// the verification period + verification_offset_minutes
+    #[serde(default = "default_verification_offset_minutes")]
+    pub verification_offset_minutes: i64,
     pub database: db_store::Settings,
     pub follower: node_follower::Settings,
     pub ingest: file_store::Settings,
@@ -33,6 +38,10 @@ pub fn default_reward_period() -> i64 {
 
 fn default_verifications() -> i32 {
     8
+}
+
+fn default_verification_offset_minutes() -> i64 {
+    30
 }
 
 impl Settings {
@@ -56,5 +65,9 @@ impl Settings {
             .add_source(Environment::with_prefix("VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
+    }
+
+    pub fn verification_offset_duration(&self) -> Duration {
+        Duration::minutes(self.verification_offset_minutes)
     }
 }
