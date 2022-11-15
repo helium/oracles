@@ -31,8 +31,6 @@ use tokio::time;
 use tonic::Streaming;
 
 pub const DEFAULT_START_REWARD_BLOCK: i64 = 1477650;
-/// default minutes to delay lookup from now
-pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 
 const RECONNECT_WAIT_SECS: i64 = 5;
 const STALE_PENDING_TIMEOUT_SECS: i64 = 1800; // 30 min
@@ -222,7 +220,7 @@ impl Server {
             *last_reward_time.value()
         );
 
-        let (start_utc, end_utc) = get_time_range(*last_reward_time.value());
+        let (start_utc, end_utc) = get_time_range(*last_reward_time.value(), Utc::now());
         if end_utc - start_utc > self.reward_interval {
             // Handle rewards if we pass our duration
             record_duration!(
@@ -405,12 +403,12 @@ async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u
     Ok(res.reward_height + 1..res.height)
 }
 
-pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
-    let after_utc = Utc.timestamp(last_reward_end_time, 0);
-    let now = Utc::now();
-    let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
-    let start_utc = after_utc.min(stop_utc);
-    (start_utc, stop_utc)
+pub fn get_time_range(
+    last_reward_end_time: i64,
+    now: DateTime<Utc>,
+) -> (DateTime<Utc>, DateTime<Utc>) {
+    let last_timestamp_utc = Utc.timestamp(last_reward_end_time, 0);
+    (last_timestamp_utc.min(now), now)
 }
 
 pub fn construct_txn(
@@ -441,4 +439,29 @@ fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
     Ok(keypair.sign(&txn.encode_to_vec())?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_time_range_returns_24_hour_period() {
+        let last_timestamp = Utc.ymd(2022, 11, 1).and_hms(0, 0, 0).timestamp();
+        let now = Utc.ymd(2022, 11, 2).and_hms(0, 0, 0);
+        let (start, stop) = get_time_range(last_timestamp, now);
+
+        assert_eq!(start, Utc.timestamp(last_timestamp, 0));
+        assert_eq!(stop, now);
+    }
+
+    #[test]
+    fn get_time_range_will_handle_last_timestamp_being_after_now() {
+        let last_timestamp = Utc.ymd(2022, 11, 2).and_hms(0, 0, 1).timestamp();
+        let now = Utc.ymd(2022, 11, 2).and_hms(0, 0, 0);
+        let (start, stop) = get_time_range(last_timestamp, now);
+
+        assert_eq!(start, now);
+        assert_eq!(stop, now);
+    }
 }

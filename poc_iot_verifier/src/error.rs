@@ -40,6 +40,10 @@ pub enum Error {
     H3ron(#[from] h3ron::Error),
     #[error("vincenty error")]
     Geo(#[from] geo::vincenty_distance::FailedToConvergeError),
+    #[error("density scaler error")]
+    DensityScaler(#[from] density_scaler::Error),
+    #[error("denylist error")]
+    DenyList(#[from] denylist::Error),
 }
 
 #[derive(Error, Debug)]

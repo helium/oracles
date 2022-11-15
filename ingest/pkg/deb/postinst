@@ -1,4 +1,0 @@
-# add to /usr/local/bin it appears in path
-ln -s /opt/poc-ingest/bin/poc-ingest /usr/local/bin/poc-ingest || true
-
-#DEBHELPER#

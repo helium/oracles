@@ -7,7 +7,6 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink, file_sink_write};
 use helium_crypto::PublicKey;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 use tokio::sync::oneshot;
@@ -42,11 +41,11 @@ impl SubnetworkRewards {
             .map(|(pubkey, mut shares)| {
                 let speedmultiplier = speedtests
                     .get_average(&pubkey)
-                    .map_or(dec!(0.0), |avg| avg.reward_multiplier());
+                    .map_or(Decimal::ZERO, |avg| avg.reward_multiplier());
                 shares *= speedmultiplier;
                 (pubkey, shares)
             })
-            .filter(|(_pubkey, shares)| shares > &dec!(0.0))
+            .filter(|(_pubkey, shares)| shares > &Decimal::ZERO)
             .collect();
 
         let (owner_shares, _missing_owner_shares) =

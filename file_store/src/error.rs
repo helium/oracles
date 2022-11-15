@@ -15,7 +15,7 @@ pub enum Error {
     #[error("not found")]
     NotFound(String),
     #[error("crypto error")]
-    Crypto(#[from] helium_crypto::Error),
+    Crypto(Box<helium_crypto::Error>),
     #[error("csv error")]
     Csv(#[from] csv::Error),
     #[error("aws error")]
@@ -85,5 +85,11 @@ impl Error {
 impl DecodeError {
     pub fn file_info<E: ToString>(msg: E) -> Error {
         Error::Decode(Self::FileInfo(msg.to_string()))
+    }
+}
+
+impl From<helium_crypto::Error> for Error {
+    fn from(err: helium_crypto::Error) -> Self {
+        Self::Crypto(Box::new(err))
     }
 }

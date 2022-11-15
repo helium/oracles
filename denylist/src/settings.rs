@@ -1,28 +1,32 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
 use serde::Deserialize;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default to
-    /// "poc_iot_verifier=debug,poc_store=info"
+    /// "denylist=debug"
     #[serde(default = "default_log")]
     pub log: String,
-    /// Cache location for generated verified reports
-    pub cache: String,
-    pub database: db_store::Settings,
-    pub follower: node_follower::Settings,
-    pub ingest: file_store::Settings,
-    pub entropy: file_store::Settings,
-    pub output: file_store::Settings,
-    pub metrics: poc_metrics::Settings,
-    pub density_scaler: density_scaler::Settings,
-    pub denylist: denylist::Settings,
+    /// Listen address for http requests for entropy. Default "0.0.0.0:8080"
+    #[serde(default = "default_denylist_url")]
+    pub denylist_url: String,
+    /// Cadence at which we poll for an updated denylist (secs)
+    #[serde(default = "default_trigger_interval")]
+    pub trigger: u64,
 }
 
 pub fn default_log() -> String {
-    "poc_iot_verifier=debug,poc_store=info".to_string()
+    "denylist=debug".to_string()
+}
+
+pub fn default_denylist_url() -> String {
+    "https://api.github.com/repos/helium/denylist/releases/latest".to_string()
+}
+
+fn default_trigger_interval() -> u64 {
+    180
 }
 
 impl Settings {
@@ -30,8 +34,8 @@ impl Settings {
     /// optional path and can be overriden with environment variables.
     ///
     /// Environemnt overrides have the same name as the entries in the settings
-    /// file in uppercase and prefixed with "VERIFY_". For example
-    /// "VERIFY_DATABASE_URL" will override the data base url.
+    /// file in uppercase and prefixed with "DENYLIST_". For example
+    /// "DENYLIST_LOG" will override the log setting.
     pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
         let mut builder = Config::builder();
 
@@ -40,12 +44,16 @@ impl Settings {
             builder = builder
                 .add_source(File::with_name(&file.as_ref().to_string_lossy()).required(false));
         }
-        // Add in settings from the environment (with a prefix of VERIFY)
-        // Eg.. `INJECT_DEBUG=1 ./target/app` would set the `debug` key
+        // Add in settings from the environment (with a prefix of APP)
+        // Eg.. `DENYLIST_DEBUG=1 ./target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("VERIFY").separator("_"))
+            .add_source(Environment::with_prefix("DENYLIST").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
             .map_err(Error::from)
+    }
+
+    pub fn trigger_interval(&self) -> Duration {
+        Duration::from_secs(self.trigger)
     }
 }
