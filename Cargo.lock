@@ -142,6 +142,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-timer"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba5fa6ed76cb2aa820707b4eb9ec46f42da9ce70b0eafab5e5e34942b38a44d5"
+dependencies = [
+ "libc",
+ "wasm-bindgen",
+ "winapi",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -672,7 +683,12 @@ dependencies = [
  "arrayvec",
  "cc",
  "cfg-if",
+<<<<<<< HEAD
  "constant_time_eq 0.2.4",
+=======
+ "constant_time_eq",
+ "digest 0.10.5",
+>>>>>>> 6e2d8c5 (misc optimisations from load testing)
 ]
 
 [[package]]
@@ -1149,7 +1165,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "structopt",
  "thiserror",
  "tracing",
@@ -1324,6 +1340,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "base64",
+ "blake3",
  "bytes",
  "chrono",
  "clap 3.2.23",
@@ -1345,7 +1362,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "strum",
  "strum_macros",
  "tempfile",
@@ -1750,7 +1767,7 @@ dependencies = [
  "p256",
  "rand_core 0.6.4",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "signature",
  "sqlx",
  "thiserror",
@@ -1893,9 +1910,15 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
+<<<<<<< HEAD
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59df7c4e19c950e6e0e868dcc0a300b09a9b88e9ec55bd879ca819087a77355d"
+=======
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d87c48c02e0dc5e3b849a2041db3029fd066650f8f717c07bf8ed78ccb895cac"
+>>>>>>> 6e2d8c5 (misc optimisations from load testing)
 dependencies = [
  "http",
  "hyper",
@@ -2308,7 +2331,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2346,7 +2369,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2418,6 +2441,7 @@ dependencies = [
  "helium-proto",
  "http",
  "http-serde",
+ "retainer",
  "serde",
  "thiserror",
  "tonic",
@@ -2701,7 +2725,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "tokio",
  "tonic",
@@ -2736,7 +2760,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2774,11 +2798,12 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
+ "retainer",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2831,7 +2856,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3181,6 +3206,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "retainer"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df8c01a8276c14d0f8d51ebcf8a48f0748f9f73f5f6b29e688126e6a52bcb145"
+dependencies = [
+ "async-lock",
+ "async-timer",
+ "log",
+ "rand",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3297,9 +3334,15 @@ dependencies = [
 
 [[package]]
 name = "rustls"
+<<<<<<< HEAD
 version = "0.20.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "539a2bfe908f471bfa933876bd1eb6a19cf2176d375f82ef7f99530a40e48c2c"
+=======
+version = "0.20.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5aab8ee6c7097ed6057f43c187a62418d0c05a4bd5f18b3571db50ee0f9ce033"
+>>>>>>> 6e2d8c5 (misc optimisations from load testing)
 dependencies = [
  "log",
  "ring",
@@ -3357,12 +3400,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
+<<<<<<< HEAD
 name = "scratch"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8132065adcfd6e02db789d9285a0deb2f3fcb04002865ab67d5fb103533898"
 
 [[package]]
+=======
+>>>>>>> 6e2d8c5 (misc optimisations from load testing)
 name = "sct"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -3,7 +3,7 @@ use crate::{
     query::{QueryMsg, QueryReceiver},
     Result, Settings,
 };
-use chrono::Duration;
+use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
 use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
 use tokio::time;
@@ -30,11 +30,15 @@ impl Server {
     ) -> Result {
         tracing::info!("starting density scaler process");
 
-        let mut trigger_timer = time::interval(
-            self.trigger_interval
-                .to_std()
-                .expect("valid interval in seconds"),
-        );
+        // let mut trigger_timer = time::interval(
+        //     self.trigger_interval
+        //         .to_std()
+        //         .expect("valid interval in seconds"),
+        // );
+
+        tracing::info!("generating hex scaling map : starting {:?}", Utc::now());
+        self.refresh_scaling_map().await?;
+        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
 
         loop {
             if shutdown.is_triggered() {
@@ -56,7 +60,7 @@ impl Server {
                         return Ok(())
                     }
                 },
-                _ = trigger_timer.tick() => self.refresh_scaling_map().await?,
+                // _ = trigger_timer.tick() => self.refresh_scaling_map().await?,
                 _ = shutdown.clone() => return Ok(()),
             }
         }
