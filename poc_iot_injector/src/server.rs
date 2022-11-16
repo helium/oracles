@@ -17,7 +17,7 @@ use tokio::time;
 pub struct Server {
     pool: Pool<Postgres>,
     keypair: Arc<Keypair>,
-    txn_service: TransactionService,
+    txn_service: Option<TransactionService>,
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
@@ -46,7 +46,9 @@ impl Server {
             pool: pool.clone(),
             keypair: Arc::new(keypair),
             tick_time,
-            txn_service: TransactionService::from_settings(&settings.transactions)?,
+            // Only create txn_service if do_submission is true
+            txn_service: do_submission
+                .then_some(TransactionService::from_settings(&settings.transactions)?),
             iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
             receipt_sender,
@@ -116,7 +118,7 @@ impl Server {
 }
 
 async fn submit_txns(
-    txn_service: &mut TransactionService,
+    txn_service: &mut Option<TransactionService>,
     store: &mut FileStore,
     keypair: Arc<Keypair>,
     receipt_sender: &file_sink::MessageSender,
@@ -159,23 +161,28 @@ async fn submit_txns(
 
 async fn handle_txn_submission(
     txn_details: TxnDetails,
-    txn_service: &mut TransactionService,
+    txn_service: &mut Option<TransactionService>,
 ) -> Result {
-    if txn_service
-        .submit(txn_details.txn, &txn_details.hash)
-        .await
-        .is_ok()
-    {
-        tracing::debug!(
-            "txn submitted successfully, hash: {:?}",
-            txn_details.hash_b64_url
-        );
-        Ok(())
-    } else {
-        tracing::warn!(
-            "txn submission failed!, hash: {:?}",
-            txn_details.hash_b64_url
-        );
-        Err(Error::TxnSubmission(txn_details.hash_b64_url))
+    match txn_service {
+        Some(txn_service) => {
+            if txn_service
+                .submit(txn_details.txn, &txn_details.hash)
+                .await
+                .is_ok()
+            {
+                tracing::debug!(
+                    "txn submitted successfully, hash: {:?}",
+                    txn_details.hash_b64_url
+                );
+                Ok(())
+            } else {
+                tracing::warn!(
+                    "txn submission failed!, hash: {:?}",
+                    txn_details.hash_b64_url
+                );
+                Err(Error::TxnSubmission(txn_details.hash_b64_url))
+            }
+        }
+        None => Ok(()),
     }
 }
