@@ -24,11 +24,13 @@ use helium_proto::{
     },
     Message,
 };
+use futures::stream::{self, StreamExt};
 use node_follower::follower_service::FollowerService;
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time;
 
+const BEACON_WORKERS: usize = 30;
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(6 * 60 + 10);
 const LOADER_WORKERS: usize = 10;
@@ -157,11 +159,37 @@ impl Runner {
         // can be a mix of both valid and invalid
         let beacon_len = db_beacon_reports.len();
         tracing::info!("{beacon_len} beacons ready for verification");
+
+        stream::iter(db_beacon_reports)
+            .for_each_concurrent(BEACON_WORKERS, | db_beacon| {
+                let tx1 = lora_invalid_beacon_tx.clone();
+                let tx2 = lora_invalid_witness_tx.clone();
+                let tx3 = lora_valid_poc_tx.clone();
+                async move {
+                    match self.handle_beacon_report(db_beacon, tx1, tx2, tx3).await {
+                        Ok(()) => (),
+                        Err(err) => {
+                            tracing::warn!("failed to handle beacon: {err:?}")
+                        }
+                    }
+                }
+            })
+            .await;
         metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
-        for db_beacon in db_beacon_reports {
+        tracing::info!("completed processing {beacon_len} beacons");
+        Ok(())
+    }
+
+    async fn handle_beacon_report(
+        &self,
+        db_beacon: Report,
+        lora_invalid_beacon_tx: MessageSender,
+        lora_invalid_witness_tx: MessageSender,
+        lora_valid_poc_tx: MessageSender,
+    ) -> Result {
             let entropy_start_time = match db_beacon.timestamp {
                 Some(v) => v,
-                None => continue,
+                None => return Ok(()),
             };
             let packet_data = &db_beacon.packet_data;
 
@@ -230,7 +258,7 @@ impl Runner {
                                     .report_id(failed_witness_report.received_timestamp);
                                 Report::update_attempts(&self.pool, &id, Utc::now()).await?;
                             }
-                            continue;
+                            return Ok(())
                         };
 
                         let valid_beacon_report = LoraValidBeaconReport {
@@ -281,10 +309,8 @@ impl Runner {
                         .await?;
                 }
             }
+            Ok(())
         }
-        tracing::info!("completed processing {beacon_len} beacons");
-        Ok(())
-    }
 
     async fn handle_invalid_poc(
         &self,
