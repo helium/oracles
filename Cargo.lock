@@ -671,6 +671,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "constant_time_eq",
+ "digest 0.10.5",
 ]
 
 [[package]]
@@ -1276,6 +1277,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "base64",
+ "blake3",
  "bytes",
  "chrono",
  "clap 3.2.22",

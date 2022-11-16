@@ -35,6 +35,7 @@ strum = {version = "0", features = ["derive"]}
 strum_macros = "0"
 sha2 = {workspace = true}
 metrics = {workspace = true }
+blake3 = {workspace = true}
 poc-metrics = { path = "../metrics" }
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
