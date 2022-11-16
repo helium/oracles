@@ -7,7 +7,7 @@ use crate::{
 use chrono::{Duration, TimeZone, Utc};
 use db_store::{meta, MetaValue};
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
-use futures::{stream, StreamExt};
+use futures::{future, stream, StreamExt};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn,
@@ -252,31 +252,18 @@ impl Server {
 
         tracing::info!("triggering rewards emissions");
 
-        let last_reward_manifest =
-            Utc.timestamp(meta::fetch(&self.pool, "last_manifest_file").await?, 0);
+        let last_reward_manifest = meta::fetch(&self.pool, "last_reward_manifest").await?;
 
         // This needs to get mega refactored, I am painfully aware of how absolutely
         // convoluted this is. I am working on it, if you have any ideas on how to
         // improve this, please comment your suggestion.
-        let pool = self.pool.clone();
         let manifests = self
             .verifier_store
-            .list(FileType::RewardManifest, last_reward_manifest, None)
-            // Is this ordered?
-            .filter_map(move |file| {
-                let pool = pool.clone();
-                async move {
-                    if let Ok(ref file) = file {
-                        if file.timestamp == last_reward_manifest {
-                            return None;
-                        }
-                        meta::store(&pool, "last_manifest_file", file.timestamp)
-                            .await
-                            .unwrap(); // Don't really know how to handle errors here
-                    }
-                    Some(file)
-                }
-            })
+            .list(
+                FileType::RewardManifest,
+                Utc.timestamp(last_reward_manifest, 0),
+                None,
+            )
             .boxed();
         let reward_files = self
             .verifier_store
@@ -296,6 +283,9 @@ impl Server {
                     },
                     |manifest| Some(manifest),
                 )
+            })
+            .filter(move |manifest| {
+                future::ready(manifest.start_timestamp >= (last_reward_manifest as u64))
             })
             .flat_map_unordered(5, |manifest| {
                 stream::iter(
@@ -344,6 +334,9 @@ impl Server {
                 .map(|(account, amount)| SubnetworkReward { account, amount })
                 .collect();
             self.issue_rewards(rewards, epoch.0..epoch.1).await?;
+            // We don't need the last manifest file value to be the _exact_ manifest file, just
+            // the last manifest's end timestamp. Rename this?
+            meta::store(&self.pool, "last_reward_manifest", epoch.1).await?
         }
 
         Ok(())
