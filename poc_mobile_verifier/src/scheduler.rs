@@ -62,7 +62,7 @@ impl Scheduler {
         let next_verification_period = self.next_verification_period();
         let next_reward_period = self.next_reward_period();
 
-        let duration = if self.verification_period.end > now {
+        let duration = if self.verification_period.end + self.verification_offset > now {
             self.verification_period.end + self.verification_offset - now
         } else if next_verification_period.end + self.verification_offset <= now {
             Duration::zero()
@@ -242,6 +242,31 @@ mod tests {
         assert_eq!(false, scheduler.should_reward(now));
         assert_eq!(
             standard_duration(0).unwrap(),
+            scheduler.sleep_duration(now).unwrap()
+        );
+    }
+
+    #[test]
+    fn now_is_after_verification_period_but_before_offset() {
+        let scheduler = Scheduler::new(
+            verification_period_length(),
+            reward_period_length(),
+            dt(2022, 10, 1, 0, 0, 0),
+            dt(2022, 10, 1, 0, 0, 0),
+            dt(2022, 10, 2, 0, 0, 0),
+            Duration::minutes(30),
+        );
+
+        let now = dt(2022, 10, 1, 3, 15, 0);
+
+        assert_eq!(
+            dt(2022, 10, 1, 0, 0, 0)..dt(2022, 10, 1, 3, 0, 0),
+            scheduler.verification_period
+        );
+        assert_eq!(false, scheduler.should_verify(now));
+        assert_eq!(false, scheduler.should_reward(now));
+        assert_eq!(
+            standard_duration(15).unwrap(),
             scheduler.sleep_duration(now).unwrap()
         );
     }
