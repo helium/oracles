@@ -155,8 +155,11 @@ impl Server {
     async fn process_txn_entry(&mut self, entry: FollowerTxnStreamRespV1) -> Result {
         let txn = match entry.txn {
             Some(BlockchainTxn { txn: Some(ref txn) }) => txn,
-            _ => {
-                tracing::warn!("ignoring missing txn in stream");
+            // TODO What is the distinction between the following 2 cases, handled bellow as one:
+            // - Some(BlockchainTxn { txn: None })
+            // - None
+            entry_txn => {
+                tracing::warn!("ignoring missing txn in stream. entry.txn:{:?}", entry_txn);
                 return Ok(());
             }
         };
