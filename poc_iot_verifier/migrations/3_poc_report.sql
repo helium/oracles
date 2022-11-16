@@ -22,3 +22,16 @@ create table poc_report (
     last_processed timestamptz default now() not null,
     created_at timestamptz default now()
 );
+
+
+CREATE INDEX idx_poc_report_id
+ON poc_report(id);
+
+CREATE INDEX idx_poc_report_packet_data
+ON poc_report(packet_data);
+
+CREATE INDEX idx_poc_report_report_type
+ON poc_report(report_type);
+
+CREATE INDEX idx_poc_report_status
+ON poc_report(status);
