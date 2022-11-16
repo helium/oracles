@@ -82,7 +82,7 @@ impl Entropy {
         sqlx::query(
             r#"
             delete from entropy
-            where timestamp < (NOW() - INTERVAL '$1 MINUTES')
+            where timestamp < (NOW() - INTERVAL '$1 SECONDS')
             "#,
         )
         .bind(stale_period)
