@@ -3792,7 +3792,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "chrono",
- "clap",
+ "clap 3.2.23",
  "db-store",
  "helium-crypto",
  "helium-proto",
