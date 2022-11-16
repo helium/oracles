@@ -16,7 +16,7 @@ use helium_proto::Message;
 use sqlx::PgPool;
 use tokio::time;
 
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 30);
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 120);
 const PURGER_WORKERS: usize = 10;
 const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
 
