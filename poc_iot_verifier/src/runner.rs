@@ -282,6 +282,7 @@ impl Runner {
                 }
             }
         }
+        tracing::info!("completed processing {beacon_len} beacons");
         Ok(())
     }
 
