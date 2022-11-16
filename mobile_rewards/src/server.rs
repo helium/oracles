@@ -281,7 +281,7 @@ impl Server {
                         tracing::error!("Could not decode reward manifest: {:?}", err);
                         None
                     },
-                    |manifest| Some(manifest),
+                    Some,
                 )
             })
             .filter(move |manifest| {
@@ -312,7 +312,7 @@ impl Server {
                         tracing::error!("Could not decode reward share: {:?}", err);
                         None
                     },
-                    |report| Some(report),
+                    Some,
                 )
             });
 
