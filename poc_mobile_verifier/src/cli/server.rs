@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
-use file_store::{file_sink, file_upload, FileStore, FileType};
+use file_store::{file_sink, file_upload, FileStore, FileType, Manifest};
 use futures_util::TryFutureExt;
 
 #[derive(Debug, clap::Args)]
@@ -54,6 +54,7 @@ impl Cmd {
         .await?;
 
         // Radio share rewards
+        let reward_manifest = Manifest::default();
         let (radio_rewards_tx, radio_rewards_rx) = file_sink::message_channel(50);
         let mut subnet_rewards = file_sink::FileSinkBuilder::new(
             FileType::RadioRewardShare,
@@ -61,6 +62,19 @@ impl Cmd {
             radio_rewards_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .manifest(reward_manifest.clone())
+        .create()
+        .await?;
+
+        // Reward manifest
+        let (reward_manifest_tx, reward_manifest_rx) = file_sink::message_channel(50);
+        let mut reward_manifests = file_sink::FileSinkBuilder::new(
+            FileType::RewardManifest,
+            store_base_path,
+            reward_manifest_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
         .create()
         .await?;
 
@@ -73,14 +87,16 @@ impl Cmd {
         let verifier = Verifier::new(file_store, follower);
 
         let verifier_daemon = VerifierDaemon {
+            verification_offset: settings.verification_offset_duration(),
             pool,
             heartbeats_tx,
             speedtest_avg_tx,
             radio_rewards_tx,
+            reward_manifest_tx,
             reward_period_hours,
             verifications_per_period,
-            verification_offset: settings.verification_offset_duration(),
             verifier,
+            reward_manifest,
         };
 
         tokio::try_join!(
@@ -88,6 +104,9 @@ impl Cmd {
             speedtest_avgs.run(&shutdown_listener).map_err(Error::from),
             subnet_rewards.run(&shutdown_listener).map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
+            reward_manifests
+                .run(&shutdown_listener)
+                .map_err(Error::from),
             verifier_daemon.run(&shutdown_listener),
         )?;
 

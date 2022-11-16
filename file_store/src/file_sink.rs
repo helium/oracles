@@ -7,6 +7,10 @@ use std::{
     io,
     path::{Path, PathBuf},
 };
+use std::{
+    mem,
+    sync::{Arc, Mutex},
+};
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncWriteExt, BufWriter},
@@ -40,7 +44,7 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 #[derive(Debug)]
 pub enum Message {
     Data(oneshot::Sender<Result>, Vec<u8>),
-    Flush,
+    Flush(oneshot::Sender<Result>),
 }
 
 pub type MessageSender = mpsc::Sender<Message>;
@@ -100,11 +104,15 @@ pub async fn write<T: prost::Message>(
         })
 }
 
-pub async fn flush(tx: &MessageSender) -> Result {
-    tx.send(Message::Flush).await.map_err(|e| {
-        tracing::error!("file_sink failed to flush with {e:?}");
-        Error::channel()
-    })
+pub async fn flush(tx: &MessageSender) -> Result<oneshot::Receiver<Result>> {
+    let (on_flush_tx, on_flush_rx) = oneshot::channel();
+    tx.send(Message::Flush(on_flush_tx))
+        .await
+        .map_err(|e| {
+            tracing::error!("file_sink failed to flush with {e:?}");
+            Error::channel()
+        })
+        .map(move |_| on_flush_rx)
 }
 
 pub struct FileSinkBuilder {
@@ -115,6 +123,7 @@ pub struct FileSinkBuilder {
     roll_time: Duration,
     messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
+    manifest: Option<Manifest>,
 }
 
 impl FileSinkBuilder {
@@ -126,6 +135,7 @@ impl FileSinkBuilder {
             max_size: 50_000_000,
             roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
             deposits: None,
+            manifest: None,
             messages,
         }
     }
@@ -152,6 +162,11 @@ impl FileSinkBuilder {
         Self { deposits, ..self }
     }
 
+    pub fn manifest(self, manifest: impl Into<Option<Manifest>>) -> Self {
+        let manifest = manifest.into();
+        Self { manifest, ..self }
+    }
+
     pub fn roll_time(self, duration: Duration) -> Self {
         Self {
             roll_time: duration,
@@ -168,6 +183,7 @@ impl FileSinkBuilder {
             deposits: self.deposits,
             roll_time: self.roll_time,
             messages: self.messages,
+            manifest: self.manifest,
             active_sink: None,
         };
         sink.init().await?;
@@ -185,6 +201,7 @@ pub struct FileSink {
 
     messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
+    manifest: Option<Manifest>,
 
     active_sink: Option<ActiveSink>,
 }
@@ -275,7 +292,10 @@ impl FileSink {
                         };
                         let _ = on_write_tx.send(res);
                     },
-                    Some(Message::Flush) => self.flush().await?,
+                    Some(Message::Flush(on_flush_tx)) => {
+                        let res = self.flush().await;
+                        let _ = on_flush_tx.send(res);
+                    }
                     None => {
                         break
                     }
@@ -347,6 +367,9 @@ impl FileSink {
         if let Some(deposits) = &self.deposits {
             file_upload::upload_file(deposits, &target_path).await?;
         }
+        if let Some(ref manifest) = self.manifest {
+            manifest.add_file(&target_path);
+        }
         Ok(())
     }
 
@@ -381,6 +404,28 @@ impl FileSink {
                 "sink not available",
             )))
         }
+    }
+}
+
+/// List of all files written by a file sink
+#[derive(Clone, Debug, Default)]
+pub struct Manifest {
+    written_files: Arc<Mutex<Vec<String>>>,
+}
+
+impl Manifest {
+    /// Return all of the written files and clearing the storage
+    pub fn take(&self) -> Vec<String> {
+        mem::take(&mut self.written_files.lock().expect("Mutex poisoned"))
+    }
+
+    /// Add a filename to the manifest
+    pub fn add_file(&self, path: &Path) {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        self.written_files
+            .lock()
+            .expect("Mutex poisoned")
+            .push(name);
     }
 }
 

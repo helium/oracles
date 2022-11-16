@@ -7,9 +7,12 @@ use crate::{
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink, file_sink_write, FileStore};
+use file_store::{file_sink, file_sink_write, traits::TimestampEncode, FileStore, Manifest};
 use futures::{stream::Stream, StreamExt};
-use helium_proto::services::{follower, Channel};
+use helium_proto::{
+    services::{follower, Channel},
+    RewardManifest,
+};
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
 use tokio::pin;
@@ -20,10 +23,12 @@ pub struct VerifierDaemon {
     pub heartbeats_tx: file_sink::MessageSender,
     pub speedtest_avg_tx: file_sink::MessageSender,
     pub radio_rewards_tx: file_sink::MessageSender,
+    pub reward_manifest_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
     pub verification_offset: Duration,
     pub verifier: Verifier,
+    pub reward_manifest: Manifest,
 }
 
 impl VerifierDaemon {
@@ -114,7 +119,26 @@ impl VerifierDaemon {
                 .await??;
         }
 
-        file_sink::flush(&self.radio_rewards_tx).await?;
+        file_sink::flush(&self.radio_rewards_tx)
+            .await?
+            // Await the returned one shot to ensure we've written all of the files and
+            // can retrieve the manifest
+            .await??;
+
+        let written_files = self.reward_manifest.take();
+
+        // Write out the manifest file
+        file_sink_write!(
+            "reward_manifest",
+            &self.reward_manifest_tx,
+            RewardManifest {
+                start_timestamp: scheduler.reward_period.start.encode_timestamp(),
+                end_timestamp: scheduler.reward_period.end.encode_timestamp(),
+                written_files
+            }
+        )
+        .await?
+        .await??;
 
         let mut transaction = self.pool.begin().await?;
 

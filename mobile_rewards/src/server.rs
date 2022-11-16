@@ -4,9 +4,9 @@ use crate::{
     txn_status::TxnStatus,
     Error, Result, Settings,
 };
-use chrono::{DateTime, Duration, TimeZone, Utc};
-use db_store::MetaValue;
-use file_store::{traits::TimestampDecode, FileStore, FileType};
+use chrono::{Duration, TimeZone, Utc};
+use db_store::{meta, MetaValue};
+use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
 use futures::{stream, StreamExt};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
@@ -16,16 +16,18 @@ use helium_proto::{
             self, FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamReqV1,
             FollowerTxnStreamRespV1,
         },
+        poc_mobile::RadioRewardShare,
         transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
         Channel,
     },
     BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
-    SubnetworkReward, SubnetworkRewards,
+    RewardManifest, SubnetworkReward,
 };
 use node_follower::txn_service::TransactionService;
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use tokio::time;
 use tonic::Streaming;
@@ -44,7 +46,6 @@ pub struct Server {
     txn_service: TransactionService,
     last_follower_height: MetaValue<i64>,
     trigger_interval: Duration,
-    reward_interval: Duration,
     verifier_store: FileStore,
 }
 
@@ -67,7 +68,6 @@ impl Server {
                 || start_reward_block,
             )
             .await?,
-            reward_interval: Duration::seconds(settings.rewards),
             verifier_store: FileStore::from_settings(&settings.verifier).await?,
             pool,
         })
@@ -205,30 +205,10 @@ impl Server {
             }
         }
 
-        let last_reward_time =
-            MetaValue::<i64>::fetch_or_insert_with(&self.pool, "last_reward_end_time", || {
-                let starting_ts = now.timestamp();
-                tracing::info!(
-                    "no last_reward_end_time found, inserting current timestamp {starting_ts}"
-                );
-                starting_ts
-            })
-            .await?;
-
-        tracing::info!(
-            "found last_reward_end_time: {:#?}",
-            *last_reward_time.value()
+        record_duration!(
+            "reward_server_emission_duration",
+            self.handle_rewards().await?
         );
-
-        let (start_utc, end_utc) = get_time_range(*last_reward_time.value(), Utc::now());
-        if end_utc - start_utc > self.reward_interval {
-            // Handle rewards if we pass our duration
-            record_duration!(
-                "reward_server_emission_duration",
-                self.handle_rewards(reward_period, last_reward_time, start_utc..end_utc)
-                    .await?
-            )
-        }
 
         Ok(())
     }
@@ -267,48 +247,105 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_rewards(
-        &mut self,
-        reward_period: Range<u64>,
-        mut last_reward_end_time: MetaValue<i64>,
-        time_range: Range<DateTime<Utc>>,
-    ) -> Result {
+    async fn handle_rewards(&mut self) -> Result {
+        use std::str::FromStr;
+
         tracing::info!("triggering rewards emissions");
 
-        let file_list = self
-            .verifier_store
-            .list_all(
-                FileType::SubnetworkRewards,
-                time_range.start,
-                time_range.end,
-            )
-            .await?;
+        let last_reward_manifest =
+            Utc.timestamp(meta::fetch(&self.pool, "last_manifest_file").await?, 0);
 
-        // TODO: We need a better pattern for this:
-        let mut stream = self
+        // This needs to get mega refactored, I am painfully aware of how absolutely
+        // convoluted this is. I am working on it, if you have any ideas on how to
+        // improve this, please comment your suggestion.
+        let pool = self.pool.clone();
+        let manifests = self
             .verifier_store
-            .source(stream::iter(file_list).map(Ok).boxed());
-        let mut rewards = vec![];
-        while let Some(Ok(msg)) = stream.next().await {
-            let subnet_rewards = SubnetworkRewards::decode(msg);
-            if let Ok(subnet_rewards) = subnet_rewards {
-                // We only care that the verified epoch ends in our rewards epoch,
-                // so that we include verified epochs that straddle two rewards epochs.
-                if time_range.contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0)) {
-                    rewards.extend(subnet_rewards.rewards);
+            .list(FileType::RewardManifest, last_reward_manifest, None)
+            // Is this ordered?
+            .filter_map(move |file| {
+                let pool = pool.clone();
+                async move {
+                    if let Ok(ref file) = file {
+                        if file.timestamp == last_reward_manifest {
+                            return None;
+                        }
+                        meta::store(&pool, "last_manifest_file", file.timestamp)
+                            .await
+                            .unwrap(); // Don't really know how to handle errors here
+                    }
+                    Some(file)
                 }
-            }
+            })
+            .boxed();
+        let reward_files = self
+            .verifier_store
+            .source_unordered(5, manifests)
+            .filter_map(|msg| async move {
+                msg.map_err(|err| {
+                    tracing::error!("Error fetching reward manifest: {:?}", err);
+                    err
+                })
+                .ok()
+            })
+            .filter_map(|msg| async move {
+                RewardManifest::decode(msg).map_or_else(
+                    |err| {
+                        tracing::error!("Could not decode reward manifest: {:?}", err);
+                        None
+                    },
+                    |manifest| Some(manifest),
+                )
+            })
+            .flat_map_unordered(5, |manifest| {
+                stream::iter(
+                    manifest
+                        .written_files
+                        .into_iter()
+                        .map(|file_name| FileInfo::from_str(&file_name)),
+                )
+            })
+            .boxed();
+        let reward_shares = self
+            .verifier_store
+            .source_unordered(5, reward_files)
+            .filter_map(|msg| async move {
+                msg.map_err(|err| {
+                    tracing::error!("Error fetching reward share: {:?}", err);
+                    err
+                })
+                .ok()
+            })
+            .filter_map(|msg| async move {
+                RadioRewardShare::decode(msg).map_or_else(
+                    |err| {
+                        tracing::error!("Could not decode reward share: {:?}", err);
+                        None
+                    },
+                    |report| Some(report),
+                )
+            });
+
+        tokio::pin!(reward_shares);
+
+        let mut owner_rewards: BTreeMap<(u64, u64), HashMap<Vec<u8>, u64>> = BTreeMap::new();
+
+        while let Some(reward_share) = reward_shares.next().await {
+            *owner_rewards
+                .entry((reward_share.start_epoch, reward_share.end_epoch))
+                .or_default()
+                .entry(reward_share.owner_key)
+                .or_default() += reward_share.amount;
         }
 
-        if !rewards.is_empty() {
-            self.issue_rewards(rewards, reward_period).await?;
-            last_reward_end_time
-                .update(&self.pool, time_range.end.timestamp())
-                .await?;
-        } else {
-            tracing::error!("cannot continue; unable to determine reward period!");
-            return Err(Error::NotFound("invalid reward period".to_string()));
+        for (epoch, rewards) in owner_rewards.into_iter() {
+            let rewards = rewards
+                .into_iter()
+                .map(|(account, amount)| SubnetworkReward { account, amount })
+                .collect();
+            self.issue_rewards(rewards, epoch.0..epoch.1).await?;
         }
+
         Ok(())
     }
 
@@ -403,14 +440,6 @@ async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u
     Ok(res.reward_height + 1..res.height)
 }
 
-pub fn get_time_range(
-    last_reward_end_time: i64,
-    now: DateTime<Utc>,
-) -> (DateTime<Utc>, DateTime<Utc>) {
-    let last_timestamp_utc = Utc.timestamp(last_reward_end_time, 0);
-    (last_timestamp_utc.min(now), now)
-}
-
 pub fn construct_txn(
     keypair: &Keypair,
     rewards: Vec<SubnetworkReward>,
@@ -439,29 +468,4 @@ fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
     Ok(keypair.sign(&txn.encode_to_vec())?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn get_time_range_returns_24_hour_period() {
-        let last_timestamp = Utc.ymd(2022, 11, 1).and_hms(0, 0, 0).timestamp();
-        let now = Utc.ymd(2022, 11, 2).and_hms(0, 0, 0);
-        let (start, stop) = get_time_range(last_timestamp, now);
-
-        assert_eq!(start, Utc.timestamp(last_timestamp, 0));
-        assert_eq!(stop, now);
-    }
-
-    #[test]
-    fn get_time_range_will_handle_last_timestamp_being_after_now() {
-        let last_timestamp = Utc.ymd(2022, 11, 2).and_hms(0, 0, 1).timestamp();
-        let now = Utc.ymd(2022, 11, 2).and_hms(0, 0, 0);
-        let (start, stop) = get_time_range(last_timestamp, now);
-
-        assert_eq!(start, now);
-        assert_eq!(stop, now);
-    }
 }
