@@ -231,12 +231,6 @@ impl Loader {
                         .await
                     }
                     false => {
-                        // if a gateway doesnt exist then drop the report
-                        // dont even insert into DB
-                        tracing::warn!(
-                            "dropping witness report as gateway not found: {:?}",
-                            &witness
-                        );
                         Ok(())
                     }
                 }
@@ -263,11 +257,11 @@ impl Loader {
 
     async fn check_valid_gateway(&self, pub_key: &PublicKey) -> bool {
         if self.check_gw_denied(pub_key).await {
-            tracing::warn!("dropping denied gateway : {:?}", &pub_key);
+            tracing::debug!("dropping denied gateway : {:?}", &pub_key);
             return false;
         }
         if self.check_unknown_gw(pub_key).await {
-            tracing::warn!("dropping unknown gateway: {:?}", &pub_key);
+            tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
             return false;
         }
         true
