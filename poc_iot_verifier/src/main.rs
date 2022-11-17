@@ -68,11 +68,11 @@ impl Server {
         });
 
         let mut loader = loader::Loader::from_settings(settings).await?;
-        // let mut runner = runner::Runner::from_settings(settings).await?;
+        let mut runner = runner::Runner::from_settings(settings).await?;
         // let purger = purger::Purger::from_settings(settings).await?;
         let mut density_scaler = DensityScaler::from_settings(settings.density_scaler.clone())?;
         tokio::try_join!(
-            // runner.run(density_tx, &shutdown),
+            runner.run(density_tx, &shutdown),
             loader.run(&shutdown),
             // purger.run(&shutdown),
             density_scaler
