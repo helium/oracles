@@ -154,6 +154,7 @@ impl Loader {
             .await?
             .unwrap_or(oldest_event_time)
             .max(oldest_event_time);
+        tracing::info!("filetype: {file_type}, max age: {oldest_event_time}, meta last time: {meta_last_time}");
         let last_time = if meta_last_time < oldest_event_time { oldest_event_time} else { meta_last_time };
         let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
