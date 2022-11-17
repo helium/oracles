@@ -215,19 +215,20 @@ impl Loader {
                 let witness: LoraWitnessIngestReport =
                     LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
-                let packet_data = witness.report.data.clone();
+                // let packet_data = witness.report.data.clone();
                 match self.check_valid_gateway(&witness.report.pub_key).await {
                     true => {
-                        Report::insert_into(
-                            &self.pool,
-                            witness.ingest_id(),
-                            Vec::<u8>::with_capacity(0),
-                            packet_data,
-                            buf.to_vec(),
-                            &witness.received_timestamp,
-                            ReportType::Witness,
-                        )
-                        .await
+                        // Report::insert_into(
+                        //     &self.pool,
+                        //     witness.ingest_id(),
+                        //     Vec::<u8>::with_capacity(0),
+                        //     packet_data,
+                        //     buf.to_vec(),
+                        //     &witness.received_timestamp,
+                        //     ReportType::Witness,
+                        // )
+                        // .await
+                        Ok(())
                     }
                     false => {
                         Ok(())
@@ -259,20 +260,20 @@ impl Loader {
             tracing::debug!("dropping denied gateway : {:?}", &pub_key);
             return false;
         }
-        // if self.check_unknown_gw(pub_key).await {
-        //     tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
-        //     return false;
-        // }
+        if self.check_unknown_gw(pub_key).await {
+            tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
+            return false;
+        }
         true
     }
 
-    // async fn check_unknown_gw(&self, pub_key: &PublicKey) -> bool {
-    //     self.follower_service
-    //         .clone()
-    //         .resolve_gateway_info(pub_key)
-    //         .await
-    //         .is_err()
-    // }
+    async fn check_unknown_gw(&self, pub_key: &PublicKey) -> bool {
+        self.follower_service
+            .clone()
+            .resolve_gateway_info(pub_key)
+            .await
+            .is_err()
+    }
 
     async fn check_gw_denied(&self, pub_key: &PublicKey) -> bool {
         self.deny_list.check_key(pub_key).await
