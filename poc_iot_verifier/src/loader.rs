@@ -30,7 +30,7 @@ const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 5 + 10)
 const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 4 + 10);
 /// max age in seconds of reports loaded from S3 which will be processed
 /// any report older will be ignored
-const MAX_REPORT_AGE: i64 = 1800; // 30 mins
+const MAX_REPORT_AGE: i64 = 600; // 10 mins
 
 const LOADER_WORKERS: usize = 30;
 const STORE_WORKERS: usize = 40;
