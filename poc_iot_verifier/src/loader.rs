@@ -32,7 +32,7 @@ const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 4 + 10)
 /// any report older will be ignored
 const MAX_REPORT_AGE: i64 = 600; // 10 mins
 
-const LOADER_WORKERS: usize = 50;
+const LOADER_WORKERS: usize = 5;
 const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
@@ -134,7 +134,7 @@ impl Loader {
             FileType::EntropyReport,
         ])
         .map(|file_type| (file_type, shutdown.clone()))
-        .for_each_concurrent(3, |(file_type, shutdown)| async move {
+        .for_each_concurrent(10, |(file_type, shutdown)| async move {
             let _ = self.process_events(*file_type, store, shutdown).await;
         })
         .await;
@@ -169,7 +169,7 @@ impl Loader {
                 match msg {
                     Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
                     Ok(buf) => match self.handle_store_update(file_type, &buf).await {
-                        Ok(()) => (),
+                        Ok(()) => tracing::info!("completed loading of item of type {file_type}"),
                         Err(err) => {
                             tracing::warn!("failed to update store: {err:?}")
                         }
