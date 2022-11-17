@@ -7,7 +7,7 @@ use crate::{
 use chrono::{Duration, TimeZone, Utc};
 use db_store::{meta, MetaValue};
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
-use futures::{future, stream, StreamExt};
+use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn,
@@ -27,7 +27,7 @@ use node_follower::txn_service::TransactionService;
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::ops::Range;
 use tokio::time;
 use tonic::Streaming;
@@ -207,7 +207,7 @@ impl Server {
 
         record_duration!(
             "reward_server_emission_duration",
-            self.handle_rewards().await?
+            self.handle_rewards(reward_period).await?
         );
 
         Ok(())
@@ -247,97 +247,67 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_rewards(&mut self) -> Result {
+    async fn handle_rewards(&mut self, reward_period: Range<u64>) -> Result {
         use std::str::FromStr;
 
         tracing::info!("triggering rewards emissions");
 
         let last_reward_manifest = meta::fetch(&self.pool, "last_reward_manifest").await?;
 
-        // This needs to get mega refactored, I am painfully aware of how absolutely
-        // convoluted this is. I am working on it, if you have any ideas on how to
-        // improve this, please comment your suggestion.
-        let manifests = self
+        let next_manifest = self
             .verifier_store
-            .list(
+            .list_all(
                 FileType::RewardManifest,
                 Utc.timestamp(last_reward_manifest, 0),
                 None,
             )
-            .boxed();
-        let reward_files = self
-            .verifier_store
-            .source_unordered(5, manifests)
-            .filter_map(|msg| async move {
-                msg.map_err(|err| {
-                    tracing::error!("Error fetching reward manifest: {:?}", err);
-                    err
-                })
-                .ok()
-            })
-            .filter_map(|msg| async move {
-                RewardManifest::decode(msg).map_or_else(
-                    |err| {
-                        tracing::error!("Could not decode reward manifest: {:?}", err);
-                        None
-                    },
-                    Some,
-                )
-            })
-            .filter(move |manifest| {
-                future::ready(manifest.start_timestamp >= (last_reward_manifest as u64))
-            })
-            .flat_map_unordered(5, |manifest| {
-                stream::iter(
-                    manifest
-                        .written_files
-                        .into_iter()
-                        .map(|file_name| FileInfo::from_str(&file_name)),
-                )
-            })
-            .boxed();
-        let reward_shares = self
-            .verifier_store
-            .source_unordered(5, reward_files)
-            .filter_map(|msg| async move {
-                msg.map_err(|err| {
-                    tracing::error!("Error fetching reward share: {:?}", err);
-                    err
-                })
-                .ok()
-            })
-            .filter_map(|msg| async move {
-                RadioRewardShare::decode(msg).map_or_else(
-                    |err| {
-                        tracing::error!("Could not decode reward share: {:?}", err);
-                        None
-                    },
-                    Some,
-                )
-            });
+            .await?;
 
-        tokio::pin!(reward_shares);
+        let Some(manifest_file) = next_manifest.first().cloned() else {
+            tracing::error!("No new manifest found");
+            return Ok(());
+        };
 
-        let mut owner_rewards: BTreeMap<(u64, u64), HashMap<Vec<u8>, u64>> = BTreeMap::new();
+        let Some(manifest_buff) = self.verifier_store.get(manifest_file.clone()).await?
+            .next()
+            .await else {
+                tracing::error!("Empty manifest");
+                return Ok(());
+            };
 
-        while let Some(reward_share) = reward_shares.next().await {
-            *owner_rewards
-                .entry((reward_share.start_epoch, reward_share.end_epoch))
-                .or_default()
-                .entry(reward_share.owner_key)
-                .or_default() += reward_share.amount;
-        }
+        let manifest = RewardManifest::decode(manifest_buff.map_err(|_| Error::ByteStreamError)?)?;
 
-        for (epoch, rewards) in owner_rewards.into_iter() {
-            let rewards = rewards
+        let reward_files = stream::iter(
+            manifest
+                .written_files
                 .into_iter()
-                .map(|(account, amount)| SubnetworkReward { account, amount })
-                .collect();
-            self.issue_rewards(rewards, epoch.0..epoch.1).await?;
-            // We don't need the last manifest file value to be the _exact_ manifest file, just
-            // the last manifest's end timestamp. Rename this?
-            meta::store(&self.pool, "last_reward_manifest", epoch.1).await?
+                .map(|file_name| FileInfo::from_str(&file_name)),
+        )
+        .boxed();
+
+        let mut reward_shares = self.verifier_store.source_unordered(5, reward_files);
+
+        let mut owner_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
+
+        while let Some(msg) = reward_shares.try_next().await? {
+            let radio_reward_share = RadioRewardShare::decode(msg)?;
+            *owner_rewards
+                .entry(radio_reward_share.owner_key)
+                .or_default() += radio_reward_share.amount;
         }
+
+        let rewards = owner_rewards
+            .into_iter()
+            .map(|(account, amount)| SubnetworkReward { account, amount })
+            .collect();
+        self.issue_rewards(rewards, reward_period).await?;
+
+        meta::store(
+            &self.pool,
+            "last_reward_manifest",
+            manifest_file.timestamp.timestamp(),
+        )
+        .await?;
 
         Ok(())
     }
