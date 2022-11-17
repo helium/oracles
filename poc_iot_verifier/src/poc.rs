@@ -93,7 +93,7 @@ impl Poc {
         // pull the beaconer info from our follower
         let beaconer_info = match self
             .follower_service
-            .resolve_gateway_info(&beaconer_pub_key)
+            .resolve_gateway_info(&beaconer_pub_key, None)
             .await
         {
             Ok(res) => res,
@@ -283,7 +283,7 @@ impl Poc {
         // use pub key to get GW info from our follower and verify the witness
         let witness_info = match self
             .follower_service
-            .resolve_gateway_info(&witness_pub_key)
+            .resolve_gateway_info(&witness_pub_key, None)
             .await
         {
             Ok(res) => res,

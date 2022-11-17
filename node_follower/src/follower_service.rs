@@ -12,7 +12,9 @@ use helium_proto::services::{
     Channel,
 };
 use tonic::Streaming;
-
+use retainer::*;
+use std::time::{Duration,};
+use std::fmt;
 type FollowerClient = follower::Client<Channel>;
 
 #[derive(Debug, Clone)]
@@ -23,15 +25,41 @@ pub struct FollowerService {
 
 #[async_trait::async_trait]
 impl GatewayInfoResolver for FollowerService {
-    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<GatewayInfo> {
-        let req = FollowerGatewayReqV1 {
-            address: address.to_vec(),
-        };
-        let res = self.client.find_gateway(req).await?.into_inner();
-        match res.result {
-            Some(GatewayResult::Info(gateway_info)) => Ok(gateway_info.try_into()?),
-            _ => Err(Error::GatewayNotFound(format!("{address}"))),
-        }
+    async fn resolve_gateway_info(&mut self, address: &PublicKey, maybe_cache: Option<&Cache<PublicKey, GatewayInfo>>) -> Result<GatewayInfo> {
+        match maybe_cache {
+            Some(cache) => {
+                match cache.get(&address).await {
+                    Some(hit) => Ok(hit.value().clone()),
+                    None => {
+                        let req = FollowerGatewayReqV1 {
+                            address: address.to_vec(),
+                        };
+                        let res = self.client.find_gateway(req).await?.into_inner();
+                        match res.result {
+                            Some(GatewayResult::Info(gateway_info)) => {
+                                let result: GatewayInfo = gateway_info.try_into()?;
+                                cache.insert(address.clone(), result.clone(),  Duration::from_secs(86400)).await;
+                                Ok(result)
+                            }
+                            _ => Err(Error::GatewayNotFound(format!("{address}"))),
+                        }
+                    }
+                }
+        },
+        None => {
+            let req = FollowerGatewayReqV1 {
+                address: address.to_vec(),
+            };
+            let res = self.client.find_gateway(req).await?.into_inner();
+            match res.result {
+                Some(GatewayResult::Info(gateway_info)) => {
+                    let result: GatewayInfo = gateway_info.try_into()?;
+                    Ok(result)
+                }
+                _ => Err(Error::GatewayNotFound(format!("{address}"))),
+            }
+                }        }
+
     }
 }
 

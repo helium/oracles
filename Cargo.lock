@@ -141,6 +141,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-timer"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba5fa6ed76cb2aa820707b4eb9ec46f42da9ce70b0eafab5e5e34942b38a44d5"
+dependencies = [
+ "libc",
+ "wasm-bindgen",
+ "winapi",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2353,6 +2364,7 @@ dependencies = [
  "helium-proto",
  "http",
  "http-serde",
+ "retainer",
  "serde",
  "thiserror",
  "tonic",
@@ -2594,7 +2606,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tower-http",
@@ -2696,6 +2708,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
+ "retainer",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3098,6 +3111,18 @@ dependencies = [
  "web-sys",
  "webpki-roots",
  "winreg",
+]
+
+[[package]]
+name = "retainer"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df8c01a8276c14d0f8d51ebcf8a48f0748f9f73f5f6b29e688126e6a52bcb145"
+dependencies = [
+ "async-lock",
+ "async-timer",
+ "log",
+ "rand",
 ]
 
 [[package]]

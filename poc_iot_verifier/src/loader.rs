@@ -18,11 +18,12 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     EntropyReportV1, Message,
 };
-use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfoResolver};
+use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfoResolver,  gateway_resp::{GatewayInfo}};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::time;
+use retainer::*;
 
 /// cadence for how often to look for new beacon and witness reports from s3 bucket
 const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 5 + 10);
@@ -46,6 +47,7 @@ pub struct Loader {
     deny_list_latest_url: String,
     deny_list_trigger_interval: Duration,
     deny_list: DenyList,
+    pub cache: Cache<PublicKey, GatewayInfo>,
 }
 
 impl Loader {
@@ -56,6 +58,7 @@ impl Loader {
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let follower_service = FollowerService::from_settings(&settings.follower)?;
         let deny_list = DenyList::new()?;
+        let cache = Cache::<PublicKey, GatewayInfo>::new();
         Ok(Self {
             pool,
             ingest_store,
@@ -64,6 +67,7 @@ impl Loader {
             deny_list_latest_url: settings.denylist.denylist_url.clone(),
             deny_list_trigger_interval: settings.denylist.trigger_interval(),
             deny_list,
+            cache,
         })
     }
 
@@ -269,7 +273,7 @@ impl Loader {
     async fn check_unknown_gw(&self, pub_key: &PublicKey) -> bool {
         self.follower_service
             .clone()
-            .resolve_gateway_info(pub_key)
+            .resolve_gateway_info(pub_key, Some(&self.cache))
             .await
             .is_err()
     }
