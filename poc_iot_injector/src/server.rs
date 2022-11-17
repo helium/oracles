@@ -147,10 +147,12 @@ async fn submit_txns(
                     tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
                     file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
                         .await?;
+                    file_sink::flush(receipt_sender).await?;
                 } else {
                     tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
                     file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
                         .await?;
+                    file_sink::flush(receipt_sender).await?;
                 }
                 Ok(())
             }
