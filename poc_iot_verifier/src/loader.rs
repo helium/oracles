@@ -4,7 +4,8 @@ use crate::{
     poc_report::{Report, ReportType},
     Result, Settings,
 };
-use chrono::{Duration, Utc};
+use chrono::{Duration as ChronoDuration, Utc};
+use denylist::DenyList;
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport,
     lora_witness_report::LoraWitnessIngestReport,
@@ -20,6 +21,7 @@ use helium_proto::{
 use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfoResolver};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
+use std::time::Duration;
 use tokio::time;
 
 /// cadence for how often to look for new beacon and witness reports from s3 bucket
@@ -41,6 +43,9 @@ pub struct Loader {
     entropy_store: FileStore,
     pool: PgPool,
     follower_service: FollowerService,
+    deny_list_latest_url: String,
+    deny_list_trigger_interval: Duration,
+    deny_list: DenyList,
 }
 
 impl Loader {
@@ -50,15 +55,19 @@ impl Loader {
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let follower_service = FollowerService::from_settings(&settings.follower)?;
+        let deny_list = DenyList::new()?;
         Ok(Self {
             pool,
             ingest_store,
             entropy_store,
             follower_service,
+            deny_list_latest_url: settings.denylist.denylist_url.clone(),
+            deny_list_trigger_interval: settings.denylist.trigger_interval(),
+            deny_list,
         })
     }
 
-    pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("started verifier loader");
 
         let mut report_timer = time::interval(REPORTS_POLL_TIME);
@@ -66,6 +75,9 @@ impl Loader {
 
         let mut entropy_timer = time::interval(ENTROPY_POLL_TIME);
         entropy_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
+        let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
+        denylist_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
             if shutdown.is_triggered() {
@@ -86,10 +98,34 @@ impl Loader {
                         tracing::error!("fatal entropy loader error: {err:?}");
                         return Err(err)
                     }
+                },
+                _ = denylist_timer.tick() =>
+                    match self.handle_denylist_tick().await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::error!("fatal db runner error: {err:?}");
+                        return Err(err)
+                    }
                 }
+
             }
         }
         tracing::info!("stopping verifier loader");
+        Ok(())
+    }
+
+    async fn handle_denylist_tick(&mut self) -> Result {
+        // sink any errors whilst updating the denylist
+        // the verifier should not stop just because github
+        // could not be reached for example
+        match self
+            .deny_list
+            .update_to_latest(&self.deny_list_latest_url)
+            .await
+        {
+            Ok(()) => (),
+            Err(e) => tracing::warn!("failed to update denylist: {e}"),
+        }
         Ok(())
     }
 
@@ -115,7 +151,7 @@ impl Loader {
     ) -> Result {
         // TODO: determine a sane value for oldest_event_time
         // events older than this will not be processed
-        let oldest_event_time = Utc::now() - Duration::hours(MAX_REPORT_AGE);
+        let oldest_event_time = Utc::now() - ChronoDuration::hours(MAX_REPORT_AGE);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
             .unwrap_or(oldest_event_time)
@@ -175,14 +211,7 @@ impl Loader {
                         )
                         .await
                     }
-                    false => {
-                        // if a gateway doesnt exist then drop the report
-                        tracing::warn!(
-                            "dropping beacon report as gateway not found: {:?}",
-                            &beacon
-                        );
-                        Ok(())
-                    }
+                    false => Ok(()),
                 }
             }
             FileType::LoraWitnessIngestReport => {
@@ -234,12 +263,27 @@ impl Loader {
         }
     }
 
-    // TODO: maybe store any found GW in the DB, save having to refetch later during validation ?
     async fn check_valid_gateway(&self, pub_key: &PublicKey) -> bool {
+        if self.check_gw_denied(pub_key).await {
+            tracing::warn!("dropping denied gateway : {:?}", &pub_key);
+            return false;
+        }
+        if self.check_unknown_gw(pub_key).await {
+            tracing::warn!("dropping unknown gateway: {:?}", &pub_key);
+            return false;
+        }
+        true
+    }
+
+    async fn check_unknown_gw(&self, pub_key: &PublicKey) -> bool {
         self.follower_service
             .clone()
             .resolve_gateway_info(pub_key)
             .await
-            .is_ok()
+            .is_err()
+    }
+
+    async fn check_gw_denied(&self, pub_key: &PublicKey) -> bool {
+        self.deny_list.check_key(pub_key).await
     }
 }

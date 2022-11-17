@@ -1,5 +1,4 @@
 use crate::{last_beacon::LastBeacon, Error, Result};
-use ::denylist::denylist::DenyList;
 use chrono::{DateTime, Duration, Utc};
 use density_scaler::QuerySender;
 use file_store::{
@@ -88,23 +87,11 @@ impl Poc {
     pub async fn verify_beacon(
         &mut self,
         density_queries: QuerySender,
-        deny_list: &DenyList,
     ) -> Result<VerifyBeaconResult> {
         let beacon = &self.beacon_report.report;
         // use pub key to get GW info from our follower
         let beaconer_pub_key = beacon.pub_key.clone();
         let beacon_received_ts = self.beacon_report.received_timestamp;
-
-        // check if beaconer is on the deny list
-        if deny_list.check_key(&beaconer_pub_key).await {
-            let resp = VerifyBeaconResult {
-                result: VerificationStatus::Invalid,
-                invalid_reason: Some(InvalidReason::Denied),
-                gateway_info: None,
-                hex_scale: None,
-            };
-            return Ok(resp);
-        }
 
         // pull the beaconer info from our follower
         let beaconer_info = match self
@@ -227,16 +214,13 @@ impl Poc {
         &mut self,
         beacon_info: &GatewayInfo,
         density_queries: QuerySender,
-        deny_list: &DenyList,
     ) -> Result<VerifyWitnessesResult> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            let witness_result = self
-                .verify_witness(&witness_report, beacon_info, deny_list)
-                .await?;
+            let witness_result = self.verify_witness(&witness_report, beacon_info).await?;
             match witness_result.result {
                 VerificationStatus::Valid => {
                     let gw_info: GatewayInfo = witness_result.gateway_info.ok_or_else(|| {
@@ -294,21 +278,10 @@ impl Poc {
         &mut self,
         witness_report: &LoraWitnessIngestReport,
         beaconer_info: &GatewayInfo,
-        deny_list: &DenyList,
     ) -> Result<VerifyWitnessResult> {
         let witness = &witness_report.report;
         let beacon = &self.beacon_report.report;
         let witness_pub_key = witness.pub_key.clone();
-
-        // check if witness is on the deny list
-        if deny_list.check_key(&witness_pub_key).await {
-            let resp = VerifyWitnessResult {
-                result: VerificationStatus::Failed,
-                invalid_reason: Some(InvalidReason::Denied),
-                gateway_info: None,
-            };
-            return Ok(resp);
-        }
 
         // use pub key to get GW info from our follower and verify the witness
         let witness_info = match self

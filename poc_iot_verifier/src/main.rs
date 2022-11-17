@@ -67,7 +67,7 @@ impl Server {
             shutdown_trigger.trigger()
         });
 
-        let loader = loader::Loader::from_settings(settings).await?;
+        let mut loader = loader::Loader::from_settings(settings).await?;
         let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
         let mut density_scaler = DensityScaler::from_settings(settings.density_scaler.clone())?;

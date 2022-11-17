@@ -6,7 +6,6 @@ use crate::{
 };
 use chrono::Utc;
 use density_scaler::QuerySender;
-use denylist::DenyList;
 use file_store::{
     file_sink,
     file_sink::MessageSender,
@@ -27,7 +26,7 @@ use helium_proto::{
 };
 use node_follower::follower_service::FollowerService;
 use sqlx::PgPool;
-use std::{path::Path, time::Duration};
+use std::path::Path;
 use tokio::time;
 
 /// the cadence in seconds at which the DB is polled for ready POCs
@@ -37,9 +36,6 @@ const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
 pub struct Runner {
     pool: PgPool,
-    deny_list_latest_url: String,
-    deny_list_trigger_interval: Duration,
-    deny_list: DenyList,
     settings: Settings,
     follower_service: FollowerService,
     density_queries: Option<QuerySender>,
@@ -49,12 +45,8 @@ impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let follower_service = FollowerService::from_settings(&settings.follower)?;
-        let deny_list = DenyList::new()?;
         Ok(Self {
             pool,
-            deny_list_latest_url: settings.denylist.denylist_url.clone(),
-            deny_list_trigger_interval: settings.denylist.trigger_interval(),
-            deny_list,
             settings: settings.clone(),
             follower_service,
             density_queries: None,
@@ -72,9 +64,6 @@ impl Runner {
 
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
-
-        let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
-        denylist_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
@@ -139,33 +128,10 @@ impl Runner {
                         tracing::error!("fatal db runner error: {err:?}");
                         return Err(err)
                     }
-                },
-                _ = denylist_timer.tick() =>
-                    match self.handle_denylist_tick().await {
-                    Ok(()) => (),
-                    Err(err) => {
-                        tracing::error!("fatal db runner error: {err:?}");
-                        return Err(err)
-                    }
                 }
             }
         }
         tracing::info!("stopping runner");
-        Ok(())
-    }
-
-    async fn handle_denylist_tick(&mut self) -> Result {
-        // sink any errors whilst updating the denylist
-        // the verifier should not stop just because github
-        // could not be reached for example
-        match self
-            .deny_list
-            .update_to_latest(&self.deny_list_latest_url)
-            .await
-        {
-            Ok(()) => (),
-            Err(e) => tracing::warn!("failed to update denylist: {e}"),
-        }
         Ok(())
     }
 
@@ -232,9 +198,7 @@ impl Runner {
                 None => return Err(Error::custom("missing density scaler query sender")),
             };
             // verify POC beacon
-            let beacon_verify_result = poc
-                .verify_beacon(density_queries.clone(), &self.deny_list)
-                .await?;
+            let beacon_verify_result = poc.verify_beacon(density_queries.clone()).await?;
             match beacon_verify_result.result {
                 VerificationStatus::Valid => {
                     tracing::info!(
@@ -244,9 +208,8 @@ impl Runner {
                     );
                     // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                        let verified_witnesses_result = poc
-                            .verify_witnesses(&beacon_info, density_queries, &self.deny_list)
-                            .await?;
+                        let verified_witnesses_result =
+                            poc.verify_witnesses(&beacon_info, density_queries).await?;
                         // check if there are any failed witnesses
                         // if so update the DB attempts count
                         // and halt here, let things be reprocessed next tick

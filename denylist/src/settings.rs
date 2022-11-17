@@ -26,7 +26,7 @@ pub fn default_denylist_url() -> String {
 }
 
 fn default_trigger_interval() -> u64 {
-    180
+    21600
 }
 
 impl Settings {
