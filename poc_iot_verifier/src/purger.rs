@@ -3,7 +3,7 @@ use file_store::{
     file_sink, file_sink::MessageSender, file_sink_write, file_upload,
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidBeaconReport,
     lora_invalid_poc::LoraInvalidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
-    FileType,
+    traits::IngestId, FileType,
 };
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
@@ -11,14 +11,15 @@ use helium_proto::services::poc_lora::{
 };
 use std::path::Path;
 
+use futures::stream::{self, StreamExt};
 use helium_proto::Message;
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tokio::time;
 
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(300);
-const LOADER_WORKERS: usize = 10;
-const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 30);
+const PURGER_WORKERS: usize = 10;
+const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
+
 /// the period of time in seconds after which entropy will be deemed stale
 /// and purged from the DB
 // any beacon or witness using this entropy & received after this period will fail
@@ -31,7 +32,7 @@ const ENTROPY_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds
 // opportunity to be verified and after this point extremely unlikely to ever be verified
 // successfully
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const REPORT_STALE_PERIOD: i32 = 60 * 60 * 8; // 8 hours in seconds;
+const REPORT_STALE_PERIOD: i32 = 60 * 60 * 2; // 2 hours in seconds;
 
 pub struct Purger {
     pool: PgPool,
@@ -41,7 +42,7 @@ pub struct Purger {
 
 impl Purger {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
-        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let pool = settings.database.connect(PURGER_DB_POOL_SIZE).await?;
         let settings = settings.clone();
         // get the base_stale period
         // if the env var is set, this value will be added to the entropy and report
@@ -125,21 +126,45 @@ impl Purger {
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        _ = Report::get_stale_pending_beacons(
+        let stale_beacons = Report::get_stale_pending_beacons(
             &self.pool,
             self.base_stale_period + REPORT_STALE_PERIOD,
         )
-        .await?
-        .iter()
-        .map(|report| self.handle_purged_beacon(report, &lora_invalid_beacon_tx));
+        .await?;
+        tracing::info!("purging {:?} stale beacons", stale_beacons.len());
+        stream::iter(stale_beacons)
+            .for_each_concurrent(PURGER_WORKERS, |report| {
+                let tx = lora_invalid_beacon_tx.clone();
+                async move {
+                    match self.handle_purged_beacon(&report, tx).await {
+                        Ok(()) => (),
+                        Err(err) => {
+                            tracing::warn!("failed to purge beacon: {err:?}")
+                        }
+                    }
+                }
+            })
+            .await;
 
-        _ = Report::get_stale_pending_witnesses(
+        let stale_witnesses = Report::get_stale_pending_witnesses(
             &self.pool,
             self.base_stale_period + REPORT_STALE_PERIOD,
         )
-        .await?
-        .iter()
-        .map(|report| self.handle_purged_witness(report, &lora_invalid_witness_tx));
+        .await?;
+        tracing::info!("purging {:?} stale witnesses", stale_witnesses.len());
+        stream::iter(stale_witnesses)
+            .for_each_concurrent(PURGER_WORKERS, |report| {
+                let tx = lora_invalid_witness_tx.clone();
+                async move {
+                    match self.handle_purged_witness(&report, tx).await {
+                        Ok(()) => (),
+                        Err(err) => {
+                            tracing::warn!("failed to purge witness: {err:?}")
+                        }
+                    }
+                }
+            })
+            .await;
 
         // purge any stale entropy, no need to output anything to s3 here
         _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
@@ -149,12 +174,12 @@ impl Purger {
     async fn handle_purged_beacon(
         &self,
         db_beacon: &Report,
-        lora_invalid_beacon_tx: &MessageSender,
+        lora_invalid_beacon_tx: MessageSender,
     ) -> Result {
-        let packet_data = &db_beacon.packet_data;
         let beacon_buf: &[u8] = &db_beacon.report_data;
         let beacon_report: LoraBeaconIngestReport =
             LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
+        let beacon_id = beacon_report.ingest_id();
         let beacon = &beacon_report.report;
         let received_timestamp = beacon_report.received_timestamp;
         let invalid_beacon_proto: LoraInvalidBeaconReportV1 = LoraInvalidBeaconReport {
@@ -166,27 +191,24 @@ impl Purger {
         tracing::debug!("purging beacon with date: {received_timestamp}");
         file_sink_write!(
             "invalid_beacon",
-            lora_invalid_beacon_tx,
+            &lora_invalid_beacon_tx,
             invalid_beacon_proto
         )
         .await?;
         // delete the report from the DB
-        let public_key = beacon_report.report.pub_key.to_vec();
-        self.delete_db_report(public_key, packet_data.clone()).await;
+        Report::delete_report(&self.pool, &beacon_id).await?;
         Ok(())
     }
 
     async fn handle_purged_witness(
         &self,
         db_witness: &Report,
-        lora_invalid_witness_tx: &MessageSender,
+        lora_invalid_witness_tx: MessageSender,
     ) -> Result {
-        let packet_data = &db_witness.packet_data;
         let witness_buf: &[u8] = &db_witness.report_data;
         let witness_report: LoraWitnessIngestReport =
             LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?;
-        let witness = &witness_report.report;
-        let public_key = witness.pub_key.to_vec().clone();
+        let witness_id = witness_report.ingest_id();
         let received_timestamp = witness_report.received_timestamp;
         let invalid_witness_report_proto: LoraInvalidWitnessReportV1 = LoraInvalidWitnessReport {
             received_timestamp,
@@ -198,22 +220,13 @@ impl Purger {
         tracing::debug!("purging witness with date: {received_timestamp}");
         file_sink_write!(
             "invalid_witness_report",
-            lora_invalid_witness_tx,
+            &lora_invalid_witness_tx,
             invalid_witness_report_proto
         )
         .await?;
 
         // delete the report from the DB
-        self.delete_db_report(public_key, packet_data.clone()).await;
+        Report::delete_report(&self.pool, &witness_id).await?;
         Ok(())
-    }
-
-    /// delete the report from the DB using ID
-    async fn delete_db_report(&self, mut pub_key_bytes: Vec<u8>, packet_data: Vec<u8>) {
-        // delete the report from the DB using ID
-        let mut id: Vec<u8> = packet_data;
-        id.append(&mut pub_key_bytes);
-        let id_hash = Sha256::digest(&id).to_vec();
-        _ = Report::delete_report(&self.pool, &id_hash).await;
     }
 }

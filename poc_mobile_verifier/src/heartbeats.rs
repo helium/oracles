@@ -191,18 +191,12 @@ impl Heartbeat {
             return Ok(false);
         }
 
-        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2 ")
-            .bind(&self.cbsd_id)
-            .bind(&self.hotspot_key)
-            .execute(&mut *exec)
-            .await?;
-
         Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
             insert into heartbeats (hotspot_key, cbsd_id, reward_weight, timestamp)
             values ($1, $2, $3, $4)
-            on conflict (hotspot_key, cbsd_id) do update set
-            reward_weight = EXCLUDED.reward_weight, timestamp = EXCLUDED.timestamp
+            on conflict (cbsd_id) do update set
+            hotspot_key = EXCLUDED.hotspot_key, reward_weight = EXCLUDED.reward_weight, timestamp = EXCLUDED.timestamp
             returning (xmax = 0) as inserted;
             "#,
         )
