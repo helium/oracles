@@ -150,12 +150,10 @@ impl Loader {
         // TODO: determine a sane value for oldest_event_time
         // events older than this will not be processed
         let oldest_event_time = Utc::now() - ChronoDuration::seconds(MAX_REPORT_AGE);
-        let meta_last_time = Meta::last_timestamp(&self.pool, file_type)
+        let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
             .unwrap_or(oldest_event_time)
             .max(oldest_event_time);
-        tracing::info!("filetype: {file_type}, max age: {oldest_event_time}, meta last time: {meta_last_time}");
-        let last_time = if meta_last_time < oldest_event_time { oldest_event_time} else { meta_last_time };
         let infos = store.list_all(file_type, last_time, None).await?;
         if infos.is_empty() {
             tracing::info!("no ingest {file_type} files to process from: {last_time}");
