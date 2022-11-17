@@ -134,7 +134,7 @@ impl Loader {
             FileType::EntropyReport,
         ])
         .map(|file_type| (file_type, shutdown.clone()))
-        .for_each_concurrent(2, |(file_type, shutdown)| async move {
+        .for_each_concurrent(50, |(file_type, shutdown)| async move {
             let _ = self.process_events(*file_type, store, shutdown).await;
         })
         .await;
