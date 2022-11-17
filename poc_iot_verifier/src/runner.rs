@@ -386,6 +386,7 @@ impl Runner {
     ) -> Result {
         let received_timestamp = valid_beacon_report.received_timestamp;
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
+        let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
         let valid_poc: LoraValidPoc = LoraValidPoc {
             poc_id: beacon_id.clone(),
@@ -403,22 +404,22 @@ impl Runner {
                 return Ok(());
             }
         }
-        // valid beacons and witness reports are kept in the DB
-        // until after they have been rewarded
-        // for now we just have to update their status to valid
-        Report::update_status(&self.pool, &beacon_id, LoraStatus::Valid, Utc::now()).await?;
-        // update timestamp of last beacon for the beaconer
-        LastBeacon::update_last_timestamp(&self.pool, &beacon.pub_key.to_vec(), received_timestamp)
-            .await?;
+        // // valid beacons and witness reports are kept in the DB
+        // // until after they have been rewarded
+        // // for now we just have to update their status to valid
+        // Report::update_status(&self.pool, &beacon_id, LoraStatus::Valid, Utc::now()).await?;
+        // // update timestamp of last beacon for the beaconer
+        // LastBeacon::update_last_timestamp(&self.pool, &beacon.pub_key.to_vec(), received_timestamp)
+        //     .await?;
 
-        // update DB status of valid witnesses
-        for valid_witness_report in witnesses_result.valid_witnesses {
-            let valid_witness_id = valid_witness_report
-                .report
-                .report_id(valid_witness_report.received_timestamp);
-            Report::update_status(&self.pool, &valid_witness_id, LoraStatus::Valid, Utc::now())
-                .await?
-        }
+        // // update DB status of valid witnesses
+        // for valid_witness_report in witnesses_result.valid_witnesses {
+        //     let valid_witness_id = valid_witness_report
+        //         .report
+        //         .report_id(valid_witness_report.received_timestamp);
+        //     Report::update_status(&self.pool, &valid_witness_id, LoraStatus::Valid, Utc::now())
+        //         .await?
+        // }
 
         // save invalid witnesses to s3, ignore any failed witness writes
         // taking the lossly approach here as if we re attempt the POC later
@@ -435,18 +436,20 @@ impl Runner {
             .await
             {
                 Ok(_) => {
-                    // we dont need to reward invalid witness reports
-                    // so we can go ahead & delete from the DB
-                    let report_id = invalid_witness_report
-                        .report
-                        .report_id(invalid_witness_report.received_timestamp);
-                    _ = Report::delete_report(&self.pool, &report_id).await;
+                    // // we dont need to reward invalid witness reports
+                    // // so we can go ahead & delete from the DB
+                    // let report_id = invalid_witness_report
+                    //     .report
+                    //     .report_id(invalid_witness_report.received_timestamp);
+                    // _ = Report::delete_report(&self.pool, &report_id).await;
+
                 }
                 Err(err) => {
                     tracing::error!("failed to save invalid_witness_report to s3, {err}");
                 }
             }
         }
+        _ = Report::delete_poc(&self.pool, &packet_data).await;
         Ok(())
     }
 }
