@@ -32,8 +32,8 @@ const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 4 + 10)
 /// any report older will be ignored
 const MAX_REPORT_AGE: i64 = 600; // 10 mins
 
-const LOADER_WORKERS: usize = 30;
-const STORE_WORKERS: usize = 40;
+const LOADER_WORKERS: usize = 50;
+const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;
@@ -134,7 +134,7 @@ impl Loader {
             FileType::EntropyReport,
         ])
         .map(|file_type| (file_type, shutdown.clone()))
-        .for_each_concurrent(50, |(file_type, shutdown)| async move {
+        .for_each_concurrent(3, |(file_type, shutdown)| async move {
             let _ = self.process_events(*file_type, store, shutdown).await;
         })
         .await;
