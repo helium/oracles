@@ -1,5 +1,4 @@
 use crate::{entropy::ENTROPY_LIFESPAN, last_beacon::LastBeacon, Error, Result};
-use ::denylist::denylist::DenyList;
 use chrono::{DateTime, Duration, Utc};
 use density_scaler::QuerySender;
 use file_store::{
