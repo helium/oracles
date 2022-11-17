@@ -259,20 +259,20 @@ impl Loader {
             tracing::debug!("dropping denied gateway : {:?}", &pub_key);
             return false;
         }
-        if self.check_unknown_gw(pub_key).await {
-            tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
-            return false;
-        }
+        // if self.check_unknown_gw(pub_key).await {
+        //     tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
+        //     return false;
+        // }
         true
     }
 
-    async fn check_unknown_gw(&self, pub_key: &PublicKey) -> bool {
-        self.follower_service
-            .clone()
-            .resolve_gateway_info(pub_key)
-            .await
-            .is_err()
-    }
+    // async fn check_unknown_gw(&self, pub_key: &PublicKey) -> bool {
+    //     self.follower_service
+    //         .clone()
+    //         .resolve_gateway_info(pub_key)
+    //         .await
+    //         .is_err()
+    // }
 
     async fn check_gw_denied(&self, pub_key: &PublicKey) -> bool {
         self.deny_list.check_key(pub_key).await
