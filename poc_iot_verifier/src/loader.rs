@@ -194,19 +194,20 @@ impl Loader {
                 let beacon: LoraBeaconIngestReport =
                     LoraBeaconIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);
-                let packet_data = beacon.report.data.clone();
+                // let packet_data = beacon.report.data.clone();
                 match self.check_valid_gateway(&beacon.report.pub_key).await {
                     true => {
-                        Report::insert_into(
-                            &self.pool,
-                            beacon.ingest_id(),
-                            beacon.report.remote_entropy,
-                            packet_data,
-                            buf.to_vec(),
-                            &beacon.received_timestamp,
-                            ReportType::Beacon,
-                        )
-                        .await
+                        // Report::insert_into(
+                        //     &self.pool,
+                        //     beacon.ingest_id(),
+                        //     beacon.report.remote_entropy,
+                        //     packet_data,
+                        //     buf.to_vec(),
+                        //     &beacon.received_timestamp,
+                        //     ReportType::Beacon,
+                        // )
+                        // .await
+                        Ok(())
                     }
                     false => Ok(()),
                 }
@@ -215,19 +216,20 @@ impl Loader {
                 let witness: LoraWitnessIngestReport =
                     LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
-                let packet_data = witness.report.data.clone();
+                // let packet_data = witness.report.data.clone();
                 match self.check_valid_gateway(&witness.report.pub_key).await {
                     true => {
-                        Report::insert_into(
-                            &self.pool,
-                            witness.ingest_id(),
-                            Vec::<u8>::with_capacity(0),
-                            packet_data,
-                            buf.to_vec(),
-                            &witness.received_timestamp,
-                            ReportType::Witness,
-                        )
-                        .await
+                        // Report::insert_into(
+                        //     &self.pool,
+                        //     witness.ingest_id(),
+                        //     Vec::<u8>::with_capacity(0),
+                        //     packet_data,
+                        //     buf.to_vec(),
+                        //     &witness.received_timestamp,
+                        //     ReportType::Witness,
+                        // )
+                        // .await
+                        Ok(())
                     }
                     false => {
                         Ok(())
