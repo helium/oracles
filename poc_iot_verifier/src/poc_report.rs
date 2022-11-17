@@ -128,7 +128,7 @@ impl Report {
     {
         sqlx::query_as::<_, Self>(
             r#"
-            select  poc_report.id,
+            select poc_report.id,
                 poc_report.remote_entropy,
                 poc_report.packet_data,
                 poc_report.report_data,
@@ -140,7 +140,7 @@ impl Report {
                 poc_report.created_at,
                 entropy.timestamp
             from poc_report
-            left join entropy on poc_report.remote_entropy=entropy.data
+            inner join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'pending'
             and entropy.timestamp < (NOW() - INTERVAL '$1 SECONDS')
             and attempts < $2

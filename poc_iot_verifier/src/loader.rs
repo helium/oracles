@@ -27,7 +27,7 @@ use tokio::time;
 /// cadence for how often to look for new beacon and witness reports from s3 bucket
 const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 5 + 10);
 /// cadence for how often to look for new entropy reports from s3 bucket
-const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(4 * 60 + 10);
+const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 4 + 10);
 /// max age in hours of reports loaded from S3 which will be processed
 /// any report older will be ignored
 const MAX_REPORT_AGE: i64 = 2;
@@ -85,13 +85,6 @@ impl Loader {
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = report_timer.tick() => match self.handle_tick(&self.ingest_store, shutdown.clone()).await {
-                    Ok(()) => (),
-                    Err(err) => {
-                        tracing::error!("fatal report loader error: {err:?}");
-                        return Err(err)
-                    }
-                },
                 _ = entropy_timer.tick() => match self.handle_tick(&self.entropy_store, shutdown.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
@@ -99,15 +92,20 @@ impl Loader {
                         return Err(err)
                     }
                 },
-                _ = denylist_timer.tick() =>
-                    match self.handle_denylist_tick().await {
+                _ = report_timer.tick() => match self.handle_tick(&self.ingest_store, shutdown.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal db runner error: {err:?}");
+                        tracing::error!("fatal report loader error: {err:?}");
                         return Err(err)
                     }
+                },
+                _ = denylist_timer.tick() =>
+                match self.handle_denylist_tick().await {
+                Ok(()) => (),
+                Err(err) => {
+                    tracing::error!("fatal db runner error: {err:?}");
                 }
-
+            }
             }
         }
         tracing::info!("stopping verifier loader");

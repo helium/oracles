@@ -32,7 +32,7 @@ use tokio::time;
 
 const BEACON_WORKERS: usize = 30;
 /// the cadence in seconds at which the DB is polled for ready POCs
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(6 * 60 + 10);
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(8 * 60 + 10);
 const LOADER_WORKERS: usize = 30;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
