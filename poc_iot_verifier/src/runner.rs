@@ -33,7 +33,7 @@ use tokio::time;
 const BEACON_WORKERS: usize = 30;
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(8 * 60 + 10);
-const LOADER_WORKERS: usize = 30;
+const LOADER_WORKERS: usize = 40;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
 
 pub struct Runner {
@@ -232,7 +232,7 @@ impl Runner {
         let beacon_verify_result = poc.verify_beacon(density_queries.clone()).await?;
         match beacon_verify_result.result {
             VerificationStatus::Valid => {
-                tracing::info!(
+                tracing::debug!(
                     "valid beacon. entropy: {:?}, addr: {:?}",
                     beacon.data,
                     beacon.pub_key.to_string()
