@@ -28,9 +28,9 @@ use tokio::time;
 const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 5 + 10);
 /// cadence for how often to look for new entropy reports from s3 bucket
 const ENTROPY_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 4 + 10);
-/// max age in hours of reports loaded from S3 which will be processed
+/// max age in seconds of reports loaded from S3 which will be processed
 /// any report older will be ignored
-const MAX_REPORT_AGE: i64 = 1;
+const MAX_REPORT_AGE: i64 = 1800; // 30 mins
 
 const LOADER_WORKERS: usize = 30;
 const STORE_WORKERS: usize = 40;
@@ -149,7 +149,7 @@ impl Loader {
     ) -> Result {
         // TODO: determine a sane value for oldest_event_time
         // events older than this will not be processed
-        let oldest_event_time = Utc::now() - ChronoDuration::hours(MAX_REPORT_AGE);
+        let oldest_event_time = Utc::now() - ChronoDuration::seconds(MAX_REPORT_AGE);
         let last_time = Meta::last_timestamp(&self.pool, file_type)
             .await?
             .unwrap_or(oldest_event_time)
