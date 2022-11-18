@@ -6,7 +6,7 @@ use crate::{
     Error, Result, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
-use density_scaler::QuerySender;
+use density_scaler::HexDensityMap;
 use file_store::{
     file_sink,
     file_sink::MessageSender,
@@ -48,7 +48,6 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 pub struct Runner {
     pool: PgPool,
     settings: Settings,
-    density_queries: Option<QuerySender>,
 }
 
 impl Runner {
@@ -57,19 +56,16 @@ impl Runner {
         Ok(Self {
             pool,
             settings: settings.clone(),
-            density_queries: None,
         })
     }
 
     pub async fn run(
         &mut self,
-        density_queries: QuerySender,
         shutdown: &triggered::Listener,
         gateway_cache: &GatewayCache,
+        hex_density_map: impl HexDensityMap,
     ) -> Result {
         tracing::info!("starting runner");
-
-        self.density_queries = Some(density_queries);
 
         let mut db_timer = time::interval(DB_POLL_TIME);
 
@@ -134,7 +130,7 @@ impl Runner {
                                                 lora_invalid_beacon_tx.clone(),
                                                 lora_invalid_witness_tx.clone(),
                                                 lora_valid_poc_tx.clone(),
-                                                gateway_cache).await {
+                                                gateway_cache, hex_density_map.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal db runner error: {err:?}");
@@ -154,6 +150,7 @@ impl Runner {
         lora_invalid_witness_tx: MessageSender,
         lora_valid_poc_tx: MessageSender,
         gateway_cache: &GatewayCache,
+        hex_density_map: impl HexDensityMap,
     ) -> Result {
         let db_beacon_reports = Report::get_next_beacons(&self.pool).await?;
         if db_beacon_reports.is_empty() {
@@ -173,9 +170,10 @@ impl Runner {
                 let tx1 = lora_invalid_beacon_tx.clone();
                 let tx2 = lora_invalid_witness_tx.clone();
                 let tx3 = lora_valid_poc_tx.clone();
+                let hdm = hex_density_map.clone();
                 async move {
                     match self
-                        .handle_beacon_report(db_beacon, tx1, tx2, tx3, gateway_cache)
+                        .handle_beacon_report(db_beacon, tx1, tx2, tx3, gateway_cache, hdm)
                         .await
                     {
                         Ok(()) => (),
@@ -198,6 +196,7 @@ impl Runner {
         lora_invalid_witness_tx: MessageSender,
         lora_valid_poc_tx: MessageSender,
         gateway_cache: &GatewayCache,
+        hex_density_map: impl HexDensityMap,
     ) -> Result {
         let entropy_start_time = match db_beacon.timestamp {
             Some(v) => v,
@@ -230,13 +229,14 @@ impl Runner {
         let mut poc =
             Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await?;
 
-        let density_queries = match &self.density_queries {
-            Some(density_queries) => density_queries.clone(),
-            None => return Err(Error::custom("missing density scaler query sender")),
-        };
+        // let density_queries = match &self.density_queries {
+        //     Some(density_queries) => density_queries.clone(),
+        //     None => return Err(Error::custom("missing density scaler query sender")),
+        // };
+
         // verify POC beacon
         let beacon_verify_result = poc
-            .verify_beacon(density_queries.clone(), gateway_cache, &self.pool)
+            .verify_beacon(hex_density_map.clone(), gateway_cache, &self.pool)
             .await?;
         match beacon_verify_result.result {
             VerificationStatus::Valid => {
@@ -248,7 +248,7 @@ impl Runner {
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
                     let verified_witnesses_result = poc
-                        .verify_witnesses(&beacon_info, density_queries, gateway_cache)
+                        .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
                         .await?;
                     // check if there are any failed witnesses
                     // if so update the DB attempts count

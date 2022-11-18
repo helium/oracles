@@ -59,9 +59,6 @@ impl Server {
         let pool = settings.database.connect(2).await?;
         sqlx::migrate!().run(&pool).await?;
 
-        // Create the density scaler query messaging channel
-        let (density_tx, density_rx) = density_scaler::query_channel(50);
-
         // configure shutdown trigger
         let (shutdown_trigger, shutdown) = triggered::trigger();
         tokio::spawn(async move {
@@ -75,12 +72,10 @@ impl Server {
         let purger = purger::Purger::from_settings(settings).await?;
         let mut density_scaler = DensityScaler::from_settings(settings.density_scaler.clone())?;
         tokio::try_join!(
-            runner.run(density_tx, &shutdown, &gateway_cache),
+            runner.run(&shutdown, &gateway_cache, density_scaler.hex_density_map()),
             loader.run(&shutdown, &gateway_cache),
             purger.run(&shutdown),
-            density_scaler
-                .run(density_rx, &shutdown)
-                .map_err(Error::from),
+            density_scaler.run(&shutdown).map_err(Error::from),
         )
         .map(|_| ())
     }

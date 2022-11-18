@@ -2,9 +2,9 @@ use crate::{
     lora_beacon_report::{LoraBeaconIngestReport, LoraBeaconReport},
     lora_witness_report::{LoraWitnessIngestReport, LoraWitnessReport},
 };
+use blake3::hash;
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
-use blake3::{hash};
 pub trait IngestId {
     fn ingest_id(&self) -> Vec<u8>;
 }
