@@ -1,4 +1,5 @@
 use crate::{
+    error::DecodeError,
     traits::MsgDecode,
     traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
     Error, Result,
@@ -104,8 +105,9 @@ impl From<LoraBeaconIngestReport> for LoraBeaconReportReqV1 {
 impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconReport {
     type Error = Error;
     fn try_from(v: LoraBeaconReportReqV1) -> Result<Self> {
-        let data_rate: DataRate =
-            DataRate::from_i32(v.datarate).ok_or_else(|| Error::custom("unsupported datarate"))?;
+        let dr = v.datarate;
+        let data_rate: DataRate = DataRate::from_i32(dr)
+            .ok_or_else(|| DecodeError::unsupported_datarate("lora_beacon_report_req_v1", dr))?;
         let timestamp = v.timestamp()?;
 
         Ok(Self {
