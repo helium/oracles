@@ -24,6 +24,8 @@ pub enum Error {
     Config(#[from] config::ConfigError),
     #[error("mpsc channel error")]
     Channel,
+    #[error("no manifest")]
+    NoManifest,
 }
 
 #[derive(Error, Debug)]

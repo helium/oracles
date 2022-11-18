@@ -7,7 +7,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink, file_sink_write, traits::TimestampEncode, FileStore, Manifest};
+use file_store::{file_sink, file_sink_write, traits::TimestampEncode, FileStore};
 use futures::{stream::Stream, StreamExt};
 use helium_proto::{
     services::{follower, Channel},
@@ -28,7 +28,6 @@ pub struct VerifierDaemon {
     pub verifications_per_period: i32,
     pub verification_offset: Duration,
     pub verifier: Verifier,
-    pub reward_manifest: Manifest,
 }
 
 impl VerifierDaemon {
@@ -119,13 +118,9 @@ impl VerifierDaemon {
                 .await??;
         }
 
-        file_sink::flush(&self.radio_rewards_tx)
+        let written_files = file_sink::fetch_manifest(&self.radio_rewards_tx)
             .await?
-            // Await the returned one shot to ensure we've written all of the files and
-            // can retrieve the manifest
             .await??;
-
-        let written_files = self.reward_manifest.take();
 
         // Write out the manifest file
         file_sink_write!(

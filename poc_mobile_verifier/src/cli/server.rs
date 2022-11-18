@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
-use file_store::{file_sink, file_upload, FileStore, FileType, Manifest};
+use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
 
 #[derive(Debug, clap::Args)]
@@ -54,7 +54,6 @@ impl Cmd {
         .await?;
 
         // Radio share rewards
-        let reward_manifest = Manifest::default();
         let (radio_rewards_tx, radio_rewards_rx) = file_sink::message_channel(50);
         let mut subnet_rewards = file_sink::FileSinkBuilder::new(
             FileType::RadioRewardShare,
@@ -62,7 +61,8 @@ impl Cmd {
             radio_rewards_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .manifest(reward_manifest.clone())
+        .roll_time(Duration::minutes(15))
+        .write_manifest(true)
         .create()
         .await?;
 
@@ -96,7 +96,6 @@ impl Cmd {
             reward_period_hours,
             verifications_per_period,
             verifier,
-            reward_manifest,
         };
 
         tokio::try_join!(
