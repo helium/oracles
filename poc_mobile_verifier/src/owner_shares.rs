@@ -51,6 +51,32 @@ const REWARDS_PER_SHARE_PREC: u32 = 9;
 const MOBILE_SCALE: u32 = 100_000_000;
 
 impl OwnerShares {
+    pub async fn aggregate(
+        resolver: &mut impl OwnerResolver,
+        heartbeats: Heartbeats,
+        speedtests: SpeedtestAverages,
+    ) -> Result<Self, ResolveError> {
+        let mut owner_shares = Self::default();
+        for heartbeat in heartbeats.into_iter() {
+            if let Some(owner) = resolver.resolve_owner(&heartbeat.hotspot_key).await? {
+                let speedmultiplier = speedtests
+                    .get_average(&heartbeat.hotspot_key)
+                    .as_ref()
+                    .map_or(dec!(0.0), Average::reward_multiplier);
+                owner_shares
+                    .shares
+                    .entry(owner)
+                    .or_default()
+                    .push(RadioShare {
+                        hotspot_key: heartbeat.hotspot_key,
+                        cbsd_id: heartbeat.cbsd_id,
+                        amount: heartbeat.reward_weight * speedmultiplier,
+                    })
+            }
+        }
+        Ok(owner_shares)
+    }
+
     pub fn total_shares(&self) -> Decimal {
         self.shares
             .iter()
@@ -119,32 +145,6 @@ pub trait OwnerResolver: Send {
         &mut self,
         address: &PublicKey,
     ) -> Result<Option<PublicKey>, ResolveError>;
-
-    async fn owner_shares(
-        &mut self,
-        heartbeats: Heartbeats,
-        speedtests: SpeedtestAverages,
-    ) -> Result<OwnerShares, ResolveError> {
-        let mut owner_shares = OwnerShares::default();
-        for heartbeat in heartbeats.into_iter() {
-            if let Some(owner) = self.resolve_owner(&heartbeat.hotspot_key).await? {
-                let speedmultiplier = speedtests
-                    .get_average(&heartbeat.hotspot_key)
-                    .as_ref()
-                    .map_or(dec!(0.0), Average::reward_multiplier);
-                owner_shares
-                    .shares
-                    .entry(owner)
-                    .or_default()
-                    .push(RadioShare {
-                        hotspot_key: heartbeat.hotspot_key,
-                        cbsd_id: heartbeat.cbsd_id,
-                        amount: heartbeat.reward_weight * speedmultiplier,
-                    })
-            }
-        }
-        Ok(owner_shares)
-    }
 }
 
 #[async_trait::async_trait]
@@ -315,8 +315,7 @@ mod test {
         speedtests.insert(g2, VecDeque::from(g2_speedtests));
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
-        let owner_rewards = resolver
-            .owner_shares(heartbeats, speedtest_avgs)
+        let owner_rewards = OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards");
 
@@ -542,8 +541,7 @@ mod test {
 
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKey, u64>::new();
-        for radio_share in resolver
-            .owner_shares(heartbeats, speedtest_avgs)
+        for radio_share in OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards")
             .into_radio_shares(&((now - Duration::hours(1))..now))

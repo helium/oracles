@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
-    owner_shares::{OwnerResolver, OwnerShares, ResolveError},
+    owner_shares::{OwnerShares, ResolveError},
     scheduler::Scheduler,
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
 };
@@ -197,7 +197,7 @@ impl Verifier {
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
     ) -> Result<OwnerShares, ResolveError> {
-        self.follower.owner_shares(heartbeats, speedtests).await
+        OwnerShares::aggregate(&mut self.follower, heartbeats, speedtests).await
     }
 }
 

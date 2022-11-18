@@ -1,6 +1,6 @@
 use crate::{
     heartbeats::Heartbeats,
-    owner_shares::{get_scheduled_tokens, OwnerResolver},
+    owner_shares::{get_scheduled_tokens, OwnerShares},
     speedtests::{Average, SpeedtestAverages},
     Settings,
 };
@@ -36,9 +36,8 @@ impl Cmd {
 
         let heartbeats = Heartbeats::validated(&pool, epoch.start).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let owner_shares = follower
-            .owner_shares(heartbeats, speedtests.clone())
-            .await?;
+        let owner_shares =
+            OwnerShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
