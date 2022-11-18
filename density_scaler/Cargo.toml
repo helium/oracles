@@ -25,3 +25,4 @@ itertools = "*"
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 config = {workspace = true}
+async-trait = {workspace = true}
