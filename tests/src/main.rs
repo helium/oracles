@@ -106,18 +106,36 @@ async fn suite(cli: &Cli) -> Result<()> {
     tokio::spawn(async move {
         txn_stream_start().await.expect("txn streamer failed");
     });
-    tokio::try_join!(
-        ingestor_start(shutdown_listener.clone(), ingestor_settings),
-        verifier_start(verifier_settings),
-        rewarder_start(shutdown_listener.clone(), rewarder_settings, &keypair),
-        follower_start(follower_settings),
-        test(&keypair, grpc_endpoint, api_token),
-    )?;
+    let shutdown_listener_ingestor = shutdown_listener.clone();
+    let shutdown_listener_rewarder = shutdown_listener.clone();
+    tokio::spawn(async move {
+        ingestor_start(shutdown_listener_ingestor, ingestor_settings).await.expect("ingestor failed");
+    });
+    let keypair_vec = keypair.to_vec();
+    tokio::spawn(async move {
+        rewarder_start(shutdown_listener_rewarder, rewarder_settings, &keypair_vec).await.expect("rewarder failed");
+    });
+    tokio::spawn(async move {
+        verifier_start(verifier_settings).await.expect("verifier failed");
+    });
+    tokio::spawn(async move {
+        follower_start(follower_settings).await.expect("follower failed");
+    });
+    test(&keypair, grpc_endpoint, api_token).await?;
+    tokio::time::sleep(std::time::Duration::from_secs(60)).await; // TODO Another way to block
     Ok(())
 }
 
 #[derive(Debug, Default)] // TODO Remove Default
-pub struct FollowerServerInstance {}
+pub struct FollowerServerInstance {
+    txs: Vec<BlockchainTxn>,
+}
+
+impl FollowerServerInstance {
+    pub fn new(tx: BlockchainTxn) -> FollowerServerInstance {
+        FollowerServerInstance { txs: vec![tx] }
+    }
+}
 
 #[derive(Debug, Default)] // TODO Remove Default
 pub struct TxnStream {
@@ -138,7 +156,9 @@ impl futures::Stream for TxnStream {
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         match self.txs.pop() {
-            None => std::task::Poll::Ready(None),
+            None => {
+                std::task::Poll::Ready(None)
+            },
             Some(tx) => {
                 let resp = FollowerTxnStreamRespV1 {
                     height: 0,         // FIXME What's a good value?
@@ -208,20 +228,7 @@ impl helium_proto::services::follower::follower_server::Follower for FollowerSer
         req: Request<FollowerTxnStreamReqV1>,
     ) -> std::result::Result<tonic::Response<Self::txn_streamStream>, Status> {
         tracing::debug!("txn_stream. self:{self:?}, req:{req:?}");
-        let r = SubnetworkReward {
-            account: vec![0], // TODO pub key?
-            amount: 0,
-        };
-        let rs = BlockchainTxnSubnetworkRewardsV1 {
-            token_type: 0,
-            start_epoch: 0,
-            end_epoch: 0,
-            reward_server_signature: vec![0],
-            rewards: vec![r],
-        };
-        let tx0 = helium_proto::blockchain_txn::Txn::SubnetworkRewards(rs);
-        let tx = BlockchainTxn { txn: Some(tx0) };
-        let msg = TxnStream::new(tx);
+        let msg = TxnStream::new(self.txs.first().unwrap().clone());
         Ok(tonic::Response::new(msg))
     }
 
@@ -264,7 +271,20 @@ impl helium_proto::services::follower::follower_server::Follower for FollowerSer
 async fn txn_stream_start() -> Result<()> {
     let addr = "127.0.0.1:8080";
     let addr: std::net::SocketAddr = addr.parse()?;
-    let follower_srv = FollowerServerInstance::default();
+    let r = SubnetworkReward {
+        account: vec![0], // TODO pub key?
+        amount: 0,
+    };
+    let rs = BlockchainTxnSubnetworkRewardsV1 {
+        token_type: 0,
+        start_epoch: 0,
+        end_epoch: 0,
+        reward_server_signature: vec![0],
+        rewards: vec![r],
+    };
+    let tx0 = helium_proto::blockchain_txn::Txn::SubnetworkRewards(rs);
+    let tx = BlockchainTxn { txn: Some(tx0) };
+    let follower_srv = FollowerServerInstance::new(tx);
     tonic::transport::Server::builder()
         .add_service(helium_proto::services::follower::Server::new(follower_srv))
         .serve(addr)
@@ -393,13 +413,14 @@ async fn verifier_start(settings: poc_mobile_verifier::Settings) -> Result<()> {
 async fn rewarder_start(
     shutdown_listener: triggered::Listener,
     settings: mobile_rewards::Settings,
-    keypair: &helium_crypto::Keypair,
+    keypair_vec: &Vec<u8>,
+    // keypair: &helium_crypto::Keypair,
 ) -> Result<()> {
     // FIXME mobile_rewards::server: failed to connec to txn stream: grpc error trying to connect: tcp connect error: Connection refused (os error 111)
     // TODO What grpc stream to connect to?
     let pool = settings.database.connect(2).await?;
     let keypair_filepath = &settings.keypair;
-    std::fs::write(keypair_filepath, keypair.to_vec())?;
+    std::fs::write(keypair_filepath, keypair_vec)?;
     sqlx::migrate!("../mobile_rewards/migrations")
         .run(&pool)
         .await
