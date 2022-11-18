@@ -2,8 +2,8 @@ use h3ron::{FromH3Index, H3Cell, Index};
 use itertools::Itertools;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use serde::Serialize;
-use std::{cmp, collections::HashMap, ops::Range};
+use std::{cmp, collections::HashMap, ops::Range, sync::Arc};
+use tokio::sync::RwLock;
 
 pub struct HexResConfig {
     pub neighbors: u64,
@@ -45,20 +45,29 @@ static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
     Some(HexResConfig::new(2, 1, 1)),     // 10
 ];
 
-#[derive(Debug, Serialize, Eq, PartialEq)]
-pub struct ScalingMap(HashMap<String, Decimal>);
+#[async_trait::async_trait]
+pub trait HexDensityMap: Clone {
+    async fn get(&self, hex: &str) -> Option<Decimal>;
+    async fn swap(&self, new_map: HashMap<String, Decimal>);
+}
 
-impl ScalingMap {
+#[derive(Debug, Clone)]
+pub struct SharedHexDensityMap(Arc<RwLock<HashMap<String, Decimal>>>);
+
+impl SharedHexDensityMap {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self(Arc::new(RwLock::new(HashMap::new())))
+    }
+}
+
+#[async_trait::async_trait]
+impl HexDensityMap for SharedHexDensityMap {
+    async fn get(&self, hex: &str) -> Option<Decimal> {
+        self.0.read().await.get(hex).cloned()
     }
 
-    pub fn insert(&mut self, hex: &str, scale_factor: Decimal) -> Option<Decimal> {
-        self.0.insert(hex.to_string(), scale_factor)
-    }
-
-    pub fn get(&self, hex: &str) -> Option<&Decimal> {
-        self.0.get(hex)
+    async fn swap(&self, new_map: HashMap<String, Decimal>) {
+        *self.0.write().await = new_map;
     }
 }
 
@@ -181,7 +190,8 @@ fn limit(res: u8, occupied_count: u64) -> u64 {
     cmp::min(res_config.max, res_config.target * max)
 }
 
-pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingMap) {
+pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<String, Decimal> {
+    let mut map = HashMap::new();
     for hex in &global_map.asserted_hexes {
         let scale: Decimal = SCALING_RES.rev().into_iter().fold(dec!(1.0), |scale, res| {
             hex.get_parent(res).map_or(scale, |parent| {
@@ -199,8 +209,10 @@ pub fn compute_scaling_map(global_map: &GlobalHexMap, scaling_map: &mut ScalingM
             })
         });
         let trunc_scale = scale.round_dp(SCALING_PRECISION);
-        scaling_map.insert(&hex.h3index().to_string(), trunc_scale);
+        map.insert(hex.h3index().to_string(), trunc_scale);
     }
+
+    map
 }
 
 fn get_res_tgt(res: u8) -> u64 {
@@ -240,8 +252,8 @@ mod tests {
             631210990515739647,
             631210990515874303,
             631210990515924479,
-            631210990515987455,
             631210990516363775,
+            631210990515987455,
             631210990516590079,
             631210990516612607,
             631210990516613631,
@@ -263,8 +275,7 @@ mod tests {
             gw_map.increment_unclipped(index);
         }
         gw_map.reduce_global();
-        let mut scale_map = ScalingMap::new();
-        compute_scaling_map(&gw_map, &mut scale_map);
+        let hex_density_map = compute_hex_density_map(&gw_map);
 
         let expected_map = HashMap::from([
             ("631210990515538431".to_string(), dec!(0.0065)),
@@ -299,6 +310,6 @@ mod tests {
             ("631210990517016575".to_string(), dec!(0.0152)),
             ("631210990515536895".to_string(), dec!(0.0065)),
         ]);
-        assert_eq!(scale_map, ScalingMap(expected_map));
+        assert_eq!(hex_density_map, expected_map);
     }
 }
