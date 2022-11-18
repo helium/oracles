@@ -1,4 +1,5 @@
 use crate::{
+    error::DecodeError,
     lora_beacon_report::LoraBeaconReport,
     lora_witness_report::LoraWitnessReport,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
@@ -62,8 +63,10 @@ impl TryFrom<LoraInvalidBeaconReportV1> for LoraInvalidBeaconReport {
     type Error = Error;
     fn try_from(v: LoraInvalidBeaconReportV1) -> Result<Self> {
         let inv_reason = v.reason;
-        let invalid_reason: InvalidReason = InvalidReason::from_i32(inv_reason)
-            .ok_or_else(|| Error::UnsupportedInvalidReason(inv_reason.to_string()))?;
+        let invalid_reason: InvalidReason =
+            InvalidReason::from_i32(inv_reason).ok_or_else(|| {
+                DecodeError::unsupported_invalid_reason("lora_invalid_beacon_report_v1", inv_reason)
+            })?;
 
         Ok(Self {
             received_timestamp: v.timestamp()?,
@@ -92,11 +95,21 @@ impl TryFrom<LoraInvalidWitnessReportV1> for LoraInvalidWitnessReport {
     type Error = Error;
     fn try_from(v: LoraInvalidWitnessReportV1) -> Result<Self> {
         let inv_reason = v.reason;
-        let invalid_reason: InvalidReason = InvalidReason::from_i32(inv_reason)
-            .ok_or_else(|| Error::UnsupportedInvalidReason(inv_reason.to_string()))?;
+        let invalid_reason: InvalidReason =
+            InvalidReason::from_i32(inv_reason).ok_or_else(|| {
+                DecodeError::unsupported_invalid_reason(
+                    "lora_invalid_witness_report_v1",
+                    inv_reason,
+                )
+            })?;
         let participant_side = v.participant_side;
         let side: InvalidParticipantSide = InvalidParticipantSide::from_i32(participant_side)
-            .ok_or_else(|| Error::UnsupportedParticipantSide(participant_side.to_string()))?;
+            .ok_or_else(|| {
+                DecodeError::unsupported_participant_side(
+                    "lora_invalid_witness_report_v1",
+                    participant_side,
+                )
+            })?;
         let received_timestamp = v.timestamp()?;
 
         Ok(Self {

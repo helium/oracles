@@ -22,12 +22,6 @@ pub enum Error {
     Config(#[from] config::ConfigError),
     #[error("mpsc channel error")]
     Channel,
-    #[error("unsupported datarate {0}")]
-    UnsupportedDataRate(String),
-    #[error("unsupported invalid_reason {0}")]
-    UnsupportedInvalidReason(String),
-    #[error("unsupported participant_side {0}")]
-    UnsupportedParticipantSide(String),
 }
 
 #[derive(Error, Debug)]
@@ -40,6 +34,12 @@ pub enum DecodeError {
     Uri(#[from] http::uri::InvalidUri),
     #[error("integer conversion error")]
     FromInt(#[from] std::num::TryFromIntError),
+    #[error("unsupported datarate, type: {0}, value: {1}")]
+    UnsupportedDataRate(String, i32),
+    #[error("unsupported invalid_reason, type: {0}, value: {1}")]
+    UnsupportedInvalidReason(String, i32),
+    #[error("unsupported participant_side, type: {0}, value: {1}")]
+    UnsupportedParticipantSide(String, i32),
 }
 
 #[derive(Error, Debug)]
@@ -86,6 +86,18 @@ impl Error {
 impl DecodeError {
     pub fn file_info<E: ToString>(msg: E) -> Error {
         Error::Decode(Self::FileInfo(msg.to_string()))
+    }
+
+    pub fn unsupported_datarate<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedDataRate(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_participant_side<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedParticipantSide(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_invalid_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
     }
 }
 
