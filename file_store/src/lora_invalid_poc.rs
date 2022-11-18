@@ -61,8 +61,9 @@ impl MsgTimestamp<u64> for LoraInvalidWitnessReport {
 impl TryFrom<LoraInvalidBeaconReportV1> for LoraInvalidBeaconReport {
     type Error = Error;
     fn try_from(v: LoraInvalidBeaconReportV1) -> Result<Self> {
-        let invalid_reason: InvalidReason = InvalidReason::from_i32(v.reason)
-            .ok_or_else(|| Error::custom("unsupported invalid_reason"))?;
+        let inv_reason = v.reason;
+        let invalid_reason: InvalidReason = InvalidReason::from_i32(inv_reason)
+            .ok_or_else(|| Error::UnsupportedInvalidReason(inv_reason.to_string()))?;
 
         Ok(Self {
             received_timestamp: v.timestamp()?,
@@ -90,10 +91,12 @@ impl From<LoraInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
 impl TryFrom<LoraInvalidWitnessReportV1> for LoraInvalidWitnessReport {
     type Error = Error;
     fn try_from(v: LoraInvalidWitnessReportV1) -> Result<Self> {
-        let invalid_reason: InvalidReason = InvalidReason::from_i32(v.reason)
-            .ok_or_else(|| Error::custom("unsupported invalid_reason"))?;
-        let side: InvalidParticipantSide = InvalidParticipantSide::from_i32(v.participant_side)
-            .ok_or_else(|| Error::custom("unsupported participant_side"))?;
+        let inv_reason = v.reason;
+        let invalid_reason: InvalidReason = InvalidReason::from_i32(inv_reason)
+            .ok_or_else(|| Error::UnsupportedInvalidReason(inv_reason.to_string()))?;
+        let participant_side = v.participant_side;
+        let side: InvalidParticipantSide = InvalidParticipantSide::from_i32(participant_side)
+            .ok_or_else(|| Error::UnsupportedParticipantSide(participant_side.to_string()))?;
         let received_timestamp = v.timestamp()?;
 
         Ok(Self {

@@ -8,8 +8,6 @@ pub enum Error {
     Config(#[from] config::ConfigError),
     #[error("metrics error")]
     Metrics(#[from] poc_metrics::Error),
-    #[error("custom error")]
-    Custom(String),
     #[error("sql error")]
     Sql(#[from] sqlx::Error),
     #[error("io error")]
@@ -44,6 +42,8 @@ pub enum Error {
     DensityScaler(#[from] density_scaler::Error),
     #[error("denylist error")]
     DenyList(#[from] denylist::Error),
+    #[error("density scaler query sender not found")]
+    DensityScalerQuerySenderMissing,
 }
 
 #[derive(Error, Debug)]
@@ -69,9 +69,6 @@ pub enum EncodeError {
 impl Error {
     pub fn not_found<E: ToString>(msg: E) -> Self {
         Self::NotFound(msg.to_string())
-    }
-    pub fn custom<E: ToString>(msg: E) -> Self {
-        Self::Custom(msg.to_string())
     }
 }
 

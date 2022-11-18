@@ -76,8 +76,9 @@ impl From<LoraWitnessIngestReport> for LoraWitnessReportReqV1 {
 impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessReport {
     type Error = Error;
     fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
-        let data_rate: DataRate = DataRate::from_i32(v.datarate)
-            .ok_or_else(|| Error::Custom("unsupported datarate".to_string()))?;
+        let dr = v.datarate;
+        let data_rate: DataRate =
+            DataRate::from_i32(dr).ok_or_else(|| Error::UnsupportedDataRate(dr.to_string()))?;
         let timestamp = v.timestamp()?;
 
         Ok(Self {

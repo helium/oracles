@@ -195,8 +195,9 @@ impl Runner {
 
             let density_queries = match &self.density_queries {
                 Some(density_queries) => density_queries.clone(),
-                None => return Err(Error::custom("missing density scaler query sender")),
+                None => return Err(Error::DensityScalerQuerySenderMissing),
             };
+
             // verify POC beacon
             let beacon_verify_result = poc.verify_beacon(density_queries.clone()).await?;
             match beacon_verify_result.result {

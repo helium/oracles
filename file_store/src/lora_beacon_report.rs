@@ -104,8 +104,9 @@ impl From<LoraBeaconIngestReport> for LoraBeaconReportReqV1 {
 impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconReport {
     type Error = Error;
     fn try_from(v: LoraBeaconReportReqV1) -> Result<Self> {
+        let dr = v.datarate;
         let data_rate: DataRate =
-            DataRate::from_i32(v.datarate).ok_or_else(|| Error::custom("unsupported datarate"))?;
+            DataRate::from_i32(dr).ok_or_else(|| Error::UnsupportedDataRate(dr.to_string()))?;
         let timestamp = v.timestamp()?;
 
         Ok(Self {
