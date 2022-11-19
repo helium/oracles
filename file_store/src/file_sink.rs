@@ -410,12 +410,20 @@ impl FileSink {
                     active_sink.size += buf_len;
                 }
             }
-            // No sink, make a new one and send the incoming buf.
+            // No sink, make a new one and send the incoming buf
+            // if the write is not too large.
             None => {
                 let mut new_sink = self.new_sink().await?;
-                new_sink.transport.send(buf).await?;
-                new_sink.size += buf_len;
-                self.active_sink = Some(new_sink);
+                assert!(new_sink.size == 0);
+                if buf_len < self.max_size {
+                    new_sink.transport.send(buf).await?;
+                    new_sink.size += buf_len;
+                    self.active_sink = Some(new_sink);
+                } else {
+                    // XXX: How can we directly deposit here since the incoming
+                    // buf is already too big?
+                    self.active_sink = Some(new_sink);
+                }
             }
         }
         Ok(())
