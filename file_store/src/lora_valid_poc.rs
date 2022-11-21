@@ -11,10 +11,9 @@ use helium_proto::services::poc_lora::{
     LoraWitnessReportReqV1,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
-use rust_decimal_macros::dec;
 use serde::Serialize;
 
-const SCALE_MULTIPLIER: Decimal = dec!(100);
+const SCALE_MULTIPLIER: Decimal = Decimal::ONE_HUNDRED;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LoraValidBeaconReport {
@@ -22,6 +21,7 @@ pub struct LoraValidBeaconReport {
     pub location: Option<u64>,
     pub hex_scale: Decimal,
     pub report: LoraBeaconReport,
+    pub reward_unit: Decimal,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -30,6 +30,7 @@ pub struct LoraValidWitnessReport {
     pub location: Option<u64>,
     pub hex_scale: Decimal,
     pub report: LoraWitnessReport,
+    pub reward_unit: Decimal,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -110,6 +111,7 @@ impl TryFrom<LoraValidBeaconReportV1> for LoraValidBeaconReport {
                 .report
                 .ok_or_else(|| Error::not_found("lora valid beacon report v1"))?
                 .try_into()?,
+            reward_unit: Decimal::new(v.reward_unit as i64, SCALING_PRECISION),
         })
     }
 }
@@ -127,6 +129,7 @@ impl From<LoraValidBeaconReport> for LoraValidBeaconReportV1 {
                 .unwrap_or_else(String::new),
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             report: Some(report),
+            reward_unit: (v.reward_unit * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
         }
     }
 }
@@ -143,6 +146,7 @@ impl TryFrom<LoraValidWitnessReportV1> for LoraValidWitnessReport {
                 .report
                 .ok_or_else(|| Error::not_found("lora valid witness port v1"))?
                 .try_into()?,
+            reward_unit: Decimal::new(v.reward_unit as i64, SCALING_PRECISION),
         })
     }
 }
@@ -159,6 +163,7 @@ impl From<LoraValidWitnessReport> for LoraValidWitnessReportV1 {
                 .unwrap_or_else(String::new),
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             report: Some(report),
+            reward_unit: (v.reward_unit * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
         }
     }
 }

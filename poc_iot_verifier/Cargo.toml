@@ -44,5 +44,5 @@ poc-metrics = { path = "../metrics" }
 db-store = {path = "../db_store"}
 density-scaler = {path = "../density_scaler/"}
 denylist = {path = "../denylist"}
-rust_decimal = {workspace = true}
+rust_decimal = {workspace = true, features = ["maths"]}
 rust_decimal_macros = {workspace = true}

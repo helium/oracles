@@ -25,6 +25,8 @@ use helium_proto::{
     Message,
 };
 use node_follower::follower_service::FollowerService;
+use rust_decimal::{Decimal, MathematicalOps};
+use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time;
@@ -33,6 +35,10 @@ use tokio::time;
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const LOADER_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = 2 * LOADER_WORKERS;
+
+const WITNESS_REDUNDANCY: u32 = 4;
+const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
+const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 pub struct Runner {
     pool: PgPool,
@@ -195,8 +201,9 @@ impl Runner {
 
             let density_queries = match &self.density_queries {
                 Some(density_queries) => density_queries.clone(),
-                None => return Err(Error::custom("missing density scaler query sender")),
+                None => return Err(Error::DensityScalerQuerySenderMissing),
             };
+
             // verify POC beacon
             let beacon_verify_result = poc.verify_beacon(density_queries.clone()).await?;
             match beacon_verify_result.result {
@@ -208,7 +215,7 @@ impl Runner {
                     );
                     // beacon is valid, verify the POC witnesses
                     if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                        let verified_witnesses_result =
+                        let mut verified_witnesses_result =
                             poc.verify_witnesses(&beacon_info, density_queries).await?;
                         // check if there are any failed witnesses
                         // if so update the DB attempts count
@@ -230,11 +237,18 @@ impl Runner {
                             continue;
                         };
 
+                        let witness_reward_units = poc_challengee_reward_unit(
+                            verified_witnesses_result.valid_witnesses.len() as u32,
+                        )?;
+
+                        verified_witnesses_result.update_reward_units(witness_reward_units);
+
                         let valid_beacon_report = LoraValidBeaconReport {
                             received_timestamp: beacon_received_ts,
                             location: beacon_info.location,
                             hex_scale: beacon_verify_result.hex_scale.unwrap_or_default(),
                             report: beacon.clone(),
+                            reward_unit: witness_reward_units,
                         };
                         self.handle_valid_poc(
                             beacon,
@@ -420,5 +434,21 @@ impl Runner {
             }
         }
         Ok(())
+    }
+}
+
+fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
+    if num_witnesses == 0 {
+        Ok(Decimal::ZERO)
+    } else if num_witnesses < WITNESS_REDUNDANCY {
+        Ok(Decimal::from(WITNESS_REDUNDANCY / num_witnesses))
+    } else {
+        let exp = WITNESS_REDUNDANCY - num_witnesses;
+        if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
+            let unnormalized = Decimal::TWO - to_sub;
+            Ok(std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized))
+        } else {
+            Err(Error::InvalidExponent(exp.to_string()))
+        }
     }
 }
