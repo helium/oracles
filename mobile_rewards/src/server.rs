@@ -268,7 +268,7 @@ impl Server {
             return Ok(());
         };
 
-        let Some(manifest_buff) = self.verifier_store.get(manifest_file.clone()).await?
+        let Some(manifest_buff) = self.verifier_store.get_source(manifest_file.clone()).await?
             .next()
             .await else {
                 tracing::error!("Empty manifest");
