@@ -65,6 +65,14 @@ pub struct VerifyWitnessesResult {
     pub failed_witnesses: Vec<LoraInvalidWitnessReport>,
 }
 
+impl VerifyWitnessesResult {
+    pub fn update_reward_units(&mut self, reward_units: Decimal) {
+        self.valid_witnesses
+            .iter_mut()
+            .for_each(|witness| witness.reward_unit = reward_units)
+    }
+}
+
 impl Poc {
     pub async fn new(
         beacon_report: LoraBeaconIngestReport,
@@ -235,6 +243,9 @@ impl Poc {
                         location: gw_info.location,
                         hex_scale: scaling_factor,
                         report: witness_report.report,
+                        // default reward units to zero until we've got the full count of
+                        // valid, non-failed witnesses for the final validated poc report
+                        reward_unit: Decimal::ZERO,
                     };
                     valid_witnesses.push(valid_witness)
                 }

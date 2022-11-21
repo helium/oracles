@@ -8,7 +8,7 @@ authors.workspace = true
 
 [dependencies]
 rand = "*"
-rust_decimal = { version = "1", features = [ "maths" ] }
+rust_decimal = {workspace = true}
 config = {workspace = true}
 clap = {workspace = true}
 thiserror = {workspace = true}
