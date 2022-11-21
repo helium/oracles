@@ -326,8 +326,16 @@ mod test {
 
         // The owner with two hotspots gets more rewards
         assert!(
-            owner_rewards.shares.get(&owner1).unwrap().total_shares()
-                > owner_rewards.shares.get(&owner2).unwrap().total_shares()
+            owner_rewards
+                .shares
+                .get(&owner1)
+                .expect("Could not fetch owner1 shares")
+                .total_shares()
+                > owner_rewards
+                    .shares
+                    .get(&owner2)
+                    .expect("Could not fetch owner2 shares")
+                    .total_shares()
         );
     }
 
@@ -550,15 +558,31 @@ mod test {
             .await
             .expect("Could not generate rewards")
             .into_radio_shares(&((now - Duration::hours(1))..now))
+            .expect("Clock is out of sync")
         {
             *owner_rewards
-                .entry(PublicKey::try_from(radio_share.owner_key).unwrap())
+                .entry(PublicKey::try_from(radio_share.owner_key).expect("Invalid public key"))
                 .or_default() += radio_share.amount;
         }
 
-        assert_eq!(*owner_rewards.get(&owner1).unwrap(), 99_715_099_715_100);
-        assert_eq!(*owner_rewards.get(&owner2).unwrap(), 299_145_299_145_301);
-        assert_eq!(*owner_rewards.get(&owner3).unwrap(), 17_806_267_806_268);
+        assert_eq!(
+            *owner_rewards
+                .get(&owner1)
+                .expect("Could not fetch owner1 rewards"),
+            99_715_099_715_100
+        );
+        assert_eq!(
+            *owner_rewards
+                .get(&owner2)
+                .expect("Could not fetch owner2 rewards"),
+            299_145_299_145_301
+        );
+        assert_eq!(
+            *owner_rewards
+                .get(&owner3)
+                .expect("Could not fetch owner3 rewards"),
+            17_806_267_806_268
+        );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let mut total = 0;
