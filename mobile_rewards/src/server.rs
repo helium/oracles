@@ -258,7 +258,9 @@ impl Server {
             .verifier_store
             .list_all(
                 FileType::RewardManifest,
-                Utc.timestamp(last_reward_manifest, 0),
+                Utc.timestamp_millis_opt(last_reward_manifest)
+                    .single()
+                    .ok_or(Error::InvalidTimestamp)?,
                 None,
             )
             .await?;
@@ -305,7 +307,7 @@ impl Server {
         meta::store(
             &self.pool,
             "last_reward_manifest",
-            manifest_file.timestamp.timestamp(),
+            manifest_file.timestamp.timestamp_millis(),
         )
         .await?;
 

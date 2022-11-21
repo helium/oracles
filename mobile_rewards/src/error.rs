@@ -36,6 +36,8 @@ pub enum Error {
     Follower(#[from] node_follower::Error),
     #[error("byte stream error")]
     ByteStreamError,
+    #[error("invalid timestamp")]
+    InvalidTimestamp,
 }
 
 #[derive(Error, Debug)]
