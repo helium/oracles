@@ -401,10 +401,13 @@ impl FileSink {
             // active sink is usable.
             Some(active_sink) => {
                 if active_sink.size + buf_len >= self.max_size {
-                    active_sink.shutdown().await?;
-                    let prev_path = active_sink.path.clone();
-                    self.deposit_sink(&prev_path).await?;
-                    self.active_sink = Some(self.new_sink().await?);
+                    // flush this sink because its due for deposit.
+                    self.flush().await?;
+                    // send the incoming buffer and attach this new sink.
+                    let mut new_sink = self.new_sink().await?;
+                    new_sink.transport.send(buf).await?;
+                    new_sink.size += buf_len;
+                    self.active_sink = Some(new_sink);
                 } else {
                     active_sink.transport.send(buf).await?;
                     active_sink.size += buf_len;
