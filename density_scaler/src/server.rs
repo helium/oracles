@@ -35,11 +35,11 @@ impl Server {
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting density scaler process");
 
-        // let mut trigger_timer = time::interval(
-        //     self.trigger_interval
-        //         .to_std()
-        //         .expect("valid interval in seconds"),
-        // );
+        let mut trigger_timer = time::interval(
+            self.trigger_interval
+                .to_std()
+                .expect("valid interval in seconds"),
+        );
 
         loop {
             if shutdown.is_triggered() {
@@ -48,7 +48,7 @@ impl Server {
             }
 
             tokio::select! {
-                // _ = trigger_timer.tick() => self.refresh_scaling_map().await?,
+                _ = trigger_timer.tick() => self.refresh_scaling_map().await?,
                 _ = shutdown.clone() => return Ok(()),
             }
         }
