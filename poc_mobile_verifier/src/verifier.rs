@@ -111,7 +111,7 @@ impl VerifierDaemon {
 
         let rewards = self.verifier.reward_epoch(heartbeats, speedtests).await?;
 
-        for reward_share in rewards.into_radio_shares(&scheduler.reward_period) {
+        for reward_share in rewards.into_radio_shares(&scheduler.reward_period)? {
             file_sink_write!("radio_reward_shares", &self.radio_rewards_tx, reward_share)
                 .await?
                 // Await the returned one shot to ensure that we wrote the file

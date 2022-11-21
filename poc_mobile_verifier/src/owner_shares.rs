@@ -88,12 +88,13 @@ impl OwnerShares {
     pub fn into_radio_shares(
         self,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::RadioRewardShare> + '_ {
+    ) -> Result<impl Iterator<Item = proto::RadioRewardShare> + '_, ClockError> {
         let total_shares = self.total_shares();
-        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap();
+        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?;
         let rewards_per_share = (total_rewards / total_shares)
             .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity);
-        self.shares
+        Ok(self
+            .shares
             .into_iter()
             .flat_map(move |(owner_key, radio_shares)| {
                 radio_shares
@@ -111,7 +112,7 @@ impl OwnerShares {
                         start_epoch: epoch.start.encode_timestamp(),
                         end_epoch: epoch.end.encode_timestamp(),
                     })
-            })
+            }))
     }
 }
 
@@ -122,17 +123,21 @@ lazy_static! {
     static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
 }
 
-pub fn get_scheduled_tokens(start: DateTime<Utc>, duration: Duration) -> Option<Decimal> {
-    if *GENESIS_START <= start {
-        // Get tokens from start - duration
-        Some(
+#[derive(thiserror::Error, Debug)]
+#[error("clock is set before the genesis start")]
+pub struct ClockError;
+
+pub fn get_scheduled_tokens(
+    start: DateTime<Utc>,
+    duration: Duration,
+) -> Result<Decimal, ClockError> {
+    (*GENESIS_START <= start)
+        .then(|| {
             (Decimal::from(GENESIS_REWARDS_PER_DAY)
                 / Decimal::from(Duration::hours(24).num_seconds()))
-                * Decimal::from(duration.num_seconds()),
-        )
-    } else {
-        None
-    }
+                * Decimal::from(duration.num_seconds())
+        })
+        .ok_or(ClockError)
 }
 
 #[derive(thiserror::Error, Debug)]
