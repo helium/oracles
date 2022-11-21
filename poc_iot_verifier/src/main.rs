@@ -70,7 +70,7 @@ impl Server {
         let mut loader = loader::Loader::from_settings(settings).await?;
         let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
-        let mut density_scaler = DensityScaler::from_settings(settings.density_scaler.clone())?;
+        let mut density_scaler = DensityScaler::from_settings(settings.density_scaler.clone()).await?;
         tokio::try_join!(
             runner.run(&shutdown, &gateway_cache, density_scaler.hex_density_map()),
             loader.run(&shutdown, &gateway_cache),
