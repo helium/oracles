@@ -14,12 +14,18 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn from_settings(settings: Settings) -> Result<Self> {
-        Ok(Self {
+    pub async fn from_settings(settings: Settings) -> Result<Self> {
+        let mut server = Self {
             hex_density_map: SharedHexDensityMap::new(),
             follower: FollowerService::from_settings(&settings.follower)?,
             trigger_interval: Duration::seconds(settings.trigger),
-        })
+        };
+
+        tracing::info!("generating hex scaling map : starting {:?}", Utc::now());
+        server.refresh_scaling_map().await?;
+        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
+
+        Ok(server)
     }
 
     pub fn hex_density_map(&self) -> impl HexDensityMap {
@@ -34,10 +40,6 @@ impl Server {
         //         .to_std()
         //         .expect("valid interval in seconds"),
         // );
-
-        tracing::info!("generating hex scaling map : starting {:?}", Utc::now());
-        self.refresh_scaling_map().await?;
-        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
 
         loop {
             if shutdown.is_triggered() {
