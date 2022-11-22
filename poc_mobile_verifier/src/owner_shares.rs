@@ -11,7 +11,6 @@ use helium_proto::services::{
 };
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
-use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -62,7 +61,7 @@ impl OwnerShares {
                 let speedmultiplier = speedtests
                     .get_average(&heartbeat.hotspot_key)
                     .as_ref()
-                    .map_or(dec!(0.0), Average::reward_multiplier);
+                    .map_or(Decimal::ZERO, Average::reward_multiplier);
                 owner_shares
                     .shares
                     .entry(owner)
