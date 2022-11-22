@@ -134,11 +134,18 @@ impl FileStore {
         )
     }
 
-    pub async fn get<K>(&self, key: K) -> Result<ByteStream>
+    pub async fn get_raw<K>(&self, key: K) -> Result<ByteStream>
     where
         K: Into<String>,
     {
         get_byte_stream(self.client.clone(), self.bucket.clone(), key).await
+    }
+
+    pub async fn get<K>(&self, key: K) -> Result<BytesMutStream>
+    where
+        K: Into<String>,
+    {
+        Ok(stream_source(self.get_raw(key).await?))
     }
 
     /// Stream a series of ordered items from the store from remote files with

@@ -1,94 +1,174 @@
 use crate::{
     heartbeats::Heartbeats,
-    reward_share::{OwnerEmissions, OwnerResolver, ResolveError},
-    speedtests::SpeedtestAverages,
+    speedtests::{Average, SpeedtestAverages},
 };
-use chrono::{DateTime, Utc};
-use file_store::{file_sink, file_sink_write};
+use chrono::{DateTime, Duration, TimeZone, Utc};
+use file_store::traits::TimestampEncode;
 use helium_crypto::PublicKey;
-use rust_decimal::Decimal;
+use helium_proto::services::{
+    follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
+    poc_mobile as proto, Channel,
+};
+use lazy_static::lazy_static;
+use rust_decimal::prelude::*;
 use std::collections::HashMap;
 use std::ops::Range;
-use tokio::sync::oneshot;
 
-mod proto {
-    pub use helium_proto::services::poc_mobile::*;
-    pub use helium_proto::{SubnetworkReward, SubnetworkRewards};
+pub struct RadioShare {
+    hotspot_key: PublicKey,
+    cbsd_id: String,
+    amount: Decimal,
 }
 
-pub struct SubnetworkRewards {
-    pub epoch: Range<DateTime<Utc>>,
-    pub rewards: Vec<proto::SubnetworkReward>,
+#[derive(Default)]
+pub struct RadioShares {
+    shares: Vec<RadioShare>,
 }
 
-impl SubnetworkRewards {
-    pub async fn from_epoch(
-        mut follower_service: impl OwnerResolver,
-        epoch: &Range<DateTime<Utc>>,
+impl RadioShares {
+    pub fn push(&mut self, share: RadioShare) {
+        self.shares.push(share);
+    }
+
+    pub fn total_shares(&self) -> Decimal {
+        self.shares
+            .iter()
+            .fold(Decimal::ZERO, |sum, radio_share| sum + radio_share.amount)
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = RadioShare> {
+        self.shares.into_iter()
+    }
+}
+
+#[derive(Default)]
+pub struct OwnerShares {
+    pub shares: HashMap<PublicKey, RadioShares>,
+}
+
+const REWARDS_PER_SHARE_PREC: u32 = 9;
+const MOBILE_SCALE: u32 = 100_000_000;
+
+impl OwnerShares {
+    pub async fn aggregate(
+        resolver: &mut impl OwnerResolver,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
     ) -> Result<Self, ResolveError> {
-        // Gather hotspot shares
-        let mut hotspot_shares = HashMap::<PublicKey, Decimal>::new();
+        let mut owner_shares = Self::default();
         for heartbeat in heartbeats.into_iter() {
-            *hotspot_shares
-                .entry(heartbeat.hotspot_key.clone())
-                .or_default() += heartbeat.reward_weight;
-        }
-
-        let filtered_shares = hotspot_shares
-            .into_iter()
-            .map(|(pubkey, mut shares)| {
+            if let Some(owner) = resolver.resolve_owner(&heartbeat.hotspot_key).await? {
                 let speedmultiplier = speedtests
-                    .get_average(&pubkey)
-                    .map_or(Decimal::ZERO, |avg| avg.reward_multiplier());
-                shares *= speedmultiplier;
-                (pubkey, shares)
-            })
-            .filter(|(_pubkey, shares)| shares > &Decimal::ZERO)
-            .collect();
-
-        let (owner_shares, _missing_owner_shares) =
-            follower_service.owner_shares(filtered_shares).await?;
-
-        let owner_emissions =
-            OwnerEmissions::new(owner_shares, epoch.start, epoch.end - epoch.start);
-
-        let mut rewards = owner_emissions
-            .into_inner()
-            .into_iter()
-            .map(|(owner, amt)| proto::SubnetworkReward {
-                account: owner.to_vec(),
-                amount: u64::from(amt),
-            })
-            .collect::<Vec<_>>();
-
-        rewards.sort_by(|a, b| {
-            a.account
-                .cmp(&b.account)
-                .then_with(|| a.amount.cmp(&b.amount))
-        });
-
-        Ok(Self {
-            epoch: epoch.clone(),
-            rewards,
-        })
+                    .get_average(&heartbeat.hotspot_key)
+                    .as_ref()
+                    .map_or(Decimal::ZERO, Average::reward_multiplier);
+                owner_shares
+                    .shares
+                    .entry(owner)
+                    .or_default()
+                    .push(RadioShare {
+                        hotspot_key: heartbeat.hotspot_key,
+                        cbsd_id: heartbeat.cbsd_id,
+                        amount: heartbeat.reward_weight * speedmultiplier,
+                    })
+            }
+        }
+        Ok(owner_shares)
     }
 
-    pub async fn write(
+    pub fn total_shares(&self) -> Decimal {
+        self.shares
+            .iter()
+            .fold(Decimal::ZERO, |sum, (_, radio_shares)| {
+                sum + radio_shares.total_shares()
+            })
+    }
+
+    pub fn into_radio_shares(
         self,
-        subnet_rewards_tx: &file_sink::MessageSender,
-    ) -> file_store::Result<oneshot::Receiver<file_store::Result>> {
-        file_sink_write!(
-            "subnet_rewards",
-            subnet_rewards_tx,
-            proto::SubnetworkRewards {
-                start_epoch: self.epoch.start.timestamp() as u64,
-                end_epoch: self.epoch.end.timestamp() as u64,
-                rewards: self.rewards,
+        epoch: &'_ Range<DateTime<Utc>>,
+    ) -> Result<impl Iterator<Item = proto::RadioRewardShare> + '_, ClockError> {
+        let total_shares = self.total_shares();
+        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?;
+        let rewards_per_share = (total_rewards / total_shares)
+            .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity);
+        Ok(self
+            .shares
+            .into_iter()
+            .flat_map(move |(owner_key, radio_shares)| {
+                radio_shares
+                    .into_iter()
+                    .map(move |radio_share| proto::RadioRewardShare {
+                        owner_key: owner_key.to_vec(),
+                        hotspot_key: radio_share.hotspot_key.to_vec(),
+                        cbsd_id: radio_share.cbsd_id,
+                        amount: {
+                            let rewards = rewards_per_share * radio_share.amount;
+                            let rewards = (rewards * Decimal::from(MOBILE_SCALE))
+                                .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+                            rewards.to_u64().unwrap_or(0)
+                        },
+                        start_epoch: epoch.start.encode_timestamp(),
+                        end_epoch: epoch.end.encode_timestamp(),
+                    })
+            }))
+    }
+}
+
+// 100M genesis rewards per day
+const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
+
+lazy_static! {
+    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("clock is set before the genesis start")]
+pub struct ClockError;
+
+pub fn get_scheduled_tokens(
+    start: DateTime<Utc>,
+    duration: Duration,
+) -> Result<Decimal, ClockError> {
+    (*GENESIS_START <= start)
+        .then(|| {
+            (Decimal::from(GENESIS_REWARDS_PER_DAY)
+                / Decimal::from(Duration::hours(24).num_seconds()))
+                * Decimal::from(duration.num_seconds())
+        })
+        .ok_or(ClockError)
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct ResolveError(#[from] tonic::Status);
+
+#[async_trait::async_trait]
+pub trait OwnerResolver: Send {
+    async fn resolve_owner(
+        &mut self,
+        address: &PublicKey,
+    ) -> Result<Option<PublicKey>, ResolveError>;
+}
+
+#[async_trait::async_trait]
+impl OwnerResolver for follower::Client<Channel> {
+    async fn resolve_owner(
+        &mut self,
+        address: &PublicKey,
+    ) -> Result<Option<PublicKey>, ResolveError> {
+        let req = FollowerGatewayReqV1 {
+            address: address.to_vec(),
+        };
+        let res = self.find_gateway(req).await?.into_inner();
+
+        if let Some(GatewayResult::Info(gateway_info)) = res.result {
+            if let Ok(pub_key) = PublicKey::try_from(gateway_info.owner) {
+                return Ok(Some(pub_key));
             }
-        )
-        .await
+        }
+
+        Ok(None)
     }
 }
 
@@ -98,7 +178,6 @@ mod test {
     use crate::{
         cell_type::CellType,
         heartbeats::{Heartbeat, Heartbeats},
-        reward_share::OwnerResolver,
         speedtests::{Speedtest, SpeedtestAverages},
     };
     use chrono::{Duration, NaiveDateTime, Utc};
@@ -188,7 +267,7 @@ mod test {
         owners.insert(g1.clone(), owner1.clone());
         owners.insert(g2.clone(), owner2.clone());
 
-        let resolver = MapResolver { owners };
+        let mut resolver = MapResolver { owners };
 
         let now = Utc::now();
         let timestamp = now.naive_utc();
@@ -240,21 +319,23 @@ mod test {
         speedtests.insert(g2, VecDeque::from(g2_speedtests));
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
-        let owner_rewards: HashMap<PublicKey, _> = SubnetworkRewards::from_epoch(
-            resolver,
-            &(now..(now + Duration::hours(24))),
-            heartbeats,
-            speedtest_avgs,
-        )
-        .await
-        .expect("Could not generate rewards")
-        .rewards
-        .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.amount))
-        .collect();
+        let owner_rewards = OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+            .await
+            .expect("Could not generate rewards");
 
         // The owner with two hotspots gets more rewards
-        assert!(owner_rewards.get(&owner1).unwrap() > owner_rewards.get(&owner2).unwrap());
+        assert!(
+            owner_rewards
+                .shares
+                .get(&owner1)
+                .expect("Could not fetch owner1 shares")
+                .total_shares()
+                > owner_rewards
+                    .shares
+                    .get(&owner2)
+                    .expect("Could not fetch owner2 shares")
+                    .total_shares()
+        );
     }
 
     #[tokio::test]
@@ -309,7 +390,7 @@ mod test {
         owners.insert(gw6.clone(), owner3.clone());
         owners.insert(gw7.clone(), owner3.clone());
         owners.insert(gw8.clone(), owner4.clone());
-        let resolver = MapResolver { owners };
+        let mut resolver = MapResolver { owners };
 
         // init cells and cell_types
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
@@ -471,28 +552,43 @@ mod test {
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
         // calculate the rewards for the sample group
-        let owner_rewards: HashMap<PublicKey, _> = SubnetworkRewards::from_epoch(
-            resolver,
-            &((now - Duration::hours(1))..now),
-            heartbeats,
-            speedtest_avgs,
-        )
-        .await
-        .expect("failed to generate rewards")
-        .rewards
-        .into_iter()
-        .map(|p| (PublicKey::try_from(p.account).unwrap(), p.amount))
-        .collect();
+        let mut owner_rewards = HashMap::<PublicKey, u64>::new();
+        for radio_share in OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+            .await
+            .expect("Could not generate rewards")
+            .into_radio_shares(&((now - Duration::hours(1))..now))
+            .expect("Clock is out of sync")
+        {
+            *owner_rewards
+                .entry(PublicKey::try_from(radio_share.owner_key).expect("Invalid public key"))
+                .or_default() += radio_share.amount;
+        }
 
-        assert_eq!(*owner_rewards.get(&owner1).unwrap(), 99_715_099_715_100);
-        assert_eq!(*owner_rewards.get(&owner2).unwrap(), 299_145_299_145_299);
-        assert_eq!(*owner_rewards.get(&owner3).unwrap(), 17_806_267_806_268);
+        assert_eq!(
+            *owner_rewards
+                .get(&owner1)
+                .expect("Could not fetch owner1 rewards"),
+            99_715_099_715_100
+        );
+        assert_eq!(
+            *owner_rewards
+                .get(&owner2)
+                .expect("Could not fetch owner2 rewards"),
+            299_145_299_145_301
+        );
+        assert_eq!(
+            *owner_rewards
+                .get(&owner3)
+                .expect("Could not fetch owner3 rewards"),
+            17_806_267_806_268
+        );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let mut total = 0;
         for val in owner_rewards.values() {
             total += *val
         }
-        assert_eq!(total, 416_666_666_666_667); // total emissions for 1 hour
+
+        assert_eq!(total, 416_666_666_666_669); // total emissions for 1 hour
     }
 }

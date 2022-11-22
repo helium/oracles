@@ -71,25 +71,14 @@ impl Heartbeats {
         Ok(Self { heartbeats })
     }
 
-    pub fn into_iter(self) -> impl IntoIterator<Item = Heartbeat> {
-        self.heartbeats.into_iter().map(
-            |(
-                HeartbeatKey {
-                    hotspot_key,
-                    cbsd_id,
-                },
-                HeartbeatValue {
-                    reward_weight,
-                    timestamp,
-                },
-            )| Heartbeat {
-                hotspot_key,
-                cbsd_id,
-                reward_weight,
-                timestamp,
-                validity: proto::HeartbeatValidity::Valid,
-            },
-        )
+    pub fn into_iter(self) -> impl Iterator<Item = Heartbeat> + Send {
+        self.heartbeats.into_iter().map(|(key, value)| Heartbeat {
+            hotspot_key: key.hotspot_key,
+            cbsd_id: key.cbsd_id,
+            reward_weight: value.reward_weight,
+            timestamp: value.timestamp,
+            validity: proto::HeartbeatValidity::Valid,
+        })
     }
 }
 
@@ -98,25 +87,18 @@ impl Extend<Heartbeat> for Heartbeats {
     where
         T: IntoIterator<Item = Heartbeat>,
     {
-        for Heartbeat {
-            hotspot_key,
-            cbsd_id,
-            reward_weight,
-            timestamp,
-            validity,
-        } in iter.into_iter()
-        {
-            if validity != proto::HeartbeatValidity::Valid {
+        for heartbeat in iter.into_iter() {
+            if heartbeat.validity != proto::HeartbeatValidity::Valid {
                 continue;
             }
             self.heartbeats.insert(
                 HeartbeatKey {
-                    hotspot_key,
-                    cbsd_id,
+                    hotspot_key: heartbeat.hotspot_key,
+                    cbsd_id: heartbeat.cbsd_id,
                 },
                 HeartbeatValue {
-                    reward_weight,
-                    timestamp,
+                    reward_weight: heartbeat.reward_weight,
+                    timestamp: heartbeat.timestamp,
                 },
             );
         }

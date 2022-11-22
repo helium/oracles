@@ -5,7 +5,7 @@ use file_store::{
     traits::MsgDecode,
     FileStore, FileType,
 };
-use futures::{stream, Stream, StreamExt};
+use futures::{Stream, StreamExt};
 use std::ops::Range;
 
 pub async fn ingest_heartbeats(
@@ -14,13 +14,9 @@ pub async fn ingest_heartbeats(
 ) -> file_store::Result<impl Stream<Item = CellHeartbeat>> {
     Ok(file_store
         .source(
-            stream::iter(
-                file_store
-                    .list_all(FileType::CellHeartbeatIngestReport, epoch.start, epoch.end)
-                    .await?,
-            )
-            .map(Ok)
-            .boxed(),
+            file_store
+                .list(FileType::CellHeartbeatIngestReport, epoch.start, epoch.end)
+                .boxed(),
         )
         .filter_map(|msg| async move {
             msg.map_err(|err| {
@@ -46,13 +42,9 @@ pub async fn ingest_speedtests(
 ) -> file_store::Result<impl Stream<Item = CellSpeedtest>> {
     Ok(file_store
         .source(
-            stream::iter(
-                file_store
-                    .list_all(FileType::CellSpeedtestIngestReport, epoch.start, epoch.end)
-                    .await?,
-            )
-            .map(Ok)
-            .boxed(),
+            file_store
+                .list(FileType::CellSpeedtestIngestReport, epoch.start, epoch.end)
+                .boxed(),
         )
         .filter_map(|msg| async move {
             msg.map_err(|err| {

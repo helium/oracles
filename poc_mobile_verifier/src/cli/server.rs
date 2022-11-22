@@ -53,14 +53,40 @@ impl Cmd {
         .create()
         .await?;
 
-        // Subnetwork rewards
-        let (subnet_rewards_tx, subnet_rewards_rx) = file_sink::message_channel(50);
-        let mut subnet_rewards = file_sink::FileSinkBuilder::new(
-            FileType::SubnetworkRewards,
+        // Radio share rewards
+        let (radio_rewards_tx, radio_rewards_rx) = file_sink::message_channel(50);
+        let mut radio_rewards = file_sink::FileSinkBuilder::new(
+            FileType::RadioRewardShare,
             store_base_path,
-            subnet_rewards_rx,
+            radio_rewards_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
+        .write_manifest(true)
+        .create()
+        .await?;
+
+        // Subnetwork rewards
+        let (subnetwork_rewards_tx, subnetwork_rewards_rx) = file_sink::message_channel(50);
+        let mut subnetwork_rewards = file_sink::FileSinkBuilder::new(
+            FileType::SubnetworkRewards,
+            store_base_path,
+            subnetwork_rewards_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
+        // Reward manifest
+        let (reward_manifest_tx, reward_manifest_rx) = file_sink::message_channel(50);
+        let mut reward_manifests = file_sink::FileSinkBuilder::new(
+            FileType::RewardManifest,
+            store_base_path,
+            reward_manifest_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(15))
         .create()
         .await?;
 
@@ -73,21 +99,29 @@ impl Cmd {
         let verifier = Verifier::new(file_store, follower);
 
         let verifier_daemon = VerifierDaemon {
+            verification_offset: settings.verification_offset_duration(),
             pool,
             heartbeats_tx,
             speedtest_avg_tx,
-            subnet_rewards_tx,
+            radio_rewards_tx,
+            reward_manifest_tx,
+            subnetwork_rewards_tx,
             reward_period_hours,
             verifications_per_period,
-            verification_offset: settings.verification_offset_duration(),
             verifier,
         };
 
         tokio::try_join!(
             heartbeats.run(&shutdown_listener).map_err(Error::from),
             speedtest_avgs.run(&shutdown_listener).map_err(Error::from),
-            subnet_rewards.run(&shutdown_listener).map_err(Error::from),
+            radio_rewards.run(&shutdown_listener).map_err(Error::from),
+            subnetwork_rewards
+                .run(&shutdown_listener)
+                .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
+            reward_manifests
+                .run(&shutdown_listener)
+                .map_err(Error::from),
             verifier_daemon.run(&shutdown_listener),
         )?;
 

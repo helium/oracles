@@ -4,10 +4,10 @@ use crate::{
     txn_status::TxnStatus,
     Error, Result, Settings,
 };
-use chrono::{DateTime, Duration, TimeZone, Utc};
-use db_store::MetaValue;
-use file_store::{traits::TimestampDecode, FileStore, FileType};
-use futures::{stream, StreamExt};
+use chrono::{Duration, TimeZone, Utc};
+use db_store::{meta, MetaValue};
+use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
+use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn,
@@ -16,16 +16,18 @@ use helium_proto::{
             self, FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamReqV1,
             FollowerTxnStreamRespV1,
         },
+        poc_mobile::RadioRewardShare,
         transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
         Channel,
     },
     BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
-    SubnetworkReward, SubnetworkRewards,
+    RewardManifest, SubnetworkReward,
 };
 use node_follower::txn_service::TransactionService;
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
+use std::collections::HashMap;
 use std::ops::Range;
 use tokio::time;
 use tonic::Streaming;
@@ -44,7 +46,6 @@ pub struct Server {
     txn_service: TransactionService,
     last_follower_height: MetaValue<i64>,
     trigger_interval: Duration,
-    reward_interval: Duration,
     verifier_store: FileStore,
 }
 
@@ -67,7 +68,6 @@ impl Server {
                 || start_reward_block,
             )
             .await?,
-            reward_interval: Duration::seconds(settings.rewards),
             verifier_store: FileStore::from_settings(&settings.verifier).await?,
             pool,
         })
@@ -205,30 +205,10 @@ impl Server {
             }
         }
 
-        let last_reward_time =
-            MetaValue::<i64>::fetch_or_insert_with(&self.pool, "last_reward_end_time", || {
-                let starting_ts = now.timestamp();
-                tracing::info!(
-                    "no last_reward_end_time found, inserting current timestamp {starting_ts}"
-                );
-                starting_ts
-            })
-            .await?;
-
-        tracing::info!(
-            "found last_reward_end_time: {:#?}",
-            *last_reward_time.value()
+        record_duration!(
+            "reward_server_emission_duration",
+            self.handle_rewards(reward_period).await?
         );
-
-        let (start_utc, end_utc) = get_time_range(*last_reward_time.value(), Utc::now());
-        if end_utc - start_utc > self.reward_interval {
-            // Handle rewards if we pass our duration
-            record_duration!(
-                "reward_server_emission_duration",
-                self.handle_rewards(reward_period, last_reward_time, start_utc..end_utc)
-                    .await?
-            )
-        }
 
         Ok(())
     }
@@ -267,48 +247,71 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_rewards(
-        &mut self,
-        reward_period: Range<u64>,
-        mut last_reward_end_time: MetaValue<i64>,
-        time_range: Range<DateTime<Utc>>,
-    ) -> Result {
+    async fn handle_rewards(&mut self, reward_period: Range<u64>) -> Result {
+        use std::str::FromStr;
+
         tracing::info!("triggering rewards emissions");
 
-        let file_list = self
+        let last_reward_manifest = meta::fetch(&self.pool, "last_reward_manifest").await?;
+
+        let next_manifest = self
             .verifier_store
             .list_all(
-                FileType::SubnetworkRewards,
-                time_range.start,
-                time_range.end,
+                FileType::RewardManifest,
+                Utc.timestamp_millis_opt(last_reward_manifest)
+                    .single()
+                    .ok_or(Error::InvalidTimestamp)?,
+                None,
             )
             .await?;
 
-        // TODO: We need a better pattern for this:
-        let mut stream = self
-            .verifier_store
-            .source(stream::iter(file_list).map(Ok).boxed());
-        let mut rewards = vec![];
-        while let Some(Ok(msg)) = stream.next().await {
-            let subnet_rewards = SubnetworkRewards::decode(msg);
-            if let Ok(subnet_rewards) = subnet_rewards {
-                // We only care that the verified epoch ends in our rewards epoch,
-                // so that we include verified epochs that straddle two rewards epochs.
-                if time_range.contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0)) {
-                    rewards.extend(subnet_rewards.rewards);
-                }
-            }
+        let Some(manifest_file) = next_manifest.first().cloned() else {
+            tracing::error!("No new manifest found");
+            return Ok(());
+        };
+
+        let Some(manifest_buff) = self.verifier_store.get(manifest_file.clone()).await?
+            .next()
+            .await else {
+                tracing::error!("Empty manifest");
+                return Ok(());
+            };
+
+        let manifest = RewardManifest::decode(manifest_buff.map_err(|_| Error::ByteStreamError)?)?;
+
+        let reward_files = stream::iter(
+            manifest
+                .written_files
+                .into_iter()
+                .map(|file_name| FileInfo::from_str(&file_name)),
+        )
+        .boxed();
+
+        let mut reward_shares = self.verifier_store.source_unordered(5, reward_files);
+
+        let mut owner_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
+
+        while let Some(msg) = reward_shares.try_next().await? {
+            let radio_reward_share = RadioRewardShare::decode(msg)?;
+            *owner_rewards
+                .entry(radio_reward_share.owner_key)
+                .or_default() += radio_reward_share.amount;
         }
 
-        if !rewards.is_empty() {
-            self.issue_rewards(rewards, reward_period).await?;
-            last_reward_end_time
-                .update(&self.pool, time_range.end.timestamp())
-                .await?;
-        } else {
-            tracing::error!("cannot continue; unable to determine reward period!");
-            return Err(Error::NotFound("invalid reward period".to_string()));
-        }
+        let mut rewards: Vec<_> = owner_rewards
+            .into_iter()
+            .map(|(account, amount)| SubnetworkReward { account, amount })
+            .collect();
+        rewards.sort_by(|a, b| a.account.cmp(&b.account));
+        self.issue_rewards(rewards, reward_period).await?;
+
+        meta::store(
+            &self.pool,
+            "last_reward_manifest",
+            manifest_file.timestamp.timestamp_millis(),
+        )
+        .await?;
+
         Ok(())
     }
 
@@ -403,14 +406,6 @@ async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u
     Ok(res.reward_height + 1..res.height)
 }
 
-pub fn get_time_range(
-    last_reward_end_time: i64,
-    now: DateTime<Utc>,
-) -> (DateTime<Utc>, DateTime<Utc>) {
-    let last_timestamp_utc = Utc.timestamp(last_reward_end_time, 0);
-    (last_timestamp_utc.min(now), now)
-}
-
 pub fn construct_txn(
     keypair: &Keypair,
     rewards: Vec<SubnetworkReward>,
@@ -439,29 +434,4 @@ fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
     Ok(keypair.sign(&txn.encode_to_vec())?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn get_time_range_returns_24_hour_period() {
-        let last_timestamp = Utc.ymd(2022, 11, 1).and_hms(0, 0, 0).timestamp();
-        let now = Utc.ymd(2022, 11, 2).and_hms(0, 0, 0);
-        let (start, stop) = get_time_range(last_timestamp, now);
-
-        assert_eq!(start, Utc.timestamp(last_timestamp, 0));
-        assert_eq!(stop, now);
-    }
-
-    #[test]
-    fn get_time_range_will_handle_last_timestamp_being_after_now() {
-        let last_timestamp = Utc.ymd(2022, 11, 2).and_hms(0, 0, 1).timestamp();
-        let now = Utc.ymd(2022, 11, 2).and_hms(0, 0, 0);
-        let (start, stop) = get_time_range(last_timestamp, now);
-
-        assert_eq!(start, now);
-        assert_eq!(stop, now);
-    }
 }

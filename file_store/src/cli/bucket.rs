@@ -151,7 +151,7 @@ impl Get {
                     .open(&self.dest.join(Path::new(&info.key)))
                     .map_err(Error::from)
                     .and_then(|mut file| {
-                        store.get(&info.key).and_then(|stream| async move {
+                        store.get_raw(&info.key).and_then(|stream| async move {
                             let mut reader = tokio_util::io::StreamReader::new(stream);
                             tokio::io::copy(&mut reader, &mut file)
                                 .map_err(Error::from)

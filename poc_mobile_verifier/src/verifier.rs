@@ -1,18 +1,20 @@
 use crate::{
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
-    reward_share::ResolveError,
+    owner_shares::{OwnerShares, ResolveError},
     scheduler::Scheduler,
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
-    subnetwork_rewards::SubnetworkRewards,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink, FileStore};
+use file_store::{file_sink, file_sink_write, traits::TimestampEncode, FileStore};
 use futures::{stream::Stream, StreamExt};
-use helium_proto::services::{follower, Channel};
+use helium_proto::{
+    services::{follower, Channel},
+    RewardManifest, SubnetworkReward, SubnetworkRewards,
+};
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 use tokio::pin;
 use tokio::time::sleep;
 
@@ -20,7 +22,9 @@ pub struct VerifierDaemon {
     pub pool: Pool<Postgres>,
     pub heartbeats_tx: file_sink::MessageSender,
     pub speedtest_avg_tx: file_sink::MessageSender,
-    pub subnet_rewards_tx: file_sink::MessageSender,
+    pub radio_rewards_tx: file_sink::MessageSender,
+    pub reward_manifest_tx: file_sink::MessageSender,
+    pub subnetwork_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
     pub verification_offset: Duration,
@@ -106,10 +110,55 @@ impl VerifierDaemon {
         let speedtests =
             SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
 
-        let rewards = self
-            .verifier
-            .reward_epoch(&scheduler.reward_period, heartbeats, speedtests)
-            .await?;
+        let rewards = self.verifier.reward_epoch(heartbeats, speedtests).await?;
+
+        let mut owner_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
+
+        for reward_share in rewards.into_radio_shares(&scheduler.reward_period)? {
+            *owner_rewards
+                .entry(reward_share.owner_key.clone())
+                .or_default() += reward_share.amount;
+
+            file_sink_write!("radio_reward_shares", &self.radio_rewards_tx, reward_share)
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+        }
+
+        let written_files = file_sink::fetch_manifest(&self.radio_rewards_tx)
+            .await?
+            .await??;
+
+        // Write out the manifest file
+        file_sink_write!(
+            "reward_manifest",
+            &self.reward_manifest_tx,
+            RewardManifest {
+                start_timestamp: scheduler.reward_period.start.encode_timestamp(),
+                end_timestamp: scheduler.reward_period.end.encode_timestamp(),
+                written_files
+            }
+        )
+        .await?
+        .await??;
+
+        // Temporarily continue to write out subnetwork rewards
+        let mut rewards: Vec<_> = owner_rewards
+            .into_iter()
+            .map(|(account, amount)| SubnetworkReward { account, amount })
+            .collect();
+        rewards.sort_by(|a, b| a.account.cmp(&b.account));
+        file_sink_write!(
+            "subnetwork_rewards",
+            &self.subnetwork_rewards_tx,
+            SubnetworkRewards {
+                start_epoch: scheduler.reward_period.start.encode_timestamp(),
+                end_epoch: scheduler.reward_period.end.encode_timestamp(),
+                rewards,
+            }
+        )
+        .await?
+        .await??;
 
         let mut transaction = self.pool.begin().await?;
 
@@ -122,14 +171,6 @@ impl VerifierDaemon {
         save_next_rewarded_end_time(&mut transaction, &scheduler.next_reward_period().end).await?;
 
         transaction.commit().await?;
-
-        rewards
-            .write(&self.subnet_rewards_tx)
-            .await?
-            // Await the returned one shot to ensure that we wrote the file
-            .await??;
-
-        file_sink::flush(&self.subnet_rewards_tx).await?;
 
         Ok(())
     }
@@ -178,11 +219,10 @@ impl Verifier {
 
     pub async fn reward_epoch(
         &mut self,
-        epoch: &Range<DateTime<Utc>>,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
-    ) -> Result<SubnetworkRewards, ResolveError> {
-        SubnetworkRewards::from_epoch(self.follower.clone(), epoch, heartbeats, speedtests).await
+    ) -> Result<OwnerShares, ResolveError> {
+        OwnerShares::aggregate(&mut self.follower, heartbeats, speedtests).await
     }
 }
 

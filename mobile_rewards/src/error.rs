@@ -34,6 +34,10 @@ pub enum Error {
     DbError(#[from] db_store::Error),
     #[error("follower error")]
     Follower(#[from] node_follower::Error),
+    #[error("byte stream error")]
+    ByteStreamError,
+    #[error("invalid timestamp")]
+    InvalidTimestamp,
 }
 
 #[derive(Error, Debug)]

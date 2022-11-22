@@ -1,8 +1,7 @@
 use crate::{
     heartbeats::Heartbeats,
-    reward_share::get_scheduled_tokens,
+    owner_shares::{get_scheduled_tokens, OwnerShares},
     speedtests::{Average, SpeedtestAverages},
-    subnetwork_rewards::SubnetworkRewards,
     Settings,
 };
 use anyhow::Result;
@@ -32,18 +31,23 @@ impl Cmd {
         let expected_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
             .expect("Couldn't get expected rewards");
 
-        let follower = settings.follower.connect_follower()?;
+        let mut follower = settings.follower.connect_follower()?;
         let pool = settings.database.connect(10).await?;
 
         let heartbeats = Heartbeats::validated(&pool, epoch.start).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let rewards =
-            SubnetworkRewards::from_epoch(follower, &epoch, heartbeats, speedtests.clone()).await?;
+        let owner_shares =
+            OwnerShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
 
-        let total_rewards = rewards
-            .rewards
-            .iter()
-            .fold(0, |acc, reward| acc + reward.amount);
+        let mut total_rewards = 0_u64;
+        let mut owner_rewards = HashMap::<_, u64>::new();
+        for reward in owner_shares.into_radio_shares(&epoch)? {
+            total_rewards += reward.amount;
+            *owner_rewards
+                .entry(PublicKey::try_from(reward.owner_key)?)
+                .or_default() += reward.amount;
+        }
+        let rewards: Vec<_> = owner_rewards.into_iter().collect();
         let mut multiplier_count = HashMap::<_, usize>::new();
         let speedtest_multipliers: Vec<_> = speedtests
             .speedtests
@@ -52,16 +56,6 @@ impl Cmd {
                 let reward_multiplier = Average::from(&avg).reward_multiplier();
                 *multiplier_count.entry(reward_multiplier).or_default() += 1;
                 (pub_key, reward_multiplier)
-            })
-            .collect();
-        let rewards: Vec<(PublicKey, u64)> = rewards
-            .rewards
-            .iter()
-            .map(|r| {
-                (
-                    PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
-                    r.amount,
-                )
             })
             .collect();
 

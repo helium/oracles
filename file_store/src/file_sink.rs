@@ -4,7 +4,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use futures::SinkExt;
 use std::{
-    io,
+    io, mem,
     path::{Path, PathBuf},
 };
 use tokio::{
@@ -40,7 +40,8 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 #[derive(Debug)]
 pub enum Message {
     Data(oneshot::Sender<Result>, Vec<u8>),
-    Flush,
+    Flush(oneshot::Sender<Result>),
+    FetchManifest(oneshot::Sender<Result<Vec<String>>>),
 }
 
 pub type MessageSender = mpsc::Sender<Message>;
@@ -100,11 +101,26 @@ pub async fn write<T: prost::Message>(
         })
 }
 
-pub async fn flush(tx: &MessageSender) -> Result {
-    tx.send(Message::Flush).await.map_err(|e| {
-        tracing::error!("file_sink failed to flush with {e:?}");
-        Error::channel()
-    })
+pub async fn flush(tx: &MessageSender) -> Result<oneshot::Receiver<Result>> {
+    let (on_flush_tx, on_flush_rx) = oneshot::channel();
+    tx.send(Message::Flush(on_flush_tx))
+        .await
+        .map_err(|e| {
+            tracing::error!("file_sink failed to flush with {e:?}");
+            Error::channel()
+        })
+        .map(move |_| on_flush_rx)
+}
+
+pub async fn fetch_manifest(tx: &MessageSender) -> Result<oneshot::Receiver<Result<Vec<String>>>> {
+    let (on_fetch_tx, on_fetch_rx) = oneshot::channel();
+    tx.send(Message::FetchManifest(on_fetch_tx))
+        .await
+        .map_err(|e| {
+            tracing::error!("file_sink failed to fetch manifest with {e:?}");
+            Error::channel()
+        })
+        .map(move |_| on_fetch_rx)
 }
 
 pub struct FileSinkBuilder {
@@ -115,6 +131,7 @@ pub struct FileSinkBuilder {
     roll_time: Duration,
     messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
+    write_manifest: bool,
 }
 
 impl FileSinkBuilder {
@@ -126,6 +143,7 @@ impl FileSinkBuilder {
             max_size: 50_000_000,
             roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
             deposits: None,
+            write_manifest: false,
             messages,
         }
     }
@@ -152,6 +170,13 @@ impl FileSinkBuilder {
         Self { deposits, ..self }
     }
 
+    pub fn write_manifest(self, write_manifest: bool) -> Self {
+        Self {
+            write_manifest,
+            ..self
+        }
+    }
+
     pub fn roll_time(self, duration: Duration) -> Self {
         Self {
             roll_time: duration,
@@ -168,6 +193,7 @@ impl FileSinkBuilder {
             deposits: self.deposits,
             roll_time: self.roll_time,
             messages: self.messages,
+            manifest: self.write_manifest.then(Vec::new),
             active_sink: None,
         };
         sink.init().await?;
@@ -185,6 +211,7 @@ pub struct FileSink {
 
     messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
+    manifest: Option<Vec<String>>,
 
     active_sink: Option<ActiveSink>,
 }
@@ -274,8 +301,19 @@ impl FileSink {
                             }
                         };
                         let _ = on_write_tx.send(res);
-                    },
-                    Some(Message::Flush) => self.flush().await?,
+                    }
+                    Some(Message::Flush(on_flush_tx)) => {
+                        let res = self.flush().await;
+                        let _ = on_flush_tx.send(res);
+                    }
+                    Some(Message::FetchManifest(on_fetch_tx)) => {
+                        let _ = self.flush().await;
+                        if let Some(ref mut manifest) = self.manifest {
+                            let _ = on_fetch_tx.send(Ok(mem::take(manifest)));
+                        } else {
+                            let _ = on_fetch_tx.send(Err(Error::NoManifest));
+                        }
+                    }
                     None => {
                         break
                     }
@@ -331,7 +369,7 @@ impl FileSink {
         Ok(())
     }
 
-    async fn deposit_sink(&self, sink_path: &Path) -> Result {
+    async fn deposit_sink(&mut self, sink_path: &Path) -> Result {
         if !sink_path.exists() {
             return Ok(());
         }
@@ -346,6 +384,10 @@ impl FileSink {
         fs::rename(&sink_path, &target_path).await?;
         if let Some(deposits) = &self.deposits {
             file_upload::upload_file(deposits, &target_path).await?;
+        }
+        if let Some(ref mut manifest) = self.manifest {
+            let name = target_filename.to_string_lossy().into_owned();
+            manifest.push(name);
         }
         Ok(())
     }

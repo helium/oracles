@@ -9,6 +9,7 @@ use file_store::FileStore;
 use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use serde_json::json;
+use std::collections::HashMap;
 
 /// Verify the shares for a given time range
 #[derive(Debug, clap::Args)]
@@ -39,36 +40,29 @@ impl Cmd {
             speedtests,
         } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
-        let rewards = verifier
+        let owner_shares = verifier
             .reward_epoch(
-                &epoch,
                 heartbeats.collect().await,
                 speedtests.filter_map(|x| async { x.ok() }).collect().await,
             )
             .await?;
 
-        let total_rewards = rewards
-            .rewards
-            .iter()
-            .fold(0, |acc, reward| acc + reward.amount);
-        let rewards: Vec<(PublicKey, u64)> = rewards
-            .rewards
-            .iter()
-            .map(|r| {
-                (
-                    PublicKey::try_from(r.account.as_slice()).expect("unable to get public key"),
-                    r.amount,
-                )
-            })
-            .collect();
+        let mut total_rewards = 0_u64;
+        let mut owner_rewards = HashMap::<_, u64>::new();
+        for reward in owner_shares.into_radio_shares(&epoch)? {
+            total_rewards += reward.amount;
+            *owner_rewards
+                .entry(PublicKey::try_from(reward.owner_key)?)
+                .or_default() += reward.amount;
+        }
+        let rewards: Vec<_> = owner_rewards.into_iter().collect();
 
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "rewards": rewards,
                 "total_rewards": total_rewards,
-            }))
-            .unwrap()
+            }))?
         );
 
         Ok(())
