@@ -72,34 +72,53 @@ impl FileStore {
         let before = before.into();
         let after = after.into();
 
-        self.client
+        let request = self
+            .client
             .list_objects_v2()
             .bucket(&self.bucket)
             .prefix(file_type.to_string())
-            .set_start_after(after.map(|dt| FileInfo::from((file_type, dt)).into()))
-            .into_paginator()
-            .send()
-            .flat_map(move |entry| match entry {
-                Ok(output) => {
-                    let filtered = output
-                        .contents
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|obj| {
-                            if FileInfo::matches(obj.key().unwrap_or_default()) {
-                                Some(FileInfo::try_from(&obj).unwrap())
-                            } else {
-                                None
-                            }
-                        })
-                        .filter(move |info| after.map_or(true, |v| info.timestamp >= v))
-                        .filter(move |info| before.map_or(true, |v| info.timestamp <= v))
-                        .map(Ok);
-                    stream::iter(filtered).boxed()
+            .set_start_after(after.map(|dt| FileInfo::from((file_type, dt)).into()));
+
+        futures::stream::unfold(
+            (request, true, None),
+            |(req, first_time, next)| async move {
+                if first_time || next.is_some() {
+                    let list_objects_response =
+                        req.clone().set_continuation_token(next).send().await;
+
+                    let next_token = list_objects_response
+                        .as_ref()
+                        .ok()
+                        .and_then(|r| r.next_continuation_token())
+                        .map(|x| x.to_owned());
+
+                    Some((list_objects_response, (req, false, next_token)))
+                } else {
+                    None
                 }
-                Err(err) => stream::once(async move { Err(Error::s3_error(err)) }).boxed(),
-            })
-            .boxed()
+            },
+        )
+        .flat_map(move |entry| match entry {
+            Ok(output) => {
+                let filtered = output
+                    .contents
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|obj| {
+                        if FileInfo::matches(obj.key().unwrap_or_default()) {
+                            Some(FileInfo::try_from(&obj).unwrap())
+                        } else {
+                            None
+                        }
+                    })
+                    .filter(move |info| after.map_or(true, |v| info.timestamp > v))
+                    .filter(move |info| before.map_or(true, |v| info.timestamp <= v))
+                    .map(Ok);
+                stream::iter(filtered).boxed()
+            }
+            Err(err) => stream::once(async move { Err(Error::s3_error(err)) }).boxed(),
+        })
+        .boxed()
     }
 
     pub async fn put(&self, file: &Path) -> Result {
