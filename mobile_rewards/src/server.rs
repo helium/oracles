@@ -250,7 +250,7 @@ impl Server {
     async fn handle_rewards(&mut self, reward_period: Range<u64>) -> Result {
         use std::str::FromStr;
 
-        tracing::info!("triggering rewards emissions");
+        tracing::info!("Checking for reward manifest");
 
         let last_reward_manifest = meta::fetch(&self.pool, "last_reward_manifest").await?;
 
@@ -266,7 +266,7 @@ impl Server {
             .await?;
 
         let Some(manifest_file) = next_manifest.first().cloned() else {
-            tracing::error!("No new manifest found");
+            tracing::info!("No new manifest found");
             return Ok(());
         };
 
@@ -276,6 +276,8 @@ impl Server {
                 tracing::error!("Empty manifest");
                 return Ok(());
             };
+
+        tracing::info!("Manifest found, triggering rewards");
 
         let manifest = RewardManifest::decode(manifest_buff.map_err(|_| Error::ByteStreamError)?)?;
 
