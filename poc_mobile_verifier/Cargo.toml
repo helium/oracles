@@ -1,9 +1,10 @@
 [package]
 name = "poc-mobile-verifier"
 version = "0.1.0"
-edition = "2021"
 description = "Heartbeat and speed share verification for rewards"
-license = "Apache-2.0"
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
 
 [dependencies]
 anyhow = {workspace = true}
@@ -38,14 +39,5 @@ file-store = {path = "../file_store"}
 db-store = { path = "../db_store" }
 poc-metrics = {path = "../metrics"}
 node-follower = {path = "../node_follower"}
-rand = "*"
-async-trait = "*"
-
-[package.metadata.deb]
-depends = "$auto"
-assets = [
-    ["target/release/poc-mobile-verifier", "/opt/poc-mobile-verifier/bin/", "755"],
-    ["pkg/deb/env-template", "/usr/share/poc-mobile-verifier/env-template", "644"]
-]
-maintainer-scripts = "pkg/deb/"
-systemd-units = { }
+rand = {workspace = true}
+async-trait = {workspace = true}

@@ -35,20 +35,3 @@ helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
-
-[package.metadata.deb]
-depends = "$auto"
-assets = [
-  [
-    "target/release/poc-entropy",
-    "/opt/poc-entropy/bin/",
-    "755",
-  ],
-  [
-    "pkg/deb/env-template",
-    "/usr/share/poc-entropy/env-template",
-    "644",
-  ],
-]
-maintainer-scripts = "pkg/deb/"
-systemd-units = {}
