@@ -11,10 +11,10 @@ use file_store::{file_sink, file_sink_write, traits::TimestampEncode, FileStore}
 use futures::{stream::Stream, StreamExt};
 use helium_proto::{
     services::{follower, Channel},
-    RewardManifest,
+    RewardManifest, SubnetworkReward, SubnetworkRewards,
 };
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 use tokio::pin;
 use tokio::time::sleep;
 
@@ -24,6 +24,7 @@ pub struct VerifierDaemon {
     pub speedtest_avg_tx: file_sink::MessageSender,
     pub radio_rewards_tx: file_sink::MessageSender,
     pub reward_manifest_tx: file_sink::MessageSender,
+    pub subnetwork_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
     pub verification_offset: Duration,
@@ -111,7 +112,13 @@ impl VerifierDaemon {
 
         let rewards = self.verifier.reward_epoch(heartbeats, speedtests).await?;
 
+        let mut owner_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
+
         for reward_share in rewards.into_radio_shares(&scheduler.reward_period)? {
+            *owner_rewards
+                .entry(reward_share.owner_key.clone())
+                .or_default() += reward_share.amount;
+
             file_sink_write!("radio_reward_shares", &self.radio_rewards_tx, reward_share)
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
@@ -130,6 +137,24 @@ impl VerifierDaemon {
                 start_timestamp: scheduler.reward_period.start.encode_timestamp(),
                 end_timestamp: scheduler.reward_period.end.encode_timestamp(),
                 written_files
+            }
+        )
+        .await?
+        .await??;
+
+        // Temporarily continue to write out subnetwork rewards
+        let mut rewards: Vec<_> = owner_rewards
+            .into_iter()
+            .map(|(account, amount)| SubnetworkReward { account, amount })
+            .collect();
+        rewards.sort_by(|a, b| a.account.cmp(&b.account));
+        file_sink_write!(
+            "subnetwork_rewards",
+            &self.subnetwork_rewards_tx,
+            SubnetworkRewards {
+                start_epoch: scheduler.reward_period.start.encode_timestamp(),
+                end_epoch: scheduler.reward_period.end.encode_timestamp(),
+                rewards,
             }
         )
         .await?

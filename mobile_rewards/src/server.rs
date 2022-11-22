@@ -298,10 +298,11 @@ impl Server {
                 .or_default() += radio_reward_share.amount;
         }
 
-        let rewards = owner_rewards
+        let mut rewards: Vec<_> = owner_rewards
             .into_iter()
             .map(|(account, amount)| SubnetworkReward { account, amount })
             .collect();
+        rewards.sort_by(|a, b| a.account.cmp(&b.account));
         self.issue_rewards(rewards, reward_period).await?;
 
         meta::store(
