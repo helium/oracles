@@ -11,6 +11,12 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
+    /// the base_stale period in seconds
+    /// if this is set, this value will be added to the entropy and report
+    /// stale periods and is to prevent data being unnecessarily purged
+    /// in the event the verifier is down for an extended period of time
+    #[serde(default = "default_base_stale_period")]
+    pub base_stale_period: i64,
     pub database: db_store::Settings,
     pub follower: node_follower::Settings,
     pub ingest: file_store::Settings,
@@ -23,6 +29,11 @@ pub struct Settings {
 
 pub fn default_log() -> String {
     "poc_iot_verifier=debug,poc_store=info".to_string()
+}
+
+
+pub fn default_base_stale_period() -> i64 {
+    0
 }
 
 impl Settings {

@@ -302,7 +302,6 @@ impl Report {
         // as the verifier processes beacon reports and then pulls witness reports
         // linked to current beacon being processed
         // stale witness reports, for this reason, are determined solely based on time
-        tracing::info!("*** purge stale period: {stale_period}");
         let stale_time= Utc::now() - Duration::seconds(stale_period);
         sqlx::query_as::<_, Self>(
             r#"

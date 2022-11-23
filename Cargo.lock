@@ -2777,6 +2777,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
+ "blake3",
  "chrono",
  "clap 3.2.23",
  "cmake",

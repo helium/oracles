@@ -44,18 +44,14 @@ impl Purger {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let pool = settings.database.connect(PURGER_DB_POOL_SIZE).await?;
         let settings = settings.clone();
-        // get the base_stale period
-        // if the env var is set, this value will be added to the entropy and report
-        // stale periods and is to prevent data being unnecessarily purged
-        // in the event the verifier is down for an extended period of time
-        let base_stale_period: i64 = std::env::var("BASE_STALE_PERIOD")
-            .map_or_else(|_| 0, |v: String| v.parse::<i64>().unwrap_or(0));
+        let base_stale_period = settings.base_stale_period;
         Ok(Self {
             pool,
             settings,
             base_stale_period,
         })
     }
+
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting purger");
@@ -120,29 +116,33 @@ impl Purger {
         lora_invalid_beacon_tx: MessageSender,
         lora_invalid_witness_tx: MessageSender,
     ) -> Result {
-        // pull stale beacons and witnesses which are in a pending state
+        // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        // let stale_beacons = Report::get_stale_pending_beacons(
-        //     &self.pool,
-        //     self.base_stale_period + REPORT_STALE_PERIOD,
-        // )
-        // .await?;
-        // tracing::info!("purging {:?} stale beacons", stale_beacons.len());
-        // stream::iter(stale_beacons)
-        //     .for_each_concurrent(PURGER_WORKERS, |report| {
-        //         let tx = lora_invalid_beacon_tx.clone();
-        //         async move {
-        //             match self.handle_purged_beacon(&report, tx).await {
-        //                 Ok(()) => (),
-        //                 Err(err) => {
-        //                     tracing::warn!("failed to purge beacon: {err:?}")
-        //                 }
-        //             }
-        //         }
-        //     })
-        //     .await;
+        let stale_period = self.base_stale_period + REPORT_STALE_PERIOD;
+        tracing::info!("starting query get_stale_pending_beacons with stale period: {stale_period}");
+        let stale_beacons = Report::get_stale_pending_beacons(
+            &self.pool,
+            stale_period,
+        )
+        .await?;
+        tracing::info!("completed query get_stale_pending_beacons");
+        tracing::info!("purging {:?} stale beacons", stale_beacons.len());
+        stream::iter(stale_beacons)
+            .for_each_concurrent(PURGER_WORKERS, |report| {
+                let tx = lora_invalid_beacon_tx.clone();
+                async move {
+                    match self.handle_purged_beacon(&report, tx).await {
+                        Ok(()) => (),
+                        Err(err) => {
+                            tracing::warn!("failed to purge beacon: {err:?}")
+                        }
+                    }
+                }
+            })
+            .await;
+
         tracing::info!("starting query get_stale_pending_witnesses");
         let stale_witnesses = Report::get_stale_pending_witnesses(
             &self.pool,

@@ -19,7 +19,7 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     EntropyReportV1, Message,
 };
-use sha2::{Digest, Sha256};
+use blake3::hash;
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::time;
@@ -285,7 +285,7 @@ impl Loader {
             FileType::EntropyReport => {
                 let event = EntropyReportV1::decode(buf)?;
                 tracing::debug!("entropy report: {:?}", event);
-                let id = Sha256::digest(&event.data).to_vec();
+                let id = hash(&event.data).as_bytes().to_vec();
                 Entropy::insert_into(
                     &self.pool,
                     &id,
