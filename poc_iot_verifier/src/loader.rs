@@ -34,7 +34,7 @@ const REPORT_MAX_REPORT_AGE: i64 = 60 * 15; // 15 mins
 const ENTROPY_MAX_REPORT_AGE: i64 = 60 * 30; // 30 mins
 
 const LOADER_WORKERS: usize = 25;
-const STORE_WORKERS: usize = 150;
+const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;

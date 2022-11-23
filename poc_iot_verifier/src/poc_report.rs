@@ -1,5 +1,5 @@
 use crate::{entropy::ENTROPY_LIFESPAN, Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
 
 /// the max number of attempts a failed beacon report will be retried
@@ -16,7 +16,7 @@ const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 //    for that beacon, if a witness comes in after the beacon has been processed
 //    then it does not get verified as part of the overall POC but instead will
 //    end up being deemed stale )
-const BEACON_PROCESSING_DELAY: i64 = 60;
+const BEACON_PROCESSING_DELAY: i64 = 60 * 32;
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]
@@ -126,8 +126,10 @@ impl Report {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
+        let entropy_min_time= Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
+        let report_min_time= Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
         sqlx::query_as::<_, Self>(
-            r#"
+            "
             select poc_report.id,
                 poc_report.remote_entropy,
                 poc_report.packet_data,
@@ -142,20 +144,21 @@ impl Report {
             from poc_report
             inner join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'pending'
-            and entropy.timestamp < (NOW() - INTERVAL '$1 SECONDS')
-            and poc_report.created_at < (NOW() - INTERVAL '$2 SECONDS')
-            and attempts < $3
-            order by created_at asc
+            and entropy.timestamp < $1
+            and poc_report.created_at < $2
+            and poc_report.attempts < $3
+            order by poc_report.created_at asc
             limit 25000
-            "#,
+            ",
         )
-        .bind(ENTROPY_LIFESPAN)
-        .bind(BEACON_PROCESSING_DELAY)
+        .bind(entropy_min_time)
+        .bind(report_min_time)
         .bind(BEACON_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
         .await
         .map_err(Error::from)
     }
+
 
     pub async fn get_witnesses_for_beacon<'c, E>(
         executor: E,
@@ -165,13 +168,12 @@ impl Report {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query_as::<_, Self>(
-            r#"
+            "
             select * from poc_report
             where packet_data = $1
             and report_type = 'witness' and status = 'pending'
             and attempts < $2
-            order by report_timestamp asc
-            "#,
+            ",
         )
         .bind(packet_data)
         .bind(WITNESS_MAX_RETRY_ATTEMPTS)
@@ -258,10 +260,11 @@ impl Report {
 
     pub async fn get_stale_pending_beacons<'c, E>(
         executor: E,
-        stale_period: i32,
+        stale_period: i64,
     ) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+
     {
         // NOTE: the query for stale beacons cannot rely on poc_report.attempts
         // as beacons could be deteached from any entropy report
@@ -271,14 +274,15 @@ impl Report {
         // if the entropy is not there the beacon will never be processed
         // Such beacons will eventually be handled by the purger and failed there
         // stale beacon reports, for this reason, are determined solely based on time
+        let stale_time= Utc::now() - Duration::seconds(stale_period);
         sqlx::query_as::<_, Self>(
-            r#"
+            "
             select * from poc_report
             where report_type = 'beacon' and status = 'pending'
-            and created_at < (NOW() - INTERVAL '$1 SECONDS')
-            "#,
+            and created_at < $1
+            ",
         )
-        .bind(stale_period)
+        .bind(stale_time)
         .fetch_all(executor)
         .await
         .map_err(Error::from)
@@ -286,7 +290,7 @@ impl Report {
 
     pub async fn get_stale_pending_witnesses<'c, E>(
         executor: E,
-        stale_period: i32,
+        stale_period: i64,
     ) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -298,14 +302,16 @@ impl Report {
         // as the verifier processes beacon reports and then pulls witness reports
         // linked to current beacon being processed
         // stale witness reports, for this reason, are determined solely based on time
+        tracing::info!("*** purge stale period: {stale_period}");
+        let stale_time= Utc::now() - Duration::seconds(stale_period);
         sqlx::query_as::<_, Self>(
-            r#"
+            "
             select * from poc_report
             where report_type = 'witness' and status = 'pending'
-            and created_at < (NOW() - INTERVAL '$1 SECONDS')
-            "#,
+            and created_at < $1)
+            ",
         )
-        .bind(stale_period)
+        .bind(stale_time)
         .fetch_all(executor)
         .await
         .map_err(Error::from)

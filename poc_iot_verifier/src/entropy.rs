@@ -75,7 +75,7 @@ impl Entropy {
         .map_err(Error::from)
     }
 
-    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i32) -> Result
+    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i64) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {

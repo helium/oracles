@@ -26,17 +26,17 @@ const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
 // due to being stale
 // the report itself will never be verified but instead handled by the stale purger
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const ENTROPY_STALE_PERIOD: i32 = 60 * 45;
+const ENTROPY_STALE_PERIOD: i64 = 60 * 45;
 /// the period in seconds after when a beacon or witness report in the DB will be deemed stale
 // this period needs to be sufficiently long that we can be sure the beacon has had the
 // opportunity to be verified and after this point extremely unlikely to ever be verified
 // successfully
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const REPORT_STALE_PERIOD: i32 = 60 * 45;
+const REPORT_STALE_PERIOD: i64 = 60 * 60;
 
 pub struct Purger {
     pool: PgPool,
-    base_stale_period: i32,
+    base_stale_period: i64,
     settings: Settings,
 }
 
@@ -48,8 +48,8 @@ impl Purger {
         // if the env var is set, this value will be added to the entropy and report
         // stale periods and is to prevent data being unnecessarily purged
         // in the event the verifier is down for an extended period of time
-        let base_stale_period: i32 = std::env::var("BASE_STALE_PERIOD")
-            .map_or_else(|_| 0, |v: String| v.parse::<i32>().unwrap_or(0));
+        let base_stale_period: i64 = std::env::var("BASE_STALE_PERIOD")
+            .map_or_else(|_| 0, |v: String| v.parse::<i64>().unwrap_or(0));
         Ok(Self {
             pool,
             settings,
@@ -143,12 +143,13 @@ impl Purger {
         //         }
         //     })
         //     .await;
-
+        tracing::info!("starting query get_stale_pending_witnesses");
         let stale_witnesses = Report::get_stale_pending_witnesses(
             &self.pool,
             self.base_stale_period + REPORT_STALE_PERIOD,
         )
         .await?;
+        tracing::info!("completed query get_stale_pending_witnesses");
         let num_stale_witnesses = stale_witnesses.len();
         tracing::info!("purging {num_stale_witnesses} stale witnesses");
         stream::iter(stale_witnesses)
