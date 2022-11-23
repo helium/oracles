@@ -28,7 +28,7 @@ impl Cli {
 pub enum Cmd {
     Info(info::Cmd),
     Dump(dump::Cmd),
-    Bucket(bucket::Cmd),
+    Bucket(Box<bucket::Cmd>),
 }
 
 impl Cmd {
