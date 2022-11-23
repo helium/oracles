@@ -129,7 +129,7 @@ impl Report {
         let entropy_min_time= Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
         let report_min_time= Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
         sqlx::query_as::<_, Self>(
-            "
+            r#"
             select poc_report.id,
                 poc_report.remote_entropy,
                 poc_report.packet_data,
@@ -149,7 +149,7 @@ impl Report {
             and poc_report.attempts < $3
             order by poc_report.created_at asc
             limit 25000
-            ",
+            "#,
         )
         .bind(entropy_min_time)
         .bind(report_min_time)
@@ -168,12 +168,12 @@ impl Report {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query_as::<_, Self>(
-            "
+            r#"
             select * from poc_report
             where packet_data = $1
             and report_type = 'witness' and status = 'pending'
             and attempts < $2
-            ",
+            "#,
         )
         .bind(packet_data)
         .bind(WITNESS_MAX_RETRY_ATTEMPTS)
@@ -276,11 +276,11 @@ impl Report {
         // stale beacon reports, for this reason, are determined solely based on time
         let stale_time= Utc::now() - Duration::seconds(stale_period);
         sqlx::query_as::<_, Self>(
-            "
+            r#"
             select * from poc_report
             where report_type = 'beacon' and status = 'pending'
             and created_at < $1
-            ",
+            "#,
         )
         .bind(stale_time)
         .fetch_all(executor)
@@ -305,11 +305,11 @@ impl Report {
         tracing::info!("*** purge stale period: {stale_period}");
         let stale_time= Utc::now() - Duration::seconds(stale_period);
         sqlx::query_as::<_, Self>(
-            "
+            r#"
             select * from poc_report
             where report_type = 'witness' and status = 'pending'
-            and created_at < $1)
-            ",
+            and created_at < $1
+            "#,
         )
         .bind(stale_time)
         .fetch_all(executor)
