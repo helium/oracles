@@ -1,8 +1,11 @@
 use anyhow::{Error, Result};
 use clap::Parser;
 use density_scaler::Server as DensityScaler;
+use file_store::{file_sink, file_upload, FileType};
 use futures::TryFutureExt;
-use poc_iot_verifier::{gateway_cache::GatewayCache, loader, purger, runner, Settings};
+use poc_iot_verifier::{
+    gateway_cache::GatewayCache, loader, purger, rewarder::Rewarder, runner, Settings,
+};
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -66,15 +69,61 @@ impl Server {
         });
 
         let gateway_cache = GatewayCache::from_settings(settings);
+
+        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
+        let file_upload =
+            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+
+        let store_base_path = std::path::Path::new(&settings.cache);
+        // Gateway reward shares sink
+        let (gateway_rewards_tx, gateway_rewards_rx) = file_sink::message_channel(50);
+        let mut gateway_rewards = file_sink::FileSinkBuilder::new(
+            FileType::GatewayRewardShare,
+            store_base_path,
+            gateway_rewards_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .write_manifest(true)
+        .create()
+        .await?;
+
+        // Reward manifest
+        let (reward_manifest_tx, reward_manifest_rx) = file_sink::message_channel(50);
+        let mut reward_manifests = file_sink::FileSinkBuilder::new(
+            FileType::RewardManifest,
+            store_base_path,
+            reward_manifest_rx,
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .create()
+        .await?;
+
+        let rewarder = Rewarder {
+            pool,
+            gateway_rewards_tx,
+            reward_manifest_tx,
+            reward_period_hours: settings.rewards,
+            reward_offset: settings.reward_offset_duration(),
+        };
+
         let mut loader = loader::Loader::from_settings(settings).await?;
         let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
         let mut density_scaler =
             DensityScaler::from_settings(settings.density_scaler.clone()).await?;
         tokio::try_join!(
-            runner.run(&shutdown, &gateway_cache, density_scaler.hex_density_map()),
+            gateway_rewards.run(&shutdown).map_err(Error::from),
+            reward_manifests.run(&shutdown).map_err(Error::from),
+            file_upload.run(&shutdown).map_err(Error::from),
+            runner.run(
+                file_upload_tx.clone(),
+                &gateway_cache,
+                density_scaler.hex_density_map(),
+                &shutdown
+            ),
             loader.run(&shutdown, &gateway_cache),
             purger.run(&shutdown),
+            rewarder.run(&shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
         )
         .map(|_| ())
