@@ -5,6 +5,7 @@ use crate::{
     poc_report::{Report, ReportType},
     Result, Settings,
 };
+use blake3::hash;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
@@ -19,25 +20,19 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     EntropyReportV1, Message,
 };
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::time::Duration;
-use tokio::time;
+use tokio::time::{self, MissedTickBehavior};
 
+const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
-const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 10);
-/// max age in seconds of beacon & witness reports loaded from S3 which will be processed
-/// any report older will be ignored
-const REPORT_MAX_REPORT_AGE: i64 = 60 * 15; // 15 mins
-/// max age in seconds of entropy reports loaded from S3 which will be processed
-/// any report older will be ignored
-const ENTROPY_MAX_REPORT_AGE: i64 = 60 * 30; // 30 mins
+const REPORTS_POLL_TIME: u64 = 60 * 15;
 
 const LOADER_WORKERS: usize = 25;
-const STORE_WORKERS: usize = 150;
+const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
-const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;
+const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
 
 pub struct Loader {
     ingest_store: FileStore,
@@ -72,8 +67,10 @@ impl Loader {
     ) -> Result {
         tracing::info!("started verifier loader");
 
-        let mut report_timer = time::interval(REPORTS_POLL_TIME);
+        let mut report_timer = time::interval(time::Duration::from_secs(REPORTS_POLL_TIME));
+        report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
+        denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
             if shutdown.is_triggered() {
@@ -85,14 +82,13 @@ impl Loader {
                     match self.handle_denylist_tick().await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal db runner error: {err:?}");
+                        tracing::error!("fatal loader error, denylist_tick triggered: {err:?}");
                     }
                 },
-                _ = report_timer.tick() => match self.handle_report_tick(shutdown.clone(), gateway_cache).await {
+                _ = report_timer.tick() => match self.handle_report_tick(gateway_cache).await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal report loader error: {err:?}");
-                        return Err(err)
+                        tracing::error!("fatal loader error, report_tick triggered: {err:?}");
                     }
                 }
             }
@@ -116,62 +112,63 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(
-        &self,
-        shutdown: triggered::Listener,
-        gateway_cache: &GatewayCache,
-    ) -> Result {
-        stream::iter(&[FileType::EntropyReport])
-            .map(|file_type| (file_type, shutdown.clone()))
-            .for_each_concurrent(5, |(file_type, shutdown)| async move {
-                let _ = self
-                    .process_events(
-                        *file_type,
-                        &self.entropy_store,
-                        shutdown,
-                        gateway_cache,
-                        ENTROPY_MAX_REPORT_AGE,
-                    )
-                    .await;
-            })
-            .await;
+    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> Result {
+        let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
+        let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
+            .await?
+            .unwrap_or(oldest_event_time)
+            .max(oldest_event_time);
+        let before = after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
 
-        // process witness report before beacons
-        // this gives a better opportunity for all relevant witness
-        // reports to be in the DB prior to the associated beacon
-        // report being selected for verification
-        // if a beacon is verified before the witness reports make it
-        // to the db then we end up dropping those witness reports
-        stream::iter(&[FileType::LoraWitnessIngestReport])
-            .map(|file_type| (file_type, shutdown.clone()))
-            .for_each_concurrent(5, |(file_type, shutdown)| async move {
-                let _ = self
-                    .process_events(
-                        *file_type,
-                        &self.ingest_store,
-                        shutdown,
-                        gateway_cache,
-                        REPORT_MAX_REPORT_AGE,
-                    )
-                    .await;
-            })
-            .await;
+        // serially load each file type starting with entropy
+        // beacons & witnesses dep on entropy
+        // and ideally we wouldnt want to process a beacon
+        // until witnesses are present in the db
+        // otherwise we end up dropping those witnesses
+        // serially loading each type ensures we have some order
+        match self
+            .process_events(
+                FileType::EntropyReport,
+                &self.entropy_store,
+                gateway_cache,
+                after,
+                before,
+            )
+            .await {
+                Ok(()) => (),
+                Err(err) =>
+                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::EntropyReport)
+            }
 
-        stream::iter(&[FileType::LoraBeaconIngestReport])
-            .map(|file_type| (file_type, shutdown.clone()))
-            .for_each_concurrent(5, |(file_type, shutdown)| async move {
-                let _ = self
-                    .process_events(
-                        *file_type,
-                        &self.ingest_store,
-                        shutdown,
-                        gateway_cache,
-                        REPORT_MAX_REPORT_AGE,
-                    )
-                    .await;
-            })
-            .await;
 
+        match self
+            .process_events(
+                FileType::LoraWitnessIngestReport,
+                &self.ingest_store,
+                gateway_cache,
+                after,
+                before,
+            )
+            .await {
+                Ok(()) => (),
+                Err(err) =>
+                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::LoraWitnessIngestReport)
+            }
+
+        match self
+            .process_events(
+                FileType::LoraBeaconIngestReport,
+                &self.ingest_store,
+                gateway_cache,
+                after,
+                before,
+            )
+            .await {
+                Ok(()) => (),
+                Err(err) =>
+                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::LoraBeaconIngestReport)
+            }
+        Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
         Ok(())
     }
 
@@ -179,55 +176,43 @@ impl Loader {
         &self,
         file_type: FileType,
         store: &FileStore,
-        shutdown: triggered::Listener,
         gateway_cache: &GatewayCache,
-        max_age: i64,
+        after: chrono::DateTime<Utc>,
+        before: chrono::DateTime<Utc>,
     ) -> Result {
-        // TODO: determine a sane value for oldest_event_time
-        // events older than this will not be processed
-        let oldest_event_time = Utc::now() - ChronoDuration::seconds(max_age);
-        let last_time = Meta::last_timestamp(&self.pool, file_type)
-            .await?
-            .unwrap_or(oldest_event_time)
-            .max(oldest_event_time);
-        let infos = store.list_all(file_type, last_time, None).await?;
+        tracing::info!(
+            "checking for new ingest files of type {file_type} after {after} and before {before}"
+        );
+        let infos = store.list_all(file_type, after, before).await?;
         if infos.is_empty() {
-            tracing::info!("no ingest {file_type} files to process from: {last_time}");
+            tracing::info!("no available ingest files of type {file_type}");
             return Ok(());
         }
 
-        let last_timestamp = infos.last().map(|v| v.timestamp);
         let infos_len = infos.len();
-        tracing::info!("processing {infos_len} {file_type} files");
-        let handler = store
+        tracing::info!("processing {infos_len} ingest files of type {file_type}");
+        store
             .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
             .for_each_concurrent(STORE_WORKERS, |msg| async move {
                 match msg {
-                    Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
+                    Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
                     Ok(buf) => match self
-                        .handle_store_update(file_type, &buf, gateway_cache)
+                        .handle_report(file_type, &buf, gateway_cache)
                         .await
                     {
                         Ok(()) => (),
                         Err(err) => {
-                            tracing::warn!("failed to update store: {err:?}")
+                            tracing::warn!("error whilst handling incoming report of type: {file_type}, error: {err:?}")
                         }
                     },
                 }
-            });
-
-        tokio::select! {
-            _ = handler => {
-                tracing::info!("completed processing {infos_len} {file_type} files");
-                Meta::update_last_timestamp(&self.pool, file_type, last_timestamp).await?;
-            },
-            _ = shutdown.clone() => (),
-        }
-
+            })
+            .await;
+        tracing::info!("completed processing {infos_len} files of type {file_type}");
         Ok(())
     }
 
-    async fn handle_store_update(
+    async fn handle_report(
         &self,
         file_type: FileType,
         buf: &[u8],
@@ -253,7 +238,9 @@ impl Loader {
                             &beacon.received_timestamp,
                             ReportType::Beacon,
                         )
-                        .await
+                        .await?;
+                        metrics::increment_counter!("oracles_poc_iot_verifier_loader_beacon");
+                        Ok(())
                     }
                     false => Ok(()),
                 }
@@ -277,7 +264,9 @@ impl Loader {
                             &witness.received_timestamp,
                             ReportType::Witness,
                         )
-                        .await
+                        .await?;
+                        metrics::increment_counter!("oracles_poc_iot_verifier_loader_witness");
+                        Ok(())
                     }
                     false => Ok(()),
                 }
@@ -285,7 +274,7 @@ impl Loader {
             FileType::EntropyReport => {
                 let event = EntropyReportV1::decode(buf)?;
                 tracing::debug!("entropy report: {:?}", event);
-                let id = Sha256::digest(&event.data).to_vec();
+                let id = hash(&event.data).as_bytes().to_vec();
                 Entropy::insert_into(
                     &self.pool,
                     &id,
@@ -293,7 +282,9 @@ impl Loader {
                     &event.timestamp.to_timestamp()?,
                     event.version as i32,
                 )
-                .await
+                .await?;
+                metrics::increment_counter!("oracles_poc_iot_verifier_loader_entropy");
+                Ok(())
             }
             _ => {
                 tracing::warn!("ignoring unexpected filetype: {file_type:?}");

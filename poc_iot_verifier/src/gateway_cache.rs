@@ -4,7 +4,7 @@ use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
-use retainer::*;
+use retainer::Cache;
 use std::time::Duration;
 
 const CACHE_TTL: u64 = 86400;

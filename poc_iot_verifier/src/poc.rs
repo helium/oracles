@@ -38,7 +38,6 @@ pub struct Poc {
     witness_reports: Vec<LoraWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
-    // pool: PgPool,
 }
 
 pub struct VerifyBeaconResult {
@@ -73,7 +72,6 @@ impl Poc {
         beacon_report: LoraBeaconIngestReport,
         witness_reports: Vec<LoraWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
-        // pool: PgPool,
     ) -> Result<Self> {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
         Ok(Self {
@@ -81,7 +79,6 @@ impl Poc {
             witness_reports,
             entropy_start,
             entropy_end,
-            // pool,
         })
     }
 
@@ -96,6 +93,7 @@ impl Poc {
         let beaconer_pub_key = beacon.pub_key.clone();
         let beacon_received_ts = self.beacon_report.received_timestamp;
 
+        // check if the beacon has exceeded max attempts
         // pull the beaconer info from our follower
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
@@ -197,7 +195,6 @@ impl Poc {
         // beaconer location is guaranteed to unwrap as we've already checked and returned early above when it's `None`
         let scaling_factor = hex_density_map.get(&beaconer_location.to_string()).await;
 
-        // let scaling_factor = Some(Decimal::ONE);
         tracing::debug!("beacon verification success");
         // all is good with the beacon
         let resp = VerifyBeaconResult {
@@ -233,7 +230,6 @@ impl Poc {
                         .get(&gw_info.location.unwrap_or_default().to_string())
                         .await
                         .unwrap_or(Decimal::ONE);
-                    // let scaling_factor = Decimal::ONE;
                     let valid_witness = LoraValidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
                         location: gw_info.location,

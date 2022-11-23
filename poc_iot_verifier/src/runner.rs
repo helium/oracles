@@ -1,8 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
-    last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
-    poc_report::{LoraStatus, Report},
+    poc_report::Report,
     Error, Result, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
@@ -11,7 +10,7 @@ use file_store::{
     file_sink,
     file_sink::MessageSender,
     file_sink_write, file_upload,
-    lora_beacon_report::{LoraBeaconIngestReport, LoraBeaconReport},
+    lora_beacon_report::LoraBeaconIngestReport,
     lora_invalid_poc::{LoraInvalidBeaconReport, LoraInvalidWitnessReport},
     lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc},
     lora_witness_report::LoraWitnessIngestReport,
@@ -26,20 +25,16 @@ use helium_proto::{
     },
     Message,
 };
-<<<<<<< HEAD
-use node_follower::follower_service::FollowerService;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
-=======
->>>>>>> 6e2d8c5 (misc optimisations from load testing)
 use sqlx::PgPool;
 use std::path::Path;
-use tokio::time;
+use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);
-const BEACON_WORKERS: usize = 80;
-const RUNNER_DB_POOL_SIZE: usize = 2 * BEACON_WORKERS;
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60);
+const BEACON_WORKERS: usize = 100;
+const RUNNER_DB_POOL_SIZE: usize = BEACON_WORKERS * 4;
 
 const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
@@ -68,6 +63,7 @@ impl Runner {
         tracing::info!("starting runner");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
+        db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
@@ -134,7 +130,6 @@ impl Runner {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal db runner error: {err:?}");
-                        return Err(err)
                     }
                 }
             }
@@ -152,7 +147,9 @@ impl Runner {
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
     ) -> Result {
+        tracing::info!("starting query get_next_beacons");
         let db_beacon_reports = Report::get_next_beacons(&self.pool).await?;
+        tracing::info!("completed query get_next_beacons");
         if db_beacon_reports.is_empty() {
             tracing::info!("no beacons ready for verification");
             return Ok(());
@@ -229,11 +226,6 @@ impl Runner {
         let mut poc =
             Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await?;
 
-        // let density_queries = match &self.density_queries {
-        //     Some(density_queries) => density_queries.clone(),
-        //     None => return Err(Error::custom("missing density scaler query sender")),
-        // };
-
         // verify POC beacon
         let beacon_verify_result = poc
             .verify_beacon(hex_density_map.clone(), gateway_cache, &self.pool)
@@ -247,7 +239,7 @@ impl Runner {
                 );
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                    let verified_witnesses_result = poc
+                    let mut verified_witnesses_result = poc
                         .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
                         .await?;
                     // check if there are any failed witnesses
@@ -255,13 +247,10 @@ impl Runner {
                     // and halt here, let things be reprocessed next tick
                     // if a witness continues to fail it will eventually
                     // be discarded from the list returned for the beacon
-                    // thus one of more failing witnesses will not block the overall POC
+                    // thus one or more failing witnesses will not block the overall POC
                     if !verified_witnesses_result.failed_witnesses.is_empty() {
                         for failed_witness_report in verified_witnesses_result.failed_witnesses {
-                            // something went wrong whilst verifying witnesses
-                            // halt here and allow things to be reprocessed next tick
                             let failed_witness = failed_witness_report.report;
-                            // have to construct the id manually here as dont have the ingest report handy
                             let id =
                                 failed_witness.report_id(failed_witness_report.received_timestamp);
                             Report::update_attempts(&self.pool, &id, Utc::now()).await?;
@@ -283,7 +272,6 @@ impl Runner {
                         reward_unit: witness_reward_units,
                     };
                     self.handle_valid_poc(
-                        beacon,
                         valid_beacon_report,
                         verified_witnesses_result,
                         &lora_valid_poc_tx,
@@ -394,7 +382,6 @@ impl Runner {
 
     async fn handle_valid_poc(
         &self,
-        beacon: &LoraBeaconReport,
         valid_beacon_report: LoraValidBeaconReport,
         witnesses_result: VerifyWitnessesResult,
         lora_valid_poc_tx: &MessageSender,
@@ -420,22 +407,6 @@ impl Runner {
                 return Ok(());
             }
         }
-        // // valid beacons and witness reports are kept in the DB
-        // // until after they have been rewarded
-        // // for now we just have to update their status to valid
-        // Report::update_status(&self.pool, &beacon_id, LoraStatus::Valid, Utc::now()).await?;
-        // // update timestamp of last beacon for the beaconer
-        // LastBeacon::update_last_timestamp(&self.pool, &beacon.pub_key.to_vec(), received_timestamp)
-        //     .await?;
-
-        // // update DB status of valid witnesses
-        // for valid_witness_report in witnesses_result.valid_witnesses {
-        //     let valid_witness_id = valid_witness_report
-        //         .report
-        //         .report_id(valid_witness_report.received_timestamp);
-        //     Report::update_status(&self.pool, &valid_witness_id, LoraStatus::Valid, Utc::now())
-        //         .await?
-        // }
 
         // save invalid witnesses to s3, ignore any failed witness writes
         // taking the lossly approach here as if we re attempt the POC later
@@ -451,20 +422,13 @@ impl Runner {
             )
             .await
             {
-                Ok(_) => {
-                    // // we dont need to reward invalid witness reports
-                    // // so we can go ahead & delete from the DB
-                    // let report_id = invalid_witness_report
-                    //     .report
-                    //     .report_id(invalid_witness_report.received_timestamp);
-                    // _ = Report::delete_report(&self.pool, &report_id).await;
-                }
+                Ok(_) => (),
                 Err(err) => {
                     tracing::error!("failed to save invalid_witness_report to s3, {err}");
                 }
             }
         }
-        _ = Report::delete_poc(&self.pool, &packet_data).await;
+        Report::delete_poc(&self.pool, &packet_data).await?;
         Ok(())
     }
 }

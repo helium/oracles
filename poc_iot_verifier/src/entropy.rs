@@ -1,5 +1,5 @@
 use crate::{Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 /// measurement in seconds of a piece of entropy
@@ -66,7 +66,6 @@ impl Entropy {
             r#"
             select * from entropy
             where id = $1
-            order by created_at asc
             "#,
         )
         .bind(id)
@@ -75,17 +74,18 @@ impl Entropy {
         .map_err(Error::from)
     }
 
-    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i32) -> Result
+    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i64) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
+        let stale_time = Utc::now() - Duration::seconds(stale_period);
         sqlx::query(
             r#"
             delete from entropy
-            where timestamp < (NOW() - INTERVAL '$1 SECONDS')
+            where timestamp < $1
             "#,
         )
-        .bind(stale_period)
+        .bind(stale_time)
         .execute(executor.clone())
         .await
         .map(|_| ())
