@@ -12,11 +12,11 @@ use helium_proto::{
     services::{
         poc_lora::{LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
-            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, SpeedtestAvg,
-            SpeedtestIngestReportV1, SpeedtestReqV1,
+            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, RadioRewardShare,
+            SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
         },
     },
-    Message, SubnetworkRewards,
+    Message, RewardManifest, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -130,6 +130,25 @@ impl Cmd {
                         "timestamp": heartbeat.timestamp,
                         "cell_type": heartbeat.cell_type,
                         "validity": heartbeat.validity,
+                    }))?;
+                }
+                FileType::RadioRewardShare => {
+                    let reward = RadioRewardShare::decode(msg)?;
+                    print_json(&json!({
+                        "owner_key": PublicKey::try_from(reward.owner_key)?,
+                        "hotpost_key": PublicKey::try_from(reward.hotspot_key)?,
+                        "cbsd_id": reward.cbsd_id,
+                        "amount": reward.amount,
+                        "start_epoch": reward.start_epoch,
+                        "end_epoch": reward.end_epoch,
+                    }))?;
+                }
+                FileType::RewardManifest => {
+                    let manifest = RewardManifest::decode(msg)?;
+                    print_json(&json!({
+                        "written_files": manifest.written_files,
+                        "start_timestamp": manifest.start_timestamp,
+                        "end_timestamp": manifest.end_timestamp,
                     }))?;
                 }
                 _ => (),
