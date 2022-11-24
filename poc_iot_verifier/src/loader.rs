@@ -152,7 +152,7 @@ impl Loader {
         // report being selected for verification
         // if a beacon is verified before the witness reports make it
         // to the db then we end up dropping those witness reports
-        let witness_after = Meta::last_timestamp(&self.pool, FileType::EntropyReport)
+        let witness_after = Meta::last_timestamp(&self.pool, FileType::LoraWitnessIngestReport)
             .await?
             .unwrap_or(oldest_event_time)
             .max(oldest_event_time);
@@ -172,7 +172,7 @@ impl Loader {
             })
             .await;
 
-        let beacon_after = Meta::last_timestamp(&self.pool, FileType::EntropyReport)
+        let beacon_after = Meta::last_timestamp(&self.pool, FileType::LoraBeaconIngestReport)
             .await?
             .unwrap_or(oldest_event_time)
             .max(oldest_event_time);
