@@ -210,7 +210,6 @@ impl Loader {
             return Ok(());
         }
 
-        let last_timestamp = infos.last().map(|v| v.timestamp);
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
@@ -230,7 +229,7 @@ impl Loader {
             }
         }).await;
         tracing::info!("completed processing {infos_len} files of type {file_type}");
-        Meta::update_last_timestamp(&self.pool, file_type, last_timestamp).await?;
+        Meta::update_last_timestamp(&self.pool, file_type, Some(before)).await?;
         Ok(())
     }
 
