@@ -24,11 +24,14 @@ use sqlx::PgPool;
 use std::time::Duration;
 use tokio::time;
 
+const REPORTS_POLL_TIME: u64 = 60 * 15;
+const INITIAL_WAIT: u64 = REPORTS_POLL_TIME * 2;
+
 /// cadence for how often to look for  reports from s3 buckets
-const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 10);
+// const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 15);
 /// max age in seconds of beacon & witness reports loaded from S3 which will be processed
 /// any report older will be ignored
-const REPORT_MAX_REPORT_AGE: i64 = 60 * 15; // 15 mins
+const REPORT_MAX_REPORT_AGE: i64 = 60 * 60; // 15 mins
 /// max age in seconds of entropy reports loaded from S3 which will be processed
 /// any report older will be ignored
 const ENTROPY_MAX_REPORT_AGE: i64 = 60 * 30; // 30 mins
@@ -72,8 +75,9 @@ impl Loader {
     ) -> Result {
         tracing::info!("started verifier loader");
 
-        let mut report_timer = time::interval(REPORTS_POLL_TIME);
+        let mut report_timer = time::interval(time::Duration::from_secs(REPORTS_POLL_TIME));
         let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
+        time::sleep(Duration::from_secs(INITIAL_WAIT)).await;
 
         loop {
             if shutdown.is_triggered() {
@@ -176,24 +180,28 @@ impl Loader {
         file_type: FileType,
         store: &FileStore,
         gateway_cache: &GatewayCache,
-        max_age: i64,
+        _max_age: i64,
     ) -> Result {
         // TODO: determine a sane value for oldest_event_time
         // events older than this will not be processed
-        let oldest_event_time = Utc::now() - ChronoDuration::seconds(max_age);
-        let last_time = Meta::last_timestamp(&self.pool, file_type)
+        let oldest_event_time = Utc::now() - ChronoDuration::seconds(INITIAL_WAIT as i64 * 2);
+
+        let after = Meta::last_timestamp(&self.pool, file_type)
             .await?
             .unwrap_or(oldest_event_time)
             .max(oldest_event_time);
-        let infos = store.list_all(file_type, last_time, None).await?;
+        let before = after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
+
+        tracing::info!("checking for new ingest files of type {file_type} after {after} and before {before}");
+        let infos = store.list_all(file_type, after, before).await?;
         if infos.is_empty() {
-            tracing::info!("no ingest {file_type} files to process from: {last_time}");
+            tracing::info!("no available ingest files of type {file_type}");
             return Ok(());
         }
 
         let last_timestamp = infos.last().map(|v| v.timestamp);
         let infos_len = infos.len();
-        tracing::info!("processing {infos_len} {file_type} files");
+        tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
         .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
         .for_each_concurrent(STORE_WORKERS, |msg| async move {
@@ -210,7 +218,7 @@ impl Loader {
                 },
             }
         }).await;
-        tracing::info!("completed processing {infos_len} {file_type} files");
+        tracing::info!("completed processing {infos_len} files of type {file_type}");
         Meta::update_last_timestamp(&self.pool, file_type, last_timestamp).await?;
         Ok(())
     }
@@ -291,14 +299,14 @@ impl Loader {
     }
 
     async fn check_valid_gateway(&self, pub_key: &PublicKey, gateway_cache: &GatewayCache) -> bool {
-        if self.check_gw_denied(pub_key).await {
-            tracing::debug!("dropping denied gateway : {:?}", &pub_key);
-            return false;
-        }
-        if self.check_unknown_gw(pub_key, gateway_cache).await {
-            tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
-            return false;
-        }
+        // if self.check_gw_denied(pub_key).await {
+        //     tracing::debug!("dropping denied gateway : {:?}", &pub_key);
+        //     return false;
+        // }
+        // if self.check_unknown_gw(pub_key, gateway_cache).await {
+        //     tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
+        //     return false;
+        // }
         true
     }
 

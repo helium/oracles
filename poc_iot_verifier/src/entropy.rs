@@ -66,7 +66,6 @@ impl Entropy {
             r#"
             select * from entropy
             where id = $1
-            order by created_at asc
             "#,
         )
         .bind(id)
