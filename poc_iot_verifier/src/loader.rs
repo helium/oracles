@@ -77,8 +77,6 @@ impl Loader {
 
         let mut report_timer = time::interval(time::Duration::from_secs(REPORTS_POLL_TIME));
         let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
-        time::sleep(Duration::from_secs(INITIAL_WAIT)).await;
-
         loop {
             if shutdown.is_triggered() {
                 break;
