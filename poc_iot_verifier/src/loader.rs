@@ -122,6 +122,15 @@ impl Loader {
         &self,
         gateway_cache: &GatewayCache,
     ) -> Result {
+
+        // TODO: determine a sane value for oldest_event_time
+        // events older than this will not be processed
+        let oldest_event_time = Utc::now() - ChronoDuration::seconds(INITIAL_WAIT as i64 * 2);
+        let entropy_after = Meta::last_timestamp(&self.pool, FileType::EntropyReport)
+            .await?
+            .unwrap_or(oldest_event_time)
+            .max(oldest_event_time);
+        let entropy_before = entropy_after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
         stream::iter(&[FileType::EntropyReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, | file_type | async move {
@@ -130,7 +139,8 @@ impl Loader {
                         *file_type,
                         &self.entropy_store,
                         gateway_cache,
-                        ENTROPY_MAX_REPORT_AGE,
+                        entropy_after,
+                        entropy_before,
                     )
                     .await;
             })
@@ -142,6 +152,11 @@ impl Loader {
         // report being selected for verification
         // if a beacon is verified before the witness reports make it
         // to the db then we end up dropping those witness reports
+        let witness_after = Meta::last_timestamp(&self.pool, FileType::EntropyReport)
+            .await?
+            .unwrap_or(oldest_event_time)
+            .max(oldest_event_time);
+        let witness_before = witness_after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
         stream::iter(&[FileType::LoraWitnessIngestReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, | file_type | async move {
@@ -150,12 +165,18 @@ impl Loader {
                         *file_type,
                         &self.ingest_store,
                         gateway_cache,
-                        REPORT_MAX_REPORT_AGE,
+                        witness_after,
+                        witness_before,
                     )
                     .await;
             })
             .await;
 
+        let beacon_after = Meta::last_timestamp(&self.pool, FileType::EntropyReport)
+            .await?
+            .unwrap_or(oldest_event_time)
+            .max(oldest_event_time);
+        let beacon_before = beacon_after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
         stream::iter(&[FileType::LoraBeaconIngestReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, | file_type | async move {
@@ -164,7 +185,8 @@ impl Loader {
                         *file_type,
                         &self.ingest_store,
                         gateway_cache,
-                        REPORT_MAX_REPORT_AGE,
+                        beacon_after,
+                        beacon_before,
                     )
                     .await;
             })
@@ -178,18 +200,9 @@ impl Loader {
         file_type: FileType,
         store: &FileStore,
         gateway_cache: &GatewayCache,
-        _max_age: i64,
+        after: chrono::DateTime<Utc>,
+        before: chrono::DateTime<Utc>,
     ) -> Result {
-        // TODO: determine a sane value for oldest_event_time
-        // events older than this will not be processed
-        let oldest_event_time = Utc::now() - ChronoDuration::seconds(INITIAL_WAIT as i64 * 2);
-
-        let after = Meta::last_timestamp(&self.pool, file_type)
-            .await?
-            .unwrap_or(oldest_event_time)
-            .max(oldest_event_time);
-        let before = after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
-
         tracing::info!("checking for new ingest files of type {file_type} after {after} and before {before}");
         let infos = store.list_all(file_type, after, before).await?;
         if infos.is_empty() {
