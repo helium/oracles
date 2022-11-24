@@ -25,7 +25,6 @@ use std::time::Duration;
 use tokio::time;
 
 const REPORTS_POLL_TIME: u64 = 60 * 15;
-const INITIAL_WAIT: u64 = REPORTS_POLL_TIME * 2;
 
 /// cadence for how often to look for  reports from s3 buckets
 // const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 15);
@@ -122,10 +121,11 @@ impl Loader {
         &self,
         gateway_cache: &GatewayCache,
     ) -> Result {
-
+        //2022-11-24T17:02:26.040135Z  INFO poc_iot_verifier::loader: checking for new ingest files of type entropy_report
+        //after 2022-11-24 16:02:26.036400671 UTC and before 2022-11-24 16:17:26.036400671 UTC
         // TODO: determine a sane value for oldest_event_time
         // events older than this will not be processed
-        let oldest_event_time = Utc::now() - ChronoDuration::seconds(INITIAL_WAIT as i64 * 2);
+        let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let entropy_after = Meta::last_timestamp(&self.pool, FileType::EntropyReport)
             .await?
             .unwrap_or(oldest_event_time)
