@@ -11,7 +11,7 @@ use file_store::{file_sink, file_sink_write, traits::TimestampEncode, FileStore}
 use futures::{stream::Stream, StreamExt};
 use helium_proto::{
     services::{follower, Channel},
-    RewardManifest, SubnetworkReward, SubnetworkRewards,
+    RewardManifest,
 };
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::{collections::HashMap, ops::Range};
@@ -24,7 +24,6 @@ pub struct VerifierDaemon {
     pub speedtest_avg_tx: file_sink::MessageSender,
     pub radio_rewards_tx: file_sink::MessageSender,
     pub reward_manifest_tx: file_sink::MessageSender,
-    pub subnetwork_rewards_tx: file_sink::MessageSender,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
     pub verification_offset: Duration,
@@ -142,23 +141,7 @@ impl VerifierDaemon {
         .await?
         .await??;
 
-        // Temporarily continue to write out subnetwork rewards
-        let mut rewards: Vec<_> = owner_rewards
-            .into_iter()
-            .map(|(account, amount)| SubnetworkReward { account, amount })
-            .collect();
-        rewards.sort_by(|a, b| a.account.cmp(&b.account));
-        file_sink_write!(
-            "subnetwork_rewards",
-            &self.subnetwork_rewards_tx,
-            SubnetworkRewards {
-                start_epoch: scheduler.reward_period.start.encode_timestamp(),
-                end_epoch: scheduler.reward_period.end.encode_timestamp(),
-                rewards,
-            }
-        )
-        .await?
-        .await??;
+        file_sink::flush(&self.reward_manifest_tx).await?;
 
         let mut transaction = self.pool.begin().await?;
 
