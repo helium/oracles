@@ -230,11 +230,6 @@ impl Runner {
         let mut poc =
             Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await?;
 
-        // let density_queries = match &self.density_queries {
-        //     Some(density_queries) => density_queries.clone(),
-        //     None => return Err(Error::custom("missing density scaler query sender")),
-        // };
-
         // verify POC beacon
         let beacon_verify_result = poc
             .verify_beacon(hex_density_map.clone(), gateway_cache, &self.pool)

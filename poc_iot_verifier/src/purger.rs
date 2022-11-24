@@ -143,7 +143,7 @@ impl Purger {
             })
             .await;
 
-        tracing::info!("starting query get_stale_pending_witnesses");
+            tracing::info!("starting query get_stale_pending_witnesses with stale period: {stale_period}");
         let stale_witnesses = Report::get_stale_pending_witnesses(
             &self.pool,
             self.base_stale_period + REPORT_STALE_PERIOD,

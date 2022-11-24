@@ -85,13 +85,13 @@ impl Loader {
                     match self.handle_denylist_tick().await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal db runner error: {err:?}");
+                        tracing::error!("fatal loader error, denylist_tick triggered: {err:?}");
                     }
                 },
-                _ = report_timer.tick() => match self.handle_report_tick(shutdown.clone(), gateway_cache).await {
+                _ = report_timer.tick() => match self.handle_report_tick(gateway_cache).await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal report loader error: {err:?}");
+                        tracing::error!("fatal loader error, repor_tick triggered: {err:?}");
                         return Err(err)
                     }
                 }
@@ -118,17 +118,15 @@ impl Loader {
 
     async fn handle_report_tick(
         &self,
-        shutdown: triggered::Listener,
         gateway_cache: &GatewayCache,
     ) -> Result {
         stream::iter(&[FileType::EntropyReport])
-            .map(|file_type| (file_type, shutdown.clone()))
-            .for_each_concurrent(5, |(file_type, shutdown)| async move {
+            .map(|file_type| (file_type))
+            .for_each_concurrent(5, | file_type | async move {
                 let _ = self
                     .process_events(
                         *file_type,
                         &self.entropy_store,
-                        shutdown,
                         gateway_cache,
                         ENTROPY_MAX_REPORT_AGE,
                     )
@@ -143,13 +141,12 @@ impl Loader {
         // if a beacon is verified before the witness reports make it
         // to the db then we end up dropping those witness reports
         stream::iter(&[FileType::LoraWitnessIngestReport])
-            .map(|file_type| (file_type, shutdown.clone()))
-            .for_each_concurrent(5, |(file_type, shutdown)| async move {
+            .map(|file_type| (file_type))
+            .for_each_concurrent(5, | file_type | async move {
                 let _ = self
                     .process_events(
                         *file_type,
                         &self.ingest_store,
-                        shutdown,
                         gateway_cache,
                         REPORT_MAX_REPORT_AGE,
                     )
@@ -158,13 +155,12 @@ impl Loader {
             .await;
 
         stream::iter(&[FileType::LoraBeaconIngestReport])
-            .map(|file_type| (file_type, shutdown.clone()))
-            .for_each_concurrent(5, |(file_type, shutdown)| async move {
+            .map(|file_type| (file_type))
+            .for_each_concurrent(5, | file_type | async move {
                 let _ = self
                     .process_events(
                         *file_type,
                         &self.ingest_store,
-                        shutdown,
                         gateway_cache,
                         REPORT_MAX_REPORT_AGE,
                     )
@@ -179,7 +175,6 @@ impl Loader {
         &self,
         file_type: FileType,
         store: &FileStore,
-        shutdown: triggered::Listener,
         gateway_cache: &GatewayCache,
         max_age: i64,
     ) -> Result {
@@ -199,31 +194,24 @@ impl Loader {
         let last_timestamp = infos.last().map(|v| v.timestamp);
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} {file_type} files");
-        let handler = store
-            .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
-            .for_each_concurrent(STORE_WORKERS, |msg| async move {
-                match msg {
-                    Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
-                    Ok(buf) => match self
-                        .handle_store_update(file_type, &buf, gateway_cache)
-                        .await
-                    {
-                        Ok(()) => (),
-                        Err(err) => {
-                            tracing::warn!("failed to update store: {err:?}")
-                        }
-                    },
-                }
-            });
-
-        tokio::select! {
-            _ = handler => {
-                tracing::info!("completed processing {infos_len} {file_type} files");
-                Meta::update_last_timestamp(&self.pool, file_type, last_timestamp).await?;
-            },
-            _ = shutdown.clone() => (),
-        }
-
+        store
+        .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
+        .for_each_concurrent(STORE_WORKERS, |msg| async move {
+            match msg {
+                Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
+                Ok(buf) => match self
+                    .handle_store_update(file_type, &buf, gateway_cache)
+                    .await
+                {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::warn!("failed to update store: {err:?}")
+                    }
+                },
+            }
+        }).await;
+        tracing::info!("completed processing {infos_len} {file_type} files");
+        Meta::update_last_timestamp(&self.pool, file_type, last_timestamp).await?;
         Ok(())
     }
 
