@@ -20,19 +20,27 @@ const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
 const PURGER_DB_POOL_SIZE: usize = 2 * PURGER_WORKERS;
 
-/// the period of time in seconds after which entropy will be deemed stale
-/// and purged from the DB
-// any beacon or witness using this entropy & received after this period will fail
-// due to being stale
-// the report itself will never be verified but instead handled by the stale purger
-// this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const ENTROPY_STALE_PERIOD: i64 = 60 * 45;
-/// the period in seconds after when a beacon or witness report in the DB will be deemed stale
+/// the period in seconds after when a beacon report in the DB will be deemed stale
 // this period needs to be sufficiently long that we can be sure the beacon has had the
 // opportunity to be verified and after this point extremely unlikely to ever be verified
 // successfully
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const REPORT_STALE_PERIOD: i64 = 60 * 60;
+const BEACON_STALE_PERIOD: i64 = 60 * 90;
+/// the period in seconds after when a witness report in the DB will be deemed stale
+// extend witness stale period beyond that of beacons
+// witnesses are inserted into the DB up to 10 mins before beacons
+// due to the loader sequentially loading witnesses then beacons
+const WITNESS_STALE_PERIOD: i64 = BEACON_STALE_PERIOD + (15 * 60);
+/// the period of time in seconds after which entropy will be deemed stale
+/// and purged from the DB
+// this value should be > that beacon stale period to allow for any beacon
+// to be verified right up to the end of its stale period
+// any beacon or witness using this entropy & received after this period will fail
+// due to being stale
+// the report itself will never be verified but instead handled by the stale purger
+// this value will be added to the env var BASE_STALE_PERIOD to determine final setting
+const ENTROPY_STALE_PERIOD: i64 = BEACON_STALE_PERIOD + (15 * 60);
+
 
 pub struct Purger {
     pool: PgPool,
@@ -120,11 +128,11 @@ impl Purger {
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        let stale_period = self.base_stale_period + REPORT_STALE_PERIOD;
+        let beacon_stale_period = self.base_stale_period + BEACON_STALE_PERIOD;
         tracing::info!(
-            "starting query get_stale_pending_beacons with stale period: {stale_period}"
+            "starting query get_stale_pending_beacons with stale period: {beacon_stale_period}"
         );
-        let stale_beacons = Report::get_stale_pending_beacons(&self.pool, stale_period).await?;
+        let stale_beacons = Report::get_stale_pending_beacons(&self.pool, beacon_stale_period).await?;
         tracing::info!("completed query get_stale_pending_beacons");
         tracing::info!("purging {:?} stale beacons", stale_beacons.len());
         stream::iter(stale_beacons)
@@ -141,12 +149,13 @@ impl Purger {
             })
             .await;
 
+        let witness_stale_period = self.base_stale_period + WITNESS_STALE_PERIOD;
         tracing::info!(
-            "starting query get_stale_pending_witnesses with stale period: {stale_period}"
+            "starting query get_stale_pending_witnesses with stale period: {witness_stale_period}"
         );
         let stale_witnesses = Report::get_stale_pending_witnesses(
             &self.pool,
-            self.base_stale_period + REPORT_STALE_PERIOD,
+            witness_stale_period,
         )
         .await?;
         tracing::info!("completed query get_stale_pending_witnesses");
@@ -165,8 +174,8 @@ impl Purger {
                 }
             })
             .await;
-
         tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
+
         // purge any stale entropy, no need to output anything to s3 here
         _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
         Ok(())

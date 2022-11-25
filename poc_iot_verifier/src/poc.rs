@@ -96,6 +96,7 @@ impl Poc {
         let beaconer_pub_key = beacon.pub_key.clone();
         let beacon_received_ts = self.beacon_report.received_timestamp;
 
+        // check if the beacon has exceeded max attempts
         // pull the beaconer info from our follower
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
