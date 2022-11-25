@@ -1,5 +1,5 @@
 use crate::{Error, Result};
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 /// measurement in seconds of a piece of entropy
@@ -78,7 +78,7 @@ impl Entropy {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        let stale_time= Utc::now() - Duration::seconds(stale_period);
+        let stale_time = Utc::now() - Duration::seconds(stale_period);
         sqlx::query(
             r#"
             delete from entropy

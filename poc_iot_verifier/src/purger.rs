@@ -14,7 +14,7 @@ use std::path::Path;
 use futures::stream::{self, StreamExt};
 use helium_proto::Message;
 use sqlx::PgPool;
-use tokio::{time::{self, MissedTickBehavior}};
+use tokio::time::{self, MissedTickBehavior};
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
@@ -51,7 +51,6 @@ impl Purger {
             base_stale_period,
         })
     }
-
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
         tracing::info!("starting purger");
@@ -122,12 +121,10 @@ impl Purger {
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
         let stale_period = self.base_stale_period + REPORT_STALE_PERIOD;
-        tracing::info!("starting query get_stale_pending_beacons with stale period: {stale_period}");
-        let stale_beacons = Report::get_stale_pending_beacons(
-            &self.pool,
-            stale_period,
-        )
-        .await?;
+        tracing::info!(
+            "starting query get_stale_pending_beacons with stale period: {stale_period}"
+        );
+        let stale_beacons = Report::get_stale_pending_beacons(&self.pool, stale_period).await?;
         tracing::info!("completed query get_stale_pending_beacons");
         tracing::info!("purging {:?} stale beacons", stale_beacons.len());
         stream::iter(stale_beacons)
@@ -144,7 +141,9 @@ impl Purger {
             })
             .await;
 
-            tracing::info!("starting query get_stale_pending_witnesses with stale period: {stale_period}");
+        tracing::info!(
+            "starting query get_stale_pending_witnesses with stale period: {stale_period}"
+        );
         let stale_witnesses = Report::get_stale_pending_witnesses(
             &self.pool,
             self.base_stale_period + REPORT_STALE_PERIOD,

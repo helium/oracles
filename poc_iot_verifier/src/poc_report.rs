@@ -1,5 +1,5 @@
 use crate::{entropy::ENTROPY_LIFESPAN, Error, Result};
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 /// the max number of attempts a failed beacon report will be retried
@@ -144,8 +144,8 @@ impl Report {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let entropy_min_time= Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
-        let report_min_time= Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
+        let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
+        let report_min_time = Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
         sqlx::query_as::<_, Self>(
             r#"
             select poc_report.id,
@@ -176,7 +176,6 @@ impl Report {
         .await
         .map_err(Error::from)
     }
-
 
     pub async fn get_witnesses_for_beacon<'c, E>(
         executor: E,
@@ -282,7 +281,6 @@ impl Report {
     ) -> Result<Vec<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-
     {
         // NOTE: the query for stale beacons cannot rely on poc_report.attempts
         // as beacons could be deteached from any entropy report
@@ -292,7 +290,7 @@ impl Report {
         // if the entropy is not there the beacon will never be processed
         // Such beacons will eventually be handled by the purger and failed there
         // stale beacon reports, for this reason, are determined solely based on time
-        let stale_time= Utc::now() - Duration::seconds(stale_period);
+        let stale_time = Utc::now() - Duration::seconds(stale_period);
         sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
@@ -320,7 +318,7 @@ impl Report {
         // as the verifier processes beacon reports and then pulls witness reports
         // linked to current beacon being processed
         // stale witness reports, for this reason, are determined solely based on time
-        let stale_time= Utc::now() - Duration::seconds(stale_period);
+        let stale_time = Utc::now() - Duration::seconds(stale_period);
         sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report

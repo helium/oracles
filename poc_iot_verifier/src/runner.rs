@@ -1,7 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
-    poc_report::{Report},
+    poc_report::Report,
     Error, Result, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
@@ -10,7 +10,7 @@ use file_store::{
     file_sink,
     file_sink::MessageSender,
     file_sink_write, file_upload,
-    lora_beacon_report::{LoraBeaconIngestReport},
+    lora_beacon_report::LoraBeaconIngestReport,
     lora_invalid_poc::{LoraInvalidBeaconReport, LoraInvalidWitnessReport},
     lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc},
     lora_witness_report::LoraWitnessIngestReport,
@@ -33,7 +33,7 @@ use rust_decimal_macros::dec;
 >>>>>>> 6e2d8c5 (misc optimisations from load testing)
 use sqlx::PgPool;
 use std::path::Path;
-use tokio::{time::{self, MissedTickBehavior}};
+use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);

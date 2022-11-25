@@ -5,6 +5,7 @@ use crate::{
     poc_report::{Report, ReportType},
     Result, Settings,
 };
+use blake3::hash;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
@@ -19,10 +20,9 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     EntropyReportV1, Message,
 };
-use blake3::hash;
 use sqlx::PgPool;
 use std::time::Duration;
-use tokio::{time::{self, MissedTickBehavior}};
+use tokio::time::{self, MissedTickBehavior};
 
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
@@ -113,10 +113,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(
-        &self,
-        gateway_cache: &GatewayCache,
-    ) -> Result {
+    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> Result {
         let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
@@ -126,7 +123,7 @@ impl Loader {
 
         stream::iter(&[FileType::EntropyReport])
             .map(|file_type| (file_type))
-            .for_each_concurrent(5, | file_type | async move {
+            .for_each_concurrent(5, |file_type| async move {
                 let _ = self
                     .process_events(
                         *file_type,
@@ -147,30 +144,18 @@ impl Loader {
         // to the db then we end up dropping those witness reports
         stream::iter(&[FileType::LoraWitnessIngestReport])
             .map(|file_type| (file_type))
-            .for_each_concurrent(5, | file_type | async move {
+            .for_each_concurrent(5, |file_type| async move {
                 let _ = self
-                    .process_events(
-                        *file_type,
-                        &self.ingest_store,
-                        gateway_cache,
-                        after,
-                        before,
-                    )
+                    .process_events(*file_type, &self.ingest_store, gateway_cache, after, before)
                     .await;
             })
             .await;
 
         stream::iter(&[FileType::LoraBeaconIngestReport])
             .map(|file_type| (file_type))
-            .for_each_concurrent(5, | file_type | async move {
+            .for_each_concurrent(5, |file_type| async move {
                 let _ = self
-                    .process_events(
-                        *file_type,
-                        &self.ingest_store,
-                        gateway_cache,
-                        after,
-                        before,
-                    )
+                    .process_events(*file_type, &self.ingest_store, gateway_cache, after, before)
                     .await;
             })
             .await;
@@ -187,7 +172,9 @@ impl Loader {
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
     ) -> Result {
-        tracing::info!("checking for new ingest files of type {file_type} after {after} and before {before}");
+        tracing::info!(
+            "checking for new ingest files of type {file_type} after {after} and before {before}"
+        );
         let infos = store.list_all(file_type, after, before).await?;
         if infos.is_empty() {
             tracing::info!("no available ingest files of type {file_type}");
@@ -197,21 +184,22 @@ impl Loader {
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
-        .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
-        .for_each_concurrent(STORE_WORKERS, |msg| async move {
-            match msg {
-                Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
-                Ok(buf) => match self
-                    .handle_store_update(file_type, &buf, gateway_cache)
-                    .await
-                {
-                    Ok(()) => (),
-                    Err(err) => {
-                        tracing::warn!("failed to update store: {err:?}")
-                    }
-                },
-            }
-        }).await;
+            .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
+            .for_each_concurrent(STORE_WORKERS, |msg| async move {
+                match msg {
+                    Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
+                    Ok(buf) => match self
+                        .handle_store_update(file_type, &buf, gateway_cache)
+                        .await
+                    {
+                        Ok(()) => (),
+                        Err(err) => {
+                            tracing::warn!("failed to update store: {err:?}")
+                        }
+                    },
+                }
+            })
+            .await;
         tracing::info!("completed processing {infos_len} files of type {file_type}");
         Ok(())
     }

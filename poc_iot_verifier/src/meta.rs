@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Utc};
-use file_store::{traits::TimestampDecode, FileType};
+use file_store::traits::TimestampDecode;
 use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]

@@ -31,7 +31,6 @@ pub fn default_log() -> String {
     "poc_iot_verifier=debug,poc_store=info".to_string()
 }
 
-
 pub fn default_base_stale_period() -> i64 {
     0
 }
