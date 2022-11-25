@@ -126,7 +126,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         lora_beacon_report_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
-    .roll_time(Duration::minutes(3))
+    .roll_time(Duration::minutes(5))
     .create()
     .await?;
 
@@ -138,7 +138,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         lora_witness_report_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
-    .roll_time(Duration::minutes(3))
+    .roll_time(Duration::minutes(5))
     .create()
     .await?;
 

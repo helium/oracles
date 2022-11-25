@@ -437,9 +437,8 @@ impl Runner {
                 }
             }
         }
-        // Report::update_status_all(&self.pool, &packet_data, LoraStatus::Valid, Utc::now()).await?;
+        Report::update_status_all(&self.pool, &packet_data, LoraStatus::Valid, Utc::now()).await?;
         // _ = Report::delete_poc(&self.pool, &packet_data).await;
-        _ = Report::delete_poc_witnesses(&self.pool, &packet_data).await;
         Ok(())
     }
 }

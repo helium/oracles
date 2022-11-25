@@ -24,16 +24,9 @@ use sqlx::PgPool;
 use std::time::Duration;
 use tokio::{time::{self, MissedTickBehavior}};
 
-const REPORTS_POLL_TIME: u64 = 60 * 15;
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
-// const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 15);
-/// max age in seconds of beacon & witness reports loaded from S3 which will be processed
-/// any report older will be ignored
-const REPORT_MAX_REPORT_AGE: i64 = 60 * 60; // 15 mins
-/// max age in seconds of entropy reports loaded from S3 which will be processed
-/// any report older will be ignored
-const ENTROPY_MAX_REPORT_AGE: i64 = 60 * 30; // 30 mins
+const REPORTS_POLL_TIME: u64 = 60 * 15;
 
 const LOADER_WORKERS: usize = 25;
 const STORE_WORKERS: usize = 100;
@@ -299,14 +292,14 @@ impl Loader {
     }
 
     async fn check_valid_gateway(&self, pub_key: &PublicKey, gateway_cache: &GatewayCache) -> bool {
-        // if self.check_gw_denied(pub_key).await {
-        //     tracing::debug!("dropping denied gateway : {:?}", &pub_key);
-        //     return false;
-        // }
-        // if self.check_unknown_gw(pub_key, gateway_cache).await {
-        //     tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
-        //     return false;
-        // }
+        if self.check_gw_denied(pub_key).await {
+            tracing::debug!("dropping denied gateway : {:?}", &pub_key);
+            return false;
+        }
+        if self.check_unknown_gw(pub_key, gateway_cache).await {
+            tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
+            return false;
+        }
         true
     }
 
