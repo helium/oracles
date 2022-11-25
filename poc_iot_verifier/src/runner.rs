@@ -1,7 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
-    poc_report::{Report, LoraStatus},
+    poc_report::{Report},
     Error, Result, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
@@ -384,8 +384,8 @@ impl Runner {
             }
         }
         // done with these poc reports, purge em from the db
-        // Report::delete_poc(&self.pool, &beacon_id).await?;
-        Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
+        Report::delete_poc(&self.pool, &beacon_id).await?;
+        // Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
         Ok(())
     }
 
@@ -437,8 +437,8 @@ impl Runner {
                 }
             }
         }
-        Report::update_status_all(&self.pool, &packet_data, LoraStatus::Valid, Utc::now()).await?;
-        // _ = Report::delete_poc(&self.pool, &packet_data).await;
+        // Report::update_status_all(&self.pool, &packet_data, LoraStatus::Valid, Utc::now()).await?;
+        _ = Report::delete_poc(&self.pool, &packet_data).await;
         Ok(())
     }
 }
