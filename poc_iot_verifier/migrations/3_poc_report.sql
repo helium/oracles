@@ -41,3 +41,7 @@ ON poc_report(created_at);
 
 CREATE INDEX idx_poc_report_attempts
 ON poc_report(attempts);
+
+CREATE INDEX idx_poc_report_report_type_status_created_at
+ON poc_report (report_type,status,created_at);
+

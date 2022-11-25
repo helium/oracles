@@ -105,6 +105,24 @@ impl Report {
         .map_err(Error::from)
     }
 
+    pub async fn delete_poc_witnesses<'c, 'q, E>(executor: E, packet_data: &'q Vec<u8>) -> Result
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
+    {
+        sqlx::query(
+            r#"
+            delete from poc_report
+            where packet_data = $1
+            and report_type = "witness"
+            "#,
+        )
+        .bind(packet_data)
+        .execute(executor.clone())
+        .await
+        .map(|_| ())
+        .map_err(Error::from)
+    }
+
     pub async fn delete_report<'c, 'q, E>(executor: E, id: &'q Vec<u8>) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,

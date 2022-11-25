@@ -14,7 +14,7 @@ use std::path::Path;
 use futures::stream::{self, StreamExt};
 use helium_proto::Message;
 use sqlx::PgPool;
-use tokio::time;
+use tokio::{time::{self, MissedTickBehavior}};
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
@@ -57,6 +57,7 @@ impl Purger {
         tracing::info!("starting purger");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
+        db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);

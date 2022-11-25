@@ -22,10 +22,10 @@ use helium_proto::{
 use blake3::hash;
 use sqlx::PgPool;
 use std::time::Duration;
-use tokio::time;
+use tokio::{time::{self, MissedTickBehavior}};
 
 const REPORTS_POLL_TIME: u64 = 60 * 15;
-
+const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
 // const REPORTS_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 15);
 /// max age in seconds of beacon & witness reports loaded from S3 which will be processed
@@ -75,7 +75,10 @@ impl Loader {
         tracing::info!("started verifier loader");
 
         let mut report_timer = time::interval(time::Duration::from_secs(REPORTS_POLL_TIME));
+        report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
+        denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
         loop {
             if shutdown.is_triggered() {
                 break;
@@ -121,16 +124,13 @@ impl Loader {
         &self,
         gateway_cache: &GatewayCache,
     ) -> Result {
-        //2022-11-24T17:02:26.040135Z  INFO poc_iot_verifier::loader: checking for new ingest files of type entropy_report
-        //after 2022-11-24 16:02:26.036400671 UTC and before 2022-11-24 16:17:26.036400671 UTC
-        // TODO: determine a sane value for oldest_event_time
-        // events older than this will not be processed
         let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
-        let entropy_after = Meta::last_timestamp(&self.pool, FileType::EntropyReport)
+        let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
             .unwrap_or(oldest_event_time)
             .max(oldest_event_time);
-        let entropy_before = entropy_after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
+        let before = after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
+
         stream::iter(&[FileType::EntropyReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, | file_type | async move {
@@ -139,8 +139,8 @@ impl Loader {
                         *file_type,
                         &self.entropy_store,
                         gateway_cache,
-                        entropy_after,
-                        entropy_before,
+                        after,
+                        before,
                     )
                     .await;
             })
@@ -152,11 +152,6 @@ impl Loader {
         // report being selected for verification
         // if a beacon is verified before the witness reports make it
         // to the db then we end up dropping those witness reports
-        let witness_after = Meta::last_timestamp(&self.pool, FileType::LoraWitnessIngestReport)
-            .await?
-            .unwrap_or(oldest_event_time)
-            .max(oldest_event_time);
-        let witness_before = witness_after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
         stream::iter(&[FileType::LoraWitnessIngestReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, | file_type | async move {
@@ -165,18 +160,13 @@ impl Loader {
                         *file_type,
                         &self.ingest_store,
                         gateway_cache,
-                        witness_after,
-                        witness_before,
+                        after,
+                        before,
                     )
                     .await;
             })
             .await;
 
-        let beacon_after = Meta::last_timestamp(&self.pool, FileType::LoraBeaconIngestReport)
-            .await?
-            .unwrap_or(oldest_event_time)
-            .max(oldest_event_time);
-        let beacon_before = beacon_after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
         stream::iter(&[FileType::LoraBeaconIngestReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, | file_type | async move {
@@ -185,13 +175,14 @@ impl Loader {
                         *file_type,
                         &self.ingest_store,
                         gateway_cache,
-                        beacon_after,
-                        beacon_before,
+                        after,
+                        before,
                     )
                     .await;
             })
             .await;
 
+        Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
         Ok(())
     }
 
@@ -229,7 +220,6 @@ impl Loader {
             }
         }).await;
         tracing::info!("completed processing {infos_len} files of type {file_type}");
-        Meta::update_last_timestamp(&self.pool, file_type, Some(before)).await?;
         Ok(())
     }
 

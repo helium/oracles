@@ -42,7 +42,7 @@ impl Meta {
 
     pub async fn last_timestamp<'c, E>(
         executor: E,
-        file_type: FileType,
+        file_type: &str,
     ) -> Result<Option<DateTime<Utc>>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -53,7 +53,7 @@ impl Meta {
             where key = $1
             "#,
         )
-        .bind(file_type.to_str())
+        .bind(file_type)
         .fetch_optional(executor)
         .await?
         .and_then(|v| {
@@ -67,7 +67,7 @@ impl Meta {
 
     pub async fn update_last_timestamp<'c, E>(
         executor: E,
-        file_type: FileType,
+        file_type: &str,
         timestamp: Option<DateTime<Utc>>,
     ) -> Result
     where
@@ -81,7 +81,7 @@ impl Meta {
                 value = EXCLUDED.value
             "#,
         )
-        .bind(file_type.to_str())
+        .bind(file_type)
         .bind(timestamp.map(|v| v.timestamp_millis().to_string()))
         .execute(executor)
         .await?;

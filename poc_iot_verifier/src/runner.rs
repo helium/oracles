@@ -33,7 +33,7 @@ use rust_decimal_macros::dec;
 >>>>>>> 6e2d8c5 (misc optimisations from load testing)
 use sqlx::PgPool;
 use std::path::Path;
-use tokio::time::{self};
+use tokio::{time::{self, MissedTickBehavior}};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);
@@ -67,6 +67,7 @@ impl Runner {
         tracing::info!("starting runner");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
+        db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.settings.cache);
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
@@ -436,8 +437,9 @@ impl Runner {
                 }
             }
         }
-        Report::update_status_all(&self.pool, &packet_data, LoraStatus::Valid, Utc::now()).await?;
+        // Report::update_status_all(&self.pool, &packet_data, LoraStatus::Valid, Utc::now()).await?;
         // _ = Report::delete_poc(&self.pool, &packet_data).await;
+        _ = Report::delete_poc_witnesses(&self.pool, &packet_data).await;
         Ok(())
     }
 }
