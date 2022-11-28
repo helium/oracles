@@ -41,7 +41,6 @@ const WITNESS_STALE_PERIOD: i64 = BEACON_STALE_PERIOD + (15 * 60);
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
 const ENTROPY_STALE_PERIOD: i64 = BEACON_STALE_PERIOD + (15 * 60);
 
-
 pub struct Purger {
     pool: PgPool,
     base_stale_period: i64,
@@ -132,7 +131,8 @@ impl Purger {
         tracing::info!(
             "starting query get_stale_pending_beacons with stale period: {beacon_stale_period}"
         );
-        let stale_beacons = Report::get_stale_pending_beacons(&self.pool, beacon_stale_period).await?;
+        let stale_beacons =
+            Report::get_stale_pending_beacons(&self.pool, beacon_stale_period).await?;
         tracing::info!("completed query get_stale_pending_beacons");
         tracing::info!("purging {:?} stale beacons", stale_beacons.len());
         stream::iter(stale_beacons)
@@ -153,11 +153,8 @@ impl Purger {
         tracing::info!(
             "starting query get_stale_pending_witnesses with stale period: {witness_stale_period}"
         );
-        let stale_witnesses = Report::get_stale_pending_witnesses(
-            &self.pool,
-            witness_stale_period,
-        )
-        .await?;
+        let stale_witnesses =
+            Report::get_stale_pending_witnesses(&self.pool, witness_stale_period).await?;
         tracing::info!("completed query get_stale_pending_witnesses");
         let num_stale_witnesses = stale_witnesses.len();
         tracing::info!("purging {num_stale_witnesses} stale witnesses");
