@@ -38,7 +38,6 @@ pub struct Poc {
     witness_reports: Vec<LoraWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
-    // pool: PgPool,
 }
 
 pub struct VerifyBeaconResult {
@@ -73,7 +72,6 @@ impl Poc {
         beacon_report: LoraBeaconIngestReport,
         witness_reports: Vec<LoraWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
-        // pool: PgPool,
     ) -> Result<Self> {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
         Ok(Self {
@@ -81,7 +79,6 @@ impl Poc {
             witness_reports,
             entropy_start,
             entropy_end,
-            // pool,
         })
     }
 
@@ -198,7 +195,6 @@ impl Poc {
         // beaconer location is guaranteed to unwrap as we've already checked and returned early above when it's `None`
         let scaling_factor = hex_density_map.get(&beaconer_location.to_string()).await;
 
-        // let scaling_factor = Some(Decimal::ONE);
         tracing::debug!("beacon verification success");
         // all is good with the beacon
         let resp = VerifyBeaconResult {
