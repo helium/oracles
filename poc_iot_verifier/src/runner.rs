@@ -25,12 +25,8 @@ use helium_proto::{
     },
     Message,
 };
-<<<<<<< HEAD
-use node_follower::follower_service::FollowerService;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
-=======
->>>>>>> 6e2d8c5 (misc optimisations from load testing)
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time::{self, MissedTickBehavior};
@@ -244,7 +240,7 @@ impl Runner {
                 );
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                    let verified_witnesses_result = poc
+                    let mut verified_witnesses_result = poc
                         .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
                         .await?;
                     // check if there are any failed witnesses
