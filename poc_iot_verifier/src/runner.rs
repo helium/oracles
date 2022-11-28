@@ -252,13 +252,10 @@ impl Runner {
                     // and halt here, let things be reprocessed next tick
                     // if a witness continues to fail it will eventually
                     // be discarded from the list returned for the beacon
-                    // thus one of more failing witnesses will not block the overall POC
+                    // thus one or more failing witnesses will not block the overall POC
                     if !verified_witnesses_result.failed_witnesses.is_empty() {
                         for failed_witness_report in verified_witnesses_result.failed_witnesses {
-                            // something went wrong whilst verifying witnesses
-                            // halt here and allow things to be reprocessed next tick
                             let failed_witness = failed_witness_report.report;
-                            // have to construct the id manually here as dont have the ingest report handy
                             let id =
                                 failed_witness.report_id(failed_witness_report.received_timestamp);
                             Report::update_attempts(&self.pool, &id, Utc::now()).await?;
@@ -385,7 +382,6 @@ impl Runner {
         }
         // done with these poc reports, purge em from the db
         Report::delete_poc(&self.pool, &beacon_id).await?;
-        // Report::update_status_all(&self.pool, &beacon_id, LoraStatus::Invalid, Utc::now()).await?;
         Ok(())
     }
 
@@ -437,8 +433,7 @@ impl Runner {
                 }
             }
         }
-        // Report::update_status_all(&self.pool, &packet_data, LoraStatus::Valid, Utc::now()).await?;
-        _ = Report::delete_poc(&self.pool, &packet_data).await;
+        Report::delete_poc(&self.pool, &packet_data).await?;
         Ok(())
     }
 }

@@ -121,6 +121,12 @@ impl Loader {
             .max(oldest_event_time);
         let before = after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
 
+        // serially load each file type starting with entropy
+        // beacons & witnesses dep on entropy
+        // and ideally we wouldnt want to process a beacon
+        // until witnesses are present in the db
+        // otherwise we end up dropping those witnesses
+        // serially loading each type ensures we have some order
         stream::iter(&[FileType::EntropyReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, |file_type| async move {
@@ -136,12 +142,6 @@ impl Loader {
             })
             .await;
 
-        // process witness report before beacons
-        // this gives a better opportunity for all relevant witness
-        // reports to be in the DB prior to the associated beacon
-        // report being selected for verification
-        // if a beacon is verified before the witness reports make it
-        // to the db then we end up dropping those witness reports
         stream::iter(&[FileType::LoraWitnessIngestReport])
             .map(|file_type| (file_type))
             .for_each_concurrent(5, |file_type| async move {
