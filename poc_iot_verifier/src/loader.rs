@@ -32,7 +32,7 @@ const LOADER_WORKERS: usize = 25;
 const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
-const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 2;
+const LOADER_DB_POOL_SIZE: usize = 50;
 
 pub struct Loader {
     ingest_store: FileStore,
