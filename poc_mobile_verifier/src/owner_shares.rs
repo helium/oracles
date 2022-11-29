@@ -56,7 +56,7 @@ impl OwnerShares {
         speedtests: SpeedtestAverages,
     ) -> Result<Self, ResolveError> {
         let mut owner_shares = Self::default();
-        for heartbeat in heartbeats.into_iter() {
+        for heartbeat in heartbeats.into_rewardables() {
             if let Some(owner) = resolver.resolve_owner(&heartbeat.hotspot_key).await? {
                 let speedmultiplier = speedtests
                     .get_average(&heartbeat.hotspot_key)

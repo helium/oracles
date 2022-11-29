@@ -34,7 +34,7 @@ impl Cmd {
         let mut follower = settings.follower.connect_follower()?;
         let pool = settings.database.connect(10).await?;
 
-        let heartbeats = Heartbeats::validated(&pool, epoch.start).await?;
+        let heartbeats = Heartbeats::validated(&pool).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
         let owner_shares =
             OwnerShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
