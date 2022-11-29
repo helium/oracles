@@ -18,7 +18,7 @@ use tokio::time::{self, MissedTickBehavior};
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
-const PURGER_DB_POOL_SIZE: usize = 50;
+const PURGER_DB_POOL_SIZE: usize = 500;
 
 /// the period in seconds after when a beacon report in the DB will be deemed stale
 // this period needs to be sufficiently long that we can be sure the beacon has had the

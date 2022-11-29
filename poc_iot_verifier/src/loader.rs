@@ -32,7 +32,7 @@ const LOADER_WORKERS: usize = 25;
 const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
-const LOADER_DB_POOL_SIZE: usize = 50;
+const LOADER_DB_POOL_SIZE: usize = 500;
 
 pub struct Loader {
     ingest_store: FileStore,
@@ -180,14 +180,14 @@ impl Loader {
             .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
             .for_each_concurrent(STORE_WORKERS, |msg| async move {
                 match msg {
-                    Err(err) => tracing::warn!("skipping entry in {file_type} stream: {err:?}"),
+                    Err(err) => tracing::warn!("skipping report of {file_type}: {err:?}"),
                     Ok(buf) => match self
-                        .handle_store_update(file_type, &buf, gateway_cache)
+                        .handle_report(file_type, &buf, gateway_cache)
                         .await
                     {
                         Ok(()) => (),
                         Err(err) => {
-                            tracing::warn!("failed to update store: {err:?}")
+                            tracing::warn!("error whilst handling incoming report: {err:?}")
                         }
                     },
                 }
@@ -197,7 +197,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_store_update(
+    async fn handle_report(
         &self,
         file_type: FileType,
         buf: &[u8],
