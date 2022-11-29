@@ -155,6 +155,7 @@ async fn submit_txns(
                                             "storing txn: {:?}",
                                             txn_details.hash_b64_url
                                         );
+                                        metrics::increment_counter!("poc_injector_receipt_count");
                                         let _ = file_sink_write!(
                                             "signed_poc_receipt_txn",
                                             receipt_sender,
@@ -168,6 +169,7 @@ async fn submit_txns(
                                 }
                             } else {
                                 tracing::info!("only storing txn: {:?}", txn_details.hash_b64_url);
+                                metrics::increment_counter!("poc_injector_receipt_count");
                                 let _ = file_sink_write!(
                                     "signed_poc_receipt_txn",
                                     receipt_sender,
