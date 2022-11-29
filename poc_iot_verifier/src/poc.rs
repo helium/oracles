@@ -230,7 +230,6 @@ impl Poc {
                         .get(&gw_info.location.unwrap_or_default().to_string())
                         .await
                         .unwrap_or(Decimal::ONE);
-                    // let scaling_factor = Decimal::ONE;
                     let valid_witness = LoraValidWitnessReport {
                         received_timestamp: witness_report.received_timestamp,
                         location: gw_info.location,
