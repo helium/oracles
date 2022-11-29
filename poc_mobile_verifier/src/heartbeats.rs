@@ -190,7 +190,7 @@ impl Heartbeat {
             r#"
             INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, hours_seen)
             VALUES ($1, $2, $3, $4)
-            ON CONFLICT DO UPDATE SET
+            ON CONFLICT (hotspot_key, cbsd_id) DO UPDATE SET
             hours_seen[$5] = TRUE
             RETURNING (xmax = 0) as inserted;
             "#,
