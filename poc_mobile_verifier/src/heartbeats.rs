@@ -28,8 +28,8 @@ pub struct HeartbeatKey {
 
 #[derive(Default)]
 pub struct HeartbeatValue {
-    reward_weight: Decimal,
-    hours_seen: [bool; 24],
+    pub reward_weight: Decimal,
+    pub hours_seen: [bool; 24],
 }
 
 impl HeartbeatValue {
@@ -113,6 +113,17 @@ impl Extend<Heartbeat> for Heartbeats {
             entry.reward_weight = heartbeat.reward_weight;
             entry.hours_seen[heartbeat.timestamp.hour() as usize] = true;
         }
+    }
+}
+
+impl FromIterator<Heartbeat> for Heartbeats {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Heartbeat>,
+    {
+        let mut heartbeats = Self::default();
+        heartbeats.extend(iter);
+        heartbeats
     }
 }
 

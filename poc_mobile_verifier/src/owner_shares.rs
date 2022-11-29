@@ -303,7 +303,12 @@ mod test {
             },
         ];
 
-        let heartbeats: Heartbeats = heartbeats.into_iter().collect();
+        let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
+
+        // Set all of the heartbeats found to true
+        for (_, hb) in heartbeats.heartbeats.iter_mut() {
+            hb.hours_seen = [true; 24];
+        }
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
@@ -512,7 +517,12 @@ mod test {
                 timestamp,
             },
         ];
-        let heartbeats: Heartbeats = heartbeats.into_iter().collect();
+        let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
+
+        // Set all of the heartbeats found to true
+        for (_, hb) in heartbeats.heartbeats.iter_mut() {
+            hb.hours_seen = [true; 24];
+        }
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
