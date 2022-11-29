@@ -127,39 +127,33 @@ impl Loader {
         // until witnesses are present in the db
         // otherwise we end up dropping those witnesses
         // serially loading each type ensures we have some order
-        stream::iter(&[FileType::EntropyReport])
-            .map(|file_type| (file_type))
-            .for_each_concurrent(5, |file_type| async move {
-                let _ = self
-                    .process_events(
-                        *file_type,
-                        &self.entropy_store,
-                        gateway_cache,
-                        after,
-                        before,
-                    )
-                    .await;
-            })
+        _ = self
+            .process_events(
+                FileType::EntropyReport,
+                &self.entropy_store,
+                gateway_cache,
+                after,
+                before,
+            )
             .await;
-
-        stream::iter(&[FileType::LoraWitnessIngestReport])
-            .map(|file_type| (file_type))
-            .for_each_concurrent(5, |file_type| async move {
-                let _ = self
-                    .process_events(*file_type, &self.ingest_store, gateway_cache, after, before)
-                    .await;
-            })
+        _ = self
+            .process_events(
+                FileType::LoraWitnessIngestReport,
+                &self.ingest_store,
+                gateway_cache,
+                after,
+                before,
+            )
             .await;
-
-        stream::iter(&[FileType::LoraBeaconIngestReport])
-            .map(|file_type| (file_type))
-            .for_each_concurrent(5, |file_type| async move {
-                let _ = self
-                    .process_events(*file_type, &self.ingest_store, gateway_cache, after, before)
-                    .await;
-            })
+        _ = self
+            .process_events(
+                FileType::LoraBeaconIngestReport,
+                &self.ingest_store,
+                gateway_cache,
+                after,
+                before,
+            )
             .await;
-
         Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
         Ok(())
     }
