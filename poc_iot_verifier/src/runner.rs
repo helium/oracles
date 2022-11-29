@@ -130,7 +130,6 @@ impl Runner {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal db runner error: {err:?}");
-                        return Err(err)
                     }
                 }
             }

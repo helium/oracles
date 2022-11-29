@@ -88,8 +88,7 @@ impl Loader {
                 _ = report_timer.tick() => match self.handle_report_tick(gateway_cache).await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal loader error, repor_tick triggered: {err:?}");
-                        return Err(err)
+                        tracing::error!("fatal loader error, report_tick triggered: {err:?}");
                     }
                 }
             }
