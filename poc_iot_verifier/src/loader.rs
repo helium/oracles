@@ -130,7 +130,7 @@ impl Loader {
         // until witnesses are present in the db
         // otherwise we end up dropping those witnesses
         // serially loading each type ensures we have some order
-        let _ = self
+        match self
             .process_events(
                 FileType::EntropyReport,
                 &self.entropy_store,
@@ -139,8 +139,12 @@ impl Loader {
                 before,
                 shutdown.clone(),
             )
-            .await;
-        let _ = self
+            .await {
+                Ok(()) => (),
+                Err(err) =>
+                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::EntropyReport)
+            }
+        match self
             .process_events(
                 FileType::LoraWitnessIngestReport,
                 &self.ingest_store,
@@ -149,8 +153,12 @@ impl Loader {
                 before,
                 shutdown.clone(),
             )
-            .await;
-        let _ = self
+            .await {
+                Ok(()) => (),
+                Err(err) =>
+                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::LoraWitnessIngestReport)
+            }
+        match self
             .process_events(
                 FileType::LoraBeaconIngestReport,
                 &self.ingest_store,
@@ -159,7 +167,11 @@ impl Loader {
                 before,
                 shutdown.clone(),
             )
-            .await;
+            .await {
+                Ok(()) => (),
+                Err(err) =>
+                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::LoraBeaconIngestReport)
+            }
         let _ = Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await;
         Ok(())
     }
