@@ -34,7 +34,7 @@ use tokio::time::{self, MissedTickBehavior};
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);
 const BEACON_WORKERS: usize = 80;
-const RUNNER_DB_POOL_SIZE: usize = 500;
+const RUNNER_DB_POOL_SIZE: usize = 200;
 
 const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
@@ -140,7 +140,7 @@ impl Runner {
 
     async fn handle_db_tick(
         &self,
-        _shutdown: triggered::Listener,
+        shutdown: triggered::Listener,
         lora_invalid_beacon_tx: MessageSender,
         lora_invalid_witness_tx: MessageSender,
         lora_valid_poc_tx: MessageSender,
@@ -162,8 +162,8 @@ impl Runner {
         let beacon_len = db_beacon_reports.len();
         tracing::info!("{beacon_len} beacons ready for verification");
 
-        stream::iter(db_beacon_reports)
-            .for_each_concurrent(BEACON_WORKERS, |db_beacon| {
+        let handler =
+            stream::iter(db_beacon_reports).for_each_concurrent(BEACON_WORKERS, |db_beacon| {
                 let tx1 = lora_invalid_beacon_tx.clone();
                 let tx2 = lora_invalid_witness_tx.clone();
                 let tx3 = lora_valid_poc_tx.clone();
@@ -179,10 +179,15 @@ impl Runner {
                         }
                     }
                 }
-            })
-            .await;
-        metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
-        tracing::info!("completed processing {beacon_len} beacons");
+            });
+
+        tokio::select! {
+            _ = handler => {
+                metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
+                tracing::info!("completed processing {beacon_len} beacons");
+                    },
+            _ = shutdown.clone() => (),
+        }
         Ok(())
     }
 

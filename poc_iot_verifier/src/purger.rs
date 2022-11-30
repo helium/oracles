@@ -18,7 +18,7 @@ use tokio::time::{self, MissedTickBehavior};
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
-const PURGER_DB_POOL_SIZE: usize = 500;
+const PURGER_DB_POOL_SIZE: usize = 200;
 
 /// the period in seconds after when a beacon report in the DB will be deemed stale
 // this period needs to be sufficiently long that we can be sure the beacon has had the
@@ -105,7 +105,7 @@ impl Purger {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = db_timer.tick() =>
-                    match self.handle_db_tick(lora_invalid_beacon_tx.clone(),lora_invalid_witness_tx.clone()).await {
+                    match self.handle_db_tick(lora_invalid_beacon_tx.clone(),lora_invalid_witness_tx.clone(), shutdown.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal purger error: {err:?}");
@@ -122,6 +122,7 @@ impl Purger {
         &self,
         lora_invalid_beacon_tx: MessageSender,
         lora_invalid_witness_tx: MessageSender,
+        shutdown: triggered::Listener,
     ) -> Result {
         // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
@@ -134,9 +135,10 @@ impl Purger {
         let stale_beacons =
             Report::get_stale_pending_beacons(&self.pool, beacon_stale_period).await?;
         tracing::info!("completed query get_stale_pending_beacons");
-        tracing::info!("purging {:?} stale beacons", stale_beacons.len());
-        stream::iter(stale_beacons)
-            .for_each_concurrent(PURGER_WORKERS, |report| {
+        let num_stale_beacons = stale_beacons.len();
+        tracing::info!("purging {:?} stale beacons", num_stale_beacons);
+        let beacon_handler =
+            stream::iter(stale_beacons).for_each_concurrent(PURGER_WORKERS, |report| {
                 let tx = lora_invalid_beacon_tx.clone();
                 async move {
                     match self.handle_purged_beacon(&report, tx).await {
@@ -146,8 +148,13 @@ impl Purger {
                         }
                     }
                 }
-            })
-            .await;
+            });
+        tokio::select! {
+            _ = beacon_handler => {
+                    tracing::info!("completed purging {num_stale_beacons} stale beacons");
+                },
+            _ = shutdown.clone() => (),
+        }
 
         let witness_stale_period = self.base_stale_period + WITNESS_STALE_PERIOD;
         tracing::info!(
@@ -158,8 +165,8 @@ impl Purger {
         tracing::info!("completed query get_stale_pending_witnesses");
         let num_stale_witnesses = stale_witnesses.len();
         tracing::info!("purging {num_stale_witnesses} stale witnesses");
-        stream::iter(stale_witnesses)
-            .for_each_concurrent(PURGER_WORKERS, |report| {
+        let witness_handler =
+            stream::iter(stale_witnesses).for_each_concurrent(PURGER_WORKERS, |report| {
                 let tx = lora_invalid_witness_tx.clone();
                 async move {
                     match self.handle_purged_witness(&report, tx).await {
@@ -169,12 +176,16 @@ impl Purger {
                         }
                     }
                 }
-            })
-            .await;
-        tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
+            });
+        tokio::select! {
+            _ = witness_handler => {
+                tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
+                    },
+            _ = shutdown.clone() => (),
+        }
 
         // purge any stale entropy, no need to output anything to s3 here
-        _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
+        let _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
         Ok(())
     }
 
@@ -203,8 +214,7 @@ impl Purger {
         )
         .await?;
         // delete the report from the DB
-        Report::delete_report(&self.pool, &beacon_id).await?;
-        Ok(())
+        Report::delete_report(&self.pool, &beacon_id).await
     }
 
     async fn handle_purged_witness(
@@ -233,7 +243,6 @@ impl Purger {
         .await?;
 
         // delete the report from the DB
-        Report::delete_report(&self.pool, &witness_id).await?;
-        Ok(())
+        Report::delete_report(&self.pool, &witness_id).await
     }
 }

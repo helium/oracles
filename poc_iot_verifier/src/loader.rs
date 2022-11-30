@@ -32,7 +32,7 @@ const LOADER_WORKERS: usize = 25;
 const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
-const LOADER_DB_POOL_SIZE: usize = 500;
+const LOADER_DB_POOL_SIZE: usize = 200;
 
 pub struct Loader {
     ingest_store: FileStore,
@@ -112,7 +112,11 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(&self, gateway_cache: &GatewayCache, shutdown: triggered::Listener) -> Result {
+    async fn handle_report_tick(
+        &self,
+        gateway_cache: &GatewayCache,
+        shutdown: triggered::Listener,
+    ) -> Result {
         let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
@@ -156,7 +160,7 @@ impl Loader {
                 shutdown.clone(),
             )
             .await;
-        Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
+        let _ = Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await;
         Ok(())
     }
 
@@ -196,10 +200,10 @@ impl Loader {
                     },
                 }
             });
-        tracing::info!("completed processing {infos_len} files of type {file_type}");
+
         tokio::select! {
             _ = handler => {
-                tracing::info!("completed processing {infos_len} {file_type} files");
+                tracing::info!("completed processing {infos_len} files of type {file_type}");
             },
             _ = shutdown.clone() => (),
         }
