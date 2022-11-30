@@ -33,8 +33,8 @@ use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(90);
-const BEACON_WORKERS: usize = 75;
-const RUNNER_DB_POOL_SIZE: usize = BEACON_WORKERS * 4;
+const BEACON_WORKERS: usize = 60;
+const RUNNER_DB_POOL_SIZE: usize = BEACON_WORKERS * 3;
 
 const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
