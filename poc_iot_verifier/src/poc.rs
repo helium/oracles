@@ -367,7 +367,7 @@ impl Poc {
 
         // check witness is utilizing same freq and that of the beaconer
         // tolerance is 100Khz
-        if i32::unsigned_abs((beacon.frequency - witness.frequency) as i32) > 1000 * 100 {
+        if (beacon.frequency.abs_diff(witness.frequency) as i32) > 1000 * 100 {
             tracing::debug!(
                 "witness verification failed, reason: {:?}",
                 InvalidReason::InvalidFrequency
