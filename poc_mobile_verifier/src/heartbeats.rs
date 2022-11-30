@@ -199,7 +199,7 @@ impl Heartbeat {
         .bind(self.cbsd_id)
         .bind(self.reward_weight)
         .bind(new_hours_seen(&self.timestamp))
-        .bind(self.timestamp.hour() as i32)
+        .bind(self.timestamp.hour() as i32 + 1)
         .fetch_one(&mut *exec)
         .await?
         .inserted)
