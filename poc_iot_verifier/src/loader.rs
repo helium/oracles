@@ -29,7 +29,7 @@ const REPORTS_META_NAME: &str = "report";
 const REPORTS_POLL_TIME: u64 = 60 * 15;
 
 const LOADER_WORKERS: usize = 25;
-const STORE_WORKERS: usize = 100;
+const STORE_WORKERS: usize = 50;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
 const LOADER_DB_POOL_SIZE: usize = 200;

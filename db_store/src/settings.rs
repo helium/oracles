@@ -17,6 +17,8 @@ pub struct Settings {
 impl Settings {
     pub async fn connect(&self, default_max_connections: usize) -> Result<Pool<Postgres>> {
         let pool = PgPoolOptions::new()
+            .min_connections(50 )
+            .test_before_acquire(true)
             .max_connections(
                 self.max_connections
                     .unwrap_or(default_max_connections as u32),
