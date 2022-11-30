@@ -85,7 +85,7 @@ impl Loader {
                         tracing::error!("fatal loader error, denylist_tick triggered: {err:?}");
                     }
                 },
-                _ = report_timer.tick() => match self.handle_report_tick(gateway_cache).await {
+                _ = report_timer.tick() => match self.handle_report_tick(gateway_cache, shutdown.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal loader error, report_tick triggered: {err:?}");
@@ -112,7 +112,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> Result {
+    async fn handle_report_tick(&self, gateway_cache: &GatewayCache, shutdown: triggered::Listener) -> Result {
         let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
@@ -126,31 +126,34 @@ impl Loader {
         // until witnesses are present in the db
         // otherwise we end up dropping those witnesses
         // serially loading each type ensures we have some order
-        _ = self
+        let _ = self
             .process_events(
                 FileType::EntropyReport,
                 &self.entropy_store,
                 gateway_cache,
                 after,
                 before,
+                shutdown.clone(),
             )
             .await;
-        _ = self
+        let _ = self
             .process_events(
                 FileType::LoraWitnessIngestReport,
                 &self.ingest_store,
                 gateway_cache,
                 after,
                 before,
+                shutdown.clone(),
             )
             .await;
-        _ = self
+        let _ = self
             .process_events(
                 FileType::LoraBeaconIngestReport,
                 &self.ingest_store,
                 gateway_cache,
                 after,
                 before,
+                shutdown.clone(),
             )
             .await;
         Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
@@ -164,6 +167,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
+        shutdown: triggered::Listener,
     ) -> Result {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
@@ -176,24 +180,30 @@ impl Loader {
 
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
-        store
+        let handler = store
             .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
             .for_each_concurrent(STORE_WORKERS, |msg| async move {
                 match msg {
-                    Err(err) => tracing::warn!("skipping report of {file_type}: {err:?}"),
+                    Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
                     Ok(buf) => match self
                         .handle_report(file_type, &buf, gateway_cache)
                         .await
                     {
                         Ok(()) => (),
                         Err(err) => {
-                            tracing::warn!("error whilst handling incoming report: {err:?}")
+                            tracing::warn!("error whilst handling incoming report of type: {file_type}, error: {err:?}")
                         }
                     },
                 }
-            })
-            .await;
+            });
         tracing::info!("completed processing {infos_len} files of type {file_type}");
+        tokio::select! {
+            _ = handler => {
+                tracing::info!("completed processing {infos_len} {file_type} files");
+            },
+            _ = shutdown.clone() => (),
+        }
+
         Ok(())
     }
 
