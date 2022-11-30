@@ -439,7 +439,7 @@ fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
     } else if num_witnesses < WITNESS_REDUNDANCY {
         Ok(Decimal::from(WITNESS_REDUNDANCY / num_witnesses))
     } else {
-        let exp = WITNESS_REDUNDANCY - num_witnesses;
+        let exp = num_witnesses - WITNESS_REDUNDANCY;
         if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
             let unnormalized = Decimal::TWO - to_sub;
             Ok(std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized))
