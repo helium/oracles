@@ -171,7 +171,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
-        shutdown: triggered::Listener,
+        _shutdown: triggered::Listener,
     ) -> Result {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
@@ -184,7 +184,7 @@ impl Loader {
 
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
-        let handler = store
+        store
             .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
             .for_each_concurrent(STORE_WORKERS, |msg| async move {
                 match msg {
@@ -199,15 +199,16 @@ impl Loader {
                         }
                     },
                 }
-            });
+            }).await;
 
-        tokio::select! {
-            _ = handler => {
-                tracing::info!("completed processing {infos_len} files of type {file_type}");
-            },
-            _ = shutdown.clone() => (),
-        }
+        // tokio::select! {
+        //     _ = handler => {
+        //         tracing::info!("completed processing {infos_len} files of type {file_type}");
+        //     },
+        //     _ = shutdown.clone() => (),
+        // }
 
+        tracing::info!("completed processing {infos_len} files of type {file_type}");
         Ok(())
     }
 

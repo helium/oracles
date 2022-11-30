@@ -122,7 +122,7 @@ impl Purger {
         &self,
         lora_invalid_beacon_tx: MessageSender,
         lora_invalid_witness_tx: MessageSender,
-        shutdown: triggered::Listener,
+        _shutdown: triggered::Listener,
     ) -> Result {
         // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
@@ -137,8 +137,7 @@ impl Purger {
         tracing::info!("completed query get_stale_pending_beacons");
         let num_stale_beacons = stale_beacons.len();
         tracing::info!("purging {:?} stale beacons", num_stale_beacons);
-        let beacon_handler =
-            stream::iter(stale_beacons).for_each_concurrent(PURGER_WORKERS, |report| {
+        stream::iter(stale_beacons).for_each_concurrent(PURGER_WORKERS, |report| {
                 let tx = lora_invalid_beacon_tx.clone();
                 async move {
                     match self.handle_purged_beacon(&report, tx).await {
@@ -148,13 +147,15 @@ impl Purger {
                         }
                     }
                 }
-            });
-        tokio::select! {
-            _ = beacon_handler => {
-                    tracing::info!("completed purging {num_stale_beacons} stale beacons");
-                },
-            _ = shutdown.clone() => (),
-        }
+            }).await;
+
+        tracing::info!("completed purging {num_stale_beacons} stale beacons");
+        // tokio::select! {
+        //     _ = beacon_handler => {
+        //             tracing::info!("completed purging {num_stale_beacons} stale beacons");
+        //         },
+        //     _ = shutdown.clone() => (),
+        // }
 
         let witness_stale_period = self.base_stale_period + WITNESS_STALE_PERIOD;
         tracing::info!(
@@ -165,8 +166,7 @@ impl Purger {
         tracing::info!("completed query get_stale_pending_witnesses");
         let num_stale_witnesses = stale_witnesses.len();
         tracing::info!("purging {num_stale_witnesses} stale witnesses");
-        let witness_handler =
-            stream::iter(stale_witnesses).for_each_concurrent(PURGER_WORKERS, |report| {
+        stream::iter(stale_witnesses).for_each_concurrent(PURGER_WORKERS, |report| {
                 let tx = lora_invalid_witness_tx.clone();
                 async move {
                     match self.handle_purged_witness(&report, tx).await {
@@ -176,13 +176,14 @@ impl Purger {
                         }
                     }
                 }
-            });
-        tokio::select! {
-            _ = witness_handler => {
-                tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
-                    },
-            _ = shutdown.clone() => (),
-        }
+            }).await;
+        tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
+        // tokio::select! {
+        //     _ = witness_handler => {
+        //         tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
+        //             },
+        //     _ = shutdown.clone() => (),
+        // }
 
         // purge any stale entropy, no need to output anything to s3 here
         let _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;

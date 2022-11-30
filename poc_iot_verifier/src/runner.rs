@@ -140,7 +140,7 @@ impl Runner {
 
     async fn handle_db_tick(
         &self,
-        shutdown: triggered::Listener,
+        _shutdown: triggered::Listener,
         lora_invalid_beacon_tx: MessageSender,
         lora_invalid_witness_tx: MessageSender,
         lora_valid_poc_tx: MessageSender,
@@ -162,8 +162,7 @@ impl Runner {
         let beacon_len = db_beacon_reports.len();
         tracing::info!("{beacon_len} beacons ready for verification");
 
-        let handler =
-            stream::iter(db_beacon_reports).for_each_concurrent(BEACON_WORKERS, |db_beacon| {
+        stream::iter(db_beacon_reports).for_each_concurrent(BEACON_WORKERS, |db_beacon| {
                 let tx1 = lora_invalid_beacon_tx.clone();
                 let tx2 = lora_invalid_witness_tx.clone();
                 let tx3 = lora_valid_poc_tx.clone();
@@ -179,15 +178,18 @@ impl Runner {
                         }
                     }
                 }
-            });
+            }).await;
 
-        tokio::select! {
-            _ = handler => {
-                metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
-                tracing::info!("completed processing {beacon_len} beacons");
-                    },
-            _ = shutdown.clone() => (),
-        }
+        metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
+        tracing::info!("completed processing {beacon_len} beacons");
+
+        // tokio::select! {
+        //     _ = handler => {
+        //         metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
+        //         tracing::info!("completed processing {beacon_len} beacons");
+        //             },
+        //     _ = shutdown.clone() => (),
+        // }
         Ok(())
     }
 
