@@ -18,7 +18,7 @@ pub struct Settings {
 impl Settings {
     pub async fn connect(&self, default_max_connections: usize) -> Result<Pool<Postgres>> {
         let pool = PgPoolOptions::new()
-            .test_before_acquire(false)
+            // .test_before_acquire(false)
             .idle_timeout(Duration::from_secs(600))
             .max_lifetime(Duration::from_secs(60 * 60 * 2))
             .min_connections(100)
