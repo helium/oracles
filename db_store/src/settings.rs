@@ -2,6 +2,7 @@ use crate::Result;
 use http::Uri;
 use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use std::time::Duration;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -17,8 +18,10 @@ pub struct Settings {
 impl Settings {
     pub async fn connect(&self, default_max_connections: usize) -> Result<Pool<Postgres>> {
         let pool = PgPoolOptions::new()
-            .min_connections(100 )
             .test_before_acquire(false)
+            .idle_timeout(Duration::from_secs(600))
+            .max_lifetime(Duration::from_secs(60 * 60 * 2))
+            .min_connections(100)
             .max_connections(
                 self.max_connections
                     .unwrap_or(default_max_connections as u32),
