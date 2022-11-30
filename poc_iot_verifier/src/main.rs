@@ -69,18 +69,25 @@ impl Server {
         });
 
         let gateway_cache = GatewayCache::from_settings(settings).await?;
-        let mut loader = loader::Loader::from_settings(settings).await?;
-        let mut runner = runner::Runner::from_settings(settings).await?;
-        let purger = purger::Purger::from_settings(settings).await?;
         let mut density_scaler =
             DensityScaler::from_settings(settings.density_scaler.clone()).await?;
-        tokio::try_join!(
-            runner.run(&shutdown, &gateway_cache, density_scaler.hex_density_map()),
-            loader.run(&shutdown, &gateway_cache),
-            purger.run(&shutdown),
-            density_scaler.run(&shutdown).map_err(Error::from),
-        )
-        .map(|_| ())
+        let shutdown1 = shutdown.clone();
+        let mut loader = loader::Loader::from_settings(settings).await?;
+        let gateway_cache1 = gateway_cache.clone();
+        let loader = tokio::spawn(async move { loader.run(&shutdown1, &gateway_cache1).await })
+            .map_err(Error::from);
+        let mut runner = runner::Runner::from_settings(settings).await?;
+        let shutdown2 = shutdown.clone();
+        let hex_map = density_scaler.hex_density_map();
+        let runner =
+            tokio::spawn(async move { runner.run(&shutdown2, &gateway_cache, hex_map).await })
+                .map_err(Error::from);
+        let purger = purger::Purger::from_settings(settings).await?;
+        let shutdown3 = shutdown.clone();
+        let purger = tokio::spawn(async move { purger.run(&shutdown3).await }).map_err(Error::from);
+        let density_scaler =
+            tokio::spawn(async move { density_scaler.run(&shutdown).await }).map_err(Error::from);
+        tokio::try_join!(runner, loader, purger, density_scaler,).map(|_| ())
     }
 }
 

@@ -48,6 +48,8 @@ pub enum Error {
     InvalidExponent(String),
     #[error("hotspot not found {0}")]
     GatewayNotFound(String),
+    #[error("join error")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 #[derive(Error, Debug)]

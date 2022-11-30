@@ -4,20 +4,22 @@ use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
+use std::sync::Arc;
 use retainer::Cache;
 use std::time::Duration;
 
 const CACHE_TTL: u64 = 86400;
 
+#[derive(Clone)]
 pub struct GatewayCache {
     pub follower_service: FollowerService,
-    pub cache: Cache<PublicKey, GatewayInfo>,
+    pub cache: Arc<Cache<PublicKey, GatewayInfo>>,
 }
 
 impl GatewayCache {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let follower_service = FollowerService::from_settings(&settings.follower)?;
-        let cache = Cache::<PublicKey, GatewayInfo>::new();
+        let cache = Arc::new(Cache::<PublicKey, GatewayInfo>::new());
         Ok(Self {
             follower_service,
             cache,
