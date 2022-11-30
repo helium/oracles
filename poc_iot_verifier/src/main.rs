@@ -47,7 +47,9 @@ pub struct Server {}
 
 impl Server {
     pub async fn run(&self, settings: &Settings) -> Result {
+        let console_layer = console_subscriber::spawn();
         tracing_subscriber::registry()
+            .with(console_layer)
             .with(tracing_subscriber::EnvFilter::new(&settings.log))
             .with(tracing_subscriber::fmt::layer())
             .init();
@@ -84,7 +86,6 @@ impl Server {
 
 #[tokio::main]
 async fn main() -> Result {
-    console_subscriber::init();
     let cli = Cli::parse();
     cli.run().await
 }
