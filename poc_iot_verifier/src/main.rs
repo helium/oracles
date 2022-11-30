@@ -84,6 +84,7 @@ impl Server {
 
 #[tokio::main]
 async fn main() -> Result {
+    console_subscriber::init();
     let cli = Cli::parse();
     cli.run().await
 }
