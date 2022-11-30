@@ -250,10 +250,13 @@ impl Loader {
                             &beacon.received_timestamp,
                             ReportType::Beacon,
                         )
-                        .await
+                        .await?;
+                        metrics::increment_counter!("oracles_poc_iot_verifier_loader_beacon");
+                        Ok(())
                     }
                     false => Ok(()),
                 }
+
             }
             FileType::LoraWitnessIngestReport => {
                 let witness: LoraWitnessIngestReport =
@@ -274,7 +277,9 @@ impl Loader {
                             &witness.received_timestamp,
                             ReportType::Witness,
                         )
-                        .await
+                        .await?;
+                        metrics::increment_counter!("oracles_poc_iot_verifier_loader_witness");
+                        Ok(())
                     }
                     false => Ok(()),
                 }
@@ -290,7 +295,9 @@ impl Loader {
                     &event.timestamp.to_timestamp()?,
                     event.version as i32,
                 )
-                .await
+                .await?;
+                metrics::increment_counter!("oracles_poc_iot_verifier_loader_entropy");
+                Ok(())
             }
             _ => {
                 tracing::warn!("ignoring unexpected filetype: {file_type:?}");
