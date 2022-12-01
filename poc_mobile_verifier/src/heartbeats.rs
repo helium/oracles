@@ -190,8 +190,13 @@ impl Heartbeat {
             r#"
             INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, hours_seen)
             VALUES ($1, $2, $3, $4)
-            ON CONFLICT (hotspot_key, cbsd_id) DO UPDATE SET
-            hours_seen[$5] = TRUE
+            ON CONFLICT cbsd_id DO UPDATE SET
+            hours_seen = CASE WHEN hotspot_key = EXCLUDED.hotspot_key THEN
+                            hours_seen[1:$5] || TRUE || hours_seen[($5 + 1):]
+                         ELSE
+                            $4
+                         END,
+            hotspot_key = EXCLUDED.hotspot_key
             RETURNING (xmax = 0) as inserted;
             "#,
         )
@@ -199,7 +204,7 @@ impl Heartbeat {
         .bind(self.cbsd_id)
         .bind(self.reward_weight)
         .bind(new_hours_seen(&self.timestamp))
-        .bind(self.timestamp.hour() as i32 + 1)
+        .bind(self.timestamp.hour() as i32)
         .fetch_one(&mut *exec)
         .await?
         .inserted)
