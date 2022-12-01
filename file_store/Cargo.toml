@@ -30,11 +30,12 @@ helium-crypto = {workspace = true}
 csv = "*"
 http = {workspace = true}
 aws-config = "0"
-aws-sdk-s3 = "0"
+aws-sdk-s3 = "0.21.0"
 strum = {version = "0", features = ["derive"]}
 strum_macros = "0"
 sha2 = {workspace = true}
 metrics = {workspace = true }
+blake3 = {workspace = true}
 poc-metrics = { path = "../metrics" }
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}

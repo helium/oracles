@@ -15,4 +15,5 @@ helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 http = {workspace = true}
 tonic = {workspace = true}
+retainer = {workspace = true}
 async-trait = "*"
