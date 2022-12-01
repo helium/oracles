@@ -188,7 +188,7 @@ impl Heartbeat {
             r#"
             INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, timestamps)
             VALUES ($1, $2, $3, ARRAY[$4])
-            ON CONFLICT cbsd_id DO UPDATE SET
+            ON CONFLICT (cbsd_id) DO UPDATE SET
             timestamps = CASE WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
                              CASE WHEN date_trunc('hour', $4) != date_trunc('hour', heartbeats.timestamps[1]) THEN
                                  array_prepend($4, heartbeats.timestamps)
@@ -199,7 +199,7 @@ impl Heartbeat {
                             ARRAY[$4]
                          END,
             hotspot_key = EXCLUDED.hotspot_key,
-            reward_weight = EXCLUDED.reward_weight,
+            reward_weight = EXCLUDED.reward_weight
             RETURNING (xmax = 0) as inserted;
             "#,
         )
