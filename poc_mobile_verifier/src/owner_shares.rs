@@ -111,6 +111,7 @@ impl OwnerShares {
                         start_epoch: epoch.start.encode_timestamp(),
                         end_epoch: epoch.end.encode_timestamp(),
                     })
+                    .filter(|radio_share| radio_share.amount > 0)
             }))
     }
 }
