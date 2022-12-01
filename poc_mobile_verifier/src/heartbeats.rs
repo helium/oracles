@@ -192,7 +192,7 @@ impl Heartbeat {
             VALUES ($1, $2, $3, $4)
             ON CONFLICT cbsd_id DO UPDATE SET
             hours_seen = CASE WHEN hotspot_key = EXCLUDED.hotspot_key THEN
-                            hours_seen[1:$5] || TRUE || hours_seen[($5 + 1):]
+                            hours_seen[1:$5] || TRUE || hours_seen[($5 + 2):]
                          ELSE
                             $4
                          END,
