@@ -9,7 +9,7 @@ use std::{net::SocketAddr, path};
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-const ENTROPY_SINK_ROLL_MINS: i64 = 5;
+const ENTROPY_SINK_ROLL_MINS: i64 = 2;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]

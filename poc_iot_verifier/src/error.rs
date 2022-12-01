@@ -46,6 +46,8 @@ pub enum Error {
     DensityScalerQuerySenderMissing,
     #[error("invalid exponent {0} error")]
     InvalidExponent(String),
+    #[error("hotspot not found {0}")]
+    GatewayNotFound(String),
 }
 
 #[derive(Error, Debug)]

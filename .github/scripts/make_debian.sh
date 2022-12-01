@@ -32,6 +32,11 @@ Restart=always
 RestartSec=15
 WorkingDirectory=/opt/$ORACLE
 
+### Remove default limits from a few important places:
+LimitNOFILE=infinity
+LimitNPROC=infinity
+TasksMax=infinity
+
 [Install]
 WantedBy=multi-user.target
 -EOF
