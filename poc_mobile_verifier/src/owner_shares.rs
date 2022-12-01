@@ -305,9 +305,9 @@ mod test {
 
         let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
 
-        // Set all of the heartbeats found to true
+        // Populate with the minimum required number of timestamps
         for (_, hb) in heartbeats.heartbeats.iter_mut() {
-            hb.hours_seen = [true; 24];
+            hb.timestamps = std::iter::repeat(timestamp).take(12).collect();
         }
 
         let last_timestamp = timestamp - Duration::hours(12);
@@ -519,9 +519,9 @@ mod test {
         ];
         let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
 
-        // Set all of the heartbeats found to true
+        // Populate with the minimum required number of timestamps
         for (_, hb) in heartbeats.heartbeats.iter_mut() {
-            hb.hours_seen = [true; 24];
+            hb.timestamps = std::iter::repeat(timestamp).take(12).collect();
         }
 
         // setup speedtests
