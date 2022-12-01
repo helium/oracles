@@ -134,12 +134,14 @@ impl Loader {
                 after,
                 before,
             )
-            .await {
-                Ok(()) => (),
-                Err(err) =>
-                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::EntropyReport)
-            }
-
+            .await
+        {
+            Ok(()) => (),
+            Err(err) => tracing::warn!(
+                "error whilst processing {:?} from s3, error: {err:?}",
+                FileType::EntropyReport
+            ),
+        }
 
         match self
             .process_events(
@@ -149,11 +151,14 @@ impl Loader {
                 after,
                 before,
             )
-            .await {
-                Ok(()) => (),
-                Err(err) =>
-                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::LoraWitnessIngestReport)
-            }
+            .await
+        {
+            Ok(()) => (),
+            Err(err) => tracing::warn!(
+                "error whilst processing {:?} from s3, error: {err:?}",
+                FileType::LoraWitnessIngestReport
+            ),
+        }
 
         match self
             .process_events(
@@ -163,11 +168,14 @@ impl Loader {
                 after,
                 before,
             )
-            .await {
-                Ok(()) => (),
-                Err(err) =>
-                    tracing::warn!("error whilst processing {:?} from s3, error: {err:?}", FileType::LoraBeaconIngestReport)
-            }
+            .await
+        {
+            Ok(()) => (),
+            Err(err) => tracing::warn!(
+                "error whilst processing {:?} from s3, error: {err:?}",
+                FileType::LoraBeaconIngestReport
+            ),
+        }
         Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
         Ok(())
     }
