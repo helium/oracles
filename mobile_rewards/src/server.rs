@@ -302,7 +302,6 @@ impl Server {
 
         let mut rewards: Vec<_> = owner_rewards
             .into_iter()
-            .filter(|(_, amount)| *amount > 0)
             .map(|(account, amount)| SubnetworkReward { account, amount })
             .collect();
         rewards.sort_by(|a, b| a.account.cmp(&b.account));
