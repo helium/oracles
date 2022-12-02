@@ -2,6 +2,7 @@ use crate::{reward_index, Error, Result, Settings};
 use db_store::meta;
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
 use futures::{stream, StreamExt, TryStreamExt};
+use helium_crypto::PublicKey;
 use helium_proto::{services::poc_mobile::RadioRewardShare, Message, RewardManifest};
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres};
@@ -101,7 +102,8 @@ impl Indexer {
         let mut txn = self.pool.begin().await?;
 
         for (address, amount) in hotspot_rewards {
-            reward_index::insert(&mut txn, &address, amount, &manifest_time).await?;
+            let pub_key = PublicKey::try_from(address)?;
+            reward_index::insert(&mut txn, &pub_key, amount, &manifest_time).await?;
         }
 
         // Include the last reward manifest in the transaction to avoid failures

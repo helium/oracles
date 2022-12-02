@@ -1,9 +1,10 @@
 use crate::{Error, Result};
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKey;
 
 pub async fn insert<'c, E>(
     executor: E,
-    address: &[u8],
+    address: &PublicKey,
     amount: u64,
     timestamp: &DateTime<Utc>,
 ) -> Result
