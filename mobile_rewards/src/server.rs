@@ -4,7 +4,7 @@ use crate::{
     txn_status::TxnStatus,
     Error, Result, Settings,
 };
-use chrono::{Duration, TimeZone, Utc};
+use chrono::{Duration, Utc};
 use db_store::{meta, MetaValue};
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
 use futures::{stream, StreamExt, TryStreamExt};
@@ -252,15 +252,13 @@ impl Server {
 
         tracing::info!("Checking for reward manifest");
 
-        let last_reward_manifest = meta::fetch(&self.pool, "last_reward_manifest").await?;
+        let last_reward_manifest: u64 = meta::fetch(&self.pool, "last_reward_manifest").await?;
 
         let next_manifest = self
             .verifier_store
             .list_all(
                 FileType::RewardManifest,
-                Utc.timestamp_millis_opt(last_reward_manifest)
-                    .single()
-                    .ok_or(Error::InvalidTimestamp)?,
+                last_reward_manifest.to_timestamp_millis()?,
                 None,
             )
             .await?;
