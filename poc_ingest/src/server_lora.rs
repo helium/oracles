@@ -1,4 +1,4 @@
-use crate::{Error, EventId, Result, Settings};
+use crate::{Error, Result, Settings};
 use chrono::{Duration, Utc};
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -12,6 +12,7 @@ use std::{convert::TryFrom, path::Path};
 use tonic::{transport, Request, Response, Status};
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
+pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer {
     lora_beacon_report_tx: file_sink::MessageSender,
@@ -32,12 +33,26 @@ impl GrpcServer {
         })
     }
 
-    fn verify_network(&self, public_key: &PublicKey) -> GrpcResult<()> {
+    fn verify_network(&self, public_key: PublicKey) -> VerifyResult<PublicKey> {
         if self.required_network == public_key.network {
-            Ok(Response::new(()))
+            Ok(public_key)
         } else {
             Err(Status::invalid_argument("invalid network"))
         }
+    }
+
+    fn verify_public_key(&self, bytes: &[u8]) -> VerifyResult<PublicKey> {
+        PublicKey::try_from(bytes).map_err(|_| Status::invalid_argument("invalid public key"))
+    }
+
+    fn verify_signature<E>(&self, public_key: PublicKey, event: E) -> VerifyResult<(PublicKey, E)>
+    where
+        E: MsgVerify,
+    {
+        event
+            .verify(&public_key)
+            .map_err(|_| Status::invalid_argument("invalid signature"))?;
+        Ok((public_key, event))
     }
 }
 
@@ -49,30 +64,21 @@ impl poc_lora::PocLora for GrpcServer {
     ) -> GrpcResult<LoraBeaconReportRespV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
-        let report = LoraBeaconIngestReportV1 {
-            received_timestamp: timestamp,
-            report: Some(event.clone()),
-        };
 
-        let public_key = PublicKey::try_from(event.pub_key.as_ref())
-            .map_err(|_| Status::invalid_argument("invalid public key"))?;
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| LoraBeaconIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
 
-        self.verify_network(&public_key)?;
+        _ = file_sink_write!("beacon_report", &self.lora_beacon_report_tx, report).await;
+        metrics::increment_counter!("ingest_server_beacon_report_count");
 
-        event
-            .verify(&public_key)
-            .map_err(|_| Status::invalid_argument("invalid signature"))?;
-
-        let event_id = EventId::from(&event);
-        let _ = file_sink_write!(
-            "beacon_report",
-            &self.lora_beacon_report_tx,
-            report,
-            format!("event_id:{:?}", event_id.to_string())
-        )
-        .await;
-        // Encode event digest, encode and return as the id
-        Ok(Response::new(event_id.into()))
+        let id = timestamp.to_string();
+        Ok(Response::new(LoraBeaconReportRespV1 { id }))
     }
 
     async fn submit_lora_witness(
@@ -81,30 +87,21 @@ impl poc_lora::PocLora for GrpcServer {
     ) -> GrpcResult<LoraWitnessReportRespV1> {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
-        let report = LoraWitnessIngestReportV1 {
-            received_timestamp: timestamp,
-            report: Some(event.clone()),
-        };
 
-        let public_key = PublicKey::try_from(event.pub_key.as_ref())
-            .map_err(|_| Status::invalid_argument("invalid public key"))?;
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| LoraWitnessIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
 
-        self.verify_network(&public_key)?;
+        _ = file_sink_write!("witness_report", &self.lora_witness_report_tx, report).await;
+        metrics::increment_counter!("ingest_server_witness_report_count");
 
-        event
-            .verify(&public_key)
-            .map_err(|_| Status::invalid_argument("invalid signature"))?;
-
-        let event_id = EventId::from(&event);
-        let _ = file_sink_write!(
-            "witness_report",
-            &self.lora_witness_report_tx,
-            report,
-            format!("event_id:{:?}", event_id.to_string())
-        )
-        .await;
-        // Encode event digest, encode and return as the id
-        Ok(Response::new(event_id.into()))
+        let id = timestamp.to_string();
+        Ok(Response::new(LoraWitnessReportRespV1 { id }))
     }
 }
 
