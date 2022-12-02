@@ -111,6 +111,7 @@ impl OwnerShares {
                         start_epoch: epoch.start.encode_timestamp(),
                         end_epoch: epoch.end.encode_timestamp(),
                     })
+                    .filter(|radio_share| radio_share.amount > 0)
             }))
     }
 }
@@ -590,5 +591,71 @@ mod test {
         }
 
         assert_eq!(total, 416_666_666_666_669); // total emissions for 1 hour
+    }
+
+    #[tokio::test]
+    async fn dont_write_zero_rewards() {
+        use rust_decimal_macros::dec;
+
+        let owner1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let owner2: PublicKey = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed owner2 parse");
+
+        let gw1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKey = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+
+        let c1 = "P27-SCE4255W2107CW5000014".to_string();
+        let c2 = "P27-SCE4255W2107CW5000015".to_string();
+        let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
+
+        let mut shares = HashMap::new();
+
+        shares.insert(
+            owner1.clone(),
+            RadioShares {
+                shares: vec![RadioShare {
+                    hotspot_key: gw1.clone(),
+                    cbsd_id: c1.clone(),
+                    amount: dec!(10.0),
+                }],
+            },
+        );
+        shares.insert(
+            owner2.clone(),
+            RadioShares {
+                shares: vec![
+                    RadioShare {
+                        hotspot_key: gw2.clone(),
+                        cbsd_id: c2.clone(),
+                        amount: dec!(-1.0),
+                    },
+                    RadioShare {
+                        hotspot_key: gw2.clone(),
+                        cbsd_id: c3.clone(),
+                        amount: dec!(0.0),
+                    },
+                ],
+            },
+        );
+
+        let now = Utc::now();
+        // We should never see any radio shares from owner2, since all of them are
+        // less than or equal to zero.
+        let owner_shares = OwnerShares { shares };
+        for reward in owner_shares
+            .into_radio_shares(&(now - Duration::hours(1)..now))
+            .expect("Could not convert to radio shares")
+        {
+            let actual_owner =
+                PublicKey::try_from(reward.owner_key).expect("Could not parse owner key");
+            assert_eq!(actual_owner, owner1);
+        }
     }
 }
