@@ -1,15 +1,13 @@
-use crate::{Result, Settings};
-use chrono::{DateTime, Duration, TimeZone, Utc};
-use db_store::MetaValue;
-use file_store::{FileStore, FileType, Stream};
+use crate::{reward_index, Error, Result, Settings};
+use db_store::meta;
+use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
 use futures::{stream, StreamExt, TryStreamExt};
-use helium_proto::{Message, SubnetworkReward, SubnetworkRewards};
+use helium_crypto::PublicKey;
+use helium_proto::{services::poc_mobile::RadioRewardShare, Message, RewardManifest};
+use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres};
+use std::{collections::HashMap, str::FromStr};
 use tokio::time;
-
-pub const DEFAULT_START_REWARD_BLOCK: i64 = 1477650;
-/// default minutes to delay lookup from now
-pub const DEFAULT_LOOKUP_DELAY: i64 = 30;
 
 pub struct Indexer {
     pool: Pool<Postgres>,
@@ -28,7 +26,7 @@ impl Indexer {
     }
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
-        tracing::info!("starting mobile indexer");
+        tracing::info!("starting mobile index");
 
         let mut interval_timer = tokio::time::interval(self.interval);
 
@@ -41,62 +39,84 @@ impl Indexer {
             tokio::select! {
                 _ = shutdown.clone() => (),
                 _ = interval_timer.tick() => {
-                    self.process_clock_tick().await?
+                    record_duration!(
+                        "reward_index_duration",
+                        self.handle_rewards().await?
+                    )
                 }
             }
         }
     }
 
-    async fn process_clock_tick(&mut self) -> Result {
-        let last_known_timestamp = MetaValue::<DateTime<Utc>>::fetch_or_insert_with(
-            &self.pool,
-            "last_verifier_timestamp",
-            || Utc.timestamp(0, 0),
-        )
-        .await?
-        .value()
-        .to_owned();
+    async fn handle_rewards(&mut self) -> Result {
+        tracing::info!("Checking for reward manifest");
 
-        let time_range = last_known_timestamp..Utc::now();
-        let file_list = self
+        let last_reward_manifest: u64 = meta::fetch(&self.pool, "last_reward_manifest").await?;
+
+        let next_manifest = self
             .verifier_store
             .list_all(
-                FileType::SubnetworkRewards,
-                time_range.start,
-                time_range.end,
+                FileType::RewardManifest,
+                last_reward_manifest.to_timestamp_millis()?,
+                None,
             )
             .await?;
 
-        let _subnet_rewards: Stream<SubnetworkReward> = self
-            .verifier_store
-            .source(stream::iter(file_list).map(Ok).boxed())
-            .map_ok(move |msg| (msg, time_range.clone()))
-            // First decode each subnet rewards, filtering out non decodable
-            // messages
-            .try_filter_map(|(msg, time_range)| async move {
-                Ok(SubnetworkRewards::decode(msg).ok().zip(Some(time_range)))
-            })
-            // We only care that the verified epoch ends in our rewards epoch,
-            // so that we include verified epochs that straddle two rewards
-            // epochs. map the matching subnet rewards to a stream of their
-            // reward entries
-            .try_filter_map(|(subnet_rewards, time_range)| async move {
-                let reward_stream = time_range
-                    .contains(&Utc.timestamp(subnet_rewards.end_epoch as i64, 0))
-                    .then(|| stream::iter(subnet_rewards.rewards).map(Ok::<_, file_store::Error>));
-                Ok(reward_stream)
-            })
-            .try_flatten()
-            .boxed();
+        let Some(manifest_file) = next_manifest.first().cloned() else {
+            tracing::info!("No new manifest found");
+            return Ok(());
+        };
+
+        let Some(manifest_buff) = self.verifier_store.get(manifest_file.clone()).await?
+            .next()
+            .await else {
+                tracing::error!("Empty manifest");
+                return Ok(());
+            };
+
+        tracing::info!("Manifest found, indexing rewards");
+
+        let manifest = RewardManifest::decode(manifest_buff.map_err(Error::from)?)?;
+        let manifest_time = manifest.end_timestamp.to_timestamp()?;
+
+        let reward_files = stream::iter(
+            manifest
+                .written_files
+                .into_iter()
+                .map(|file_name| FileInfo::from_str(&file_name)),
+        )
+        .boxed();
+
+        let mut reward_shares = self.verifier_store.source_unordered(5, reward_files);
+
+        let mut hotspot_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
+
+        while let Some(msg) = reward_shares.try_next().await? {
+            let radio_reward_share = RadioRewardShare::decode(msg)?;
+            *hotspot_rewards
+                .entry(radio_reward_share.hotspot_key)
+                .or_default() += radio_reward_share.amount;
+        }
+
+        // Begin a transaction to write all the hotspot rewards
+        let mut txn = self.pool.begin().await?;
+
+        for (address, amount) in hotspot_rewards {
+            let pub_key = PublicKey::try_from(address)?;
+            reward_index::insert(&mut txn, &pub_key, amount, &manifest_time).await?;
+        }
+
+        // Include the last reward manifest in the transaction to avoid failures
+        // updating the last handled manifest
+        meta::store(
+            &mut txn,
+            "last_reward_manifest",
+            manifest_file.timestamp.timestamp_millis(),
+        )
+        .await?;
+
+        txn.commit().await?;
 
         Ok(())
     }
-}
-
-pub fn get_time_range(last_reward_end_time: i64) -> (DateTime<Utc>, DateTime<Utc>) {
-    let after_utc = Utc.timestamp(last_reward_end_time, 0);
-    let now = Utc::now();
-    let stop_utc = now - Duration::minutes(DEFAULT_LOOKUP_DELAY);
-    let start_utc = after_utc.min(stop_utc);
-    (start_utc, stop_utc)
 }

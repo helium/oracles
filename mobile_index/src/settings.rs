@@ -14,7 +14,6 @@ pub struct Settings {
     pub interval: u64,
     pub database: db_store::Settings,
     pub verifier: file_store::Settings,
-    pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
 }
 

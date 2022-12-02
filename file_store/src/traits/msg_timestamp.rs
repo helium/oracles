@@ -14,12 +14,16 @@ pub trait TimestampDecode {
 impl TimestampDecode for u64 {
     fn to_timestamp(self) -> Result<DateTime<Utc>> {
         let decoded = i64::try_from(self).map_err(DecodeError::from)?;
-        Ok(Utc.timestamp(decoded, 0))
+        Utc.timestamp_opt(decoded, 0)
+            .single()
+            .ok_or_else(|| DecodeError::invalid_timestamp(self))
     }
 
     fn to_timestamp_millis(self) -> Result<DateTime<Utc>> {
         let decoded = i64::try_from(self).map_err(DecodeError::from)?;
-        Ok(Utc.timestamp_millis(decoded))
+        Utc.timestamp_millis_opt(decoded)
+            .single()
+            .ok_or_else(|| DecodeError::invalid_timestamp(self))
     }
 
     fn to_timestamp_nanos(self) -> Result<DateTime<Utc>> {

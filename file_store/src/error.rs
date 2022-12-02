@@ -42,6 +42,8 @@ pub enum DecodeError {
     UnsupportedInvalidReason(String, i32),
     #[error("unsupported participant_side, type: {0}, value: {1}")]
     UnsupportedParticipantSide(String, i32),
+    #[error("invalid unix timestamp {0}")]
+    InvalidTimestamp(u64),
 }
 
 #[derive(Error, Debug)]
@@ -100,6 +102,10 @@ impl DecodeError {
 
     pub fn unsupported_invalid_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
+    }
+
+    pub fn invalid_timestamp(v: u64) -> Error {
+        Error::Decode(Self::InvalidTimestamp(v))
     }
 }
 
