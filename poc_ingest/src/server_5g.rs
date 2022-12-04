@@ -1,4 +1,4 @@
-use crate::{Error, EventId, Result, Settings};
+use crate::{Error, Result, Settings};
 use chrono::{Duration, Utc};
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -14,6 +14,7 @@ use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
 const INGEST_WAIT_DURATION_MINUTES: i64 = 15;
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
+pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer {
     heartbeat_report_tx: file_sink::MessageSender,
@@ -33,12 +34,26 @@ impl GrpcServer {
         })
     }
 
-    fn verify_network(&self, public_key: &PublicKey) -> GrpcResult<()> {
+    fn verify_network(&self, public_key: PublicKey) -> VerifyResult<PublicKey> {
         if self.required_network == public_key.network {
-            Ok(Response::new(()))
+            Ok(public_key)
         } else {
             Err(Status::invalid_argument("invalid network"))
         }
+    }
+
+    fn verify_public_key(&self, bytes: &[u8]) -> VerifyResult<PublicKey> {
+        PublicKey::try_from(bytes).map_err(|_| Status::invalid_argument("invalid public key"))
+    }
+
+    fn verify_signature<E>(&self, public_key: PublicKey, event: E) -> VerifyResult<(PublicKey, E)>
+    where
+        E: MsgVerify,
+    {
+        event
+            .verify(&public_key)
+            .map_err(|_| Status::invalid_argument("invalid signature"))?;
+        Ok((public_key, event))
     }
 }
 
@@ -48,56 +63,46 @@ impl poc_mobile::PocMobile for GrpcServer {
         &self,
         request: Request<SpeedtestReqV1>,
     ) -> GrpcResult<SpeedtestRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        let public_key = PublicKey::try_from(event.pub_key.as_ref())
-            .map_err(|_| Status::invalid_argument("invalid public key"))?;
-
-        self.verify_network(&public_key)?;
-
-        event
-            .verify(&public_key)
-            .map_err(|_| Status::invalid_argument("invalid signature"))?;
-        // Encode event digest, encode and return as the id
-        let event_id = EventId::from(&event);
-
-        let report = SpeedtestIngestReportV1 {
-            report: Some(event),
-            received_timestamp: timestamp,
-        };
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| SpeedtestIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
 
         _ = file_sink_write!("speedtest_report", &self.speedtest_report_tx, report).await;
         metrics::increment_counter!("ingest_server_speedtest_count");
-        Ok(Response::new(event_id.into()))
+
+        let id = timestamp.to_string();
+        Ok(Response::new(SpeedtestRespV1 { id }))
     }
 
     async fn submit_cell_heartbeat(
         &self,
         request: Request<CellHeartbeatReqV1>,
     ) -> GrpcResult<CellHeartbeatRespV1> {
-        let timestamp = Utc::now().timestamp_millis() as u64;
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
 
-        let public_key = PublicKey::try_from(event.pub_key.as_slice())
-            .map_err(|_| Status::invalid_argument("invalid public key"))?;
-
-        self.verify_network(&public_key)?;
-
-        event
-            .verify(&public_key)
-            .map_err(|_| Status::invalid_argument("invalid signature"))?;
-        let event_id = EventId::from(&event);
-
-        let report = CellHeartbeatIngestReportV1 {
-            report: Some(event),
-            received_timestamp: timestamp,
-        };
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| CellHeartbeatIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
 
         _ = file_sink_write!("heartbeat_report", &self.heartbeat_report_tx, report).await;
         metrics::increment_counter!("ingest_server_heartbeat_count");
-        // Encode event digest, encode and return as the id
-        Ok(Response::new(event_id.into()))
+
+        let id = timestamp.to_string();
+        Ok(Response::new(CellHeartbeatRespV1 { id }))
     }
 }
 
