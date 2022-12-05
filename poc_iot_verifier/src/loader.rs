@@ -98,6 +98,7 @@ impl Loader {
     }
 
     async fn handle_denylist_tick(&mut self) -> Result {
+        tracing::info!("handling denylist tick");
         // sink any errors whilst updating the denylist
         // the verifier should not stop just because github
         // could not be reached for example
@@ -109,17 +110,19 @@ impl Loader {
             Ok(()) => (),
             Err(e) => tracing::warn!("failed to update denylist: {e}"),
         }
+        tracing::info!("completed handling denylist tick");
         Ok(())
     }
 
     async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> Result {
+        tracing::info!("handling report tick");
         let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
             .unwrap_or(oldest_event_time)
             .max(oldest_event_time);
         let before = after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
-
+        tracing::info!("tick period.  after: {after}, before: {before}");
         // serially load each file type starting with entropy
         // beacons & witnesses dep on entropy
         // and ideally we wouldnt want to process a beacon
@@ -177,6 +180,7 @@ impl Loader {
             ),
         }
         Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
+        tracing::info!("completed handling report tick");
         Ok(())
     }
 
@@ -200,7 +204,7 @@ impl Loader {
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
-            .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
+            .source_unordered(LOADER_WORKERS, stream::iter(infos).fuse().map(Ok).boxed())
             .for_each_concurrent(STORE_WORKERS, |msg| async move {
                 match msg {
                     Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
