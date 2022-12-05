@@ -105,7 +105,7 @@ impl VerifierDaemon {
     }
 
     pub async fn reward(&mut self, scheduler: &Scheduler) -> anyhow::Result<()> {
-        let heartbeats = Heartbeats::validated(&self.pool, scheduler.reward_period.start).await?;
+        let heartbeats = Heartbeats::validated(&self.pool).await?;
         let speedtests =
             SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
 

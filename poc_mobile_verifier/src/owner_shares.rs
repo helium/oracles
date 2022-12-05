@@ -56,7 +56,7 @@ impl OwnerShares {
         speedtests: SpeedtestAverages,
     ) -> Result<Self, ResolveError> {
         let mut owner_shares = Self::default();
-        for heartbeat in heartbeats.into_iter() {
+        for heartbeat in heartbeats.into_rewardables() {
             if let Some(owner) = resolver.resolve_owner(&heartbeat.hotspot_key).await? {
                 let speedmultiplier = speedtests
                     .get_average(&heartbeat.hotspot_key)
@@ -304,7 +304,12 @@ mod test {
             },
         ];
 
-        let heartbeats: Heartbeats = heartbeats.into_iter().collect();
+        let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
+
+        // Populate with the minimum required number of timestamps
+        for (_, hb) in heartbeats.heartbeats.iter_mut() {
+            hb.timestamps = std::iter::repeat(timestamp).take(12).collect();
+        }
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
@@ -513,7 +518,12 @@ mod test {
                 timestamp,
             },
         ];
-        let heartbeats: Heartbeats = heartbeats.into_iter().collect();
+        let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
+
+        // Populate with the minimum required number of timestamps
+        for (_, hb) in heartbeats.heartbeats.iter_mut() {
+            hb.timestamps = std::iter::repeat(timestamp).take(12).collect();
+        }
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);

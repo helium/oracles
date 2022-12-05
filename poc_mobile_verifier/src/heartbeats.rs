@@ -1,7 +1,7 @@
 //! Heartbeat storage
 
 use crate::cell_type::CellType;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
 use file_store::{file_sink, file_sink_write, heartbeat::CellHeartbeat};
 use futures::stream::{Stream, StreamExt};
 use helium_crypto::PublicKey;
@@ -26,9 +26,16 @@ pub struct HeartbeatKey {
     cbsd_id: String,
 }
 
+#[derive(Default)]
 pub struct HeartbeatValue {
-    reward_weight: Decimal,
-    timestamp: NaiveDateTime,
+    pub reward_weight: Decimal,
+    pub timestamps: Vec<NaiveDateTime>,
+}
+
+pub struct HeartbeatReward {
+    pub hotspot_key: PublicKey,
+    pub cbsd_id: String,
+    pub reward_weight: Decimal,
 }
 
 #[derive(Default)]
@@ -36,49 +43,48 @@ pub struct Heartbeats {
     pub heartbeats: HashMap<HeartbeatKey, HeartbeatValue>,
 }
 
+/// Minimum number of heartbeats required to give a reward to the hotspot.
+pub const MINIMUM_HEARTBEAT_COUNT: usize = 12;
+
 impl Heartbeats {
-    pub async fn validated(
-        exec: impl sqlx::PgExecutor<'_>,
-        starting: DateTime<Utc>,
-    ) -> Result<Self, sqlx::Error> {
+    pub async fn validated(exec: impl sqlx::PgExecutor<'_>) -> Result<Self, sqlx::Error> {
         #[derive(sqlx::FromRow)]
         pub struct HeartbeatRow {
-            pub hotspot_key: PublicKey,
-            pub cbsd_id: String,
-            pub reward_weight: Decimal,
-            pub timestamp: NaiveDateTime,
+            hotspot_key: PublicKey,
+            cbsd_id: String,
+            reward_weight: Decimal,
+            timestamps: Vec<NaiveDateTime>,
         }
 
-        let heartbeats =
-            sqlx::query_as::<_, HeartbeatRow>("SELECT * FROM heartbeats WHERE timestamp >= $1")
-                .bind(starting)
-                .fetch_all(exec)
-                .await?
-                .into_iter()
-                .map(|hb| {
-                    (
-                        HeartbeatKey {
-                            hotspot_key: hb.hotspot_key,
-                            cbsd_id: hb.cbsd_id,
-                        },
-                        HeartbeatValue {
-                            reward_weight: hb.reward_weight,
-                            timestamp: hb.timestamp,
-                        },
-                    )
-                })
-                .collect();
+        let heartbeats = sqlx::query_as::<_, HeartbeatRow>("SELECT * FROM heartbeats")
+            .fetch_all(exec)
+            .await?
+            .into_iter()
+            .map(|hb| {
+                (
+                    HeartbeatKey {
+                        hotspot_key: hb.hotspot_key,
+                        cbsd_id: hb.cbsd_id,
+                    },
+                    HeartbeatValue {
+                        reward_weight: hb.reward_weight,
+                        timestamps: hb.timestamps,
+                    },
+                )
+            })
+            .collect();
         Ok(Self { heartbeats })
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = Heartbeat> + Send {
-        self.heartbeats.into_iter().map(|(key, value)| Heartbeat {
-            hotspot_key: key.hotspot_key,
-            cbsd_id: key.cbsd_id,
-            reward_weight: value.reward_weight,
-            timestamp: value.timestamp,
-            validity: proto::HeartbeatValidity::Valid,
-        })
+    pub fn into_rewardables(self) -> impl Iterator<Item = HeartbeatReward> + Send {
+        self.heartbeats
+            .into_iter()
+            .filter(|(_, value)| value.timestamps.len() >= MINIMUM_HEARTBEAT_COUNT)
+            .map(|(key, value)| HeartbeatReward {
+                hotspot_key: key.hotspot_key,
+                cbsd_id: key.cbsd_id,
+                reward_weight: value.reward_weight,
+            })
     }
 }
 
@@ -91,16 +97,19 @@ impl Extend<Heartbeat> for Heartbeats {
             if heartbeat.validity != proto::HeartbeatValidity::Valid {
                 continue;
             }
-            self.heartbeats.insert(
-                HeartbeatKey {
+            let entry = self
+                .heartbeats
+                .entry(HeartbeatKey {
                     hotspot_key: heartbeat.hotspot_key,
                     cbsd_id: heartbeat.cbsd_id,
-                },
-                HeartbeatValue {
-                    reward_weight: heartbeat.reward_weight,
-                    timestamp: heartbeat.timestamp,
-                },
-            );
+                })
+                .or_default();
+            entry.reward_weight = heartbeat.reward_weight;
+            if entry.timestamps.is_empty()
+                || entry.timestamps[0].hour() != heartbeat.timestamp.hour()
+            {
+                entry.timestamps.insert(0, heartbeat.timestamp);
+            }
         }
     }
 }
@@ -110,25 +119,9 @@ impl FromIterator<Heartbeat> for Heartbeats {
     where
         T: IntoIterator<Item = Heartbeat>,
     {
-        let heartbeats = iter
-            .into_iter()
-            .flat_map(|hb| {
-                if hb.validity != proto::HeartbeatValidity::Valid {
-                    return None;
-                }
-                Some((
-                    HeartbeatKey {
-                        hotspot_key: hb.hotspot_key,
-                        cbsd_id: hb.cbsd_id,
-                    },
-                    HeartbeatValue {
-                        reward_weight: hb.reward_weight,
-                        timestamp: hb.timestamp,
-                    },
-                ))
-            })
-            .collect();
-        Self { heartbeats }
+        let mut heartbeats = Self::default();
+        heartbeats.extend(iter);
+        heartbeats
     }
 }
 
@@ -193,11 +186,21 @@ impl Heartbeat {
 
         Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
-            insert into heartbeats (hotspot_key, cbsd_id, reward_weight, timestamp)
-            values ($1, $2, $3, $4)
-            on conflict (cbsd_id) do update set
-            hotspot_key = EXCLUDED.hotspot_key, reward_weight = EXCLUDED.reward_weight, timestamp = EXCLUDED.timestamp
-            returning (xmax = 0) as inserted;
+            INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, timestamps)
+            VALUES ($1, $2, $3, ARRAY[$4])
+            ON CONFLICT (cbsd_id) DO UPDATE SET
+            timestamps = CASE WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
+                             CASE WHEN date_trunc('hour', $4) != date_trunc('hour', heartbeats.timestamps[1]) THEN
+                                 array_prepend($4, heartbeats.timestamps)
+                             ELSE
+                                 heartbeats.timestamps
+                             END   
+                         ELSE
+                            ARRAY[$4]
+                         END,
+            hotspot_key = EXCLUDED.hotspot_key,
+            reward_weight = EXCLUDED.reward_weight
+            RETURNING (xmax = 0) as inserted;
             "#,
         )
         .bind(self.hotspot_key)
