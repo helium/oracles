@@ -185,6 +185,7 @@ impl FileStore {
                 Ok(stream) => stream_source(stream),
                 Err(err) => stream::once(async move { Err(err) }).boxed(),
             })
+            .fuse()
             .boxed()
     }
 
@@ -202,6 +203,7 @@ impl FileStore {
                 Ok(stream) => stream_source(stream),
                 Err(err) => stream::once(async move { Err(err) }).boxed(),
             })
+            .fuse()
             .boxed()
     }
 
