@@ -205,9 +205,9 @@ impl Heartbeat {
                              ELSE
                                  $5
                          END,
-            latest_timestamp = GREATEST(heartbeats.latest_timestamp, $4),
+            latest_timestamp = GREATEST(heartbeats.latest_timestamp, EXCLUDED.latest_timestamp),
             hotspot_key = CASE
-                              WHEN heartbeats.latest_timestamp < $4 THEN
+                              WHEN heartbeats.latest_timestamp < EXCLUDED.latest_timestamp THEN
                                   EXCLUDED.hotspot_key
                               ELSE
                                   heartbeats.hotspot_key
