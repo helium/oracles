@@ -65,7 +65,7 @@ impl Heartbeats {
         }
 
         let heartbeats = sqlx::query_as::<_, HeartbeatRow>(
-            "SELECT (hotspot_key, cbsd_id, reward_weight, hours_seen) FROM heartbeats",
+            "SELECT * FROM heartbeats",
         )
         .fetch_all(exec)
         .await?
