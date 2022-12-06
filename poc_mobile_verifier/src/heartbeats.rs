@@ -198,7 +198,7 @@ impl Heartbeat {
             hours_seen = CASE
                              WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
                                  heartbeats.hours_seen[1:$6] || TRUE || heartbeats.hours_seen[($6 + 2):]
-                             WHEN heartbeats.latest_timestamp > EXCLUDED.timestamp THEN
+                             WHEN heartbeats.latest_timestamp > EXCLUDED.latest_timestamp THEN
                                  -- If we've already reset the heartbeats after a changed hotspot, don't
                                  -- reset the heartbeats again for old timestamps
                                  heartbeats.hours_seen
