@@ -100,9 +100,15 @@ fn construct_poc_witnesses(
 ) -> Result<Vec<BlockchainPocWitnessV1>> {
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
-        let reward_shares = (witness_report.hex_scale * witness_report.reward_unit)
-            .to_u32()
-            .unwrap_or_default();
+        let dec_reward_shares = witness_report.hex_scale * witness_report.reward_unit;
+        let reward_shares = dec_reward_shares.to_u32().unwrap_or_default();
+        tracing::debug!(
+            "witness, hex_scale: {}, reward_unit: {:?}, dec_reward_shares: {:?}, u32_reward_shares: {:?}",
+            witness_report.hex_scale,
+            witness_report.reward_unit,
+            dec_reward_shares,
+            reward_shares
+        );
 
         // NOTE: channel is irrelevant now
         let poc_witness = BlockchainPocWitnessV1 {
@@ -115,7 +121,7 @@ fn construct_poc_witnesses(
             frequency: hz_to_mhz(witness_report.report.frequency),
             datarate: witness_report.report.datarate.to_string(),
             channel: 0,
-            reward_shares,
+            reward_shares: 1,
         };
 
         poc_witnesses.push(poc_witness)
@@ -130,9 +136,15 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
 }
 
 fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> Result<BlockchainPocReceiptV1> {
-    let reward_shares = (beacon_report.hex_scale * beacon_report.reward_unit)
-        .to_u32()
-        .unwrap_or_default();
+    let dec_reward_shares = beacon_report.hex_scale * beacon_report.reward_unit;
+    let reward_shares = dec_reward_shares.to_u32().unwrap_or_default();
+    tracing::debug!(
+        "receipt, hex_scale: {}, reward_unit: {:?}, dec_reward_shares: {:?}, u32_reward_shares: {:?}",
+        beacon_report.hex_scale,
+        beacon_report.reward_unit,
+        dec_reward_shares,
+        reward_shares
+    );
 
     // NOTE: signal, origin, snr and addr_hash are irrelevant now
     Ok(BlockchainPocReceiptV1 {
@@ -148,7 +160,7 @@ fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> Result<Blockch
         datarate: beacon_report.report.datarate.to_string(),
         tx_power: beacon_report.report.tx_power,
         addr_hash: vec![],
-        reward_shares,
+        reward_shares: 1,
     })
 }
 
