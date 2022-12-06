@@ -32,8 +32,6 @@ pub enum Error {
     Follower(#[from] node_follower::Error),
     #[error("txn construction error")]
     TxnConstruction,
-    #[error("txn submission error, hash: {0}")]
-    TxnSubmission(String),
 }
 
 #[derive(Error, Debug)]

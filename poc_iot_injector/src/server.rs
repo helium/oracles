@@ -192,25 +192,22 @@ async fn handle_txn_submission(
     txn_service: &mut Option<TransactionService>,
 ) -> Result {
     match txn_service {
-        Some(txn_service) => {
-            if txn_service
-                .submit(txn_details.txn, &txn_details.hash)
-                .await
-                .is_ok()
-            {
+        Some(txn_service) => match txn_service.submit(txn_details.txn, &txn_details.hash).await {
+            Ok(_) => {
                 tracing::debug!(
-                    "txn submitted successfully, hash: {:?}",
+                    "txn hash: {:?} successfully submitted!",
                     txn_details.hash_b64_url
                 );
                 Ok(())
-            } else {
-                tracing::warn!(
-                    "txn submission failed!, hash: {:?}",
+            }
+            Err(err) => {
+                tracing::error!(
+                    "txn hash: {:?} failed with {err:?}",
                     txn_details.hash_b64_url
                 );
-                Err(Error::TxnSubmission(txn_details.hash_b64_url))
+                Err(Error::from(err))
             }
-        }
+        },
         None => Ok(()),
     }
 }
