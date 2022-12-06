@@ -242,7 +242,7 @@ impl Loader {
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
-            .source_unordered(LOADER_WORKERS, stream::iter(infos).map(Ok).boxed())
+            .source(stream::iter(infos).map(Ok).boxed())
             .for_each_concurrent(STORE_WORKERS, |msg| async move {
                 match msg {
                     Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
