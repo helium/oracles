@@ -1,5 +1,6 @@
 use crate::{
     gateway_cache::GatewayCache,
+    last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::Report,
     Error, Result, Settings,
@@ -388,6 +389,7 @@ impl Runner {
         lora_invalid_witness_tx: &MessageSender,
     ) -> Result {
         let received_timestamp = valid_beacon_report.received_timestamp;
+        let pub_key = valid_beacon_report.report.pub_key.to_vec();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -428,6 +430,9 @@ impl Runner {
                 }
             }
         }
+        // update timestamp of last beacon for the beaconer
+        LastBeacon::update_last_timestamp(&self.pool, &pub_key.to_vec(), received_timestamp)
+            .await?;
         Report::delete_poc(&self.pool, &packet_data).await?;
         Ok(())
     }
