@@ -190,7 +190,7 @@ impl Heartbeat {
             VALUES ($1, $2, $3, ARRAY[$4])
             ON CONFLICT (cbsd_id) DO UPDATE SET
             timestamps = CASE WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
-                             CASE WHEN date_trunc('hour', $4) != date_trunc('hour', heartbeats.timestamps[1]) THEN
+                             CASE WHEN date_trunc('hour', $4) > date_trunc('hour', heartbeats.timestamps[1]) THEN
                                  array_prepend($4, heartbeats.timestamps)
                              ELSE
                                  heartbeats.timestamps
