@@ -64,23 +64,25 @@ impl Heartbeats {
             hours_seen: [bool; 24],
         }
 
-        let heartbeats = sqlx::query_as::<_, HeartbeatRow>("SELECT * FROM heartbeats")
-            .fetch_all(exec)
-            .await?
-            .into_iter()
-            .map(|hb| {
-                (
-                    HeartbeatKey {
-                        hotspot_key: hb.hotspot_key,
-                        cbsd_id: hb.cbsd_id,
-                    },
-                    HeartbeatValue {
-                        reward_weight: hb.reward_weight,
-                        hours_seen: hb.hours_seen,
-                    },
-                )
-            })
-            .collect();
+        let heartbeats = sqlx::query_as::<_, HeartbeatRow>(
+            "SELECT (hotspot_key, cbsd_id, reward_weight, hours_seen) FROM heartbeats",
+        )
+        .fetch_all(exec)
+        .await?
+        .into_iter()
+        .map(|hb| {
+            (
+                HeartbeatKey {
+                    hotspot_key: hb.hotspot_key,
+                    cbsd_id: hb.cbsd_id,
+                },
+                HeartbeatValue {
+                    reward_weight: hb.reward_weight,
+                    hours_seen: hb.hours_seen,
+                },
+            )
+        })
+        .collect();
         Ok(Self { heartbeats })
     }
 
@@ -190,15 +192,26 @@ impl Heartbeat {
 
         Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
-            INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, hours_seen)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, latest_timestamp, hours_seen)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (cbsd_id) DO UPDATE SET
-            hours_seen = CASE WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
-                             heartbeats.hours_seen[1:$5] || TRUE || heartbeats.hours_seen[($5 + 2):]
-                         ELSE
-                             $4
+            hours_seen = CASE
+                             WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
+                                 heartbeats.hours_seen[1:$6] || TRUE || heartbeats.hours_seen[($6 + 2):]
+                             WHEN heartbeats.latest_timestamp > EXCLUDED.timestamp THEN
+                                 -- If we've already reset the heartbeats after a changed hotspot, don't
+                                 -- reset the heartbeats again for old timestamps
+                                 heartbeats.hours_seen
+                             ELSE
+                                 $5
                          END,
-            hotspot_key = EXCLUDED.hotspot_key,
+            latest_timestamp = GREATEST(heartbeats.latest_timestamp, $4),
+            hotspot_key = CASE
+                              WHEN heartbeats.latest_timestamp < $4 THEN
+                                  EXCLUDED.hotspot_key
+                              ELSE
+                                  heartbeats.hotspot_key
+                          END,
             reward_weight = EXCLUDED.reward_weight
             RETURNING (xmax = 0) as inserted;
             "#,
@@ -206,6 +219,7 @@ impl Heartbeat {
         .bind(self.hotspot_key)
         .bind(self.cbsd_id)
         .bind(self.reward_weight)
+        .bind(self.timestamp)
         .bind(new_hours_seen(&self.timestamp))
         .bind(self.timestamp.hour() as i32)
         .fetch_one(&mut *exec)
