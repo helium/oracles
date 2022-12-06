@@ -64,25 +64,23 @@ impl Heartbeats {
             hours_seen: [bool; 24],
         }
 
-        let heartbeats = sqlx::query_as::<_, HeartbeatRow>(
-            "SELECT * FROM heartbeats",
-        )
-        .fetch_all(exec)
-        .await?
-        .into_iter()
-        .map(|hb| {
-            (
-                HeartbeatKey {
-                    hotspot_key: hb.hotspot_key,
-                    cbsd_id: hb.cbsd_id,
-                },
-                HeartbeatValue {
-                    reward_weight: hb.reward_weight,
-                    hours_seen: hb.hours_seen,
-                },
-            )
-        })
-        .collect();
+        let heartbeats = sqlx::query_as::<_, HeartbeatRow>("SELECT * FROM heartbeats")
+            .fetch_all(exec)
+            .await?
+            .into_iter()
+            .map(|hb| {
+                (
+                    HeartbeatKey {
+                        hotspot_key: hb.hotspot_key,
+                        cbsd_id: hb.cbsd_id,
+                    },
+                    HeartbeatValue {
+                        reward_weight: hb.reward_weight,
+                        hours_seen: hb.hours_seen,
+                    },
+                )
+            })
+            .collect();
         Ok(Self { heartbeats })
     }
 
