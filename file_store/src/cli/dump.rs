@@ -16,7 +16,7 @@ use helium_proto::{
             SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
         },
     },
-    Message, RewardManifest, SubnetworkRewards,
+    BlockchainTxn, Message, RewardManifest, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -150,6 +150,12 @@ impl Cmd {
                         "start_timestamp": manifest.start_timestamp,
                         "end_timestamp": manifest.end_timestamp,
                     }))?;
+                }
+                FileType::SignedPocReceiptTxn => {
+                    // This just outputs a binary of the txns instead of the typical decode.
+                    // This is to make ingesting the output of these transactions simpler on chain.
+                    let wrapped_txn = BlockchainTxn::decode(msg)?;
+                    println!("{:?}", wrapped_txn.encode_to_vec());
                 }
                 _ => (),
             }
