@@ -29,7 +29,15 @@ pub struct HeartbeatKey {
 #[derive(Default)]
 pub struct HeartbeatValue {
     pub reward_weight: Decimal,
-    pub timestamps: Vec<NaiveDateTime>,
+    pub hours_seen: [bool; 24],
+}
+
+impl HeartbeatValue {
+    fn heartbeat_count(&self) -> usize {
+        self.hours_seen
+            .iter()
+            .fold(0, |hbs, seen| *seen as usize + hbs)
+    }
 }
 
 pub struct HeartbeatReward {
@@ -53,7 +61,7 @@ impl Heartbeats {
             hotspot_key: PublicKey,
             cbsd_id: String,
             reward_weight: Decimal,
-            timestamps: Vec<NaiveDateTime>,
+            hours_seen: [bool; 24],
         }
 
         let heartbeats = sqlx::query_as::<_, HeartbeatRow>("SELECT * FROM heartbeats")
@@ -68,7 +76,7 @@ impl Heartbeats {
                     },
                     HeartbeatValue {
                         reward_weight: hb.reward_weight,
-                        timestamps: hb.timestamps,
+                        hours_seen: hb.hours_seen,
                     },
                 )
             })
@@ -79,7 +87,7 @@ impl Heartbeats {
     pub fn into_rewardables(self) -> impl Iterator<Item = HeartbeatReward> + Send {
         self.heartbeats
             .into_iter()
-            .filter(|(_, value)| value.timestamps.len() >= MINIMUM_HEARTBEAT_COUNT)
+            .filter(|(_, value)| value.heartbeat_count() >= MINIMUM_HEARTBEAT_COUNT)
             .map(|(key, value)| HeartbeatReward {
                 hotspot_key: key.hotspot_key,
                 cbsd_id: key.cbsd_id,
@@ -105,11 +113,7 @@ impl Extend<Heartbeat> for Heartbeats {
                 })
                 .or_default();
             entry.reward_weight = heartbeat.reward_weight;
-            if entry.timestamps.is_empty()
-                || entry.timestamps[0].hour() != heartbeat.timestamp.hour()
-            {
-                entry.timestamps.insert(0, heartbeat.timestamp);
-            }
+            entry.hours_seen[heartbeat.timestamp.hour() as usize] = true;
         }
     }
 }
@@ -186,17 +190,13 @@ impl Heartbeat {
 
         Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
-            INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, timestamps)
-            VALUES ($1, $2, $3, ARRAY[$4])
+            INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, hours_seen)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (cbsd_id) DO UPDATE SET
-            timestamps = CASE WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
-                             CASE WHEN date_trunc('hour', $4) != date_trunc('hour', heartbeats.timestamps[1]) THEN
-                                 array_prepend($4, heartbeats.timestamps)
-                             ELSE
-                                 heartbeats.timestamps
-                             END   
+            hours_seen = CASE WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
+                             heartbeats.hours_seen[1:$5] || TRUE || heartbeats.hours_seen[($5 + 2):]
                          ELSE
-                            ARRAY[$4]
+                             $4
                          END,
             hotspot_key = EXCLUDED.hotspot_key,
             reward_weight = EXCLUDED.reward_weight
@@ -206,11 +206,18 @@ impl Heartbeat {
         .bind(self.hotspot_key)
         .bind(self.cbsd_id)
         .bind(self.reward_weight)
-        .bind(self.timestamp)
+        .bind(new_hours_seen(&self.timestamp))
+        .bind(self.timestamp.hour() as i32)
         .fetch_one(&mut *exec)
         .await?
         .inserted)
     }
+}
+
+fn new_hours_seen(timestamp: &NaiveDateTime) -> [bool; 24] {
+    let mut hours_seen = [false; 24];
+    hours_seen[timestamp.hour() as usize] = true;
+    hours_seen
 }
 
 /// Validate a heartbeat in the given epoch.
