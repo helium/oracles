@@ -5,6 +5,7 @@ use crate::{
 use chrono::{Duration, Utc};
 use futures::stream::StreamExt;
 use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
+use rust_decimal::Decimal;
 use tokio::time;
 
 pub struct Server {
@@ -21,9 +22,7 @@ impl Server {
             trigger_interval: Duration::seconds(settings.trigger),
         };
 
-        tracing::info!("generating hex scaling map : starting {:?}", Utc::now());
         server.refresh_scaling_map().await?;
-        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
 
         Ok(server)
     }
@@ -55,6 +54,7 @@ impl Server {
     }
 
     pub async fn refresh_scaling_map(&mut self) -> Result {
+        tracing::info!("generating hex scaling map : starting {:?}", Utc::now());
         let mut global_map = GlobalHexMap::new();
         let mut gw_stream = self.follower.active_gateways().await?;
         while let Some(GatewayInfo { location, .. }) = gw_stream.next().await {
@@ -64,7 +64,14 @@ impl Server {
         }
         global_map.reduce_global();
         let new_map = compute_hex_density_map(&global_map);
+
+        tracing::info!("populated hex density map with {} keys", new_map.len());
+        let sample: Vec<(String, Decimal)> = new_map.clone().into_iter().take(3).collect::<Vec<(String, Decimal)>>();
+        for (location, scale) in sample {
+            tracing::info!("Scaling factor for sample location:  {:?}, {:?}", location, scale);
+        };
         self.hex_density_map.swap(new_map).await;
+        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
         Ok(())
     }
 }
