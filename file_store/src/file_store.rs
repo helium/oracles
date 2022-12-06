@@ -174,6 +174,7 @@ impl FileStore {
         let client = self.client.clone();
         infos
             .map_ok(move |info| get_byte_stream(client.clone(), bucket.clone(), info.key))
+            .fuse()
             .try_buffered(2)
             .flat_map(|stream| match stream {
                 Ok(stream) => stream_source(stream),
@@ -192,6 +193,7 @@ impl FileStore {
         let client = self.client.clone();
         infos
             .map_ok(move |info| get_byte_stream(client.clone(), bucket.clone(), info.key))
+            .fuse()
             .try_buffer_unordered(workers)
             .flat_map(|stream| match stream {
                 Ok(stream) => stream_source(stream),
@@ -229,5 +231,6 @@ where
         .send()
         .map_ok(|output| output.body)
         .map_err(Error::s3_error)
+
         .await
 }
