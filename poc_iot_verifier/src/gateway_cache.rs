@@ -1,4 +1,4 @@
-use crate::{Error, Result, Settings};
+use crate::Settings;
 use helium_crypto::PublicKey;
 use node_follower::{
     follower_service::FollowerService,
@@ -14,17 +14,24 @@ pub struct GatewayCache {
     pub cache: Cache<PublicKey, GatewayInfo>,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("gateway not found: {0}")]
+pub struct GatewayNotFound(PublicKey);
+
 impl GatewayCache {
-    pub async fn from_settings(settings: &Settings) -> Result<Self> {
-        let follower_service = FollowerService::from_settings(&settings.follower)?;
+    pub fn from_settings(settings: &Settings) -> Self {
+        let follower_service = FollowerService::from_settings(&settings.follower);
         let cache = Cache::<PublicKey, GatewayInfo>::new();
-        Ok(Self {
+        Self {
             follower_service,
             cache,
-        })
+        }
     }
 
-    pub async fn resolve_gateway_info(&self, address: &PublicKey) -> Result<GatewayInfo> {
+    pub async fn resolve_gateway_info(
+        &self,
+        address: &PublicKey,
+    ) -> Result<GatewayInfo, GatewayNotFound> {
         match self.cache.get(address).await {
             Some(hit) => {
                 tracing::debug!("gateway cache hit: {:?}", address);
@@ -46,7 +53,7 @@ impl GatewayCache {
                             .await;
                         Ok(res)
                     }
-                    _ => Err(Error::GatewayNotFound(format!("{address}"))),
+                    _ => Err(GatewayNotFound(address.clone())),
                 }
             }
         }

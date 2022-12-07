@@ -1,5 +1,4 @@
 pub mod entropy;
-pub mod error;
 pub mod gateway_cache;
 pub mod last_beacon;
 pub mod loader;
@@ -9,6 +8,4 @@ pub mod poc_report;
 pub mod purger;
 pub mod runner;
 mod settings;
-pub mod traits;
-pub use error::{Error, Result};
 pub use settings::Settings;

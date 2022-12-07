@@ -3,7 +3,7 @@ use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
     poc_report::{Report, ReportType},
-    Result, Settings,
+    Settings,
 };
 use blake3::hash;
 use chrono::{Duration as ChronoDuration, Utc};
@@ -43,8 +43,18 @@ pub struct Loader {
     deny_list: DenyList,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum NewLoaderError {
+    #[error("file store error: {0}")]
+    FileStoreError(#[from] file_store::Error),
+    #[error("db_store error: {0}")]
+    DbStoreError(#[from] db_store::Error),
+    #[error("denylist error: {0}")]
+    DenyListError(#[from] denylist::Error),
+}
+
 impl Loader {
-    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+    pub async fn from_settings(settings: &Settings) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier loader");
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
@@ -64,7 +74,7 @@ impl Loader {
         &mut self,
         shutdown: &triggered::Listener,
         gateway_cache: &GatewayCache,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         tracing::info!("started verifier loader");
 
         let mut report_timer = time::interval(time::Duration::from_secs(REPORTS_POLL_TIME));
@@ -97,7 +107,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_denylist_tick(&mut self) -> Result {
+    async fn handle_denylist_tick(&mut self) -> anyhow::Result<()> {
         // sink any errors whilst updating the denylist
         // the verifier should not stop just because github
         // could not be reached for example
@@ -112,7 +122,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> Result {
+    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> anyhow::Result<()> {
         let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
@@ -187,7 +197,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
         );
@@ -225,7 +235,7 @@ impl Loader {
         file_type: FileType,
         buf: &[u8],
         gateway_cache: &GatewayCache,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         match file_type {
             FileType::LoraBeaconIngestReport => {
                 let beacon: LoraBeaconIngestReport =

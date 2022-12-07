@@ -3,7 +3,7 @@ use crate::{
     last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::Report,
-    Error, Result, Settings,
+    Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use density_scaler::HexDensityMap;
@@ -46,8 +46,12 @@ pub struct Runner {
     settings: Settings,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("error creating runner: {0}")]
+pub struct NewRunnerError(#[from] db_store::Error);
+
 impl Runner {
-    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+    pub async fn from_settings(settings: &Settings) -> Result<Self, NewRunnerError> {
         let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
         Ok(Self {
             pool,
@@ -60,7 +64,7 @@ impl Runner {
         shutdown: &triggered::Listener,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         tracing::info!("starting runner");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
@@ -147,7 +151,7 @@ impl Runner {
         lora_valid_poc_tx: MessageSender,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
         let db_beacon_reports = Report::get_next_beacons(&self.pool).await?;
         tracing::info!("completed query get_next_beacons");
@@ -195,7 +199,7 @@ impl Runner {
         lora_valid_poc_tx: MessageSender,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         let entropy_start_time = match db_beacon.timestamp {
             Some(v) => v,
             None => return Ok(()),
@@ -224,8 +228,7 @@ impl Runner {
         }
 
         // create the struct defining this POC
-        let mut poc =
-            Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await?;
+        let mut poc = Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await;
 
         // verify POC beacon
         let beacon_verify_result = poc
@@ -283,9 +286,10 @@ impl Runner {
             }
             VerificationStatus::Invalid => {
                 // the beacon is invalid, which in turn renders all witnesses invalid
-                let invalid_reason = beacon_verify_result
-                    .invalid_reason
-                    .ok_or_else(|| Error::not_found("invalid invalid_reason for beacon"))?;
+                let Some(invalid_reason) = beacon_verify_result
+                    .invalid_reason else {
+                        anyhow::bail!("invalid_reason is None");
+                    };
                 tracing::info!(
                     "invalid beacon. entropy: {:?}, addr: {:?}, reason: {:?}",
                     beacon.data,
@@ -322,7 +326,7 @@ impl Runner {
         invalid_reason: InvalidReason,
         lora_invalid_beacon_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         // the beacon is invalid, which in turn renders all witnesses invalid
         let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
@@ -387,7 +391,7 @@ impl Runner {
         witnesses_result: VerifyWitnessesResult,
         lora_valid_poc_tx: &MessageSender,
         lora_invalid_witness_tx: &MessageSender,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
         let pub_key = valid_beacon_report.report.pub_key.to_vec();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -438,7 +442,7 @@ impl Runner {
     }
 }
 
-fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
+fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
     if num_witnesses == 0 {
         Ok(Decimal::ZERO)
     } else if num_witnesses < WITNESS_REDUNDANCY {
@@ -449,7 +453,7 @@ fn poc_challengee_reward_unit(num_witnesses: u32) -> Result<Decimal> {
             let unnormalized = Decimal::TWO - to_sub;
             Ok(std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized))
         } else {
-            Err(Error::InvalidExponent(exp.to_string()))
+            anyhow::bail!("invalid exponent: {}", exp);
         }
     }
 }
