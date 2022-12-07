@@ -124,7 +124,7 @@ impl SpeedtestRollingAverage {
             values ($1, $2, $3)
             on conflict (id) do update set
             speedtests = EXCLUDED.speedtests, latest_timestamp = EXCLUDED.latest_timestamp
-            returning (xmax = 0) as inserted;
+            returning (xmax = 0) as inserted
             "#,
         )
         .bind(self.id)
