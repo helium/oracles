@@ -1,5 +1,6 @@
+use anyhow::Result;
 use clap::Parser;
-use poc_ingest::{server_5g, server_lora, Mode, Result, Settings};
+use poc_ingest::{server_5g, server_lora, Mode, Settings};
 use std::path;
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -18,9 +19,8 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result {
-        let settings = Settings::new(self.config)?;
-        self.cmd.run(settings).await
+    pub async fn run(self) -> Result<()> {
+        self.cmd.run(Settings::new(self.config)?).await
     }
 }
 
@@ -30,7 +30,7 @@ pub enum Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: Settings) -> Result {
+    pub async fn run(&self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
         }
@@ -41,7 +41,7 @@ impl Cmd {
 pub struct Server {}
 
 impl Server {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result<()> {
         tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(&settings.log))
             .with(tracing_subscriber::fmt::layer())
@@ -65,7 +65,7 @@ impl Server {
 }
 
 #[tokio::main]
-async fn main() -> Result {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     cli.run().await
 }
