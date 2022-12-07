@@ -1,10 +1,9 @@
+use anyhow::{Error, Result};
 use chrono::Duration;
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
-use poc_entropy::{
-    entropy_generator::EntropyGenerator, server::ApiServer, DecodeError, Error, Result, Settings,
-};
+use poc_entropy::{entropy_generator::EntropyGenerator, server::ApiServer, Settings};
 use std::{net::SocketAddr, path};
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -26,7 +25,7 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
         self.cmd.run(settings).await
     }
@@ -38,7 +37,7 @@ pub enum Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: Settings) -> Result {
+    pub async fn run(&self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
         }
@@ -49,7 +48,7 @@ impl Cmd {
 pub struct Server {}
 
 impl Server {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result<()> {
         tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(&settings.log))
             .with(tracing_subscriber::fmt::layer())
@@ -85,15 +84,17 @@ impl Server {
                 .await?;
 
         // server
-        let socket_addr: SocketAddr = settings.listen.parse().map_err(DecodeError::from)?;
+        let socket_addr: SocketAddr = settings.listen.parse()?;
         let api_server = ApiServer::new(socket_addr, entropy_watch).await?;
 
         tracing::info!("api listening on {}", api_server.socket_addr);
 
         tokio::try_join!(
             api_server.run(&shutdown),
+            entropy_generator
+                .run(entropy_tx, &shutdown)
+                .map_err(Error::from),
             entropy_sink.run(&shutdown).map_err(Error::from),
-            entropy_generator.run(entropy_tx, &shutdown),
             file_upload.run(&shutdown).map_err(Error::from),
         )
         .map(|_| ())
@@ -101,7 +102,7 @@ impl Server {
 }
 
 #[tokio::main]
-async fn main() -> Result {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     cli.run().await
 }

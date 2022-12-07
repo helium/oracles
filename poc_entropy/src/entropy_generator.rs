@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::Utc;
 use file_store::{file_sink, file_sink_write};
 use futures::TryFutureExt;
@@ -68,8 +67,18 @@ pub struct EntropyGenerator {
     sender: MessageSender,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum GetEntropyError {
+    #[error("no blockhash found")]
+    NoBlockHashFound,
+    #[error("failed to decode hash: {0}")]
+    DecodeError(#[from] bs58::decode::Error),
+    #[error("json rpc error: {0}")]
+    JsonRpcError(#[from] jsonrpsee::core::Error),
+}
+
 impl EntropyGenerator {
-    pub async fn new(url: impl AsRef<str>) -> Result<Self> {
+    pub async fn new(url: impl AsRef<str>) -> Result<Self, GetEntropyError> {
         let client = HttpClientBuilder::default()
             .request_timeout(ENTROPY_TIMEOUT)
             .build(url)?;
@@ -99,7 +108,7 @@ impl EntropyGenerator {
         &mut self,
         file_sink: file_sink::MessageSender,
         shutdown: &triggered::Listener,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         tracing::info!("started entropy generator");
         let mut entropy_timer = time::interval(ENTROPY_TICK_TIME);
         entropy_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
@@ -127,7 +136,10 @@ impl EntropyGenerator {
         self.receiver.clone()
     }
 
-    async fn handle_entropy_tick(&mut self, file_sink: &file_sink::MessageSender) -> Result {
+    async fn handle_entropy_tick(
+        &mut self,
+        file_sink: &file_sink::MessageSender,
+    ) -> anyhow::Result<()> {
         match Self::get_entropy(&self.client).await {
             Ok(data) => self.sender.send_modify(|entry| {
                 entry.timestamp = Utc::now().timestamp();
@@ -155,18 +167,18 @@ impl EntropyGenerator {
         Ok(())
     }
 
-    async fn get_entropy(client: &HttpClient) -> Result<Vec<u8>> {
+    async fn get_entropy(client: &HttpClient) -> Result<Vec<u8>, GetEntropyError> {
         let params = rpc_params!(json!({"commitment": "processed"}));
         client
             .request("getLatestBlockhash", params)
-            .map_err(Error::from)
+            .map_err(GetEntropyError::from)
             .and_then(|result: JsonRpcResult| async move {
                 result
                     .value
                     .get("blockhash")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::not_found("no blockhash found"))
-                    .and_then(|hash| bs58::decode(hash).into_vec().map_err(Error::from))
+                    .ok_or(GetEntropyError::NoBlockHashFound)
+                    .and_then(|hash| bs58::decode(hash).into_vec().map_err(GetEntropyError::from))
             })
             .await
     }
