@@ -1,4 +1,5 @@
-use crate::{reward_index, Error, Result, Settings};
+use crate::{reward_index, Settings};
+use anyhow::Result;
 use db_store::meta;
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
 use futures::{stream, StreamExt, TryStreamExt};
@@ -25,7 +26,7 @@ impl Indexer {
         })
     }
 
-    pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("starting mobile index");
 
         let mut interval_timer = tokio::time::interval(self.interval);
@@ -48,7 +49,7 @@ impl Indexer {
         }
     }
 
-    async fn handle_rewards(&mut self) -> Result {
+    async fn handle_rewards(&mut self) -> Result<()> {
         tracing::info!("Checking for reward manifest");
 
         let last_reward_manifest: u64 = meta::fetch(&self.pool, "last_reward_manifest").await?;
@@ -76,7 +77,7 @@ impl Indexer {
 
         tracing::info!("Manifest found, indexing rewards");
 
-        let manifest = RewardManifest::decode(manifest_buff.map_err(Error::from)?)?;
+        let manifest = RewardManifest::decode(manifest_buff?)?;
         let manifest_time = manifest.end_timestamp.to_timestamp()?;
 
         let reward_files = stream::iter(

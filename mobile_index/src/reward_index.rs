@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKey;
 
@@ -7,7 +6,7 @@ pub async fn insert<'c, E>(
     address: &PublicKey,
     amount: u64,
     timestamp: &DateTime<Utc>,
-) -> Result
+) -> Result<(), sqlx::Error>
 where
     E: sqlx::Executor<'c, Database = sqlx::Postgres>,
 {
@@ -32,7 +31,7 @@ where
     .bind(amount as i64)
     .bind(timestamp)
     .execute(executor)
-    .await
-    .map_err(Error::from)
-    .map(|_| ())
+    .await?;
+
+    Ok(())
 }
