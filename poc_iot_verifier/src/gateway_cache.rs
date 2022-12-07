@@ -11,13 +11,13 @@ const CACHE_TTL: u64 = 86400;
 
 pub struct GatewayCache {
     pub follower_service: FollowerService,
-    pub cache: Cache<PublicKey, GatewayInfo>,
+    pub cache: Cache<Vec<u8>, GatewayInfo>,
 }
 
 impl GatewayCache {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
         let follower_service = FollowerService::from_settings(&settings.follower)?;
-        let cache = Cache::<PublicKey, GatewayInfo>::new();
+        let cache = Cache::new();
         Ok(Self {
             follower_service,
             cache,
@@ -25,7 +25,8 @@ impl GatewayCache {
     }
 
     pub async fn resolve_gateway_info(&self, address: &PublicKey) -> Result<GatewayInfo> {
-        match self.cache.get(address).await {
+        let address_bytes = address.to_vec();
+        match self.cache.get(&address_bytes).await {
             Some(hit) => {
                 tracing::debug!("gateway cache hit: {:?}", address);
                 metrics::increment_counter!("oracles_poc_iot_verifier_gateway_cache_hit");
@@ -42,7 +43,7 @@ impl GatewayCache {
                         tracing::debug!("cache miss: {:?}", address);
                         metrics::increment_counter!("oracles_poc_iot_verifier_gateway_cache_miss");
                         self.cache
-                            .insert(address.clone(), res.clone(), Duration::from_secs(CACHE_TTL))
+                            .insert(address_bytes, res.clone(), Duration::from_secs(CACHE_TTL))
                             .await;
                         Ok(res)
                     }
