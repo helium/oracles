@@ -1,4 +1,3 @@
-use crate::Result;
 use helium_proto::services::{follower, transaction, Channel, Endpoint};
 use serde::Deserialize;
 use std::time::Duration;
@@ -38,19 +37,19 @@ pub fn default_batch_size() -> u32 {
 }
 
 impl Settings {
-    pub fn connect_follower(&self) -> Result<follower::Client<Channel>> {
+    pub fn connect_follower(&self) -> follower::Client<Channel> {
         let channel = Endpoint::from(self.url.clone())
             .connect_timeout(Duration::from_secs(self.connect))
             .timeout(Duration::from_secs(self.rpc))
             .connect_lazy();
-        Ok(follower::Client::new(channel))
+        follower::Client::new(channel)
     }
 
-    pub fn connect_transactions(&self) -> Result<transaction::Client<Channel>> {
+    pub fn connect_transactions(&self) -> transaction::Client<Channel> {
         let channel = Endpoint::from(self.url.clone())
             .connect_timeout(Duration::from_secs(self.connect))
             .timeout(Duration::from_secs(self.rpc))
             .connect_lazy();
-        Ok(transaction::Client::new(channel))
+        transaction::Client::new(channel)
     }
 }

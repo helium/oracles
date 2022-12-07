@@ -1,6 +1,6 @@
 use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
-    Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
+    Settings, LOADER_WORKERS, STORE_WORKERS,
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
@@ -24,11 +24,21 @@ pub struct Server {
     do_submission: bool,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum NewServerError {
+    #[error("database error: {0}")]
+    DatabaseError(#[from] db_store::Error),
+    #[error("keypair error: {0}")]
+    KeypairError(#[from] Box<helium_crypto::Error>),
+    #[error("file store error: {0}")]
+    FileStoreError(#[from] file_store::Error),
+}
+
 impl Server {
     pub async fn new(
         settings: &Settings,
         receipt_sender: file_sink::MessageSender,
-    ) -> Result<Self> {
+    ) -> Result<Self, NewServerError> {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
@@ -47,7 +57,7 @@ impl Server {
             tick_time,
             // Only create txn_service if do_submission is true
             txn_service: do_submission
-                .then_some(TransactionService::from_settings(&settings.transactions)?),
+                .then_some(TransactionService::from_settings(&settings.transactions)),
             iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
             receipt_sender,
@@ -56,7 +66,7 @@ impl Server {
         Ok(result)
     }
 
-    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting poc-iot-injector server");
         let mut poc_iot_timer = time::interval(self.tick_time);
         poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
@@ -79,7 +89,7 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_poc_tick(&mut self) -> Result {
+    async fn handle_poc_tick(&mut self) -> anyhow::Result<()> {
         let after_utc = Utc.from_utc_datetime(&NaiveDateTime::from_timestamp(
             *self.last_poc_submission_ts.value(),
             0,
@@ -124,7 +134,7 @@ async fn submit_txns(
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
     do_submission: bool,
-) -> Result {
+) -> anyhow::Result<()> {
     let file_list = store
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
         .await?;
@@ -144,28 +154,22 @@ async fn submit_txns(
                             tracing::debug!("txn_details: {:?}", txn_details);
                             if do_submission {
                                 tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
-                                match handle_txn_submission(
+                                if let Err(err) = handle_txn_submission(
                                     txn_details.clone(),
                                     &mut shared_txn_service,
                                 )
                                 .await
                                 {
-                                    Ok(_) => {
-                                        tracing::info!(
-                                            "storing txn: {:?}",
-                                            txn_details.hash_b64_url
-                                        );
-                                        metrics::increment_counter!("poc_injector_receipt_count");
-                                        let _ = file_sink_write!(
-                                            "signed_poc_receipt_txn",
-                                            receipt_sender,
-                                            txn_details.txn
-                                        )
-                                        .await;
-                                    }
-                                    Err(err) => {
-                                        tracing::warn!("unable to submit_txn, {err:?}")
-                                    }
+                                    tracing::warn!("unable to submit_txn, {err:?}");
+                                } else {
+                                    tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
+                                    metrics::increment_counter!("poc_injector_receipt_count");
+                                    let _ = file_sink_write!(
+                                        "signed_poc_receipt_txn",
+                                        receipt_sender,
+                                        txn_details.txn
+                                    )
+                                    .await;
                                 }
                             } else {
                                 tracing::info!("only storing txn: {:?}", txn_details.hash_b64_url);
@@ -187,10 +191,14 @@ async fn submit_txns(
     Ok(())
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("txn submission failed: {0}")]
+pub struct HandleTxnSubmissionError(pub String);
+
 async fn handle_txn_submission(
     txn_details: TxnDetails,
     txn_service: &mut Option<TransactionService>,
-) -> Result {
+) -> Result<(), HandleTxnSubmissionError> {
     match txn_service {
         Some(txn_service) => {
             if txn_service
@@ -208,7 +216,7 @@ async fn handle_txn_submission(
                     "txn submission failed!, hash: {:?}",
                     txn_details.hash_b64_url
                 );
-                Err(Error::TxnSubmission(txn_details.hash_b64_url))
+                Err(HandleTxnSubmissionError(txn_details.hash_b64_url))
             }
         }
         None => Ok(()),

@@ -1,4 +1,5 @@
-use crate::{server::Server, Error, Result, Settings};
+use crate::{server::Server, Settings};
+use anyhow::{Error, Result};
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
 use tokio::signal;
@@ -8,7 +9,7 @@ use tokio::signal;
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result<()> {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 

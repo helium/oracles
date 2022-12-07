@@ -15,9 +15,8 @@ pub struct TransactionService {
 }
 
 impl TransactionService {
-    pub fn from_settings(settings: &Settings) -> Result<Self> {
-        let client = settings.connect_transactions()?;
-        Ok(Self { client })
+    pub fn from_settings(settings: &Settings) -> Self {
+        Self { client: settings.connect_transactions() }
     }
 
     pub async fn submit(&mut self, txn: BlockchainTxn, key: &[u8]) -> Result<TxnSubmitRespV1> {

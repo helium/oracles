@@ -17,7 +17,7 @@ impl Server {
     pub async fn from_settings(settings: Settings) -> Result<Self> {
         let mut server = Self {
             hex_density_map: SharedHexDensityMap::new(),
-            follower: FollowerService::from_settings(&settings.follower)?,
+            follower: FollowerService::from_settings(&settings.follower),
             trigger_interval: Duration::seconds(settings.trigger),
         };
 
