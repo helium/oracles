@@ -1,4 +1,5 @@
-use crate::{Error, Result, Settings};
+use crate::Settings;
+use anyhow::{Error, Result};
 use chrono::{Duration, Utc};
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -105,7 +106,7 @@ impl poc_lora::PocLora for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result {
+pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result<()> {
     let grpc_addr = settings.listen_addr()?;
 
     // Initialize uploader
