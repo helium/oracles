@@ -76,7 +76,7 @@ impl Cmd {
         .create()
         .await?;
 
-        let follower = settings.follower.connect_follower()?;
+        let follower = settings.follower.connect_follower();
 
         let reward_period_hours = settings.rewards;
         let verifications_per_period = settings.verifications;

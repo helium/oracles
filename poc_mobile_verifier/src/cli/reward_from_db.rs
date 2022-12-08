@@ -31,7 +31,7 @@ impl Cmd {
         let expected_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
             .expect("Couldn't get expected rewards");
 
-        let mut follower = settings.follower.connect_follower()?;
+        let mut follower = settings.follower.connect_follower();
         let pool = settings.database.connect(10).await?;
 
         let heartbeats = Heartbeats::validated(&pool).await?;
