@@ -435,8 +435,6 @@ impl FileSink {
                     if self.auto_commit {
                         self.commit().await?;
                     }
-                    // let prev_path = active_sink.path.clone();
-                    // self.deposit_sink(&prev_path).await?;
                     self.new_sink().await?;
                 }
             }
