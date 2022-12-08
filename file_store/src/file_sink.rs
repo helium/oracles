@@ -40,8 +40,8 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 #[derive(Debug)]
 pub enum Message {
     Data(oneshot::Sender<Result>, Vec<u8>),
-    Flush(oneshot::Sender<Result>),
-    FetchManifest(oneshot::Sender<Result<Vec<String>>>),
+    Commit(oneshot::Sender<Result<Vec<String>>>),
+    Rollback(oneshot::Sender<Result<Vec<String>>>),
 }
 
 pub type MessageSender = mpsc::Sender<Message>;
@@ -101,26 +101,26 @@ pub async fn write<T: prost::Message>(
         })
 }
 
-pub async fn flush(tx: &MessageSender) -> Result<oneshot::Receiver<Result>> {
-    let (on_flush_tx, on_flush_rx) = oneshot::channel();
-    tx.send(Message::Flush(on_flush_tx))
+pub async fn commit(tx: &MessageSender) -> Result<oneshot::Receiver<Result<Vec<String>>>> {
+    let (on_commit_tx, on_commit_rx) = oneshot::channel();
+    tx.send(Message::Commit(on_commit_tx))
         .await
         .map_err(|e| {
-            tracing::error!("file_sink failed to flush with {e:?}");
+            tracing::error!("file_sink failed to commit with {e:?}");
             Error::channel()
         })
-        .map(move |_| on_flush_rx)
+        .map(|_| on_commit_rx)
 }
 
-pub async fn fetch_manifest(tx: &MessageSender) -> Result<oneshot::Receiver<Result<Vec<String>>>> {
-    let (on_fetch_tx, on_fetch_rx) = oneshot::channel();
-    tx.send(Message::FetchManifest(on_fetch_tx))
+pub async fn rollback(tx: &MessageSender) -> Result<oneshot::Receiver<Result<Vec<String>>>> {
+    let (on_rollback_tx, on_rollback_rx) = oneshot::channel();
+    tx.send(Message::Rollback(on_rollback_tx))
         .await
         .map_err(|e| {
-            tracing::error!("file_sink failed to fetch manifest with {e:?}");
+            tracing::error!("file_sink failed to rollback with {e:?}");
             Error::channel()
         })
-        .map(move |_| on_fetch_rx)
+        .map(|_| on_rollback_rx)
 }
 
 pub struct FileSinkBuilder {
@@ -131,7 +131,7 @@ pub struct FileSinkBuilder {
     roll_time: Duration,
     messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
-    write_manifest: bool,
+    auto_commit: bool,
 }
 
 impl FileSinkBuilder {
@@ -143,7 +143,7 @@ impl FileSinkBuilder {
             max_size: 50_000_000,
             roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
             deposits: None,
-            write_manifest: false,
+            auto_commit: true,
             messages,
         }
     }
@@ -170,9 +170,9 @@ impl FileSinkBuilder {
         Self { deposits, ..self }
     }
 
-    pub fn write_manifest(self, write_manifest: bool) -> Self {
+    pub fn auto_commit(self, auto_commit: bool) -> Self {
         Self {
-            write_manifest,
+            auto_commit,
             ..self
         }
     }
@@ -193,7 +193,8 @@ impl FileSinkBuilder {
             deposits: self.deposits,
             roll_time: self.roll_time,
             messages: self.messages,
-            manifest: self.write_manifest.then(Vec::new),
+            staged_files: Vec::new(),
+            auto_commit: self.auto_commit,
             active_sink: None,
         };
         sink.init().await?;
@@ -211,7 +212,8 @@ pub struct FileSink {
 
     messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
-    manifest: Option<Vec<String>>,
+    staged_files: Vec<PathBuf>,
+    auto_commit: bool,
 
     active_sink: Option<ActiveSink>,
 }
@@ -219,7 +221,6 @@ pub struct FileSink {
 #[derive(Debug)]
 struct ActiveSink {
     size: usize,
-    path: PathBuf,
     time: DateTime<Utc>,
     transport: Transport,
 }
@@ -245,7 +246,11 @@ impl FileSink {
                         .to_string_lossy()
                         .starts_with(&self.prefix) =>
                 {
-                    let _ = self.deposit_sink(&entry.path()).await;
+                    if self.auto_commit {
+                        let _ = self.deposit_sink(&entry.path()).await;
+                    } else {
+                        let _ = fs::remove_file(&entry.path()).await;
+                    }
                 }
                 Ok(None) => break,
                 _ => continue,
@@ -302,17 +307,13 @@ impl FileSink {
                         };
                         let _ = on_write_tx.send(res);
                     }
-                    Some(Message::Flush(on_flush_tx)) => {
-                        let res = self.flush().await;
-                        let _ = on_flush_tx.send(res);
+                    Some(Message::Commit(on_commit_tx)) => {
+                        let res = self.commit().await;
+                        let _ = on_commit_tx.send(res);
                     }
-                    Some(Message::FetchManifest(on_fetch_tx)) => {
-                        let _ = self.flush().await;
-                        if let Some(ref mut manifest) = self.manifest {
-                            let _ = on_fetch_tx.send(Ok(mem::take(manifest)));
-                        } else {
-                            let _ = on_fetch_tx.send(Err(Error::NoManifest));
-                        }
+                    Some(Message::Rollback(on_rollback_tx)) => {
+                        let res = self.rollback().await;
+                        let _ = on_rollback_tx.send(res);
                     }
                     None => {
                         break
@@ -328,7 +329,7 @@ impl FileSink {
         Ok(())
     }
 
-    async fn new_sink(&self) -> Result<ActiveSink> {
+    async fn new_sink(&mut self) -> Result {
         let sink_time = Utc::now();
         let filename = format!("{}.{}.gz", self.prefix, sink_time.timestamp_millis());
         let new_path = self.tmp_path.join(filename);
@@ -339,33 +340,65 @@ impl FileSink {
                 .open(&new_path)
                 .await?,
         ));
-        Ok(ActiveSink {
-            path: new_path,
+
+        self.staged_files.push(new_path);
+
+        self.active_sink = Some(ActiveSink {
             size: 0,
             time: sink_time,
             transport: new_transport(writer),
-        })
+        });
+
+        Ok(())
     }
 
-    pub async fn flush(&mut self) -> Result {
-        if let Some(active_sink) = self.active_sink.as_mut() {
-            active_sink.shutdown().await?;
-            let prev_path = active_sink.path.clone();
-            self.deposit_sink(&prev_path).await?;
-            self.active_sink = None;
+    pub async fn commit(&mut self) -> Result<Vec<String>> {
+        self.maybe_close_active_sink().await?;
+
+        let mut manifest: Vec<String> = Vec::new();
+        let staged_files = mem::take(&mut self.staged_files);
+
+        for staged_file in staged_files.into_iter() {
+            self.deposit_sink(staged_file.as_path()).await?;
+            manifest.push(file_name(&staged_file)?);
         }
-        Ok(())
+
+        Ok(manifest)
+    }
+
+    pub async fn rollback(&mut self) -> Result<Vec<String>> {
+        self.maybe_close_active_sink().await?;
+
+        let mut manifest: Vec<String> = Vec::new();
+        let staged_files = mem::take(&mut self.staged_files);
+
+        for staged_file in staged_files.into_iter() {
+            fs::remove_file(&staged_file).await?;
+            manifest.push(file_name(&staged_file)?);
+        }
+
+        Ok(manifest)
     }
 
     pub async fn maybe_roll(&mut self) -> Result {
         if let Some(active_sink) = self.active_sink.as_mut() {
             if (active_sink.time + self.roll_time) <= Utc::now() {
-                active_sink.shutdown().await?;
-                let prev_path = active_sink.path.clone();
-                self.deposit_sink(&prev_path).await?;
-                self.active_sink = None;
+                if self.auto_commit {
+                    self.commit().await?;
+                } else {
+                    self.maybe_close_active_sink().await?;
+                }
             }
         }
+        Ok(())
+    }
+
+    async fn maybe_close_active_sink(&mut self) -> Result {
+        if let Some(active_sink) = self.active_sink.as_mut() {
+            active_sink.shutdown().await?;
+            self.active_sink = None;
+        }
+
         Ok(())
     }
 
@@ -385,10 +418,7 @@ impl FileSink {
         if let Some(deposits) = &self.deposits {
             file_upload::upload_file(deposits, &target_path).await?;
         }
-        if let Some(ref mut manifest) = self.manifest {
-            let name = target_filename.to_string_lossy().into_owned();
-            manifest.push(name);
-        }
+
         Ok(())
     }
 
@@ -402,14 +432,17 @@ impl FileSink {
             Some(active_sink) => {
                 if active_sink.size + buf_len >= self.max_size {
                     active_sink.shutdown().await?;
-                    let prev_path = active_sink.path.clone();
-                    self.deposit_sink(&prev_path).await?;
-                    self.active_sink = Some(self.new_sink().await?);
+                    if self.auto_commit {
+                        self.commit().await?;
+                    }
+                    // let prev_path = active_sink.path.clone();
+                    // self.deposit_sink(&prev_path).await?;
+                    self.new_sink().await?;
                 }
             }
             // No sink, make a new one
             None => {
-                self.active_sink = Some(self.new_sink().await?);
+                self.new_sink().await?;
             }
         }
 
@@ -424,6 +457,18 @@ impl FileSink {
             )))
         }
     }
+}
+
+fn file_name(path_buf: &Path) -> Result<String> {
+    path_buf
+        .file_name()
+        .map(|os_str| os_str.to_string_lossy().to_string())
+        .ok_or_else(|| {
+            Error::from(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "expected sink filename",
+            ))
+        })
 }
 
 #[cfg(test)]
