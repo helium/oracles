@@ -113,12 +113,18 @@ impl Loader {
     }
 
     async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> Result {
-        let oldest_event_time = Utc::now() - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
+        let now = Utc::now();
+        // if there is NO last timestamp in the DB, we will start our loading window at this point
+        let window_default_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
+        // if there IS a last timestamp in the DB, we will use it as the starting point for our loading window
+        // but cap it at this max.  this ensures should the verifier go down or get stuck for a period
+        // we do not attempt to load to much history which could result in us not catching up again
+        let window_max_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 3);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
-            .unwrap_or(oldest_event_time)
-            .max(oldest_event_time);
-        let before = after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
+            .unwrap_or(window_default_lookback)
+            .max(window_max_lookback);
+        let before = (after + ChronoDuration::seconds(REPORTS_POLL_TIME as i64)).max(now);
 
         // serially load each file type starting with entropy
         // beacons & witnesses dep on entropy
