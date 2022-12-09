@@ -115,8 +115,8 @@ impl Loader {
     async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> Result {
         let now = Utc::now();
         // the loader loads files from s3 via a sliding window
-        // the window is of size = REPORTS_POLL_TIME
-        // and starts at a point of now - (REPORTS_POLL_TIME * 2)
+        // the window defaults to a width = REPORTS_POLL_TIME
+        // its start point is Now() - (REPORTS_POLL_TIME * 2)
         // as such data being loaded is always stale by a time equal to REPORTS_POLL_TIME
 
         // if there is NO last timestamp in the DB, we will start our sliding window from this point
@@ -125,14 +125,26 @@ impl Loader {
         // but cap it at the max below.  this ensures should the verifier go down or get stuck for a period
         // we do not attempt to load too much history which could result in it not catching up again
         let window_max_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 3);
+
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
-        // the sliding window end point is always now - REPORTS_POLL_TIME
-        // this can result in the window size being stretched in the scenario
+
+        // the sliding window end point is always Now() - REPORTS_POLL_TIME
+        // this can result in the window width being stretched in the scenario
         // whereby the previous loading run took longer than REPORTS_POLL_TIME to complete
+        // in such a scenario the window start point will be that of the previous run's end point
+        // and the width will be stretch from that point up until Now() - REPORTS_POLL_TIME
+        // If we continue to take longer than the tick time and the window width keeps stretching
+        // then the `window_max_lookback` cap will kick in at some point
         let before = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
+        let window_width = (after - before).num_minutes() as u64;
+        if window_width > REPORTS_POLL_TIME {
+            tracing::warn!("stretched sliding window, after: {after}, before: {before}, width: {window_width}, tick_time: {:?}", REPORTS_POLL_TIME);
+        } else {
+            tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
+        }
 
         // serially load each file type starting with entropy
         // beacons & witnesses dep on entropy
