@@ -143,7 +143,9 @@ impl Loader {
         if window_width > REPORTS_POLL_TIME {
             tracing::warn!("stretched sliding window, after: {after}, before: {before}, width: {window_width}, tick_time: {:?}", REPORTS_POLL_TIME);
         } else {
-            tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
+            tracing::info!(
+                "sliding window, after: {after}, before: {before}, width: {window_width}"
+            );
         }
 
         // serially load each file type starting with entropy
