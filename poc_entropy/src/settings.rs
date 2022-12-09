@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
@@ -42,7 +41,7 @@ impl Settings {
     /// Environemnt overrides have the same name as the entries in the settings
     /// file in uppercase and prefixed with "ENTROPY_". For example
     /// "ENTROPY_LOG" will override the log setting.
-    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self, config::ConfigError> {
         let mut builder = Config::builder();
 
         if let Some(file) = path {
@@ -56,6 +55,5 @@ impl Settings {
             .add_source(Environment::with_prefix("ENTROPY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-            .map_err(Error::from)
     }
 }
