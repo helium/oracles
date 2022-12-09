@@ -1,6 +1,6 @@
 use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
-    Error, Result, Settings, LOADER_WORKERS, STORE_WORKERS,
+    Error, Result, Settings, LOADER_WORKERS,
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
@@ -8,10 +8,13 @@ use file_store::{file_sink, file_sink_write, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
+use prost::bytes::BytesMut;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
-use tokio::time;
+use tokio::{sync::Semaphore, task, time};
+
+const MAX_CONCURRENT_SUBMISSIONS: usize = 16;
 
 pub struct Server {
     pool: Pool<Postgres>,
@@ -95,7 +98,7 @@ impl Server {
             &mut self.txn_service,
             &mut self.iot_verifier_store,
             self.keypair.clone(),
-            &self.receipt_sender,
+            self.receipt_sender.clone(),
             after_utc,
             before_utc,
             self.do_submission,
@@ -120,7 +123,7 @@ async fn submit_txns(
     txn_service: &mut Option<TransactionService>,
     store: &mut FileStore,
     keypair: Arc<Keypair>,
-    receipt_sender: &file_sink::MessageSender,
+    receipt_sender: file_sink::MessageSender,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
     do_submission: bool,
@@ -131,59 +134,76 @@ async fn submit_txns(
 
     let before_ts = before_utc.timestamp_millis();
 
-    store
-        .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
-        .for_each_concurrent(STORE_WORKERS, |msg| {
-            let mut shared_txn_service = txn_service.clone();
-            let shared_key = keypair.clone();
-            async move {
-                match msg {
-                    Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
-                    Ok(buf) => match handle_report_msg(buf, shared_key, before_ts) {
-                        Ok(txn_details) => {
-                            tracing::debug!("txn_details: {:?}", txn_details);
-                            if do_submission {
-                                tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
-                                match handle_txn_submission(
-                                    txn_details.clone(),
-                                    &mut shared_txn_service,
-                                )
-                                .await
-                                {
-                                    Ok(_) => {
-                                        tracing::info!(
-                                            "storing txn: {:?}",
-                                            txn_details.hash_b64_url
-                                        );
-                                        metrics::increment_counter!("poc_injector_receipt_count");
-                                        let _ = file_sink_write!(
-                                            "signed_poc_receipt_txn",
-                                            receipt_sender,
-                                            txn_details.txn
-                                        )
-                                        .await;
-                                    }
-                                    Err(err) => {
-                                        tracing::warn!("unable to submit_txn, {err:?}")
-                                    }
-                                }
-                            } else {
-                                tracing::info!("only storing txn: {:?}", txn_details.hash_b64_url);
-                                metrics::increment_counter!("poc_injector_receipt_count");
-                                let _ = file_sink_write!(
-                                    "signed_poc_receipt_txn",
-                                    receipt_sender,
-                                    txn_details.txn
-                                )
-                                .await;
-                            }
-                        }
-                        Err(err) => tracing::warn!("unable to construct txn_details, {err:?}"),
-                    },
-                }
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_SUBMISSIONS));
+
+    let mut stream =
+        store.source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed());
+
+    while let Some(msg) = stream.next().await {
+        match msg {
+            Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
+            Ok(buf) => {
+                let shared_key = keypair.clone();
+                let mut shared_txn_service = txn_service.clone();
+                let receipt_sender_clone = receipt_sender.clone();
+                let sem = sem.clone();
+                task::spawn(async move {
+                    let permit = sem.acquire().await;
+                    let _ = process_submission(
+                        buf,
+                        shared_key,
+                        before_ts,
+                        do_submission,
+                        &receipt_sender_clone,
+                        &mut shared_txn_service,
+                    )
+                    .await;
+                    drop(permit);
+                });
             }
-        })
-        .await;
+        }
+    }
+
+    Ok(())
+}
+
+async fn process_submission(
+    buf: BytesMut,
+    shared_key: Arc<Keypair>,
+    before_ts: i64,
+    do_submission: bool,
+    receipt_sender: &file_sink::MessageSender,
+    txn_service: &mut Option<TransactionService>,
+) -> Result<()> {
+    match handle_report_msg(buf, shared_key, before_ts) {
+        Ok(txn_details) => {
+            tracing::debug!("txn_details: {:?}", txn_details);
+            if do_submission {
+                tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
+                match handle_txn_submission(txn_details.clone(), txn_service).await {
+                    Ok(_) => {
+                        tracing::info!("txn send: {:?}", txn_details.hash_b64_url);
+                        metrics::increment_counter!("poc_injector_receipt_count");
+                        // let _ = file_sink_write!(
+                        //     "signed_poc_receipt_txn",
+                        //     receipt_sender,
+                        //     txn_details.txn
+                        // )
+                        // .await;
+                    }
+                    Err(err) => {
+                        tracing::warn!("unable to submit_txn, {err:?}")
+                    }
+                }
+            } else {
+                tracing::info!("only storing txn: {:?}", txn_details.hash_b64_url);
+                metrics::increment_counter!("poc_injector_receipt_count");
+                let _ = file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn)
+                    .await;
+            }
+        }
+        Err(err) => tracing::warn!("unable to construct txn_details, {err:?}"),
+    }
     Ok(())
 }
 
