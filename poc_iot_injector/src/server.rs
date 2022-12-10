@@ -12,7 +12,7 @@ use prost::bytes::BytesMut;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
-use tokio::{sync::Semaphore, task, time};
+use tokio::{task::JoinSet, time};
 
 const MAX_CONCURRENT_SUBMISSIONS: usize = 16;
 
@@ -134,10 +134,10 @@ async fn submit_txns(
 
     let before_ts = before_utc.timestamp_millis();
 
-    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_SUBMISSIONS));
-
     let mut stream =
         store.source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed());
+
+    let mut set = JoinSet::new();
 
     while let Some(msg) = stream.next().await {
         match msg {
@@ -146,9 +146,9 @@ async fn submit_txns(
                 let shared_key = keypair.clone();
                 let mut shared_txn_service = txn_service.clone();
                 let receipt_sender_clone = receipt_sender.clone();
-                let sem = sem.clone();
-                task::spawn(async move {
-                    let permit = sem.acquire().await;
+
+                tracing::info!("Spawning submission tasks...");
+                set.spawn(async move {
                     let _ = process_submission(
                         buf,
                         shared_key,
@@ -158,8 +158,12 @@ async fn submit_txns(
                         &mut shared_txn_service,
                     )
                     .await;
-                    drop(permit);
                 });
+
+                if set.len() > MAX_CONCURRENT_SUBMISSIONS {
+                    tracing::info!("Processing {MAX_CONCURRENT_SUBMISSIONS} submissions");
+                    set.join_next().await;
+                }
             }
         }
     }
@@ -182,7 +186,7 @@ async fn process_submission(
                 tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
                 match handle_txn_submission(txn_details.clone(), txn_service).await {
                     Ok(_) => {
-                        tracing::info!("txn send: {:?}", txn_details.hash_b64_url);
+                        tracing::info!("txn sent: {:?}", txn_details.hash_b64_url);
                         metrics::increment_counter!("poc_injector_receipt_count");
                         // let _ = file_sink_write!(
                         //     "signed_poc_receipt_txn",
