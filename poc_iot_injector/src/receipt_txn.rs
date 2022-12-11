@@ -106,7 +106,7 @@ fn construct_poc_witnesses(
 
         // NOTE: channel is irrelevant now
         let poc_witness = BlockchainPocWitnessV1 {
-            gateway: witness_report.report.pub_key.to_vec(),
+            gateway: witness_report.report.pub_key.into(),
             timestamp: witness_report.report.timestamp.timestamp() as u64,
             signal: witness_report.report.signal,
             packet_hash: witness_report.report.data,
@@ -136,7 +136,7 @@ fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> Result<Blockch
 
     // NOTE: signal, origin, snr and addr_hash are irrelevant now
     Ok(BlockchainPocReceiptV1 {
-        gateway: beacon_report.report.pub_key.to_vec(),
+        gateway: beacon_report.report.pub_key.into(),
         timestamp: beacon_report.report.timestamp.timestamp() as u64,
         signal: 0,
         data: beacon_report.report.data,

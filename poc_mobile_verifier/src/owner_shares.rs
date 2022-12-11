@@ -4,7 +4,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::traits::TimestampEncode;
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
     poc_mobile as proto, Channel,
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 pub struct RadioShare {
-    hotspot_key: PublicKey,
+    hotspot_key: PublicKeyBinary,
     cbsd_id: String,
     amount: Decimal,
 }
@@ -43,7 +43,7 @@ impl RadioShares {
 
 #[derive(Default)]
 pub struct OwnerShares {
-    pub shares: HashMap<PublicKey, RadioShares>,
+    pub shares: HashMap<PublicKeyBinary, RadioShares>,
 }
 
 const REWARDS_PER_SHARE_PREC: u32 = 9;
@@ -99,8 +99,8 @@ impl OwnerShares {
                 radio_shares
                     .into_iter()
                     .map(move |radio_share| proto::RadioRewardShare {
-                        owner_key: owner_key.to_vec(),
-                        hotspot_key: radio_share.hotspot_key.to_vec(),
+                        owner_key: owner_key.clone().into(),
+                        hotspot_key: radio_share.hotspot_key.into(),
                         cbsd_id: radio_share.cbsd_id,
                         amount: {
                             let rewards = rewards_per_share * radio_share.amount;
@@ -148,23 +148,23 @@ pub struct ResolveError(#[from] tonic::Status);
 pub trait OwnerResolver: Send {
     async fn resolve_owner(
         &mut self,
-        address: &PublicKey,
-    ) -> Result<Option<PublicKey>, ResolveError>;
+        address: &PublicKeyBinary,
+    ) -> Result<Option<PublicKeyBinary>, ResolveError>;
 }
 
 #[async_trait::async_trait]
 impl OwnerResolver for follower::Client<Channel> {
     async fn resolve_owner(
         &mut self,
-        address: &PublicKey,
-    ) -> Result<Option<PublicKey>, ResolveError> {
+        address: &PublicKeyBinary,
+    ) -> Result<Option<PublicKeyBinary>, ResolveError> {
         let req = FollowerGatewayReqV1 {
-            address: address.to_vec(),
+            address: address.clone().into(),
         };
         let res = self.find_gateway(req).await?.into_inner();
 
         if let Some(GatewayResult::Info(gateway_info)) = res.result {
-            if let Ok(pub_key) = PublicKey::try_from(gateway_info.owner) {
+            if let Ok(pub_key) = PublicKeyBinary::try_from(gateway_info.owner) {
                 return Ok(Some(pub_key));
             }
         }
@@ -186,15 +186,15 @@ mod test {
     use std::collections::{HashMap, VecDeque};
 
     struct MapResolver {
-        owners: HashMap<PublicKey, PublicKey>,
+        owners: HashMap<PublicKeyBinary, PublicKeyBinary>,
     }
 
     #[async_trait::async_trait]
     impl OwnerResolver for MapResolver {
         async fn resolve_owner(
             &mut self,
-            address: &PublicKey,
-        ) -> Result<Option<PublicKey>, ResolveError> {
+            address: &PublicKeyBinary,
+        ) -> Result<Option<PublicKeyBinary>, ResolveError> {
             Ok(self.owners.get(address).cloned())
         }
     }
@@ -247,20 +247,20 @@ mod test {
 
     #[tokio::test]
     async fn test_single_owner_multiple_hotspots() {
-        let g1: PublicKey = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
+        let g1: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
             .parse()
             .expect("unable to construct pubkey");
-        let g2: PublicKey = "118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc"
+        let g2: PublicKeyBinary = "118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc"
             .parse()
             .expect("unable to construct pubkey");
 
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
 
-        let owner1: PublicKey = "1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r"
+        let owner1: PublicKeyBinary = "1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r"
             .parse()
             .expect("unable to get test pubkey");
-        let owner2: PublicKey = "1126cBTucnhedhxnWp6puBWBk6Xdbpi7nkqeaX4s4xoDy2ja7bcd"
+        let owner2: PublicKeyBinary = "1126cBTucnhedhxnWp6puBWBk6Xdbpi7nkqeaX4s4xoDy2ja7bcd"
             .parse()
             .expect("unable to get pubkey");
 
@@ -347,42 +347,42 @@ mod test {
     #[tokio::test]
     async fn reward_shares_with_speed_multiplier() {
         // init hotspots
-        let owner1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner1 parse");
-        let owner2: PublicKey = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed owner2 parse");
-        let owner3: PublicKey = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
+        let owner3: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
             .parse()
             .expect("failed owner3 parse");
-        let owner4: PublicKey = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
+        let owner4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
             .parse()
             .expect("failed owner4 parse");
 
         // init hotspots
-        let gw1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
-        let gw2: PublicKey = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed gw2 parse");
-        let gw3: PublicKey = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
+        let gw3: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
             .parse()
             .expect("failed gw3 parse");
-        let gw4: PublicKey = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
+        let gw4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
             .parse()
             .expect("failed gw4 parse");
-        let gw5: PublicKey = "112j1iw1sV2B2Tz2DxPSeum9Cmc5kMKNdDTDg1zDRsdwuvZueq3B"
+        let gw5: PublicKeyBinary = "112j1iw1sV2B2Tz2DxPSeum9Cmc5kMKNdDTDg1zDRsdwuvZueq3B"
             .parse()
             .expect("failed gw5 parse");
-        let gw6: PublicKey = "11fCasUk9XvU15ktsMMH64J9E7XuqQ2L5FJPv8HZMCDG6kdZ3SC"
+        let gw6: PublicKeyBinary = "11fCasUk9XvU15ktsMMH64J9E7XuqQ2L5FJPv8HZMCDG6kdZ3SC"
             .parse()
             .expect("failed gw6 parse");
-        let gw7: PublicKey = "11HdwRpQDrYM7LJtRGSzRF3vY2iwuumx1Z2MUhBYAVTwZdSh6Bi"
+        let gw7: PublicKeyBinary = "11HdwRpQDrYM7LJtRGSzRF3vY2iwuumx1Z2MUhBYAVTwZdSh6Bi"
             .parse()
             .expect("failed gw7 parse");
-        let gw8: PublicKey = "112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ"
+        let gw8: PublicKeyBinary = "112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ"
             .parse()
             .expect("failed gw8 parse");
 
@@ -563,7 +563,7 @@ mod test {
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
         // calculate the rewards for the sample group
-        let mut owner_rewards = HashMap::<PublicKey, u64>::new();
+        let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         for radio_share in OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards")
@@ -571,7 +571,7 @@ mod test {
             .expect("Clock is out of sync")
         {
             *owner_rewards
-                .entry(PublicKey::try_from(radio_share.owner_key).expect("Invalid public key"))
+                .entry(PublicKeyBinary::from(radio_share.owner_key))
                 .or_default() += radio_share.amount;
         }
 
@@ -607,17 +607,17 @@ mod test {
     async fn dont_write_zero_rewards() {
         use rust_decimal_macros::dec;
 
-        let owner1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner1 parse");
-        let owner2: PublicKey = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed owner2 parse");
 
-        let gw1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
-        let gw2: PublicKey = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed gw2 parse");
 
@@ -663,8 +663,7 @@ mod test {
             .into_radio_shares(&(now - Duration::hours(1)..now))
             .expect("Could not convert to radio shares")
         {
-            let actual_owner =
-                PublicKey::try_from(reward.owner_key).expect("Could not parse owner key");
+            let actual_owner = PublicKeyBinary::from(reward.owner_key);
             assert_eq!(actual_owner, owner1);
         }
     }
