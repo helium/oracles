@@ -49,8 +49,8 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.5.0", features=["sqlx-postgres", "multisig"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-crypto = {version = "0.6", features=["sqlx-postgres", "multisig"]}
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
 humantime = "2"
 metrics = "0"

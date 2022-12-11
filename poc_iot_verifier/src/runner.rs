@@ -239,7 +239,7 @@ impl Runner {
                 tracing::debug!(
                     "valid beacon. entropy: {:?}, addr: {:?}",
                     beacon.data,
-                    beacon.pub_key.to_string()
+                    beacon.pub_key
                 );
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
@@ -293,7 +293,7 @@ impl Runner {
                 tracing::info!(
                     "invalid beacon. entropy: {:?}, addr: {:?}, reason: {:?}",
                     beacon.data,
-                    beacon.pub_key.to_string(),
+                    beacon.pub_key,
                     invalid_reason
                 );
                 self.handle_invalid_poc(
@@ -311,7 +311,7 @@ impl Runner {
                 tracing::info!(
                     "failed beacon. entropy: {:?}, addr: {:?}",
                     beacon.data,
-                    beacon.pub_key.to_string()
+                    beacon.pub_key
                 );
                 Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now()).await?;
             }
@@ -393,7 +393,7 @@ impl Runner {
         lora_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
-        let pub_key = valid_beacon_report.report.pub_key.to_vec();
+        let pub_key = valid_beacon_report.report.pub_key.clone();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -435,8 +435,7 @@ impl Runner {
             }
         }
         // update timestamp of last beacon for the beaconer
-        LastBeacon::update_last_timestamp(&self.pool, &pub_key.to_vec(), received_timestamp)
-            .await?;
+        LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
         Report::delete_poc(&self.pool, &packet_data).await?;
         Ok(())
     }

@@ -4,7 +4,7 @@ use crate::cell_type::CellType;
 use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
 use file_store::{file_sink, file_sink_write, heartbeat::CellHeartbeat};
 use futures::stream::{Stream, StreamExt};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -13,7 +13,7 @@ use std::{collections::HashMap, ops::Range};
 
 #[derive(Clone)]
 pub struct Heartbeat {
-    pub hotspot_key: PublicKey,
+    pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
     pub reward_weight: Decimal,
     pub timestamp: NaiveDateTime,
@@ -22,7 +22,7 @@ pub struct Heartbeat {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HeartbeatKey {
-    hotspot_key: PublicKey,
+    hotspot_key: PublicKeyBinary,
     cbsd_id: String,
 }
 
@@ -41,7 +41,7 @@ impl HeartbeatValue {
 }
 
 pub struct HeartbeatReward {
-    pub hotspot_key: PublicKey,
+    pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
     pub reward_weight: Decimal,
 }
@@ -58,7 +58,7 @@ impl Heartbeats {
     pub async fn validated(exec: impl sqlx::PgExecutor<'_>) -> Result<Self, sqlx::Error> {
         #[derive(sqlx::FromRow)]
         pub struct HeartbeatRow {
-            hotspot_key: PublicKey,
+            hotspot_key: PublicKeyBinary,
             cbsd_id: String,
             reward_weight: Decimal,
             hours_seen: [bool; 24],
@@ -168,7 +168,7 @@ impl Heartbeat {
             heartbeats_tx,
             proto::Heartbeat {
                 cbsd_id: self.cbsd_id.clone(),
-                pub_key: self.hotspot_key.to_vec(),
+                pub_key: self.hotspot_key.clone().into(),
                 reward_multiplier: self.reward_weight.to_f32().unwrap_or(0.0),
                 cell_type,
                 validity: self.validity as i32,
