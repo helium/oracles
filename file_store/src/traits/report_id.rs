@@ -1,8 +1,9 @@
 use crate::{
     lora_beacon_report::{LoraBeaconIngestReport, LoraBeaconReport},
     lora_witness_report::{LoraWitnessIngestReport, LoraWitnessReport},
+    traits::TimestampEncode,
 };
-use blake3::hash;
+use blake3::Hasher;
 use chrono::{DateTime, Utc};
 pub trait IngestId {
     fn ingest_id(&self) -> Vec<u8>;
@@ -16,11 +17,16 @@ macro_rules! impl_ingest_id {
     ($report_type:ty) => {
         impl IngestId for $report_type {
             fn ingest_id(&self) -> Vec<u8> {
-                let mut id: Vec<u8> = self.report.data.clone();
-                let mut public_key = self.report.pub_key.to_vec();
-                id.append(&mut self.received_timestamp.to_string().as_bytes().to_vec());
-                id.append(&mut public_key);
-                hash(&id).as_bytes().to_vec()
+                let mut hasher = Hasher::new();
+                hasher.update(&self.report.data);
+                hasher.update(
+                    &self
+                        .received_timestamp
+                        .encode_timestamp_millis()
+                        .to_be_bytes(),
+                );
+                hasher.update(self.report.pub_key.as_ref());
+                hasher.finalize().as_bytes().to_vec()
             }
         }
     };
@@ -30,11 +36,11 @@ macro_rules! impl_report_id {
     ($report_type:ty) => {
         impl ReportId for $report_type {
             fn report_id(&self, received_ts: DateTime<Utc>) -> Vec<u8> {
-                let mut id: Vec<u8> = self.data.clone();
-                let mut public_key = self.pub_key.to_vec();
-                id.append(&mut received_ts.to_string().as_bytes().to_vec());
-                id.append(&mut public_key);
-                hash(&id).as_bytes().to_vec()
+                let mut hasher = Hasher::new();
+                hasher.update(&self.data);
+                hasher.update(&received_ts.encode_timestamp_millis().to_be_bytes());
+                hasher.update(self.pub_key.as_ref());
+                hasher.finalize().as_bytes().to_vec()
             }
         }
     };

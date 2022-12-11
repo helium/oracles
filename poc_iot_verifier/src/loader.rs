@@ -12,7 +12,7 @@ use file_store::{
     traits::IngestId, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     Message,
@@ -287,7 +287,11 @@ impl Loader {
         }
     }
 
-    async fn check_valid_gateway(&self, pub_key: &PublicKey, gateway_cache: &GatewayCache) -> bool {
+    async fn check_valid_gateway(
+        &self,
+        pub_key: &PublicKeyBinary,
+        gateway_cache: &GatewayCache,
+    ) -> bool {
         if self.check_gw_denied(pub_key).await {
             tracing::debug!("dropping denied gateway : {:?}", &pub_key);
             return false;
@@ -299,11 +303,15 @@ impl Loader {
         true
     }
 
-    async fn check_unknown_gw(&self, pub_key: &PublicKey, gateway_cache: &GatewayCache) -> bool {
+    async fn check_unknown_gw(
+        &self,
+        pub_key: &PublicKeyBinary,
+        gateway_cache: &GatewayCache,
+    ) -> bool {
         gateway_cache.resolve_gateway_info(pub_key).await.is_err()
     }
 
-    async fn check_gw_denied(&self, pub_key: &PublicKey) -> bool {
+    async fn check_gw_denied(&self, pub_key: &PublicKeyBinary) -> bool {
         self.deny_list.check_key(pub_key).await
     }
 }

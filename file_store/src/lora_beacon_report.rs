@@ -5,15 +5,14 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconReportReqV1};
 use helium_proto::DataRate;
 use serde::Serialize;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LoraBeaconReport {
-    #[serde(alias = "pubKey")]
-    pub pub_key: PublicKey,
+    pub pub_key: PublicKeyBinary,
     pub local_entropy: Vec<u8>,
     pub remote_entropy: Vec<u8>,
     pub data: Vec<u8>,
@@ -87,7 +86,7 @@ impl From<LoraBeaconIngestReport> for LoraBeaconReportReqV1 {
     fn from(v: LoraBeaconIngestReport) -> Self {
         let timestamp = v.report.timestamp();
         Self {
-            pub_key: v.report.pub_key.to_vec(),
+            pub_key: v.report.pub_key.into(),
             local_entropy: v.report.local_entropy,
             remote_entropy: v.report.remote_entropy,
             data: v.report.data,
@@ -111,7 +110,7 @@ impl TryFrom<LoraBeaconReportReqV1> for LoraBeaconReport {
         let timestamp = v.timestamp()?;
 
         Ok(Self {
-            pub_key: PublicKey::try_from(v.pub_key)?,
+            pub_key: v.pub_key.into(),
             local_entropy: v.local_entropy,
             remote_entropy: v.remote_entropy,
             data: v.data,
@@ -130,7 +129,7 @@ impl From<LoraBeaconReport> for LoraBeaconReportReqV1 {
     fn from(v: LoraBeaconReport) -> Self {
         let timestamp = v.timestamp();
         Self {
-            pub_key: v.pub_key.to_vec(),
+            pub_key: v.pub_key.into(),
             local_entropy: v.local_entropy,
             remote_entropy: v.remote_entropy,
             data: v.data,

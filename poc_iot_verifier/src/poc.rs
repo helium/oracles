@@ -112,7 +112,7 @@ impl Poc {
 
         // is beaconer allowed to beacon at this time ?
         // any irregularily timed beacons will be rejected
-        match LastBeacon::get(pool, &beaconer_pub_key.to_vec()).await? {
+        match LastBeacon::get(pool, beaconer_pub_key.as_ref()).await? {
             Some(last_beacon) => {
                 let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
                 if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {

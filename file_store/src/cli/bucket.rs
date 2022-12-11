@@ -203,21 +203,22 @@ fn locate(
     gateway: &PublicKey,
     buf: &[u8],
 ) -> Result<Option<serde_json::Value>> {
+    let pub_key = gateway.to_vec();
     match file_type {
         FileType::CellHeartbeat => {
-            CellHeartbeat::decode(buf).and_then(|event| event.to_value_if(gateway))
+            CellHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         FileType::CellSpeedtest => {
-            CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(gateway))
+            CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         FileType::LoraBeaconIngestReport => {
-            LoraBeaconIngestReport::decode(buf).and_then(|event| event.to_value_if(gateway))
+            LoraBeaconIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         FileType::LoraWitnessIngestReport => {
-            LoraWitnessIngestReport::decode(buf).and_then(|event| event.to_value_if(gateway))
+            LoraWitnessIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         FileType::LoraValidPoc => {
-            LoraValidPoc::decode(buf).and_then(|event| event.to_value_if(gateway))
+            LoraValidPoc::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         _ => Ok(None),
     }
@@ -228,19 +229,19 @@ trait ToValue {
     where
         Self: serde::Serialize;
 
-    fn to_value_if(self, gateway: &PublicKey) -> Result<Option<serde_json::Value>>
+    fn to_value_if(self, gateway: Vec<u8>) -> Result<Option<serde_json::Value>>
     where
         Self: Gateway,
         Self: serde::Serialize + Sized,
     {
-        (self.pubkey() == gateway)
+        (self.has_pubkey(&gateway))
             .then(|| self.to_value())
             .transpose()
     }
 }
 
 trait Gateway {
-    fn pubkey(&self) -> &PublicKey;
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool;
 }
 
 impl<T> ToValue for T
@@ -257,31 +258,31 @@ where
 }
 
 impl Gateway for CellHeartbeat {
-    fn pubkey(&self) -> &PublicKey {
-        &self.pubkey
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.pubkey.as_ref() == pub_key
     }
 }
 
 impl Gateway for CellSpeedtest {
-    fn pubkey(&self) -> &PublicKey {
-        &self.pubkey
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.pubkey.as_ref() == pub_key
     }
 }
 
 impl Gateway for LoraBeaconIngestReport {
-    fn pubkey(&self) -> &PublicKey {
-        &self.report.pub_key
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.report.pub_key.as_ref() == pub_key
     }
 }
 
 impl Gateway for LoraWitnessIngestReport {
-    fn pubkey(&self) -> &PublicKey {
-        &self.report.pub_key
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.report.pub_key.as_ref() == pub_key
     }
 }
 
 impl Gateway for LoraValidPoc {
-    fn pubkey(&self) -> &PublicKey {
-        &self.beacon_report.report.pub_key
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.beacon_report.report.pub_key.as_ref() == pub_key
     }
 }

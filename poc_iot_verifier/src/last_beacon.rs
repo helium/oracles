@@ -11,7 +11,7 @@ pub struct LastBeacon {
 }
 
 impl LastBeacon {
-    pub async fn insert_kv<'c, E>(executor: E, id: &Vec<u8>, val: &str) -> Result<Self>
+    pub async fn insert_kv<'c, E>(executor: E, id: &[u8], val: &str) -> Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -29,7 +29,7 @@ impl LastBeacon {
         .map_err(Error::from)
     }
 
-    pub async fn get<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<Self>>
+    pub async fn get<'c, E>(executor: E, id: &[u8]) -> Result<Option<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -40,7 +40,7 @@ impl LastBeacon {
             .map_err(Error::from)
     }
 
-    pub async fn last_timestamp<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<DateTime<Utc>>>
+    pub async fn last_timestamp<'c, E>(executor: E, id: &[u8]) -> Result<Option<DateTime<Utc>>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -63,7 +63,7 @@ impl LastBeacon {
 
     pub async fn update_last_timestamp<'c, E>(
         executor: E,
-        id: &Vec<u8>,
+        id: &[u8],
         timestamp: DateTime<Utc>,
     ) -> Result
     where
