@@ -5,15 +5,14 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{LoraWitnessIngestReportV1, LoraWitnessReportReqV1};
 use helium_proto::DataRate;
 use serde::Serialize;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LoraWitnessReport {
-    #[serde(alias = "pubKey")]
-    pub pub_key: PublicKey,
+    pub pub_key: PublicKeyBinary,
     pub data: Vec<u8>,
     pub timestamp: DateTime<Utc>,
     pub tmst: u32,
@@ -61,7 +60,7 @@ impl From<LoraWitnessIngestReport> for LoraWitnessReportReqV1 {
     fn from(v: LoraWitnessIngestReport) -> Self {
         let timestamp = v.report.timestamp();
         Self {
-            pub_key: v.report.pub_key.to_vec(),
+            pub_key: v.report.pub_key.into(),
             data: v.report.data,
             timestamp,
             signal: v.report.signal,
@@ -83,7 +82,7 @@ impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessReport {
         let timestamp = v.timestamp()?;
 
         Ok(Self {
-            pub_key: PublicKey::try_from(v.pub_key)?,
+            pub_key: v.pub_key.into(),
             data: v.data,
             timestamp,
             signal: v.signal,
@@ -124,7 +123,7 @@ impl From<LoraWitnessReport> for LoraWitnessReportReqV1 {
     fn from(v: LoraWitnessReport) -> Self {
         let timestamp = v.timestamp();
         Self {
-            pub_key: v.pub_key.to_vec(),
+            pub_key: v.pub_key.into(),
             data: v.data,
             timestamp,
             signal: v.signal,

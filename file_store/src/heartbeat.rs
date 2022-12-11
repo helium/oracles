@@ -3,20 +3,17 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CellHeartbeat {
-    #[serde(alias = "pubKey")]
-    pub pubkey: PublicKey,
+    pub pubkey: PublicKeyBinary,
     pub hotspot_type: String,
     pub cell_id: u32,
     pub timestamp: DateTime<Utc>,
-    #[serde(alias = "longitude")]
     pub lon: f64,
-    #[serde(alias = "latitude")]
     pub lat: f64,
     pub operation_mode: bool,
     pub cbsd_category: String,
@@ -42,7 +39,7 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
     fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
         Ok(Self {
             timestamp: v.timestamp.to_timestamp()?,
-            pubkey: PublicKey::try_from(v.pub_key)?,
+            pubkey: v.pub_key.into(),
             hotspot_type: v.hotspot_type,
             cell_id: v.cell_id,
             lon: v.lon,

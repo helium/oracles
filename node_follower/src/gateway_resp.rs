@@ -1,13 +1,13 @@
 use crate::{Error, Result};
 use async_trait::async_trait;
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::follower::GatewayInfo as GatewayInfoProto, GatewayStakingMode, Region,
 };
 
 #[async_trait]
 pub trait GatewayInfoResolver {
-    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<GatewayInfo>;
+    async fn resolve_gateway_info(&mut self, address: &PublicKeyBinary) -> Result<GatewayInfo>;
 }
 
 #[derive(Debug, Clone)]

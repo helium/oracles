@@ -18,11 +18,15 @@ pub enum LastBeaconError {
 }
 
 impl LastBeacon {
+<<<<<<< HEAD
     pub async fn insert_kv<'c, E>(
         executor: E,
         id: &Vec<u8>,
         val: &str,
     ) -> Result<Self, LastBeaconError>
+=======
+    pub async fn insert_kv<'c, E>(executor: E, id: &[u8], val: &str) -> Result<Self>
+>>>>>>> d8049b8 (Use helium_crypto PublicKeyBinary)
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -39,7 +43,11 @@ impl LastBeacon {
         .await?)
     }
 
+<<<<<<< HEAD
     pub async fn get<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<Self>, LastBeaconError>
+=======
+    pub async fn get<'c, E>(executor: E, id: &[u8]) -> Result<Option<Self>>
+>>>>>>> d8049b8 (Use helium_crypto PublicKeyBinary)
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -51,10 +59,14 @@ impl LastBeacon {
         )
     }
 
+<<<<<<< HEAD
     pub async fn last_timestamp<'c, E>(
         executor: E,
         id: &Vec<u8>,
     ) -> Result<Option<DateTime<Utc>>, LastBeaconError>
+=======
+    pub async fn last_timestamp<'c, E>(executor: E, id: &[u8]) -> Result<Option<DateTime<Utc>>>
+>>>>>>> d8049b8 (Use helium_crypto PublicKeyBinary)
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -77,7 +89,7 @@ impl LastBeacon {
 
     pub async fn update_last_timestamp<'c, E>(
         executor: E,
-        id: &Vec<u8>,
+        id: &[u8],
         timestamp: DateTime<Utc>,
     ) -> Result<(), LastBeaconError>
     where

@@ -89,7 +89,7 @@ impl DenyList {
         Ok(())
     }
 
-    pub async fn check_key(&self, pub_key: &PublicKey) -> bool {
+    pub async fn check_key<K: AsRef<[u8]>>(&self, pub_key: K) -> bool {
         if self.filter.len() == 0 {
             tracing::warn!("empty denylist filter, rejecting key");
             return true;
@@ -125,9 +125,9 @@ pub fn filter_from_bin(bin: &Vec<u8>) -> Result<Xor32> {
     }
 }
 
-fn public_key_hash(public_key: &PublicKey) -> u64 {
+fn public_key_hash<R: AsRef<[u8]>>(public_key: R) -> u64 {
     let mut hasher = XxHash64::default();
-    hasher.write(&public_key.to_vec());
+    hasher.write(public_key.as_ref());
     hasher.finish()
 }
 

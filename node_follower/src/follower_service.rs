@@ -3,7 +3,7 @@ use crate::{
     Error, GatewayInfoStream, Result, Settings,
 };
 use futures::stream::{self, StreamExt};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     follower::{
         self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1,
@@ -23,14 +23,14 @@ pub struct FollowerService {
 
 #[async_trait::async_trait]
 impl GatewayInfoResolver for FollowerService {
-    async fn resolve_gateway_info(&mut self, address: &PublicKey) -> Result<GatewayInfo> {
+    async fn resolve_gateway_info(&mut self, address: &PublicKeyBinary) -> Result<GatewayInfo> {
         let req = FollowerGatewayReqV1 {
-            address: address.to_vec(),
+            address: address.clone().into(),
         };
         let res = self.client.find_gateway(req).await?.into_inner();
         match res.result {
             Some(GatewayResult::Info(gateway_info)) => Ok(gateway_info.try_into()?),
-            _ => Err(Error::GatewayNotFound(format!("{address}"))),
+            _ => Err(Error::GatewayNotFound(format!("{address:?}"))),
         }
     }
 }
