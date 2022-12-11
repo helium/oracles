@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use file_store::{file_sink, file_sink_write, speedtest::CellSpeedtest, traits::TimestampEncode};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -58,13 +58,13 @@ impl PgHasArrayType for Speedtest {
 
 #[derive(FromRow)]
 pub struct SpeedtestRollingAverage {
-    pub id: PublicKey,
+    pub id: PublicKeyBinary,
     pub speedtests: Vec<Speedtest>,
     pub latest_timestamp: NaiveDateTime,
 }
 
 impl SpeedtestRollingAverage {
-    pub fn new(id: PublicKey) -> Self {
+    pub fn new(id: PublicKeyBinary) -> Self {
         Self {
             id,
             speedtests: Vec::new(),
@@ -78,7 +78,7 @@ impl SpeedtestRollingAverage {
     ) -> impl Stream<Item = Result<Self, FetchError>> + 'a {
         let tests_by_publickey = speedtests
             .fold(
-                HashMap::<PublicKey, Vec<CellSpeedtest>>::new(),
+                HashMap::<PublicKeyBinary, Vec<CellSpeedtest>>::new(),
                 |mut map, cell_speedtest| async move {
                     map.entry(cell_speedtest.pubkey.clone())
                         .or_default()
@@ -152,7 +152,7 @@ impl SpeedtestRollingAverage {
             "speedtest_average",
             averages_tx,
             proto::SpeedtestAvg {
-                pub_key: self.id.to_vec(),
+                pub_key: self.id.clone().into(),
                 upload_speed_avg_bps,
                 download_speed_avg_bps,
                 latency_avg_ms,
@@ -184,7 +184,7 @@ pub struct SpeedtestAverages {
     // we have to constantly convert between the two.
     // It does make me more confident in the implementation of validate_speedtests
     // though.
-    pub speedtests: HashMap<PublicKey, VecDeque<Speedtest>>,
+    pub speedtests: HashMap<PublicKeyBinary, VecDeque<Speedtest>>,
 }
 
 impl SpeedtestAverages {
@@ -202,7 +202,7 @@ impl SpeedtestAverages {
             })
     }
 
-    pub fn get_average(&self, pub_key: &PublicKey) -> Option<Average> {
+    pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<Average> {
         self.speedtests.get(pub_key).map(Average::from)
     }
 
@@ -407,7 +407,10 @@ pub struct FetchError(#[from] sqlx::Error);
 
 #[async_trait::async_trait]
 pub trait SpeedtestStore {
-    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, FetchError>;
+    async fn fetch(
+        self,
+        id: &PublicKeyBinary,
+    ) -> Result<Option<SpeedtestRollingAverage>, FetchError>;
 }
 
 #[async_trait::async_trait]
@@ -415,7 +418,10 @@ impl<E> SpeedtestStore for E
 where
     for<'a> E: sqlx::PgExecutor<'a>,
 {
-    async fn fetch(self, id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
+    async fn fetch(
+        self,
+        id: &PublicKeyBinary,
+    ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
         Ok(
             sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
                 .bind(id)
@@ -430,7 +436,10 @@ pub struct EmptyDatabase;
 
 #[async_trait::async_trait]
 impl SpeedtestStore for EmptyDatabase {
-    async fn fetch(self, _id: &PublicKey) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
+    async fn fetch(
+        self,
+        _id: &PublicKeyBinary,
+    ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
         Ok(None)
     }
 }
@@ -557,7 +566,7 @@ mod test {
 
     #[test]
     fn check_speedtest_rolling_avg() {
-        let owner: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
         let speedtests = VecDeque::from(known_speedtests());

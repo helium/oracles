@@ -3,19 +3,16 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{SpeedtestIngestReportV1, SpeedtestReqV1};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct CellSpeedtest {
-    #[serde(alias = "pubKey")]
-    pub pubkey: PublicKey,
+    pub pubkey: PublicKeyBinary,
     pub serial: String,
     pub timestamp: DateTime<Utc>,
-    #[serde(alias = "uploadSpeed")]
     pub upload_speed: u64,
-    #[serde(alias = "downloadSpeed")]
     pub download_speed: u64,
     pub latency: u32,
 }
@@ -62,7 +59,7 @@ impl From<CellSpeedtest> for SpeedtestReqV1 {
     fn from(v: CellSpeedtest) -> Self {
         let timestamp = v.timestamp();
         SpeedtestReqV1 {
-            pub_key: v.pubkey.to_vec(),
+            pub_key: v.pubkey.into(),
             serial: v.serial,
             timestamp,
             upload_speed: v.upload_speed,
@@ -78,7 +75,7 @@ impl TryFrom<SpeedtestReqV1> for CellSpeedtest {
     fn try_from(value: SpeedtestReqV1) -> Result<Self> {
         let timestamp = value.timestamp()?;
         Ok(Self {
-            pubkey: PublicKey::try_from(value.pub_key)?,
+            pubkey: value.pub_key.into(),
             serial: value.serial,
             timestamp,
             upload_speed: value.upload_speed,
