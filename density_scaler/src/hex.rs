@@ -47,12 +47,12 @@ static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
 
 #[async_trait::async_trait]
 pub trait HexDensityMap: Clone {
-    async fn get(&self, hex: &str) -> Option<Decimal>;
-    async fn swap(&self, new_map: HashMap<String, Decimal>);
+    async fn get(&self, hex: u64) -> Option<Decimal>;
+    async fn swap(&self, new_map: HashMap<u64, Decimal>);
 }
 
 #[derive(Debug, Clone)]
-pub struct SharedHexDensityMap(Arc<RwLock<HashMap<String, Decimal>>>);
+pub struct SharedHexDensityMap(Arc<RwLock<HashMap<u64, Decimal>>>);
 
 impl SharedHexDensityMap {
     pub fn new() -> Self {
@@ -62,11 +62,11 @@ impl SharedHexDensityMap {
 
 #[async_trait::async_trait]
 impl HexDensityMap for SharedHexDensityMap {
-    async fn get(&self, hex: &str) -> Option<Decimal> {
-        self.0.read().await.get(hex).cloned()
+    async fn get(&self, hex: u64) -> Option<Decimal> {
+        self.0.read().await.get(&hex).cloned()
     }
 
-    async fn swap(&self, new_map: HashMap<String, Decimal>) {
+    async fn swap(&self, new_map: HashMap<u64, Decimal>) {
         *self.0.write().await = new_map;
     }
 }
@@ -190,8 +190,8 @@ fn limit(res: u8, occupied_count: u64) -> u64 {
     cmp::min(res_config.max, res_config.target * max)
 }
 
-pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<String, Decimal> {
-    let mut map = HashMap::new();
+pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<u64, Decimal> {
+    let mut map: HashMap<u64, Decimal> = HashMap::new();
     for hex in &global_map.asserted_hexes {
         let scale: Decimal = SCALING_RES.rev().into_iter().fold(dec!(1.0), |scale, res| {
             hex.get_parent(res).map_or(scale, |parent| {
@@ -209,9 +209,8 @@ pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<String, Dec
             })
         });
         let trunc_scale = scale.round_dp(SCALING_PRECISION);
-        map.insert(hex.h3index().to_string(), trunc_scale);
+        map.insert(hex.h3index(), trunc_scale);
     }
-
     map
 }
 
@@ -277,38 +276,38 @@ mod tests {
         gw_map.reduce_global();
         let hex_density_map = compute_hex_density_map(&gw_map);
 
-        let expected_map = HashMap::from([
-            ("631210990515538431".to_string(), dec!(0.0065)),
-            ("631210990515727359".to_string(), dec!(0.0091)),
-            ("631210990515924479".to_string(), dec!(0.0606)),
-            ("631210990515537919".to_string(), dec!(0.0065)),
-            ("631210990517011455".to_string(), dec!(0.0152)),
-            ("631210990516885503".to_string(), dec!(0.0152)),
-            ("631210990516888063".to_string(), dec!(0.0152)),
-            ("631210990516955647".to_string(), dec!(0.0455)),
-            ("631210990515728895".to_string(), dec!(0.0091)),
-            ("631210990517144063".to_string(), dec!(0.0909)),
-            ("631210990515739647".to_string(), dec!(0.0091)),
-            ("631210990516640767".to_string(), dec!(0.0606)),
-            ("631210990515601919".to_string(), dec!(0.0114)),
-            ("631210990516590079".to_string(), dec!(0.0606)),
-            ("631210990517264895".to_string(), dec!(0.0909)),
-            ("631210990515606527".to_string(), dec!(0.0114)),
-            ("631210990515874303".to_string(), dec!(0.0606)),
-            ("631210990516613631".to_string(), dec!(0.0303)),
-            ("631210990515589631".to_string(), dec!(0.0114)),
-            ("631210990515564031".to_string(), dec!(0.0455)),
-            ("631210990516612607".to_string(), dec!(0.0303)),
-            ("631210990516876799".to_string(), dec!(0.0152)),
-            ("631210990516363775".to_string(), dec!(0.0909)),
-            ("631210990516907007".to_string(), dec!(0.0227)),
-            ("631210990516912639".to_string(), dec!(0.0227)),
-            ("631210990515722239".to_string(), dec!(0.0091)),
-            ("631210990516996607".to_string(), dec!(0.0152)),
-            ("631210990515987455".to_string(), dec!(0.0606)),
-            ("631210990515600383".to_string(), dec!(0.0114)),
-            ("631210990517016575".to_string(), dec!(0.0152)),
-            ("631210990515536895".to_string(), dec!(0.0065)),
+        let expected_map = HashMap::<u64, Decimal>::from([
+            (631210990515538431, dec!(0.0065)),
+            (631210990515727359, dec!(0.0091)),
+            (631210990515924479, dec!(0.0606)),
+            (631210990515537919, dec!(0.0065)),
+            (631210990517011455, dec!(0.0152)),
+            (631210990516885503, dec!(0.0152)),
+            (631210990516888063, dec!(0.0152)),
+            (631210990516955647, dec!(0.0455)),
+            (631210990515728895, dec!(0.0091)),
+            (631210990517144063, dec!(0.0909)),
+            (631210990515739647, dec!(0.0091)),
+            (631210990516640767, dec!(0.0606)),
+            (631210990515601919, dec!(0.0114)),
+            (631210990516590079, dec!(0.0606)),
+            (631210990517264895, dec!(0.0909)),
+            (631210990515606527, dec!(0.0114)),
+            (631210990515874303, dec!(0.0606)),
+            (631210990516613631, dec!(0.0303)),
+            (631210990515589631, dec!(0.0114)),
+            (631210990515564031, dec!(0.0455)),
+            (631210990516612607, dec!(0.0303)),
+            (631210990516876799, dec!(0.0152)),
+            (631210990516363775, dec!(0.0909)),
+            (631210990516907007, dec!(0.0227)),
+            (631210990516912639, dec!(0.0227)),
+            (631210990515722239, dec!(0.0091)),
+            (631210990516996607, dec!(0.0152)),
+            (631210990515987455, dec!(0.0606)),
+            (631210990515600383, dec!(0.0114)),
+            (631210990517016575, dec!(0.0152)),
+            (631210990515536895, dec!(0.0065)),
         ]);
         assert_eq!(hex_density_map, expected_map);
     }
