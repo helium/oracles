@@ -34,8 +34,6 @@ impl Cmd {
             .list_all(FileType::LoraValidPoc, after_utc, before_utc)
             .await?;
 
-        let before_ts = before_utc.timestamp_millis();
-
         let poc_oracle_key = settings.keypair()?;
         let shared_key = Arc::new(poc_oracle_key);
 
@@ -49,7 +47,7 @@ impl Cmd {
                 let success_counter_ref = Arc::clone(&success_counter);
                 let failure_counter_ref = Arc::clone(&failure_counter);
                 async move {
-                    if process_msg(msg, shared_key_clone, before_ts).await.is_ok() {
+                    if process_msg(msg, shared_key_clone).await.is_ok() {
                         *success_counter_ref.lock().unwrap() += 1;
                     } else {
                         *failure_counter_ref.lock().unwrap() += 1;
@@ -69,9 +67,8 @@ impl Cmd {
 async fn process_msg(
     msg: prost::bytes::BytesMut,
     shared_key_clone: Arc<Keypair>,
-    before_ts: i64,
 ) -> Result<TxnDetails> {
-    if let Ok(txn_details) = handle_report_msg(msg.clone(), shared_key_clone, before_ts) {
+    if let Ok(txn_details) = handle_report_msg(msg.clone(), shared_key_clone) {
         tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
         Ok(txn_details)
     } else {

@@ -132,8 +132,6 @@ async fn submit_txns(
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
         .await?;
 
-    let before_ts = before_utc.timestamp_millis();
-
     let mut stream =
         store.source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed());
 
@@ -152,7 +150,6 @@ async fn submit_txns(
                     let _ = process_submission(
                         buf,
                         shared_key,
-                        before_ts,
                         do_submission,
                         &receipt_sender_clone,
                         &mut shared_txn_service,
@@ -174,12 +171,11 @@ async fn submit_txns(
 async fn process_submission(
     buf: BytesMut,
     shared_key: Arc<Keypair>,
-    before_ts: i64,
     do_submission: bool,
     receipt_sender: &file_sink::MessageSender,
     txn_service: &mut Option<TransactionService>,
 ) -> Result<()> {
-    match handle_report_msg(buf, shared_key, before_ts) {
+    match handle_report_msg(buf, shared_key) {
         Ok(txn_details) => {
             tracing::debug!("txn_details: {:?}", txn_details);
             if do_submission {

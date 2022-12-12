@@ -21,19 +21,14 @@ pub struct TxnDetails {
     pub hash_b64_url: String,
 }
 
-pub fn handle_report_msg(
-    msg: prost::bytes::BytesMut,
-    keypair: Arc<Keypair>,
-    timestamp: i64,
-) -> Result<TxnDetails> {
+pub fn handle_report_msg(msg: prost::bytes::BytesMut, keypair: Arc<Keypair>) -> Result<TxnDetails> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
 
     match LoraValidPoc::decode(msg) {
         Ok(lora_valid_poc) => {
             let poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports)?;
-
-            let poc_receipt = construct_poc_receipt(lora_valid_poc.beacon_report)?;
+            let (poc_receipt, beacon_ts) = construct_poc_receipt(lora_valid_poc.beacon_report)?;
 
             // TODO: Double check whether the gateway in the poc_receipt is challengee?
             let path_element =
@@ -41,7 +36,7 @@ pub fn handle_report_msg(
 
             path.push(path_element);
 
-            let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
+            let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, beacon_ts, &keypair)?;
             Ok(TxnDetails {
                 txn: wrap_txn(bare_txn),
                 hash,
@@ -129,27 +124,33 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
     freq_mhz.to_f32().unwrap_or_default()
 }
 
-fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> Result<BlockchainPocReceiptV1> {
+fn construct_poc_receipt(
+    beacon_report: LoraValidBeaconReport,
+) -> Result<(BlockchainPocReceiptV1, i64)> {
     let reward_shares = (beacon_report.hex_scale * beacon_report.reward_unit)
         .to_u32()
         .unwrap_or_default();
+    let beacon_ts = beacon_report.report.timestamp.timestamp();
 
     // NOTE: signal, origin, snr and addr_hash are irrelevant now
-    Ok(BlockchainPocReceiptV1 {
-        gateway: beacon_report.report.pub_key.to_vec(),
-        timestamp: beacon_report.report.timestamp.timestamp() as u64,
-        signal: 0,
-        data: beacon_report.report.data,
-        origin: 0,
-        signature: beacon_report.report.signature,
-        snr: 0.0,
-        frequency: hz_to_mhz(beacon_report.report.frequency),
-        channel: beacon_report.report.channel,
-        datarate: beacon_report.report.datarate.to_string(),
-        tx_power: beacon_report.report.tx_power,
-        addr_hash: vec![],
-        reward_shares,
-    })
+    Ok((
+        BlockchainPocReceiptV1 {
+            gateway: beacon_report.report.pub_key.to_vec(),
+            timestamp: beacon_ts as u64,
+            signal: 0,
+            data: beacon_report.report.data,
+            origin: 0,
+            signature: beacon_report.report.signature,
+            snr: 0.0,
+            frequency: hz_to_mhz(beacon_report.report.frequency),
+            channel: beacon_report.report.channel,
+            datarate: beacon_report.report.datarate.to_string(),
+            tx_power: beacon_report.report.tx_power,
+            addr_hash: vec![],
+            reward_shares,
+        },
+        beacon_ts,
+    ))
 }
 
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
