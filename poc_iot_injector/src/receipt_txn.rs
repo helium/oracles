@@ -160,7 +160,7 @@ fn construct_poc_receipt(
             datarate: beacon_report.report.datarate.to_string(),
             tx_power: beacon_report.report.tx_power,
             addr_hash: vec![],
-            reward_shares,
+            reward_shares: 1,
         },
         beacon_ts,
     ))
