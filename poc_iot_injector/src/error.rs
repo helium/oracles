@@ -32,6 +32,8 @@ pub enum Error {
     Follower(#[from] node_follower::Error),
     #[error("txn construction error")]
     TxnConstruction,
+    #[error("task join error")]
+    TaskJoinError(#[from] tokio::task::JoinError),
 }
 
 #[derive(Error, Debug)]
