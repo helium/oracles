@@ -108,7 +108,7 @@ fn construct_poc_witnesses(
         // NOTE: channel is irrelevant now
         let poc_witness = BlockchainPocWitnessV1 {
             gateway: witness_report.report.pub_key.to_vec(),
-            timestamp: witness_report.report.timestamp.timestamp() as u64,
+            timestamp: witness_report.received_timestamp.timestamp_millis() as u64,
             signal: witness_report.report.signal,
             packet_hash: witness_report.report.data,
             signature: witness_report.report.signature,
@@ -143,7 +143,7 @@ fn construct_poc_receipt(
         reward_shares
     );
 
-    let beacon_ts = beacon_report.report.timestamp.timestamp();
+    let beacon_ts = beacon_report.received_timestamp.timestamp_millis();
 
     // NOTE: signal, origin, snr and addr_hash are irrelevant now
     Ok((
