@@ -223,6 +223,12 @@ impl FileStore {
             })
             .boxed()
     }
+
+    pub async fn stream_file(&self, file_info: FileInfo) -> Result<BytesMutStream> {
+        get_byte_stream(self.client.clone(), self.bucket.clone(), file_info)
+            .await
+            .map(stream_source)
+    }
 }
 
 fn stream_source(stream: ByteStream) -> BytesMutStream {
