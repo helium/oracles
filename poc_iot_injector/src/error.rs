@@ -36,8 +36,6 @@ pub enum Error {
     TxnSubmission(String),
     #[error("task join error")]
     TaskJoinError(#[from] tokio::task::JoinError),
-    #[error("sem acquire error")]
-    SemAcquireError(#[from] tokio::sync::AcquireError),
 }
 
 #[derive(Error, Debug)]
