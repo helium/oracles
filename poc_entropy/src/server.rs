@@ -1,7 +1,4 @@
-use crate::{
-    entropy_generator::{Entropy, MessageReceiver, ENTROPY_TICK_TIME},
-    Error, Result,
-};
+use crate::entropy_generator::{Entropy, MessageReceiver, ENTROPY_TICK_TIME};
 use axum::{
     extract::Extension,
     headers::{CacheControl, HeaderMap, HeaderMapExt},
@@ -11,7 +8,6 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
-use futures_util::TryFutureExt;
 use std::net::SocketAddr;
 use tokio::{sync::watch, time::Duration};
 use tower_http::trace::TraceLayer;
@@ -22,7 +18,10 @@ pub struct ApiServer {
 }
 
 impl ApiServer {
-    pub async fn new(socket_addr: SocketAddr, entropy_watch: MessageReceiver) -> Result<Self> {
+    pub async fn new(
+        socket_addr: SocketAddr,
+        entropy_watch: MessageReceiver,
+    ) -> anyhow::Result<Self> {
         let app = Router::new()
             // health
             .route("/health", get(empty_handler))
@@ -35,23 +34,23 @@ impl ApiServer {
         Ok(Self { socket_addr, app })
     }
 
-    pub async fn run(self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting api server");
-        let result = axum::Server::bind(&self.socket_addr)
+        axum::Server::bind(&self.socket_addr)
             .serve(self.app.into_make_service())
             .with_graceful_shutdown(shutdown.clone())
-            .map_err(Error::from)
-            .await;
+            .await?;
         tracing::info!("stopping api server");
-        result
+        Ok(())
     }
 }
 
 async fn get_entropy(
     Extension(entropy_watch): Extension<watch::Receiver<Entropy>>,
-) -> std::result::Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     let entropy = &*entropy_watch.borrow();
-    let json = serde_json::to_value(entropy).map_err(api_error)?;
+    let json = serde_json::to_value(entropy)
+        .map_err(|e| (http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     metrics::increment_counter!("entropy_server_get_count");
     let mut headers = HeaderMap::new();
     let remaining_age =
@@ -62,12 +61,3 @@ async fn get_entropy(
 }
 
 async fn empty_handler() {}
-
-/// Utility function for mapping any error into an api error
-pub fn api_error<E>(err: E) -> (StatusCode, String)
-where
-    E: std::error::Error,
-    Error: From<E>,
-{
-    Error::from(err).into()
-}

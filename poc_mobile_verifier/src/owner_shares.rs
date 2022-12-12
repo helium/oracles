@@ -203,7 +203,7 @@ mod test {
         mbps * 125000
     }
 
-    fn cell_type_weight(cbsd_id: &String) -> Decimal {
+    fn cell_type_weight(cbsd_id: &str) -> Decimal {
         CellType::from_cbsd_id(cbsd_id)
             .expect("unable to get cell_type")
             .reward_weight()
@@ -631,24 +631,24 @@ mod test {
             owner1.clone(),
             RadioShares {
                 shares: vec![RadioShare {
-                    hotspot_key: gw1.clone(),
-                    cbsd_id: c1.clone(),
+                    hotspot_key: gw1,
+                    cbsd_id: c1,
                     amount: dec!(10.0),
                 }],
             },
         );
         shares.insert(
-            owner2.clone(),
+            owner2,
             RadioShares {
                 shares: vec![
                     RadioShare {
                         hotspot_key: gw2.clone(),
-                        cbsd_id: c2.clone(),
+                        cbsd_id: c2,
                         amount: dec!(-1.0),
                     },
                     RadioShare {
-                        hotspot_key: gw2.clone(),
-                        cbsd_id: c3.clone(),
+                        hotspot_key: gw2,
+                        cbsd_id: c3,
                         amount: dec!(0.0),
                     },
                 ],

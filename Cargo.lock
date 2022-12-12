@@ -2437,6 +2437,7 @@ dependencies = [
 name = "mobile-index"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "base64",
  "chrono",
@@ -2805,6 +2806,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 name = "poc-entropy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum 0.6.0",
  "base64",
  "bs58",
@@ -2838,6 +2840,7 @@ dependencies = [
 name = "poc-ingest"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64",
  "chrono",
  "clap 3.2.23",

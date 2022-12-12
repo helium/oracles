@@ -576,8 +576,8 @@ mod test {
     fn check_speedtest_without_lapsed() {
         let speedtest_cutoff = Duration::hours(10);
         let contiguos_speedtests = known_speedtests();
-        let contiguous_speedtests: Vec<&Speedtest> =
-            speedtests_without_lapsed(contiguos_speedtests.iter(), speedtest_cutoff).collect();
+        let contiguous_speedtests =
+            speedtests_without_lapsed(contiguos_speedtests.iter(), speedtest_cutoff);
 
         let disjoint_speedtests = vec![
             Speedtest::new(
@@ -599,10 +599,10 @@ mod test {
                 40,
             ),
         ];
-        let disjoint_speedtests: Vec<&Speedtest> =
-            speedtests_without_lapsed(disjoint_speedtests.iter(), speedtest_cutoff).collect();
+        let disjoint_speedtests =
+            speedtests_without_lapsed(disjoint_speedtests.iter(), speedtest_cutoff);
 
-        assert_eq!(contiguous_speedtests.len(), 8);
-        assert_eq!(disjoint_speedtests.len(), 1);
+        assert_eq!(contiguous_speedtests.count(), 8);
+        assert_eq!(disjoint_speedtests.count(), 1);
     }
 }

@@ -1,4 +1,5 @@
-use crate::{Error, Result, Settings};
+use crate::Settings;
+use anyhow::{bail, Error, Result};
 use chrono::{Duration, Utc};
 use file_store::traits::MsgVerify;
 use file_store::{file_sink, file_sink_write, file_upload, FileType};
@@ -106,7 +107,7 @@ impl poc_mobile::PocMobile for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result {
+pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result<()> {
     let grpc_addr = settings.listen_addr()?;
 
     // Initialize uploader
@@ -141,15 +142,16 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     let grpc_server = GrpcServer::new(heartbeat_report_tx, speedtest_report_tx, settings.network)?;
 
-    let api_token = settings
+    let Some(api_token) = settings
         .token
         .as_ref()
-        .map(|token| {
+        .and_then(|token| {
             format!("Bearer {}", token)
                 .parse::<MetadataValue<_>>()
-                .unwrap()
-        })
-        .ok_or_else(|| Error::not_found("expected api token in settings"))?;
+                .ok()
+        }) else {
+            bail!("expected valid api token in settings");
+        };
 
     tracing::info!(
         "grpc listening on {grpc_addr} and server mode {:?}",

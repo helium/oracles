@@ -1,8 +1,11 @@
-use crate::{error::DecodeError, Error, Result};
 use config::{Config, Environment, File};
 use helium_crypto::Network;
 use serde::Deserialize;
-use std::{net::SocketAddr, path::Path, str::FromStr};
+use std::{
+    net::{AddrParseError, SocketAddr},
+    path::Path,
+    str::FromStr,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -57,7 +60,7 @@ impl Settings {
     /// Environemnt overrides have the same name as the entries in the settings
     /// file in uppercase and prefixed with "ENTROPY_". For example
     /// "ENTROPY_LOG" will override the log setting.
-    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self, config::ConfigError> {
         let mut builder = Config::builder();
 
         if let Some(file) = path {
@@ -71,11 +74,9 @@ impl Settings {
             .add_source(Environment::with_prefix("INGEST").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-            .map_err(Error::from)
     }
 
-    pub fn listen_addr(&self) -> Result<SocketAddr> {
-        let addr = SocketAddr::from_str(&self.listen).map_err(DecodeError::from)?;
-        Ok(addr)
+    pub fn listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
+        SocketAddr::from_str(&self.listen)
     }
 }

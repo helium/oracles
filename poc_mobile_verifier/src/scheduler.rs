@@ -113,8 +113,8 @@ mod tests {
 
         let now = dt(2022, 10, 1, 1, 0, 0);
 
-        assert_eq!(false, scheduler.should_verify(now));
-        assert_eq!(false, scheduler.should_reward(now));
+        assert!(!scheduler.should_verify(now));
+        assert!(!scheduler.should_reward(now));
         assert_eq!(
             standard_duration(150).unwrap(),
             scheduler.sleep_duration(now).unwrap()
@@ -138,8 +138,8 @@ mod tests {
             dt(2022, 10, 1, 0, 0, 0)..dt(2022, 10, 1, 3, 0, 0),
             scheduler.verification_period
         );
-        assert_eq!(true, scheduler.should_verify(now));
-        assert_eq!(false, scheduler.should_reward(now));
+        assert!(scheduler.should_verify(now));
+        assert!(!scheduler.should_reward(now));
         assert_eq!(
             standard_duration(180).unwrap(),
             scheduler.sleep_duration(now).unwrap()
@@ -163,8 +163,8 @@ mod tests {
             dt(2022, 10, 1, 21, 0, 0)..dt(2022, 10, 2, 0, 0, 0),
             scheduler.verification_period
         );
-        assert_eq!(true, scheduler.should_verify(now));
-        assert_eq!(true, scheduler.should_reward(now));
+        assert!(scheduler.should_verify(now));
+        assert!(scheduler.should_reward(now));
         assert_eq!(
             standard_duration(180).unwrap(),
             scheduler.sleep_duration(now).unwrap()
@@ -188,8 +188,8 @@ mod tests {
             dt(2022, 10, 1, 22, 0, 0)..dt(2022, 10, 2, 0, 0, 0),
             scheduler.verification_period
         );
-        assert_eq!(true, scheduler.should_verify(now));
-        assert_eq!(true, scheduler.should_reward(now));
+        assert!(scheduler.should_verify(now));
+        assert!(scheduler.should_reward(now));
         assert_eq!(
             standard_duration(180).unwrap(),
             scheduler.sleep_duration(now).unwrap()
@@ -213,8 +213,8 @@ mod tests {
             dt(2022, 10, 1, 12, 0, 0)..dt(2022, 10, 1, 15, 0, 0),
             scheduler.verification_period
         );
-        assert_eq!(true, scheduler.should_verify(now));
-        assert_eq!(false, scheduler.should_reward(now));
+        assert!(scheduler.should_verify(now));
+        assert!(!scheduler.should_reward(now));
         assert_eq!(
             standard_duration(0).unwrap(),
             scheduler.sleep_duration(now).unwrap()
@@ -238,8 +238,8 @@ mod tests {
             dt(2022, 10, 1, 12, 0, 0)..dt(2022, 10, 1, 15, 0, 0),
             scheduler.verification_period
         );
-        assert_eq!(true, scheduler.should_verify(now));
-        assert_eq!(false, scheduler.should_reward(now));
+        assert!(scheduler.should_verify(now));
+        assert!(!scheduler.should_reward(now));
         assert_eq!(
             standard_duration(0).unwrap(),
             scheduler.sleep_duration(now).unwrap()
@@ -263,8 +263,8 @@ mod tests {
             dt(2022, 10, 1, 0, 0, 0)..dt(2022, 10, 1, 3, 0, 0),
             scheduler.verification_period
         );
-        assert_eq!(false, scheduler.should_verify(now));
-        assert_eq!(false, scheduler.should_reward(now));
+        assert!(!scheduler.should_verify(now));
+        assert!(!scheduler.should_reward(now));
         assert_eq!(
             standard_duration(15).unwrap(),
             scheduler.sleep_duration(now).unwrap()
