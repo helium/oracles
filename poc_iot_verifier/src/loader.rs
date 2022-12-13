@@ -262,7 +262,12 @@ impl Loader {
                 });
 
                 let sql = query_builder.sql();
-                _ = Report::insert_bulk(&self.pool, sql).await;
+                match Report::insert_bulk(&self.pool, sql).await
+                {
+                    Ok(()) => (),
+                    Err(err) => tracing::warn!(
+                        "error whilst inserting report to db,  error: {err:?}"),
+                }
             })
             .await;
         tracing::info!("completed processing {infos_len} files of type {file_type}");
