@@ -5,11 +5,11 @@ use crate::{
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
+use futures::FutureExt;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
 use std::path::Path;
 use std::str::FromStr;
-use futures::FutureExt;
 
 #[derive(Debug, Clone)]
 pub struct FileStore {
@@ -206,25 +206,6 @@ impl FileStore {
                 Err(err) => stream::once(async move { Err(err) }).boxed(),
             })
             .fuse()
-            .boxed()
-    }
-
-    pub fn stream_files<A, B, F>(&self, file_type: F, after: A, before: B) -> Stream<FileData>
-    where
-        F: Into<FileType> + Copy,
-        A: Into<Option<DateTime<Utc>>> + Copy,
-        B: Into<Option<DateTime<Utc>>> + Copy,
-    {
-        let client = self.client.clone();
-        let bucket = self.bucket.clone();
-
-        self.list(file_type, after, before)
-            .map_ok(move |info| get_byte_stream_with_info(client.clone(), bucket.clone(), info))
-            .try_buffered(2)
-            .map_ok(|(info, stream)| FileData {
-                info,
-                stream: stream_source(stream),
-            })
             .boxed()
     }
 
