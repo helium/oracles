@@ -12,7 +12,7 @@ use file_store::{
     lora_beacon_report::LoraBeaconIngestReport,
     lora_witness_report::LoraWitnessIngestReport,
     traits::{IngestId, TimestampDecode},
-    FileStore, FileType,
+    FileInfo, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKey;
@@ -231,29 +231,55 @@ impl Loader {
 
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
-        store
-            .source(stream::iter(infos).map(Ok).boxed())
-            .for_each_concurrent(STORE_WORKERS, |msg| async move {
-                match msg {
-                    Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
-                    Ok(buf) => match self
-                        .handle_report(file_type, &buf, gateway_cache)
-                        .await
-                    {
-                        Ok(()) => (),
-                        Err(err) => {
-                            tracing::warn!("error whilst handling incoming report of type: {file_type}, error: {err:?}")
-                        }
-                    },
-                }
+
+        stream::iter(infos)
+            .for_each_concurrent(10, |file_info| async move {
+                match self.process_file(store, file_info.clone(), gateway_cache).await {
+                    Ok(()) => tracing::debug!("completed processing file of type {}, ts: {}", &file_type, file_info.timestamp),
+                    Err(err) => tracing::warn!("error whilst processing file of type {}, ts: {}, err: {err:?}", &file_type, file_info.timestamp),
+                };
             })
             .await;
+
         tracing::info!("completed processing {infos_len} files of type {file_type}");
+        Ok(())
+    }
+
+    async fn process_file(
+        &self,
+        store: &FileStore,
+        file_info: FileInfo,
+        gateway_cache: &GatewayCache,
+    ) -> Result {
+        let mut tx = self.pool.begin().await?;
+
+        let mut stream = store.stream_file(file_info.clone()).await?;
+        while let Some(msg) = stream.next().await {
+            match msg {
+                Err(err) => tracing::warn!(
+                    "skipping report of type {} due to error {err:?}",
+                    file_info.file_type
+                ),
+                Ok(buf) => match self
+                    .handle_report(&mut tx, file_info.file_type, &buf, gateway_cache)
+                    .await
+                {
+                    Ok(()) => (),
+                    Err(err) => tracing::warn!(
+                        "error whilst handling incoming report of type: {}, error: {err:?}",
+                        file_info.file_type
+                    ),
+                },
+            }
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
     async fn handle_report(
         &self,
+        exec: impl sqlx::PgExecutor<'_>,
         file_type: FileType,
         buf: &[u8],
         gateway_cache: &GatewayCache,
@@ -270,7 +296,7 @@ impl Loader {
                 {
                     true => {
                         Report::insert_into(
-                            &self.pool,
+                            exec,
                             beacon.ingest_id(),
                             beacon.report.remote_entropy,
                             packet_data,
@@ -296,7 +322,7 @@ impl Loader {
                 {
                     true => {
                         Report::insert_into(
-                            &self.pool,
+                            exec,
                             witness.ingest_id(),
                             Vec::<u8>::with_capacity(0),
                             packet_data,
@@ -316,7 +342,7 @@ impl Loader {
                 tracing::debug!("entropy report: {:?}", event);
                 let id = hash(&event.data).as_bytes().to_vec();
                 Entropy::insert_into(
-                    &self.pool,
+                    exec,
                     &id,
                     &event.data,
                     &event.timestamp.to_timestamp()?,
