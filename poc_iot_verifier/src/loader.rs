@@ -23,7 +23,7 @@ use tokio::time::{self, MissedTickBehavior};
 
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
-const REPORTS_POLL_TIME: u64 = 60 * 30;
+const REPORTS_POLL_TIME: u64 = 60 * 15;
 
 const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
@@ -253,6 +253,7 @@ impl Loader {
                 });
 
                 let sql = query_builder.sql();
+                tracing::info!("sql insert: {:?}", sql);
                 match Report::insert_bulk(&self.pool, sql).await
                 {
                     Ok(()) => (),
