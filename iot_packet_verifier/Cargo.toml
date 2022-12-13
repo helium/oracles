@@ -1,0 +1,19 @@
+[package]
+name = "iot-packet-verifier"
+version = "0.1.0"
+edition = "2021"
+description = "Packet verification for IOT"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = {workspace = true}
+config = {workspace = true}
+chrono = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
+helium-proto = {workspace = true}
+helium-crypto = {workspace = true}
+futures = {workspace = true}
+file-store = {path = "../file_store"}
+prost = {workspace = true}
+node-follower = {path = "../node_follower"}
