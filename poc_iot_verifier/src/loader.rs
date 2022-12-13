@@ -4,7 +4,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_witness_report::LoraWitnessIngestReport,
-    traits::IngestId, FileStore, FileType,
+    traits::IngestId, FileInfo, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -209,20 +209,51 @@ impl Loader {
         }
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
-        store
-            .source(stream::iter(infos).map(Ok).boxed())
-            .chunks(300)
-            .for_each_concurrent(STORE_WORKERS, |msgs| async move {
-                let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-                    REPORT_INSERT_SQL
-                );
-                let mut inserts = Vec::new();
-                for msg in msgs {
-                    match msg {
-                        Err(err) => tracing::warn!(
-                            "skipping report of type {file_type} due to error {err:?}"),
-                        Ok(buf) => {
-                            match self.handle_report(file_type, &buf, gateway_cache).await
+
+        stream::iter(infos)
+            .for_each_concurrent(10, |file_info| async move {
+                match self
+                    .process_file(store, file_info.clone(), gateway_cache)
+                    .await
+                {
+                    Ok(()) => tracing::debug!(
+                        "completed processing file of type {}, ts: {}",
+                        &file_type,
+                        file_info.timestamp
+                    ),
+                    Err(err) => tracing::warn!(
+                        "error whilst processing file of type {}, ts: {}, err: {err:?}",
+                        &file_type,
+                        file_info.timestamp
+                    ),
+                };
+            })
+            .await;
+
+        tracing::info!("completed processing {infos_len} files of type {file_type}");
+        Ok(())
+    }
+
+    async fn process_file(
+        &self,
+        store: &FileStore,
+        file_info: FileInfo,
+        gateway_cache: &GatewayCache,
+    ) -> Result {
+        let file_type = file_info.file_type;
+        let mut tx = self.pool.begin().await?;
+
+        let mut stream = store.stream_file(file_info.clone()).await?.chunks(300);
+        while let Some(msgs) = stream.next().await {
+            let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(REPORT_INSERT_SQL);
+            let mut inserts = Vec::new();
+            for msg in msgs {
+                match msg {
+                    Err(err) => {
+                        tracing::warn!("skipping report of type {file_type} due to error {err:?}")
+                    }
+                    Ok(buf) => {
+                        match self.handle_report(file_type, &buf, gateway_cache).await
                             {
                                 Ok(Some(bindings)) =>  inserts.push(bindings),
                                 Ok(None) => (),
@@ -230,30 +261,25 @@ impl Loader {
                                     "error whilst handling incoming report of type: {file_type}, error: {err:?}")
 
                             }
-                        }
                     }
                 }
-                query_builder
-                .push_values(inserts, |mut b, insert|
-                    {
-                        b.push_bind(insert.id)
-                        .push_bind(insert.remote_entropy)
-                        .push_bind(insert.packet_data)
-                        .push_bind(insert.buf)
-                        .push_bind(insert.received_ts)
-                        .push_bind(insert.report_type);
-                    }
-                );
-                let query = query_builder.build();
-                match query.execute(&self.pool).await
-                {
-                    Ok(_) => (),
-                    Err(err) => tracing::warn!(
-                        "error whilst inserting report to db,  error: {err:?}"),
-                }
-            })
-            .await;
-        tracing::info!("completed processing {infos_len} files of type {file_type}");
+            }
+            query_builder.push_values(inserts, |mut b, insert| {
+                b.push_bind(insert.id)
+                    .push_bind(insert.remote_entropy)
+                    .push_bind(insert.packet_data)
+                    .push_bind(insert.buf)
+                    .push_bind(insert.received_ts)
+                    .push_bind(insert.report_type);
+            });
+            let query = query_builder.build();
+            match query.execute(&mut tx).await {
+                Ok(_) => (),
+                Err(err) => tracing::warn!("error whilst inserting report to db,  error: {err:?}"),
+            }
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
