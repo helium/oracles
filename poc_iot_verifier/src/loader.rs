@@ -17,7 +17,7 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     Message,
 };
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use std::time::Duration;
 use tokio::time::{self, MissedTickBehavior};
 
@@ -46,6 +46,14 @@ pub enum NewLoaderError {
     DbStoreError(#[from] db_store::Error),
     #[error("denylist error: {0}")]
     DenyListError(#[from] denylist::Error),
+
+pub struct InsertBindings {
+    id: Vec<u8>,
+    remote_entropy: Vec<u8>,
+    packet_data: Vec<u8>,
+    buf: Vec<u8>,
+    received_ts: DateTime<Utc>,
+    report_type: ReportType,
 }
 
 impl Loader {
@@ -212,19 +220,49 @@ impl Loader {
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
             .source(stream::iter(infos).map(Ok).boxed())
-            .for_each_concurrent(STORE_WORKERS, |msg| async move {
-                match msg {
-                    Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
-                    Ok(buf) => match self
-                        .handle_report(file_type, &buf, gateway_cache)
-                        .await
-                    {
-                        Ok(()) => (),
-                        Err(err) => {
-                            tracing::warn!("error whilst handling incoming report of type: {file_type}, error: {err:?}")
+            .chunks(50)
+            .for_each_concurrent(STORE_WORKERS, |msgs| async move {
+                let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
+                    "insert into poc_report (
+                        id,
+                        remote_entropy,
+                        packet_data,
+                        report_data,
+                        report_timestamp,
+                        report_type
+                    ) "
+                );
+                let mut inserts = Vec::new();
+                for msg in msgs {
+                    match msg {
+                        Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
+                        Ok(buf) => {
+                            match self.handle_report(file_type, &buf, gateway_cache).await
+                            {
+                                Ok(Some(bindings)) => {
+                                    inserts.push(bindings);
+
+                                },
+                                Ok(None) => (),
+                                Err(err) => {
+                                    tracing::warn!("error whilst handling incoming report of type: {file_type}, error: {err:?}")
+                                }
+                            }
                         }
-                    },
+                    }
                 }
+
+                query_builder.push_values(inserts, |mut b, insert| {
+                        b.push_bind(insert.id)
+                        .push_bind(insert.remote_entropy)
+                        .push_bind(insert.packet_data)
+                        .push_bind(insert.buf)
+                        .push_bind(insert.received_ts)
+                        .push_bind(insert.report_type);
+                });
+
+                let sql = query_builder.sql();
+                _ = Report::insert_bulk(&self.pool, sql).await;
             })
             .await;
         tracing::info!("completed processing {infos_len} files of type {file_type}");
@@ -236,7 +274,7 @@ impl Loader {
         file_type: FileType,
         buf: &[u8],
         gateway_cache: &GatewayCache,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
             FileType::LoraBeaconIngestReport => {
                 let beacon: LoraBeaconIngestReport =
@@ -248,20 +286,18 @@ impl Loader {
                     .await
                 {
                     true => {
-                        Report::insert_into(
-                            &self.pool,
-                            beacon.ingest_id(),
-                            beacon.report.remote_entropy,
+                        let res = InsertBindings {
+                            id: beacon.ingest_id(),
+                            remote_entropy: beacon.report.remote_entropy,
                             packet_data,
-                            buf.to_vec(),
-                            &beacon.received_timestamp,
-                            ReportType::Beacon,
-                        )
-                        .await?;
+                            buf: buf.to_vec(),
+                            received_ts: beacon.received_timestamp,
+                            report_type: ReportType::Beacon,
+                        };
                         metrics::increment_counter!("oracles_poc_iot_verifier_loader_beacon");
-                        Ok(())
+                        Ok(Some(res))
                     }
-                    false => Ok(()),
+                    false => Ok(None),
                 }
             }
             FileType::LoraWitnessIngestReport => {
@@ -274,25 +310,23 @@ impl Loader {
                     .await
                 {
                     true => {
-                        Report::insert_into(
-                            &self.pool,
-                            witness.ingest_id(),
-                            Vec::<u8>::with_capacity(0),
+                        let res = InsertBindings {
+                            id: witness.ingest_id(),
+                            remote_entropy: Vec::<u8>::with_capacity(0),
                             packet_data,
-                            buf.to_vec(),
-                            &witness.received_timestamp,
-                            ReportType::Witness,
-                        )
-                        .await?;
+                            buf: buf.to_vec(),
+                            received_ts: witness.received_timestamp,
+                            report_type: ReportType::Witness,
+                        };
                         metrics::increment_counter!("oracles_poc_iot_verifier_loader_witness");
-                        Ok(())
+                        Ok(Some(res))
                     }
-                    false => Ok(()),
+                    false => Ok(None),
                 }
             }
             _ => {
                 tracing::warn!("ignoring unexpected filetype: {file_type:?}");
-                Ok(())
+                Ok(None)
             }
         }
     }
