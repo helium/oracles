@@ -130,8 +130,8 @@ impl Loader {
         let before = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
         let window_width = (before - after).num_minutes() as u64;
         tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
-        _ = self.process_window(gateway_cache, after, before);
-        Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
+        _ = self.process_window(gateway_cache, after, before).await;
+        _ = Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await;
         tracing::info!("completed handling poc_report tick");
         Ok(())
     }
