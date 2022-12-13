@@ -113,7 +113,6 @@ impl Purger {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal purger error: {err:?}");
-                        return Err(err)
                     }
                 }
             }

@@ -23,9 +23,9 @@ use tokio::time::{self, MissedTickBehavior};
 
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
-const REPORTS_POLL_TIME: u64 = 60 * 15;
+const REPORTS_POLL_TIME: u64 = 60 * 30;
 
-const STORE_WORKERS: usize = 200;
+const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
