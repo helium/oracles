@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 use file_store::traits::TimestampDecode;
 use serde::{Deserialize, Serialize};
@@ -10,12 +9,24 @@ pub struct LastBeacon {
     pub timestamp: DateTime<Utc>,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum LastBeaconError {
+    #[error("database error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
+    #[error("file store error: {0}")]
+    FileStoreError(#[from] file_store::Error),
+}
+
 impl LastBeacon {
-    pub async fn insert_kv<'c, E>(executor: E, id: &Vec<u8>, val: &str) -> Result<Self>
+    pub async fn insert_kv<'c, E>(
+        executor: E,
+        id: &Vec<u8>,
+        val: &str,
+    ) -> Result<Self, LastBeaconError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as::<_, Self>(
+        Ok(sqlx::query_as::<_, Self>(
             r#" insert into last_beacon ( id, timestamp )
             values ($1, $2)
             on conflict (key) do nothing
@@ -25,22 +36,25 @@ impl LastBeacon {
         .bind(id)
         .bind(val)
         .fetch_one(executor)
-        .await
-        .map_err(Error::from)
+        .await?)
     }
 
-    pub async fn get<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<Self>>
+    pub async fn get<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<Self>, LastBeaconError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as::<_, LastBeacon>(r#" select * from last_beacon where id = $1;"#)
-            .bind(id)
-            .fetch_optional(executor)
-            .await
-            .map_err(Error::from)
+        Ok(
+            sqlx::query_as::<_, LastBeacon>(r#" select * from last_beacon where id = $1;"#)
+                .bind(id)
+                .fetch_optional(executor)
+                .await?,
+        )
     }
 
-    pub async fn last_timestamp<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<DateTime<Utc>>>
+    pub async fn last_timestamp<'c, E>(
+        executor: E,
+        id: &Vec<u8>,
+    ) -> Result<Option<DateTime<Utc>>, LastBeaconError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -65,7 +79,7 @@ impl LastBeacon {
         executor: E,
         id: &Vec<u8>,
         timestamp: DateTime<Utc>,
-    ) -> Result
+    ) -> Result<(), LastBeaconError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {

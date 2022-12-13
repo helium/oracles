@@ -31,8 +31,7 @@ impl Cmd {
         let epoch = start..end;
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
-        let follower = settings.follower.connect_follower()?;
-
+        let follower = settings.follower.connect_follower();
         let mut verifier = Verifier::new(file_store, follower);
 
         let VerifiedEpoch {
@@ -55,6 +54,7 @@ impl Cmd {
                 .entry(PublicKey::try_from(reward.owner_key)?)
                 .or_default() += reward.amount;
         }
+
         let rewards: Vec<_> = owner_rewards.into_iter().collect();
 
         println!(

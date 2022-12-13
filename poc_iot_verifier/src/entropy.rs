@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +25,10 @@ pub struct Entropy {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("entropy error: {0}")]
+pub struct EntropyError(#[from] sqlx::Error);
+
 impl Entropy {
     pub async fn insert_into<'c, E>(
         executor: E,
@@ -33,7 +36,7 @@ impl Entropy {
         data: &Vec<u8>,
         timestamp: &DateTime<Utc>,
         version: i32,
-    ) -> Result
+    ) -> Result<(), EntropyError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -53,16 +56,15 @@ impl Entropy {
         .bind(timestamp)
         .bind(version)
         .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
-    pub async fn get<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<Self>>
+    pub async fn get<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<Self>, EntropyError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as::<_, Self>(
+        Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from entropy
             where id = $1
@@ -70,11 +72,10 @@ impl Entropy {
         )
         .bind(id)
         .fetch_optional(executor)
-        .await
-        .map_err(Error::from)
+        .await?)
     }
 
-    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i64) -> Result
+    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i64) -> Result<(), EntropyError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
@@ -87,8 +88,7 @@ impl Entropy {
         )
         .bind(stale_time)
         .execute(executor.clone())
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 }

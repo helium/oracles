@@ -2870,6 +2870,7 @@ dependencies = [
 name = "poc-iot-injector"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64",
  "chrono",
  "clap 3.2.23",
@@ -2906,6 +2907,7 @@ dependencies = [
 name = "poc-iot-verifier"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "base64",
  "blake3",

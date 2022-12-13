@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, poc_report::Report, Result, Settings};
+use crate::{entropy::Entropy, poc_report::Report, Settings};
 use file_store::{
     file_sink, file_sink::MessageSender, file_sink_write, file_upload,
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidBeaconReport,
@@ -47,8 +47,12 @@ pub struct Purger {
     settings: Settings,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("error creating purger: {0}")]
+pub struct NewPurgerError(#[from] db_store::Error);
+
 impl Purger {
-    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+    pub async fn from_settings(settings: &Settings) -> Result<Self, NewPurgerError> {
         let pool = settings.database.connect(PURGER_DB_POOL_SIZE).await?;
         let settings = settings.clone();
         let base_stale_period = settings.base_stale_period;
@@ -59,7 +63,7 @@ impl Purger {
         })
     }
 
-    pub async fn run(&self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(&self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting purger");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
@@ -122,7 +126,7 @@ impl Purger {
         &self,
         lora_invalid_beacon_tx: MessageSender,
         lora_invalid_witness_tx: MessageSender,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
@@ -182,7 +186,7 @@ impl Purger {
         &self,
         db_beacon: &Report,
         lora_invalid_beacon_tx: MessageSender,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         let beacon_buf: &[u8] = &db_beacon.report_data;
         let beacon_report: LoraBeaconIngestReport =
             LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
@@ -211,7 +215,7 @@ impl Purger {
         &self,
         db_witness: &Report,
         lora_invalid_witness_tx: MessageSender,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         let witness_buf: &[u8] = &db_witness.report_data;
         let witness_report: LoraWitnessIngestReport =
             LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?;

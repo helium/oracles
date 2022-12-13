@@ -1,5 +1,7 @@
 use crate::{
-    entropy::ENTROPY_LIFESPAN, gateway_cache::GatewayCache, last_beacon::LastBeacon, Error, Result,
+    entropy::ENTROPY_LIFESPAN,
+    gateway_cache::GatewayCache,
+    last_beacon::{LastBeacon, LastBeaconError},
 };
 use chrono::{DateTime, Duration, Utc};
 use density_scaler::HexDensityMap;
@@ -7,7 +9,7 @@ use file_store::{
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
     lora_valid_poc::LoraValidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
 };
-use geo::{point, prelude::*};
+use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason},
@@ -33,6 +35,7 @@ pub enum VerificationStatus {
     Invalid,
     Failed,
 }
+
 pub struct Poc {
     beacon_report: LoraBeaconIngestReport,
     witness_reports: Vec<LoraWitnessIngestReport>,
@@ -67,19 +70,29 @@ impl VerifyWitnessesResult {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum VerificationError {
+    #[error("not found: {0}")]
+    NotFound(&'static str),
+    #[error("last beacon error: {0}")]
+    LastBeaconError(#[from] LastBeaconError),
+    #[error("calc distance error: {0}")]
+    CalcDistanceError(#[from] CalcDistanceError),
+}
+
 impl Poc {
     pub async fn new(
         beacon_report: LoraBeaconIngestReport,
         witness_reports: Vec<LoraWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
-    ) -> Result<Self> {
+    ) -> Self {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
-        Ok(Self {
+        Self {
             beacon_report,
             witness_reports,
             entropy_start,
             entropy_end,
-        })
+        }
     }
 
     pub async fn verify_beacon(
@@ -87,7 +100,7 @@ impl Poc {
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
         pool: &PgPool,
-    ) -> Result<VerifyBeaconResult> {
+    ) -> Result<VerifyBeaconResult, VerificationError> {
         let beacon = &self.beacon_report.report;
         // use pub key to get GW info from our follower
         let beaconer_pub_key = beacon.pub_key.clone();
@@ -212,7 +225,7 @@ impl Poc {
         beacon_info: &GatewayInfo,
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
-    ) -> Result<VerifyWitnessesResult> {
+    ) -> Result<VerifyWitnessesResult, VerificationError> {
         let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
         let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
@@ -223,9 +236,9 @@ impl Poc {
                 .await?;
             match witness_result.result {
                 VerificationStatus::Valid => {
-                    let gw_info: GatewayInfo = witness_result.gateway_info.ok_or_else(|| {
-                        Error::not_found("invalid FollowerGatewayResp for witness")
-                    })?;
+                    let gw_info = witness_result
+                        .gateway_info
+                        .ok_or(VerificationError::NotFound("gateway_info"))?;
                     let scaling_factor = hex_density_map
                         .get(gw_info.location.unwrap_or_default())
                         .await
@@ -246,7 +259,7 @@ impl Poc {
                         received_timestamp: witness_report.received_timestamp,
                         reason: witness_result
                             .invalid_reason
-                            .ok_or_else(|| Error::not_found("invalid invalid_reason"))?,
+                            .ok_or(VerificationError::NotFound("invalid_reason"))?,
                         report: witness_report.report,
                         participant_side: InvalidParticipantSide::Witness,
                     };
@@ -260,7 +273,7 @@ impl Poc {
                         received_timestamp: witness_report.received_timestamp,
                         reason: witness_result
                             .invalid_reason
-                            .ok_or_else(|| Error::not_found("invalid invalid_reason"))?,
+                            .ok_or(VerificationError::NotFound("invalid_reason"))?,
                         report: witness_report.report,
                         participant_side: InvalidParticipantSide::Witness,
                     };
@@ -282,7 +295,7 @@ impl Poc {
         witness_report: &LoraWitnessIngestReport,
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
-    ) -> Result<VerifyWitnessResult> {
+    ) -> Result<VerifyWitnessResult, VerificationError> {
         let witness = &witness_report.report;
         let beacon = &self.beacon_report.report;
         let witness_pub_key = witness.pub_key.clone();
@@ -397,10 +410,10 @@ impl Poc {
         // check witness does not exceed max distance from beaconer
         let beaconer_loc = beaconer_info
             .location
-            .ok_or_else(|| Error::not_found("invalid beaconer location"))?;
+            .ok_or(VerificationError::NotFound("beaconer_info"))?;
         let witness_loc = witness_info
             .location
-            .ok_or_else(|| Error::not_found("invalid witness location"))?;
+            .ok_or(VerificationError::NotFound("witness_info"))?;
         let witness_distance = calc_distance(beaconer_loc, witness_loc)?;
         tracing::debug!("witness distance in mtrs: {:?}", witness_distance);
         if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
@@ -478,7 +491,15 @@ fn calc_fspl(tx_power: i32, freq: u64, distance: f64, gain: i32) -> f64 {
     (tx_power as f64) - fpsl
 }
 
-fn calc_distance(p1: u64, p2: u64) -> Result<f64> {
+#[derive(thiserror::Error, Debug)]
+pub enum CalcDistanceError {
+    #[error("convergence error: {0}")]
+    ConvergenceError(#[from] FailedToConvergeError),
+    #[error("h3ron error: {0}")]
+    H3ronError(#[from] h3ron::Error),
+}
+
+fn calc_distance(p1: u64, p2: u64) -> Result<f64, CalcDistanceError> {
     let p1_cell = H3Cell::new(p1);
     let p2_cell = H3Cell::new(p2);
     let p1_coord = H3Cell::to_coordinate(&p1_cell)?;
@@ -493,7 +514,7 @@ fn calc_distance(p1: u64, p2: u64) -> Result<f64> {
     Ok(adj_distance.round())
 }
 
-fn hex_adjustment(loc: &H3Cell) -> Result<f64> {
+fn hex_adjustment(loc: &H3Cell) -> Result<f64, h3ron::Error> {
     // Distance from hex center to edge, sqrt(3)*edge_length/2.
     let res = loc.resolution();
     let edge_length = H3DirectedEdge::edge_length_avg_m(res)?;

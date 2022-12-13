@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 use file_store::traits::TimestampDecode;
 use serde::{Deserialize, Serialize};
@@ -10,12 +9,16 @@ pub struct Meta {
     pub value: String,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("meta error: {0}")]
+pub struct MetaError(#[from] sqlx::Error);
+
 impl Meta {
-    pub async fn insert_kv<'c, E>(executor: E, key: &str, val: &str) -> Result<Self>
+    pub async fn insert_kv<'c, E>(executor: E, key: &str, val: &str) -> Result<Self, MetaError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as::<_, Self>(
+        Ok(sqlx::query_as::<_, Self>(
             r#" insert into meta ( key, value )
             values ($1, $2)
             on conflict (key) do nothing
@@ -25,25 +28,25 @@ impl Meta {
         .bind(key)
         .bind(val)
         .fetch_one(executor)
-        .await
-        .map_err(Error::from)
+        .await?)
     }
 
-    pub async fn get<'c, E>(executor: E, key: &str) -> Result<Option<Self>>
+    pub async fn get<'c, E>(executor: E, key: &str) -> Result<Option<Self>, MetaError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as::<_, Meta>(r#" select * from meta where key = $1;"#)
-            .bind(key)
-            .fetch_optional(executor)
-            .await
-            .map_err(Error::from)
+        Ok(
+            sqlx::query_as::<_, Meta>(r#" select * from meta where key = $1;"#)
+                .bind(key)
+                .fetch_optional(executor)
+                .await?,
+        )
     }
 
     pub async fn last_timestamp<'c, E>(
         executor: E,
         file_type: &str,
-    ) -> Result<Option<DateTime<Utc>>>
+    ) -> Result<Option<DateTime<Utc>>, MetaError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -69,11 +72,11 @@ impl Meta {
         executor: E,
         file_type: &str,
         timestamp: Option<DateTime<Utc>>,
-    ) -> Result
+    ) -> Result<(), MetaError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let _ = sqlx::query(
+        sqlx::query(
             r#"
             insert into meta (key, value)
             values ($1, $2)

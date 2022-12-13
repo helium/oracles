@@ -36,12 +36,11 @@ impl GatewayInfoResolver for FollowerService {
 }
 
 impl FollowerService {
-    pub fn from_settings(settings: &Settings) -> Result<Self> {
-        let client = settings.connect_follower()?;
-        Ok(Self {
-            client,
+    pub fn from_settings(settings: &Settings) -> Self {
+        Self {
+            client: settings.connect_follower(),
             batch_size: settings.batch,
-        })
+        }
     }
 
     pub async fn txn_stream<T>(

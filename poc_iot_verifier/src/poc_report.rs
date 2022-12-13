@@ -1,4 +1,4 @@
-use crate::{entropy::ENTROPY_LIFESPAN, Error, Result};
+use crate::entropy::ENTROPY_LIFESPAN;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +50,10 @@ pub struct Report {
     pub timestamp: Option<DateTime<Utc>>,
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("report error: {0}")]
+pub struct ReportError(#[from] sqlx::Error);
+
 impl Report {
     pub async fn insert_into<'c, E>(
         executor: E,
@@ -59,7 +63,7 @@ impl Report {
         report_data: Vec<u8>,
         report_timestamp: &DateTime<Utc>,
         report_type: ReportType,
-    ) -> Result
+    ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -83,12 +87,14 @@ impl Report {
         .bind(report_timestamp)
         .bind(report_type)
         .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
-    pub async fn delete_poc<'c, 'q, E>(executor: E, packet_data: &'q Vec<u8>) -> Result
+    pub async fn delete_poc<'c, 'q, E>(
+        executor: E,
+        packet_data: &'q Vec<u8>,
+    ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
@@ -100,12 +106,14 @@ impl Report {
         )
         .bind(packet_data)
         .execute(executor.clone())
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
-    pub async fn delete_poc_witnesses<'c, 'q, E>(executor: E, packet_data: &'q Vec<u8>) -> Result
+    pub async fn delete_poc_witnesses<'c, 'q, E>(
+        executor: E,
+        packet_data: &'q Vec<u8>,
+    ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
@@ -118,12 +126,11 @@ impl Report {
         )
         .bind(packet_data)
         .execute(executor.clone())
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
-    pub async fn delete_report<'c, 'q, E>(executor: E, id: &'q Vec<u8>) -> Result
+    pub async fn delete_report<'c, 'q, E>(executor: E, id: &'q Vec<u8>) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
@@ -135,18 +142,17 @@ impl Report {
         )
         .bind(id)
         .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
-    pub async fn get_next_beacons<'c, E>(executor: E) -> Result<Vec<Self>>
+    pub async fn get_next_beacons<'c, E>(executor: E) -> Result<Vec<Self>, ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
         let report_min_time = Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
-        sqlx::query_as::<_, Self>(
+        Ok(sqlx::query_as::<_, Self>(
             r#"
             select poc_report.id,
                 poc_report.remote_entropy,
@@ -173,18 +179,17 @@ impl Report {
         .bind(report_min_time)
         .bind(BEACON_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
-        .await
-        .map_err(Error::from)
+        .await?)
     }
 
     pub async fn get_witnesses_for_beacon<'c, E>(
         executor: E,
         packet_data: &Vec<u8>,
-    ) -> Result<Vec<Self>>
+    ) -> Result<Vec<Self>, ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        sqlx::query_as::<_, Self>(
+        Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
             where packet_data = $1
@@ -195,8 +200,7 @@ impl Report {
         .bind(packet_data)
         .bind(WITNESS_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
-        .await
-        .map_err(Error::from)
+        .await?)
     }
 
     pub async fn update_status<'c, E>(
@@ -204,7 +208,7 @@ impl Report {
         id: &Vec<u8>,
         status: LoraStatus,
         timestamp: DateTime<Utc>,
-    ) -> Result
+    ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -220,9 +224,8 @@ impl Report {
         .bind(timestamp)
         .bind(id)
         .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
     pub async fn update_status_all<'c, E>(
@@ -230,7 +233,7 @@ impl Report {
         packet_data: &Vec<u8>,
         status: LoraStatus,
         timestamp: DateTime<Utc>,
-    ) -> Result
+    ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -246,16 +249,15 @@ impl Report {
         .bind(timestamp)
         .bind(packet_data)
         .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
     pub async fn update_attempts<'c, E>(
         executor: E,
         id: &Vec<u8>,
         timestamp: DateTime<Utc>,
-    ) -> Result
+    ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -270,15 +272,14 @@ impl Report {
         .bind(timestamp)
         .bind(id)
         .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(Error::from)
+        .await?;
+        Ok(())
     }
 
     pub async fn get_stale_pending_beacons<'c, E>(
         executor: E,
         stale_period: i64,
-    ) -> Result<Vec<Self>>
+    ) -> Result<Vec<Self>, ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -291,7 +292,7 @@ impl Report {
         // Such beacons will eventually be handled by the purger and failed there
         // stale beacon reports, for this reason, are determined solely based on time
         let stale_time = Utc::now() - Duration::seconds(stale_period);
-        sqlx::query_as::<_, Self>(
+        Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
             where report_type = 'beacon' and status = 'pending'
@@ -300,14 +301,13 @@ impl Report {
         )
         .bind(stale_time)
         .fetch_all(executor)
-        .await
-        .map_err(Error::from)
+        .await?)
     }
 
     pub async fn get_stale_pending_witnesses<'c, E>(
         executor: E,
         stale_period: i64,
-    ) -> Result<Vec<Self>>
+    ) -> Result<Vec<Self>, ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -319,7 +319,7 @@ impl Report {
         // linked to current beacon being processed
         // stale witness reports, for this reason, are determined solely based on time
         let stale_time = Utc::now() - Duration::seconds(stale_period);
-        sqlx::query_as::<_, Self>(
+        Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
             where report_type = 'witness' and status = 'pending'
@@ -328,7 +328,6 @@ impl Report {
         )
         .bind(stale_time)
         .fetch_all(executor)
-        .await
-        .map_err(Error::from)
+        .await?)
     }
 }

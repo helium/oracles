@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use file_store::{
     lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc, LoraValidWitnessReport},
     traits::MsgDecode,
@@ -21,38 +20,39 @@ pub struct TxnDetails {
     pub hash_b64_url: String,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum TxnConstructionError {
+    #[error("decode error: {0}")]
+    FileStoreError(#[from] file_store::Error),
+    #[error("signing error: {0}")]
+    CryptoError(#[from] Box<helium_crypto::Error>),
+}
+
 pub fn handle_report_msg(
     msg: prost::bytes::BytesMut,
     keypair: Arc<Keypair>,
     timestamp: i64,
-) -> Result<TxnDetails> {
+) -> Result<TxnDetails, TxnConstructionError> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
+    let lora_valid_poc = LoraValidPoc::decode(msg)?;
 
-    match LoraValidPoc::decode(msg) {
-        Ok(lora_valid_poc) => {
-            let poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports)?;
+    let poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports);
 
-            let poc_receipt = construct_poc_receipt(lora_valid_poc.beacon_report)?;
+    let poc_receipt = construct_poc_receipt(lora_valid_poc.beacon_report);
 
-            // TODO: Double check whether the gateway in the poc_receipt is challengee?
-            let path_element =
-                construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses)?;
+    // TODO: Double check whether the gateway in the poc_receipt is challengee?
+    let path_element =
+        construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses);
 
-            path.push(path_element);
+    path.push(path_element);
 
-            let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
-            Ok(TxnDetails {
-                txn: wrap_txn(bare_txn),
-                hash,
-                hash_b64_url,
-            })
-        }
-        Err(e) => {
-            tracing::error!("error: {:?}", e);
-            Err(Error::TxnConstruction)
-        }
-    }
+    let (bare_txn, hash, hash_b64_url) = construct_bare_txn(path, timestamp, &keypair)?;
+    Ok(TxnDetails {
+        txn: wrap_txn(bare_txn),
+        hash,
+        hash_b64_url,
+    })
 }
 
 fn wrap_txn(txn: BlockchainTxnPocReceiptsV2) -> BlockchainTxn {
@@ -65,7 +65,7 @@ fn construct_bare_txn(
     path: PocPath,
     timestamp: i64,
     keypair: &Keypair,
-) -> Result<(BlockchainTxnPocReceiptsV2, Vec<u8>, String)> {
+) -> Result<(BlockchainTxnPocReceiptsV2, Vec<u8>, String), TxnConstructionError> {
     let mut txn = BlockchainTxnPocReceiptsV2 {
         challenger: keypair.public_key().to_vec(),
         secret: vec![],
@@ -86,18 +86,17 @@ fn construct_path_element(
     challengee: Vec<u8>,
     poc_receipt: BlockchainPocReceiptV1,
     poc_witnesses: Vec<BlockchainPocWitnessV1>,
-) -> Result<BlockchainPocPathElementV1> {
-    let path_element = BlockchainPocPathElementV1 {
+) -> BlockchainPocPathElementV1 {
+    BlockchainPocPathElementV1 {
         challengee,
         receipt: Some(poc_receipt),
         witnesses: poc_witnesses,
-    };
-    Ok(path_element)
+    }
 }
 
 fn construct_poc_witnesses(
     witness_reports: Vec<LoraValidWitnessReport>,
-) -> Result<Vec<BlockchainPocWitnessV1>> {
+) -> Vec<BlockchainPocWitnessV1> {
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
         let reward_shares = (witness_report.hex_scale * witness_report.reward_unit)
@@ -120,7 +119,7 @@ fn construct_poc_witnesses(
 
         poc_witnesses.push(poc_witness)
     }
-    Ok(poc_witnesses)
+    poc_witnesses
 }
 
 fn hz_to_mhz(freq_hz: u64) -> f32 {
@@ -129,13 +128,13 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
     freq_mhz.to_f32().unwrap_or_default()
 }
 
-fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> Result<BlockchainPocReceiptV1> {
+fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> BlockchainPocReceiptV1 {
     let reward_shares = (beacon_report.hex_scale * beacon_report.reward_unit)
         .to_u32()
         .unwrap_or_default();
 
     // NOTE: signal, origin, snr and addr_hash are irrelevant now
-    Ok(BlockchainPocReceiptV1 {
+    BlockchainPocReceiptV1 {
         gateway: beacon_report.report.pub_key.to_vec(),
         timestamp: beacon_report.report.timestamp.timestamp() as u64,
         signal: 0,
@@ -149,7 +148,7 @@ fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> Result<Blockch
         tx_power: beacon_report.report.tx_power,
         addr_hash: vec![],
         reward_shares,
-    })
+    }
 }
 
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
@@ -162,7 +161,10 @@ fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
     )
 }
 
-fn sign_txn(txn: &BlockchainTxnPocReceiptsV2, keypair: &Keypair) -> Result<Vec<u8>> {
+fn sign_txn(
+    txn: &BlockchainTxnPocReceiptsV2,
+    keypair: &Keypair,
+) -> Result<Vec<u8>, Box<helium_crypto::Error>> {
     let mut txn = txn.clone();
     txn.signature = vec![];
     Ok(keypair.sign(&txn.encode_to_vec())?)

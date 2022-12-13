@@ -1,9 +1,8 @@
+use anyhow::{Error, Result};
 use clap::Parser;
 use density_scaler::Server as DensityScaler;
 use futures::TryFutureExt;
-use poc_iot_verifier::{
-    gateway_cache::GatewayCache, loader, purger, runner, Error, Result, Settings,
-};
+use poc_iot_verifier::{gateway_cache::GatewayCache, loader, purger, runner, Settings};
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -23,7 +22,7 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
         self.cmd.run(settings).await
     }
@@ -35,7 +34,7 @@ pub enum Cmd {
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: Settings) -> Result {
+    pub async fn run(&self, settings: Settings) -> Result<()> {
         match self {
             Self::Server(cmd) => cmd.run(&settings).await,
         }
@@ -46,7 +45,7 @@ impl Cmd {
 pub struct Server {}
 
 impl Server {
-    pub async fn run(&self, settings: &Settings) -> Result {
+    pub async fn run(&self, settings: &Settings) -> Result<()> {
         tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(&settings.log))
             .with(tracing_subscriber::fmt::layer())
@@ -66,7 +65,7 @@ impl Server {
             shutdown_trigger.trigger()
         });
 
-        let gateway_cache = GatewayCache::from_settings(settings).await?;
+        let gateway_cache = GatewayCache::from_settings(settings);
         let mut loader = loader::Loader::from_settings(settings).await?;
         let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
@@ -83,7 +82,7 @@ impl Server {
 }
 
 #[tokio::main]
-async fn main() -> Result {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     cli.run().await
 }
