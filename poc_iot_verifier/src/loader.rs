@@ -1,24 +1,21 @@
 use crate::{
-    entropy::Entropy,
     gateway_cache::GatewayCache,
     meta::Meta,
     poc_report::{Report, ReportType},
     Result, Settings,
 };
-use blake3::hash;
+use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
-    lora_beacon_report::LoraBeaconIngestReport,
-    lora_witness_report::LoraWitnessIngestReport,
-    traits::{IngestId, TimestampDecode},
-    FileStore, FileType,
+    lora_beacon_report::LoraBeaconIngestReport, lora_witness_report::LoraWitnessIngestReport,
+    traits::IngestId, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
-    EntropyReportV1, Message,
+    Message,
 };
 use sqlx::PgPool;
 use std::time::Duration;
@@ -28,15 +25,13 @@ const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
 const REPORTS_POLL_TIME: u64 = 60 * 15;
 
-const LOADER_WORKERS: usize = 25;
-const STORE_WORKERS: usize = 100;
+const STORE_WORKERS: usize = 200;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
 
 pub struct Loader {
     ingest_store: FileStore,
-    entropy_store: FileStore,
     pool: PgPool,
     deny_list_latest_url: String,
     deny_list_trigger_interval: Duration,
@@ -48,12 +43,10 @@ impl Loader {
         tracing::info!("from_settings verifier loader");
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
-        let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let deny_list = DenyList::new()?;
         Ok(Self {
             pool,
             ingest_store,
-            entropy_store,
             deny_list_latest_url: settings.denylist.denylist_url.clone(),
             deny_list_trigger_interval: settings.denylist.trigger_interval(),
             deny_list,
@@ -124,56 +117,34 @@ impl Loader {
 
         // if there is NO last timestamp in the DB, we will start our sliding window from this point
         let window_default_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
-        // if there IS a last timestamp in the DB, we will use it as the starting point for our sliding window
-        // but cap it at the max below.  this ensures should the verifier go down or get stuck for a period
-        // we do not attempt to load too much history which could result in it not catching up again
-        let window_max_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 3);
-
+        // NOTE: Atm we never look back more than window_default_lookback
+        // The experience has been that once we start processing a window longer than default
+        // we never recover the time and end up stuck on a window of the extended size
+        // The option is here however to extend the window size should it be needed
+        let window_max_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
 
-        // the sliding window end point is always Now() - REPORTS_POLL_TIME
-        // this can result in the window width being stretched in the scenario
-        // whereby the previous loading run took longer than REPORTS_POLL_TIME to complete
-        // in such a scenario the window start point will be that of the previous run's end point
-        // and the width will be stretch from that point up until Now() - REPORTS_POLL_TIME
-        // If we continue to take longer than the tick time and the window width keeps stretching
-        // then the `window_max_lookback` cap will kick in at some point
         let before = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
-        let window_width = (after - before).num_minutes() as u64;
-        if window_width > REPORTS_POLL_TIME {
-            tracing::warn!("stretched sliding window, after: {after}, before: {before}, width: {window_width}, tick_time: {:?}", REPORTS_POLL_TIME);
-        } else {
-            tracing::info!(
-                "sliding window, after: {after}, before: {before}, width: {window_width}"
-            );
-        }
+        let window_width = (before - after).num_minutes() as u64;
+        tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
+        _ = self.process_window(gateway_cache, after, before);
+        Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
+        tracing::info!("completed handling poc_report tick");
+        Ok(())
+    }
 
-        // serially load each file type starting with entropy
-        // beacons & witnesses dep on entropy
-        // and ideally we wouldnt want to process a beacon
-        // until witnesses are present in the db
-        // otherwise we end up dropping those witnesses
-        // serially loading each type ensures we have some order
-        match self
-            .process_events(
-                FileType::EntropyReport,
-                &self.entropy_store,
-                gateway_cache,
-                after,
-                before,
-            )
-            .await
-        {
-            Ok(()) => (),
-            Err(err) => tracing::warn!(
-                "error whilst processing {:?} from s3, error: {err:?}",
-                FileType::EntropyReport
-            ),
-        }
-
+    async fn process_window(
+        &self,
+        gateway_cache: &GatewayCache,
+        after: DateTime<Utc>,
+        before: DateTime<Utc>,
+    ) -> Result {
+        // serially load witnesses and beacons for this window
+        // ideally we dont want to process a beacon
+        // until any associated witnesses are present in the db
         match self
             .process_events(
                 FileType::LoraWitnessIngestReport,
@@ -207,8 +178,6 @@ impl Loader {
                 FileType::LoraBeaconIngestReport
             ),
         }
-        Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
-        tracing::info!("completed handling report tick");
         Ok(())
     }
 
@@ -310,21 +279,6 @@ impl Loader {
                     }
                     false => Ok(()),
                 }
-            }
-            FileType::EntropyReport => {
-                let event = EntropyReportV1::decode(buf)?;
-                tracing::debug!("entropy report: {:?}", event);
-                let id = hash(&event.data).as_bytes().to_vec();
-                Entropy::insert_into(
-                    &self.pool,
-                    &id,
-                    &event.data,
-                    &event.timestamp.to_timestamp()?,
-                    event.version as i32,
-                )
-                .await?;
-                metrics::increment_counter!("oracles_poc_iot_verifier_loader_entropy");
-                Ok(())
             }
             _ => {
                 tracing::warn!("ignoring unexpected filetype: {file_type:?}");
