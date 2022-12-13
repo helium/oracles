@@ -18,8 +18,10 @@ use helium_proto::{
     Message,
 };
 use sqlx::{PgPool, Postgres, QueryBuilder};
-use std::time::Duration;
+use std::{time::Duration, ops::DerefMut};
+use std::sync::Arc;
 use tokio::time::{self, MissedTickBehavior};
+use tokio::sync::Mutex;
 
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
@@ -225,21 +227,10 @@ impl Loader {
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
 
         stream::iter(infos)
-            .for_each_concurrent(10, |file_info| async move {
-                match self
-                    .process_file(store, file_info.clone(), gateway_cache)
-                    .await
-                {
-                    Ok(()) => tracing::debug!(
-                        "completed processing file of type {}, ts: {}",
-                        &file_type,
-                        file_info.timestamp
-                    ),
-                    Err(err) => tracing::warn!(
-                        "error whilst processing file of type {}, ts: {}, err: {err:?}",
-                        &file_type,
-                        file_info.timestamp
-                    ),
+            .for_each_concurrent(4, |file_info| async move {
+                match self.process_file(store, file_info.clone(), gateway_cache).await {
+                    Ok(()) => tracing::debug!("completed processing file of type {}, ts: {}", &file_type, file_info.timestamp),
+                    Err(err) => tracing::warn!("error whilst processing file of type {}, ts: {}, err: {err:?}", &file_type, file_info.timestamp),
                 };
             })
             .await;
@@ -255,45 +246,49 @@ impl Loader {
         gateway_cache: &GatewayCache,
     ) -> Result {
         let file_type = file_info.file_type;
-        let mut tx = self.pool.begin().await?;
+        let tx = Arc::new(Mutex::new(self.pool.begin().await?));
 
-        let mut stream = store.stream_file(file_info.clone()).await?.chunks(300);
-        while let Some(msgs) = stream.next().await {
-            let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(REPORT_INSERT_SQL);
-            let mut inserts = Vec::new();
-            for msg in msgs {
-                match msg {
-                    Err(err) => {
-                        tracing::warn!("skipping report of type {file_type} due to error {err:?}")
-                    }
-                    Ok(buf) => {
-                        match self.handle_report(file_type, &buf, gateway_cache).await
-                            {
-                                Ok(Some(bindings)) =>  inserts.push(bindings),
-                                Ok(None) => (),
-                                Err(err) => tracing::warn!(
-                                    "error whilst handling incoming report of type: {file_type}, error: {err:?}")
+        store
+            .stream_file(file_info.clone())
+            .await?
+            .chunks(300)
+            .for_each_concurrent(100, |msgs| async {
+                let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(REPORT_INSERT_SQL);
+                let mut inserts = Vec::new();
+                for msg in msgs {
+                    match msg {
+                        Err(err) => {
+                            tracing::warn!("skipping report of type {file_type} due to error {err:?}")
+                        }
+                        Ok(buf) => {
+                            match self.handle_report(file_type, &buf, gateway_cache).await
+                                {
+                                    Ok(Some(bindings)) =>  inserts.push(bindings),
+                                    Ok(None) => (),
+                                    Err(err) => tracing::warn!(
+                                        "error whilst handling incoming report of type: {file_type}, error: {err:?}")
 
-                            }
+                                }
+                        }
                     }
                 }
-            }
-            query_builder.push_values(inserts, |mut b, insert| {
-                b.push_bind(insert.id)
-                    .push_bind(insert.remote_entropy)
-                    .push_bind(insert.packet_data)
-                    .push_bind(insert.buf)
-                    .push_bind(insert.received_ts)
-                    .push_bind(insert.report_type);
-            });
-            let query = query_builder.build();
-            match query.execute(&mut tx).await {
-                Ok(_) => (),
-                Err(err) => tracing::warn!("error whilst inserting report to db,  error: {err:?}"),
-            }
-        }
+                query_builder.push_values(inserts, |mut b, insert| {
+                    b.push_bind(insert.id)
+                        .push_bind(insert.remote_entropy)
+                        .push_bind(insert.packet_data)
+                        .push_bind(insert.buf)
+                        .push_bind(insert.received_ts)
+                        .push_bind(insert.report_type);
+                });
+                let query = query_builder.build();
+                match query.execute(tx.clone().lock().await.deref_mut()).await {
+                    Ok(_) => (),
+                    Err(err) => tracing::warn!("error whilst inserting report to db,  error: {err:?}"),
+                }
+            }).await;
 
-        tx.commit().await?;
+        Arc::try_unwrap(tx).unwrap().into_inner().commit().await?;
+
         Ok(())
     }
 
