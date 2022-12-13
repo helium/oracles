@@ -261,11 +261,14 @@ impl Loader {
                         .push_bind(insert.report_type);
                 });
 
-                let sql = query_builder.sql();
-                tracing::info!("sql insert: {:?}", sql);
-                match Report::insert_bulk(&self.pool, sql).await
+                let query = query_builder.build();
+
+                let res = query.execute(&self.pool).await;
+                // tracing::info!("sql insert: {:?}", sql);
+                // match Report::insert_bulk(&self.pool, sql).await
+                match res
                 {
-                    Ok(()) => (),
+                    Ok(_) => (),
                     Err(err) => tracing::warn!(
                         "error whilst inserting report to db,  error: {err:?}"),
                 }
