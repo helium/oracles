@@ -1,4 +1,5 @@
 pub mod entropy;
+pub mod entropy_loader;
 pub mod gateway_cache;
 pub mod last_beacon;
 pub mod loader;
