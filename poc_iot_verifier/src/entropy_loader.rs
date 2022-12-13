@@ -9,9 +9,9 @@ use tokio::time::{self, MissedTickBehavior};
 
 const ENTROPY_META_NAME: &str = "entropy_report";
 /// cadence for how often to look for entropy from s3 buckets
-const ENTROPY_POLL_TIME: u64 = 60 * 5;
+const ENTROPY_POLL_TIME: u64 = 60 * 10;
 
-const STORE_WORKERS: usize = 100;
+const STORE_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
 
 pub struct EntropyLoader {
