@@ -175,6 +175,11 @@ async fn submit_txns(
         }
     }
 
+    // Make sure the tasks are finished to completion even when we run out of stream items
+    while !set.is_empty() {
+        set.join_next().await;
+    }
+
     Ok(())
 }
 
