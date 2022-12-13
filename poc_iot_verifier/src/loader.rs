@@ -211,7 +211,7 @@ impl Loader {
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
             .source(stream::iter(infos).map(Ok).boxed())
-            .chunks(50)
+            .chunks(300)
             .for_each_concurrent(STORE_WORKERS, |msgs| async move {
                 let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
                     "insert into poc_report (
@@ -242,7 +242,6 @@ impl Loader {
                         }
                     }
                 }
-
                 query_builder.push_values(inserts, |mut b, insert| {
                         b.push_bind(insert.id)
                         .push_bind(insert.remote_entropy)
@@ -253,11 +252,7 @@ impl Loader {
                 });
 
                 let query = query_builder.build();
-
-                let res = query.execute(&self.pool).await;
-                // tracing::info!("sql insert: {:?}", sql);
-                // match Report::insert_bulk(&self.pool, sql).await
-                match res
+                match query.execute(&self.pool).await
                 {
                     Ok(_) => (),
                     Err(err) => tracing::warn!(
