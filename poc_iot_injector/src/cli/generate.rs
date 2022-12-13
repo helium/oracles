@@ -31,8 +31,6 @@ impl Cmd {
             .list_all(FileType::LoraValidPoc, after_utc, before_utc)
             .await?;
 
-        let before_ts = before_utc.timestamp_millis();
-
         let poc_oracle_key = settings.keypair()?;
         let shared_key = Arc::new(poc_oracle_key);
 
@@ -45,7 +43,7 @@ impl Cmd {
 
         while let Some(msg) = files.next().await {
             let shared_key_clone = shared_key.clone();
-            if let Ok(txn_details) = handle_report_msg(msg.clone(), shared_key_clone, before_ts) {
+            if let Ok(txn_details) = handle_report_msg(msg.clone(), shared_key_clone) {
                 tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
                 success_counter += 1;
             } else {
