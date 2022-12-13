@@ -3,9 +3,7 @@ use clap::Parser;
 use density_scaler::Server as DensityScaler;
 use file_store::{file_sink, file_upload, FileType};
 use futures::TryFutureExt;
-use poc_iot_verifier::{
-    gateway_cache::GatewayCache, loader, purger, rewarder::Rewarder, runner, Settings,
-};
+use poc_iot_verifier::{gateway_cache::GatewayCache, loader, entropy_loader, purger, rewarder::Rewarder, runner, Settings};
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -108,6 +106,7 @@ impl Server {
         };
 
         let mut loader = loader::Loader::from_settings(settings).await?;
+        let mut entropy_loader = entropy_loader::EntropyLoader::from_settings(settings).await?;
         let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
         let mut density_scaler =
@@ -123,6 +122,7 @@ impl Server {
                 &shutdown
             ),
             loader.run(&shutdown, &gateway_cache),
+            entropy_loader.run(&shutdown),
             purger.run(&shutdown),
             rewarder.run(&shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
