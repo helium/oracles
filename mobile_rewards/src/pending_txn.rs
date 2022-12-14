@@ -84,7 +84,7 @@ pub struct PendingTxn {
 
 #[derive(thiserror::Error, Debug)]
 pub enum PendingTxnError {
-    #[error("{0} not found")]
+    #[error("not found: {0}")]
     NotFound(&'static str),
     #[error("database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
