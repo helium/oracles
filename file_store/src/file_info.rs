@@ -151,7 +151,7 @@ impl fmt::Display for FileType {
             Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
-            Self::IotPacketReport => IOT_PACKET_REPORT
+            Self::IotPacketReport => IOT_PACKET_REPORT,
         };
         f.write_str(s)
     }
