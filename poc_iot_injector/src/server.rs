@@ -1,6 +1,6 @@
 use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
-    Settings, LOADER_WORKERS, STORE_WORKERS,
+    Settings, LOADER_WORKERS,
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
@@ -8,10 +8,13 @@ use file_store::{file_sink, file_sink_write, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
+use prost::bytes::BytesMut;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
-use tokio::time;
+use tokio::{task::JoinSet, time};
+
+const MAX_CONCURRENT_SUBMISSIONS: usize = 16;
 
 pub struct Server {
     pool: Pool<Postgres>,
@@ -139,85 +142,89 @@ async fn submit_txns(
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
         .await?;
 
-    let before_ts = before_utc.timestamp_millis();
+    let mut stream =
+        store.source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed());
 
-    store
-        .source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed())
-        .for_each_concurrent(STORE_WORKERS, |msg| {
-            let mut shared_txn_service = txn_service.clone();
-            let shared_key = keypair.clone();
-            async move {
-                match msg {
-                    Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
-                    Ok(buf) => match handle_report_msg(buf, shared_key, before_ts) {
-                        Ok(txn_details) => {
-                            tracing::debug!("txn_details: {:?}", txn_details);
-                            if do_submission {
-                                tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
-                                if let Err(err) = handle_txn_submission(
-                                    txn_details.clone(),
-                                    &mut shared_txn_service,
-                                )
-                                .await
-                                {
-                                    tracing::warn!("unable to submit_txn, {err:?}");
-                                } else {
-                                    tracing::info!("storing txn: {:?}", txn_details.hash_b64_url);
-                                    metrics::increment_counter!("poc_injector_receipt_count");
-                                    let _ = file_sink_write!(
-                                        "signed_poc_receipt_txn",
-                                        receipt_sender,
-                                        txn_details.txn
-                                    )
-                                    .await;
-                                }
-                            } else {
-                                tracing::info!("only storing txn: {:?}", txn_details.hash_b64_url);
-                                metrics::increment_counter!("poc_injector_receipt_count");
-                                let _ = file_sink_write!(
-                                    "signed_poc_receipt_txn",
-                                    receipt_sender,
-                                    txn_details.txn
-                                )
-                                .await;
-                            }
-                        }
-                        Err(err) => tracing::warn!("unable to construct txn_details, {err:?}"),
-                    },
+    let mut set = JoinSet::new();
+
+    while let Some(msg) = stream.next().await {
+        match msg {
+            Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
+            Ok(buf) => {
+                let shared_key = keypair.clone();
+                let mut shared_txn_service = txn_service.clone();
+                let receipt_sender_clone = receipt_sender.clone();
+
+                tracing::info!("Spawning submission tasks...");
+                set.spawn(async move {
+                    let _ = process_submission(
+                        buf,
+                        shared_key,
+                        do_submission,
+                        &receipt_sender_clone,
+                        &mut shared_txn_service,
+                    )
+                    .await;
+                });
+
+                if set.len() > MAX_CONCURRENT_SUBMISSIONS {
+                    tracing::info!("Processing {MAX_CONCURRENT_SUBMISSIONS} submissions");
+                    set.join_next().await;
                 }
             }
-        })
-        .await;
+        }
+    }
+
+    // Make sure the tasks are finished to completion even when we run out of stream items
+    while !set.is_empty() {
+        set.join_next().await;
+    }
+
     Ok(())
 }
 
-#[derive(thiserror::Error, Debug)]
-#[error("txn submission failed: {0}")]
-pub struct HandleTxnSubmissionError(pub String);
+async fn process_submission(
+    buf: BytesMut,
+    shared_key: Arc<Keypair>,
+    do_submission: bool,
+    receipt_sender: &file_sink::MessageSender,
+    txn_service: &mut Option<TransactionService>,
+) -> anyhow::Result<()> {
+    match handle_report_msg(buf, shared_key) {
+        Ok(txn_details) => {
+            tracing::debug!("txn_details: {:?}", txn_details);
+            if do_submission {
+                tracing::info!("submitting txn: {:?}", txn_details.hash_b64_url);
+                match handle_txn_submission(txn_details.clone(), txn_service).await {
+                    Ok(_) => {
+                        tracing::info!("txn sent: {:?}", txn_details.hash_b64_url);
+                        metrics::increment_counter!("poc_injector_receipt_count");
+                    }
+                    Err(err) => {
+                        tracing::warn!("unable to submit_txn, {err:?}")
+                    }
+                }
+            } else {
+                tracing::info!("only storing txn: {:?}", txn_details.hash_b64_url);
+                metrics::increment_counter!("poc_injector_receipt_count");
+                file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn).await?;
+            }
+        }
+        Err(err) => tracing::warn!("unable to construct txn_details, {err:?}"),
+    }
+    Ok(())
+}
 
 async fn handle_txn_submission(
     txn_details: TxnDetails,
     txn_service: &mut Option<TransactionService>,
-) -> Result<(), HandleTxnSubmissionError> {
+) -> anyhow::Result<()> {
     match txn_service {
         Some(txn_service) => {
-            if txn_service
+            txn_service
                 .submit(txn_details.txn, &txn_details.hash)
-                .await
-                .is_ok()
-            {
-                tracing::debug!(
-                    "txn submitted successfully, hash: {:?}",
-                    txn_details.hash_b64_url
-                );
-                Ok(())
-            } else {
-                tracing::warn!(
-                    "txn submission failed!, hash: {:?}",
-                    txn_details.hash_b64_url
-                );
-                Err(HandleTxnSubmissionError(txn_details.hash_b64_url))
-            }
+                .await?;
+            Ok(())
         }
         None => Ok(()),
     }
