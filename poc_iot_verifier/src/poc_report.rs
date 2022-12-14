@@ -18,6 +18,15 @@ const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 //    end up being deemed stale )
 const BEACON_PROCESSING_DELAY: i64 = 0;
 
+const REPORT_INSERT_SQL: &str = "insert into poc_report (
+    id,
+    remote_entropy,
+    packet_data,
+    report_data,
+    report_timestamp,
+    report_type
+) ";
+
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]
 pub enum ReportType {
@@ -31,6 +40,15 @@ pub enum LoraStatus {
     Pending,
     Valid,
     Invalid,
+}
+
+pub struct InsertBindings {
+    pub id: Vec<u8>,
+    pub remote_entropy: Vec<u8>,
+    pub packet_data: Vec<u8>,
+    pub buf: Vec<u8>,
+    pub received_ts: DateTime<Utc>,
+    pub report_type: ReportType,
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -89,6 +107,31 @@ impl Report {
         .execute(executor)
         .await?;
         Ok(())
+    }
+
+    pub async fn bulk_insert<'c, E>(
+        executor: E,
+        bindings: Vec<InsertBindings>,
+    ) -> Result<(), ReportError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(REPORT_INSERT_SQL);
+        query_builder.push_values(bindings, |mut b, insert| {
+            b.push_bind(insert.id)
+                .push_bind(insert.remote_entropy)
+                .push_bind(insert.packet_data)
+                .push_bind(insert.buf)
+                .push_bind(insert.received_ts)
+                .push_bind(insert.report_type);
+        });
+
+        let query = query_builder.build();
+        query
+            .execute(executor)
+            .await
+            .map(|_| ())
+            .map_err(ReportError::from)
     }
 
     pub async fn delete_poc<'c, 'q, E>(
