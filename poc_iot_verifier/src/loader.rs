@@ -1,4 +1,4 @@
-use crate::{gateway_cache::GatewayCache, meta::Meta, poc_report::ReportType, Result, Settings};
+use crate::{gateway_cache::GatewayCache, meta::Meta, poc_report::Report, poc_report::ReportType, Result, Settings};
 use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
@@ -13,8 +13,10 @@ use helium_proto::{
     Message,
 };
 use sqlx::{PgPool, Postgres, QueryBuilder};
-use std::time::Duration;
+use std::{time::Duration, hash::Hasher};
 use tokio::time::{self, MissedTickBehavior};
+use xorf::{Filter as XorFilter, Xor32};
+use twox_hash::XxHash64;
 
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
@@ -143,6 +145,7 @@ impl Loader {
         tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
         _ = self.process_window(gateway_cache, after, before).await;
         _ = Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await;
+        _ = Report::pending_beacons_to_ready(&self.pool, now);
         tracing::info!("completed handling poc_report tick");
         Ok(())
     }
@@ -153,25 +156,6 @@ impl Loader {
         after: DateTime<Utc>,
         before: DateTime<Utc>,
     ) -> Result {
-        // serially load witnesses and beacons for this window
-        // ideally we dont want to process a beacon
-        // until any associated witnesses are present in the db
-        match self
-            .process_events(
-                FileType::LoraWitnessIngestReport,
-                &self.ingest_store,
-                gateway_cache,
-                after,
-                before,
-            )
-            .await
-        {
-            Ok(()) => (),
-            Err(err) => tracing::warn!(
-                "error whilst processing {:?} from s3, error: {err:?}",
-                FileType::LoraWitnessIngestReport
-            ),
-        }
         match self
             .process_events(
                 FileType::LoraBeaconIngestReport,
@@ -188,6 +172,162 @@ impl Loader {
                 FileType::LoraBeaconIngestReport
             ),
         }
+
+        match self
+            .process_events(
+                FileType::LoraWitnessIngestReport,
+                &self.ingest_store,
+                gateway_cache,
+                after,
+                before,
+            )
+            .await
+        {
+            Ok(()) => (),
+            Err(err) => tracing::warn!(
+                "error whilst processing {:?} from s3, error: {err:?}",
+                FileType::LoraWitnessIngestReport
+            ),
+        }
+        Ok(())
+    }
+
+    async fn process_beacon_events(
+        &self,
+        file_type: FileType,
+        store: &FileStore,
+        gateway_cache: &GatewayCache,
+        after: chrono::DateTime<Utc>,
+        before: chrono::DateTime<Utc>,
+    ) -> Result {
+        tracing::info!(
+            "checking for new ingest files of type {file_type} after {after} and before {before}"
+        );
+        let infos = store.list_all(file_type, after, before).await?;
+        if infos.is_empty() {
+            tracing::info!("no available ingest files of type {file_type}");
+            return Ok(());
+        }
+        let infos_len = infos.len();
+        tracing::info!("processing {infos_len} ingest files of type {file_type}");
+
+        store
+            .source(stream::iter(infos).map(Ok).boxed())
+            .chunks(300)
+            .for_each_concurrent(STORE_WORKERS, |msgs| async move {
+                let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
+                    REPORT_INSERT_SQL
+                );
+                let mut inserts = Vec::new();
+                for msg in msgs {
+                    match msg {
+                        Err(err) => tracing::warn!(
+                            "skipping report of type {file_type} due to error {err:?}"),
+                        Ok(buf) => {
+                            match self.handle_report(file_type, &buf, gateway_cache, &Xor32::from(Vec::new())).await
+                            {
+                                Ok(Some(bindings)) =>  inserts.push(bindings),
+                                Ok(None) => (),
+                                Err(err) => tracing::warn!(
+                                    "error whilst handling incoming report of type: {file_type}, error: {err:?}")
+
+                            }
+                        }
+                    }
+                }
+                query_builder
+                .push_values(inserts, |mut b, insert|
+                    {
+                        b.push_bind(insert.id)
+                        .push_bind(insert.remote_entropy)
+                        .push_bind(insert.packet_data)
+                        .push_bind(insert.buf)
+                        .push_bind(insert.received_ts)
+                        .push_bind(insert.report_type);
+                    }
+                );
+                let query = query_builder.build();
+                match query.execute(&self.pool).await
+                {
+                    Ok(_) => (),
+                    Err(err) => tracing::warn!(
+                        "error whilst inserting report to db,  error: {err:?}"),
+                }
+            })
+            .await;
+        tracing::info!("completed processing {infos_len} files of type {file_type}");
+        Ok(())
+    }
+
+
+    async fn process_witness_events(
+        &self,
+        file_type: FileType,
+        store: &FileStore,
+        gateway_cache: &GatewayCache,
+        after: chrono::DateTime<Utc>,
+        before: chrono::DateTime<Utc>,
+    ) -> Result {
+        tracing::info!(
+            "checking for new ingest files of type {file_type} after {after} and before {before}"
+        );
+        let infos = store.list_all(file_type, after, before).await?;
+        if infos.is_empty() {
+            tracing::info!("no available ingest files of type {file_type}");
+            return Ok(());
+        }
+        let infos_len = infos.len();
+        tracing::info!("processing {infos_len} ingest files of type {file_type}");
+        let beacon_packet_data: Vec<u64> = Report::get_ready_beacons(&self.pool).await?
+        .into_iter()
+        .map(|beacon| filter_key_hash(beacon.packet_data) )
+        .collect();
+        let filter = Xor32::from(beacon_packet_data);
+        store
+            .source(stream::iter(infos).map(Ok).boxed())
+            .chunks(300)
+            .for_each_concurrent(STORE_WORKERS, |msgs| async move {
+                let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
+                    REPORT_INSERT_SQL
+                );
+                let mut inserts = Vec::new();
+                for msg in msgs {
+                    match msg {
+                        Err(err) => tracing::warn!(
+                            "skipping report of type {file_type} due to error {err:?}"),
+                        Ok(buf) => {
+                            match self.handle_report(file_type, &buf, gateway_cache, &filter).await
+                            {
+                                Ok(Some(bindings)) =>  inserts.push(bindings),
+                                Ok(None) => (),
+                                Err(err) => tracing::warn!(
+                                    "error whilst handling incoming report of type: {file_type}, error: {err:?}")
+
+                            }
+                        }
+                    }
+                }
+                query_builder
+                .push_values(inserts, |mut b, insert|
+                    {
+                        b.push_bind(insert.id)
+                        .push_bind(insert.remote_entropy)
+                        .push_bind(insert.packet_data)
+                        .push_bind(insert.buf)
+                        .push_bind(insert.received_ts)
+                        .push_bind(insert.report_type);
+                    }
+                );
+                let query = query_builder.build();
+                match query.execute(&self.pool).await
+                {
+                    Ok(_) => (),
+                    Err(err) => tracing::warn!(
+                        "error whilst inserting report to db,  error: {err:?}"),
+                }
+            })
+            .await;
+        tracing::info!("completed processing {infos_len} files of type {file_type}");
         Ok(())
     }
 
@@ -262,6 +402,7 @@ impl Loader {
         file_type: FileType,
         buf: &[u8],
         gateway_cache: &GatewayCache,
+        beacon_filter: &Xor32,
     ) -> Result<Option<InsertBindings>> {
         match file_type {
             FileType::LoraBeaconIngestReport => {
@@ -293,23 +434,28 @@ impl Loader {
                     LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
                 let packet_data = witness.report.data.clone();
-                match self
+                if beacon_filter.contains(&filter_key_hash(&packet_data))
+                {
+                    match self
                     .check_valid_gateway(&witness.report.pub_key, gateway_cache)
                     .await
-                {
-                    true => {
-                        let res = InsertBindings {
-                            id: witness.ingest_id(),
-                            remote_entropy: Vec::<u8>::with_capacity(0),
-                            packet_data,
-                            buf: buf.to_vec(),
-                            received_ts: witness.received_timestamp,
-                            report_type: ReportType::Witness,
-                        };
-                        metrics::increment_counter!("oracles_poc_iot_verifier_loader_witness");
-                        Ok(Some(res))
+                    {
+                        true => {
+                            let res = InsertBindings {
+                                id: witness.ingest_id(),
+                                remote_entropy: Vec::<u8>::with_capacity(0),
+                                packet_data,
+                                buf: buf.to_vec(),
+                                received_ts: witness.received_timestamp,
+                                report_type: ReportType::Witness,
+                            };
+                            metrics::increment_counter!("oracles_poc_iot_verifier_loader_witness");
+                            Ok(Some(res))
+                        }
+                        false => Ok(None)
                     }
-                    false => Ok(None),
+                } else {
+                    Ok(None)
                 }
             }
             _ => {
@@ -346,4 +492,10 @@ impl Loader {
     async fn check_gw_denied(&self, pub_key: &PublicKeyBinary) -> bool {
         self.deny_list.check_key(pub_key).await
     }
+}
+
+fn filter_key_hash<R: AsRef<[u8]>>(data: R) -> u64 {
+    let mut hasher = XxHash64::default();
+    hasher.write(data);
+    hasher.finish()
 }

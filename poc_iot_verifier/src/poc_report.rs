@@ -28,6 +28,7 @@ pub enum ReportType {
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "lorastatus", rename_all = "lowercase")]
 pub enum LoraStatus {
+    Waiting,
     Pending,
     Valid,
     Invalid,
@@ -161,7 +162,7 @@ impl Report {
                 entropy.timestamp
             from poc_report
             inner join entropy on poc_report.remote_entropy=entropy.data
-            where poc_report.report_type = 'beacon' and status = 'pending'
+            where poc_report.report_type = 'beacon' and status = 'ready'
             and entropy.timestamp < $1
             and poc_report.created_at < $2
             and poc_report.attempts < $3
@@ -188,7 +189,7 @@ impl Report {
             r#"
             select * from poc_report
             where packet_data = $1
-            and report_type = 'witness' and status = 'pending'
+            and report_type = 'witness' and status = 'ready'
             and attempts < $2
             "#,
         )
@@ -196,6 +197,45 @@ impl Report {
         .bind(WITNESS_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
         .await
+        .map_err(Error::from)
+    }
+
+    pub async fn get_ready_beacons<'c, E>(
+        executor: E,
+    ) -> Result<Vec<Self>>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query_as::<_, Self>(
+            r#"
+            select packet_data from poc_report
+            report_type = 'beacon' and status = 'pending'
+            "#,
+        )
+        .fetch_all(executor)
+        .await
+        .map_err(Error::from)
+    }
+
+    pub async fn pending_beacons_to_ready<'c, E>(
+        executor: E,
+        timestamp: DateTime<Utc>,
+    ) -> Result
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query(
+            r#"
+            update poc_report set
+                status = 'pending',
+                last_processed = $1
+            where status = 'ready';
+            "#,
+        )
+        .bind(timestamp)
+        .execute(executor)
+        .await
+        .map(|_| ())
         .map_err(Error::from)
     }
 
@@ -294,7 +334,7 @@ impl Report {
         sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
-            where report_type = 'beacon' and status = 'pending'
+            where report_type = 'beacon' and status = 'ready'
             and created_at < $1
             "#,
         )
@@ -322,7 +362,7 @@ impl Report {
         sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
-            where report_type = 'witness' and status = 'pending'
+            where report_type = 'witness' and status = 'ready'
             and created_at < $1
             "#,
         )

@@ -1,5 +1,6 @@
 create type lorastatus AS enum (
     'pending',
+    'ready',
     'valid',
     'invalid'
 );

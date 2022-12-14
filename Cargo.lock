@@ -2924,6 +2924,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "twox-hash",
  "xorf",
 ]
 
