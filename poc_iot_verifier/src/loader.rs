@@ -1,9 +1,4 @@
-use crate::{
-    gateway_cache::GatewayCache,
-    meta::Meta,
-    poc_report::{Report, ReportType},
-    Result, Settings,
-};
+use crate::{gateway_cache::GatewayCache, meta::Meta, poc_report::ReportType, Result, Settings};
 use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
@@ -29,6 +24,15 @@ const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
 // since they're processed concurrently
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
+
+const REPORT_INSERT_SQL: &str = "insert into poc_report (
+    id,
+    remote_entropy,
+    packet_data,
+    report_data,
+    report_timestamp,
+    report_type
+) ";
 
 pub struct Loader {
     ingest_store: FileStore,
@@ -68,12 +72,10 @@ impl Loader {
         gateway_cache: &GatewayCache,
     ) -> Result {
         tracing::info!("started verifier loader");
-
         let mut report_timer = time::interval(time::Duration::from_secs(REPORTS_POLL_TIME));
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
         denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
         loop {
             if shutdown.is_triggered() {
                 break;
@@ -170,7 +172,6 @@ impl Loader {
                 FileType::LoraWitnessIngestReport
             ),
         }
-
         match self
             .process_events(
                 FileType::LoraBeaconIngestReport,
@@ -206,7 +207,6 @@ impl Loader {
             tracing::info!("no available ingest files of type {file_type}");
             return Ok(());
         }
-
         let infos_len = infos.len();
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
         store
@@ -214,43 +214,36 @@ impl Loader {
             .chunks(300)
             .for_each_concurrent(STORE_WORKERS, |msgs| async move {
                 let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-                    "insert into poc_report (
-                        id,
-                        remote_entropy,
-                        packet_data,
-                        report_data,
-                        report_timestamp,
-                        report_type
-                    ) "
+                    REPORT_INSERT_SQL
                 );
                 let mut inserts = Vec::new();
                 for msg in msgs {
                     match msg {
-                        Err(err) => tracing::warn!("skipping report of type {file_type} due to error {err:?}"),
+                        Err(err) => tracing::warn!(
+                            "skipping report of type {file_type} due to error {err:?}"),
                         Ok(buf) => {
                             match self.handle_report(file_type, &buf, gateway_cache).await
                             {
-                                Ok(Some(bindings)) => {
-                                    inserts.push(bindings);
-
-                                },
+                                Ok(Some(bindings)) =>  inserts.push(bindings),
                                 Ok(None) => (),
-                                Err(err) => {
-                                    tracing::warn!("error whilst handling incoming report of type: {file_type}, error: {err:?}")
-                                }
+                                Err(err) => tracing::warn!(
+                                    "error whilst handling incoming report of type: {file_type}, error: {err:?}")
+
                             }
                         }
                     }
                 }
-                query_builder.push_values(inserts, |mut b, insert| {
+                query_builder
+                .push_values(inserts, |mut b, insert|
+                    {
                         b.push_bind(insert.id)
                         .push_bind(insert.remote_entropy)
                         .push_bind(insert.packet_data)
                         .push_bind(insert.buf)
                         .push_bind(insert.received_ts)
                         .push_bind(insert.report_type);
-                });
-
+                    }
+                );
                 let query = query_builder.build();
                 match query.execute(&self.pool).await
                 {

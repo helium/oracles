@@ -88,17 +88,6 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn insert_bulk<'c, E>(executor: E, sql: &str) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-    {
-        sqlx::query(sql)
-            .execute(executor)
-            .await
-            .map(|_| ())
-            .map_err(Error::from)
-    }
-
     pub async fn delete_poc<'c, 'q, E>(executor: E, packet_data: &'q Vec<u8>) -> Result
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
