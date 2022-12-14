@@ -1,4 +1,9 @@
-use crate::{gateway_cache::GatewayCache, meta::Meta, poc_report::ReportType, Result, Settings};
+use crate::{
+    gateway_cache::GatewayCache,
+    meta::Meta,
+    poc_report::{InsertBindings, Report, ReportType},
+    Result, Settings,
+};
 use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
@@ -12,11 +17,11 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     Message,
 };
-use sqlx::{PgPool, Postgres, QueryBuilder};
-use std::{time::Duration, ops::DerefMut};
+use sqlx::PgPool;
 use std::sync::Arc;
-use tokio::time::{self, MissedTickBehavior};
+use std::{ops::DerefMut, time::Duration};
 use tokio::sync::Mutex;
+use tokio::time::{self, MissedTickBehavior};
 
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
@@ -27,30 +32,12 @@ const STORE_WORKERS: usize = 100;
 // since they're processed concurrently
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
 
-const REPORT_INSERT_SQL: &str = "insert into poc_report (
-    id,
-    remote_entropy,
-    packet_data,
-    report_data,
-    report_timestamp,
-    report_type
-) ";
-
 pub struct Loader {
     ingest_store: FileStore,
     pool: PgPool,
     deny_list_latest_url: String,
     deny_list_trigger_interval: Duration,
     deny_list: DenyList,
-}
-
-pub struct InsertBindings {
-    id: Vec<u8>,
-    remote_entropy: Vec<u8>,
-    packet_data: Vec<u8>,
-    buf: Vec<u8>,
-    received_ts: DateTime<Utc>,
-    report_type: ReportType,
 }
 
 impl Loader {
@@ -214,9 +201,20 @@ impl Loader {
 
         stream::iter(infos)
             .for_each_concurrent(4, |file_info| async move {
-                match self.process_file(store, file_info.clone(), gateway_cache).await {
-                    Ok(()) => tracing::debug!("completed processing file of type {}, ts: {}", &file_type, file_info.timestamp),
-                    Err(err) => tracing::warn!("error whilst processing file of type {}, ts: {}, err: {err:?}", &file_type, file_info.timestamp),
+                match self
+                    .process_file(store, file_info.clone(), gateway_cache)
+                    .await
+                {
+                    Ok(()) => tracing::debug!(
+                        "completed processing file of type {}, ts: {}",
+                        &file_type,
+                        file_info.timestamp
+                    ),
+                    Err(err) => tracing::warn!(
+                        "error whilst processing file of type {}, ts: {}, err: {err:?}",
+                        &file_type,
+                        file_info.timestamp
+                    ),
                 };
             })
             .await;
@@ -239,7 +237,6 @@ impl Loader {
             .await?
             .chunks(300)
             .for_each_concurrent(100, |msgs| async {
-                let mut query_builder: QueryBuilder<Postgres> = QueryBuilder::new(REPORT_INSERT_SQL);
                 let mut inserts = Vec::new();
                 for msg in msgs {
                     match msg {
@@ -258,16 +255,8 @@ impl Loader {
                         }
                     }
                 }
-                query_builder.push_values(inserts, |mut b, insert| {
-                    b.push_bind(insert.id)
-                        .push_bind(insert.remote_entropy)
-                        .push_bind(insert.packet_data)
-                        .push_bind(insert.buf)
-                        .push_bind(insert.received_ts)
-                        .push_bind(insert.report_type);
-                });
-                let query = query_builder.build();
-                match query.execute(tx.clone().lock().await.deref_mut()).await {
+
+                match Report::bulk_insert(tx.clone().lock().await.deref_mut(), inserts).await {
                     Ok(_) => (),
                     Err(err) => tracing::warn!("error whilst inserting report to db,  error: {err:?}"),
                 }

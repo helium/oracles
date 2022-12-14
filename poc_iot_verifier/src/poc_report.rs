@@ -18,6 +18,15 @@ const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 //    end up being deemed stale )
 const BEACON_PROCESSING_DELAY: i64 = 0;
 
+const REPORT_INSERT_SQL: &str = "insert into poc_report (
+    id,
+    remote_entropy,
+    packet_data,
+    report_data,
+    report_timestamp,
+    report_type
+) ";
+
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]
 pub enum ReportType {
@@ -31,6 +40,15 @@ pub enum LoraStatus {
     Pending,
     Valid,
     Invalid,
+}
+
+pub struct InsertBindings {
+    pub id: Vec<u8>,
+    pub remote_entropy: Vec<u8>,
+    pub packet_data: Vec<u8>,
+    pub buf: Vec<u8>,
+    pub received_ts: DateTime<Utc>,
+    pub report_type: ReportType,
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -51,8 +69,8 @@ pub struct Report {
 }
 
 impl Report {
-    pub async fn insert_into<'c, E>(
-        executor: E,
+    pub async fn insert_into(
+        executor: impl sqlx::PgExecutor<'_>,
         id: Vec<u8>,
         remote_entropy: Vec<u8>,
         packet_data: Vec<u8>,
@@ -60,8 +78,6 @@ impl Report {
         report_timestamp: &DateTime<Utc>,
         report_type: ReportType,
     ) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
             r#"
@@ -88,9 +104,29 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn delete_poc<'c, 'q, E>(executor: E, packet_data: &'q Vec<u8>) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
+    pub async fn bulk_insert(
+        exec: impl sqlx::PgExecutor<'_>,
+        bindings: Vec<InsertBindings>,
+    ) -> Result {
+        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(REPORT_INSERT_SQL);
+        query_builder.push_values(bindings, |mut b, insert| {
+            b.push_bind(insert.id)
+                .push_bind(insert.remote_entropy)
+                .push_bind(insert.packet_data)
+                .push_bind(insert.buf)
+                .push_bind(insert.received_ts)
+                .push_bind(insert.report_type);
+        });
+
+        let query = query_builder.build();
+        query
+            .execute(exec)
+            .await
+            .map(|_| ())
+            .map_err(Error::from)
+    }
+
+    pub async fn delete_poc(executor: impl sqlx::PgExecutor<'_>, packet_data: &Vec<u8>) -> Result
     {
         sqlx::query(
             r#"
@@ -99,15 +135,13 @@ impl Report {
             "#,
         )
         .bind(packet_data)
-        .execute(executor.clone())
+        .execute(executor)
         .await
         .map(|_| ())
         .map_err(Error::from)
     }
 
-    pub async fn delete_poc_witnesses<'c, 'q, E>(executor: E, packet_data: &'q Vec<u8>) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
+    pub async fn delete_poc_witnesses(executor: impl sqlx::PgExecutor<'_>, packet_data: &Vec<u8>) -> Result
     {
         sqlx::query(
             r#"
@@ -117,15 +151,13 @@ impl Report {
             "#,
         )
         .bind(packet_data)
-        .execute(executor.clone())
+        .execute(executor)
         .await
         .map(|_| ())
         .map_err(Error::from)
     }
 
-    pub async fn delete_report<'c, 'q, E>(executor: E, id: &'q Vec<u8>) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
+    pub async fn delete_report(executor: impl sqlx::PgExecutor<'_>, id: &Vec<u8>) -> Result
     {
         sqlx::query(
             r#"
@@ -140,9 +172,7 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn get_next_beacons<'c, E>(executor: E) -> Result<Vec<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    pub async fn get_next_beacons(executor: impl sqlx::PgExecutor<'_>) -> Result<Vec<Self>>
     {
         let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
         let report_min_time = Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
@@ -177,12 +207,10 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn get_witnesses_for_beacon<'c, E>(
-        executor: E,
+    pub async fn get_witnesses_for_beacon(
+        executor: impl sqlx::PgExecutor<'_>,
         packet_data: &Vec<u8>,
     ) -> Result<Vec<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query_as::<_, Self>(
             r#"
@@ -199,14 +227,12 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn update_status<'c, E>(
-        executor: E,
+    pub async fn update_status(
+        executor: impl sqlx::PgExecutor<'_>,
         id: &Vec<u8>,
         status: LoraStatus,
         timestamp: DateTime<Utc>,
     ) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
             r#"
@@ -225,14 +251,12 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn update_status_all<'c, E>(
-        executor: E,
+    pub async fn update_status_all(
+        executor: impl sqlx::PgExecutor<'_>,
         packet_data: &Vec<u8>,
         status: LoraStatus,
         timestamp: DateTime<Utc>,
     ) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
             r#"
@@ -251,13 +275,11 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn update_attempts<'c, E>(
-        executor: E,
+    pub async fn update_attempts(
+        executor: impl sqlx::PgExecutor<'_>,
         id: &Vec<u8>,
         timestamp: DateTime<Utc>,
     ) -> Result
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         sqlx::query(
             r#"
@@ -275,12 +297,10 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn get_stale_pending_beacons<'c, E>(
-        executor: E,
+    pub async fn get_stale_pending_beacons(
+        executor: impl sqlx::PgExecutor<'_>,
         stale_period: i64,
     ) -> Result<Vec<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         // NOTE: the query for stale beacons cannot rely on poc_report.attempts
         // as beacons could be deteached from any entropy report
@@ -304,12 +324,10 @@ impl Report {
         .map_err(Error::from)
     }
 
-    pub async fn get_stale_pending_witnesses<'c, E>(
-        executor: E,
+    pub async fn get_stale_pending_witnesses(
+        executor: impl sqlx::PgExecutor<'_>,
         stale_period: i64,
     ) -> Result<Vec<Self>>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         // NOTE: the query for stale witnesses cannot rely on poc_report.attempts
         // as witnesses could be deteached from any beacon report
