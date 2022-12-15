@@ -9,7 +9,7 @@ use tokio::time::{self, MissedTickBehavior};
 
 const ENTROPY_META_NAME: &str = "entropy_report";
 /// cadence for how often to look for entropy from s3 buckets
-const ENTROPY_POLL_TIME: u64 = 60 * 10;
+const ENTROPY_POLL_TIME: i64 = 60 * 10;
 
 const STORE_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
@@ -40,7 +40,7 @@ impl EntropyLoader {
 
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("started verifier entropy loader");
-        let mut report_timer = time::interval(time::Duration::from_secs(ENTROPY_POLL_TIME));
+        let mut report_timer = time::interval(time::Duration::from_secs(ENTROPY_POLL_TIME as u64));
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             if shutdown.is_triggered() {
@@ -51,7 +51,7 @@ impl EntropyLoader {
                 _ = report_timer.tick() => match self.handle_entropy_tick().await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal entropy loader error, entropy_tick triggered: {err:?}");
+                        tracing::error!("entropy loader error: {err:?}");
                     }
                 }
             }
@@ -68,26 +68,30 @@ impl EntropyLoader {
         // as such data being loaded is always stale by a time equal to ENTROPY_POLL_TIME
 
         // if there is NO last timestamp in the DB, we will start our sliding window from this point
-        let window_default_lookback = now - ChronoDuration::seconds(60 * 60);
+        let window_default_lookback = now - ChronoDuration::seconds(ENTROPY_POLL_TIME * 6);
         // if there IS a last timestamp in the DB, we will use it as the starting point for our sliding window
         // but cap it at the max below.
-        let window_max_lookback = now - ChronoDuration::seconds(60 * 60 * 2);
+        let window_max_lookback = now - ChronoDuration::seconds(ENTROPY_POLL_TIME * 12);
         let after = Meta::last_timestamp(&self.pool, ENTROPY_META_NAME)
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
-        let before = now - ChronoDuration::seconds(60 * 10);
+        let before = now - ChronoDuration::seconds(ENTROPY_POLL_TIME);
         let window_width = (before - after).num_minutes() as u64;
         tracing::info!(
             "entropy sliding window, after: {after}, before: {before}, width: {window_width}"
         );
+        // contain any errors whilst processing the window
+        // any required recovery should happen within process_window
+        // and after processing the window we should always updated last timestamp
+        // in order to advance our sliding window
         match self
-            .process_events(FileType::EntropyReport, &self.entropy_store, after, before)
+            .process_window(FileType::EntropyReport, &self.entropy_store, after, before)
             .await
         {
             Ok(()) => (),
             Err(err) => tracing::warn!(
-                "error whilst processing {:?} from s3, error: {err:?}",
+                "error whilst processing window for {:?}, error: {err:?}",
                 FileType::EntropyReport
             ),
         }
@@ -96,7 +100,7 @@ impl EntropyLoader {
         Ok(())
     }
 
-    async fn process_events(
+    async fn process_window(
         &self,
         file_type: FileType,
         store: &FileStore,
