@@ -1,6 +1,6 @@
 use crate::{
     error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result,
-    Settings, Stream,
+    Settings,
 };
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
@@ -244,20 +244,5 @@ where
         .map_ok(|output| output.body)
         .map_err(Error::s3_error)
         .fuse()
-        .await
-}
-
-async fn get_byte_stream_with_info(
-    client: Client,
-    bucket: String,
-    info: FileInfo,
-) -> Result<(FileInfo, ByteStream)> {
-    client
-        .get_object()
-        .bucket(bucket)
-        .key(&info.key)
-        .send()
-        .map_ok(|output| (info, output.body))
-        .map_err(Error::s3_error)
         .await
 }
