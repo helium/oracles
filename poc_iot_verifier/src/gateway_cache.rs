@@ -53,7 +53,7 @@ impl GatewayCache {
                             .await;
                         Ok(res)
                     }
-                    _ => Err(GatewayNotFound(address.clone()))
+                    _ => Err(GatewayNotFound(address.clone())),
                 }
             }
         }

@@ -9,7 +9,7 @@ use tokio::time::{self, MissedTickBehavior};
 
 const ENTROPY_META_NAME: &str = "entropy_report";
 /// cadence for how often to look for entropy from s3 buckets
-const ENTROPY_POLL_TIME: i64 = 60 * 10;
+const ENTROPY_POLL_TIME: i64 = 60 * 5;
 
 const STORE_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
@@ -28,7 +28,7 @@ pub enum NewLoaderError {
 }
 
 impl EntropyLoader {
-    pub async fn from_settings(settings: &Settings) ->Result<Self, NewLoaderError> {
+    pub async fn from_settings(settings: &Settings) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier entropy loader");
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;

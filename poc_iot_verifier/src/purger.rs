@@ -25,7 +25,7 @@ const PURGER_DB_POOL_SIZE: usize = PURGER_WORKERS * 4;
 // opportunity to be verified and after this point extremely unlikely to ever be verified
 // successfully
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const BEACON_STALE_PERIOD: i64 = 60 * 90;
+const BEACON_STALE_PERIOD: i64 = 60 * 30;
 /// the period in seconds after when a witness report in the DB will be deemed stale
 // extend witness stale period beyond that of beacons
 // witnesses are inserted into the DB up to 10 mins before beacons
@@ -134,9 +134,8 @@ impl Purger {
         tracing::info!(
             "starting query get_stale_pending_beacons with stale period: {beacon_stale_period}"
         );
-        let stale_beacons =
-            Report::get_stale_pending_beacons(&self.pool, beacon_stale_period).await?;
-        tracing::info!("completed query get_stale_pending_beacons");
+        let stale_beacons = Report::get_stale_beacons(&self.pool, beacon_stale_period).await?;
+        tracing::info!("completed query get_stale_beacons");
         tracing::info!("purging {:?} stale beacons", stale_beacons.len());
         stream::iter(stale_beacons)
             .for_each_concurrent(PURGER_WORKERS, |report| {
@@ -156,9 +155,8 @@ impl Purger {
         tracing::info!(
             "starting query get_stale_pending_witnesses with stale period: {witness_stale_period}"
         );
-        let stale_witnesses =
-            Report::get_stale_pending_witnesses(&self.pool, witness_stale_period).await?;
-        tracing::info!("completed query get_stale_pending_witnesses");
+        let stale_witnesses = Report::get_stale_witnesses(&self.pool, witness_stale_period).await?;
+        tracing::info!("completed query get_stale_witnesses");
         let num_stale_witnesses = stale_witnesses.len();
         tracing::info!("purging {num_stale_witnesses} stale witnesses");
         stream::iter(stale_witnesses)
@@ -198,7 +196,10 @@ impl Purger {
             report: beacon.clone(),
         }
         .into();
-        tracing::debug!("purging beacon with date: {received_timestamp}");
+        tracing::debug!(
+            "purging beacon with entropy: {:?}, time: {received_timestamp}",
+            db_beacon.remote_entropy
+        );
         file_sink_write!(
             "invalid_beacon",
             &lora_invalid_beacon_tx,
@@ -227,7 +228,10 @@ impl Purger {
             participant_side: InvalidParticipantSide::Witness,
         }
         .into();
-        tracing::debug!("purging witness with date: {received_timestamp}");
+        tracing::debug!(
+            "purging witness with packet data: {:?}, time: {received_timestamp}",
+            db_witness.packet_data
+        );
         file_sink_write!(
             "invalid_witness_report",
             &lora_invalid_witness_tx,

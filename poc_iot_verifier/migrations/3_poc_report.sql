@@ -1,5 +1,6 @@
 create type lorastatus AS enum (
     'pending',
+    'ready',
     'valid',
     'invalid'
 );
@@ -28,4 +29,17 @@ ON poc_report(packet_data);
 
 CREATE INDEX idx_poc_report_report_type
 ON poc_report(report_type);
+
+CREATE INDEX idx_poc_report_status
+ON poc_report(status);
+
+CREATE INDEX idx_poc_report_created_at
+ON poc_report(created_at);
+
+CREATE INDEX idx_poc_report_attempts
+ON poc_report(attempts);
+
+CREATE INDEX idx_poc_report_report_type_status_created_at
+ON poc_report (report_type,status,created_at);
+
 

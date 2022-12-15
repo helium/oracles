@@ -2,7 +2,9 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use density_scaler::Server as DensityScaler;
 use futures::TryFutureExt;
-use poc_iot_verifier::{gateway_cache::GatewayCache, loader, entropy_loader, purger, runner, Settings};
+use poc_iot_verifier::{
+    entropy_loader, gateway_cache::GatewayCache, loader, purger, runner, Settings,
+};
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -74,8 +76,8 @@ impl Server {
             DensityScaler::from_settings(settings.density_scaler.clone()).await?;
         tokio::try_join!(
             runner.run(&shutdown, &gateway_cache, density_scaler.hex_density_map()),
-            loader.run(&shutdown, &gateway_cache),
             entropy_loader.run(&shutdown),
+            loader.run(&shutdown, &gateway_cache),
             purger.run(&shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
         )

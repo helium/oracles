@@ -38,6 +38,7 @@ pub enum ReportType {
 #[sqlx(type_name = "lorastatus", rename_all = "lowercase")]
 pub enum LoraStatus {
     Pending,
+    Ready,
     Valid,
     Invalid,
 }
@@ -116,7 +117,8 @@ impl Report {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(REPORT_INSERT_SQL);
+        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+            sqlx::QueryBuilder::new(REPORT_INSERT_SQL);
         query_builder.push_values(bindings, |mut b, insert| {
             b.push_bind(insert.id)
                 .push_bind(insert.remote_entropy)
@@ -210,7 +212,7 @@ impl Report {
                 entropy.timestamp
             from poc_report
             inner join entropy on poc_report.remote_entropy=entropy.data
-            where poc_report.report_type = 'beacon' and status = 'pending'
+            where poc_report.report_type = 'beacon' and status = 'ready'
             and entropy.timestamp < $1
             and poc_report.created_at < $2
             and poc_report.attempts < $3
@@ -225,6 +227,43 @@ impl Report {
         .await?)
     }
 
+    pub async fn get_pending_beacon_packet_data<'c, E>(
+        executor: E,
+    ) -> Result<Vec<Self>, ReportError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        Ok(sqlx::query_as::<_, Self>(
+            r#"
+            select * from poc_report
+            where report_type = 'beacon' and status = 'pending'
+            "#,
+        )
+        .fetch_all(executor)
+        .await?)
+    }
+
+    pub async fn pending_beacons_to_ready<'c, E>(
+        executor: E,
+        timestamp: DateTime<Utc>,
+    ) -> Result<(), ReportError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query(
+            r#"
+            update poc_report set
+                status = 'ready',
+                last_processed = $1
+            where report_type = 'beacon' and status = 'pending';
+            "#,
+        )
+        .bind(timestamp)
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_witnesses_for_beacon<'c, E>(
         executor: E,
         packet_data: &Vec<u8>,
@@ -236,7 +275,7 @@ impl Report {
             r#"
             select * from poc_report
             where packet_data = $1
-            and report_type = 'witness' and status = 'pending'
+            and report_type = 'witness'
             and attempts < $2
             "#,
         )
@@ -319,7 +358,7 @@ impl Report {
         Ok(())
     }
 
-    pub async fn get_stale_pending_beacons<'c, E>(
+    pub async fn get_stale_beacons<'c, E>(
         executor: E,
         stale_period: i64,
     ) -> Result<Vec<Self>, ReportError>
@@ -338,7 +377,7 @@ impl Report {
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
-            where report_type = 'beacon' and status = 'pending'
+            where report_type = 'beacon' and status = 'ready'
             and created_at < $1
             "#,
         )
@@ -347,7 +386,7 @@ impl Report {
         .await?)
     }
 
-    pub async fn get_stale_pending_witnesses<'c, E>(
+    pub async fn get_stale_witnesses<'c, E>(
         executor: E,
         stale_period: i64,
     ) -> Result<Vec<Self>, ReportError>
@@ -365,7 +404,7 @@ impl Report {
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
-            where report_type = 'witness' and status = 'pending'
+            where report_type = 'witness' and status = 'ready'
             and created_at < $1
             "#,
         )
