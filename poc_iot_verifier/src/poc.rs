@@ -148,7 +148,7 @@ impl Poc {
             Some(last_beacon) => {
                 let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
                 if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
-                    tracing::info!(
+                    tracing::debug!(
                         "beacon verification failed, reason:
                         IrregularInterval. Seconds since last beacon {:?}, entropy: {:?}",
                         interval_since_last_beacon.num_seconds(),

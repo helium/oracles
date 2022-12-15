@@ -35,7 +35,7 @@ use std::path::Path;
 use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60);
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const BEACON_WORKERS: usize = 100;
 const RUNNER_DB_POOL_SIZE: usize = BEACON_WORKERS * 4;
 
@@ -84,7 +84,7 @@ impl Runner {
             lora_invalid_beacon_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(15))
+        .roll_time(ChronoDuration::minutes(5))
         .create()
         .await?;
 
@@ -94,7 +94,7 @@ impl Runner {
             lora_invalid_witness_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(15))
+        .roll_time(ChronoDuration::minutes(5))
         .create()
         .await?;
 
@@ -104,7 +104,7 @@ impl Runner {
             lora_valid_poc_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(10))
+        .roll_time(ChronoDuration::minutes(2))
         .create()
         .await?;
 
@@ -287,7 +287,7 @@ impl Runner {
                     .invalid_reason else {
                         anyhow::bail!("invalid_reason is None");
                     };
-                tracing::info!(
+                tracing::debug!(
                     "invalid beacon. entropy: {:?}, addr: {:?}, reason: {:?}",
                     beacon.data,
                     beacon.pub_key,

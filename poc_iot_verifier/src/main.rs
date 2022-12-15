@@ -123,6 +123,7 @@ impl Server {
             ),
             loader.run(&shutdown, &gateway_cache),
             entropy_loader.run(&shutdown),
+            loader.run(&shutdown, &gateway_cache),
             purger.run(&shutdown),
             rewarder.run(&shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
