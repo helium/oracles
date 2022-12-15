@@ -14,9 +14,7 @@ use std::{cell::RefCell, path::Path};
 use futures::stream::{self, StreamExt};
 use helium_proto::Message;
 use sqlx::{PgPool, Postgres};
-use tokio::{
-    time::{self, MissedTickBehavior},
-};
+use tokio::time::{self, MissedTickBehavior};
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
@@ -148,7 +146,7 @@ impl Purger {
         stream::iter(stale_beacons)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_beacon(&mut *tx.borrow_mut() ,report, lora_invalid_beacon_tx)
+                    .handle_purged_beacon(&mut tx.borrow_mut(), report, lora_invalid_beacon_tx)
                     .await
                 {
                     Ok(()) => (),
@@ -175,7 +173,7 @@ impl Purger {
         stream::iter(stale_witnesses)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_witness(&mut *tx.borrow_mut(), report, lora_invalid_witness_tx)
+                    .handle_purged_witness(&mut tx.borrow_mut(), report, lora_invalid_witness_tx)
                     .await
                 {
                     Ok(()) => (),
@@ -215,7 +213,7 @@ impl Purger {
         tracing::debug!("purging beacon with date: {received_timestamp}");
         file_sink_write!(
             "invalid_beacon",
-            &lora_invalid_beacon_tx,
+            lora_invalid_beacon_tx,
             invalid_beacon_proto
         )
         .await?;
@@ -245,7 +243,7 @@ impl Purger {
         tracing::debug!("purging witness with date: {received_timestamp}");
         file_sink_write!(
             "invalid_witness_report",
-            &lora_invalid_witness_tx,
+            lora_invalid_witness_tx,
             invalid_witness_report_proto
         )
         .await?;

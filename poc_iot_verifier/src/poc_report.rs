@@ -130,8 +130,10 @@ impl Report {
         Ok(())
     }
 
-    pub async fn delete_report(executor: impl sqlx::PgExecutor<'_>, id: &Vec<u8>) -> Result<(), ReportError>
-    {
+    pub async fn delete_report(
+        executor: impl sqlx::PgExecutor<'_>,
+        id: &Vec<u8>,
+    ) -> Result<(), ReportError> {
         sqlx::query(
             r#"
             delete from poc_report
