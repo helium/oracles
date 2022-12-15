@@ -130,9 +130,7 @@ impl Report {
         Ok(())
     }
 
-    pub async fn delete_report<'c, 'q, E>(executor: E, id: &'q Vec<u8>) -> Result<(), ReportError>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
+    pub async fn delete_report(executor: impl sqlx::PgExecutor<'_>, id: &Vec<u8>) -> Result<(), ReportError>
     {
         sqlx::query(
             r#"

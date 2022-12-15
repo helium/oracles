@@ -9,12 +9,14 @@ use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
     LoraInvalidWitnessReportV1, LoraWitnessIngestReportV1,
 };
-use std::path::Path;
+use std::{cell::RefCell, path::Path};
 
 use futures::stream::{self, StreamExt};
 use helium_proto::Message;
-use sqlx::PgPool;
-use tokio::time::{self, MissedTickBehavior};
+use sqlx::{PgPool, Postgres};
+use tokio::{
+    time::{self, MissedTickBehavior},
+};
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
@@ -82,6 +84,7 @@ impl Purger {
             lora_invalid_beacon_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
         .create()
         .await?;
 
@@ -91,6 +94,7 @@ impl Purger {
             lora_invalid_witness_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
         .create()
         .await?;
 
@@ -109,7 +113,7 @@ impl Purger {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = db_timer.tick() =>
-                    match self.handle_db_tick(lora_invalid_beacon_tx.clone(),lora_invalid_witness_tx.clone()).await {
+                    match self.handle_db_tick(&lora_invalid_beacon_tx, &lora_invalid_witness_tx).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal purger error: {err:?}");
@@ -124,8 +128,8 @@ impl Purger {
 
     async fn handle_db_tick(
         &self,
-        lora_invalid_beacon_tx: MessageSender,
-        lora_invalid_witness_tx: MessageSender,
+        lora_invalid_beacon_tx: &MessageSender,
+        lora_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
@@ -139,19 +143,23 @@ impl Purger {
             Report::get_stale_pending_beacons(&self.pool, beacon_stale_period).await?;
         tracing::info!("completed query get_stale_pending_beacons");
         tracing::info!("purging {:?} stale beacons", stale_beacons.len());
+
+        let tx = RefCell::new(self.pool.begin().await?);
         stream::iter(stale_beacons)
-            .for_each_concurrent(PURGER_WORKERS, |report| {
-                let tx = lora_invalid_beacon_tx.clone();
-                async move {
-                    match self.handle_purged_beacon(&report, tx).await {
-                        Ok(()) => (),
-                        Err(err) => {
-                            tracing::warn!("failed to purge beacon: {err:?}")
-                        }
+            .for_each_concurrent(PURGER_WORKERS, |report| async {
+                match self
+                    .handle_purged_beacon(&mut *tx.borrow_mut() ,report, lora_invalid_beacon_tx)
+                    .await
+                {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::warn!("failed to purge beacon: {err:?}")
                     }
                 }
             })
             .await;
+        file_sink::commit(lora_invalid_beacon_tx).await?;
+        tx.into_inner().commit().await?;
 
         let witness_stale_period = self.base_stale_period + WITNESS_STALE_PERIOD;
         tracing::info!(
@@ -162,19 +170,23 @@ impl Purger {
         tracing::info!("completed query get_stale_pending_witnesses");
         let num_stale_witnesses = stale_witnesses.len();
         tracing::info!("purging {num_stale_witnesses} stale witnesses");
+
+        let tx = RefCell::new(self.pool.begin().await?);
         stream::iter(stale_witnesses)
-            .for_each_concurrent(PURGER_WORKERS, |report| {
-                let tx = lora_invalid_witness_tx.clone();
-                async move {
-                    match self.handle_purged_witness(&report, tx).await {
-                        Ok(()) => (),
-                        Err(err) => {
-                            tracing::warn!("failed to purge witness: {err:?}")
-                        }
+            .for_each_concurrent(PURGER_WORKERS, |report| async {
+                match self
+                    .handle_purged_witness(&mut *tx.borrow_mut(), report, lora_invalid_witness_tx)
+                    .await
+                {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::warn!("failed to purge witness: {err:?}")
                     }
                 }
             })
             .await;
+        file_sink::commit(lora_invalid_witness_tx).await?;
+        tx.into_inner().commit().await?;
         tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
 
         // purge any stale entropy, no need to output anything to s3 here
@@ -184,8 +196,9 @@ impl Purger {
 
     async fn handle_purged_beacon(
         &self,
-        db_beacon: &Report,
-        lora_invalid_beacon_tx: MessageSender,
+        tx: &mut sqlx::Transaction<'_, Postgres>,
+        db_beacon: Report,
+        lora_invalid_beacon_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         let beacon_buf: &[u8] = &db_beacon.report_data;
         let beacon_report: LoraBeaconIngestReport =
@@ -207,14 +220,15 @@ impl Purger {
         )
         .await?;
         // delete the report from the DB
-        Report::delete_report(&self.pool, &beacon_id).await?;
+        Report::delete_report(tx, &beacon_id).await?;
         Ok(())
     }
 
     async fn handle_purged_witness(
         &self,
-        db_witness: &Report,
-        lora_invalid_witness_tx: MessageSender,
+        tx: &mut sqlx::Transaction<'_, Postgres>,
+        db_witness: Report,
+        lora_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         let witness_buf: &[u8] = &db_witness.report_data;
         let witness_report: LoraWitnessIngestReport =
@@ -237,7 +251,7 @@ impl Purger {
         .await?;
 
         // delete the report from the DB
-        Report::delete_report(&self.pool, &witness_id).await?;
+        Report::delete_report(tx, &witness_id).await?;
         Ok(())
     }
 }
