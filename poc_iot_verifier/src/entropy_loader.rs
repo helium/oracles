@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, meta::Meta, Result, Settings};
+use crate::{entropy::Entropy, meta::Meta, Settings};
 use blake3::hash;
 use chrono::{Duration as ChronoDuration, Utc};
 use file_store::{traits::TimestampDecode, FileStore, FileType};
@@ -19,8 +19,16 @@ pub struct EntropyLoader {
     pool: PgPool,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum NewLoaderError {
+    #[error("file store error: {0}")]
+    FileStoreError(#[from] file_store::Error),
+    #[error("db_store error: {0}")]
+    DbStoreError(#[from] db_store::Error),
+}
+
 impl EntropyLoader {
-    pub async fn from_settings(settings: &Settings) -> Result<Self> {
+    pub async fn from_settings(settings: &Settings) ->Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier entropy loader");
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
@@ -30,7 +38,7 @@ impl EntropyLoader {
         })
     }
 
-    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("started verifier entropy loader");
         let mut report_timer = time::interval(time::Duration::from_secs(ENTROPY_POLL_TIME));
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -52,7 +60,7 @@ impl EntropyLoader {
         Ok(())
     }
 
-    async fn handle_entropy_tick(&self) -> Result {
+    async fn handle_entropy_tick(&self) -> anyhow::Result<()> {
         tracing::info!("handling entropy tick");
         let now = Utc::now();
         // the loader loads files from s3 via a sliding window
@@ -94,7 +102,7 @@ impl EntropyLoader {
         store: &FileStore,
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
-    ) -> Result {
+    ) -> anyhow::Result<()> {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
         );
@@ -127,7 +135,7 @@ impl EntropyLoader {
         Ok(())
     }
 
-    async fn handle_report(&self, file_type: FileType, buf: &[u8]) -> Result {
+    async fn handle_report(&self, file_type: FileType, buf: &[u8]) -> anyhow::Result<()> {
         match file_type {
             FileType::EntropyReport => {
                 let event = EntropyReportV1::decode(buf)?;
