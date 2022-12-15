@@ -18,8 +18,8 @@ use helium_proto::{
     Message,
 };
 use sqlx::PgPool;
-use std::{cell::RefCell, time::Duration};
-use tokio::time::{self, MissedTickBehavior};
+use std::{time::Duration, ops::DerefMut};
+use tokio::{sync::Mutex, time::{self, MissedTickBehavior}};
 
 const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets
@@ -238,7 +238,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
     ) -> anyhow::Result<()> {
         let file_type = file_info.file_type;
-        let tx = RefCell::new(self.pool.begin().await?);
+        let tx = Mutex::new(self.pool.begin().await?);
 
         store
             .stream_file(file_info.clone())
@@ -264,7 +264,7 @@ impl Loader {
                     }
                 }
 
-                match Report::bulk_insert(&mut *tx.borrow_mut(), inserts).await {
+                match Report::bulk_insert(tx.lock().await.deref_mut(), inserts).await {
                     Ok(_) => (),
                     Err(err) => tracing::warn!("error whilst inserting report to db,  error: {err:?}"),
                 }
