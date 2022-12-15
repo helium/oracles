@@ -68,8 +68,7 @@ impl EntropyLoader {
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
-
-        let before = now;
+        let before = now - ChronoDuration::seconds(60 * 10);
         let window_width = (before - after).num_minutes() as u64;
         tracing::info!(
             "entropy sliding window, after: {after}, before: {before}, width: {window_width}"
