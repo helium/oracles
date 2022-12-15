@@ -26,6 +26,7 @@ pub const MAX_FRAME_LENGTH: usize = 15_000_000;
 
 type Sink = GzipEncoder<BufWriter<File>>;
 type Transport = FramedWrite<Sink, LengthDelimitedCodec>;
+pub type FileManifest = Vec<String>;
 
 fn new_transport(sink: Sink) -> Transport {
     LengthDelimitedCodec::builder()
@@ -40,8 +41,8 @@ fn transport_sink(transport: &mut Transport) -> &mut Sink {
 #[derive(Debug)]
 pub enum Message {
     Data(oneshot::Sender<Result>, Vec<u8>),
-    Commit(oneshot::Sender<Result<Vec<String>>>),
-    Rollback(oneshot::Sender<Result<Vec<String>>>),
+    Commit(oneshot::Sender<Result<FileManifest>>),
+    Rollback(oneshot::Sender<Result<FileManifest>>),
 }
 
 pub type MessageSender = mpsc::Sender<Message>;
@@ -101,7 +102,7 @@ pub async fn write<T: prost::Message>(
         })
 }
 
-pub async fn commit(tx: &MessageSender) -> Result<oneshot::Receiver<Result<Vec<String>>>> {
+pub async fn commit(tx: &MessageSender) -> Result<oneshot::Receiver<Result<FileManifest>>> {
     let (on_commit_tx, on_commit_rx) = oneshot::channel();
     tx.send(Message::Commit(on_commit_tx))
         .await
@@ -112,7 +113,7 @@ pub async fn commit(tx: &MessageSender) -> Result<oneshot::Receiver<Result<Vec<S
         .map(|_| on_commit_rx)
 }
 
-pub async fn rollback(tx: &MessageSender) -> Result<oneshot::Receiver<Result<Vec<String>>>> {
+pub async fn rollback(tx: &MessageSender) -> Result<oneshot::Receiver<Result<FileManifest>>> {
     let (on_rollback_tx, on_rollback_rx) = oneshot::channel();
     tx.send(Message::Rollback(on_rollback_tx))
         .await
@@ -352,10 +353,10 @@ impl FileSink {
         Ok(())
     }
 
-    pub async fn commit(&mut self) -> Result<Vec<String>> {
+    pub async fn commit(&mut self) -> Result<FileManifest> {
         self.maybe_close_active_sink().await?;
 
-        let mut manifest: Vec<String> = Vec::new();
+        let mut manifest: FileManifest = Vec::new();
         let staged_files = mem::take(&mut self.staged_files);
 
         for staged_file in staged_files.into_iter() {
@@ -366,10 +367,10 @@ impl FileSink {
         Ok(manifest)
     }
 
-    pub async fn rollback(&mut self) -> Result<Vec<String>> {
+    pub async fn rollback(&mut self) -> Result<FileManifest> {
         self.maybe_close_active_sink().await?;
 
-        let mut manifest: Vec<String> = Vec::new();
+        let mut manifest: FileManifest  = Vec::new();
         let staged_files = mem::take(&mut self.staged_files);
 
         for staged_file in staged_files.into_iter() {
