@@ -3,6 +3,7 @@ use crate::{
     last_beacon::LastBeacon,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::Report,
+    reward_share::GatewayShare,
     Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
@@ -10,7 +11,8 @@ use density_scaler::HexDensityMap;
 use file_store::{
     file_sink,
     file_sink::MessageSender,
-    file_sink_write, file_upload,
+    file_sink_write,
+    file_upload::MessageSender as FileUploadSender,
     lora_beacon_report::LoraBeaconIngestReport,
     lora_invalid_poc::{LoraInvalidBeaconReport, LoraInvalidWitnessReport},
     lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc},
@@ -61,9 +63,10 @@ impl Runner {
 
     pub async fn run(
         &mut self,
-        shutdown: &triggered::Listener,
+        file_upload_tx: FileUploadSender,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
+        shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
         tracing::info!("starting runner");
 
@@ -74,10 +77,6 @@ impl Runner {
         let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
         let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
         let (lora_valid_poc_tx, lora_valid_poc_rx) = file_sink::message_channel(50);
-
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
 
         let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
             FileType::LoraInvalidBeaconReport,
@@ -114,11 +113,9 @@ impl Runner {
         let shutdown2 = shutdown.clone();
         let shutdown3 = shutdown.clone();
         let shutdown4 = shutdown.clone();
-        let shutdown5 = shutdown.clone();
         tokio::spawn(async move { lora_invalid_beacon_sink.run(&shutdown2).await });
         tokio::spawn(async move { lora_invalid_witness_sink.run(&shutdown3).await });
         tokio::spawn(async move { lora_valid_poc_sink.run(&shutdown4).await });
-        tokio::spawn(async move { file_upload.run(&shutdown5).await });
 
         loop {
             if shutdown.is_triggered() {
@@ -402,6 +399,14 @@ impl Runner {
             beacon_report: valid_beacon_report,
             witness_reports: witnesses_result.valid_witnesses,
         };
+
+        let mut transaction = self.pool.begin().await?;
+        for reward_share in GatewayShare::shares_from_poc(&valid_poc) {
+            reward_share.save(&mut transaction).await?;
+        }
+        // TODO: expand this transaction to cover all of the database access below?
+        transaction.commit().await?;
+
         let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
         // save the poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick

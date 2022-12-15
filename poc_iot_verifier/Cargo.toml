@@ -49,3 +49,4 @@ density-scaler = {path = "../density_scaler/"}
 denylist = {path = "../denylist"}
 rust_decimal = {workspace = true, features = ["maths"]}
 rust_decimal_macros = {workspace = true}
+humantime = {workspace = true}

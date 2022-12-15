@@ -1,3 +1,4 @@
+use chrono::Duration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
@@ -24,6 +25,13 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     pub density_scaler: density_scaler::Settings,
     pub denylist: denylist::Settings,
+    /// Reward period in hours. (Default to 24)
+    #[serde(default = "default_reward_period")]
+    pub rewards: i64,
+    /// Reward calculation offset in minutes, rewards will be calculated at the end
+    /// of the reward period + reward_offset_minutes
+    #[serde(default = "default_reward_offset_minutes")]
+    pub reward_offset_minutes: i64,
 }
 
 pub fn default_log() -> String {
@@ -32,6 +40,14 @@ pub fn default_log() -> String {
 
 pub fn default_base_stale_period() -> i64 {
     0
+}
+
+fn default_reward_period() -> i64 {
+    24
+}
+
+fn default_reward_offset_minutes() -> i64 {
+    30
 }
 
 impl Settings {
@@ -55,5 +71,9 @@ impl Settings {
             .add_source(Environment::with_prefix("VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
+    }
+
+    pub fn reward_offset_duration(&self) -> Duration {
+        Duration::minutes(self.reward_offset_minutes)
     }
 }
