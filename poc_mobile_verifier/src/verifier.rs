@@ -124,9 +124,7 @@ impl VerifierDaemon {
                 .await??;
         }
 
-        let written_files = file_sink::fetch_manifest(&self.radio_rewards_tx)
-            .await?
-            .await??;
+        let written_files = file_sink::commit(&self.radio_rewards_tx).await?.await??;
 
         // Write out the manifest file
         file_sink_write!(
@@ -141,7 +139,7 @@ impl VerifierDaemon {
         .await?
         .await??;
 
-        file_sink::flush(&self.reward_manifest_tx).await?;
+        file_sink::commit(&self.reward_manifest_tx).await?;
 
         let mut transaction = self.pool.begin().await?;
 

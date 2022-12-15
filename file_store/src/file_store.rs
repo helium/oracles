@@ -1,5 +1,6 @@
 use crate::{
-    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings,
+    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result,
+    Settings, Stream,
 };
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
@@ -13,6 +14,11 @@ use std::str::FromStr;
 pub struct FileStore {
     pub(crate) bucket: String,
     client: Client,
+}
+
+pub struct FileData {
+    pub info: FileInfo,
+    pub stream: BytesMutStream,
 }
 
 impl FileStore {
@@ -198,6 +204,31 @@ impl FileStore {
             })
             .boxed()
     }
+
+    pub fn stream_files<A, B, F>(&self, file_type: F, after: A, before: B) -> Stream<FileData>
+    where
+        F: Into<FileType> + Copy,
+        A: Into<Option<DateTime<Utc>>> + Copy,
+        B: Into<Option<DateTime<Utc>>> + Copy,
+    {
+        let client = self.client.clone();
+        let bucket = self.bucket.clone();
+
+        self.list(file_type, after, before)
+            .map_ok(move |info| get_byte_stream_with_info(client.clone(), bucket.clone(), info))
+            .try_buffered(2)
+            .map_ok(|(info, stream)| FileData {
+                info,
+                stream: stream_source(stream),
+            })
+            .boxed()
+    }
+
+    pub async fn stream_file(&self, file_info: FileInfo) -> Result<BytesMutStream> {
+        get_byte_stream(self.client.clone(), self.bucket.clone(), file_info)
+            .await
+            .map(stream_source)
+    }
 }
 
 fn stream_source(stream: ByteStream) -> BytesMutStream {
@@ -226,6 +257,21 @@ where
         .key(key)
         .send()
         .map_ok(|output| output.body)
+        .map_err(Error::s3_error)
+        .await
+}
+
+async fn get_byte_stream_with_info(
+    client: Client,
+    bucket: String,
+    info: FileInfo,
+) -> Result<(FileInfo, ByteStream)> {
+    client
+        .get_object()
+        .bucket(bucket)
+        .key(&info.key)
+        .send()
+        .map_ok(|output| (info, output.body))
         .map_err(Error::s3_error)
         .await
 }
