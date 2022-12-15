@@ -83,7 +83,7 @@ impl Server {
             gateway_rewards_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .write_manifest(true)
+        .auto_commit(false)
         .create()
         .await?;
 
@@ -95,6 +95,7 @@ impl Server {
             reward_manifest_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
         .create()
         .await?;
 

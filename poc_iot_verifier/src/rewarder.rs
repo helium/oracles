@@ -63,9 +63,7 @@ impl Rewarder {
             .await??;
         }
 
-        let written_files = file_sink::fetch_manifest(&self.gateway_rewards_tx)
-            .await?
-            .await??;
+        let written_files = file_sink::commit(&self.gateway_rewards_tx).await?.await??;
 
         // Write the rewards manifest for the completed period
         file_sink_write!(
@@ -79,6 +77,8 @@ impl Rewarder {
         )
         .await?
         .await??;
+
+        file_sink::commit(&self.reward_manifest_tx).await?;
 
         let mut transaction = self.pool.begin().await?;
 
