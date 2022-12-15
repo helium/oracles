@@ -9,12 +9,15 @@ use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
     LoraInvalidWitnessReportV1, LoraWitnessIngestReportV1,
 };
-use std::{cell::RefCell, path::Path};
+use std::{ops::DerefMut, path::Path};
 
 use futures::stream::{self, StreamExt};
 use helium_proto::Message;
 use sqlx::{PgPool, Postgres};
-use tokio::time::{self, MissedTickBehavior};
+use tokio::{
+    sync::Mutex,
+    time::{self, MissedTickBehavior},
+};
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
@@ -142,11 +145,15 @@ impl Purger {
         tracing::info!("completed query get_stale_pending_beacons");
         tracing::info!("purging {:?} stale beacons", stale_beacons.len());
 
-        let tx = RefCell::new(self.pool.begin().await?);
+        let tx = Mutex::new(self.pool.begin().await?);
         stream::iter(stale_beacons)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_beacon(&mut tx.borrow_mut(), report, lora_invalid_beacon_tx)
+                    .handle_purged_beacon(
+                        tx.lock().await.deref_mut(),
+                        report,
+                        lora_invalid_beacon_tx,
+                    )
                     .await
                 {
                     Ok(()) => (),
@@ -169,11 +176,15 @@ impl Purger {
         let num_stale_witnesses = stale_witnesses.len();
         tracing::info!("purging {num_stale_witnesses} stale witnesses");
 
-        let tx = RefCell::new(self.pool.begin().await?);
+        let tx = Mutex::new(self.pool.begin().await?);
         stream::iter(stale_witnesses)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_witness(&mut tx.borrow_mut(), report, lora_invalid_witness_tx)
+                    .handle_purged_witness(
+                        tx.lock().await.deref_mut(),
+                        report,
+                        lora_invalid_witness_tx,
+                    )
                     .await
                 {
                     Ok(()) => (),
