@@ -31,20 +31,3 @@ file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 metrics = {workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-
-[package.metadata.deb]
-depends = "$auto"
-assets = [
-  [
-    "target/release/poc-ingest",
-    "/opt/poc-ingest/bin/",
-    "755",
-  ],
-  [
-    "pkg/deb/env-template",
-    "/usr/share/poc-ingest/env-template",
-    "644",
-  ],
-]
-maintainer-scripts = "pkg/deb/"
-systemd-units = {}

@@ -39,14 +39,5 @@ helium-crypto = { workspace = true }
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
-rand = "*"
-async-trait = "*"
-
-[package.metadata.deb]
-depends = "$auto"
-assets = [
-    ["target/release/mobile-rewards", "/opt/mobile-rewards/bin/", "755"],
-    ["pkg/deb/env-template", "/usr/share/mobile-rewards/env-template", "644"]
-]
-maintainer-scripts = "pkg/deb/"
-systemd-units = { }
+rand = {workspace = true}
+async-trait = {workspace = true}

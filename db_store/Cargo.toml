@@ -14,5 +14,3 @@ sqlx = {workspace = true}
 serde = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
-
-
