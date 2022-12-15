@@ -18,9 +18,7 @@ use helium_proto::{
     Message,
 };
 use sqlx::PgPool;
-use std::sync::Arc;
-use std::{ops::DerefMut, time::Duration};
-use tokio::sync::Mutex;
+use std::{cell::RefCell, time::Duration};
 use tokio::time::{self, MissedTickBehavior};
 
 const REPORTS_META_NAME: &str = "report";
@@ -200,7 +198,7 @@ impl Loader {
         tracing::info!("processing {infos_len} ingest files of type {file_type}");
 
         stream::iter(infos)
-            .for_each_concurrent(4, |file_info| async move {
+            .for_each_concurrent(10, |file_info| async move {
                 match self
                     .process_file(store, file_info.clone(), gateway_cache)
                     .await
@@ -230,13 +228,13 @@ impl Loader {
         gateway_cache: &GatewayCache,
     ) -> Result {
         let file_type = file_info.file_type;
-        let tx = Arc::new(Mutex::new(self.pool.begin().await?));
+        let tx = RefCell::new(self.pool.begin().await?);
 
         store
             .stream_file(file_info.clone())
             .await?
             .chunks(300)
-            .for_each_concurrent(100, |msgs| async {
+            .for_each_concurrent(10, |msgs| async {
                 let mut inserts = Vec::new();
                 for msg in msgs {
                     match msg {
@@ -256,13 +254,13 @@ impl Loader {
                     }
                 }
 
-                match Report::bulk_insert(tx.clone().lock().await.deref_mut(), inserts).await {
+                match Report::bulk_insert(&mut *tx.borrow_mut(), inserts).await {
                     Ok(_) => (),
                     Err(err) => tracing::warn!("error whilst inserting report to db,  error: {err:?}"),
                 }
             }).await;
 
-        Arc::try_unwrap(tx).unwrap().into_inner().commit().await?;
+        tx.into_inner().commit().await?;
 
         Ok(())
     }
