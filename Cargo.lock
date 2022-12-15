@@ -1896,7 +1896,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=macpie/session_key_filter#c81c52130080eb9d40df27f290e66ca8e775a336"
+source = "git+https://github.com/helium/proto?branch=map/oui-balance#9448567775d1989550bb88d5ff34c22d7bb935bd"
 dependencies = [
  "bytes",
  "prost",
@@ -2115,15 +2115,25 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "clap 3.2.23",
  "config",
+ "db-store",
  "file-store",
  "futures",
+ "futures-util",
  "helium-crypto",
  "helium-proto",
  "node-follower",
+ "poc-metrics",
  "prost",
+ "serde",
+ "sqlx",
+ "thiserror",
  "tokio",
+ "tonic",
  "tracing",
+ "tracing-subscriber",
+ "triggered",
 ]
 
 [[package]]

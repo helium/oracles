@@ -12,8 +12,7 @@ pub fn ingest_reports(
     epoch: &Range<DateTime<Utc>>,
 ) -> impl Stream<Item = PacketRouterPacketReportV1> {
     file_store
-        .source_unordered(
-            DOWNLOAD_WORKERS,
+        .source(
             file_store
                 .list(FileType::IotPacketReport, epoch.start, epoch.end)
                 .boxed(),

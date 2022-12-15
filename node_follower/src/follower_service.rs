@@ -85,4 +85,14 @@ impl FollowerService {
 
         Ok(gw_stream)
     }
+
+    pub async fn oui_balance_stream(
+        &mut self,
+    ) -> Result<Streaming<follower::FollowerOuiBalanceUpdateRespV1>> {
+        Ok(self
+            .client
+            .oui_balance_stream(follower::FollowerOuiBalanceUpdateReqV1 {})
+            .await?
+            .into_inner())
+    }
 }
