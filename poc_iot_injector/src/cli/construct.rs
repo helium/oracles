@@ -36,7 +36,7 @@ async fn process_msg(
     msg: prost::bytes::BytesMut,
     shared_key_clone: Arc<Keypair>,
 ) -> anyhow::Result<TxnDetails> {
-    if let Ok(txn_details) = handle_report_msg(msg.clone(), shared_key_clone) {
+    if let Ok(txn_details) = handle_report_msg(msg, shared_key_clone) {
         tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
         Ok(txn_details)
     } else {
