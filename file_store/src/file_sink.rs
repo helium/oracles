@@ -370,7 +370,7 @@ impl FileSink {
     pub async fn rollback(&mut self) -> Result<FileManifest> {
         self.maybe_close_active_sink().await?;
 
-        let mut manifest: FileManifest  = Vec::new();
+        let mut manifest: FileManifest = Vec::new();
         let staged_files = mem::take(&mut self.staged_files);
 
         for staged_file in staged_files.into_iter() {
