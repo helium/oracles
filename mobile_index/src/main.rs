@@ -50,7 +50,7 @@ impl Server {
             .init();
 
         // Install the prometheus metrics exporter
-        poc_metrics::install_metrics();
+        poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool
         let pool = settings.database.connect(10).await?;
