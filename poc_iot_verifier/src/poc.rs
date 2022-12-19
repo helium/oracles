@@ -58,6 +58,7 @@ pub struct VerifyWitnessResult {
     result: VerificationStatus,
     invalid_reason: Option<InvalidReason>,
     pub gateway_info: Option<GatewayInfo>,
+    hex_scale: Option<Decimal>,
 }
 
 pub struct VerifyWitnessesResult {
@@ -112,14 +113,12 @@ impl Poc {
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return self
-                    .beacon_result(
-                        VerificationStatus::Invalid,
-                        Some(InvalidReason::GatewayNotFound),
-                        None,
-                        None,
-                    )
-                    .await;
+                return self.beacon_result(
+                    VerificationStatus::Invalid,
+                    Some(InvalidReason::GatewayNotFound),
+                    None,
+                    None,
+                );
             }
         };
         tracing::debug!("beacon info {:?}", beaconer_info);
@@ -131,24 +130,28 @@ impl Poc {
         {
             Ok(()) => {
                 let beaconer_location = beaconer_info.location.unwrap();
-                let scaling_factor = hex_density_map.get(beaconer_location).await;
-                self.beacon_result(
-                    VerificationStatus::Valid,
-                    None,
-                    Some(beaconer_info),
-                    scaling_factor,
-                )
-                .await
+                if let Some(scaling_factor) = hex_density_map.get(beaconer_location).await {
+                    self.beacon_result(
+                        VerificationStatus::Valid,
+                        None,
+                        Some(beaconer_info),
+                        Some(scaling_factor),
+                    )
+                } else {
+                    self.beacon_result(
+                        VerificationStatus::Invalid,
+                        Some(InvalidReason::ScalingFactorNotFound),
+                        Some(beaconer_info),
+                        None,
+                    )
+                }
             }
-            Err(invalid_reason) => {
-                self.beacon_result(
-                    VerificationStatus::Invalid,
-                    Some(invalid_reason),
-                    Some(beaconer_info),
-                    None,
-                )
-                .await
-            }
+            Err(invalid_reason) => self.beacon_result(
+                VerificationStatus::Invalid,
+                Some(invalid_reason),
+                Some(beaconer_info),
+                None,
+            ),
         }
     }
 
@@ -164,12 +167,17 @@ impl Poc {
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
             let witness_result = self
-                .verify_witness(&witness_report, beacon_info, gateway_cache)
+                .verify_witness(
+                    &witness_report,
+                    beacon_info,
+                    gateway_cache,
+                    &hex_density_map,
+                )
                 .await?;
             match witness_result.result {
                 VerificationStatus::Valid => {
                     let valid_witness = self
-                        .valid_witness_report(witness_result, witness_report, &hex_density_map)
+                        .valid_witness_report(witness_result, witness_report)
                         .await?;
                     valid_witnesses.push(valid_witness)
                 }
@@ -203,6 +211,7 @@ impl Poc {
         witness_report: &LoraWitnessIngestReport,
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
+        hex_density_map: &impl HexDensityMap,
     ) -> Result<VerifyWitnessResult, VerificationError> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
@@ -210,13 +219,12 @@ impl Poc {
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return self
-                    .witness_result(
-                        VerificationStatus::Invalid,
-                        Some(InvalidReason::GatewayNotFound),
-                        None,
-                    )
-                    .await;
+                return self.witness_result(
+                    VerificationStatus::Invalid,
+                    Some(InvalidReason::GatewayNotFound),
+                    None,
+                    None,
+                );
             }
         };
         tracing::debug!("witness info {:?}", beaconer_info);
@@ -241,17 +249,28 @@ impl Poc {
             .await
         {
             Ok(()) => {
-                self.witness_result(VerificationStatus::Valid, None, Some(witness_info))
-                    .await
+                if let Some(hex_scale) = hex_density_map.get(witness_location).await {
+                    self.witness_result(
+                        VerificationStatus::Valid,
+                        None,
+                        Some(witness_info),
+                        Some(hex_scale),
+                    )
+                } else {
+                    self.witness_result(
+                        VerificationStatus::Invalid,
+                        Some(InvalidReason::ScalingFactorNotFound),
+                        Some(witness_info),
+                        None,
+                    )
+                }
             }
-            Err(invalid_reason) => {
-                self.witness_result(
-                    VerificationStatus::Invalid,
-                    Some(invalid_reason),
-                    Some(witness_info),
-                )
-                .await
-            }
+            Err(invalid_reason) => self.witness_result(
+                VerificationStatus::Invalid,
+                Some(invalid_reason),
+                Some(witness_info),
+                None,
+            ),
         }
     }
 
@@ -307,23 +326,18 @@ impl Poc {
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: LoraWitnessIngestReport,
-        hex_density_map: &impl HexDensityMap,
     ) -> Result<LoraValidWitnessReport, VerificationError> {
         let gw_info = witness_result
             .gateway_info
             .ok_or(VerificationError::NotFound("invalid witness_location"))?;
-        let scaling_factor = hex_density_map
-            .get(
-                gw_info
-                    .location
-                    .ok_or(VerificationError::NotFound("invalid beacon_location"))?,
-            )
-            .await
-            .unwrap_or(Decimal::ONE);
         Ok(LoraValidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             location: gw_info.location,
-            hex_scale: scaling_factor,
+            // witnesses should no longer validate if scaling factor not found, so this should be changed
+            // to a `ValidationError(NoScalingFactor)` or similar post-anyhow migration
+            hex_scale: witness_result
+                .hex_scale
+                .ok_or(VerificationError::NotFound("invalid hex scaling factor"))?,
             report: witness_report.report,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
@@ -361,7 +375,7 @@ impl Poc {
         })
     }
 
-    async fn beacon_result(
+    fn beacon_result(
         &self,
         result: VerificationStatus,
         invalid_reason: Option<InvalidReason>,
@@ -381,11 +395,12 @@ impl Poc {
         })
     }
 
-    async fn witness_result(
+    fn witness_result(
         &self,
         result: VerificationStatus,
         invalid_reason: Option<InvalidReason>,
         gateway_info: Option<GatewayInfo>,
+        hex_scale: Option<Decimal>,
     ) -> Result<VerifyWitnessResult, VerificationError> {
         tracing::debug!(
             "witness verification result: {:?}, reason: {:?}",
@@ -396,6 +411,7 @@ impl Poc {
             result,
             invalid_reason,
             gateway_info,
+            hex_scale,
         })
     }
 }

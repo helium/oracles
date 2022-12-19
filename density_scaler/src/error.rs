@@ -6,16 +6,12 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("config error")]
     Config(#[from] config::ConfigError),
-    #[error("env error")]
-    Env(#[from] std::env::VarError),
     #[error("io error")]
     Io(#[from] std::io::Error),
     #[error("encode error")]
     Encode(#[from] EncodeError),
     #[error("decode error")]
     Decode(#[from] DecodeError),
-    #[error("query channel error")]
-    QueryChannel,
     #[error("not found")]
     NotFound(String),
     #[error("follower error")]
@@ -41,10 +37,6 @@ pub enum EncodeError {
 impl Error {
     pub fn not_found<E: ToString>(msg: E) -> Self {
         Self::NotFound(msg.to_string())
-    }
-
-    pub fn channel() -> Self {
-        Self::QueryChannel
     }
 }
 
