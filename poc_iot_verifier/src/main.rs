@@ -3,7 +3,10 @@ use clap::Parser;
 use density_scaler::Server as DensityScaler;
 use file_store::{file_sink, file_upload, FileType};
 use futures::TryFutureExt;
-use poc_iot_verifier::{gateway_cache::GatewayCache, loader, entropy_loader, purger, rewarder::Rewarder, runner, Settings};
+use poc_iot_verifier::{
+    entropy_loader, gateway_cache::GatewayCache, loader, purger, rewarder::Rewarder, runner,
+    Settings,
+};
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
