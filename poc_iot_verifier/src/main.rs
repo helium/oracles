@@ -121,7 +121,6 @@ impl Server {
                 density_scaler.hex_density_map(),
                 &shutdown
             ),
-            loader.run(&shutdown, &gateway_cache),
             entropy_loader.run(&shutdown),
             loader.run(&shutdown, &gateway_cache),
             purger.run(&shutdown),
