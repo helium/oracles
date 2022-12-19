@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use poc_iot_injector::{
-    cli::{generate, server},
+    cli::{construct, generate, server},
     Settings,
 };
 use std::path;
@@ -11,6 +11,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub enum Cmd {
     Generate(generate::Cmd),
     Server(server::Cmd),
+    Construct(construct::Cmd),
 }
 
 impl Cmd {
@@ -18,6 +19,7 @@ impl Cmd {
         match self {
             Self::Generate(cmd) => cmd.run(&settings).await,
             Self::Server(cmd) => cmd.run(&settings).await,
+            Self::Construct(cmd) => cmd.run(&settings).await,
         }
     }
 }
