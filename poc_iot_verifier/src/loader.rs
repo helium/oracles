@@ -18,7 +18,6 @@ use helium_proto::{
     Message,
 };
 use sqlx::PgPool;
-use std::sync::Arc;
 use std::{hash::Hasher, ops::DerefMut, time::Duration};
 use tokio::{
     sync::Mutex,
@@ -162,7 +161,7 @@ impl Loader {
         // later when processing witnesses, the witness packet data
         // is checked against the xor filter
         // if not found the witness is deemed invalid and dropped
-        let xor_data = Arc::new(Mutex::new(Vec::<u64>::new()));
+        let xor_data = Mutex::new(Vec::<u64>::new());
 
         // the arc is requried when processing beacons
         // filter is not required for beacons
@@ -185,7 +184,7 @@ impl Loader {
             ),
         }
         tracing::info!("creating beacon xor filter");
-        let beacon_packet_data = Arc::try_unwrap(xor_data).unwrap().into_inner();
+        let beacon_packet_data = xor_data.into_inner();
         tracing::info!("xor filter len {:?}", beacon_packet_data.len());
         let filter = Xor16::from(beacon_packet_data);
         tracing::info!("completed creating beacon xor filter");
@@ -224,7 +223,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
-        xor_data: Option<&Arc<Mutex<Vec<u64>>>>,
+        xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
     ) -> anyhow::Result<()> {
         tracing::info!(
@@ -271,7 +270,7 @@ impl Loader {
         store: &FileStore,
         file_info: FileInfo,
         gateway_cache: &GatewayCache,
-        xor_data: Option<&Arc<Mutex<Vec<u64>>>>,
+        xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
     ) -> anyhow::Result<()> {
         let file_type = file_info.file_type;
@@ -316,7 +315,7 @@ impl Loader {
         file_type: FileType,
         buf: &[u8],
         gateway_cache: &GatewayCache,
-        xor_data: Option<&Arc<Mutex<Vec<u64>>>>,
+        xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
     ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
