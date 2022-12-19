@@ -1,6 +1,5 @@
 use crate::{
-    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result,
-    Settings,
+    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings,
 };
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
