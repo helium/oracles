@@ -216,6 +216,7 @@ impl Loader {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn process_events(
         &self,
         file_type: FileType,
