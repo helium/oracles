@@ -20,7 +20,6 @@ pub struct Settings {
     pub follower: node_follower::Settings,
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
-    pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
 }
 

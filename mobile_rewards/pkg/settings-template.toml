@@ -78,22 +78,6 @@ bucket = "mainnet-verified-bucket"
 #
 # endpoint = "https://aws-s3-bucket.aws.com"
 
-[output]
-# Output bucket for reward reports
-
-# Name of bucket to write details to. Required
-#
-bucket = "mainnet-rewards-bucket"
-
-# Region for bucket. Defaults to below
-#
-# region = "us-west-2"
-
-# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
-# IAM context by default
-#
-# endpoint = "https://aws-s3-bucket.aws.com"
-
 [metrics]
 
 # Endpoint for metrics. Default below
