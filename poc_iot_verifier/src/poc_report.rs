@@ -209,7 +209,7 @@ impl Report {
             inner join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'ready'
             and entropy.timestamp < $1
-            and poc_report.attempts < $3
+            and poc_report.attempts < $2
             order by poc_report.created_at asc
             limit 25000
             "#,
