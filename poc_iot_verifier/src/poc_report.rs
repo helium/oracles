@@ -6,17 +6,6 @@ use serde::{Deserialize, Serialize};
 const BEACON_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 /// the max number of attempts a failed witness report will be retried
 const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
-/// a period of time in seconds which needs to pass after the ENTROPY_LIFESPAN expires
-/// before which any beacon & witness reports using that entropy will be processed
-//  this is bascially a buffer period which is added to ENTROPY_LIFESPAN
-//  to prevent POC reports being processed *immediately* after the entropy expires
-//  instead there will be a further delay which allows for any *fashionably* late
-//  witness reports to be processed as part of the overall POC
-//  ( processing of POCs occur by first pulling a beacon and then any witnesses
-//    for that beacon, if a witness comes in after the beacon has been processed
-//    then it does not get verified as part of the overall POC but instead will
-//    end up being deemed stale )
-const BEACON_PROCESSING_DELAY: i64 = 0;
 
 const REPORT_INSERT_SQL: &str = "insert into poc_report (
     id,
@@ -196,7 +185,6 @@ impl Report {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
-        let report_min_time = Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select poc_report.id,
@@ -214,14 +202,12 @@ impl Report {
             inner join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'ready'
             and entropy.timestamp < $1
-            and poc_report.created_at < $2
             and poc_report.attempts < $3
             order by poc_report.created_at asc
             limit 25000
             "#,
         )
         .bind(entropy_min_time)
-        .bind(report_min_time)
         .bind(BEACON_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
         .await?)
