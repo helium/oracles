@@ -6,7 +6,7 @@ create table gateway_shares (
     reward_unit decimal not null,
     -- id of the associated valid poc report
     poc_id bytea not null,
-    primary key(hotspot_key, id)
+    primary key(hotspot_key, poc_id)
 );
 
 create index idx_hotspot_key on gateway_shares (hotspot_key);
