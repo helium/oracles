@@ -1,7 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
-    poc_report::{InsertBindings, Report, ReportType, LoraStatus},
+    poc_report::{InsertBindings, LoraStatus, Report, ReportType},
     Settings,
 };
 use chrono::DateTime;
