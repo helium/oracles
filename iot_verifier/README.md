@@ -5,8 +5,8 @@ This crates takes beacon and witness reports as input from an S3 bucket and veri
 
 ## S3 Inputs
 
-- `lora_beacon_ingest_report_v1`: a beacon report produced by the ingestor
-- `lora_witness_ingest_report_v1`: a witness report produced by the ingestor
+- `iot_beacon_ingest_report_v1`: a beacon report produced by the ingestor
+- `iot_witness_ingest_report_v1`: a witness report produced by the ingestor
 - `entropy_report_v1`: an entropy report produced by the entropy service
 
 ## Validations

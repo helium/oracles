@@ -1,71 +1,71 @@
 use crate::{
     error::DecodeError,
-    lora_beacon_report::LoraBeaconReport,
-    lora_witness_report::LoraWitnessReport,
+    iot_beacon_report::IotBeaconReport,
+    iot_witness_report::IotWitnessReport,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraInvalidBeaconReportV1,
-    LoraInvalidWitnessReportV1, LoraWitnessReportReqV1,
+use helium_proto::services::poc_iot::{
+    InvalidParticipantSide, InvalidReason, IotBeaconReportReqV1, IotInvalidBeaconReportV1,
+    IotInvalidWitnessReportV1, IotWitnessReportReqV1,
 };
 use serde::Serialize;
 
 #[derive(Serialize, Clone)]
-pub struct LoraInvalidBeaconReport {
+pub struct IotInvalidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
     pub reason: InvalidReason,
-    pub report: LoraBeaconReport,
+    pub report: IotBeaconReport,
 }
 
 #[derive(Serialize, Clone)]
-pub struct LoraInvalidWitnessReport {
+pub struct IotInvalidWitnessReport {
     pub received_timestamp: DateTime<Utc>,
     pub reason: InvalidReason,
-    pub report: LoraWitnessReport,
+    pub report: IotWitnessReport,
     pub participant_side: InvalidParticipantSide,
 }
 
-impl MsgDecode for LoraInvalidBeaconReport {
-    type Msg = LoraInvalidBeaconReportV1;
+impl MsgDecode for IotInvalidBeaconReport {
+    type Msg = IotInvalidBeaconReportV1;
 }
 
-impl MsgDecode for LoraInvalidWitnessReport {
-    type Msg = LoraInvalidWitnessReportV1;
+impl MsgDecode for IotInvalidWitnessReport {
+    type Msg = IotInvalidWitnessReportV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraInvalidBeaconReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for IotInvalidBeaconReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
     }
 }
 
-impl MsgTimestamp<u64> for LoraInvalidBeaconReport {
+impl MsgTimestamp<u64> for IotInvalidBeaconReport {
     fn timestamp(&self) -> u64 {
         self.received_timestamp.encode_timestamp_millis()
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for LoraInvalidWitnessReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for IotInvalidWitnessReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
     }
 }
 
-impl MsgTimestamp<u64> for LoraInvalidWitnessReport {
+impl MsgTimestamp<u64> for IotInvalidWitnessReport {
     fn timestamp(&self) -> u64 {
         self.received_timestamp.encode_timestamp_millis()
     }
 }
 
-impl TryFrom<LoraInvalidBeaconReportV1> for LoraInvalidBeaconReport {
+impl TryFrom<IotInvalidBeaconReportV1> for IotInvalidBeaconReport {
     type Error = Error;
-    fn try_from(v: LoraInvalidBeaconReportV1) -> Result<Self> {
+    fn try_from(v: IotInvalidBeaconReportV1) -> Result<Self> {
         let inv_reason = v.reason;
         let invalid_reason: InvalidReason =
             InvalidReason::from_i32(inv_reason).ok_or_else(|| {
-                DecodeError::unsupported_invalid_reason("lora_invalid_beacon_report_v1", inv_reason)
+                DecodeError::unsupported_invalid_reason("iot_invalid_beacon_report_v1", inv_reason)
             })?;
 
         Ok(Self {
@@ -73,16 +73,16 @@ impl TryFrom<LoraInvalidBeaconReportV1> for LoraInvalidBeaconReport {
             reason: invalid_reason,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("lora invalid beacon report v1"))?
+                .ok_or_else(|| Error::not_found("iot invalid beacon report v1"))?
                 .try_into()?,
         })
     }
 }
 
-impl From<LoraInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
-    fn from(v: LoraInvalidBeaconReport) -> Self {
+impl From<IotInvalidBeaconReport> for IotInvalidBeaconReportV1 {
+    fn from(v: IotInvalidBeaconReport) -> Self {
         let received_timestamp = v.timestamp();
-        let report: LoraBeaconReportReqV1 = v.report.into();
+        let report: IotBeaconReportReqV1 = v.report.into();
         Self {
             received_timestamp,
             reason: v.reason as i32,
@@ -91,22 +91,19 @@ impl From<LoraInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
     }
 }
 
-impl TryFrom<LoraInvalidWitnessReportV1> for LoraInvalidWitnessReport {
+impl TryFrom<IotInvalidWitnessReportV1> for IotInvalidWitnessReport {
     type Error = Error;
-    fn try_from(v: LoraInvalidWitnessReportV1) -> Result<Self> {
+    fn try_from(v: IotInvalidWitnessReportV1) -> Result<Self> {
         let inv_reason = v.reason;
         let invalid_reason: InvalidReason =
             InvalidReason::from_i32(inv_reason).ok_or_else(|| {
-                DecodeError::unsupported_invalid_reason(
-                    "lora_invalid_witness_report_v1",
-                    inv_reason,
-                )
+                DecodeError::unsupported_invalid_reason("iot_invalid_witness_report_v1", inv_reason)
             })?;
         let participant_side = v.participant_side;
         let side: InvalidParticipantSide = InvalidParticipantSide::from_i32(participant_side)
             .ok_or_else(|| {
                 DecodeError::unsupported_participant_side(
-                    "lora_invalid_witness_report_v1",
+                    "iot_invalid_witness_report_v1",
                     participant_side,
                 )
             })?;
@@ -118,16 +115,16 @@ impl TryFrom<LoraInvalidWitnessReportV1> for LoraInvalidWitnessReport {
             participant_side: side,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("lora invalid witness report"))?
+                .ok_or_else(|| Error::not_found("iot invalid witness report"))?
                 .try_into()?,
         })
     }
 }
 
-impl From<LoraInvalidWitnessReport> for LoraInvalidWitnessReportV1 {
-    fn from(v: LoraInvalidWitnessReport) -> Self {
+impl From<IotInvalidWitnessReport> for IotInvalidWitnessReportV1 {
+    fn from(v: IotInvalidWitnessReport) -> Self {
         let received_timestamp = v.timestamp();
-        let report: LoraWitnessReportReqV1 = v.report.into();
+        let report: IotWitnessReportReqV1 = v.report.into();
         Self {
             received_timestamp,
             reason: v.reason as i32,

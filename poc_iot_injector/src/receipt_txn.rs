@@ -1,5 +1,5 @@
 use file_store::{
-    lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc, LoraValidWitnessReport},
+    iot_valid_poc::{IotValidBeaconReport, IotValidPoc, IotValidWitnessReport},
     traits::MsgDecode,
 };
 use helium_crypto::{Keypair, Sign};
@@ -39,16 +39,16 @@ pub fn handle_report_msg(
 ) -> Result<TxnDetails, TxnConstructionError> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
-    let lora_valid_poc = LoraValidPoc::decode(msg)?;
+    let iot_valid_poc = IotValidPoc::decode(msg)?;
 
-    let mut poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports);
+    let mut poc_witnesses = construct_poc_witnesses(iot_valid_poc.witness_reports);
     maybe_squish_witnesses(
         &mut poc_witnesses,
-        &lora_valid_poc.poc_id,
+        &iot_valid_poc.poc_id,
         max_witnesses_per_receipt as usize,
     );
 
-    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(lora_valid_poc.beacon_report)?;
+    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(iot_valid_poc.beacon_report)?;
 
     // TODO: Double check whether the gateway in the poc_receipt is challengee?
     let path_element =
@@ -123,7 +123,7 @@ fn construct_path_element(
 }
 
 fn construct_poc_witnesses(
-    witness_reports: Vec<LoraValidWitnessReport>,
+    witness_reports: Vec<IotValidWitnessReport>,
 ) -> Vec<BlockchainPocWitnessV1> {
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
@@ -160,7 +160,7 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
 }
 
 fn construct_poc_receipt(
-    beacon_report: LoraValidBeaconReport,
+    beacon_report: IotValidBeaconReport,
 ) -> Result<(BlockchainPocReceiptV1, i64), TxnConstructionError> {
     let reward_shares = ((beacon_report.hex_scale * beacon_report.reward_unit)
         * REWARD_SHARE_MULTIPLIER)

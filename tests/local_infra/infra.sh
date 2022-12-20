@@ -1,7 +1,7 @@
 #!/bin/bash
 
 infra-start() {
-    local default_buckets="mobile-ingest mobile-verify mobile-reward iot-ingest iot-verify iot-reward poclora-ingest poclora-verifier"
+    local default_buckets="mobile-ingest mobile-verify mobile-reward iot-ingest iot-verify iot-reward pociot-ingest pociot-verifier"
 
     if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" ]];
        then echo "required creds unset"; return 1

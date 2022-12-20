@@ -1,8 +1,7 @@
 use crate::{
-    heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconIngestReport,
-    lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport,
-    speedtest::CellSpeedtest, traits::MsgDecode, Error, FileInfoStream, FileStore, FileType,
-    Result, Settings,
+    heartbeat::CellHeartbeat, iot_beacon_report::IotBeaconIngestReport, iot_valid_poc::IotValidPoc,
+    iot_witness_report::IotWitnessIngestReport, speedtest::CellSpeedtest, traits::MsgDecode, Error,
+    FileInfoStream, FileStore, FileType, Result, Settings,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
@@ -211,14 +210,14 @@ fn locate(
         FileType::CellSpeedtest => {
             CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
-        FileType::LoraBeaconIngestReport => {
-            LoraBeaconIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
+        FileType::IotBeaconIngestReport => {
+            IotBeaconIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
-        FileType::LoraWitnessIngestReport => {
-            LoraWitnessIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
+        FileType::IotWitnessIngestReport => {
+            IotWitnessIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
-        FileType::LoraValidPoc => {
-            LoraValidPoc::decode(buf).and_then(|event| event.to_value_if(pub_key))
+        FileType::IotValidPoc => {
+            IotValidPoc::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         _ => Ok(None),
     }
@@ -269,19 +268,19 @@ impl Gateway for CellSpeedtest {
     }
 }
 
-impl Gateway for LoraBeaconIngestReport {
+impl Gateway for IotBeaconIngestReport {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.report.pub_key.as_ref() == pub_key
     }
 }
 
-impl Gateway for LoraWitnessIngestReport {
+impl Gateway for IotWitnessIngestReport {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.report.pub_key.as_ref() == pub_key
     }
 }
 
-impl Gateway for LoraValidPoc {
+impl Gateway for IotValidPoc {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.beacon_report.report.pub_key.as_ref() == pub_key
     }

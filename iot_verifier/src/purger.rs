@@ -1,13 +1,13 @@
 use crate::{entropy::Entropy, metrics::Metrics, poc_report::Report, Settings};
 use file_store::{
     file_sink, file_sink::MessageSender, file_sink_write, file_upload,
-    lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidBeaconReport,
-    lora_invalid_poc::LoraInvalidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
+    iot_beacon_report::IotBeaconIngestReport, iot_invalid_poc::IotInvalidBeaconReport,
+    iot_invalid_poc::IotInvalidWitnessReport, iot_witness_report::IotWitnessIngestReport,
     traits::IngestId, FileType,
 };
-use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
-    LoraInvalidWitnessReportV1, LoraWitnessIngestReportV1,
+use helium_proto::services::poc_iot::{
+    InvalidParticipantSide, InvalidReason, IotBeaconIngestReportV1, IotInvalidBeaconReportV1,
+    IotInvalidWitnessReportV1, IotWitnessIngestReportV1,
 };
 use std::{ops::DerefMut, path::Path};
 
@@ -73,26 +73,26 @@ impl Purger {
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.settings.cache);
-        let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
-        let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
+        let (iot_invalid_beacon_tx, iot_invalid_beacon_rx) = file_sink::message_channel(50);
+        let (iot_invalid_witness_tx, iot_invalid_witness_rx) = file_sink::message_channel(50);
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
             file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
 
-        let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraInvalidBeaconReport,
+        let mut iot_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
+            FileType::IotInvalidBeaconReport,
             store_base_path,
-            lora_invalid_beacon_rx,
+            iot_invalid_beacon_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
         .create()
         .await?;
 
-        let mut lora_invalid_witness_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraInvalidWitnessReport,
+        let mut iot_invalid_witness_sink = file_sink::FileSinkBuilder::new(
+            FileType::IotInvalidWitnessReport,
             store_base_path,
-            lora_invalid_witness_rx,
+            iot_invalid_witness_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -103,8 +103,8 @@ impl Purger {
         let shutdown2 = shutdown.clone();
         let shutdown3 = shutdown.clone();
         let shutdown4 = shutdown.clone();
-        tokio::spawn(async move { lora_invalid_beacon_sink.run(&shutdown2).await });
-        tokio::spawn(async move { lora_invalid_witness_sink.run(&shutdown3).await });
+        tokio::spawn(async move { iot_invalid_beacon_sink.run(&shutdown2).await });
+        tokio::spawn(async move { iot_invalid_witness_sink.run(&shutdown3).await });
         tokio::spawn(async move { file_upload.run(&shutdown4).await });
 
         loop {
@@ -114,7 +114,7 @@ impl Purger {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = db_timer.tick() =>
-                    match self.handle_db_tick(&lora_invalid_beacon_tx, &lora_invalid_witness_tx).await {
+                    match self.handle_db_tick(&iot_invalid_beacon_tx, &iot_invalid_witness_tx).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal purger error: {err:?}");
@@ -128,8 +128,8 @@ impl Purger {
 
     async fn handle_db_tick(
         &self,
-        lora_invalid_beacon_tx: &MessageSender,
-        lora_invalid_witness_tx: &MessageSender,
+        iot_invalid_beacon_tx: &MessageSender,
+        iot_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
@@ -147,7 +147,7 @@ impl Purger {
         stream::iter(stale_beacons)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_beacon(&tx, report, lora_invalid_beacon_tx)
+                    .handle_purged_beacon(&tx, report, iot_invalid_beacon_tx)
                     .await
                 {
                     Ok(()) => (),
@@ -157,7 +157,7 @@ impl Purger {
                 }
             })
             .await;
-        file_sink::commit(lora_invalid_beacon_tx).await?;
+        file_sink::commit(iot_invalid_beacon_tx).await?;
         tx.into_inner().commit().await?;
 
         let witness_stale_period = self.base_stale_period + WITNESS_STALE_PERIOD;
@@ -173,7 +173,7 @@ impl Purger {
         stream::iter(stale_witnesses)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_witness(&tx, report, lora_invalid_witness_tx)
+                    .handle_purged_witness(&tx, report, iot_invalid_witness_tx)
                     .await
                 {
                     Ok(()) => (),
@@ -183,7 +183,7 @@ impl Purger {
                 }
             })
             .await;
-        file_sink::commit(lora_invalid_witness_tx).await?;
+        file_sink::commit(iot_invalid_witness_tx).await?;
         tx.into_inner().commit().await?;
         tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
 
@@ -196,15 +196,15 @@ impl Purger {
         &self,
         tx: &Mutex<sqlx::Transaction<'_, Postgres>>,
         db_beacon: Report,
-        lora_invalid_beacon_tx: &MessageSender,
+        iot_invalid_beacon_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         let beacon_buf: &[u8] = &db_beacon.report_data;
-        let beacon_report: LoraBeaconIngestReport =
-            LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
+        let beacon_report: IotBeaconIngestReport =
+            IotBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
         let beacon_id = beacon_report.ingest_id();
         let beacon = &beacon_report.report;
         let received_timestamp = beacon_report.received_timestamp;
-        let invalid_beacon_proto: LoraInvalidBeaconReportV1 = LoraInvalidBeaconReport {
+        let invalid_beacon_proto: IotInvalidBeaconReportV1 = IotInvalidBeaconReport {
             received_timestamp,
             reason: InvalidReason::Stale,
             report: beacon.clone(),
@@ -212,7 +212,7 @@ impl Purger {
         .into();
         file_sink_write!(
             "invalid_beacon",
-            lora_invalid_beacon_tx,
+            iot_invalid_beacon_tx,
             invalid_beacon_proto,
             &[("reason", InvalidReason::Stale.as_str_name())]
         )
@@ -227,14 +227,14 @@ impl Purger {
         &self,
         tx: &Mutex<sqlx::Transaction<'_, Postgres>>,
         db_witness: Report,
-        lora_invalid_witness_tx: &MessageSender,
+        iot_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         let witness_buf: &[u8] = &db_witness.report_data;
-        let witness_report: LoraWitnessIngestReport =
-            LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?;
+        let witness_report: IotWitnessIngestReport =
+            IotWitnessIngestReportV1::decode(witness_buf)?.try_into()?;
         let witness_id = witness_report.ingest_id();
         let received_timestamp = witness_report.received_timestamp;
-        let invalid_witness_report_proto: LoraInvalidWitnessReportV1 = LoraInvalidWitnessReport {
+        let invalid_witness_report_proto: IotInvalidWitnessReportV1 = IotInvalidWitnessReport {
             received_timestamp,
             report: witness_report.report,
             reason: InvalidReason::Stale,
@@ -243,7 +243,7 @@ impl Purger {
         .into();
         file_sink_write!(
             "invalid_witness_report",
-            lora_invalid_witness_tx,
+            iot_invalid_witness_tx,
             invalid_witness_report_proto,
             &[("reason", InvalidReason::Stale.as_str_name())]
         )

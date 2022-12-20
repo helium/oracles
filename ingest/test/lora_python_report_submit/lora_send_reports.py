@@ -16,8 +16,8 @@ import uuid
 
 import grpc
 
-import lora_pb2
-import lora_pb2_grpc
+import iot_pb2
+import iot_pb2_grpc
 import time
 
 from dotenv import load_dotenv
@@ -29,7 +29,7 @@ handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 log.addHandler(handler)
 
-PICKLE_FILE="lora_gateways.pickle"
+PICKLE_FILE="iot_gateways.pickle"
 
 FCC_IDS = [ '2AG32PBS3101S', '2AG32MBS3100196N',
             '2AG32PBS31010', 'P27-SCE4255W',
@@ -50,7 +50,7 @@ def choose_mode():
 def build_gateways():
     # encode keys as bytes
     gateways = []
-    if os.path.exists("lora_gateways.pickle"):
+    if os.path.exists("iot_gateways.pickle"):
         with open(PICKLE_FILE, "rb") as f:
             gateways = pickle.load(f)
     else:
@@ -61,11 +61,11 @@ def build_gateways():
     if gateways:
         return gateways
     else:
-        log.critical("Could not build gateways. Is LORA_GATEWAYS set?")
+        log.critical("Could not build gateways. Is IOT_GATEWAYS set?")
         os.exit(1)
 
 def build_gateways_from_env(gateways):
-    for x in re.split(",", os.environ["LORA_GATEWAYS"]):
+    for x in re.split(",", os.environ["IOT_GATEWAYS"]):
         # generate an index into the latlong based on the pubkey
         # using crc32 modulo the length of the dict as a
         # consistent hash
@@ -99,7 +99,7 @@ def main(gateways):
         witness_pubkey = uuid.uuid4(),
         beacon_id = str(rand_id[0]),
         log.debug('Your UUID is: ' + str(rand_id[0])),
-        beacon = lora_pb2.lora_beacon_report_req_v1(
+        beacon = iot_pb2.iot_beacon_report_req_v1(
             pub_key=str.encode(str(beaconer_pubkey[0])),
 	    beacon_id=str.encode(str(rand_id[0])),
 	    local_entropy=str.encode('entropy1'),
@@ -112,7 +112,7 @@ def main(gateways):
 	    timestamp=int(ts[0]),
 	    signature=str.encode(gw['gw_addr'])
         )
-        witness = lora_pb2.lora_witness_report_req_v1(
+        witness = iot_pb2.iot_witness_report_req_v1(
             pub_key=str.encode(str(witness_pubkey[0])),
             beacon_id=str.encode(str(rand_id[0])),
             packet=str.encode('datapayload'),
@@ -128,7 +128,7 @@ def main(gateways):
        	log.debug("{}".format(pformat(beacon)))
         log.debug("{}".format(pformat(witness)))
 
-        url = os.environ["LORA_GRPC_URL"]
+        url = os.environ["IOT_GRPC_URL"]
         api_token = "Bearer " + os.environ["API_TOKEN"]
 
         credentials = grpc.ssl_channel_credentials()
@@ -138,9 +138,9 @@ def main(gateways):
                                         ('grpc.enable_retries', 0),
                                         ('grpc.keepalive_timeout_ms', 10000)
                                        ]) as channel:
-            stub = lora_pb2_grpc.poc_loraStub(channel)
-            beacon_response = stub.submit_lora_beacon(beacon,metadata=metadata)
-            witness_response = stub.submit_lora_witness(witness,metadata=metadata)
+            stub = iot_pb2_grpc.poc_iotStub(channel)
+            beacon_response = stub.submit_iot_beacon(beacon,metadata=metadata)
+            witness_response = stub.submit_iot_witness(witness,metadata=metadata)
             print("submit beacon req received response: " + beacon_response.id)
             print("submit witness req received response: " + witness_response.id)
 
@@ -148,9 +148,9 @@ if __name__ == "__main__":
 
     # pull config from .env
     # if set, use the location given by this var
-    if 'LORA_ENV_FILE' in os.environ:
-        log.debug("loading .env from {}".format(os.environ["LORA_ENV_FILE"]))
-        load_dotenv(os.environ["LORA_ENV_FILE"])
+    if 'IOT_ENV_FILE' in os.environ:
+        log.debug("loading .env from {}".format(os.environ["IOT_ENV_FILE"]))
+        load_dotenv(os.environ["IOT_ENV_FILE"])
     else:
         # otherwise look in current working directory
         load_dotenv()

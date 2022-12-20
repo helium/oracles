@@ -1,4 +1,4 @@
-create type lorastatus AS enum (
+create type iotstatus AS enum (
     'pending',
     'ready',
     'valid',
@@ -17,7 +17,7 @@ create table poc_report (
     packet_data bytea not null,
     report_data bytea not null,
     report_type reporttype,
-    status lorastatus default 'pending' not null,
+    status iotstatus default 'pending' not null,
     attempts integer default 0,
     report_timestamp timestamptz not null,
     last_processed timestamptz default now() not null,

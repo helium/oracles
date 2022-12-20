@@ -9,10 +9,10 @@ use helium_crypto::Keypair;
 use helium_proto::Message;
 use std::{path::PathBuf, sync::Arc};
 
-/// Construct raw poc receipt txns from a given lora_valid_poc file
+/// Construct raw poc receipt txns from a given iot_valid_poc file
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
-    /// Required path to lora_valid_poc file
+    /// Required path to iot_valid_poc file
     #[clap(long)]
     in_path: PathBuf,
 }

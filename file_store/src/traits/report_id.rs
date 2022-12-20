@@ -1,6 +1,6 @@
 use crate::{
-    lora_beacon_report::{LoraBeaconIngestReport, LoraBeaconReport},
-    lora_witness_report::{LoraWitnessIngestReport, LoraWitnessReport},
+    iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
+    iot_witness_report::{IotWitnessIngestReport, IotWitnessReport},
     traits::TimestampEncode,
 };
 use blake3::Hasher;
@@ -46,7 +46,7 @@ macro_rules! impl_report_id {
     };
 }
 
-impl_ingest_id!(LoraBeaconIngestReport);
-impl_ingest_id!(LoraWitnessIngestReport);
-impl_report_id!(LoraBeaconReport);
-impl_report_id!(LoraWitnessReport);
+impl_ingest_id!(IotBeaconIngestReport);
+impl_ingest_id!(IotWitnessIngestReport);
+impl_report_id!(IotBeaconReport);
+impl_report_id!(IotWitnessReport);

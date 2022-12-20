@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package helium.poc_lora;
+package helium.poc_iot;
 
 enum data_rate {
   SF7BW125 = 0;
@@ -15,9 +15,9 @@ enum invalid_reason {
   bad_signature = 0;
   // TODO: add final values
 }
-message lora_beacon_report_req_v1 {
-  bytes beacon_id = 1;  // likely be a concatenation of local and remote entropy so maybe not needed if we already include both fields ? 
-  bytes pub_key = 2;  
+message iot_beacon_report_req_v1 {
+  bytes beacon_id = 1;  // likely be a concatenation of local and remote entropy so maybe not needed if we already include both fields ?
+  bytes pub_key = 2;
   bytes local_entropy = 3;
   bytes remote_entropy = 4;
   bytes data = 5;
@@ -30,9 +30,9 @@ message lora_beacon_report_req_v1 {
   bytes signature = 11;
 }
 
-message lora_beacon_report_resp_v1 { string id = 1; }
+message iot_beacon_report_resp_v1 { string id = 1; }
 
-message lora_witness_report_req_v1 {
+message iot_witness_report_req_v1 {
   bytes beacon_id = 1;
   bytes pub_key = 2;
   bytes packet = 3;
@@ -46,28 +46,28 @@ message lora_witness_report_req_v1 {
   bytes signature = 11;
 }
 
-message lora_witness_report_resp_v1 { string id = 1; }
+message iot_witness_report_resp_v1 { string id = 1; }
 
 message invalid_beacon_report_v1 {
-    lora_beacon_report_req_v1 beacon = 1;
+    iot_beacon_report_req_v1 beacon = 1;
     invalid_reason invalid_reason = 2;
-    bytes invalid_details = 3;    
+    bytes invalid_details = 3;
 }
 
 message invalid_witness_report_v1 {
-    lora_witness_report_req_v1 witness = 1;
+    iot_witness_report_req_v1 witness = 1;
     invalid_reason invalid_reason = 2;
-    bytes invalid_details = 3;    
+    bytes invalid_details = 3;
 }
 
 message valid_poc_v1 {
   bytes poc_id = 1;
-  lora_beacon_report_req_v1 beacon_report = 2;
-  repeated lora_witness_report_req_v1 witness_reports = 3;
+  iot_beacon_report_req_v1 beacon_report = 2;
+  repeated iot_witness_report_req_v1 witness_reports = 3;
 }
 
-service poc_lora {
-  rpc submit_lora_beacon(lora_beacon_report_req_v1) returns (lora_beacon_report_resp_v1);
-  rpc submit_lora_witness(lora_witness_report_req_v1) returns (lora_witness_report_resp_v1);
+service poc_iot {
+  rpc submit_iot_beacon(iot_beacon_report_req_v1) returns (iot_beacon_report_resp_v1);
+  rpc submit_iot_witness(iot_witness_report_req_v1) returns (iot_witness_report_resp_v1);
 }
 

@@ -1877,7 +1877,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#22d06927367597b305b83a3743a8ba952a4dbfa3"
+source = "git+https://github.com/helium/proto?branch=andymck/rename-lora-to-iot#030d9689692632dbf6ba5a413c8e66dea23dcd15"
 dependencies = [
  "bytes",
  "prost",

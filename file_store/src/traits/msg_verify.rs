@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
-use helium_proto::services::poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1};
+use helium_proto::services::poc_iot::{IotBeaconReportReqV1, IotWitnessReportReqV1};
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, DataTransferSessionReqV1, SpeedtestReqV1},
     Message,
@@ -26,8 +26,8 @@ macro_rules! impl_msg_verify {
 
 impl_msg_verify!(CellHeartbeatReqV1, signature);
 impl_msg_verify!(SpeedtestReqV1, signature);
-impl_msg_verify!(LoraBeaconReportReqV1, signature);
-impl_msg_verify!(LoraWitnessReportReqV1, signature);
+impl_msg_verify!(IotBeaconReportReqV1, signature);
+impl_msg_verify!(IotWitnessReportReqV1, signature);
 impl_msg_verify!(DataTransferSessionReqV1, signature);
 
 #[cfg(test)]
@@ -61,5 +61,5 @@ mod test {
         let public_key = PublicKey::from_bytes(&msg.pub_key).expect("public key");
         assert!(msg.verify(&public_key).is_ok());
     }
-    // TODO: Add tests for lora beacon and witness reports
+    // TODO: Add tests for iot beacon and witness reports
 }

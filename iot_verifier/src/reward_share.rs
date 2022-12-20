@@ -1,9 +1,9 @@
 use crate::poc_report::ReportType;
 use chrono::{DateTime, Duration, Utc};
-use file_store::{lora_valid_poc::LoraValidPoc, traits::TimestampEncode};
+use file_store::{iot_valid_poc::IotValidPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_lora as proto;
+use helium_proto::services::poc_iot as proto;
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use sqlx::{Postgres, Transaction};
@@ -77,7 +77,7 @@ impl GatewayShare {
         .inserted)
     }
 
-    pub fn shares_from_poc(report: &LoraValidPoc) -> impl Iterator<Item = Self> {
+    pub fn shares_from_poc(report: &IotValidPoc) -> impl Iterator<Item = Self> {
         let mut shares: Vec<Self> = Vec::new();
         let poc_id = report.poc_id.clone();
         let beacon_scaling_factor = report.beacon_report.hex_scale;

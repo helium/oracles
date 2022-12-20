@@ -2,10 +2,10 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import lora_pb2 as lora__pb2
+import iot_pb2 as iot__pb2
 
 
-class poc_loraStub(object):
+class poc_iotStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -14,58 +14,58 @@ class poc_loraStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.submit_lora_beacon = channel.unary_unary(
-                '/helium.poc_lora.poc_lora/submit_lora_beacon',
-                request_serializer=lora__pb2.lora_beacon_report_req_v1.SerializeToString,
-                response_deserializer=lora__pb2.lora_beacon_report_resp_v1.FromString,
+        self.submit_iot_beacon = channel.unary_unary(
+                '/helium.poc_iot.poc_iot/submit_iot_beacon',
+                request_serializer=iot__pb2.iot_beacon_report_req_v1.SerializeToString,
+                response_deserializer=iot__pb2.iot_beacon_report_resp_v1.FromString,
                 )
-        self.submit_lora_witness = channel.unary_unary(
-                '/helium.poc_lora.poc_lora/submit_lora_witness',
-                request_serializer=lora__pb2.lora_witness_report_req_v1.SerializeToString,
-                response_deserializer=lora__pb2.lora_witness_report_resp_v1.FromString,
+        self.submit_iot_witness = channel.unary_unary(
+                '/helium.poc_iot.poc_iot/submit_iot_witness',
+                request_serializer=iot__pb2.iot_witness_report_req_v1.SerializeToString,
+                response_deserializer=iot__pb2.iot_witness_report_resp_v1.FromString,
                 )
 
 
-class poc_loraServicer(object):
+class poc_iotServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def submit_lora_beacon(self, request, context):
+    def submit_iot_beacon(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def submit_lora_witness(self, request, context):
+    def submit_iot_witness(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_poc_loraServicer_to_server(servicer, server):
+def add_poc_iotServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'submit_lora_beacon': grpc.unary_unary_rpc_method_handler(
-                    servicer.submit_lora_beacon,
-                    request_deserializer=lora__pb2.lora_beacon_report_req_v1.FromString,
-                    response_serializer=lora__pb2.lora_beacon_report_resp_v1.SerializeToString,
+            'submit_iot_beacon': grpc.unary_unary_rpc_method_handler(
+                    servicer.submit_iot_beacon,
+                    request_deserializer=iot__pb2.iot_beacon_report_req_v1.FromString,
+                    response_serializer=iot__pb2.iot_beacon_report_resp_v1.SerializeToString,
             ),
-            'submit_lora_witness': grpc.unary_unary_rpc_method_handler(
-                    servicer.submit_lora_witness,
-                    request_deserializer=lora__pb2.lora_witness_report_req_v1.FromString,
-                    response_serializer=lora__pb2.lora_witness_report_resp_v1.SerializeToString,
+            'submit_iot_witness': grpc.unary_unary_rpc_method_handler(
+                    servicer.submit_iot_witness,
+                    request_deserializer=iot__pb2.iot_witness_report_req_v1.FromString,
+                    response_serializer=iot__pb2.iot_witness_report_resp_v1.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'helium.poc_lora.poc_lora', rpc_method_handlers)
+            'helium.poc_iot.poc_iot', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
  # This class is part of an EXPERIMENTAL API.
-class poc_lora(object):
+class poc_iot(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def submit_lora_beacon(request,
+    def submit_iot_beacon(request,
             target,
             options=(),
             channel_credentials=None,
@@ -75,14 +75,14 @@ class poc_lora(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/helium.poc_lora.poc_lora/submit_lora_beacon',
-            lora__pb2.lora_beacon_report_req_v1.SerializeToString,
-            lora__pb2.lora_beacon_report_resp_v1.FromString,
+        return grpc.experimental.unary_unary(request, target, '/helium.poc_iot.poc_iot/submit_iot_beacon',
+            iot__pb2.iot_beacon_report_req_v1.SerializeToString,
+            iot__pb2.iot_beacon_report_resp_v1.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def submit_lora_witness(request,
+    def submit_iot_witness(request,
             target,
             options=(),
             channel_credentials=None,
@@ -92,8 +92,8 @@ class poc_lora(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/helium.poc_lora.poc_lora/submit_lora_witness',
-            lora__pb2.lora_witness_report_req_v1.SerializeToString,
-            lora__pb2.lora_witness_report_resp_v1.FromString,
+        return grpc.experimental.unary_unary(request, target, '/helium.poc_iot.poc_iot/submit_iot_witness',
+            iot__pb2.iot_witness_report_req_v1.SerializeToString,
+            iot__pb2.iot_witness_report_resp_v1.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

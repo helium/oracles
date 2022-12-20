@@ -16,16 +16,16 @@ _sym_db = _symbol_database.Default()
 
 DESCRIPTOR = _descriptor.FileDescriptor(
   name='lora.proto',
-  package='helium.poc_lora',
+  package='helium.poc_iot',
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\nlora.proto\x12\x0fhelium.poc_lora\"\x86\x02\n\x19lora_beacon_report_req_v1\x12\x11\n\tbeacon_id\x18\x01 \x01(\x0c\x12\x0f\n\x07pub_key\x18\x02 \x01(\x0c\x12\x15\n\rlocal_entropy\x18\x03 \x01(\x0c\x12\x16\n\x0eremote_entropy\x18\x04 \x01(\x0c\x12\x0c\n\x04\x64\x61ta\x18\x05 \x01(\x0c\x12\x11\n\tfrequency\x18\x06 \x01(\x02\x12\x0f\n\x07\x63hannel\x18\x07 \x01(\x05\x12,\n\x08\x64\x61tarate\x18\x08 \x01(\x0e\x32\x1a.helium.poc_lora.data_rate\x12\x10\n\x08tx_power\x18\t \x01(\x05\x12\x11\n\ttimestamp\x18\n \x01(\x04\x12\x11\n\tsignature\x18\x0b \x01(\x0c\"(\n\x1alora_beacon_report_resp_v1\x12\n\n\x02id\x18\x01 \x01(\t\"\xf5\x01\n\x1alora_witness_report_req_v1\x12\x11\n\tbeacon_id\x18\x01 \x01(\x0c\x12\x0f\n\x07pub_key\x18\x02 \x01(\x0c\x12\x0e\n\x06packet\x18\x03 \x01(\x0c\x12\x11\n\ttimestamp\x18\x04 \x01(\x04\x12\x0e\n\x06ts_res\x18\x05 \x01(\r\x12\x0e\n\x06signal\x18\x06 \x01(\x11\x12\x0b\n\x03snr\x18\x07 \x01(\x02\x12\x11\n\tfrequency\x18\x08 \x01(\x02\x12\x0f\n\x07\x63hannel\x18\t \x01(\x05\x12,\n\x08\x64\x61tarate\x18\n \x01(\x0e\x32\x1a.helium.poc_lora.data_rate\x12\x11\n\tsignature\x18\x0b \x01(\x0c\")\n\x1blora_witness_report_resp_v1\x12\n\n\x02id\x18\x01 \x01(\t\"\xa8\x01\n\x18invalid_beacon_report_v1\x12:\n\x06\x62\x65\x61\x63on\x18\x01 \x01(\x0b\x32*.helium.poc_lora.lora_beacon_report_req_v1\x12\x37\n\x0einvalid_reason\x18\x02 \x01(\x0e\x32\x1f.helium.poc_lora.invalid_reason\x12\x17\n\x0finvalid_details\x18\x03 \x01(\x0c\"\xab\x01\n\x19invalid_witness_report_v1\x12<\n\x07witness\x18\x01 \x01(\x0b\x32+.helium.poc_lora.lora_witness_report_req_v1\x12\x37\n\x0einvalid_reason\x18\x02 \x01(\x0e\x32\x1f.helium.poc_lora.invalid_reason\x12\x17\n\x0finvalid_details\x18\x03 \x01(\x0c\"\xa7\x01\n\x0cvalid_poc_v1\x12\x0e\n\x06poc_id\x18\x01 \x01(\x0c\x12\x41\n\rbeacon_report\x18\x02 \x01(\x0b\x32*.helium.poc_lora.lora_beacon_report_req_v1\x12\x44\n\x0fwitness_reports\x18\x03 \x03(\x0b\x32+.helium.poc_lora.lora_witness_report_req_v1*S\n\tdata_rate\x12\x0c\n\x08SF7BW125\x10\x00\x12\x0c\n\x08SF8BW125\x10\x01\x12\x0c\n\x08SF9BW125\x10\x02\x12\r\n\tSF10BW125\x10\x03\x12\r\n\tSF12BW125\x10\x04*#\n\x0einvalid_reason\x12\x11\n\rbad_signature\x10\x00\x32\xeb\x01\n\x08poc_lora\x12m\n\x12submit_lora_beacon\x12*.helium.poc_lora.lora_beacon_report_req_v1\x1a+.helium.poc_lora.lora_beacon_report_resp_v1\x12p\n\x13submit_lora_witness\x12+.helium.poc_lora.lora_witness_report_req_v1\x1a,.helium.poc_lora.lora_witness_report_resp_v1b\x06proto3'
+  serialized_pb=b'\n\nlora.proto\x12\x0fhelium.poc_iot\"\x86\x02\n\x19iot_beacon_report_req_v1\x12\x11\n\tbeacon_id\x18\x01 \x01(\x0c\x12\x0f\n\x07pub_key\x18\x02 \x01(\x0c\x12\x15\n\rlocal_entropy\x18\x03 \x01(\x0c\x12\x16\n\x0eremote_entropy\x18\x04 \x01(\x0c\x12\x0c\n\x04\x64\x61ta\x18\x05 \x01(\x0c\x12\x11\n\tfrequency\x18\x06 \x01(\x02\x12\x0f\n\x07\x63hannel\x18\x07 \x01(\x05\x12,\n\x08\x64\x61tarate\x18\x08 \x01(\x0e\x32\x1a.helium.poc_iot.data_rate\x12\x10\n\x08tx_power\x18\t \x01(\x05\x12\x11\n\ttimestamp\x18\n \x01(\x04\x12\x11\n\tsignature\x18\x0b \x01(\x0c\"(\n\x1aiot_beacon_report_resp_v1\x12\n\n\x02id\x18\x01 \x01(\t\"\xf5\x01\n\x1aiot_witness_report_req_v1\x12\x11\n\tbeacon_id\x18\x01 \x01(\x0c\x12\x0f\n\x07pub_key\x18\x02 \x01(\x0c\x12\x0e\n\x06packet\x18\x03 \x01(\x0c\x12\x11\n\ttimestamp\x18\x04 \x01(\x04\x12\x0e\n\x06ts_res\x18\x05 \x01(\r\x12\x0e\n\x06signal\x18\x06 \x01(\x11\x12\x0b\n\x03snr\x18\x07 \x01(\x02\x12\x11\n\tfrequency\x18\x08 \x01(\x02\x12\x0f\n\x07\x63hannel\x18\t \x01(\x05\x12,\n\x08\x64\x61tarate\x18\n \x01(\x0e\x32\x1a.helium.poc_iot.data_rate\x12\x11\n\tsignature\x18\x0b \x01(\x0c\")\n\x1biot_witness_report_resp_v1\x12\n\n\x02id\x18\x01 \x01(\t\"\xa8\x01\n\x18invalid_beacon_report_v1\x12:\n\x06\x62\x65\x61\x63on\x18\x01 \x01(\x0b\x32*.helium.poc_iot.iot_beacon_report_req_v1\x12\x37\n\x0einvalid_reason\x18\x02 \x01(\x0e\x32\x1f.helium.poc_iot.invalid_reason\x12\x17\n\x0finvalid_details\x18\x03 \x01(\x0c\"\xab\x01\n\x19invalid_witness_report_v1\x12<\n\x07witness\x18\x01 \x01(\x0b\x32+.helium.poc_iot.iot_witness_report_req_v1\x12\x37\n\x0einvalid_reason\x18\x02 \x01(\x0e\x32\x1f.helium.poc_iot.invalid_reason\x12\x17\n\x0finvalid_details\x18\x03 \x01(\x0c\"\xa7\x01\n\x0cvalid_poc_v1\x12\x0e\n\x06poc_id\x18\x01 \x01(\x0c\x12\x41\n\rbeacon_report\x18\x02 \x01(\x0b\x32*.helium.poc_iot.iot_beacon_report_req_v1\x12\x44\n\x0fwitness_reports\x18\x03 \x03(\x0b\x32+.helium.poc_iot.iot_witness_report_req_v1*S\n\tdata_rate\x12\x0c\n\x08SF7BW125\x10\x00\x12\x0c\n\x08SF8BW125\x10\x01\x12\x0c\n\x08SF9BW125\x10\x02\x12\r\n\tSF10BW125\x10\x03\x12\r\n\tSF12BW125\x10\x04*#\n\x0einvalid_reason\x12\x11\n\rbad_signature\x10\x00\x32\xeb\x01\n\x08poc_iot\x12m\n\x12submit_iot_beacon\x12*.helium.poc_iot.iot_beacon_report_req_v1\x1a+.helium.poc_iot.iot_beacon_report_resp_v1\x12p\n\x13submit_iot_witness\x12+.helium.poc_iot.iot_witness_report_req_v1\x1a,.helium.poc_iot.iot_witness_report_resp_v1b\x06proto3'
 )
 
 _DATA_RATE = _descriptor.EnumDescriptor(
   name='data_rate',
-  full_name='helium.poc_lora.data_rate',
+  full_name='helium.poc_iot.data_rate',
   filename=None,
   file=DESCRIPTOR,
   create_key=_descriptor._internal_create_key,
@@ -66,7 +66,7 @@ _sym_db.RegisterEnumDescriptor(_DATA_RATE)
 data_rate = enum_type_wrapper.EnumTypeWrapper(_DATA_RATE)
 _INVALID_REASON = _descriptor.EnumDescriptor(
   name='invalid_reason',
-  full_name='helium.poc_lora.invalid_reason',
+  full_name='helium.poc_iot.invalid_reason',
   filename=None,
   file=DESCRIPTOR,
   create_key=_descriptor._internal_create_key,
@@ -94,86 +94,86 @@ bad_signature = 0
 
 
 
-_LORA_BEACON_REPORT_REQ_V1 = _descriptor.Descriptor(
-  name='lora_beacon_report_req_v1',
-  full_name='helium.poc_lora.lora_beacon_report_req_v1',
+_IOT_BEACON_REPORT_REQ_V1 = _descriptor.Descriptor(
+  name='iot_beacon_report_req_v1',
+  full_name='helium.poc_iot.iot_beacon_report_req_v1',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='beacon_id', full_name='helium.poc_lora.lora_beacon_report_req_v1.beacon_id', index=0,
+      name='beacon_id', full_name='helium.poc_iot.iot_beacon_report_req_v1.beacon_id', index=0,
       number=1, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='pub_key', full_name='helium.poc_lora.lora_beacon_report_req_v1.pub_key', index=1,
+      name='pub_key', full_name='helium.poc_iot.iot_beacon_report_req_v1.pub_key', index=1,
       number=2, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='local_entropy', full_name='helium.poc_lora.lora_beacon_report_req_v1.local_entropy', index=2,
+      name='local_entropy', full_name='helium.poc_iot.iot_beacon_report_req_v1.local_entropy', index=2,
       number=3, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='remote_entropy', full_name='helium.poc_lora.lora_beacon_report_req_v1.remote_entropy', index=3,
+      name='remote_entropy', full_name='helium.poc_iot.iot_beacon_report_req_v1.remote_entropy', index=3,
       number=4, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='data', full_name='helium.poc_lora.lora_beacon_report_req_v1.data', index=4,
+      name='data', full_name='helium.poc_iot.iot_beacon_report_req_v1.data', index=4,
       number=5, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='frequency', full_name='helium.poc_lora.lora_beacon_report_req_v1.frequency', index=5,
+      name='frequency', full_name='helium.poc_iot.iot_beacon_report_req_v1.frequency', index=5,
       number=6, type=2, cpp_type=6, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='channel', full_name='helium.poc_lora.lora_beacon_report_req_v1.channel', index=6,
+      name='channel', full_name='helium.poc_iot.iot_beacon_report_req_v1.channel', index=6,
       number=7, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='datarate', full_name='helium.poc_lora.lora_beacon_report_req_v1.datarate', index=7,
+      name='datarate', full_name='helium.poc_iot.iot_beacon_report_req_v1.datarate', index=7,
       number=8, type=14, cpp_type=8, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='tx_power', full_name='helium.poc_lora.lora_beacon_report_req_v1.tx_power', index=8,
+      name='tx_power', full_name='helium.poc_iot.iot_beacon_report_req_v1.tx_power', index=8,
       number=9, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='timestamp', full_name='helium.poc_lora.lora_beacon_report_req_v1.timestamp', index=9,
+      name='timestamp', full_name='helium.poc_iot.iot_beacon_report_req_v1.timestamp', index=9,
       number=10, type=4, cpp_type=4, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='signature', full_name='helium.poc_lora.lora_beacon_report_req_v1.signature', index=10,
+      name='signature', full_name='helium.poc_iot.iot_beacon_report_req_v1.signature', index=10,
       number=11, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
@@ -196,16 +196,16 @@ _LORA_BEACON_REPORT_REQ_V1 = _descriptor.Descriptor(
 )
 
 
-_LORA_BEACON_REPORT_RESP_V1 = _descriptor.Descriptor(
-  name='lora_beacon_report_resp_v1',
-  full_name='helium.poc_lora.lora_beacon_report_resp_v1',
+_IOT_BEACON_REPORT_RESP_V1 = _descriptor.Descriptor(
+  name='iot_beacon_report_resp_v1',
+  full_name='helium.poc_iot.iot_beacon_report_resp_v1',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='id', full_name='helium.poc_lora.lora_beacon_report_resp_v1.id', index=0,
+      name='id', full_name='helium.poc_iot.iot_beacon_report_resp_v1.id', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
@@ -228,86 +228,86 @@ _LORA_BEACON_REPORT_RESP_V1 = _descriptor.Descriptor(
 )
 
 
-_LORA_WITNESS_REPORT_REQ_V1 = _descriptor.Descriptor(
-  name='lora_witness_report_req_v1',
-  full_name='helium.poc_lora.lora_witness_report_req_v1',
+_IOT_WITNESS_REPORT_REQ_V1 = _descriptor.Descriptor(
+  name='iot_witness_report_req_v1',
+  full_name='helium.poc_iot.iot_witness_report_req_v1',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='beacon_id', full_name='helium.poc_lora.lora_witness_report_req_v1.beacon_id', index=0,
+      name='beacon_id', full_name='helium.poc_iot.iot_witness_report_req_v1.beacon_id', index=0,
       number=1, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='pub_key', full_name='helium.poc_lora.lora_witness_report_req_v1.pub_key', index=1,
+      name='pub_key', full_name='helium.poc_iot.iot_witness_report_req_v1.pub_key', index=1,
       number=2, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='packet', full_name='helium.poc_lora.lora_witness_report_req_v1.packet', index=2,
+      name='packet', full_name='helium.poc_iot.iot_witness_report_req_v1.packet', index=2,
       number=3, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='timestamp', full_name='helium.poc_lora.lora_witness_report_req_v1.timestamp', index=3,
+      name='timestamp', full_name='helium.poc_iot.iot_witness_report_req_v1.timestamp', index=3,
       number=4, type=4, cpp_type=4, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='ts_res', full_name='helium.poc_lora.lora_witness_report_req_v1.ts_res', index=4,
+      name='ts_res', full_name='helium.poc_iot.iot_witness_report_req_v1.ts_res', index=4,
       number=5, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='signal', full_name='helium.poc_lora.lora_witness_report_req_v1.signal', index=5,
+      name='signal', full_name='helium.poc_iot.iot_witness_report_req_v1.signal', index=5,
       number=6, type=17, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='snr', full_name='helium.poc_lora.lora_witness_report_req_v1.snr', index=6,
+      name='snr', full_name='helium.poc_iot.iot_witness_report_req_v1.snr', index=6,
       number=7, type=2, cpp_type=6, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='frequency', full_name='helium.poc_lora.lora_witness_report_req_v1.frequency', index=7,
+      name='frequency', full_name='helium.poc_iot.iot_witness_report_req_v1.frequency', index=7,
       number=8, type=2, cpp_type=6, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='channel', full_name='helium.poc_lora.lora_witness_report_req_v1.channel', index=8,
+      name='channel', full_name='helium.poc_iot.iot_witness_report_req_v1.channel', index=8,
       number=9, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='datarate', full_name='helium.poc_lora.lora_witness_report_req_v1.datarate', index=9,
+      name='datarate', full_name='helium.poc_iot.iot_witness_report_req_v1.datarate', index=9,
       number=10, type=14, cpp_type=8, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='signature', full_name='helium.poc_lora.lora_witness_report_req_v1.signature', index=10,
+      name='signature', full_name='helium.poc_iot.iot_witness_report_req_v1.signature', index=10,
       number=11, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
@@ -330,16 +330,16 @@ _LORA_WITNESS_REPORT_REQ_V1 = _descriptor.Descriptor(
 )
 
 
-_LORA_WITNESS_REPORT_RESP_V1 = _descriptor.Descriptor(
-  name='lora_witness_report_resp_v1',
-  full_name='helium.poc_lora.lora_witness_report_resp_v1',
+_IOT_WITNESS_REPORT_RESP_V1 = _descriptor.Descriptor(
+  name='iot_witness_report_resp_v1',
+  full_name='helium.poc_iot.iot_witness_report_resp_v1',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='id', full_name='helium.poc_lora.lora_witness_report_resp_v1.id', index=0,
+      name='id', full_name='helium.poc_iot.iot_witness_report_resp_v1.id', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
@@ -364,28 +364,28 @@ _LORA_WITNESS_REPORT_RESP_V1 = _descriptor.Descriptor(
 
 _INVALID_BEACON_REPORT_V1 = _descriptor.Descriptor(
   name='invalid_beacon_report_v1',
-  full_name='helium.poc_lora.invalid_beacon_report_v1',
+  full_name='helium.poc_iot.invalid_beacon_report_v1',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='beacon', full_name='helium.poc_lora.invalid_beacon_report_v1.beacon', index=0,
+      name='beacon', full_name='helium.poc_iot.invalid_beacon_report_v1.beacon', index=0,
       number=1, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='invalid_reason', full_name='helium.poc_lora.invalid_beacon_report_v1.invalid_reason', index=1,
+      name='invalid_reason', full_name='helium.poc_iot.invalid_beacon_report_v1.invalid_reason', index=1,
       number=2, type=14, cpp_type=8, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='invalid_details', full_name='helium.poc_lora.invalid_beacon_report_v1.invalid_details', index=2,
+      name='invalid_details', full_name='helium.poc_iot.invalid_beacon_report_v1.invalid_details', index=2,
       number=3, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
@@ -410,28 +410,28 @@ _INVALID_BEACON_REPORT_V1 = _descriptor.Descriptor(
 
 _INVALID_WITNESS_REPORT_V1 = _descriptor.Descriptor(
   name='invalid_witness_report_v1',
-  full_name='helium.poc_lora.invalid_witness_report_v1',
+  full_name='helium.poc_iot.invalid_witness_report_v1',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='witness', full_name='helium.poc_lora.invalid_witness_report_v1.witness', index=0,
+      name='witness', full_name='helium.poc_iot.invalid_witness_report_v1.witness', index=0,
       number=1, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='invalid_reason', full_name='helium.poc_lora.invalid_witness_report_v1.invalid_reason', index=1,
+      name='invalid_reason', full_name='helium.poc_iot.invalid_witness_report_v1.invalid_reason', index=1,
       number=2, type=14, cpp_type=8, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='invalid_details', full_name='helium.poc_lora.invalid_witness_report_v1.invalid_details', index=2,
+      name='invalid_details', full_name='helium.poc_iot.invalid_witness_report_v1.invalid_details', index=2,
       number=3, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
@@ -456,28 +456,28 @@ _INVALID_WITNESS_REPORT_V1 = _descriptor.Descriptor(
 
 _VALID_POC_V1 = _descriptor.Descriptor(
   name='valid_poc_v1',
-  full_name='helium.poc_lora.valid_poc_v1',
+  full_name='helium.poc_iot.valid_poc_v1',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='poc_id', full_name='helium.poc_lora.valid_poc_v1.poc_id', index=0,
+      name='poc_id', full_name='helium.poc_iot.valid_poc_v1.poc_id', index=0,
       number=1, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='beacon_report', full_name='helium.poc_lora.valid_poc_v1.beacon_report', index=1,
+      name='beacon_report', full_name='helium.poc_iot.valid_poc_v1.beacon_report', index=1,
       number=2, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='witness_reports', full_name='helium.poc_lora.valid_poc_v1.witness_reports', index=2,
+      name='witness_reports', full_name='helium.poc_iot.valid_poc_v1.witness_reports', index=2,
       number=3, type=11, cpp_type=10, label=3,
       has_default_value=False, default_value=[],
       message_type=None, enum_type=None, containing_type=None,
@@ -499,18 +499,18 @@ _VALID_POC_V1 = _descriptor.Descriptor(
   serialized_end=1142,
 )
 
-_LORA_BEACON_REPORT_REQ_V1.fields_by_name['datarate'].enum_type = _DATA_RATE
-_LORA_WITNESS_REPORT_REQ_V1.fields_by_name['datarate'].enum_type = _DATA_RATE
-_INVALID_BEACON_REPORT_V1.fields_by_name['beacon'].message_type = _LORA_BEACON_REPORT_REQ_V1
+_IOT_BEACON_REPORT_REQ_V1.fields_by_name['datarate'].enum_type = _DATA_RATE
+_IOT_WITNESS_REPORT_REQ_V1.fields_by_name['datarate'].enum_type = _DATA_RATE
+_INVALID_BEACON_REPORT_V1.fields_by_name['beacon'].message_type = _IOT_BEACON_REPORT_REQ_V1
 _INVALID_BEACON_REPORT_V1.fields_by_name['invalid_reason'].enum_type = _INVALID_REASON
-_INVALID_WITNESS_REPORT_V1.fields_by_name['witness'].message_type = _LORA_WITNESS_REPORT_REQ_V1
+_INVALID_WITNESS_REPORT_V1.fields_by_name['witness'].message_type = _IOT_WITNESS_REPORT_REQ_V1
 _INVALID_WITNESS_REPORT_V1.fields_by_name['invalid_reason'].enum_type = _INVALID_REASON
-_VALID_POC_V1.fields_by_name['beacon_report'].message_type = _LORA_BEACON_REPORT_REQ_V1
-_VALID_POC_V1.fields_by_name['witness_reports'].message_type = _LORA_WITNESS_REPORT_REQ_V1
-DESCRIPTOR.message_types_by_name['lora_beacon_report_req_v1'] = _LORA_BEACON_REPORT_REQ_V1
-DESCRIPTOR.message_types_by_name['lora_beacon_report_resp_v1'] = _LORA_BEACON_REPORT_RESP_V1
-DESCRIPTOR.message_types_by_name['lora_witness_report_req_v1'] = _LORA_WITNESS_REPORT_REQ_V1
-DESCRIPTOR.message_types_by_name['lora_witness_report_resp_v1'] = _LORA_WITNESS_REPORT_RESP_V1
+_VALID_POC_V1.fields_by_name['beacon_report'].message_type = _IOT_BEACON_REPORT_REQ_V1
+_VALID_POC_V1.fields_by_name['witness_reports'].message_type = _IOT_WITNESS_REPORT_REQ_V1
+DESCRIPTOR.message_types_by_name['iot_beacon_report_req_v1'] = _IOT_BEACON_REPORT_REQ_V1
+DESCRIPTOR.message_types_by_name['iot_beacon_report_resp_v1'] = _IOT_BEACON_REPORT_RESP_V1
+DESCRIPTOR.message_types_by_name['iot_witness_report_req_v1'] = _IOT_WITNESS_REPORT_REQ_V1
+DESCRIPTOR.message_types_by_name['iot_witness_report_resp_v1'] = _IOT_WITNESS_REPORT_RESP_V1
 DESCRIPTOR.message_types_by_name['invalid_beacon_report_v1'] = _INVALID_BEACON_REPORT_V1
 DESCRIPTOR.message_types_by_name['invalid_witness_report_v1'] = _INVALID_WITNESS_REPORT_V1
 DESCRIPTOR.message_types_by_name['valid_poc_v1'] = _VALID_POC_V1
@@ -518,60 +518,60 @@ DESCRIPTOR.enum_types_by_name['data_rate'] = _DATA_RATE
 DESCRIPTOR.enum_types_by_name['invalid_reason'] = _INVALID_REASON
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
-lora_beacon_report_req_v1 = _reflection.GeneratedProtocolMessageType('lora_beacon_report_req_v1', (_message.Message,), {
-  'DESCRIPTOR' : _LORA_BEACON_REPORT_REQ_V1,
-  '__module__' : 'lora_pb2'
-  # @@protoc_insertion_point(class_scope:helium.poc_lora.lora_beacon_report_req_v1)
+iot_beacon_report_req_v1 = _reflection.GeneratedProtocolMessageType('iot_beacon_report_req_v1', (_message.Message,), {
+  'DESCRIPTOR' : _IOT_BEACON_REPORT_REQ_V1,
+  '__module__' : 'iot_pb2'
+  # @@protoc_insertion_point(class_scope:helium.poc_iot.iot_beacon_report_req_v1)
   })
-_sym_db.RegisterMessage(lora_beacon_report_req_v1)
+_sym_db.RegisterMessage(iot_beacon_report_req_v1)
 
-lora_beacon_report_resp_v1 = _reflection.GeneratedProtocolMessageType('lora_beacon_report_resp_v1', (_message.Message,), {
-  'DESCRIPTOR' : _LORA_BEACON_REPORT_RESP_V1,
-  '__module__' : 'lora_pb2'
-  # @@protoc_insertion_point(class_scope:helium.poc_lora.lora_beacon_report_resp_v1)
+iot_beacon_report_resp_v1 = _reflection.GeneratedProtocolMessageType('iot_beacon_report_resp_v1', (_message.Message,), {
+  'DESCRIPTOR' : _IOT_BEACON_REPORT_RESP_V1,
+  '__module__' : 'iot_pb2'
+  # @@protoc_insertion_point(class_scope:helium.poc_iot.iot_beacon_report_resp_v1)
   })
-_sym_db.RegisterMessage(lora_beacon_report_resp_v1)
+_sym_db.RegisterMessage(iot_beacon_report_resp_v1)
 
-lora_witness_report_req_v1 = _reflection.GeneratedProtocolMessageType('lora_witness_report_req_v1', (_message.Message,), {
-  'DESCRIPTOR' : _LORA_WITNESS_REPORT_REQ_V1,
-  '__module__' : 'lora_pb2'
-  # @@protoc_insertion_point(class_scope:helium.poc_lora.lora_witness_report_req_v1)
+iot_witness_report_req_v1 = _reflection.GeneratedProtocolMessageType('iot_witness_report_req_v1', (_message.Message,), {
+  'DESCRIPTOR' : _IOT_WITNESS_REPORT_REQ_V1,
+  '__module__' : 'iot_pb2'
+  # @@protoc_insertion_point(class_scope:helium.poc_iot.iot_witness_report_req_v1)
   })
-_sym_db.RegisterMessage(lora_witness_report_req_v1)
+_sym_db.RegisterMessage(iot_witness_report_req_v1)
 
-lora_witness_report_resp_v1 = _reflection.GeneratedProtocolMessageType('lora_witness_report_resp_v1', (_message.Message,), {
-  'DESCRIPTOR' : _LORA_WITNESS_REPORT_RESP_V1,
-  '__module__' : 'lora_pb2'
-  # @@protoc_insertion_point(class_scope:helium.poc_lora.lora_witness_report_resp_v1)
+iot_witness_report_resp_v1 = _reflection.GeneratedProtocolMessageType('iot_witness_report_resp_v1', (_message.Message,), {
+  'DESCRIPTOR' : _IOT_WITNESS_REPORT_RESP_V1,
+  '__module__' : 'iot_pb2'
+  # @@protoc_insertion_point(class_scope:helium.poc_iot.iot_witness_report_resp_v1)
   })
-_sym_db.RegisterMessage(lora_witness_report_resp_v1)
+_sym_db.RegisterMessage(iot_witness_report_resp_v1)
 
 invalid_beacon_report_v1 = _reflection.GeneratedProtocolMessageType('invalid_beacon_report_v1', (_message.Message,), {
   'DESCRIPTOR' : _INVALID_BEACON_REPORT_V1,
-  '__module__' : 'lora_pb2'
-  # @@protoc_insertion_point(class_scope:helium.poc_lora.invalid_beacon_report_v1)
+  '__module__' : 'iot_pb2'
+  # @@protoc_insertion_point(class_scope:helium.poc_iot.invalid_beacon_report_v1)
   })
 _sym_db.RegisterMessage(invalid_beacon_report_v1)
 
 invalid_witness_report_v1 = _reflection.GeneratedProtocolMessageType('invalid_witness_report_v1', (_message.Message,), {
   'DESCRIPTOR' : _INVALID_WITNESS_REPORT_V1,
-  '__module__' : 'lora_pb2'
-  # @@protoc_insertion_point(class_scope:helium.poc_lora.invalid_witness_report_v1)
+  '__module__' : 'iot_pb2'
+  # @@protoc_insertion_point(class_scope:helium.poc_iot.invalid_witness_report_v1)
   })
 _sym_db.RegisterMessage(invalid_witness_report_v1)
 
 valid_poc_v1 = _reflection.GeneratedProtocolMessageType('valid_poc_v1', (_message.Message,), {
   'DESCRIPTOR' : _VALID_POC_V1,
-  '__module__' : 'lora_pb2'
-  # @@protoc_insertion_point(class_scope:helium.poc_lora.valid_poc_v1)
+  '__module__' : 'iot_pb2'
+  # @@protoc_insertion_point(class_scope:helium.poc_iot.valid_poc_v1)
   })
 _sym_db.RegisterMessage(valid_poc_v1)
 
 
 
-_POC_LORA = _descriptor.ServiceDescriptor(
-  name='poc_lora',
-  full_name='helium.poc_lora.poc_lora',
+_POC_IOT = _descriptor.ServiceDescriptor(
+  name='poc_iot',
+  full_name='helium.poc_iot.poc_iot',
   file=DESCRIPTOR,
   index=0,
   serialized_options=None,
@@ -580,28 +580,28 @@ _POC_LORA = _descriptor.ServiceDescriptor(
   serialized_end=1502,
   methods=[
   _descriptor.MethodDescriptor(
-    name='submit_lora_beacon',
-    full_name='helium.poc_lora.poc_lora.submit_lora_beacon',
+    name='submit_iot_beacon',
+    full_name='helium.poc_iot.poc_iot.submit_iot_beacon',
     index=0,
     containing_service=None,
-    input_type=_LORA_BEACON_REPORT_REQ_V1,
-    output_type=_LORA_BEACON_REPORT_RESP_V1,
+    input_type=_IOT_BEACON_REPORT_REQ_V1,
+    output_type=_IOT_BEACON_REPORT_RESP_V1,
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
   ),
   _descriptor.MethodDescriptor(
-    name='submit_lora_witness',
-    full_name='helium.poc_lora.poc_lora.submit_lora_witness',
+    name='submit_iot_witness',
+    full_name='helium.poc_iot.poc_iot.submit_iot_witness',
     index=1,
     containing_service=None,
-    input_type=_LORA_WITNESS_REPORT_REQ_V1,
-    output_type=_LORA_WITNESS_REPORT_RESP_V1,
+    input_type=_IOT_WITNESS_REPORT_REQ_V1,
+    output_type=_IOT_WITNESS_REPORT_RESP_V1,
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
   ),
 ])
-_sym_db.RegisterServiceDescriptor(_POC_LORA)
+_sym_db.RegisterServiceDescriptor(_POC_IOT)
 
-DESCRIPTOR.services_by_name['poc_lora'] = _POC_LORA
+DESCRIPTOR.services_by_name['poc_iot'] = _POC_IOT
 
 # @@protoc_insertion_point(module_scope)
