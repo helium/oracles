@@ -1,5 +1,6 @@
 use crate::{
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
+    settings::FollowerClients,
     Error, GatewayInfoStream, Result, Settings,
 };
 use futures::stream::{self, StreamExt};
@@ -11,13 +12,14 @@ use helium_proto::services::{
     },
     Channel,
 };
+use rand::{seq::SliceRandom, thread_rng};
 use tonic::Streaming;
 
 type FollowerClient = follower::Client<Channel>;
 
 #[derive(Debug, Clone)]
 pub struct FollowerService {
-    pub client: FollowerClient,
+    pub clients: FollowerClients,
     batch_size: u32,
 }
 
@@ -27,7 +29,9 @@ impl GatewayInfoResolver for FollowerService {
         let req = FollowerGatewayReqV1 {
             address: address.clone().into(),
         };
-        let res = self.client.find_gateway(req).await?.into_inner();
+        let mut client = self.random_client()?;
+
+        let res = client.find_gateway(req).await?.into_inner();
         match res.result {
             Some(GatewayResult::Info(gateway_info)) => Ok(gateway_info.try_into()?),
             _ => Err(Error::GatewayNotFound(format!("{address:?}"))),
@@ -38,8 +42,16 @@ impl GatewayInfoResolver for FollowerService {
 impl FollowerService {
     pub fn from_settings(settings: &Settings) -> Self {
         Self {
-            client: settings.connect_follower(),
+            clients: settings.connect_followers(),
             batch_size: settings.batch,
+        }
+    }
+
+    pub fn random_client(&self) -> Result<FollowerClient> {
+        let mut rng = thread_rng();
+        match self.clients.choose(&mut rng).cloned() {
+            Some(c) => Ok(c),
+            None => Err(Error::ClientNotFound),
         }
     }
 
@@ -57,7 +69,8 @@ impl FollowerService {
             txn_hash: txn_hash.to_vec(),
             txn_types: txn_types.iter().map(|e| e.to_string()).collect(),
         };
-        let res = self.client.txn_stream(req).await?.into_inner();
+        let mut client = self.random_client()?;
+        let res = client.txn_stream(req).await?.into_inner();
         Ok(res)
     }
 
@@ -65,8 +78,10 @@ impl FollowerService {
         let req = FollowerGatewayStreamReqV1 {
             batch_size: self.batch_size,
         };
-        let gw_stream = self
-            .client
+
+        let mut client = self.random_client()?;
+
+        let gw_stream = client
             .active_gateways(req)
             .await?
             .into_inner()

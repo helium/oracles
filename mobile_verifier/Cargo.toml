@@ -35,9 +35,18 @@ rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
+rand = {workspace = true}
 file-store = {path = "../file_store"}
 db-store = { path = "../db_store" }
 poc-metrics = {path = "../metrics"}
 node-follower = {path = "../node_follower"}
-rand = {workspace = true}
 async-trait = {workspace = true}
+
+[package.metadata.deb]
+depends = "$auto"
+assets = [
+    ["target/release/poc-mobile-verifier", "/opt/poc-mobile-verifier/bin/", "755"],
+    ["pkg/deb/env-template", "/usr/share/poc-mobile-verifier/env-template", "644"]
+]
+maintainer-scripts = "pkg/deb/"
+systemd-units = { }

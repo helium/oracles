@@ -12,18 +12,14 @@ use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn,
     services::{
-        follower::{
-            self, FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamReqV1,
-            FollowerTxnStreamRespV1,
-        },
+        follower::{FollowerSubnetworkLastRewardHeightReqV1, FollowerTxnStreamRespV1},
         poc_mobile::RadioRewardShare,
         transaction::{TxnQueryRespV1, TxnStatus as ProtoTxnStatus},
-        Channel,
     },
     BlockchainTokenTypeV1, BlockchainTxn, BlockchainTxnSubnetworkRewardsV1, Message,
     RewardManifest, SubnetworkReward,
 };
-use node_follower::txn_service::TransactionService;
+use node_follower::{follower_service::FollowerService, txn_service::TransactionService};
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
@@ -41,7 +37,7 @@ pub const TXN_TYPES: &[&str] = &["blockchain_txn_subnetwork_rewards_v1"];
 pub struct Server {
     pool: Pool<Postgres>,
     keypair: Keypair,
-    follower_client: follower::Client<Channel>,
+    follower_service: FollowerService,
     txn_service: TransactionService,
     last_follower_height: MetaValue<i64>,
     trigger_interval: Duration,
@@ -58,7 +54,7 @@ impl Server {
             .unwrap_or(DEFAULT_START_REWARD_BLOCK);
         Ok(Self {
             keypair,
-            follower_client: settings.follower.connect_follower(),
+            follower_service: FollowerService::from_settings(&settings.follower),
             txn_service: TransactionService::from_settings(&settings.transactions),
             trigger_interval: Duration::seconds(settings.trigger),
             last_follower_height: MetaValue::<i64>::fetch_or_insert_with(
@@ -89,7 +85,7 @@ impl Server {
             tracing::info!("connecting to blockchain txn stream at height {curr_height}");
             tokio::select! {
                 _ = shutdown.clone() => (),
-                stream_result = txn_stream(&mut self.follower_client, curr_height, &[], TXN_TYPES) => match stream_result {
+                stream_result = self.follower_service.txn_stream(curr_height, &[], TXN_TYPES) => match stream_result {
                     Ok(txn_stream) => {
                         tracing::info!("connected to txn stream");
                         self.run_with_txn_stream(txn_stream, shutdown.clone()).await?
@@ -182,7 +178,7 @@ impl Server {
 
     async fn process_clock_tick(&mut self) -> Result<()> {
         let now = Utc::now();
-        let reward_period = reward_period(&mut self.follower_client).await?;
+        let reward_period = reward_period(&mut self.follower_service).await?;
         let current_height = reward_period.end;
         tracing::info!(
             "processing clock tick at height {} with time {}",
@@ -375,25 +371,8 @@ impl Server {
     }
 }
 
-async fn txn_stream<T>(
-    client: &mut follower::Client<Channel>,
-    height: u64,
-    txn_hash: &[u8],
-    txn_types: &[T],
-) -> Result<Streaming<FollowerTxnStreamRespV1>>
-where
-    T: ToString,
-{
-    let req = FollowerTxnStreamReqV1 {
-        height,
-        txn_hash: txn_hash.to_vec(),
-        txn_types: txn_types.iter().map(|e| e.to_string()).collect(),
-    };
-    let res = client.txn_stream(req).await?.into_inner();
-    Ok(res)
-}
-
-async fn reward_period(client: &mut follower::Client<Channel>) -> Result<Range<u64>> {
+async fn reward_period(follower_service: &mut FollowerService) -> Result<Range<u64>> {
+    let mut client = follower_service.random_client()?;
     let res = client
         .subnetwork_last_reward_height(FollowerSubnetworkLastRewardHeightReqV1 {
             token_type: BlockchainTokenTypeV1::Mobile as i32,

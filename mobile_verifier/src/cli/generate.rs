@@ -31,8 +31,8 @@ impl Cmd {
         let epoch = start..end;
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
-        let follower = settings.follower.connect_follower();
-        let mut verifier = Verifier::new(file_store, follower);
+        let follower = settings.follower.connect_followers();
+        let mut verifier = Verifier::new(file_store, follower[0].clone());
 
         let VerifiedEpoch {
             heartbeats,

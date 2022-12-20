@@ -31,13 +31,14 @@ impl Cmd {
         let expected_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
             .expect("Couldn't get expected rewards");
 
-        let mut follower = settings.follower.connect_follower();
+        let follower = settings.follower.connect_followers();
         let pool = settings.database.connect(10).await?;
 
         let heartbeats = Heartbeats::validated(&pool).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
         let owner_shares =
-            OwnerShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
+            OwnerShares::aggregate(&mut follower[0].clone(), heartbeats, speedtests.clone())
+                .await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();

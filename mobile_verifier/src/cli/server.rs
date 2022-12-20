@@ -77,13 +77,13 @@ impl Cmd {
         .create()
         .await?;
 
-        let follower = settings.follower.connect_follower();
+        let follower = settings.follower.connect_followers();
 
         let reward_period_hours = settings.rewards;
         let verifications_per_period = settings.verifications;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let verifier = Verifier::new(file_store, follower);
+        let verifier = Verifier::new(file_store, follower[0].clone());
 
         let verifier_daemon = VerifierDaemon {
             verification_offset: settings.verification_offset_duration(),

@@ -1,4 +1,4 @@
-use crate::{Result, Settings};
+use crate::{settings::TxnClients, Error, Result, Settings};
 use helium_proto::{
     services::{
         transaction::{self, TxnQueryReqV1, TxnQueryRespV1, TxnSubmitReqV1, TxnSubmitRespV1},
@@ -6,18 +6,27 @@ use helium_proto::{
     },
     BlockchainTxn,
 };
+use rand::{seq::SliceRandom, thread_rng};
 
 type TransactionClient = transaction::Client<Channel>;
 
 #[derive(Debug, Clone)]
 pub struct TransactionService {
-    client: TransactionClient,
+    clients: TxnClients,
 }
 
 impl TransactionService {
     pub fn from_settings(settings: &Settings) -> Self {
         Self {
-            client: settings.connect_transactions(),
+            clients: settings.connect_transactions(),
+        }
+    }
+
+    pub fn random_client(&self) -> Result<TransactionClient> {
+        let mut rng = thread_rng();
+        match self.clients.choose(&mut rng).cloned() {
+            Some(client) => Ok(client),
+            None => Err(Error::ClientNotFound),
         }
     }
 
@@ -26,13 +35,16 @@ impl TransactionService {
             txn: Some(txn),
             key: key.to_vec(),
         };
-        let res = self.client.submit(req).await?.into_inner();
+
+        let mut client = self.random_client()?;
+        let res = client.submit(req).await?.into_inner();
         Ok(res)
     }
 
     pub async fn query(&mut self, key: &[u8]) -> Result<TxnQueryRespV1> {
         let req = TxnQueryReqV1 { key: key.to_vec() };
-        let res = self.client.query(req).await?.into_inner();
+        let mut client = self.random_client()?;
+        let res = client.query(req).await?.into_inner();
         Ok(res)
     }
 }
