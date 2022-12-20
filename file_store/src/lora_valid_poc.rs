@@ -11,9 +11,10 @@ use helium_proto::services::poc_lora::{
     LoraWitnessReportReqV1,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal_macros::dec;
 use serde::Serialize;
 
-const SCALE_MULTIPLIER: Decimal = Decimal::ONE_HUNDRED;
+const SCALE_MULTIPLIER: Decimal = dec!(10000);
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LoraValidBeaconReport {
