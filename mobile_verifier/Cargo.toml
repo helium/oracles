@@ -1,5 +1,5 @@
 [package]
-name = "poc-mobile-verifier"
+name = "mobile-verifier"
 version = "0.1.0"
 description = "Heartbeat and speed share verification for rewards"
 license.workspace = true

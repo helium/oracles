@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use poc_mobile_verifier::{
+use mobile_verifier::{
     cli::{generate, reward_from_db, server},
     Settings,
 };
