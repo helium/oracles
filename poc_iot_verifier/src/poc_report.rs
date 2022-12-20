@@ -13,7 +13,7 @@ const REPORT_INSERT_SQL: &str = "insert into poc_report (
     packet_data,
     report_data,
     report_timestamp,
-    report_type
+    report_type,
     status
 ) ";
 
