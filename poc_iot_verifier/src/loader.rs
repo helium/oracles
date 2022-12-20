@@ -1,7 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
-    poc_report::{InsertBindings, Report, ReportType},
+    poc_report::{InsertBindings, Report, ReportType, LoraStatus},
     Settings,
 };
 use chrono::DateTime;
@@ -336,6 +336,7 @@ impl Loader {
                             buf: buf.to_vec(),
                             received_ts: beacon.received_timestamp,
                             report_type: ReportType::Beacon,
+                            status: LoraStatus::Pending,
                         };
                         metrics::increment_counter!("oracles_poc_iot_verifier_loader_beacon");
                         if let Some(xor_data) = xor_data {
@@ -370,6 +371,7 @@ impl Loader {
                                         buf: buf.to_vec(),
                                         received_ts: witness.received_timestamp,
                                         report_type: ReportType::Witness,
+                                        status: LoraStatus::Ready,
                                     };
                                     metrics::increment_counter!(
                                         "oracles_poc_iot_verifier_loader_witness"

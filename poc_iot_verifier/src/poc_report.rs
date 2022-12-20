@@ -14,6 +14,7 @@ const REPORT_INSERT_SQL: &str = "insert into poc_report (
     report_data,
     report_timestamp,
     report_type
+    status
 ) ";
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
@@ -39,6 +40,7 @@ pub struct InsertBindings {
     pub buf: Vec<u8>,
     pub received_ts: DateTime<Utc>,
     pub report_type: ReportType,
+    pub status: LoraStatus,
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -63,6 +65,7 @@ pub struct Report {
 pub struct ReportError(#[from] sqlx::Error);
 
 impl Report {
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_into<'c, E>(
         executor: E,
         id: Vec<u8>,
@@ -71,6 +74,7 @@ impl Report {
         report_data: Vec<u8>,
         report_timestamp: &DateTime<Utc>,
         report_type: ReportType,
+        status: LoraStatus,
     ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -83,8 +87,9 @@ impl Report {
             packet_data,
             report_data,
             report_timestamp,
-            report_type
-        ) values ($1, $2, $3, $4, $5, $6)
+            report_type,
+            status
+        ) values ($1, $2, $3, $4, $5, $6, $7)
         on conflict (id) do nothing
             "#,
         )
@@ -94,6 +99,7 @@ impl Report {
         .bind(report_data)
         .bind(report_timestamp)
         .bind(report_type)
+        .bind(status)
         .execute(executor)
         .await?;
         Ok(())
@@ -114,7 +120,8 @@ impl Report {
                 .push_bind(insert.packet_data)
                 .push_bind(insert.buf)
                 .push_bind(insert.received_ts)
-                .push_bind(insert.report_type);
+                .push_bind(insert.report_type)
+                .push_bind(insert.status);
         });
 
         let query = query_builder.build();
