@@ -7,7 +7,7 @@ use crate::{
     Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
-use density_scaler::HexDensityMap;
+use density_scaler::{HexDensityMap, SCALING_PRECISION};
 use file_store::{
     file_sink,
     file_sink::MessageSender,
@@ -447,17 +447,18 @@ impl Runner {
 }
 
 fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
-    if num_witnesses == 0 {
-        Ok(Decimal::ZERO)
+    let reward_units = if num_witnesses == 0 {
+        Decimal::ZERO
     } else if num_witnesses < WITNESS_REDUNDANCY {
-        Ok(Decimal::from(WITNESS_REDUNDANCY / num_witnesses))
+        Decimal::from(WITNESS_REDUNDANCY / num_witnesses)
     } else {
         let exp = num_witnesses - WITNESS_REDUNDANCY;
         if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
             let unnormalized = Decimal::TWO - to_sub;
-            Ok(std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized))
+            std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized)
         } else {
             anyhow::bail!("invalid exponent: {}", exp);
         }
-    }
+    };
+    Ok(reward_units.round_dp(SCALING_PRECISION))
 }

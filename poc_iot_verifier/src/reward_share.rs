@@ -80,23 +80,31 @@ impl GatewayShare {
     pub fn shares_from_poc(report: &LoraValidPoc) -> impl Iterator<Item = Self> {
         let mut shares: Vec<Self> = Vec::new();
         let poc_id = report.poc_id.clone();
-        shares.push(Self {
-            hotspot_key: report.beacon_report.report.pub_key.clone(),
-            reward_type: ReportType::Beacon,
-            reward_timestamp: report.beacon_report.received_timestamp,
-            hex_scale: report.beacon_report.hex_scale,
-            reward_unit: report.beacon_report.reward_unit,
-            poc_id: poc_id.clone(),
-        });
-        for witness in &report.witness_reports {
+        let beacon_scaling_factor = report.beacon_report.hex_scale;
+        let beacon_reward_unit = report.beacon_report.reward_unit;
+        if beacon_scaling_factor > Decimal::ZERO && beacon_reward_unit > Decimal::ZERO {
             shares.push(Self {
-                hotspot_key: witness.report.pub_key.clone(),
-                reward_type: ReportType::Witness,
-                reward_timestamp: witness.received_timestamp,
-                hex_scale: witness.hex_scale,
-                reward_unit: witness.reward_unit,
+                hotspot_key: report.beacon_report.report.pub_key.clone(),
+                reward_type: ReportType::Beacon,
+                reward_timestamp: report.beacon_report.received_timestamp,
+                hex_scale: beacon_scaling_factor,
+                reward_unit: beacon_reward_unit,
                 poc_id: poc_id.clone(),
             })
+        };
+        for witness in &report.witness_reports {
+            let witness_hex_scale = witness.hex_scale;
+            let witness_reward_unit = witness.reward_unit;
+            if witness_hex_scale > Decimal::ZERO && witness_reward_unit > Decimal::ZERO {
+                shares.push(Self {
+                    hotspot_key: witness.report.pub_key.clone(),
+                    reward_type: ReportType::Witness,
+                    reward_timestamp: witness.received_timestamp,
+                    hex_scale: witness_hex_scale,
+                    reward_unit: witness_reward_unit,
+                    poc_id: poc_id.clone(),
+                })
+            }
         }
         shares.into_iter()
     }
@@ -205,8 +213,12 @@ impl GatewayShares {
 }
 
 fn rewards_per_share(total_rewards: Decimal, total_shares: Decimal) -> Decimal {
-    (total_rewards / total_shares)
-        .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity)
+    if total_shares > Decimal::ZERO {
+        (total_rewards / total_shares)
+            .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity)
+    } else {
+        Decimal::ZERO
+    }
 }
 
 fn compute_rewards(rewards_per_share: Decimal, shares: Decimal) -> u64 {
