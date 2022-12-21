@@ -123,7 +123,7 @@ impl Poc {
         };
         tracing::debug!("beacon info {:?}", beaconer_info);
         // we have beaconer info, proceed to verifications
-        let last_beacon = LastBeacon::get(pool, &beaconer_pub_key.as_ref()).await?;
+        let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
         match self
             .do_beacon_verifications(last_beacon, &beaconer_info)
             .await
@@ -623,7 +623,6 @@ mod tests {
     use super::*;
     use crate::last_beacon::LastBeacon;
     use chrono::Duration;
-    use helium_crypto::PublicKey;
     use helium_proto::{services::poc_lora::InvalidReason, GatewayStakingMode, Region};
     use std::str::FromStr;
 
@@ -717,9 +716,10 @@ mod tests {
     #[test]
     fn test_verify_self_witness() {
         let key1 =
-            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf").unwrap();
-        let key2 =
-            PublicKeyBinary::from_str("11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo").unwrap();
+            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
+                .unwrap();
+        let key2 = PublicKeyBinary::from_str("11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo")
+            .unwrap();
         assert_eq!(Ok(()), verify_self_witness(&key1, &key2));
         assert_eq!(
             Err(InvalidReason::SelfWitness),
