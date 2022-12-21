@@ -61,7 +61,7 @@ impl GatewayShare {
             r#"
             insert into gateway_shares (hotspot_key, reward_type, reward_timestamp, hex_scale, reward_unit, poc_id)
             values ($1, $2, $3, $4, $5, $6)
-            on confict (hotspot_key, poc_id) do update set
+            on conflict (hotspot_key, poc_id) do update set
             reward_type = EXCLUDED.reward_type, reward_timestamp = EXCLUDED.reward_timestamp, hex_scale = EXCLUDED.hex_scale, reward_unit = EXCLUDED.reward_unit
             returning (xmax = 0) as inserted;
             "#,
