@@ -6,17 +6,16 @@ use serde::{Deserialize, Serialize};
 const BEACON_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
 /// the max number of attempts a failed witness report will be retried
 const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
-/// a period of time in seconds which needs to pass after the ENTROPY_LIFESPAN expires
-/// before which any beacon & witness reports using that entropy will be processed
-//  this is bascially a buffer period which is added to ENTROPY_LIFESPAN
-//  to prevent POC reports being processed *immediately* after the entropy expires
-//  instead there will be a further delay which allows for any *fashionably* late
-//  witness reports to be processed as part of the overall POC
-//  ( processing of POCs occur by first pulling a beacon and then any witnesses
-//    for that beacon, if a witness comes in after the beacon has been processed
-//    then it does not get verified as part of the overall POC but instead will
-//    end up being deemed stale )
-const BEACON_PROCESSING_DELAY: i64 = 60 * 5;
+
+const REPORT_INSERT_SQL: &str = "insert into poc_report (
+    id,
+    remote_entropy,
+    packet_data,
+    report_data,
+    report_timestamp,
+    report_type,
+    status
+) ";
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]
@@ -29,8 +28,19 @@ pub enum ReportType {
 #[sqlx(type_name = "lorastatus", rename_all = "lowercase")]
 pub enum LoraStatus {
     Pending,
+    Ready,
     Valid,
     Invalid,
+}
+
+pub struct InsertBindings {
+    pub id: Vec<u8>,
+    pub remote_entropy: Vec<u8>,
+    pub packet_data: Vec<u8>,
+    pub buf: Vec<u8>,
+    pub received_ts: DateTime<Utc>,
+    pub report_type: ReportType,
+    pub status: LoraStatus,
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -55,6 +65,7 @@ pub struct Report {
 pub struct ReportError(#[from] sqlx::Error);
 
 impl Report {
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_into<'c, E>(
         executor: E,
         id: Vec<u8>,
@@ -63,6 +74,7 @@ impl Report {
         report_data: Vec<u8>,
         report_timestamp: &DateTime<Utc>,
         report_type: ReportType,
+        status: LoraStatus,
     ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -75,8 +87,9 @@ impl Report {
             packet_data,
             report_data,
             report_timestamp,
-            report_type
-        ) values ($1, $2, $3, $4, $5, $6)
+            report_type,
+            status
+        ) values ($1, $2, $3, $4, $5, $6, $7)
         on conflict (id) do nothing
             "#,
         )
@@ -86,9 +99,37 @@ impl Report {
         .bind(report_data)
         .bind(report_timestamp)
         .bind(report_type)
+        .bind(status)
         .execute(executor)
         .await?;
         Ok(())
+    }
+
+    pub async fn bulk_insert<'c, E>(
+        executor: E,
+        bindings: Vec<InsertBindings>,
+    ) -> Result<(), ReportError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+            sqlx::QueryBuilder::new(REPORT_INSERT_SQL);
+        query_builder.push_values(bindings, |mut b, insert| {
+            b.push_bind(insert.id)
+                .push_bind(insert.remote_entropy)
+                .push_bind(insert.packet_data)
+                .push_bind(insert.buf)
+                .push_bind(insert.received_ts)
+                .push_bind(insert.report_type)
+                .push_bind(insert.status);
+        });
+
+        let query = query_builder.build();
+        query
+            .execute(executor)
+            .await
+            .map(|_| ())
+            .map_err(ReportError::from)
     }
 
     pub async fn delete_poc<'c, 'q, E>(
@@ -151,7 +192,6 @@ impl Report {
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
-        let report_min_time = Utc::now() - Duration::seconds(BEACON_PROCESSING_DELAY);
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select poc_report.id,
@@ -167,19 +207,54 @@ impl Report {
                 entropy.timestamp
             from poc_report
             inner join entropy on poc_report.remote_entropy=entropy.data
-            where poc_report.report_type = 'beacon' and status = 'pending'
+            where poc_report.report_type = 'beacon' and status = 'ready'
             and entropy.timestamp < $1
-            and poc_report.created_at < $2
-            and poc_report.attempts < $3
+            and poc_report.attempts < $2
             order by poc_report.created_at asc
             limit 25000
             "#,
         )
         .bind(entropy_min_time)
-        .bind(report_min_time)
         .bind(BEACON_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
         .await?)
+    }
+
+    pub async fn get_pending_beacon_packet_data<'c, E>(
+        executor: E,
+    ) -> Result<Vec<Self>, ReportError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        Ok(sqlx::query_as::<_, Self>(
+            r#"
+            select * from poc_report
+            where report_type = 'beacon' and status = 'pending'
+            "#,
+        )
+        .fetch_all(executor)
+        .await?)
+    }
+
+    pub async fn pending_beacons_to_ready<'c, E>(
+        executor: E,
+        timestamp: DateTime<Utc>,
+    ) -> Result<(), ReportError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query(
+            r#"
+            update poc_report set
+                status = 'ready',
+                last_processed = $1
+            where report_type = 'beacon' and status = 'pending';
+            "#,
+        )
+        .bind(timestamp)
+        .execute(executor)
+        .await?;
+        Ok(())
     }
 
     pub async fn get_witnesses_for_beacon<'c, E>(
@@ -193,7 +268,7 @@ impl Report {
             r#"
             select * from poc_report
             where packet_data = $1
-            and report_type = 'witness' and status = 'pending'
+            and report_type = 'witness'
             and attempts < $2
             "#,
         )
@@ -276,7 +351,7 @@ impl Report {
         Ok(())
     }
 
-    pub async fn get_stale_pending_beacons<'c, E>(
+    pub async fn get_stale_beacons<'c, E>(
         executor: E,
         stale_period: i64,
     ) -> Result<Vec<Self>, ReportError>
@@ -295,7 +370,7 @@ impl Report {
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
-            where report_type = 'beacon' and status = 'pending'
+            where report_type = 'beacon' and status = 'ready'
             and created_at < $1
             "#,
         )
@@ -304,7 +379,7 @@ impl Report {
         .await?)
     }
 
-    pub async fn get_stale_pending_witnesses<'c, E>(
+    pub async fn get_stale_witnesses<'c, E>(
         executor: E,
         stale_period: i64,
     ) -> Result<Vec<Self>, ReportError>
@@ -322,7 +397,7 @@ impl Report {
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select * from poc_report
-            where report_type = 'witness' and status = 'pending'
+            where report_type = 'witness' and status = 'ready'
             and created_at < $1
             "#,
         )

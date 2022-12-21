@@ -20,7 +20,7 @@ pub enum LastBeaconError {
 impl LastBeacon {
     pub async fn insert_kv<'c, E>(
         executor: E,
-        id: &Vec<u8>,
+        id: &[u8],
         val: &str,
     ) -> Result<Self, LastBeaconError>
     where
@@ -39,7 +39,7 @@ impl LastBeacon {
         .await?)
     }
 
-    pub async fn get<'c, E>(executor: E, id: &Vec<u8>) -> Result<Option<Self>, LastBeaconError>
+    pub async fn get<'c, E>(executor: E, id: &[u8]) -> Result<Option<Self>, LastBeaconError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -53,7 +53,7 @@ impl LastBeacon {
 
     pub async fn last_timestamp<'c, E>(
         executor: E,
-        id: &Vec<u8>,
+        id: &[u8],
     ) -> Result<Option<DateTime<Utc>>, LastBeaconError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -77,7 +77,7 @@ impl LastBeacon {
 
     pub async fn update_last_timestamp<'c, E>(
         executor: E,
-        id: &Vec<u8>,
+        id: &[u8],
         timestamp: DateTime<Utc>,
     ) -> Result<(), LastBeaconError>
     where

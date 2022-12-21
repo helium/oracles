@@ -2,7 +2,7 @@ use crate::poc_report::ReportType;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{lora_valid_poc::LoraValidPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora as proto;
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
@@ -35,7 +35,7 @@ fn get_scheduled_tokens(duration: Duration) -> (Decimal, Decimal) {
 
 #[derive(sqlx::FromRow)]
 pub struct GatewayShare {
-    pub hotspot_key: PublicKey,
+    pub hotspot_key: PublicKeyBinary,
     pub reward_type: ReportType,
     pub reward_timestamp: DateTime<Utc>,
     pub hex_scale: Decimal,
@@ -120,7 +120,7 @@ impl RewardShares {
 
 #[derive(Default)]
 pub struct GatewayShares {
-    pub shares: HashMap<PublicKey, RewardShares>,
+    pub shares: HashMap<PublicKeyBinary, RewardShares>,
 }
 
 impl GatewayShares {
@@ -185,7 +185,7 @@ impl GatewayShares {
             .into_iter()
             .map(
                 move |(hotspot_key, reward_shares)| proto::GatewayRewardShare {
-                    hotspot_key: hotspot_key.to_vec(),
+                    hotspot_key: hotspot_key.into(),
                     beacon_amount: compute_rewards(
                         beacon_rewards_per_share,
                         reward_shares.beacon_shares,
@@ -229,22 +229,22 @@ mod test {
 
     #[test]
     fn test_reward_share_calculation() {
-        let gw1: PublicKey = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
-        let gw2: PublicKey = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed gw2 parse");
-        let gw3: PublicKey = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
+        let gw3: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
             .parse()
             .expect("failed gw3 parse");
-        let gw4: PublicKey = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
+        let gw4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
             .parse()
             .expect("failed gw4 parse");
-        let gw5: PublicKey = "112j1iw1sV2B2Tz2DxPSeum9Cmc5kMKNdDTDg1zDRsdwuvZueq3B"
+        let gw5: PublicKeyBinary = "112j1iw1sV2B2Tz2DxPSeum9Cmc5kMKNdDTDg1zDRsdwuvZueq3B"
             .parse()
             .expect("failed gw5 parse");
-        let gw6: PublicKey = "11fCasUk9XvU15ktsMMH64J9E7XuqQ2L5FJPv8HZMCDG6kdZ3SC"
+        let gw6: PublicKeyBinary = "11fCasUk9XvU15ktsMMH64J9E7XuqQ2L5FJPv8HZMCDG6kdZ3SC"
             .parse()
             .expect("failed gw6 parse");
 
@@ -260,7 +260,7 @@ mod test {
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
 
-        let rewards: HashMap<PublicKey, proto::GatewayRewardShare> = gw_shares
+        let rewards: HashMap<PublicKeyBinary, proto::GatewayRewardShare> = gw_shares
             .into_gateway_reward_shares(&reward_period)
             .map(|reward| {
                 (

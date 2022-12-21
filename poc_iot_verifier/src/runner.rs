@@ -35,7 +35,7 @@ use std::path::Path;
 use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60);
+const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const BEACON_WORKERS: usize = 100;
 const RUNNER_DB_POOL_SIZE: usize = BEACON_WORKERS * 4;
 
@@ -84,7 +84,7 @@ impl Runner {
             lora_invalid_beacon_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(15))
+        .roll_time(ChronoDuration::minutes(5))
         .create()
         .await?;
 
@@ -94,7 +94,7 @@ impl Runner {
             lora_invalid_witness_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(15))
+        .roll_time(ChronoDuration::minutes(5))
         .create()
         .await?;
 
@@ -104,7 +104,7 @@ impl Runner {
             lora_valid_poc_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(10))
+        .roll_time(ChronoDuration::minutes(2))
         .create()
         .await?;
 
@@ -236,7 +236,7 @@ impl Runner {
                 tracing::debug!(
                     "valid beacon. entropy: {:?}, addr: {:?}",
                     beacon.data,
-                    beacon.pub_key.to_string()
+                    beacon.pub_key
                 );
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
@@ -287,10 +287,10 @@ impl Runner {
                     .invalid_reason else {
                         anyhow::bail!("invalid_reason is None");
                     };
-                tracing::info!(
+                tracing::debug!(
                     "invalid beacon. entropy: {:?}, addr: {:?}, reason: {:?}",
                     beacon.data,
-                    beacon.pub_key.to_string(),
+                    beacon.pub_key,
                     invalid_reason
                 );
                 self.handle_invalid_poc(
@@ -308,7 +308,7 @@ impl Runner {
                 tracing::info!(
                     "failed beacon. entropy: {:?}, addr: {:?}",
                     beacon.data,
-                    beacon.pub_key.to_string()
+                    beacon.pub_key
                 );
                 Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now()).await?;
             }
@@ -390,7 +390,7 @@ impl Runner {
         lora_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
-        let pub_key = valid_beacon_report.report.pub_key.to_vec();
+        let pub_key = valid_beacon_report.report.pub_key.clone();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -440,8 +440,7 @@ impl Runner {
             }
         }
         // update timestamp of last beacon for the beaconer
-        LastBeacon::update_last_timestamp(&self.pool, &pub_key.to_vec(), received_timestamp)
-            .await?;
+        LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
         Report::delete_poc(&self.pool, &packet_data).await?;
         Ok(())
     }

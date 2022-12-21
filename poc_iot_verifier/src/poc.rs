@@ -123,9 +123,28 @@ impl Poc {
         };
         tracing::debug!("beacon info {:?}", beaconer_info);
 
+        // verify the beaconer's remote entropy
+        // if beacon received timestamp is outside of entopy start/end then reject the poc
+        if beacon_received_ts < self.entropy_start || beacon_received_ts > self.entropy_end {
+            tracing::debug!(
+                "beacon verification failed, reason: {:?}. beacon_received_ts: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
+                InvalidReason::BadEntropy,
+                beacon_received_ts,
+                self.entropy_start,
+                self.entropy_end
+            );
+            let resp = VerifyBeaconResult {
+                result: VerificationStatus::Invalid,
+                invalid_reason: Some(InvalidReason::BadEntropy),
+                gateway_info: Some(beaconer_info),
+                hex_scale: None,
+            };
+            return Ok(resp);
+        }
+
         // is beaconer allowed to beacon at this time ?
         // any irregularily timed beacons will be rejected
-        match LastBeacon::get(pool, &beaconer_pub_key.to_vec()).await? {
+        match LastBeacon::get(pool, beaconer_pub_key.as_ref()).await? {
             Some(last_beacon) => {
                 let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
                 if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
@@ -147,25 +166,6 @@ impl Poc {
             None => {
                 tracing::debug!("no last beacon timestamp available for this beaconer, ignoring ");
             }
-        }
-
-        // verify the beaconer's remote entropy
-        // if beacon received timestamp is outside of entopy start/end then reject the poc
-        if beacon_received_ts < self.entropy_start || beacon_received_ts > self.entropy_end {
-            tracing::debug!(
-                "beacon verification failed, reason: {:?}. beacon_received_ts: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
-                InvalidReason::BadEntropy,
-                beacon_received_ts,
-                self.entropy_start,
-                self.entropy_end
-            );
-            let resp = VerifyBeaconResult {
-                result: VerificationStatus::Invalid,
-                invalid_reason: Some(InvalidReason::BadEntropy),
-                gateway_info: Some(beaconer_info),
-                hex_scale: None,
-            };
-            return Ok(resp);
         }
 
         //check beaconer has an asserted location
