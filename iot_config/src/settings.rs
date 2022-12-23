@@ -1,4 +1,5 @@
 use config::{Config, Environment, File};
+use helium_crypto::Network;
 use serde::Deserialize;
 use std::{
     net::{AddrParseError, SocketAddr},
@@ -15,6 +16,8 @@ pub struct Settings {
     /// Listen address. Required. Default is 0.0.0.0:8080
     #[serde(default = "default_listen_addr")]
     pub listen: String,
+    /// Network required in all public keys: mainnet | testnet
+    pub network: Network,
     pub database: db_store::Settings,
     pub metrics: poc_metrics::Settings,
 }

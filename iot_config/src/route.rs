@@ -266,7 +266,7 @@ impl FlowType {
     fn from_i32(v: i32) -> Result<Self, UnsupportedFlowTypeError> {
         proto::FlowTypeV1::from_i32(v)
             .map(|ft| ft.into())
-            .ok_or_else(|| UnsupportedFlowTypeError(v))
+            .ok_or(UnsupportedFlowTypeError(v))
     }
 }
 

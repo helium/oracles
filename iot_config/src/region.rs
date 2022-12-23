@@ -29,7 +29,7 @@ impl Region {
     pub fn from_i32(v: i32) -> Result<Self, UnsupportedRegionError> {
         ProtoRegion::from_i32(v)
             .map(|r| r.into())
-            .ok_or_else(|| UnsupportedRegionError(v))
+            .ok_or(UnsupportedRegionError(v))
     }
 }
 
