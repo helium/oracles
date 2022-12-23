@@ -1855,9 +1855,8 @@ dependencies = [
 
 [[package]]
 name = "helium-crypto"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7701cb46d87e69c557c5a26a5f71b0932e27bd9a08332fc707e0f8754ad5aa0"
+version = "0.6.1"
+source = "git+https://github.com/helium/helium-crypto-rs?branch=main#a28268c9e17dc5551f33f7672fbdf0d7f4ef6755"
 dependencies = [
  "base64",
  "bs58",
@@ -1868,7 +1867,7 @@ dependencies = [
  "p256",
  "rand_core",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "signature",
  "sqlx",
  "thiserror",
@@ -2130,6 +2129,7 @@ dependencies = [
  "clap 3.2.23",
  "config",
  "db-store",
+ "file-store",
  "futures",
  "futures-util",
  "helium-crypto",

@@ -19,3 +19,6 @@ use tonic::{Response, Status};
 
 pub type GrpcResult<T> = Result<Response<T>, Status>;
 pub type GrpcStreamResult<T> = ReceiverStream<Result<T, Status>>;
+
+pub const HELIUM_NET_ID: u64 = 0xc00053;
+pub const HELIUM_NWK_ID: u32 = 83;

@@ -15,9 +15,9 @@ pub mod proto {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DevAddrRange {
     #[serde(alias = "lower")]
-    start_addr: DevAddrField,
+    pub start_addr: DevAddrField,
     #[serde(alias = "upper")]
-    end_addr: DevAddrField,
+    pub end_addr: DevAddrField,
 }
 
 impl DevAddrRange {
@@ -182,15 +182,15 @@ impl<'de, const WIDTH: usize> Deserialize<'de> for LoraField<WIDTH> {
 }
 
 pub fn validate_net_id(s: &str) -> Result<NetIdField, NetIdError> {
-    NetIdField::from_str(s).map_err(|e| NetIdError(e))
+    NetIdField::from_str(s).map_err(NetIdError)
 }
 
 pub fn validate_devaddr(s: &str) -> Result<DevAddrField, DevAddrError> {
-    DevAddrField::from_str(s).map_err(|e| DevAddrError(e))
+    DevAddrField::from_str(s).map_err(DevAddrError)
 }
 
 pub fn validate_eui(s: &str) -> Result<EuiField, EuiError> {
-    EuiField::from_str(s).map_err(|e| EuiError(e))
+    EuiField::from_str(s).map_err(EuiError)
 }
 
 pub fn devaddr(val: u64) -> DevAddrField {
@@ -220,7 +220,7 @@ impl NetIdField {
         net_id >> (BIT_WIDTH - TYPE_LEN)
     }
 
-    fn nwk_id(&self) -> u32 {
+    pub fn nwk_id(&self) -> u32 {
         let prefix_length = self.net_id_type() + 1;
 
         let mut temp = self.0 as u32;
@@ -303,6 +303,32 @@ impl NetIdField {
             start_addr: self.range_start()?,
             end_addr: self.range_end()?,
         })
+    }
+}
+
+impl DevAddrField {
+    pub fn to_range(self, add: u64) -> DevAddrRange {
+        let end = (self.0 + (add - 1)).into();
+        DevAddrRange {
+            start_addr: self,
+            end_addr: end,
+        }
+    }
+
+    pub fn to_net_id(self) -> Result<NetIdField, InvalidNetId> {
+        let addr = self.0 as u32;
+        let id = match addr.leading_ones() {
+            0 => (addr & 0b01111110000000000000000000000000) >> 25,
+            1 => (addr & 0b00111111000000000000000000000000) >> 24,
+            2 => (addr & 0b00011111111100000000000000000000) >> 20,
+            3 => (addr & 0b00001111111111100000000000000000) >> 17,
+            4 => (addr & 0b00000111111111111000000000000000) >> 15,
+            5 => (addr & 0b00000011111111111110000000000000) >> 13,
+            6 => (addr & 0b00000001111111111111110000000000) >> 10,
+            7 => (addr & 0b00000000111111111111111110000000) >> 7,
+            other => return Err(InvalidNetId(other)),
+        };
+        Ok(id.into())
     }
 }
 
@@ -419,6 +445,12 @@ mod tests {
                 DevAddrRange::new(devaddr(test.start_addr), devaddr(test.end_addr))
                     .expect("invalid devaddr order"),
                 net_id.full_range().expect("invalid net id")
+            );
+            assert_eq!(
+                devaddr(test.start_addr)
+                    .to_net_id()
+                    .expect("invalid devaddr"),
+                test.nwk_id.into()
             );
         }
     }
