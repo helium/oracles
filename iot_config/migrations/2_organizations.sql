@@ -2,6 +2,8 @@ create table organizations {
     oui bigserial primary key not null,
     owner_pubkey text not null,
     payer_pubkey text not null,
+    delegate_keys text[],
+    nonce bigint not null default 1,
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()

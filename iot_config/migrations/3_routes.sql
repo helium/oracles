@@ -3,6 +3,7 @@ create table routes {
     oui bigint not null references organizations(oui) on delete cascade,
     net_id bigint not null,
     max_copies bigint not null,
+    nonce bigint not null default 1,
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
