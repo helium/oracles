@@ -74,7 +74,7 @@ impl Daemon {
         let listen_addr = settings.listen_addr()?;
 
         let gateway_svc = GatewayService {};
-        let org_svc = OrgService {};
+        let org_svc = OrgService::new(settings).await?;
         let route_svc = RouteService {};
         let session_key_filter_svc = SessionKeyFilterService {};
 
