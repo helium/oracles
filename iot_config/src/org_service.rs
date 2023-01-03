@@ -1,8 +1,4 @@
-use crate::{
-    lora_field,
-    org::{self, Org},
-    GrpcResult, Settings, HELIUM_NET_ID, HELIUM_NWK_ID,
-};
+use crate::{lora_field, org, GrpcResult, Settings, HELIUM_NET_ID, HELIUM_NWK_ID};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Network, PublicKey};
@@ -56,7 +52,7 @@ impl OrgService {
 #[tonic::async_trait]
 impl iot_config::Org for OrgService {
     async fn list(&self, _request: Request<OrgListReqV1>) -> GrpcResult<OrgListResV1> {
-        let proto_orgs: Vec<OrgV1> = Org::list(&self.pool)
+        let proto_orgs: Vec<OrgV1> = org::list(&self.pool)
             .await
             .map_err(|_| Status::internal("org list failed"))?
             .into_iter()
@@ -69,7 +65,7 @@ impl iot_config::Org for OrgService {
     async fn get(&self, request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        let org = Org::get_with_constraints(request.oui, &self.pool)
+        let org = org::get_with_constraints(request.oui, &self.pool)
             .await
             .map_err(|_| Status::internal("org get failed"))?;
         let net_id = org
@@ -104,11 +100,11 @@ impl iot_config::Org for OrgService {
             .map_err(|_| Status::internal("org constraints failed"))?
             .to_range(requested_addrs);
 
-        let org = Org::insert(req.owner.into(), req.payer.into(), vec![], &self.pool)
+        let org = org::insert_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
             .await
             .map_err(|_| Status::internal("org save failed"))?;
 
-        Org::insert_constraints(org.oui, HELIUM_NWK_ID, &devaddr_range, &self.pool)
+        org::insert_constraints(org.oui, HELIUM_NWK_ID, &devaddr_range, &self.pool)
             .await
             .map_err(|_| Status::internal("org constraints save failed"))?;
 
@@ -137,11 +133,11 @@ impl iot_config::Org for OrgService {
             .full_range()
             .map_err(|_| Status::invalid_argument("invalid net_id"))?;
 
-        let org = Org::insert(req.owner.into(), req.payer.into(), vec![], &self.pool)
+        let org = org::insert_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
             .await
             .map_err(|_| Status::internal("org save failed"))?;
 
-        Org::insert_constraints(org.oui, net_id.nwk_id(), &devaddr_range, &self.pool)
+        org::insert_constraints(org.oui, net_id.nwk_id(), &devaddr_range, &self.pool)
             .await
             .map_err(|_| Status::internal("org constraints save failed"))?;
 

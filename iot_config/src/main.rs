@@ -75,7 +75,7 @@ impl Daemon {
 
         let gateway_svc = GatewayService {};
         let org_svc = OrgService::new(settings).await?;
-        let route_svc = RouteService {};
+        let route_svc = RouteService::new(settings).await?;
         let session_key_filter_svc = SessionKeyFilterService {};
 
         transport::Server::builder()

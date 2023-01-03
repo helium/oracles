@@ -32,133 +32,127 @@ pub struct OrgWithConstraints {
     pub constraints: DevAddrRange,
 }
 
-impl Org {
-    pub async fn insert(
-        owner: PublicKeyBinary,
-        payer: PublicKeyBinary,
-        delegate_keys: Vec<PublicKeyBinary>,
-        db: impl sqlx::PgExecutor<'_>,
-    ) -> Result<Self, sqlx::Error> {
-        let row = sqlx::query(
-            r#"
-            insert into organizations (owner_pubkey, payer_pubkey, delegate_keys)
-            values ($1, $2, $3)
-            on conflict (owner_pubkey, payer_pubkey) do nothing
-            returning (oui, nonce)
-            "#,
-        )
-        .bind(&owner)
-        .bind(&payer)
-        .bind(&delegate_keys)
-        .fetch_one(db)
-        .await?;
+pub async fn insert_org(
+    owner: PublicKeyBinary,
+    payer: PublicKeyBinary,
+    delegate_keys: Vec<PublicKeyBinary>,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<Org, sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        insert into organizations (owner_pubkey, payer_pubkey, delegate_keys)
+        values ($1, $2, $3)
+        on conflict (owner_pubkey, payer_pubkey) do nothing
+        returning (oui, nonce)
+        "#,
+    )
+    .bind(&owner)
+    .bind(&payer)
+    .bind(&delegate_keys)
+    .fetch_one(db)
+    .await?;
 
-        Ok(Org {
-            oui: row.get::<i64, &str>("oui") as u64,
-            owner,
-            payer,
-            delegate_keys,
-            nonce: row.get::<i64, &str>("nonce") as u64,
-        })
-    }
+    Ok(Org {
+        oui: row.get::<i64, &str>("oui") as u64,
+        owner,
+        payer,
+        delegate_keys,
+        nonce: row.get::<i64, &str>("nonce") as u64,
+    })
+}
 
-    pub async fn insert_constraints(
-        oui: u64,
-        nwk_id: u32,
-        devaddr_range: &DevAddrRange,
-        db: impl sqlx::PgExecutor<'_>,
-    ) -> Result<(), sqlx::Error> {
-        let start_addr: u32 = devaddr_range.start_addr.into();
-        let end_addr: u32 = devaddr_range.end_addr.into();
+pub async fn insert_constraints(
+    oui: u64,
+    nwk_id: u32,
+    devaddr_range: &DevAddrRange,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        insert into organization_devaddr_constraints (oui, nwk_id, start_nwk_addr, end_nwk_addr)
+        values ($1, $2, $3, $4)
+        on conflict (oui) do update set
+        nwk_id = EXCLUDED.nwk_id, start_nwk_addr = EXCLUDED.start_nwk_addr, end_nwk_addr = EXCLUDED.end_nwk_addr
+        "#,
+    )
+    .bind(oui as i64)
+    .bind(nwk_id as i32)
+    .bind(i32::from(devaddr_range.start_addr))
+    .bind(i32::from(devaddr_range.end_addr))
+    .execute(db)
+    .await
+    .map(|_| ())
+}
 
-        sqlx::query(
-            r#"
-            insert into organization_devaddr_constraints (oui, nwk_id, start_nwk_addr, end_nwk_addr)
-            values ($1, $2, $3, $4)
-            on conflict (oui) do update set
-            nwk_id = EXCLUDED.nwk_id, start_nwk_addr = EXCLUDED.start_nwk_addr, end_nwk_addr = EXCLUDED.end_nwk_addr
-            "#,
-        )
-        .bind(oui as i64)
-        .bind(nwk_id as i32)
-        .bind(start_addr as i32)
-        .bind(end_addr as i32)
-        .execute(db)
-        .await?;
+pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error> {
+    Ok(sqlx::query(
+        r#"
+        select * from organizations
+        "#,
+    )
+    .fetch(db)
+    .map_ok(|row| Org {
+        oui: row.get::<i64, &str>("oui") as u64,
+        owner: row.get("owner_pubkey"),
+        payer: row.get("payer_pubkey"),
+        delegate_keys: row.get("delegate_keys"),
+        nonce: row.get::<i64, &str>("nonce") as u64,
+    })
+    .filter_map(|row| async move { row.ok() })
+    .collect::<Vec<Org>>()
+    .await)
+}
 
-        Ok(())
-    }
+pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Org, sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        select * from organizations where oui = $1
+        "#,
+    )
+    .bind(oui as i64)
+    .fetch_one(db)
+    .await?;
 
-    pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Self>, sqlx::Error> {
-        Ok(sqlx::query(
-            r#"
-            select * from organizations
-            "#,
-        )
-        .fetch(db)
-        .map_ok(|row| Org {
-            oui: row.get::<i64, &str>("oui") as u64,
-            owner: row.get("owner_pubkey"),
-            payer: row.get("payer_pubkey"),
-            delegate_keys: row.get("delegate_keys"),
-            nonce: row.get::<i64, &str>("nonce") as u64,
-        })
-        .filter_map(|row| async move { row.ok() })
-        .collect::<Vec<Org>>()
-        .await)
-    }
+    Ok(Org {
+        oui,
+        owner: row.get("owner_pubkey"),
+        payer: row.get("payer_pubkey"),
+        delegate_keys: row.get("delegate_keys"),
+        nonce: row.get::<i64, &str>("nonce") as u64,
+    })
+}
 
-    pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Self, sqlx::Error> {
-        let row = sqlx::query(
-            r#"
-            select * from organizations where oui = $1
-            "#,
-        )
-        .bind(oui as i64)
-        .fetch_one(db)
-        .await?;
+pub async fn get_with_constraints(
+    oui: u64,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<OrgWithConstraints, sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.nonce, org_const.start_nwk_addr, org_const.end_nwk_addr
+        from organizations org join organization_devaddr_constraints org_const
+        on org.oui = org_const.oui
+        "#,
+    )
+    .bind(oui as i64)
+    .fetch_one(db)
+    .await?;
 
-        Ok(Org {
+    let start_addr = row.get::<i64, &str>("start_nwk_addr");
+    let end_addr = row.get::<i64, &str>("end_nwk_addr");
+
+    Ok(OrgWithConstraints {
+        org: Org {
             oui,
             owner: row.get("owner_pubkey"),
             payer: row.get("payer_pubkey"),
             delegate_keys: row.get("delegate_keys"),
             nonce: row.get::<i64, &str>("nonce") as u64,
-        })
-    }
-
-    pub async fn get_with_constraints(
-        oui: u64,
-        db: impl sqlx::PgExecutor<'_>,
-    ) -> Result<OrgWithConstraints, sqlx::Error> {
-        let row = sqlx::query(
-            r#"
-            select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.nonce, org_const.start_nwk_addr, org_const.end_nwk_addr
-            from organizations org join organization_devaddr_constraints org_const
-            on org.oui = org_const.oui
-            "#,
-        )
-        .bind(oui as i64)
-        .fetch_one(db)
-        .await?;
-
-        let start_addr = row.get::<i64, &str>("start_nwk_addr") as u64;
-        let end_addr = row.get::<i64, &str>("end_nwk_addr") as u64;
-
-        Ok(OrgWithConstraints {
-            org: Org {
-                oui,
-                owner: row.get("owner_pubkey"),
-                payer: row.get("payer_pubkey"),
-                delegate_keys: row.get("delegate_keys"),
-                nonce: row.get::<i64, &str>("nonce") as u64,
-            },
-            constraints: DevAddrRange {
-                start_addr: start_addr.into(),
-                end_addr: end_addr.into(),
-            },
-        })
-    }
+        },
+        constraints: DevAddrRange {
+            start_addr: start_addr.into(),
+            end_addr: end_addr.into(),
+        },
+    })
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -177,20 +171,20 @@ struct NextHeliumDevAddr {
 pub async fn next_helium_devaddr(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<DevAddrField, NextHeliumDevAddrError> {
-    let helium_default_start: u64 = net_id(HELIUM_NET_ID).range_start()?.into();
+    let helium_default_start: i64 = net_id(HELIUM_NET_ID).range_start()?.into();
 
     let addr = sqlx::query_as::<_, NextHeliumDevAddr>(
             r#"
             select coalesce(max(end_nwk_addr), $1) from organization_devaddr_constraints where nwk_id = $2
             "#,
         )
-        .bind(helium_default_start as i64)
+        .bind(helium_default_start)
         .bind(HELIUM_NWK_ID as i32)
         .fetch_one(db)
         .await?
         .addr;
 
-    Ok((addr as u64).into())
+    Ok(addr.into())
 }
 
 impl From<proto::OrgV1> for Org {
