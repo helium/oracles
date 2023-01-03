@@ -52,6 +52,12 @@ pub struct Runner {
 #[error("error creating runner: {0}")]
 pub struct NewRunnerError(#[from] db_store::Error);
 
+#[derive(thiserror::Error, Debug)]
+pub enum RunnerError {
+    #[error("not found: {0}")]
+    NotFound(&'static str),
+}
+
 impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewRunnerError> {
         let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
@@ -268,7 +274,9 @@ impl Runner {
                     let valid_beacon_report = LoraValidBeaconReport {
                         received_timestamp: beacon_received_ts,
                         location: beacon_info.location,
-                        hex_scale: beacon_verify_result.hex_scale.unwrap_or_default(),
+                        hex_scale: beacon_verify_result
+                            .hex_scale
+                            .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,
                         report: beacon.clone(),
                         reward_unit: witness_reward_units,
                     };
