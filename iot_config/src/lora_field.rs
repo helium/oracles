@@ -47,8 +47,8 @@ impl DevAddrRange {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Eui {
-    app_eui: EuiField,
-    dev_eui: EuiField,
+    pub app_eui: EuiField,
+    pub dev_eui: EuiField,
 }
 
 impl Eui {
@@ -101,9 +101,21 @@ impl<const WIDTH: usize> From<LoraField<WIDTH>> for u64 {
     }
 }
 
+impl<const WIDTH: usize> From<LoraField<WIDTH>> for i64 {
+    fn from(field: LoraField<WIDTH>) -> Self {
+        field.0 as i64
+    }
+}
+
 impl<const WIDTH: usize> From<LoraField<WIDTH>> for u32 {
     fn from(field: LoraField<WIDTH>) -> Self {
         field.0 as u32
+    }
+}
+
+impl<const WIDTH: usize> From<LoraField<WIDTH>> for i32 {
+    fn from(field: LoraField<WIDTH>) -> Self {
+        field.0 as i32
     }
 }
 
@@ -113,8 +125,20 @@ impl<const WIDTH: usize> From<u64> for LoraField<WIDTH> {
     }
 }
 
+impl<const WIDTH: usize> From<i64> for LoraField<WIDTH> {
+    fn from(val: i64) -> Self {
+        LoraField(val as u64)
+    }
+}
+
 impl<const WIDTH: usize> From<u32> for LoraField<WIDTH> {
     fn from(val: u32) -> Self {
+        LoraField(val as u64)
+    }
+}
+
+impl<const WIDTH: usize> From<i32> for LoraField<WIDTH> {
+    fn from(val: i32) -> Self {
         LoraField(val as u64)
     }
 }

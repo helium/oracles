@@ -1,4 +1,4 @@
-create table organizations {
+create table organizations (
     oui bigserial primary key not null,
     owner_pubkey text not null,
     payer_pubkey text not null,
@@ -7,11 +7,11 @@ create table organizations {
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
-};
+);
 
-select trigger updated_at('organizations');
+select trigger_updated_at('organizations');
 
-create table organization_devaddr_constraints {
+create table organization_devaddr_constraints (
     oui bigint not null references organizations(oui) on delete cascade,
     nwk_id int not null,
     start_nwk_addr int not null,
@@ -19,6 +19,6 @@ create table organization_devaddr_constraints {
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
-};
+);
 
-select trigger updated_at('organization_devaddr_constraints');
+select trigger_updated_at('organization_devaddr_constraints');
