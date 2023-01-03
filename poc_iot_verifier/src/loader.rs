@@ -17,6 +17,7 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     Message,
 };
+use itertools::Itertools;
 use sqlx::PgPool;
 use std::{hash::Hasher, ops::DerefMut, time::Duration};
 use tokio::{
@@ -184,7 +185,7 @@ impl Loader {
             ),
         }
         tracing::info!("creating beacon xor filter");
-        let beacon_packet_data = xor_data.into_inner();
+        let beacon_packet_data: Vec<u64> = xor_data.into_inner().into_iter().unique().collect();
         tracing::info!("xor filter len {:?}", beacon_packet_data.len());
         let filter = Xor16::from(beacon_packet_data);
         tracing::info!("completed creating beacon xor filter");
