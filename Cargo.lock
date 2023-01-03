@@ -2950,6 +2950,7 @@ dependencies = [
  "helium-proto",
  "http-serde",
  "humantime",
+ "itertools",
  "lazy_static",
  "metrics",
  "node-follower",
