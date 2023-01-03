@@ -21,8 +21,8 @@ tonic = {workspace = true}
 http = {workspace = true}
 node-follower = { path = "../node_follower" }
 h3ron = {workspace = true}
-itertools = "*"
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 config = {workspace = true}
 async-trait = {workspace = true}
+itertools = {workspace = true}
