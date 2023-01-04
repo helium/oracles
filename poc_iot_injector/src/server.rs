@@ -224,7 +224,7 @@ async fn handle_txn_submission(
     match txn_service {
         Some(txn_service) => {
             txn_service
-                .submit(txn_details.txn, &txn_details.hash)
+                .submit_random(txn_details.txn, &txn_details.hash)
                 .await?;
             Ok(())
         }

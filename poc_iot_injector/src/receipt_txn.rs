@@ -12,6 +12,7 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+const REWARD_SHARE_MULTIPLIER: Decimal = Decimal::ONE_HUNDRED;
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
 #[derive(Clone, Debug)]
@@ -124,7 +125,8 @@ fn construct_poc_witnesses(
 ) -> Vec<BlockchainPocWitnessV1> {
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
-        let reward_shares = (witness_report.hex_scale * witness_report.reward_unit)
+        let reward_shares = ((witness_report.hex_scale * witness_report.reward_unit)
+            * REWARD_SHARE_MULTIPLIER)
             .to_u32()
             .unwrap_or_default();
 
@@ -154,7 +156,8 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
 }
 
 fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> (BlockchainPocReceiptV1, i64) {
-    let reward_shares = (beacon_report.hex_scale * beacon_report.reward_unit)
+    let reward_shares = ((beacon_report.hex_scale * beacon_report.reward_unit)
+        * REWARD_SHARE_MULTIPLIER)
         .to_u32()
         .unwrap_or_default();
 
@@ -204,6 +207,7 @@ fn sign_txn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn max_witnesses_per_receipt_test() {
@@ -246,5 +250,26 @@ mod tests {
             max_witnesses_per_receipt,
         );
         assert_eq!(10, non_squished_witnesses2.len());
+    }
+
+    #[test]
+    fn reward_share_test() {
+        // dec_rs: 1.26932270, hex_scale: 0.7090, reward_unit: 1.7903
+        let hex_scale = dec!(0.7090);
+        let reward_unit = dec!(1.7903);
+        let dec_rs = hex_scale * reward_unit;
+        assert_eq!(
+            (dec_rs * Decimal::ONE_HUNDRED).to_u32().unwrap_or_default(),
+            126
+        );
+
+        // dec_rs: 0, hex_scale: 0.1945, reward_unit: 0.0000
+        let hex_scale = dec!(0.1945);
+        let reward_unit = dec!(0.0000);
+        let dec_rs = hex_scale * reward_unit;
+        assert_eq!(
+            (dec_rs * Decimal::ONE_HUNDRED).to_u32().unwrap_or_default(),
+            0
+        );
     }
 }
