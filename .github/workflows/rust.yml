@@ -35,7 +35,7 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --release --all-targets -- -Dclippy::all
+          args: --release --all-targets -- -Dclippy::all -D warnings
 
       - name: Run tests
         run: cargo test -r

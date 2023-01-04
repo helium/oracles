@@ -17,7 +17,6 @@ use helium_proto::{
     services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
     Message,
 };
-use itertools::Itertools;
 use sqlx::PgPool;
 use std::{hash::Hasher, ops::DerefMut, time::Duration};
 use tokio::{
