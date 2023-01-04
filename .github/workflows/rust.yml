@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-20.04
+    env:
+      RUSTFLAGS: -D warnings
 
     steps:
       - uses: actions/checkout@v2
