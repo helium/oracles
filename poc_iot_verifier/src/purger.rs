@@ -147,11 +147,7 @@ impl Purger {
         stream::iter(stale_beacons)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_beacon(
-                        tx.lock().await.deref_mut(),
-                        report,
-                        lora_invalid_beacon_tx,
-                    )
+                    .handle_purged_beacon(&tx, report, lora_invalid_beacon_tx)
                     .await
                 {
                     Ok(()) => (),
@@ -177,11 +173,7 @@ impl Purger {
         stream::iter(stale_witnesses)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_witness(
-                        tx.lock().await.deref_mut(),
-                        report,
-                        lora_invalid_witness_tx,
-                    )
+                    .handle_purged_witness(&tx, report, lora_invalid_witness_tx)
                     .await
                 {
                     Ok(()) => (),
@@ -202,7 +194,7 @@ impl Purger {
 
     async fn handle_purged_beacon(
         &self,
-        tx: &mut sqlx::Transaction<'_, Postgres>,
+        tx: &Mutex<sqlx::Transaction<'_, Postgres>>,
         db_beacon: Report,
         lora_invalid_beacon_tx: &MessageSender,
     ) -> anyhow::Result<()> {
@@ -229,13 +221,13 @@ impl Purger {
         )
         .await?;
         // delete the report from the DB
-        Report::delete_report(tx, &beacon_id).await?;
+        Report::delete_report(tx.lock().await.deref_mut(), &beacon_id).await?;
         Ok(())
     }
 
     async fn handle_purged_witness(
         &self,
-        tx: &mut sqlx::Transaction<'_, Postgres>,
+        tx: &Mutex<sqlx::Transaction<'_, Postgres>>,
         db_witness: Report,
         lora_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
@@ -263,7 +255,7 @@ impl Purger {
         .await?;
 
         // delete the report from the DB
-        Report::delete_report(tx, &witness_id).await?;
+        Report::delete_report(tx.lock().await.deref_mut(), &witness_id).await?;
         Ok(())
     }
 }

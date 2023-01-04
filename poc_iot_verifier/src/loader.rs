@@ -342,11 +342,8 @@ impl Loader {
                         };
                         metrics::increment_counter!("oracles_poc_iot_verifier_loader_beacon");
                         if let Some(xor_data) = xor_data {
-                            xor_data
-                                .lock()
-                                .await
-                                .deref_mut()
-                                .push(filter_key_hash(&beacon.report.data))
+                            let key_hash = filter_key_hash(&beacon.report.data);
+                            xor_data.lock().await.deref_mut().push(key_hash)
                         };
                         Ok(Some(res))
                     }
