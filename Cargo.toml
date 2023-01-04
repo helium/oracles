@@ -9,7 +9,7 @@ members = [
     "mobile_rewards",
     "mobile_verifier",
     "poc_entropy",
-    "poc_iot_verifier",
+    "iot_verifier",
     "poc_iot_injector",
     "node_follower",
     "density_scaler",
