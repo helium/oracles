@@ -173,18 +173,18 @@ impl Poc {
                     gateway_cache,
                     &hex_density_map,
                 )
-                .await?;
+                .await;
             match witness_result.result {
                 VerificationStatus::Valid => {
                     let valid_witness = self
                         .valid_witness_report(witness_result, witness_report)
-                        .await?;
+                        .await;
                     valid_witnesses.push(valid_witness)
                 }
                 VerificationStatus::Invalid => {
                     let invalid_witness = self
                         .invalid_witness_report(witness_result, witness_report)
-                        .await?;
+                        .await;
                     invalid_witnesses.push(invalid_witness)
                 }
                 VerificationStatus::Failed => {
@@ -193,7 +193,7 @@ impl Poc {
                     // and allow it to do its things
                     let failed_witness = self
                         .failed_witness_report(witness_result, witness_report)
-                        .await?;
+                        .await;
                     failed_witnesses.push(failed_witness)
                 }
             }
@@ -212,7 +212,7 @@ impl Poc {
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &impl HexDensityMap,
-    ) -> Result<VerifyWitnessResult, VerificationError> {
+    ) -> VerifyWitnessResult {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
@@ -228,28 +228,17 @@ impl Poc {
             }
         };
         tracing::debug!("witness info {:?}", beaconer_info);
-
-        // calculate distance of witness to beaconer
-        let witness_location = witness_info
-            .location
-            .ok_or(VerificationError::NotFound("invalid witness_location"))?;
-        let beacon_location = beaconer_info
-            .location
-            .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
-        let witness_distance = calc_distance(beacon_location, witness_location)?;
-
         // run the witness verifications
         match self
             .do_witness_verifications(
                 &witness_info,
                 witness_report,
                 beaconer_info,
-                witness_distance,
             )
             .await
         {
             Ok(()) => {
-                if let Some(hex_scale) = hex_density_map.get(witness_location).await {
+                if let Some(hex_scale) = hex_density_map.get(witness_info.location.unwrap()).await {
                     self.witness_result(
                         VerificationStatus::Valid,
                         None,
@@ -292,7 +281,6 @@ impl Poc {
         witness_info: &GatewayInfo,
         witness_report: &LoraWitnessIngestReport,
         beaconer_info: &GatewayInfo,
-        witness_distance: f64,
     ) -> GenericVerifyResult {
         let beacon_report = &self.beacon_report;
         verify_self_witness(
@@ -310,13 +298,14 @@ impl Poc {
             witness_report.report.frequency,
         )?;
         verify_witness_region(beaconer_info.region, witness_info.region)?;
-        verify_witness_distance(witness_distance)?;
+        verify_witness_distance(beaconer_info.location,witness_info.location)?;
         verify_witness_rssi(
             witness_report.report.signal,
             witness_report.report.frequency,
             beacon_report.report.tx_power,
             beaconer_info.gain,
-            witness_distance,
+            beaconer_info.location,
+            witness_info.location,
         )?;
         verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
         Ok(())
@@ -326,53 +315,49 @@ impl Poc {
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraValidWitnessReport, VerificationError> {
+    ) -> LoraValidWitnessReport {
         let gw_info = witness_result
-            .gateway_info
-            .ok_or(VerificationError::NotFound("invalid witness_location"))?;
-        Ok(LoraValidWitnessReport {
+            .gateway_info.unwrap();
+        LoraValidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             location: gw_info.location,
-            // witnesses should no longer validate if scaling factor not found, so this should be changed
-            // to a `ValidationError(NoScalingFactor)` or similar post-anyhow migration
             hex_scale: witness_result
                 .hex_scale
-                .ok_or(VerificationError::NotFound("invalid hex scaling factor"))?,
+                .unwrap(),
             report: witness_report.report,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
             reward_unit: Decimal::ZERO,
-        })
+        }
     }
 
     async fn invalid_witness_report(
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
-        Ok(LoraInvalidWitnessReport {
+    ) -> LoraInvalidWitnessReport {
+        LoraInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             reason: witness_result
-                .invalid_reason
-                .ok_or(VerificationError::NotFound("invalid witness_location"))?,
+                .invalid_reason.unwrap(),
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
-        })
+        }
     }
 
     async fn failed_witness_report(
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
-        Ok(LoraInvalidWitnessReport {
+    ) -> LoraInvalidWitnessReport {
+        LoraInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             reason: witness_result
                 .invalid_reason
-                .ok_or(VerificationError::NotFound("invalid witness_location"))?,
+                .unwrap(),
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
-        })
+        }
     }
 
     fn beacon_result(
@@ -401,18 +386,18 @@ impl Poc {
         invalid_reason: Option<InvalidReason>,
         gateway_info: Option<GatewayInfo>,
         hex_scale: Option<Decimal>,
-    ) -> Result<VerifyWitnessResult, VerificationError> {
+    ) -> VerifyWitnessResult {
         tracing::debug!(
             "witness verification result: {:?}, reason: {:?}",
             result,
             invalid_reason
         );
-        Ok(VerifyWitnessResult {
+        VerifyWitnessResult {
             result,
             invalid_reason,
             gateway_info,
             hex_scale,
-        })
+        }
     }
 }
 
@@ -524,7 +509,17 @@ fn verify_witness_region(beacon_region: Region, witness_region: Region) -> Gener
 }
 
 /// verify witness does not exceed max distance from beaconer
-fn verify_witness_distance(witness_distance: f64) -> GenericVerifyResult {
+fn verify_witness_distance(beacon_loc: Option<u64>, witness_loc: Option<u64>) -> GenericVerifyResult {
+    // other verifications handle location checks but dont assume
+    // we have a valid location passed in here
+    // if no location for either beaconer or witness then default
+    // this verification to a fail
+    let l1 = beacon_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
+    let l2 = witness_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
+    let witness_distance = match calc_distance(l1, l2) {
+        Ok(d) => d,
+        Err(_) => return Err(InvalidReason::MaxDistanceExceeded),
+    };
     tracing::debug!("witness distance in mtrs: {:?}", witness_distance);
     if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
         tracing::debug!(
@@ -542,8 +537,20 @@ fn verify_witness_rssi(
     witness_freq: u64,
     beacon_tx_power: i32,
     beacon_gain: i32,
-    distance: f64,
+    beacon_loc: Option<u64>,
+    witness_loc: Option<u64>,
 ) -> GenericVerifyResult {
+    // other verifications handle location checks but dont assume
+    // we have a valid location passed in here
+    // if no location for either beaconer or witness or
+    // distance between the two cannot be determined
+    // then default this verification to a fail
+    let l1 = beacon_loc.ok_or(InvalidReason::BadRssi)?;
+    let l2 = witness_loc.ok_or(InvalidReason::BadRssi)?;
+    let distance = match calc_distance(l1, l2) {
+        Ok(d) => d,
+        Err(_) => return Err(InvalidReason::BadRssi),
+    };
     let min_rcv_signal = calc_fspl(beacon_tx_power, witness_freq, distance, beacon_gain);
     tracing::debug!(
         "beaconer tx_power: {beacon_tx_power},
@@ -765,12 +772,10 @@ mod tests {
         let beacon_loc = 631615575095659519; // malta
         let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
         let witness2_loc = 631278052025960447; // armenia
-        let witness1_dist = calc_distance(beacon_loc, witness1_loc).unwrap();
-        let witness2_dist = calc_distance(beacon_loc, witness2_loc).unwrap();
-        assert_eq!(Ok(()), verify_witness_distance(witness1_dist));
+        assert_eq!(Ok(()), verify_witness_distance(Some(beacon_loc), Some(witness1_loc)));
         assert_eq!(
             Err(InvalidReason::MaxDistanceExceeded),
-            verify_witness_distance(witness2_dist)
+            verify_witness_distance(Some(beacon_loc), Some(witness2_loc))
         );
     }
 
@@ -778,9 +783,12 @@ mod tests {
     fn test_verify_witness_rssi() {
         //TODO: values here were taken from real work success and fail scenarios
         //      get someone in the know to verify
+        let beacon_loc = 631615575095659519; // malta
+        let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
+        let witness2_loc = 631278052025960447; // armenia
+
         let beacon1_tx_power = 27;
         let beacon1_gain = 80;
-        let witness1_distance = 2011.0; //metres
         let witness1_signal = -1060;
         let witness1_freq = 904700032;
         assert_eq!(
@@ -790,13 +798,13 @@ mod tests {
                 witness1_freq,
                 beacon1_tx_power,
                 beacon1_gain,
-                witness1_distance
+                Some(beacon_loc),
+                Some(witness1_loc),
             )
         );
 
         let beacon2_tx_power = 27;
         let beacon2_gain = 12;
-        let witness2_distance = 1683.0; //metres
         let witness2_signal = -19;
         let witness2_freq = 904499968;
         assert_eq!(
@@ -806,7 +814,9 @@ mod tests {
                 witness2_freq,
                 beacon2_tx_power,
                 beacon2_gain,
-                witness2_distance
+                Some(beacon_loc),
+                Some(witness2_loc),
+
             )
         );
     }

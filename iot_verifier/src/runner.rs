@@ -177,13 +177,15 @@ impl Runner {
                 let tx3 = lora_valid_poc_tx.clone();
                 let hdm = hex_density_map.clone();
                 async move {
+                    let beacon_id = db_beacon.id.clone();
                     match self
                         .handle_beacon_report(db_beacon, tx1, tx2, tx3, gateway_cache, hdm)
                         .await
                     {
                         Ok(()) => (),
                         Err(err) => {
-                            tracing::warn!("failed to handle beacon: {err:?}")
+                            tracing::warn!("failed to handle beacon: {err:?}");
+                            _ = Report::update_attempts(&self.pool, &beacon_id, Utc::now()).await;
                         }
                     }
                 }
