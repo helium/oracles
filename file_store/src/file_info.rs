@@ -107,6 +107,7 @@ pub const SIGNED_POC_RECEIPT_TXN: &str = "signed_poc_receipt_txn";
 pub const RADIO_REWARD_SHARE: &str = "radio_reward_share";
 pub const REWARD_MANIFEST: &str = "reward_manifest";
 pub const GATEWAY_REWARD_SHARE: &str = "gateway_reward_share";
+pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -129,6 +130,7 @@ pub enum FileType {
     RadioRewardShare,
     RewardManifest,
     GatewayRewardShare,
+    DataTransferSessionIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -152,6 +154,7 @@ impl fmt::Display for FileType {
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
             Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
+            Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
         };
         f.write_str(s)
     }
@@ -178,6 +181,7 @@ impl FileType {
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
             Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
+            Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
         }
     }
 }
@@ -204,6 +208,7 @@ impl FromStr for FileType {
             RADIO_REWARD_SHARE => Self::RadioRewardShare,
             REWARD_MANIFEST => Self::RewardManifest,
             GATEWAY_REWARD_SHARE => Self::GatewayRewardShare,
+            DATA_TRANSFER_SESSION_INGEST_REPORT => Self::DataTransferSessionIngestReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
