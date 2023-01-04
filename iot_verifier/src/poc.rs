@@ -230,11 +230,7 @@ impl Poc {
         tracing::debug!("witness info {:?}", beaconer_info);
         // run the witness verifications
         match self
-            .do_witness_verifications(
-                &witness_info,
-                witness_report,
-                beaconer_info,
-            )
+            .do_witness_verifications(&witness_info, witness_report, beaconer_info)
             .await
         {
             Ok(()) => {
@@ -298,7 +294,7 @@ impl Poc {
             witness_report.report.frequency,
         )?;
         verify_witness_region(beaconer_info.region, witness_info.region)?;
-        verify_witness_distance(beaconer_info.location,witness_info.location)?;
+        verify_witness_distance(beaconer_info.location, witness_info.location)?;
         verify_witness_rssi(
             witness_report.report.signal,
             witness_report.report.frequency,
@@ -316,14 +312,11 @@ impl Poc {
         witness_result: VerifyWitnessResult,
         witness_report: LoraWitnessIngestReport,
     ) -> LoraValidWitnessReport {
-        let gw_info = witness_result
-            .gateway_info.unwrap();
+        let gw_info = witness_result.gateway_info.unwrap();
         LoraValidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             location: gw_info.location,
-            hex_scale: witness_result
-                .hex_scale
-                .unwrap(),
+            hex_scale: witness_result.hex_scale.unwrap(),
             report: witness_report.report,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
@@ -338,8 +331,7 @@ impl Poc {
     ) -> LoraInvalidWitnessReport {
         LoraInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            reason: witness_result
-                .invalid_reason.unwrap(),
+            reason: witness_result.invalid_reason.unwrap(),
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
         }
@@ -352,9 +344,7 @@ impl Poc {
     ) -> LoraInvalidWitnessReport {
         LoraInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            reason: witness_result
-                .invalid_reason
-                .unwrap(),
+            reason: witness_result.invalid_reason.unwrap(),
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
         }
@@ -509,7 +499,10 @@ fn verify_witness_region(beacon_region: Region, witness_region: Region) -> Gener
 }
 
 /// verify witness does not exceed max distance from beaconer
-fn verify_witness_distance(beacon_loc: Option<u64>, witness_loc: Option<u64>) -> GenericVerifyResult {
+fn verify_witness_distance(
+    beacon_loc: Option<u64>,
+    witness_loc: Option<u64>,
+) -> GenericVerifyResult {
     // other verifications handle location checks but dont assume
     // we have a valid location passed in here
     // if no location for either beaconer or witness then default
@@ -772,7 +765,10 @@ mod tests {
         let beacon_loc = 631615575095659519; // malta
         let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
         let witness2_loc = 631278052025960447; // armenia
-        assert_eq!(Ok(()), verify_witness_distance(Some(beacon_loc), Some(witness1_loc)));
+        assert_eq!(
+            Ok(()),
+            verify_witness_distance(Some(beacon_loc), Some(witness1_loc))
+        );
         assert_eq!(
             Err(InvalidReason::MaxDistanceExceeded),
             verify_witness_distance(Some(beacon_loc), Some(witness2_loc))
@@ -816,7 +812,6 @@ mod tests {
                 beacon2_gain,
                 Some(beacon_loc),
                 Some(witness2_loc),
-
             )
         );
     }
