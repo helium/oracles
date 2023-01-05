@@ -1,5 +1,5 @@
-pub mod server_5g;
-pub mod server_lora;
+pub mod server_iot;
+pub mod server_mobile;
 pub mod settings;
 
 pub use settings::{Mode, Settings};

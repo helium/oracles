@@ -13,7 +13,7 @@ pub struct Settings {
     /// "ingest=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    /// Mode to run the server in (lora or mobile). Required
+    /// Mode to run the server in (iot or mobile). Required
     pub mode: Mode,
     /// Listen address. Required. Default is 0.0.0.0:9081
     #[serde(default = "default_listen_addr")]
@@ -49,7 +49,7 @@ pub fn default_sink() -> String {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    Lora,
+    IOT,
     Mobile,
 }
 

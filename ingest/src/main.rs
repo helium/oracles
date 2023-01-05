@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use ingest::{server_5g, server_lora, Mode, Settings};
+use ingest::{server_iot, server_mobile, Mode, Settings};
 use std::path;
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -58,8 +58,8 @@ impl Server {
 
         // run the grpc server in either lora or mobile 5g mode
         match settings.mode {
-            Mode::Lora => server_lora::grpc_server(shutdown_listener, settings).await,
-            Mode::Mobile => server_5g::grpc_server(shutdown_listener, settings).await,
+            Mode::IOT => server_iot::grpc_server(shutdown_listener, settings).await,
+            Mode::Mobile => server_mobile::grpc_server(shutdown_listener, settings).await,
         }
     }
 }
