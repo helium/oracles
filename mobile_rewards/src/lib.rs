@@ -20,7 +20,7 @@ pub fn write_json<T: ?Sized + serde::Serialize>(
     data: &T,
 ) -> anyhow::Result<()> {
     let tmp_output_dir = env::var("TMP_OUTPUT_DIR").unwrap_or_else(|_| "/tmp".to_string());
-    let fname = format!("{}-{}-{}.json", fname_prefix, after_ts, before_ts);
+    let fname = format!("{fname_prefix}-{after_ts}-{before_ts}.json");
     let fpath = Path::new(&tmp_output_dir).join(fname);
     std::fs::write(Path::new(&fpath), serde_json::to_string_pretty(data)?)?;
     Ok(())
