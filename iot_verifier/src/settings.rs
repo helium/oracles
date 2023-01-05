@@ -6,7 +6,7 @@ use std::path::Path;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default to
-    /// "poc_iot_verifier=debug,poc_store=info"
+    /// "iot_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
     /// Cache location for generated verified reports
@@ -35,7 +35,7 @@ pub struct Settings {
 }
 
 pub fn default_log() -> String {
-    "poc_iot_verifier=debug,poc_store=info".to_string()
+    "iot_verifier=debug,poc_store=info".to_string()
 }
 
 pub fn default_base_stale_period() -> i64 {

@@ -340,7 +340,7 @@ impl Loader {
                             report_type: ReportType::Beacon,
                             status: LoraStatus::Pending,
                         };
-                        metrics::increment_counter!("oracles_poc_iot_verifier_loader_beacon");
+                        metrics::increment_counter!("oracles_iot_verifier_loader_beacon");
                         if let Some(xor_data) = xor_data {
                             let key_hash = filter_key_hash(&beacon.report.data);
                             xor_data.lock().await.deref_mut().push(key_hash)
@@ -373,7 +373,7 @@ impl Loader {
                                         status: LoraStatus::Ready,
                                     };
                                     metrics::increment_counter!(
-                                        "oracles_poc_iot_verifier_loader_witness"
+                                        "oracles_iot_verifier_loader_witness"
                                     );
                                     Ok(Some(res))
                                 }

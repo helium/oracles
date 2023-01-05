@@ -189,7 +189,7 @@ impl Runner {
                 }
             })
             .await;
-        metrics::gauge!("oracles_poc_iot_verifier_beacons_ready", beacon_len as f64);
+        metrics::gauge!("oracles_iot_verifier_beacons_ready", beacon_len as f64);
         tracing::info!("completed processing {beacon_len} beacons");
         Ok(())
     }
@@ -219,7 +219,7 @@ impl Runner {
         let witness_len = db_witnesses.len();
         tracing::debug!("found {witness_len} witness for beacon");
         metrics::gauge!(
-            "oracles_poc_iot_verifier_witnesses_per_beacon",
+            "oracles_iot_verifier_witnesses_per_beacon",
             witness_len as f64
         );
 
