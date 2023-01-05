@@ -10,7 +10,7 @@ use std::{
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default
-    /// "poc_ingest=debug,poc_store=info"
+    /// "ingest=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
     /// Mode to run the server in (lora or mobile). Required
@@ -37,7 +37,7 @@ pub fn default_listen_addr() -> String {
 }
 
 pub fn default_log() -> String {
-    "poc_ingest=debug,poc_store=info".to_string()
+    "ingest=debug,poc_store=info".to_string()
 }
 
 pub fn default_sink() -> String {

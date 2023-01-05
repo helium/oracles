@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use poc_ingest::{server_5g, server_lora, Mode, Settings};
+use ingest::{server_5g, server_lora, Mode, Settings};
 use std::path;
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

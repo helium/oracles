@@ -1,7 +1,7 @@
 
 # log settings for the application (RUST_LOG format). Default below
 # 
-# log = "poc_ingest=debug,poc_store=info"
+# log = "ingest=debug,poc_store=info"
 
 # Mode to run the ingest in. This adjustst the allowed grpc endpoints. "lora" or
 # "mobile". Required
