@@ -1,7 +1,7 @@
 
 # log settings for the application (RUST_LOG format). Default below
 # 
-# log = "mobule_index=debug"
+# log = "reward_index=debug"
 
 # Interval for checking verifier bucket (in seconds). Default below (15 minutes)
 #

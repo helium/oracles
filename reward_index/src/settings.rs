@@ -1,6 +1,6 @@
 use config::{Config, Environment, File};
 use serde::Deserialize;
-use std::{path::Path, time, fmt};
+use std::{fmt, path::Path, time};
 
 /// Mode to start the indexer in. Each mode exposes uses different files from
 /// the verifier
@@ -11,12 +11,11 @@ pub enum Mode {
     Mobile,
 }
 
-
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Iot => f.write_str("iot"),
-            Self::Mobile => f.write_str("mobile")
+            Self::Mobile => f.write_str("mobile"),
         }
     }
 }
@@ -38,7 +37,7 @@ pub struct Settings {
 }
 
 pub fn default_log() -> String {
-    "mobile_index=debug,poc_store=info".to_string()
+    "reward_index=debug,poc_store=info".to_string()
 }
 
 impl Settings {

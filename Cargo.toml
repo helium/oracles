@@ -13,7 +13,7 @@ members = [
     "poc_iot_injector",
     "node_follower",
     "density_scaler",
-    "mobile_index",
+    "reward_index",
     "metrics",
     "denylist",
 ]
