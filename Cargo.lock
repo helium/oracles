@@ -1877,7 +1877,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/extend-invalid-reason-generic-error#08a19674a2dc9daafa4c0d6495e4f7b46652262b"
+source = "git+https://github.com/helium/proto?branch=master#22d06927367597b305b83a3743a8ba952a4dbfa3"
 dependencies = [
  "bytes",
  "prost",

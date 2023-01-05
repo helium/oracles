@@ -49,7 +49,7 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "andymck/extend-invalid-reason-generic-error", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 helium-crypto = {version = "0.6", features=["sqlx-postgres", "multisig"]}
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
 humantime = "2"
