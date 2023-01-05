@@ -129,7 +129,9 @@ impl Poc {
             .await
         {
             Ok(()) => {
-                let beaconer_location = beaconer_info.location.unwrap();
+                let beaconer_location = beaconer_info
+                    .location
+                    .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
                 if let Some(scaling_factor) = hex_density_map.get(beaconer_location).await {
                     self.beacon_result(
                         VerificationStatus::Valid,
@@ -166,35 +168,57 @@ impl Poc {
         let mut failed_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            let witness_result = self
+            match self
                 .verify_witness(
                     &witness_report,
                     beacon_info,
                     gateway_cache,
                     &hex_density_map,
                 )
-                .await;
-            match witness_result.result {
-                VerificationStatus::Valid => {
-                    let valid_witness = self
-                        .valid_witness_report(witness_result, witness_report)
-                        .await;
-                    valid_witnesses.push(valid_witness)
+                .await
+            {
+                Ok(witness_result) => {
+                    match witness_result.result {
+                        VerificationStatus::Valid => {
+                            if let Ok(valid_witness) = self
+                                .valid_witness_report(witness_result, witness_report)
+                                .await
+                            {
+                                valid_witnesses.push(valid_witness)
+                            };
+                        }
+                        VerificationStatus::Invalid => {
+                            if let Ok(invalid_witness) = self
+                                .invalid_witness_report(witness_result, witness_report)
+                                .await
+                            {
+                                invalid_witnesses.push(invalid_witness)
+                            }
+                        }
+                        VerificationStatus::Failed => {
+                            // if a witness check returns failed it suggests something
+                            // unexpected has occurred. propogate this back to caller
+                            // and allow it to do its things
+                            let failed_reason = invalid_reason_or_default(
+                                witness_result.invalid_reason,
+                                InvalidReason::GenericError,
+                            );
+                            if let Ok(failed_witness) = self
+                                .failed_witness_report(failed_reason, witness_report)
+                                .await
+                            {
+                                failed_witnesses.push(failed_witness)
+                            }
+                        }
+                    }
                 }
-                VerificationStatus::Invalid => {
-                    let invalid_witness = self
-                        .invalid_witness_report(witness_result, witness_report)
-                        .await;
-                    invalid_witnesses.push(invalid_witness)
-                }
-                VerificationStatus::Failed => {
-                    // if a witness check returns failed it suggests something
-                    // unexpected has occurred. propogate this back to caller
-                    // and allow it to do its things
-                    let failed_witness = self
-                        .failed_witness_report(witness_result, witness_report)
-                        .await;
-                    failed_witnesses.push(failed_witness)
+                Err(_) => {
+                    if let Ok(failed_witness) = self
+                        .failed_witness_report(InvalidReason::GenericError, witness_report)
+                        .await
+                    {
+                        failed_witnesses.push(failed_witness)
+                    }
                 }
             }
         }
@@ -212,19 +236,19 @@ impl Poc {
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &impl HexDensityMap,
-    ) -> VerifyWitnessResult {
+    ) -> Result<VerifyWitnessResult, VerificationError> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return self.witness_result(
+                return Ok(self.witness_result(
                     VerificationStatus::Invalid,
                     Some(InvalidReason::GatewayNotFound),
                     None,
                     None,
-                );
+                ));
             }
         };
         tracing::debug!("witness info {:?}", beaconer_info);
@@ -234,28 +258,41 @@ impl Poc {
             .await
         {
             Ok(()) => {
-                if let Some(hex_scale) = hex_density_map.get(witness_info.location.unwrap()).await {
-                    self.witness_result(
+                // to avoid assuming witness location is set and to avoid unwrap
+                // we explicity match location here again
+                let witness_location = match witness_info.location {
+                    Some(l) => l,
+                    None => {
+                        return Ok(self.witness_result(
+                            VerificationStatus::Invalid,
+                            Some(InvalidReason::NotAsserted),
+                            None,
+                            None,
+                        ))
+                    }
+                };
+                if let Some(hex_scale) = hex_density_map.get(witness_location).await {
+                    Ok(self.witness_result(
                         VerificationStatus::Valid,
                         None,
                         Some(witness_info),
                         Some(hex_scale),
-                    )
+                    ))
                 } else {
-                    self.witness_result(
+                    Ok(self.witness_result(
                         VerificationStatus::Invalid,
                         Some(InvalidReason::ScalingFactorNotFound),
                         Some(witness_info),
                         None,
-                    )
+                    ))
                 }
             }
-            Err(invalid_reason) => self.witness_result(
+            Err(invalid_reason) => Ok(self.witness_result(
                 VerificationStatus::Invalid,
                 Some(invalid_reason),
                 Some(witness_info),
                 None,
-            ),
+            )),
         }
     }
 
@@ -288,6 +325,7 @@ impl Poc {
             self.entropy_end,
             witness_report.received_timestamp,
         )?;
+        verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
         verify_gw_location(witness_info.location)?;
         verify_witness_freq(
             beacon_report.report.frequency,
@@ -303,7 +341,6 @@ impl Poc {
             beaconer_info.location,
             witness_info.location,
         )?;
-        verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
         Ok(())
     }
 
@@ -311,43 +348,56 @@ impl Poc {
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: LoraWitnessIngestReport,
-    ) -> LoraValidWitnessReport {
-        let gw_info = witness_result.gateway_info.unwrap();
-        LoraValidWitnessReport {
+    ) -> Result<LoraValidWitnessReport, VerificationError> {
+        let gw_info = witness_result
+            .gateway_info
+            .ok_or(VerificationError::NotFound(
+                "expected gateway info not found",
+            ))?;
+        let hex_scale = witness_result
+            .hex_scale
+            .ok_or(VerificationError::NotFound("expected hex scale not found"))?;
+        Ok(LoraValidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             location: gw_info.location,
-            hex_scale: witness_result.hex_scale.unwrap(),
+            hex_scale,
             report: witness_report.report,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
             reward_unit: Decimal::ZERO,
-        }
+        })
     }
 
     async fn invalid_witness_report(
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: LoraWitnessIngestReport,
-    ) -> LoraInvalidWitnessReport {
-        LoraInvalidWitnessReport {
+    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
+        let invalid_reason = witness_result
+            .invalid_reason
+            .ok_or(VerificationError::NotFound(
+                "expected invalid_reason not found",
+            ))?;
+        tracing::info!("invalid witness result. reason: {:?}", invalid_reason);
+        Ok(LoraInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            reason: witness_result.invalid_reason.unwrap(),
+            reason: invalid_reason,
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
-        }
+        })
     }
 
     async fn failed_witness_report(
         &self,
-        witness_result: VerifyWitnessResult,
+        failed_reason: InvalidReason,
         witness_report: LoraWitnessIngestReport,
-    ) -> LoraInvalidWitnessReport {
-        LoraInvalidWitnessReport {
+    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
+        Ok(LoraInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            reason: witness_result.invalid_reason.unwrap(),
+            reason: failed_reason,
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
-        }
+        })
     }
 
     fn beacon_result(
@@ -545,17 +595,27 @@ fn verify_witness_rssi(
         Err(_) => return Err(InvalidReason::BadRssi),
     };
     let min_rcv_signal = calc_fspl(beacon_tx_power, witness_freq, distance, beacon_gain);
-    tracing::debug!(
+    tracing::info!(
         "beaconer tx_power: {beacon_tx_power},
             beaconer gain: {beacon_gain},
             witness signal: {witness_signal},
             witness freq: {:?},
-            min_rcv_signal: {min_rcv_signal}",
+            min_rcv_signal: {min_rcv_signal}
+            distance: {distance}",
         witness_freq
     );
     // signal is submitted as DBM * 10
-    // min_rcv_signal is plain old DBM
+    // min_rcv_signal    is plain old DBM
     if witness_signal / 10 > min_rcv_signal as i32 {
+        tracing::info!(
+            "witness rssi verification fail.  beaconer tx_power: {beacon_tx_power},
+            beaconer gain: {beacon_gain},
+            witness signal: {witness_signal},
+            witness freq: {:?},
+            min_rcv_signal: {min_rcv_signal}
+            distance: {distance}",
+            witness_freq
+        );
         tracing::debug!(
             "witness verification failed, reason: {:?}",
             InvalidReason::BadRssi
@@ -616,6 +676,16 @@ fn hex_adjustment(loc: &H3Cell) -> Result<f64, h3ron::Error> {
         edge_length * (f64::round(f64::sqrt(3.0) * f64::powf(10.0, 3.0)) / f64::powf(10.0, 3.0))
             / 2.0,
     )
+}
+
+fn invalid_reason_or_default(
+    invalid_reason: Option<InvalidReason>,
+    default: InvalidReason,
+) -> InvalidReason {
+    match invalid_reason {
+        Some(reason) => reason,
+        None => default,
+    }
 }
 
 #[cfg(test)]
