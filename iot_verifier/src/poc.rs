@@ -211,7 +211,8 @@ impl Poc {
                         }
                     }
                 }
-                Err(_) => {
+                Err(err) => {
+                    tracing::warn!("Unexpected error verifying witness: {err:?}");
                     if let Ok(failed_witness) = self
                         .failed_witness_report(InvalidReason::UnknownError, witness_report)
                         .await
