@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use mobile_index::{settings::Settings, Indexer};
+use reward_index::{settings::Settings, Indexer};
 use std::path::PathBuf;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

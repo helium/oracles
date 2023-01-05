@@ -1,11 +1,14 @@
 
 # log settings for the application (RUST_LOG format). Default below
 # 
-# log = "mobule_index=debug"
+# log = "reward_index=debug"
 
 # Interval for checking verifier bucket (in seconds). Default below (15 minutes)
 #
 # interval = 900
+
+# Mode to operate the indexer in. "iot" or "mobile"
+mode = "iot"
 
 #
 [database]

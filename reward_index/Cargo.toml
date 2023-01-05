@@ -1,5 +1,5 @@
 [package]
-name = "mobile-index"
+name = "reward-index"
 version = "0.1.0"
 description = "Reward Indexer for the Helium Mobile Network"
 edition.workspace = true

@@ -1,10 +1,13 @@
-use crate::{reward_index, Settings};
+use crate::{reward_index, settings, Settings};
 use anyhow::Result;
 use db_store::meta;
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
 use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
-use helium_proto::{services::poc_mobile::RadioRewardShare, Message, RewardManifest};
+use helium_proto::{
+    services::poc_lora::GatewayRewardShare, services::poc_mobile::RadioRewardShare, Message,
+    RewardManifest,
+};
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, str::FromStr};
@@ -14,12 +17,14 @@ pub struct Indexer {
     pool: Pool<Postgres>,
     interval: time::Duration,
     verifier_store: FileStore,
+    mode: settings::Mode,
 }
 
 impl Indexer {
     pub async fn new(settings: &Settings) -> Result<Self> {
         let pool = settings.database.connect(10).await?;
         Ok(Self {
+            mode: settings.mode,
             interval: settings.interval(),
             verifier_store: FileStore::from_settings(&settings.verifier).await?,
             pool,
@@ -27,13 +32,13 @@ impl Indexer {
     }
 
     pub async fn run(&mut self, shutdown: triggered::Listener) -> Result<()> {
-        tracing::info!("starting mobile index");
+        tracing::info!(mode = self.mode.to_string(), "starting index");
 
         let mut interval_timer = tokio::time::interval(self.interval);
 
         loop {
             if shutdown.is_triggered() {
-                tracing::info!("stopping mobile indexer");
+                tracing::info!(mode = self.mode.to_string(), "stopping indexer");
                 return Ok(());
             }
 
@@ -93,10 +98,8 @@ impl Indexer {
         let mut hotspot_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
 
         while let Some(msg) = reward_shares.try_next().await? {
-            let radio_reward_share = RadioRewardShare::decode(msg)?;
-            *hotspot_rewards
-                .entry(radio_reward_share.hotspot_key)
-                .or_default() += radio_reward_share.amount;
+            let (hotspot_key, amount) = extract_reward_share(&self.mode, &msg)?;
+            *hotspot_rewards.entry(hotspot_key).or_default() += amount;
         }
 
         // Begin a transaction to write all the hotspot rewards
@@ -119,5 +122,21 @@ impl Indexer {
         txn.commit().await?;
 
         Ok(())
+    }
+}
+
+fn extract_reward_share(mode: &settings::Mode, msg: &[u8]) -> Result<(Vec<u8>, u64)> {
+    match mode {
+        settings::Mode::Mobile => {
+            let share = RadioRewardShare::decode(msg)?;
+            Ok((share.hotspot_key, share.amount))
+        }
+        settings::Mode::Iot => {
+            let share = GatewayRewardShare::decode(msg)?;
+            Ok((
+                share.hotspot_key,
+                share.witness_amount + share.beacon_amount,
+            ))
+        }
     }
 }

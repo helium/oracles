@@ -146,7 +146,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         .token
         .as_ref()
         .and_then(|token| {
-            format!("Bearer {}", token)
+            format!("Bearer {token}")
                 .parse::<MetadataValue<_>>()
                 .ok()
         }) else {

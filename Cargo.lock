@@ -2464,44 +2464,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mobile-index"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64",
- "chrono",
- "clap 3.2.23",
- "config",
- "db-store",
- "file-store",
- "futures",
- "futures-util",
- "helium-crypto",
- "helium-proto",
- "http-serde",
- "lazy_static",
- "metrics",
- "metrics-exporter-prometheus",
- "once_cell",
- "poc-metrics",
- "prost",
- "rand",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "sha2 0.10.6",
- "sqlx",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "mobile-rewards"
 version = "0.1.0"
 dependencies = [
@@ -3364,6 +3326,44 @@ dependencies = [
  "async-timer",
  "log",
  "rand",
+]
+
+[[package]]
+name = "reward-index"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap 3.2.23",
+ "config",
+ "db-store",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http-serde",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "once_cell",
+ "poc-metrics",
+ "prost",
+ "rand",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
 ]
 
 [[package]]
