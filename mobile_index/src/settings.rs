@@ -1,6 +1,25 @@
 use config::{Config, Environment, File};
 use serde::Deserialize;
-use std::{path::Path, time};
+use std::{path::Path, time, fmt};
+
+/// Mode to start the indexer in. Each mode exposes uses different files from
+/// the verifier
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    Iot,
+    Mobile,
+}
+
+
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Iot => f.write_str("iot"),
+            Self::Mobile => f.write_str("mobile")
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -11,6 +30,8 @@ pub struct Settings {
     /// Check interval in seconds. (Default is 900; 15 minutes)
     #[serde(default = "default_interval")]
     pub interval: u64,
+    /// Mode to run the server in (iot or mobile). Required
+    pub mode: Mode,
     pub database: db_store::Settings,
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,

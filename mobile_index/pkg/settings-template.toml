@@ -7,6 +7,9 @@
 #
 # interval = 900
 
+# Mode to operate the indexer in. "iot" or "mobile"
+mode = "iot"
+
 #
 [database]
 
