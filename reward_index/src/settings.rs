@@ -2,7 +2,7 @@ use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::{fmt, path::Path, time};
 
-/// Mode to start the indexer in. Each mode exposes uses different files from
+/// Mode to start the indexer in. Each mode uses different files from
 /// the verifier
 #[derive(Debug, Deserialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
