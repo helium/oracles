@@ -35,7 +35,7 @@ impl GatewayCache {
         match self.cache.get(address).await {
             Some(hit) => {
                 tracing::debug!("gateway cache hit: {:?}", address);
-                metrics::increment_counter!("oracles_poc_iot_verifier_gateway_cache_hit");
+                metrics::increment_counter!("oracles_iot_verifier_gateway_cache_hit");
                 Ok(hit.value().clone())
             }
             _ => {
@@ -47,7 +47,7 @@ impl GatewayCache {
                 {
                     Ok(res) => {
                         tracing::debug!("cache miss: {:?}", address);
-                        metrics::increment_counter!("oracles_poc_iot_verifier_gateway_cache_miss");
+                        metrics::increment_counter!("oracles_iot_verifier_gateway_cache_miss");
                         self.cache
                             .insert(address.clone(), res.clone(), Duration::from_secs(CACHE_TTL))
                             .await;

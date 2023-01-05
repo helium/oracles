@@ -1,7 +1,7 @@
 
 # log settings for the application (RUST_LOG format). Default below
 # 
-# log = "poc-iot-verifier=debug,poc_store=info"
+# log = "iot-verifier=debug,poc_store=info"
 
 # Cache location for generated verified reports; Required
 #

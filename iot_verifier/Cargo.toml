@@ -1,5 +1,5 @@
 [package]
-name = "poc-iot-verifier"
+name = "iot-verifier"
 version = "0.1.0"
 description = "PoC Verifier Server for the Helium Lora Network"
 edition.workspace = true

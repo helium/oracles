@@ -2091,6 +2091,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "iot-verifier"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "blake3",
+ "chrono",
+ "clap 3.2.23",
+ "cmake",
+ "config",
+ "db-store",
+ "density-scaler",
+ "denylist",
+ "file-store",
+ "futures",
+ "futures-util",
+ "geo",
+ "geo-types",
+ "h3ron",
+ "helium-crypto",
+ "helium-proto",
+ "http-serde",
+ "humantime",
+ "itertools",
+ "lazy_static",
+ "metrics",
+ "node-follower",
+ "once_cell",
+ "poc-metrics",
+ "prost",
+ "retainer",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+ "twox-hash",
+ "xorf",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2923,55 +2972,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
-]
-
-[[package]]
-name = "poc-iot-verifier"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64",
- "blake3",
- "chrono",
- "clap 3.2.23",
- "cmake",
- "config",
- "db-store",
- "density-scaler",
- "denylist",
- "file-store",
- "futures",
- "futures-util",
- "geo",
- "geo-types",
- "h3ron",
- "helium-crypto",
- "helium-proto",
- "http-serde",
- "humantime",
- "itertools",
- "lazy_static",
- "metrics",
- "node-follower",
- "once_cell",
- "poc-metrics",
- "prost",
- "retainer",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "sha2 0.10.6",
- "sqlx",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "triggered",
- "twox-hash",
- "xorf",
 ]
 
 [[package]]
