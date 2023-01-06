@@ -6,7 +6,6 @@ create table routes (
     server_host text not null,
     server_port int not null,
     server_protocol_opts json not null,
-    nonce bigint not null default 1,
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()

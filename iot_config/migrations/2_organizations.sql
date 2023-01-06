@@ -1,9 +1,14 @@
+create type org_status as enum (
+    'enabled',
+    'disabled'
+);
+
 create table organizations (
     oui bigserial primary key not null,
     owner_pubkey text not null,
     payer_pubkey text not null,
     delegate_keys text[],
-    nonce bigint not null default 1,
+    status org_status not null default 'enabled',
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()

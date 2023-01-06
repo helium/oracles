@@ -1,17 +1,22 @@
 use crate::{
     lora_field::{DevAddrRange, Eui},
+    org::OrgStatus,
     route::{self, Route},
     GrpcResult, GrpcStreamResult, Settings,
 };
 use anyhow::Result;
+use futures::stream::StreamExt;
 use helium_proto::services::iot_config::{
-    self, RouteCreateReqV1, RouteDeleteReqV1, RouteDevaddrsReqV1, RouteDevaddrsResV1,
+    self, ActionV1, RouteCreateReqV1, RouteDeleteReqV1, RouteDevaddrsReqV1, RouteDevaddrsResV1,
     RouteEuisReqV1, RouteEuisResV1, RouteGetReqV1, RouteListReqV1, RouteListResV1,
     RouteStreamReqV1, RouteStreamResV1, RouteUpdateReqV1, RouteV1,
 };
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::{
+    pin,
+    sync::broadcast::{Receiver, Sender},
+};
 use tonic::{Request, Response, Status};
 
 pub struct RouteService {
@@ -64,21 +69,18 @@ impl iot_config::Route for RouteService {
     async fn create(&self, request: Request<RouteCreateReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
 
-        let mut route: Route = request
+        let route: Route = request
             .route
             .ok_or("missing route")
             .map_err(Status::invalid_argument)?
             .into();
 
-        let stored_route: Route =
+        let new_route: Route =
             route::create_route(route.clone(), &self.pool, self.update_channel.clone())
                 .await
                 .map_err(|_| Status::internal("route create failed"))?;
 
-        route.id = stored_route.id;
-        route.nonce = stored_route.nonce;
-
-        Ok(Response::new(route.into()))
+        Ok(Response::new(new_route.into()))
     }
 
     async fn update(&self, request: Request<RouteUpdateReqV1>) -> GrpcResult<RouteV1> {
@@ -152,7 +154,7 @@ impl iot_config::Route for RouteService {
             self.update_channel.clone(),
         )
         .await
-        .map_err(|_| Status::internal("devaddr ranges modify failes"))?;
+        .map_err(|_| Status::internal("devaddr ranges modify failed"))?;
 
         Ok(Response::new(RouteDevaddrsResV1 {
             id: request.id,
@@ -163,11 +165,29 @@ impl iot_config::Route for RouteService {
 
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, _request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        tracing::info!("client subscribed to route stream");
+        let pool = self.pool.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
+            let active_routes = route::route_stream_by_status(OrgStatus::Enabled, &pool).await;
+
+            pin!(active_routes);
+
+            while let Some(active_route) = active_routes.next().await {
+                if (tx.send(Ok(RouteStreamResV1 {
+                    action: ActionV1::Create.into(),
+                    route: Some(active_route.into()),
+                })))
+                .await
+                .is_err()
+                {
+                    break;
+                }
+            }
+
             while let Ok(update) = route_updates.recv().await {
                 if (tx.send(Ok(update)).await).is_err() {
                     break;

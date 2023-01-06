@@ -100,7 +100,7 @@ impl iot_config::Org for OrgService {
             .map_err(|_| Status::internal("org constraints failed"))?
             .to_range(requested_addrs);
 
-        let org = org::insert_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
+        let org = org::create_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
             .await
             .map_err(|_| Status::internal("org save failed"))?;
 
@@ -133,7 +133,7 @@ impl iot_config::Org for OrgService {
             .full_range()
             .map_err(|_| Status::invalid_argument("invalid net_id"))?;
 
-        let org = org::insert_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
+        let org = org::create_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
             .await
             .map_err(|_| Status::internal("org save failed"))?;
 
