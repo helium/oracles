@@ -48,7 +48,7 @@ impl Cmd {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct Daemon {}
+pub struct Daemon;
 
 impl Daemon {
     pub async fn run(&self, settings: &Settings) -> Result<()> {

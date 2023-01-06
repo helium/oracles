@@ -1,8 +1,10 @@
 use crate::{
     lora_field::{DevAddrRange, Eui, NetIdField},
-    region::Region,
+    org::OrgStatus,
+    // region::Region,
 };
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
+use helium_proto::Region;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::{collections::BTreeMap, sync::Arc};
@@ -25,7 +27,6 @@ pub struct Route {
     pub oui: u64,
     pub server: RouteServer,
     pub max_copies: u32,
-    pub nonce: u64,
 }
 
 impl Route {
@@ -38,12 +39,7 @@ impl Route {
             oui,
             server: RouteServer::default(),
             max_copies,
-            nonce: 1,
         }
-    }
-
-    pub fn inc_nonce(&mut self) {
-        self.nonce += 1;
     }
 
     pub fn add_eui(&mut self, eui: Eui) {
@@ -86,13 +82,10 @@ pub struct StorageRoute {
     pub server_protocol_opts: String,
     pub devaddr_ranges: Vec<(i64, i64)>,
     pub eui_pairs: Vec<(i64, i64)>,
-    pub nonce: i64,
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum RouteStorageError {
-    #[error("invalid nonce: expected {0} actual {1}")]
-    InvalidNonce(i64, i64),
     #[error("db persist failed: {0}")]
     PersistError(#[from] sqlx::Error),
     #[error("protocol serialize error: {0}")]
@@ -156,33 +149,11 @@ pub async fn create_route(
     Ok(new_route)
 }
 
-#[derive(sqlx::FromRow, Debug)]
-pub struct RouteNonce {
-    nonce: i64,
-}
-
 pub async fn update_route(
     route: Route,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
     update_tx: Arc<Sender<proto::RouteStreamResV1>>,
 ) -> Result<Route, RouteStorageError> {
-    let new_nonce = route.nonce as i64;
-    let current_nonce = sqlx::query_as::<_, RouteNonce>(
-        r#"
-        select nonce from routes
-        where id = $1
-        "#,
-    )
-    .bind(&route.id)
-    .fetch_one(db)
-    .await?
-    .nonce;
-
-    let expected_nonce = current_nonce + 1;
-    if new_nonce != expected_nonce {
-        return Err(RouteStorageError::InvalidNonce(expected_nonce, new_nonce));
-    }
-
     let protocol_opts = route
         .server
         .protocol
@@ -194,10 +165,10 @@ pub async fn update_route(
 
     sqlx::query(
         r#"
-        insert into routes (id, max_copies, server_host, server_port, server_protocol_opts, nonce)
-        values ($1, $2, $3, $4, $5, $6)
+        insert into routes (id, max_copies, server_host, server_port, server_protocol_opts)
+        values ($1, $2, $3, $4, $5)
         on conflict (id) do update set
-        max_copies = EXCLUDED.max_copies, server_host = EXCLUDED.server_host, server_port = EXCLUDED.server_port, server_protocol_opts = EXCLUDED.server_protocol_opts, nonce = EXCLUDED.nonce
+        max_copies = EXCLUDED.max_copies, server_host = EXCLUDED.server_host, server_port = EXCLUDED.server_port, server_protocol_opts = EXCLUDED.server_protocol_opts
         "#,
     )
     .bind(&route.id)
@@ -205,7 +176,6 @@ pub async fn update_route(
     .bind(&route.server.host)
     .bind(route.server.port as i32)
     .bind(serde_json::to_string(&protocol_opts)?)
-    .bind(expected_nonce)
     .execute(&mut transaction)
     .await?;
 
@@ -426,7 +396,7 @@ pub async fn list_routes(
 ) -> Result<Vec<Route>, RouteStorageError> {
     Ok(sqlx::query_as::<_, StorageRoute>(
         r#"
-        select rte.id, rte.oui, rte.net_id, rte.max_copies, rte.nonce, rte.server_host, rte.server_port, rte.server_protocol_opts,
+        select rte.id, rte.oui, rte.net_id, rte.max_copies, rte.server_host, rte.server_port, rte.server_protocol_opts,
             array_agg(distinct epairs.app_eui || ',' || epairs.dev_eui) epairs,
             array_agg(distinct dranges.start_nwk_addr || ',' || dranges.end_nwk_addr) dranges
             from routes rte
@@ -447,11 +417,42 @@ pub async fn list_routes(
             oui: route.oui as u64,
             server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_str(&route.server_protocol_opts)?),
             max_copies: route.max_copies as u32,
-            nonce: route.nonce as u64,
         })})
     .filter_map(|route| async move { route.ok() })
     .collect::<Vec<Route>>()
     .await)
+}
+
+pub async fn route_stream_by_status<'a>(
+    status: OrgStatus,
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> impl Stream<Item = Route> + 'a {
+    sqlx::query_as::<_, StorageRoute>(
+        r#"
+        select rte.id, rte.oui, rte.net_id, rte.max_copies, rte.server_host, rte.server_port, rte.server_protocol_opts,
+            array_agg(distinct epairs.app_eui || ',' || epairs.dev_eui) epairs,
+            array_agg(distinct dranges.start_nwk_addr || ',' || dranges.end_nwk_addrs) dranges
+            from routes rte
+            join organizations org on rte.oui = org.oui
+            join route_eui_pairs epairs on rte.id = epairs.route_id
+            join route_devaddr_ranges dranges on rte.id = dranges.route_id
+            where org.status = $1
+            group by rte.id
+        "#,
+    )
+    .bind(status)
+    .fetch(db)
+    .map_err(RouteStorageError::from)
+    .and_then(|route| async move { Ok(Route {
+            id: route.id,
+            net_id: route.net_id.into(),
+            devaddr_ranges: route.devaddr_ranges.into_iter().map(|(start, end)| DevAddrRange {start_addr: start.into(), end_addr: end.into()}).collect(),
+            euis: route.eui_pairs.into_iter().map(|(app, dev)| Eui::new(app.into(), dev.into())).collect(),
+            oui: route.oui as u64,
+            server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_str(&route.server_protocol_opts)?),
+            max_copies: route.max_copies as u32,
+        })})
+    .filter_map(|route| async move { route.ok() })
 }
 
 pub async fn get_route(
@@ -460,7 +461,7 @@ pub async fn get_route(
 ) -> Result<Route, RouteStorageError> {
     let route = sqlx::query_as::<_, StorageRoute>(
         r#"
-        select rte.id, rte.oui, rte.net_id, rte.max_copies, rte.nonce, rte.server_host, rte.server_port, rte.server_protocol_opts,
+        select rte.id, rte.oui, rte.net_id, rte.max_copies, rte.server_host, rte.server_port, rte.server_protocol_opts,
             array_agg (distinct epairs.app_eui || ',' || epairs.dev_eui) epairs,
             array_agg (distinct dranges.start_nwk_addr || ',' || dranges.end_nwk_addr) dranges
             from routes rte
@@ -499,7 +500,6 @@ pub async fn get_route(
         oui: route.oui as u64,
         server,
         max_copies: route.max_copies as u32,
-        nonce: route.nonce as u64,
     })
 }
 
@@ -558,11 +558,11 @@ impl From<proto::RouteV1> for Route {
             oui: route.oui,
             server: route.server.map_or_else(RouteServer::default, |s| s.into()),
             max_copies: route.max_copies,
-            nonce: route.nonce,
         }
     }
 }
 
+#[allow(deprecated)]
 impl From<Route> for proto::RouteV1 {
     fn from(route: Route) -> Self {
         Self {
@@ -577,7 +577,8 @@ impl From<Route> for proto::RouteV1 {
             oui: route.oui,
             server: Some(route.server.into()),
             max_copies: route.max_copies,
-            nonce: route.nonce,
+            // Deprecated proto field; flagged above to avoid compiler warning
+            nonce: 0,
         }
     }
 }

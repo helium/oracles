@@ -12,13 +12,20 @@ pub mod proto {
     pub use helium_proto::services::iot_config::{OrgResV1, OrgV1};
 }
 
+#[derive(Clone, Debug, Serialize, sqlx::Type)]
+#[sqlx(type_name = "org_status", rename_all = "snake_case")]
+pub enum OrgStatus {
+    Enabled,
+    Disabled,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Org {
     pub oui: u64,
     pub owner: PublicKeyBinary,
     pub payer: PublicKeyBinary,
     pub delegate_keys: Vec<PublicKeyBinary>,
-    pub nonce: u64,
+    pub status: OrgStatus,
 }
 
 #[derive(Debug, Serialize)]
@@ -32,7 +39,7 @@ pub struct OrgWithConstraints {
     pub constraints: DevAddrRange,
 }
 
-pub async fn insert_org(
+pub async fn create_org(
     owner: PublicKeyBinary,
     payer: PublicKeyBinary,
     delegate_keys: Vec<PublicKeyBinary>,
@@ -43,7 +50,7 @@ pub async fn insert_org(
         insert into organizations (owner_pubkey, payer_pubkey, delegate_keys)
         values ($1, $2, $3)
         on conflict (owner_pubkey, payer_pubkey) do nothing
-        returning (oui, nonce)
+        returning oui
         "#,
     )
     .bind(&owner)
@@ -57,7 +64,7 @@ pub async fn insert_org(
         owner,
         payer,
         delegate_keys,
-        nonce: row.get::<i64, &str>("nonce") as u64,
+        status: OrgStatus::Enabled,
     })
 }
 
@@ -96,7 +103,7 @@ pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error
         owner: row.get("owner_pubkey"),
         payer: row.get("payer_pubkey"),
         delegate_keys: row.get("delegate_keys"),
-        nonce: row.get::<i64, &str>("nonce") as u64,
+        status: row.get("status"),
     })
     .filter_map(|row| async move { row.ok() })
     .collect::<Vec<Org>>()
@@ -118,7 +125,7 @@ pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Org, sqlx::E
         owner: row.get("owner_pubkey"),
         payer: row.get("payer_pubkey"),
         delegate_keys: row.get("delegate_keys"),
-        nonce: row.get::<i64, &str>("nonce") as u64,
+        status: row.get("status"),
     })
 }
 
@@ -128,7 +135,7 @@ pub async fn get_with_constraints(
 ) -> Result<OrgWithConstraints, sqlx::Error> {
     let row = sqlx::query(
         r#"
-        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.nonce, org_const.start_nwk_addr, org_const.end_nwk_addr
+        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.enabled org_const.start_nwk_addr, org_const.end_nwk_addr
         from organizations org join organization_devaddr_constraints org_const
         on org.oui = org_const.oui
         "#,
@@ -146,7 +153,7 @@ pub async fn get_with_constraints(
             owner: row.get("owner_pubkey"),
             payer: row.get("payer_pubkey"),
             delegate_keys: row.get("delegate_keys"),
-            nonce: row.get::<i64, &str>("nonce") as u64,
+            status: row.get("status"),
         },
         constraints: DevAddrRange {
             start_addr: start_addr.into(),
@@ -172,6 +179,7 @@ pub async fn next_helium_devaddr(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<DevAddrField, NextHeliumDevAddrError> {
     let helium_default_start: i64 = net_id(HELIUM_NET_ID).range_start()?.into();
+    tracing::info!("helium devaddr default start {helium_default_start}");
 
     let addr = sqlx::query_as::<_, NextHeliumDevAddr>(
             r#"
@@ -183,6 +191,7 @@ pub async fn next_helium_devaddr(
         .fetch_one(db)
         .await?
         .addr;
+    tracing::info!("next helium devaddr start {addr}");
 
     Ok(addr.into())
 }
@@ -193,28 +202,30 @@ impl From<proto::OrgV1> for Org {
             oui: org.oui,
             owner: org.owner.into(),
             payer: org.payer.into(),
-            nonce: org.nonce,
             delegate_keys: org
                 .delegate_keys
                 .into_iter()
                 .map(|key| key.into())
                 .collect(),
+            status: OrgStatus::Enabled,
         }
     }
 }
 
+#[allow(deprecated)]
 impl From<Org> for proto::OrgV1 {
     fn from(org: Org) -> Self {
         Self {
             oui: org.oui,
             owner: org.owner.into(),
             payer: org.payer.into(),
-            nonce: org.nonce,
             delegate_keys: org
                 .delegate_keys
                 .iter()
                 .map(|key| key.as_ref().into())
                 .collect(),
+            // Deprecated proto field; flagged above to avoid compiler warning
+            nonce: 0,
         }
     }
 }
