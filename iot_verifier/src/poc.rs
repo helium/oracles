@@ -113,17 +113,13 @@ impl Poc {
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return self.beacon_result(
-                    VerificationStatus::Invalid,
-                    Some(InvalidReason::GatewayNotFound),
-                    None,
-                    None,
-                );
+                return Ok(VerifyBeaconResult::gateway_not_found());
             }
         };
         tracing::debug!("beacon info {:?}", beaconer_info);
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
+
         match self
             .do_beacon_verifications(last_beacon, &beaconer_info)
             .await
@@ -132,28 +128,14 @@ impl Poc {
                 let beaconer_location = beaconer_info
                     .location
                     .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
+
                 if let Some(scaling_factor) = hex_density_map.get(beaconer_location).await {
-                    self.beacon_result(
-                        VerificationStatus::Valid,
-                        None,
-                        Some(beaconer_info),
-                        Some(scaling_factor),
-                    )
+                    Ok(VerifyBeaconResult::valid(beaconer_info, scaling_factor))
                 } else {
-                    self.beacon_result(
-                        VerificationStatus::Invalid,
-                        Some(InvalidReason::ScalingFactorNotFound),
-                        Some(beaconer_info),
-                        None,
-                    )
+                    Ok(VerifyBeaconResult::scaling_factor_not_found(beaconer_info))
                 }
             }
-            Err(invalid_reason) => self.beacon_result(
-                VerificationStatus::Invalid,
-                Some(invalid_reason),
-                Some(beaconer_info),
-                None,
-            ),
+            Err(invalid_reason) => Ok(VerifyBeaconResult::invalid(invalid_reason, beaconer_info)),
         }
     }
 
@@ -243,12 +225,7 @@ impl Poc {
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return Ok(self.witness_result(
-                    VerificationStatus::Invalid,
-                    Some(InvalidReason::GatewayNotFound),
-                    None,
-                    None,
-                ));
+                return Ok(VerifyWitnessResult::gateway_not_found());
             }
         };
         tracing::debug!("witness info {:?}", beaconer_info);
@@ -260,39 +237,17 @@ impl Poc {
             Ok(()) => {
                 // to avoid assuming witness location is set and to avoid unwrap
                 // we explicity match location here again
-                let witness_location = match witness_info.location {
-                    Some(l) => l,
-                    None => {
-                        return Ok(self.witness_result(
-                            VerificationStatus::Invalid,
-                            Some(InvalidReason::NotAsserted),
-                            None,
-                            None,
-                        ))
-                    }
+                let Some(witness_location) = witness_info.location else {
+                    return Ok(VerifyWitnessResult::not_asserted())
                 };
+
                 if let Some(hex_scale) = hex_density_map.get(witness_location).await {
-                    Ok(self.witness_result(
-                        VerificationStatus::Valid,
-                        None,
-                        Some(witness_info),
-                        Some(hex_scale),
-                    ))
+                    Ok(VerifyWitnessResult::valid(witness_info, hex_scale))
                 } else {
-                    Ok(self.witness_result(
-                        VerificationStatus::Invalid,
-                        Some(InvalidReason::ScalingFactorNotFound),
-                        Some(witness_info),
-                        None,
-                    ))
+                    Ok(VerifyWitnessResult::scaling_factor_not_found(witness_info))
                 }
             }
-            Err(invalid_reason) => Ok(self.witness_result(
-                VerificationStatus::Invalid,
-                Some(invalid_reason),
-                Some(witness_info),
-                None,
-            )),
+            Err(invalid_reason) => Ok(VerifyWitnessResult::invalid(invalid_reason, witness_info)),
         }
     }
 
@@ -398,46 +353,6 @@ impl Poc {
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
         })
-    }
-
-    fn beacon_result(
-        &self,
-        result: VerificationStatus,
-        invalid_reason: Option<InvalidReason>,
-        beaconer_info: Option<GatewayInfo>,
-        scaling_factor: Option<Decimal>,
-    ) -> Result<VerifyBeaconResult, VerificationError> {
-        tracing::debug!(
-            "beacon verification result: {:?}, reason: {:?}",
-            result,
-            invalid_reason
-        );
-        Ok(VerifyBeaconResult {
-            result,
-            invalid_reason,
-            gateway_info: beaconer_info,
-            hex_scale: scaling_factor,
-        })
-    }
-
-    fn witness_result(
-        &self,
-        result: VerificationStatus,
-        invalid_reason: Option<InvalidReason>,
-        gateway_info: Option<GatewayInfo>,
-        hex_scale: Option<Decimal>,
-    ) -> VerifyWitnessResult {
-        tracing::debug!(
-            "witness verification result: {:?}, reason: {:?}",
-            result,
-            invalid_reason
-        );
-        VerifyWitnessResult {
-            result,
-            invalid_reason,
-            gateway_info,
-            hex_scale,
-        }
     }
 }
 
@@ -685,6 +600,131 @@ fn invalid_reason_or_default(
     match invalid_reason {
         Some(reason) => reason,
         None => default,
+    }
+}
+
+impl VerifyBeaconResult {
+    pub fn new(
+        result: VerificationStatus,
+        invalid_reason: Option<InvalidReason>,
+        gateway_info: Option<GatewayInfo>,
+        hex_scale: Option<Decimal>,
+    ) -> Self {
+        tracing::debug!(
+            "beacon verification result: {:?}, reason: {:?}",
+            result,
+            invalid_reason
+        );
+
+        Self {
+            result,
+            invalid_reason,
+            gateway_info,
+            hex_scale,
+        }
+    }
+
+    pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
+        Self::new(
+            VerificationStatus::Valid,
+            None,
+            Some(gateway_info),
+            Some(hex_scale),
+        )
+    }
+
+    pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            Some(invalid_reason),
+            Some(gateway_info),
+            None,
+        )
+    }
+
+    pub fn gateway_not_found() -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            Some(InvalidReason::GatewayNotFound),
+            None,
+            None,
+        )
+    }
+
+    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            Some(InvalidReason::ScalingFactorNotFound),
+            Some(gateway_info),
+            None,
+        )
+    }
+}
+
+impl VerifyWitnessResult {
+    pub fn new(
+        result: VerificationStatus,
+        invalid_reason: Option<InvalidReason>,
+        gateway_info: Option<GatewayInfo>,
+        hex_scale: Option<Decimal>,
+    ) -> Self {
+        tracing::debug!(
+            "witness verification result: {:?}, reason: {:?}",
+            result,
+            invalid_reason
+        );
+
+        VerifyWitnessResult {
+            result,
+            invalid_reason,
+            gateway_info,
+            hex_scale,
+        }
+    }
+
+    pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
+        Self::new(
+            VerificationStatus::Valid,
+            None,
+            Some(gateway_info),
+            Some(hex_scale),
+        )
+    }
+
+    pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            Some(invalid_reason),
+            Some(gateway_info),
+            None,
+        )
+    }
+
+    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            Some(InvalidReason::ScalingFactorNotFound),
+            Some(gateway_info),
+            None,
+        )
+    }
+
+    pub fn gateway_not_found() -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            Some(InvalidReason::GatewayNotFound),
+            None,
+            None,
+        )
+    }
+
+    pub fn not_asserted() -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            Some(InvalidReason::NotAsserted),
+            None,
+            None,
+        )
     }
 }
 
