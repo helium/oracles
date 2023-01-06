@@ -100,7 +100,7 @@ sudo apt update
 sudo apt install --yes ruby
 sudo gem install fpm -v 1.14.2 # current as of 2022-11-08
 
-for config_path in $( find . -name 'settings-template.toml' )
+for config_path in $( find ./iot_config/ -name 'settings-template.toml' )
 do
     oracle=$(echo $config_path | sed -E 's!\./([^/]+)/.+$!\1!' | sed -E 's!_!-!g')
 
