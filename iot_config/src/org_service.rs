@@ -1,4 +1,4 @@
-use crate::{lora_field, org, GrpcResult, Settings, HELIUM_NET_ID, HELIUM_NWK_ID};
+use crate::{lora_field, org, GrpcResult, Settings, HELIUM_NET_ID};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Network, PublicKey};
@@ -104,13 +104,13 @@ impl iot_config::Org for OrgService {
             .await
             .map_err(|_| Status::internal("org save failed"))?;
 
-        org::insert_constraints(org.oui, HELIUM_NWK_ID, &devaddr_range, &self.pool)
+        org::insert_constraints(org.oui, HELIUM_NET_ID, &devaddr_range, &self.pool)
             .await
             .map_err(|_| Status::internal("org constraints save failed"))?;
 
         Ok(Response::new(OrgResV1 {
             org: Some(org.into()),
-            net_id: HELIUM_NET_ID,
+            net_id: HELIUM_NET_ID.into(),
             devaddr_ranges: vec![devaddr_range.into()],
         }))
     }
@@ -137,7 +137,7 @@ impl iot_config::Org for OrgService {
             .await
             .map_err(|_| Status::internal("org save failed"))?;
 
-        org::insert_constraints(org.oui, net_id.nwk_id(), &devaddr_range, &self.pool)
+        org::insert_constraints(org.oui, net_id, &devaddr_range, &self.pool)
             .await
             .map_err(|_| Status::internal("org constraints save failed"))?;
 

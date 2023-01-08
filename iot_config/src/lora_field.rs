@@ -95,6 +95,9 @@ impl<const WIDTH: usize> PartialOrd for LoraField<WIDTH> {
     }
 }
 
+// Freely convert any LoraField to and from 64-bit integers
+// but limit conversion between 32-bit integers to the NetId
+// and DevAddr fields only
 impl<const WIDTH: usize> From<LoraField<WIDTH>> for u64 {
     fn from(field: LoraField<WIDTH>) -> Self {
         field.0
@@ -107,14 +110,26 @@ impl<const WIDTH: usize> From<LoraField<WIDTH>> for i64 {
     }
 }
 
-impl<const WIDTH: usize> From<LoraField<WIDTH>> for u32 {
-    fn from(field: LoraField<WIDTH>) -> Self {
+impl From<LoraField<6>> for u32 {
+    fn from(field: LoraField<6>) -> Self {
         field.0 as u32
     }
 }
 
-impl<const WIDTH: usize> From<LoraField<WIDTH>> for i32 {
-    fn from(field: LoraField<WIDTH>) -> Self {
+impl From<LoraField<8>> for u32 {
+    fn from(field: LoraField<8>) -> Self {
+        field.0 as u32
+    }
+}
+
+impl From<LoraField<6>> for i32 {
+    fn from(field: LoraField<6>) -> Self {
+        field.0 as i32
+    }
+}
+
+impl From<LoraField<8>> for i32 {
+    fn from(field: LoraField<8>) -> Self {
         field.0 as i32
     }
 }
@@ -131,15 +146,27 @@ impl<const WIDTH: usize> From<i64> for LoraField<WIDTH> {
     }
 }
 
-impl<const WIDTH: usize> From<u32> for LoraField<WIDTH> {
+impl From<u32> for LoraField<6> {
     fn from(val: u32) -> Self {
-        LoraField(val as u64)
+        LoraField::<6>(val as u64)
     }
 }
 
-impl<const WIDTH: usize> From<i32> for LoraField<WIDTH> {
+impl From<u32> for LoraField<8> {
+    fn from(val: u32) -> Self {
+        LoraField::<8>(val as u64)
+    }
+}
+
+impl From<i32> for LoraField<6> {
     fn from(val: i32) -> Self {
-        LoraField(val as u64)
+        LoraField::<6>(val as u64)
+    }
+}
+
+impl From<i32> for LoraField<8> {
+    fn from(val: i32) -> Self {
+        LoraField::<8>(val as u64)
     }
 }
 

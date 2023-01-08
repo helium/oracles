@@ -1,0 +1,34 @@
+version: "2.4"
+services:
+
+  iot-config:
+    image: iot-config:latest
+    build:
+      context: .
+      dockerfile: iot_config.Dockerfile
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    environment:
+      CFG_DATABASE_URL: postgres://postgres:postgres@postgres:5432/config_db
+      CFG_LISTEN: 0.0.0.0:8080
+      CFG_METRICS_ENDPOINT: 0.0.0.0:19000
+      CFG_NETWORK: mainnet
+      CFG_LOG: info
+
+  postgres:
+    image: postgres:latest
+    command: ["postgres", "-c", "log_statement=all"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: config_db
+      PGDATA: /data
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/data
+
+volumes:
+  db-data:
