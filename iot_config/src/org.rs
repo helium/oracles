@@ -4,8 +4,8 @@ use serde::Serialize;
 use sqlx::Row;
 
 use crate::{
-    lora_field::{net_id, DevAddrField, DevAddrRange},
-    HELIUM_NET_ID, HELIUM_NWK_ID,
+    lora_field::{DevAddrField, DevAddrRange, NetIdField},
+    HELIUM_NET_ID,
 };
 
 pub mod proto {
@@ -49,7 +49,7 @@ pub async fn create_org(
         r#"
         insert into organizations (owner_pubkey, payer_pubkey, delegate_keys)
         values ($1, $2, $3)
-        on conflict (owner_pubkey, payer_pubkey) do nothing
+        on conflict (owner_pubkey) do nothing
         returning oui
         "#,
     )
@@ -70,22 +70,20 @@ pub async fn create_org(
 
 pub async fn insert_constraints(
     oui: u64,
-    nwk_id: u32,
+    net_id: NetIdField,
     devaddr_range: &DevAddrRange,
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        insert into organization_devaddr_constraints (oui, nwk_id, start_nwk_addr, end_nwk_addr)
+        insert into organization_devaddr_constraints (oui, net_id, start_addr, end_addr)
         values ($1, $2, $3, $4)
-        on conflict (oui) do update set
-        nwk_id = EXCLUDED.nwk_id, start_nwk_addr = EXCLUDED.start_nwk_addr, end_nwk_addr = EXCLUDED.end_nwk_addr
         "#,
     )
     .bind(oui as i64)
-    .bind(nwk_id as i32)
-    .bind(i32::from(devaddr_range.start_addr))
-    .bind(i32::from(devaddr_range.end_addr))
+    .bind(i64::from(net_id))
+    .bind(i64::from(devaddr_range.start_addr))
+    .bind(i64::from(devaddr_range.end_addr))
     .execute(db)
     .await
     .map(|_| ())
@@ -135,7 +133,7 @@ pub async fn get_with_constraints(
 ) -> Result<OrgWithConstraints, sqlx::Error> {
     let row = sqlx::query(
         r#"
-        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.enabled org_const.start_nwk_addr, org_const.end_nwk_addr
+        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.enabled org_const.start_addr, org_const.end_addr
         from organizations org join organization_devaddr_constraints org_const
         on org.oui = org_const.oui
         "#,
@@ -144,8 +142,8 @@ pub async fn get_with_constraints(
     .fetch_one(db)
     .await?;
 
-    let start_addr = row.get::<i64, &str>("start_nwk_addr");
-    let end_addr = row.get::<i64, &str>("end_nwk_addr");
+    let start_addr = row.get::<i64, &str>("start_addr");
+    let end_addr = row.get::<i64, &str>("end_addr");
 
     Ok(OrgWithConstraints {
         org: Org {
@@ -172,28 +170,34 @@ pub enum NextHeliumDevAddrError {
 
 #[derive(sqlx::FromRow)]
 struct NextHeliumDevAddr {
-    addr: i64,
+    coalesce: i64,
 }
 
 pub async fn next_helium_devaddr(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<DevAddrField, NextHeliumDevAddrError> {
-    let helium_default_start: i64 = net_id(HELIUM_NET_ID).range_start()?.into();
-    tracing::info!("helium devaddr default start {helium_default_start}");
+    let helium_default_start: i64 = HELIUM_NET_ID.range_start()?.into();
 
     let addr = sqlx::query_as::<_, NextHeliumDevAddr>(
             r#"
-            select coalesce(max(end_nwk_addr), $1) from organization_devaddr_constraints where nwk_id = $2
+            select coalesce(max(end_addr), $1) from organization_devaddr_constraints where net_id = $2
             "#,
         )
         .bind(helium_default_start)
-        .bind(HELIUM_NWK_ID as i32)
+        .bind(i64::from(HELIUM_NET_ID))
         .fetch_one(db)
         .await?
-        .addr;
+        .coalesce;
+
+    let next_addr = if addr == helium_default_start {
+        addr
+    } else {
+        addr + 1
+    };
+
     tracing::info!("next helium devaddr start {addr}");
 
-    Ok(addr.into())
+    Ok(next_addr.into())
 }
 
 impl From<proto::OrgV1> for Org {

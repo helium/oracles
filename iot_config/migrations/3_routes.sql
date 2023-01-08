@@ -5,7 +5,7 @@ create table routes (
     max_copies int not null,
     server_host text not null,
     server_port int not null,
-    server_protocol_opts json not null,
+    server_protocol_opts jsonb not null,
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -26,8 +26,8 @@ select trigger_updated_at('route_eui_pairs');
 
 create table route_devaddr_ranges (
     route_id uuid not null references routes(id) on delete cascade,
-    start_nwk_addr int not null,
-    end_nwk_addr int not null,
+    start_addr bigint not null,
+    end_addr bigint not null,
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
