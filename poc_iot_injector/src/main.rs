@@ -1,7 +1,8 @@
+use anyhow::Result;
 use clap::Parser;
 use poc_iot_injector::{
-    cli::{generate, server},
-    Result, Settings,
+    cli::{construct, generate, server},
+    Settings,
 };
 use std::path;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -10,13 +11,15 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub enum Cmd {
     Generate(generate::Cmd),
     Server(server::Cmd),
+    Construct(construct::Cmd),
 }
 
 impl Cmd {
-    pub async fn run(self, settings: Settings) -> Result {
+    pub async fn run(self, settings: Settings) -> Result<()> {
         match self {
             Self::Generate(cmd) => cmd.run(&settings).await,
             Self::Server(cmd) => cmd.run(&settings).await,
+            Self::Construct(cmd) => cmd.run(&settings).await,
         }
     }
 }
@@ -36,7 +39,7 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::new(self.config)?;
         tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(&settings.log))
@@ -47,7 +50,7 @@ impl Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     cli.run().await
 }

@@ -1,16 +1,19 @@
+[profile.release]
+debug = true
+
 [workspace]
 members = [
-    "poc_ingest",
+    "ingest",
     "db_store",
     "file_store",
     "mobile_rewards",
-    "poc_mobile_verifier",
+    "mobile_verifier",
     "poc_entropy",
-    "poc_iot_verifier",
+    "iot_verifier",
     "poc_iot_injector",
     "node_follower",
     "density_scaler",
-    "mobile_index",
+    "reward_index",
     "metrics",
     "denylist",
     "iot_packet_verifier",
@@ -47,8 +50,8 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-crypto = {git = "https://github.com/helium/helium-crypto-rs", tag="v0.5.0", features=["sqlx-postgres", "multisig"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "map/oui-balance", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-crypto = {version = "0.6", features=["sqlx-postgres", "multisig"]}
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
 humantime = "2"
 metrics = "0"
@@ -79,3 +82,5 @@ geo-types = "*"
 geo = "*"
 blake3 = "*"
 retainer = "*"
+rand = "*"
+itertools = "*"

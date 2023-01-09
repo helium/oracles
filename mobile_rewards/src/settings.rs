@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
@@ -21,7 +20,6 @@ pub struct Settings {
     pub follower: node_follower::Settings,
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
-    pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
 }
 
@@ -44,7 +42,7 @@ impl Settings {
     /// Environemnt overrides have the same name as the entries in the settings
     /// file in uppercase and prefixed with "MI_". For example "MI_DATABASE_URL"
     /// will override the data base url.
-    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self, config::ConfigError> {
         let mut builder = Config::builder();
 
         if let Some(file) = path {
@@ -58,11 +56,10 @@ impl Settings {
             .add_source(Environment::with_prefix("MR").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-            .map_err(Error::from)
     }
 
-    pub fn keypair(&self) -> Result<helium_crypto::Keypair> {
-        let data = std::fs::read(&self.keypair)?;
+    pub fn keypair(&self) -> Result<helium_crypto::Keypair, Box<helium_crypto::Error>> {
+        let data = std::fs::read(&self.keypair).map_err(helium_crypto::Error::from)?;
         Ok(helium_crypto::Keypair::try_from(&data[..])?)
     }
 }

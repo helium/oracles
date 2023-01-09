@@ -4,6 +4,7 @@ use crate::{
 use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
+use futures::FutureExt;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use http::Uri;
 use std::path::Path;
@@ -13,6 +14,11 @@ use std::str::FromStr;
 pub struct FileStore {
     pub(crate) bucket: String,
     client: Client,
+}
+
+pub struct FileData {
+    pub info: FileInfo,
+    pub stream: BytesMutStream,
 }
 
 impl FileStore {
@@ -179,6 +185,7 @@ impl FileStore {
                 Ok(stream) => stream_source(stream),
                 Err(err) => stream::once(async move { Err(err) }).boxed(),
             })
+            .fuse()
             .boxed()
     }
 
@@ -196,7 +203,14 @@ impl FileStore {
                 Ok(stream) => stream_source(stream),
                 Err(err) => stream::once(async move { Err(err) }).boxed(),
             })
+            .fuse()
             .boxed()
+    }
+
+    pub async fn stream_file(&self, file_info: FileInfo) -> Result<BytesMutStream> {
+        get_byte_stream(self.client.clone(), self.bucket.clone(), file_info)
+            .await
+            .map(stream_source)
     }
 }
 
@@ -227,5 +241,6 @@ where
         .send()
         .map_ok(|output| output.body)
         .map_err(Error::s3_error)
+        .fuse()
         .await
 }

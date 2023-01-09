@@ -7,7 +7,8 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-rand = "*"
+anyhow = {workspace = true}
+rand = {workspace = true}
 rust_decimal = {workspace = true}
 config = {workspace = true}
 clap = {workspace = true}
@@ -37,20 +38,3 @@ file-store = {path = "../file_store"}
 db-store = {path = "../db_store"}
 node-follower = {path = "../node_follower"}
 density-scaler = {path = "../density_scaler"}
-
-[package.metadata.deb]
-depends = "$auto"
-assets = [
-  [
-    "target/release/poc-iot-injector",
-    "/opt/poc-iot-injector/bin/",
-    "755",
-  ],
-  [
-    "pkg/deb/env-template",
-    "/usr/share/poc-iot-injector/env-template",
-    "644",
-  ],
-]
-maintainer-scripts = "pkg/deb/"
-systemd-units = {}

@@ -108,6 +108,8 @@ pub const RADIO_REWARD_SHARE: &str = "radio_reward_share";
 pub const REWARD_MANIFEST: &str = "reward_manifest";
 pub const IOT_PACKET_REPORT: &str = "packet_report";
 pub const VERIFIED_PACKET: &str = "verified_packet";
+pub const GATEWAY_REWARD_SHARE: &str = "gateway_reward_share";
+pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -131,6 +133,8 @@ pub enum FileType {
     RewardManifest,
     IotPacketReport,
     VerifiedPacket,
+    GatewayRewardShare,
+    DataTransferSessionIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -155,6 +159,8 @@ impl fmt::Display for FileType {
             Self::RewardManifest => REWARD_MANIFEST,
             Self::IotPacketReport => IOT_PACKET_REPORT,
             Self::VerifiedPacket => VERIFIED_PACKET,
+            Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
+            Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
         };
         f.write_str(s)
     }
@@ -182,6 +188,8 @@ impl FileType {
             Self::RewardManifest => REWARD_MANIFEST,
             Self::IotPacketReport => IOT_PACKET_REPORT,
             Self::VerifiedPacket => VERIFIED_PACKET,
+            Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
+            Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
         }
     }
 }
@@ -209,6 +217,8 @@ impl FromStr for FileType {
             REWARD_MANIFEST => Self::RewardManifest,
             IOT_PACKET_REPORT => Self::IotPacketReport,
             VERIFIED_PACKET => Self::VerifiedPacket,
+            GATEWAY_REWARD_SHARE => Self::GatewayRewardShare,
+            DATA_TRANSFER_SESSION_INGEST_REPORT => Self::DataTransferSessionIngestReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

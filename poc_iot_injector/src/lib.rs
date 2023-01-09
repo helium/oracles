@@ -1,10 +1,8 @@
 pub mod cli;
-mod error;
 pub mod receipt_txn;
 pub mod server;
 mod settings;
 
-pub use error::{Error, Result};
 pub use settings::Settings;
 
 // Number of files to load from S3

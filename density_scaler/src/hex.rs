@@ -193,7 +193,7 @@ fn limit(res: u8, occupied_count: u64) -> u64 {
 pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<u64, Decimal> {
     let mut map: HashMap<u64, Decimal> = HashMap::new();
     for hex in &global_map.asserted_hexes {
-        let scale: Decimal = SCALING_RES.rev().into_iter().fold(dec!(1.0), |scale, res| {
+        let scale: Decimal = SCALING_RES.rev().fold(dec!(1.0), |scale, res| {
             hex.get_parent(res).map_or(scale, |parent| {
                 match (
                     global_map.unclipped_hexes.get(&parent),

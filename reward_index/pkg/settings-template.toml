@@ -1,0 +1,61 @@
+
+# log settings for the application (RUST_LOG format). Default below
+# 
+# log = "reward_index=debug"
+
+# Interval for checking verifier bucket (in seconds). Default below (15 minutes)
+#
+# interval = 900
+
+# Mode to operate the indexer in. "iot" or "mobile"
+mode = "iot"
+
+#
+[database]
+
+# Url for database to write indexed rewards to
+url = "postgres://postgres:postgres@127.0.0.1:5432/index_db"
+
+# Max connections to the database. Default below
+#
+# max_connections = 10
+
+[verifier]
+# Input bucket details for verified reward share data
+
+# Name of bucket to access verified data. Required
+#
+bucket = "mainnet-verified-bucket"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+
+[output]
+# Output bucket for indexed reward details
+
+# Name of bucket to write details to. Required
+#
+bucket = "mainnet-mobile-index-bucket"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

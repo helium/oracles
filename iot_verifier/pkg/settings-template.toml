@@ -1,0 +1,97 @@
+
+# log settings for the application (RUST_LOG format). Default below
+# 
+# log = "iot-verifier=debug,poc_store=info"
+
+# Cache location for generated verified reports; Required
+#
+cache = "/var/data/iot-verified"
+
+# Denylist url
+#
+# denylist_url = "https://api.github.com/repos/helium/denylist/releases/latest"
+
+
+[database]
+
+# Url for database
+url = "postgres://postgres:postgres@127.0.0.1:5432/index_db"
+
+# Max connections to the database. Default below
+#
+# max_connections = 10
+
+[follower]
+
+# Local grpc url to node follower for rewards tracking and submission
+#[serde(with = "http_serde::uri", default = "default_url")]
+# url = http://127.0.0.1:8080
+
+# Start block to start streaming followed transactions from.
+block = 0
+
+# Connect timeout for follower in seconds. Default 5
+# connect = 5
+
+# RPC timeout for follower in seconds. Default 5
+# rpc = 5
+
+# batch size for gateway stream results. Default 100
+# batch = 100
+
+[ingest]
+
+# Input bucket details for ingest data
+
+# Name of bucket to access ingest data. Required
+#
+bucket = "mainnet-ingest-bucket"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+
+[entropy]
+
+# Input bucket details for entropy data
+
+# Name of bucket to access entropy data. Required
+#
+bucket = "mainnet-entropy-bucket"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+[output]
+# Output bucket for verified reports
+
+# Name of bucket to write details to. Required
+#
+bucket = "mainnet-verified-bucket"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

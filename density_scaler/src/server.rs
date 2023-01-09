@@ -17,13 +17,11 @@ impl Server {
     pub async fn from_settings(settings: Settings) -> Result<Self> {
         let mut server = Self {
             hex_density_map: SharedHexDensityMap::new(),
-            follower: FollowerService::from_settings(&settings.follower)?,
+            follower: FollowerService::from_settings(&settings.follower),
             trigger_interval: Duration::seconds(settings.trigger),
         };
 
-        tracing::info!("generating hex scaling map : starting {:?}", Utc::now());
         server.refresh_scaling_map().await?;
-        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
 
         Ok(server)
     }
@@ -55,6 +53,7 @@ impl Server {
     }
 
     pub async fn refresh_scaling_map(&mut self) -> Result {
+        tracing::info!("generating hex scaling map : starting {:?}", Utc::now());
         let mut global_map = GlobalHexMap::new();
         let mut gw_stream = self.follower.active_gateways().await?;
         while let Some(GatewayInfo { location, .. }) = gw_stream.next().await {
@@ -64,7 +63,9 @@ impl Server {
         }
         global_map.reduce_global();
         let new_map = compute_hex_density_map(&global_map);
+        tracing::info!("scaling factor map entries: {}", new_map.len());
         self.hex_density_map.swap(new_map).await;
+        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
         Ok(())
     }
 }

@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use helium_proto::services::transaction::TxnStatus as ProtoTxnStatus;
 use std::fmt::Display;
 
@@ -17,12 +16,17 @@ impl Display for TxnStatus {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("no such txn status: {0}")]
+pub struct NoSuchTxnStatus(i32);
+
 impl TryFrom<i32> for TxnStatus {
-    type Error = Error;
-    fn try_from(value: i32) -> Result<Self> {
+    type Error = NoSuchTxnStatus;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match ProtoTxnStatus::from_i32(value) {
             Some(v) => Ok(Self::from(v)),
-            None => Err(Error::NotFound(format!("unknown value {value}"))),
+            None => Err(NoSuchTxnStatus(value)),
         }
     }
 }

@@ -1,4 +1,3 @@
-use crate::{Error, Result};
 use std::fmt::Display;
 
 #[derive(Clone, Debug)]
@@ -16,12 +15,17 @@ impl Display for BlockchainTokenTypeV1 {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("{0} is not a blockchain token type")]
+pub struct NoSuchBlockchainTokenType(i32);
+
 impl TryFrom<i32> for BlockchainTokenTypeV1 {
-    type Error = Error;
-    fn try_from(value: i32) -> Result<Self> {
+    type Error = NoSuchBlockchainTokenType;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match helium_proto::BlockchainTokenTypeV1::from_i32(value) {
             Some(v) => Ok(Self::from(v)),
-            None => Err(Error::NotFound(format!("unknown value {value}"))),
+            None => Err(NoSuchBlockchainTokenType(value)),
         }
     }
 }

@@ -1,9 +1,9 @@
 use crate::{
     pending_txn::{PendingTxn, Status},
-    traits::B64,
     txn_status::TxnStatus,
-    Error, Result, Settings,
+    Settings,
 };
+use anyhow::{bail, Result};
 use chrono::{Duration, Utc};
 use db_store::{meta, MetaValue};
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
@@ -27,8 +27,7 @@ use node_follower::txn_service::TransactionService;
 use poc_metrics::record_duration;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
-use std::collections::HashMap;
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 use tokio::time;
 use tonic::Streaming;
 
@@ -59,8 +58,8 @@ impl Server {
             .unwrap_or(DEFAULT_START_REWARD_BLOCK);
         Ok(Self {
             keypair,
-            follower_client: settings.follower.connect_follower()?,
-            txn_service: TransactionService::from_settings(&settings.transactions)?,
+            follower_client: settings.follower.connect_follower(),
+            txn_service: TransactionService::from_settings(&settings.transactions),
             trigger_interval: Duration::seconds(settings.trigger),
             last_follower_height: MetaValue::<i64>::fetch_or_insert_with(
                 &pool,
@@ -73,7 +72,7 @@ impl Server {
         })
     }
 
-    pub async fn run(&mut self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(&mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("starting rewards server");
 
         // If the rewards server has restarted, check for and process any
@@ -120,7 +119,7 @@ impl Server {
         &mut self,
         mut txn_stream: Streaming<FollowerTxnStreamRespV1>,
         shutdown: triggered::Listener,
-    ) -> Result {
+    ) -> Result<()> {
         let mut trigger_timer = time::interval(
             self.trigger_interval
                 .to_std()
@@ -152,7 +151,7 @@ impl Server {
         }
     }
 
-    async fn process_txn_entry(&mut self, entry: FollowerTxnStreamRespV1) -> Result {
+    async fn process_txn_entry(&mut self, entry: FollowerTxnStreamRespV1) -> Result<()> {
         let txn = match entry.txn {
             Some(BlockchainTxn { txn: Some(ref txn) }) => txn,
             _ => {
@@ -170,17 +169,18 @@ impl Server {
         &mut self,
         envelope: &FollowerTxnStreamRespV1,
         txn: &BlockchainTxnSubnetworkRewardsV1,
-    ) -> Result {
+    ) -> Result<()> {
         if txn.token_type() != BlockchainTokenTypeV1::Mobile {
             return Ok(());
         }
 
-        let txn_hash = &envelope.txn_hash.to_b64_url()?;
+        let txn_hash = &base64::encode_config(&envelope.txn_hash, base64::URL_SAFE_NO_PAD);
         let txn_ts = envelope.timestamp.to_timestamp()?;
-        PendingTxn::update(&self.pool, txn_hash, Status::Cleared, txn_ts).await
+        PendingTxn::update(&self.pool, txn_hash, Status::Cleared, txn_ts).await?;
+        Ok(())
     }
 
-    async fn process_clock_tick(&mut self) -> Result {
+    async fn process_clock_tick(&mut self) -> Result<()> {
         let now = Utc::now();
         let reward_period = reward_period(&mut self.follower_client).await?;
         let current_height = reward_period.end;
@@ -213,7 +213,7 @@ impl Server {
         Ok(())
     }
 
-    async fn check_pending(&mut self) -> Result {
+    async fn check_pending(&mut self) -> Result<()> {
         let pending_txns = PendingTxn::list(&self.pool, Status::Pending).await?;
         let mut failed_hashes: Vec<String> = Vec::new();
         for txn in pending_txns {
@@ -240,14 +240,12 @@ impl Server {
         let failed_pending_txns = PendingTxn::list(&self.pool, Status::Failed).await?;
         if !failed_pending_txns.is_empty() {
             tracing::error!("found failed_pending_txns {:#?}", failed_pending_txns);
-            return Err(Error::TransactionError(
-                "failed transactions in pending".to_string(),
-            ));
+            bail!("failed transactions in pending");
         }
         Ok(())
     }
 
-    async fn handle_rewards(&mut self, reward_period: Range<u64>) -> Result {
+    async fn handle_rewards(&mut self, reward_period: Range<u64>) -> Result<()> {
         use std::str::FromStr;
 
         tracing::info!("Checking for reward manifest");
@@ -277,7 +275,7 @@ impl Server {
 
         tracing::info!("Manifest found, triggering rewards");
 
-        let manifest = RewardManifest::decode(manifest_buff.map_err(|_| Error::ByteStreamError)?)?;
+        let manifest = RewardManifest::decode(manifest_buff?)?;
 
         let reward_files = stream::iter(
             manifest
@@ -319,7 +317,7 @@ impl Server {
         &mut self,
         rewards: Vec<SubnetworkReward>,
         reward_period: Range<u64>,
-    ) -> Result {
+    ) -> Result<()> {
         if rewards.is_empty() {
             tracing::info!("nothing to reward");
             return Ok(());
@@ -351,7 +349,7 @@ impl Server {
         Ok(())
     }
 
-    async fn process_prior_created_txns(&mut self) -> Result {
+    async fn process_prior_created_txns(&mut self) -> Result<()> {
         tracing::info!("processing any unsubmitted reward txns from previous run");
 
         let created_txns = PendingTxn::list(&self.pool, Status::Created).await?;

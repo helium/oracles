@@ -2,7 +2,7 @@ use crate::{error::Error, models::metadata::DenyListMetaData, Result};
 use std::{str, time::Duration};
 
 /// The default client useragent for denylist http requests
-static USERAGENT: &str = "oracle/poc_iot_verifier/1.0";
+static USERAGENT: &str = "oracle/iot_verifier/1.0";
 /// The default timeout for http requests
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 

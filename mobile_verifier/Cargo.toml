@@ -1,0 +1,43 @@
+[package]
+name = "mobile-verifier"
+version = "0.1.0"
+description = "Heartbeat and speed share verification for rewards"
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = {workspace = true}
+config = {workspace = true}
+thiserror = {workspace = true}
+serde =  {workspace = true}
+serde_json = {workspace = true}
+http-serde = {workspace = true}
+clap = {workspace = true}
+sqlx = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = {workspace = true}
+base64 = {workspace = true}
+sha2 = {workspace = true}
+lazy_static = {workspace = true}
+chrono = {workspace = true}
+triggered = {workspace = true}
+futures = {workspace = true}
+futures-util = {workspace = true}
+prost = {workspace = true}
+once_cell = {workspace = true}
+helium-proto = {workspace = true}
+helium-crypto = {workspace = true}
+humantime = {workspace = true}
+rust_decimal = {workspace = true}
+rust_decimal_macros = {workspace = true}
+tonic = {workspace = true}
+metrics = {workspace = true}
+metrics-exporter-prometheus = {workspace = true}
+file-store = {path = "../file_store"}
+db-store = { path = "../db_store" }
+poc-metrics = {path = "../metrics"}
+node-follower = {path = "../node_follower"}
+rand = {workspace = true}
+async-trait = {workspace = true}
