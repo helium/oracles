@@ -58,7 +58,7 @@ impl Server {
 
         // run the grpc server in either lora or mobile 5g mode
         match settings.mode {
-            Mode::IOT => server_iot::grpc_server(shutdown_listener, settings).await,
+            Mode::Iot => server_iot::grpc_server(shutdown_listener, settings).await,
             Mode::Mobile => server_mobile::grpc_server(shutdown_listener, settings).await,
         }
     }
