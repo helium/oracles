@@ -28,7 +28,6 @@ pub struct Settings {
     pub max_witnesses_per_receipt: u64,
     /// Local folder for storing intermediate files
     pub cache: String,
-    pub output: file_store::Settings,
 }
 
 pub fn default_log() -> String {
