@@ -382,8 +382,12 @@ impl Loader {
                         }
                         false => {
                             tracing::debug!(
-                                "dropping witness report as no assocaited beacon data: {:?}",
+                                "dropping witness report as no associated beacon data: {:?}",
                                 packet_data
+                            );
+                            metrics::increment_counter!(
+                                "iot_verifier_invalid_witness_report",
+                                &vec![("status", "ok"), ("reason", "no_associated_beacon_data")]
                             );
                             Ok(None)
                         }
