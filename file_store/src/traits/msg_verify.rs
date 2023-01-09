@@ -2,7 +2,7 @@ use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1};
 use helium_proto::{
-    services::poc_mobile::{CellHeartbeatReqV1, SpeedtestReqV1},
+    services::poc_mobile::{CellHeartbeatReqV1, DataTransferSessionReqV1, SpeedtestReqV1},
     Message,
 };
 
@@ -28,6 +28,7 @@ impl_msg_verify!(CellHeartbeatReqV1, signature);
 impl_msg_verify!(SpeedtestReqV1, signature);
 impl_msg_verify!(LoraBeaconReportReqV1, signature);
 impl_msg_verify!(LoraWitnessReportReqV1, signature);
+impl_msg_verify!(DataTransferSessionReqV1, signature);
 
 #[cfg(test)]
 mod test {
