@@ -26,8 +26,6 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(default = "default_max_witnesses_per_receipt")]
     pub max_witnesses_per_receipt: u64,
-    /// Local folder for storing intermediate files
-    pub cache: String,
 }
 
 pub fn default_log() -> String {
