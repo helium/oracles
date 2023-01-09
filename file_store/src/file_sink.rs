@@ -58,20 +58,20 @@ macro_rules! file_sink_write {
         file_store::_file_sink_write!($tag, $tx, $item, None)
     };
 
-    ($tag:literal, $tx:expr, $item:expr, $context:expr) => {
-        file_store::_file_sink_write!($tag, $tx, $item, Some($context))
+    ($tag:literal, $tx:expr, $item:expr, $labels:expr) => {
+        file_store::_file_sink_write!($tag, $tx, $item, Some($labels))
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! _file_sink_write {
-    ($tag:literal, $tx:expr, $item:expr, $context:expr) => {
+    ($tag:literal, $tx:expr, $item:expr, $labels:expr) => {
         file_store::file_sink::write(
             concat!(env!("CARGO_PKG_NAME"), "-", $tag),
             $tx,
             $item,
-            $context,
+            $labels,
         )
     };
 }
@@ -82,22 +82,23 @@ pub async fn write<T: prost::Message>(
     tag: &'static str,
     tx: &MessageSender,
     item: T,
-    log_context: Option<String>,
+    labels: Option<Vec<(&'static str, &'static str)>>,
 ) -> Result<oneshot::Receiver<Result>> {
     let (on_write_tx, on_write_rx) = oneshot::channel();
     let bytes = item.encode_to_vec();
+    let mut labels = labels.unwrap_or_default();
     tx.send(Message::Data(on_write_tx, bytes))
         .await
         .map_err(|e| {
-            metrics::increment_counter!(tag, "status" => "error");
-            tracing::error!(
-                "file_sink write failed for {tag:?} with {e:?}. context: {log_context:?}"
-            );
+            labels.push(("status", "error"));
+            metrics::increment_counter!(tag, &labels);
+            tracing::error!("file_sink write failed for {tag:?} with {e:?}");
             Error::channel()
         })
         .map(move |_| {
-            metrics::increment_counter!(tag, "status" => "ok");
-            tracing::debug!("file_sink write succeeded for {tag:?}. context: {log_context:?}");
+            labels.push(("status", "ok"));
+            metrics::increment_counter!(tag, &labels);
+            tracing::debug!("file_sink write succeeded for {tag:?}");
             on_write_rx
         })
 }
