@@ -19,7 +19,7 @@ pub struct TransactionService {
 
 impl TransactionService {
     pub fn from_settings(settings: &Settings) -> Self {
-        let clients = match &settings.urls {
+        let clients = match &settings.submission_urls {
             None => None,
             Some(_urls) => settings.connect_multiple_transactions(),
         };

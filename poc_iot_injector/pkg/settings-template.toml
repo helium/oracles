@@ -50,6 +50,12 @@ block = 0
 # batch size for gateway stream results. Default 100
 # batch = 100
 
+# Optionally provide multiple submission_urls (for poc-injector) like so:
+# [[transactions.submission_urls]]
+# url = "http://127.0.0.1:8083"
+# [[transactions.submission_urls]]
+# url = "http://127.0.0.1:8084"
+
 [verifier]
 
 # Input bucket details for verified reports

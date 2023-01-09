@@ -27,7 +27,7 @@ pub struct Settings {
     #[serde(default = "default_batch_size")]
     pub batch: u32,
     /// Optional list of Node urls to submit txns to
-    pub urls: Option<Vec<NodeUrl>>,
+    pub submission_urls: Option<Vec<NodeUrl>>,
 }
 
 pub fn default_url() -> http::Uri {
@@ -64,7 +64,7 @@ impl Settings {
     }
 
     pub fn connect_multiple_transactions(&self) -> Option<TransactionClients> {
-        match &self.urls {
+        match &self.submission_urls {
             Some(urls) => {
                 let clients = urls
                     .iter()
