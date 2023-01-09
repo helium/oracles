@@ -347,7 +347,8 @@ impl Runner {
         match file_sink_write!(
             "invalid_beacon_report",
             lora_invalid_beacon_tx,
-            invalid_poc_proto
+            invalid_poc_proto,
+            vec![("reason", invalid_reason.as_str_name())]
         )
         .await
         {
@@ -375,7 +376,8 @@ impl Runner {
             match file_sink_write!(
                 "invalid_witness_report",
                 lora_invalid_witness_tx,
-                invalid_witness_report_proto
+                invalid_witness_report_proto,
+                vec![("reason", invalid_reason.as_str_name())]
             )
             .await
             {
