@@ -127,13 +127,13 @@ impl poc_mobile::PocMobile for GrpcServer {
             })?;
 
         _ = file_sink_write!(
-            "data_transfer_session_report",
+            "mobile_data_transfer_session_report",
             &self.data_transfer_session_tx,
             report
         )
         .await;
 
-        metrics::increment_counter!("ingest_server_data_transfer_session_count");
+        metrics::increment_counter!("ingest_server_mobile_data_transfer_session_count");
 
         Ok(Response::new(DataTransferSessionRespV1 {
             id: timestamp.to_string(),
