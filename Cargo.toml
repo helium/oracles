@@ -3,7 +3,7 @@ debug = true
 
 [workspace]
 members = [
-    "poc_ingest",
+    "ingest",
     "db_store",
     "file_store",
     "mobile_rewards",

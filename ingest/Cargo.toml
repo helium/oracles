@@ -1,5 +1,5 @@
 [package]
-name = "poc-ingest"
+name = "ingest"
 version = "0.1.0"
 description = "PoC Ingest Server for the Helium Network"
 authors.workspace = true

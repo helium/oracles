@@ -10,10 +10,10 @@ use std::{
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default
-    /// "poc_ingest=debug,poc_store=info"
+    /// "ingest=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
-    /// Mode to run the server in (lora or mobile). Required
+    /// Mode to run the server in (iot or mobile). Required
     pub mode: Mode,
     /// Listen address. Required. Default is 0.0.0.0:9081
     #[serde(default = "default_listen_addr")]
@@ -37,7 +37,7 @@ pub fn default_listen_addr() -> String {
 }
 
 pub fn default_log() -> String {
-    "poc_ingest=debug,poc_store=info".to_string()
+    "ingest=debug,poc_store=info".to_string()
 }
 
 pub fn default_sink() -> String {
@@ -49,7 +49,7 @@ pub fn default_sink() -> String {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    Lora,
+    Iot,
     Mobile,
 }
 

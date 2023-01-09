@@ -2082,6 +2082,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "ingest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "clap 3.2.23",
+ "config",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "poc-metrics",
+ "prost",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2864,36 +2894,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower-http",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
-name = "poc-ingest"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "chrono",
- "clap 3.2.23",
- "config",
- "file-store",
- "futures",
- "futures-util",
- "helium-crypto",
- "helium-proto",
- "http",
- "metrics",
- "metrics-exporter-prometheus",
- "poc-metrics",
- "prost",
- "serde",
- "serde_json",
- "sha2 0.10.6",
- "thiserror",
- "tokio",
- "tonic",
  "tracing",
  "tracing-subscriber",
  "triggered",
