@@ -387,7 +387,7 @@ impl Loader {
                             );
                             metrics::increment_counter!(
                                 "iot_verifier_invalid_witness_report",
-                                &vec![("status", "ok"), ("reason", "no_associated_beacon_data")]
+                                &[("status", "ok"), ("reason", "no_associated_beacon_data")]
                             );
                             Ok(None)
                         }

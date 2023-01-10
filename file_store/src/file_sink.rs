@@ -3,6 +3,7 @@ use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use futures::SinkExt;
+use metrics::Label;
 use std::{
     io, mem,
     path::{Path, PathBuf},
@@ -55,11 +56,11 @@ pub fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
 #[macro_export]
 macro_rules! file_sink_write {
     ($tag:literal, $tx:expr, $item:expr) => {
-        file_store::_file_sink_write!($tag, $tx, $item, None)
+        file_store::_file_sink_write!($tag, $tx, $item, std::iter::empty())
     };
 
     ($tag:literal, $tx:expr, $item:expr, $labels:expr) => {
-        file_store::_file_sink_write!($tag, $tx, $item, Some($labels))
+        file_store::_file_sink_write!($tag, $tx, $item, $labels)
     };
 }
 
@@ -76,31 +77,43 @@ macro_rules! _file_sink_write {
     };
 }
 
+const OK_LABEL: Label = Label::from_static_parts("status", "ok");
+const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
+
 // Meant to be used indirectly, via file_sink_write macro.
 #[doc(hidden)]
 pub async fn write<T: prost::Message>(
     tag: &'static str,
     tx: &MessageSender,
     item: T,
-    labels: Option<Vec<(&'static str, &'static str)>>,
+    labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
 ) -> Result<oneshot::Receiver<Result>> {
     let (on_write_tx, on_write_rx) = oneshot::channel();
     let bytes = item.encode_to_vec();
-    let mut labels = labels.unwrap_or_default();
-    tx.send(Message::Data(on_write_tx, bytes))
-        .await
-        .map_err(|e| {
-            labels.push(("status", "error"));
-            metrics::increment_counter!(tag, &labels);
-            tracing::error!("file_sink write failed for {tag:?} with {e:?}");
-            Error::channel()
-        })
-        .map(move |_| {
-            labels.push(("status", "ok"));
-            metrics::increment_counter!(tag, &labels);
+    let labels = labels.into_iter().map(Label::from);
+
+    match tx.send(Message::Data(on_write_tx, bytes)).await {
+        Ok(_) => {
+            metrics::increment_counter!(
+                tag,
+                labels
+                    .chain(std::iter::once(OK_LABEL))
+                    .collect::<Vec<Label>>()
+            );
             tracing::debug!("file_sink write succeeded for {tag:?}");
-            on_write_rx
-        })
+            Ok(on_write_rx)
+        }
+        Err(e) => {
+            metrics::increment_counter!(
+                tag,
+                labels
+                    .chain(std::iter::once(ERROR_LABEL))
+                    .collect::<Vec<Label>>()
+            );
+            tracing::error!("file_sink write failed for {tag:?} with {e:?}");
+            Err(Error::channel())
+        }
+    }
 }
 
 pub async fn commit(tx: &MessageSender) -> Result<oneshot::Receiver<Result<FileManifest>>> {

@@ -348,7 +348,7 @@ impl Runner {
             "invalid_beacon_report",
             lora_invalid_beacon_tx,
             invalid_poc_proto,
-            vec![("reason", invalid_reason.as_str_name())]
+            &[("reason", invalid_reason.as_str_name())]
         )
         .await
         {
@@ -377,7 +377,7 @@ impl Runner {
                 "invalid_witness_report",
                 lora_invalid_witness_tx,
                 invalid_witness_report_proto,
-                vec![("reason", invalid_reason.as_str_name())]
+                &[("reason", invalid_reason.as_str_name())]
             )
             .await
             {
@@ -434,12 +434,14 @@ impl Runner {
         // we will have to clean out any sucessful write of the valid poc above
         // so if a report fails from this point on, it shall be lost for ever more
         for invalid_witness_report in witnesses_result.invalid_witnesses {
+            let invalid_reason = invalid_witness_report.reason;
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.into();
             match file_sink_write!(
                 "invalid_witness_report",
                 lora_invalid_witness_tx,
-                invalid_witness_report_proto
+                invalid_witness_report_proto,
+                &[("reason", invalid_reason.as_str_name())]
             )
             .await
             {
