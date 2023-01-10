@@ -210,10 +210,6 @@ impl Purger {
             report: beacon.clone(),
         }
         .into();
-        tracing::debug!(
-            "purging beacon with entropy: {:?}, time: {received_timestamp}",
-            db_beacon.remote_entropy
-        );
         file_sink_write!(
             "invalid_beacon",
             lora_invalid_beacon_tx,
@@ -243,10 +239,6 @@ impl Purger {
             participant_side: InvalidParticipantSide::Witness,
         }
         .into();
-        tracing::debug!(
-            "purging witness with packet data: {:?}, time: {received_timestamp}",
-            db_witness.packet_data
-        );
         file_sink_write!(
             "invalid_witness_report",
             lora_invalid_witness_tx,

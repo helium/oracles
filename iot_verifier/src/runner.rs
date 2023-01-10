@@ -219,7 +219,6 @@ impl Runner {
 
         let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
         let witness_len = db_witnesses.len();
-        tracing::debug!("found {witness_len} witness for beacon");
         metrics::gauge!(
             "oracles_iot_verifier_witnesses_per_beacon",
             witness_len as f64
@@ -241,11 +240,6 @@ impl Runner {
             .await?;
         match beacon_verify_result.result {
             VerificationStatus::Valid => {
-                tracing::debug!(
-                    "valid beacon. entropy: {:?}, addr: {:?}",
-                    beacon.data,
-                    beacon.pub_key
-                );
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
                     let mut verified_witnesses_result = poc
@@ -297,12 +291,6 @@ impl Runner {
                     .invalid_reason else {
                         anyhow::bail!("invalid_reason is None");
                     };
-                tracing::debug!(
-                    "invalid beacon. entropy: {:?}, addr: {:?}, reason: {:?}",
-                    beacon.data,
-                    beacon.pub_key,
-                    invalid_reason
-                );
                 self.handle_invalid_poc(
                     &beacon_report,
                     witnesses,
@@ -344,6 +332,12 @@ impl Runner {
             report: beacon.clone(),
         };
         let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
+        tracing::debug!(
+            "invalid poc.  beaconer: {:?}, reason: {:?}, witness count:{:?}",
+            beacon_report.report.pub_key,
+            invalid_reason,
+            witness_reports.len()
+        );
         // save invalid poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
         match file_sink_write!(
@@ -406,6 +400,12 @@ impl Runner {
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
+        tracing::debug!(
+            "valid poc.  beaconer: {:?}, valid witness count:  {:?}  invalid witness count: {:?}",
+            pub_key,
+            witnesses_result.valid_witnesses.len(),
+            witnesses_result.invalid_witnesses.len()
+        );
         let valid_poc: LoraValidPoc = LoraValidPoc {
             poc_id: beacon_id,
             beacon_report: valid_beacon_report,

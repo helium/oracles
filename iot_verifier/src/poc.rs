@@ -116,10 +116,8 @@ impl Poc {
                 return Ok(VerifyBeaconResult::gateway_not_found());
             }
         };
-        tracing::debug!("beacon info {:?}", beaconer_info);
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
-
         match self
             .do_beacon_verifications(last_beacon, &beaconer_info)
             .await
@@ -228,7 +226,6 @@ impl Poc {
                 return Ok(VerifyWitnessResult::gateway_not_found());
             }
         };
-        tracing::debug!("witness info {:?}", beaconer_info);
         // run the witness verifications
         match self
             .do_witness_verifications(&witness_info, witness_report, beaconer_info)
@@ -256,11 +253,19 @@ impl Poc {
         last_beacon: Option<LastBeacon>,
         beaconer_info: &GatewayInfo,
     ) -> GenericVerifyResult {
+        tracing::debug!(
+            "verifying beacon from beaconer: {:?}",
+            PublicKeyBinary::from(beaconer_info.address.clone())
+        );
         let beacon_received_ts = self.beacon_report.received_timestamp;
         verify_entropy(self.entropy_start, self.entropy_end, beacon_received_ts)?;
         verify_beacon_schedule(&last_beacon, beacon_received_ts)?;
         verify_gw_location(beaconer_info.location)?;
         verify_gw_capability(beaconer_info.staking_mode)?;
+        tracing::debug!(
+            "valid beacon from beaconer: {:?}",
+            PublicKeyBinary::from(beaconer_info.address.clone())
+        );
         Ok(())
     }
 
@@ -270,6 +275,10 @@ impl Poc {
         witness_report: &LoraWitnessIngestReport,
         beaconer_info: &GatewayInfo,
     ) -> GenericVerifyResult {
+        tracing::debug!(
+            "verifying witness from gateway: {:?}",
+            PublicKeyBinary::from(witness_info.address.clone())
+        );
         let beacon_report = &self.beacon_report;
         verify_self_witness(
             &beacon_report.report.pub_key,
@@ -296,6 +305,10 @@ impl Poc {
             beaconer_info.location,
             witness_info.location,
         )?;
+        tracing::debug!(
+            "valid witness from gateway: {:?}",
+            PublicKeyBinary::from(witness_info.address.clone())
+        );
         Ok(())
     }
 
@@ -333,7 +346,6 @@ impl Poc {
             .ok_or(VerificationError::NotFound(
                 "expected invalid_reason not found",
             ))?;
-        tracing::info!("invalid witness result. reason: {:?}", invalid_reason);
         Ok(LoraInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             reason: invalid_reason,
@@ -389,12 +401,15 @@ fn verify_entropy(
 ) -> GenericVerifyResult {
     if received_ts < entropy_start || received_ts > entropy_end {
         tracing::debug!(
-                "report verification failed, reason: {:?}. received_ts: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
-                InvalidReason::EntropyExpired,
-                received_ts,
-                entropy_start,
-                entropy_end
-            );
+            "report verification failed, reason: {:?}.
+                received_ts: {:?},
+                entropy_start_time: {:?},
+                entropy_end_time: {:?}",
+            InvalidReason::EntropyExpired,
+            received_ts,
+            entropy_start,
+            entropy_end
+        );
         return Err(InvalidReason::EntropyExpired);
     }
     Ok(())
@@ -419,6 +434,11 @@ fn verify_gw_location(gateway_loc: Option<u64>) -> GenericVerifyResult {
 fn verify_gw_capability(staking_mode: GatewayStakingMode) -> GenericVerifyResult {
     match staking_mode {
         GatewayStakingMode::Dataonly => {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}. gateway staking mode: {:?}",
+                InvalidReason::InvalidCapability,
+                staking_mode
+            );
             return Err(InvalidReason::InvalidCapability);
         }
         GatewayStakingMode::Full => (),
@@ -433,6 +453,10 @@ fn verify_self_witness(
     witness_pub_key: &PublicKeyBinary,
 ) -> GenericVerifyResult {
     if witness_pub_key == beacon_pub_key {
+        tracing::debug!(
+            "witness verification failed, reason: {:?}",
+            InvalidReason::SelfWitness
+        );
         return Err(InvalidReason::SelfWitness);
     }
     Ok(())
@@ -443,7 +467,7 @@ fn verify_self_witness(
 fn verify_witness_freq(beacon_freq: u64, witness_freq: u64) -> GenericVerifyResult {
     if (beacon_freq.abs_diff(witness_freq) as i32) > 1000 * 100 {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            "witness verification failed, reason: {:?}. beaconer freq: {beacon_freq}, witness freq: {witness_freq}",
             InvalidReason::InvalidFrequency
         );
         return Err(InvalidReason::InvalidFrequency);
@@ -455,7 +479,7 @@ fn verify_witness_freq(beacon_freq: u64, witness_freq: u64) -> GenericVerifyResu
 fn verify_witness_region(beacon_region: Region, witness_region: Region) -> GenericVerifyResult {
     if beacon_region != witness_region {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            "witness verification failed, reason: {:?}. beaconer region: {beacon_region}, witness region: {witness_region}",
             InvalidReason::InvalidRegion
         );
         return Err(InvalidReason::InvalidRegion);
@@ -478,10 +502,9 @@ fn verify_witness_distance(
         Ok(d) => d,
         Err(_) => return Err(InvalidReason::MaxDistanceExceeded),
     };
-    tracing::debug!("witness distance in mtrs: {:?}", witness_distance);
     if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            "witness verification failed, reason: {:?}. distance {witness_distance}",
             InvalidReason::MaxDistanceExceeded
         );
         return Err(InvalidReason::MaxDistanceExceeded);
@@ -510,29 +533,16 @@ fn verify_witness_rssi(
         Err(_) => return Err(InvalidReason::BadRssi),
     };
     let min_rcv_signal = calc_fspl(beacon_tx_power, witness_freq, distance, beacon_gain);
-    tracing::info!(
-        "beaconer tx_power: {beacon_tx_power},
-            beaconer gain: {beacon_gain},
-            witness signal: {witness_signal},
-            witness freq: {:?},
-            min_rcv_signal: {min_rcv_signal}
-            distance: {distance}",
-        witness_freq
-    );
     // signal is submitted as DBM * 10
     // min_rcv_signal    is plain old DBM
     if witness_signal / 10 > min_rcv_signal as i32 {
-        tracing::info!(
-            "witness rssi verification fail.  beaconer tx_power: {beacon_tx_power},
+        tracing::debug!(
+            "witness verification failed, reason: {:?}
+            beaconer tx_power: {beacon_tx_power},
             beaconer gain: {beacon_gain},
             witness signal: {witness_signal},
-            witness freq: {:?},
-            min_rcv_signal: {min_rcv_signal}
-            distance: {distance}",
-            witness_freq
-        );
-        tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            witness freq: {witness_freq},
+            min_rcv_signal: {min_rcv_signal}",
             InvalidReason::BadRssi
         );
         return Err(InvalidReason::BadRssi);
@@ -545,8 +555,9 @@ fn verify_witness_rssi(
 fn verify_witness_data(beacon_data: &Vec<u8>, witness_data: &Vec<u8>) -> GenericVerifyResult {
     if witness_data != beacon_data {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
-            InvalidReason::InvalidPacket
+            "witness verification failed, reason: {:?}. witness_data: {:?}",
+            InvalidReason::InvalidPacket,
+            witness_data
         );
         return Err(InvalidReason::InvalidPacket);
     }
@@ -610,12 +621,6 @@ impl VerifyBeaconResult {
         gateway_info: Option<GatewayInfo>,
         hex_scale: Option<Decimal>,
     ) -> Self {
-        tracing::debug!(
-            "beacon verification result: {:?}, reason: {:?}",
-            result,
-            invalid_reason
-        );
-
         Self {
             result,
             invalid_reason,
@@ -668,12 +673,6 @@ impl VerifyWitnessResult {
         gateway_info: Option<GatewayInfo>,
         hex_scale: Option<Decimal>,
     ) -> Self {
-        tracing::debug!(
-            "witness verification result: {:?}, reason: {:?}",
-            result,
-            invalid_reason
-        );
-
         VerifyWitnessResult {
             result,
             invalid_reason,
