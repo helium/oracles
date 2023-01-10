@@ -56,11 +56,11 @@ pub fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
 #[macro_export]
 macro_rules! file_sink_write {
     ($tag:literal, $tx:expr, $item:expr) => {
-        file_store::_file_sink_write!($tag, $tx, $item, None)
+        file_store::_file_sink_write!($tag, $tx, $item, std::iter::empty())
     };
 
     ($tag:literal, $tx:expr, $item:expr, $labels:expr) => {
-        file_store::_file_sink_write!($tag, $tx, $item, Some($labels))
+        file_store::_file_sink_write!($tag, $tx, $item, $labels)
     };
 }
 
@@ -86,11 +86,11 @@ pub async fn write<T: prost::Message>(
     tag: &'static str,
     tx: &MessageSender,
     item: T,
-    labels: Option<&[(&'static str, &'static str)]>,
+    labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
 ) -> Result<oneshot::Receiver<Result>> {
     let (on_write_tx, on_write_rx) = oneshot::channel();
     let bytes = item.encode_to_vec();
-    let labels = labels.unwrap_or_default().iter().map(Label::from);
+    let labels = labels.into_iter().map(Label::from);
 
     match tx.send(Message::Data(on_write_tx, bytes)).await {
         Ok(_) => {
