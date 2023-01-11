@@ -1,4 +1,4 @@
-use crate::balances::{BalanceFollower, Balances};
+use crate::balances::Balances;
 use crate::ingest;
 use crate::settings::Settings;
 use crate::verifier::Verifier;
@@ -83,9 +83,8 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     poc_metrics::install_metrics();
 
     // Set up the BalanceFollower:
-    let mut follower = FollowerService::from_settings(&settings.follower)?;
-    let balance_follower = BalanceFollower::new(follower.oui_balance_stream().await?).await?;
-    let balances = balance_follower.balances();
+    let mut follower = FollowerService::from_settings(&settings.follower);
+    let balances = Balances::new(todo!(), todo!());
 
     // Set up the verifier Daemon:
     let pool = settings.database.connect(10).await?;
@@ -105,7 +104,6 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         verified_packets_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
-    .write_manifest(true)
     .create()
     .await?;
 
@@ -126,9 +124,6 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
 
     // Run the services:
     tokio::try_join!(
-        balance_follower
-            .run(&shutdown_listener)
-            .map_err(Error::from),
         file_upload.run(&shutdown_listener).map_err(Error::from),
         verifier_daemon.run(&shutdown_listener).map_err(Error::from),
         verified_packets

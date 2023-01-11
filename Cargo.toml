@@ -25,6 +25,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
+anchor-lang = "0.26.0"
 anyhow = {version = "1", features = ["backtrace"]}
 thiserror = "1"
 clap = {version = "3", features = ["derive"]}
@@ -50,8 +51,11 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
-helium-crypto = {version = "0.6", features=["sqlx-postgres", "multisig"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "map/verified-packet", features = ["services"]}
+helium-crypto = {path = "../helium-crypto-rs", features=["solana", "sqlx-postgres", "multisig"]}
+solana-client = "1.14"
+solana-sdk = "1.14"
+data-credits = {git = "https://github.com/helium/helium-program-library.git"}
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
 humantime = "2"
 metrics = "0"

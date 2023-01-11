@@ -1,121 +1,84 @@
-use helium_proto::services::follower;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
-use tonic::Streaming;
+use anchor_client::Client;
+use anchor_lang::AccountDeserialize;
+use data_credits::{
+    accounts::BurnDelegatedDataCreditsV0, instructions::burn_delegated_data_credits_v0,
+    DelegatedDataCreditsV0,
+};
+use helium_crypto::PublicKey;
+use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_program::{program_error::ProgramError, program_pack::Pack};
+use solana_sdk::{pubkey::Pubkey, signature::Keypair};
 
-pub type Oui = u64;
-
-pub struct Balance {
-    prev_update_balance: u64,
-    curr_balance: u64,
-}
-
-impl Balance {
-    fn new(balance: u64) -> Self {
-        Self {
-            prev_update_balance: balance,
-            curr_balance: balance,
-        }
-    }
-
-    fn update_balance(&mut self, new_balance: u64) {
-        if self.prev_update_balance < new_balance {
-            self.curr_balance += new_balance - self.prev_update_balance;
-        }
-        self.prev_update_balance = new_balance;
-    }
-}
-
-#[derive(Clone)]
 pub struct Balances {
-    balances: Arc<RwLock<HashMap<Oui, Mutex<Balance>>>>,
+    pub pid: Pubkey,
+    pub provider: RpcClient,
+}
+
+const SUB_DAO: Pubkey = Pubkey::new_from_array([0; 32]);
+
+#[derive(thiserror::Error, Debug)]
+pub enum DebitError {
+    #[error("solana rpc error: {0}")]
+    RpcClientError(#[from] ClientError),
+    #[error("anchor error: {0}")]
+    AnchorError(#[from] anchor_lang::error::Error),
+    #[error("solana program error: {0}")]
+    ProgramError(#[from] ProgramError),
 }
 
 impl Balances {
-    /// Debits the balance if it is sufficient, and returns false if the
-    /// balance is insufficient.
-    pub async fn debit_balance_if_sufficient(&self, oui: &Oui, value: u64) -> bool {
-        if let Some(balance) = self.balances.read().await.get(oui) {
-            let mut balance = balance.lock().await;
-            if balance.curr_balance >= value {
-                balance.curr_balance -= value;
-                return true;
-            }
+    pub fn new(url: &str, pid: Pubkey) -> Self {
+        Self {
+            pid,
+            provider: RpcClient::new(url.to_string()),
         }
-        false
-    }
-}
-
-pub struct BalanceFollower {
-    updates: Streaming<follower::FollowerOuiBalanceUpdateRespV1>,
-    balances: Balances,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum FollowerError {
-    #[error("Tonic error: {0}")]
-    TonicError(#[from] tonic::Status),
-    #[error("Stream closed unexpectedly")]
-    StreamClosed,
-}
-
-impl BalanceFollower {
-    pub async fn new(
-        mut stream: Streaming<follower::FollowerOuiBalanceUpdateRespV1>,
-    ) -> Result<Self, FollowerError> {
-        // Get the first set of balances:
-        let mut balances = HashMap::new();
-        let first = stream.message().await?.ok_or(FollowerError::StreamClosed)?;
-        for balance in first.updated_balances {
-            balances.insert(balance.oui, Mutex::new(Balance::new(balance.balance)));
-        }
-
-        Ok(Self {
-            updates: stream,
-            balances: Balances {
-                balances: Arc::new(RwLock::new(balances)),
-            },
-        })
     }
 
-    pub fn balances(&self) -> Balances {
-        self.balances.clone()
-    }
+    /// Debit the balance by a given amount
+    pub async fn debit(&self, gateway: &PublicKey, amount: u64) -> Result<bool, DebitError> {
+        let ddc_pda_key = "delegated_data_credits";
+        let sha_digest = sha256::digest(gateway.to_vec().as_slice());
+        let (ddc_key, _) = Pubkey::find_program_address(
+            &[
+                ddc_pda_key.as_bytes(),
+                &SUB_DAO.to_bytes(),
+                sha_digest.as_bytes(),
+            ],
+            &data_credits::ID,
+        );
 
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), FollowerError> {
-        loop {
-            tokio::select! {
-                _ = shutdown.clone() => break,
-                update_result = self.update() => update_result?,
-            }
+        let ddc = self.delegated_data_credits(&ddc_key).await?;
+        let account_balance = self.account_balance(&ddc).await?;
+        let suficient = account_balance >= amount;
+
+        if suficient {
+            // Burn the credits:
+            let counter = Keypair::new();
+            let authority = todo!();
+
+            let accounts = BurnDelegatedDataCreditsV0 { ..todo!() };
+
+            let args = burn_delegated_data_credits_v0::BurnDelegatedDataCreditsArgsV0 { amount };
+
+            // We have to manually create and send the program in order for it to be async...
+            // todo...
         }
 
-        Ok(())
+        Ok(suficient)
     }
 
-    async fn update(&mut self) -> Result<(), FollowerError> {
-        let next_update = self
-            .updates
-            .message()
-            .await?
-            .ok_or(FollowerError::StreamClosed)?;
+    pub async fn delegated_data_credits(
+        &self,
+        ddkey: &Pubkey,
+    ) -> Result<DelegatedDataCreditsV0, DebitError> {
+        let account_data = self.provider.get_account_data(ddkey).await?;
+        let mut account_data = account_data.as_ref();
+        Ok(DelegatedDataCreditsV0::try_deserialize(&mut account_data)?)
+    }
 
-        // Lock all of the balances until they have all been updated.
-        let mut balances = self.balances.balances.write().await;
-        for update in next_update.updated_balances {
-            if balances.contains_key(&update.oui) {
-                balances
-                    .get(&update.oui)
-                    .unwrap()
-                    .lock()
-                    .await
-                    .update_balance(update.balance);
-            } else {
-                balances.insert(update.oui, Mutex::new(Balance::new(update.balance)));
-            }
-        }
-
-        Ok(())
+    pub async fn account_balance(&self, ddc: &DelegatedDataCreditsV0) -> Result<u64, DebitError> {
+        let account_data = self.provider.get_account_data(&ddc.escrow_account).await?;
+        let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
+        Ok(account_layout.amount)
     }
 }
