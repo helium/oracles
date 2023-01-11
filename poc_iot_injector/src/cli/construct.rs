@@ -21,11 +21,12 @@ impl Cmd {
     pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let mut file_stream = file_source::source([&self.in_path]);
         let poc_oracle_key = settings.keypair()?;
+        let max_witnesses_per_receipt = settings.max_witnesses_per_receipt;
         let shared_key = Arc::new(poc_oracle_key);
 
         while let Some(result) = file_stream.next().await {
             let msg = result?;
-            process_msg(msg, shared_key.clone()).await?;
+            process_msg(msg, shared_key.clone(), max_witnesses_per_receipt).await?;
         }
 
         Ok(())
@@ -35,8 +36,9 @@ impl Cmd {
 async fn process_msg(
     msg: prost::bytes::BytesMut,
     shared_key_clone: Arc<Keypair>,
+    max_witnesses_per_receipt: u64,
 ) -> anyhow::Result<TxnDetails> {
-    if let Ok(txn_details) = handle_report_msg(msg, shared_key_clone) {
+    if let Ok(txn_details) = handle_report_msg(msg, shared_key_clone, max_witnesses_per_receipt) {
         tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
         Ok(txn_details)
     } else {

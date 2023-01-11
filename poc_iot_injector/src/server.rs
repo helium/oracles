@@ -25,6 +25,7 @@ pub struct Server {
     tick_time: StdDuration,
     receipt_sender: file_sink::MessageSender,
     do_submission: bool,
+    max_witnesses_per_receipt: u64,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -46,6 +47,7 @@ impl Server {
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
         let do_submission = settings.do_submission;
+        let max_witnesses_per_receipt = settings.max_witnesses_per_receipt;
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
@@ -65,6 +67,7 @@ impl Server {
             last_poc_submission_ts,
             receipt_sender,
             do_submission,
+            max_witnesses_per_receipt,
         };
         Ok(result)
     }
@@ -112,6 +115,7 @@ impl Server {
             after_utc,
             before_utc,
             self.do_submission,
+            self.max_witnesses_per_receipt,
         )
         .await?;
 
@@ -137,6 +141,7 @@ async fn submit_txns(
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
     do_submission: bool,
+    max_witnesses_per_receipt: u64,
 ) -> anyhow::Result<()> {
     let file_list = store
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
@@ -161,6 +166,7 @@ async fn submit_txns(
                         buf,
                         shared_key,
                         do_submission,
+                        max_witnesses_per_receipt,
                         &receipt_sender_clone,
                         &mut shared_txn_service,
                     )
@@ -187,10 +193,11 @@ async fn process_submission(
     buf: BytesMut,
     shared_key: Arc<Keypair>,
     do_submission: bool,
+    max_witnesses_per_receipt: u64,
     receipt_sender: &file_sink::MessageSender,
     txn_service: &mut Option<TransactionService>,
 ) -> anyhow::Result<()> {
-    match handle_report_msg(buf, shared_key) {
+    match handle_report_msg(buf, shared_key, max_witnesses_per_receipt) {
         Ok(txn_details) => {
             tracing::debug!("txn_details: {:?}", txn_details);
             if do_submission {
