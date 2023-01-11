@@ -16,6 +16,7 @@ use helium_proto::{
     services::poc_iot::{InvalidParticipantSide, InvalidReason},
     GatewayStakingMode, Region,
 };
+use lazy_static::lazy_static;
 use node_follower::gateway_resp::GatewayInfo;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -28,9 +29,13 @@ pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
 pub const R: f64 = 6.371e6;
 
-/// the cadence in seconds at which hotspots are permitted to beacon
-/// 6 hours with 10 min tolerance
-const BEACON_INTERVAL: i64 = (60 * 60 * 6) - (10 * 60);
+lazy_static! {
+    /// the cadence at which hotspots are permitted to beacon
+    static ref BEACON_INTERVAL: Duration = Duration::hours(6);
+    /// a tolerance applied to beacon intervals within which beacons
+    /// will be accepted
+    static ref BEACON_INTERVAL_TOLERANCE: Duration = Duration::minutes(10);
+}
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
@@ -377,7 +382,7 @@ fn verify_beacon_schedule(
     match last_beacon {
         Some(last_beacon) => {
             let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-            if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
+            if interval_since_last_beacon < (*BEACON_INTERVAL - *BEACON_INTERVAL_TOLERANCE) {
                 tracing::debug!(
                     "beacon verification failed, reason:
                         IrregularInterval. Seconds since last beacon {:?}",
@@ -772,19 +777,43 @@ mod tests {
     fn test_verify_beacon_schedule() {
         let now = Utc::now();
         let id: &str = "test_id";
-        let last_beacon_a = Some(LastBeacon {
+        let last_beacon = Some(LastBeacon {
             id: id.as_bytes().to_vec(),
-            timestamp: now - Duration::seconds(60 * 12),
+            timestamp: now - *BEACON_INTERVAL,
         });
-        // last beacon was 12 mins in the past, expectation pass
-        assert_eq!(Ok(()), verify_beacon_schedule(&last_beacon_a, now));
-        //we dont have any last beacon data, expectation pass
-        assert_eq!(Ok(()), verify_beacon_schedule(&None, now));
-        // too soon after our last beacon, expectation fail
+        // last beacon was BEACON_INTERVAL in the past, expectation pass
+        assert_eq!(Ok(()), verify_beacon_schedule(&last_beacon, now));
+        // last beacon was BEACON_INTERVAL + 1hr in the past, expectation pass
+        assert_eq!(
+            Ok(()),
+            verify_beacon_schedule(&last_beacon, now + Duration::minutes(60))
+        );
+        // last beacon was BEACON_INTERVAL - 1 hr, too soon after our last beacon,
+        // expectation fail
         assert_eq!(
             Err(InvalidReason::IrregularInterval),
-            verify_beacon_schedule(&last_beacon_a, now - Duration::seconds(60 * 5))
+            verify_beacon_schedule(&last_beacon, now - Duration::minutes(60))
         );
+        // last beacon was just outside of our tolerance period by 2 mins
+        // therefore beacon too soon, expectation fail
+        assert_eq!(
+            Err(InvalidReason::IrregularInterval),
+            verify_beacon_schedule(
+                &last_beacon,
+                now - (*BEACON_INTERVAL_TOLERANCE + Duration::minutes(2))
+            )
+        );
+        // last beacon was just inside of our tolerance period by 2 mins
+        // expectation pass
+        assert_eq!(
+            Ok(()),
+            verify_beacon_schedule(
+                &last_beacon,
+                now - (*BEACON_INTERVAL_TOLERANCE - Duration::minutes(2))
+            )
+        );
+        //we dont have any last beacon data, expectation pass
+        assert_eq!(Ok(()), verify_beacon_schedule(&None, now));
     }
 
     #[test]
