@@ -72,11 +72,8 @@ fn maybe_squish_witnesses(
     }
 
     // Seed a random number from the poc_id for shuffling the witnesses
-    let mut hasher = Sha256::new();
-    hasher.update(poc_id);
-    let mut seed: [u8; 32] = [0; 32];
-    seed.copy_from_slice(&hasher.finalize());
-    let mut rng = StdRng::from_seed(seed);
+    let seed = Sha256::digest(poc_id);
+    let mut rng = StdRng::from_seed(seed.into());
 
     // Shuffle and truncate witnesses
     poc_witnesses.shuffle(&mut rng);
