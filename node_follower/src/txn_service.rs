@@ -13,7 +13,10 @@ pub type TransactionClients = Vec<TransactionClient>;
 
 #[derive(Debug, Clone)]
 pub struct TransactionService {
+    // Required to create TransactionService, built using the url from settings
     client: TransactionClient,
+    // Optional, create multiple clients using submission_urls from settings.
+    // For now, only poc-injector configures this in its settings.
     clients: Option<TransactionClients>,
 }
 
