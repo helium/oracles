@@ -16,6 +16,7 @@ const REPORT_INSERT_SQL: &str = "insert into poc_report (
     report_type,
     status
 ) ";
+const REPORT_INSERT_CONFLICT_SQL: &str = " on conflict (id) do nothing ";
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "reporttype", rename_all = "lowercase")]
@@ -123,7 +124,7 @@ impl Report {
                 .push_bind(insert.report_type)
                 .push_bind(insert.status);
         });
-
+        query_builder.push(REPORT_INSERT_CONFLICT_SQL);
         let query = query_builder.build();
         query
             .execute(executor)
