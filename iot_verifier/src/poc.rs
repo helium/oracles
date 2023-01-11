@@ -29,7 +29,8 @@ pub const C: f64 = 2.998e8;
 pub const R: f64 = 6.371e6;
 
 /// the cadence in seconds at which hotspots are permitted to beacon
-const BEACON_INTERVAL: i64 = (10 * 60) - 10; // 10 mins ( minus 10 sec tolerance )
+/// 6 hours with 10 min tolerance
+const BEACON_INTERVAL: i64 = (60 * 60 * 6) - (10 * 60);
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
