@@ -32,6 +32,7 @@ impl Cmd {
             .await?;
 
         let poc_oracle_key = settings.keypair()?;
+        let max_witnesses_per_receipt = settings.max_witnesses_per_receipt;
         let shared_key = Arc::new(poc_oracle_key);
 
         let mut success_counter = 0;
@@ -43,7 +44,9 @@ impl Cmd {
 
         while let Some(msg) = files.next().await {
             let shared_key_clone = shared_key.clone();
-            if let Ok(txn_details) = handle_report_msg(msg.clone(), shared_key_clone) {
+            if let Ok(txn_details) =
+                handle_report_msg(msg.clone(), shared_key_clone, max_witnesses_per_receipt)
+            {
                 tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
                 success_counter += 1;
             } else {

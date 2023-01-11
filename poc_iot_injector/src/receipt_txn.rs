@@ -7,6 +7,7 @@ use helium_proto::{
     blockchain_txn::Txn, BlockchainPocPathElementV1, BlockchainPocReceiptV1,
     BlockchainPocWitnessV1, BlockchainTxn, BlockchainTxnPocReceiptsV2, Message,
 };
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -31,12 +32,18 @@ pub enum TxnConstructionError {
 pub fn handle_report_msg(
     msg: prost::bytes::BytesMut,
     keypair: Arc<Keypair>,
+    max_witnesses_per_receipt: u64,
 ) -> Result<TxnDetails, TxnConstructionError> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
     let lora_valid_poc = LoraValidPoc::decode(msg)?;
 
-    let poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports);
+    let mut poc_witnesses = construct_poc_witnesses(lora_valid_poc.witness_reports);
+    maybe_squish_witnesses(
+        &mut poc_witnesses,
+        &lora_valid_poc.poc_id,
+        max_witnesses_per_receipt as usize,
+    );
 
     let (poc_receipt, beacon_received_ts) = construct_poc_receipt(lora_valid_poc.beacon_report);
 
@@ -52,6 +59,25 @@ pub fn handle_report_msg(
         hash,
         hash_b64_url,
     })
+}
+
+/// Maybe squish poc_witnesses if the length is >= max_witnesses_per_receipt
+fn maybe_squish_witnesses(
+    poc_witnesses: &mut Vec<BlockchainPocWitnessV1>,
+    poc_id: &Vec<u8>,
+    max_witnesses_per_receipt: usize,
+) {
+    if poc_witnesses.len() <= max_witnesses_per_receipt {
+        return;
+    }
+
+    // Seed a random number from the poc_id for shuffling the witnesses
+    let seed = Sha256::digest(poc_id);
+    let mut rng = StdRng::from_seed(seed.into());
+
+    // Shuffle and truncate witnesses
+    poc_witnesses.shuffle(&mut rng);
+    poc_witnesses.truncate(max_witnesses_per_receipt)
 }
 
 fn wrap_txn(txn: BlockchainTxnPocReceiptsV2) -> BlockchainTxn {
@@ -173,4 +199,52 @@ fn sign_txn(
     let mut txn = txn.clone();
     txn.signature = vec![];
     Ok(keypair.sign(&txn.encode_to_vec())?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_witnesses_per_receipt_test() {
+        let poc_witness = BlockchainPocWitnessV1 {
+            gateway: vec![],
+            timestamp: 123,
+            signal: 0,
+            packet_hash: vec![],
+            signature: vec![],
+            snr: 0.0,
+            frequency: 0.0,
+            datarate: "dr".to_string(),
+            channel: 0,
+            reward_shares: 0,
+        };
+        let poc_id: Vec<u8> = vec![0];
+        let max_witnesses_per_receipt = 14;
+
+        let mut to_be_squished_witnesses = vec![poc_witness.clone(); 20];
+        assert_eq!(20, to_be_squished_witnesses.len());
+        maybe_squish_witnesses(
+            &mut to_be_squished_witnesses,
+            &poc_id,
+            max_witnesses_per_receipt,
+        );
+        assert_eq!(14, to_be_squished_witnesses.len());
+        let mut non_squished_witnesses = vec![poc_witness.clone(); 14];
+        assert_eq!(14, non_squished_witnesses.len());
+        maybe_squish_witnesses(
+            &mut non_squished_witnesses,
+            &poc_id,
+            max_witnesses_per_receipt,
+        );
+        assert_eq!(14, non_squished_witnesses.len());
+        let mut non_squished_witnesses2 = vec![poc_witness; 10];
+        assert_eq!(10, non_squished_witnesses2.len());
+        maybe_squish_witnesses(
+            &mut non_squished_witnesses2,
+            &poc_id,
+            max_witnesses_per_receipt,
+        );
+        assert_eq!(10, non_squished_witnesses2.len());
+    }
 }

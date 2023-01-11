@@ -24,7 +24,7 @@ pub struct Server {
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
     receipt_sender: file_sink::MessageSender,
-    do_submission: bool,
+    settings: Settings,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -45,7 +45,6 @@ impl Server {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
-        let do_submission = settings.do_submission;
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
@@ -56,15 +55,16 @@ impl Server {
 
         let result = Self {
             pool: pool.clone(),
+            settings: settings.clone(),
             keypair: Arc::new(keypair),
             tick_time,
             // Only create txn_service if do_submission is true
-            txn_service: do_submission
+            txn_service: settings
+                .do_submission
                 .then_some(TransactionService::from_settings(&settings.transactions)),
             iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
             receipt_sender,
-            do_submission,
         };
         Ok(result)
     }
@@ -111,7 +111,7 @@ impl Server {
             &self.receipt_sender,
             after_utc,
             before_utc,
-            self.do_submission,
+            self.settings.clone(),
         )
         .await?;
 
@@ -136,7 +136,7 @@ async fn submit_txns(
     receipt_sender: &file_sink::MessageSender,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
-    do_submission: bool,
+    settings: Settings,
 ) -> anyhow::Result<()> {
     let file_list = store
         .list_all(FileType::LoraValidPoc, after_utc, before_utc)
@@ -160,7 +160,8 @@ async fn submit_txns(
                     let _ = process_submission(
                         buf,
                         shared_key,
-                        do_submission,
+                        settings.do_submission,
+                        settings.max_witnesses_per_receipt,
                         &receipt_sender_clone,
                         &mut shared_txn_service,
                     )
@@ -187,10 +188,11 @@ async fn process_submission(
     buf: BytesMut,
     shared_key: Arc<Keypair>,
     do_submission: bool,
+    max_witnesses_per_receipt: u64,
     receipt_sender: &file_sink::MessageSender,
     txn_service: &mut Option<TransactionService>,
 ) -> anyhow::Result<()> {
-    match handle_report_msg(buf, shared_key) {
+    match handle_report_msg(buf, shared_key, max_witnesses_per_receipt) {
         Ok(txn_details) => {
             tracing::debug!("txn_details: {:?}", txn_details);
             if do_submission {

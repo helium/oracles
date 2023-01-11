@@ -19,6 +19,9 @@ keypair = "/path/to/key_pair"
 #
 # do_submission = false
 
+# Number of witnesses allowed per receipt
+#
+# max_witnesses_per_receipt = 14
 
 [database]
 
