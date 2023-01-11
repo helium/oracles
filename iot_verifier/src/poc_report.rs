@@ -385,7 +385,7 @@ impl Report {
         Ok(sqlx::query_scalar::<_, i64>(
             r#"
             select count(*) from poc_report
-            where report_type = 'beacon' and status = 'ready'
+            where report_type = 'beacon' and status in ('pending','ready')
             "#,
         )
         .fetch_one(executor)
