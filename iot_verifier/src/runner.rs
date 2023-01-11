@@ -1,6 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     last_beacon::LastBeacon,
+    metrics::Metrics,
     poc::{Poc, VerificationStatus, VerifyWitnessesResult},
     poc_report::Report,
     reward_share::GatewayShare,
@@ -191,7 +192,6 @@ impl Runner {
                 }
             })
             .await;
-        metrics::gauge!("oracles_iot_verifier_beacons_ready", beacon_len as f64);
         tracing::info!("completed processing {beacon_len} beacons");
         Ok(())
     }
@@ -219,10 +219,7 @@ impl Runner {
 
         let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
         let witness_len = db_witnesses.len();
-        metrics::gauge!(
-            "oracles_iot_verifier_witnesses_per_beacon",
-            witness_len as f64
-        );
+        tracing::debug!("found {witness_len} witness for beacon");
 
         // get the beacon and witness report PBs from the db reports
         let mut witnesses: Vec<LoraWitnessIngestReport> = Vec::new();
@@ -385,6 +382,7 @@ impl Runner {
         }
         // done with these poc reports, purge em from the db
         Report::delete_poc(&self.pool, &beacon_id).await?;
+        Metrics::decrement_num_beacons();
         Ok(())
     }
 
@@ -456,6 +454,7 @@ impl Runner {
         // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
         Report::delete_poc(&self.pool, &packet_data).await?;
+        Metrics::decrement_num_beacons();
         Ok(())
     }
 }

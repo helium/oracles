@@ -4,6 +4,7 @@ pub mod gateway_cache;
 pub mod last_beacon;
 pub mod loader;
 pub mod meta;
+pub mod metrics;
 pub mod poc;
 pub mod poc_report;
 pub mod purger;

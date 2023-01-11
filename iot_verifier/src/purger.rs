@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, poc_report::Report, Settings};
+use crate::{entropy::Entropy, metrics::Metrics, poc_report::Report, Settings};
 use file_store::{
     file_sink, file_sink::MessageSender, file_sink_write, file_upload,
     lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidBeaconReport,
@@ -218,6 +218,7 @@ impl Purger {
         .await?;
         // delete the report from the DB
         Report::delete_report(tx.lock().await.deref_mut(), &beacon_id).await?;
+        Metrics::decrement_num_beacons();
         Ok(())
     }
 

@@ -1,6 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
+    metrics::LoaderMetricTracker,
     poc_report::{InsertBindings, LoraStatus, Report, ReportType},
     Settings,
 };
@@ -277,6 +278,7 @@ impl Loader {
     ) -> anyhow::Result<()> {
         let file_type = file_info.file_type;
         let tx = Mutex::new(self.pool.begin().await?);
+        let metrics = LoaderMetricTracker::new();
         store
             .stream_file(file_info.clone())
             .await?
@@ -289,7 +291,7 @@ impl Loader {
                             tracing::warn!("skipping report of type {file_type} due to error {err:?}")
                         }
                         Ok(buf) => {
-                            match self.handle_report(file_type, &buf, gateway_cache, xor_data, xor_filter).await
+                            match self.handle_report(file_type, &buf, gateway_cache, xor_data, xor_filter, &metrics).await
                                 {
                                     Ok(Some(bindings)) =>  inserts.push(bindings),
                                     Ok(None) => (),
@@ -309,6 +311,7 @@ impl Loader {
             }).await;
 
         tx.into_inner().commit().await?;
+        metrics.record_metrics();
         Ok(())
     }
 
@@ -319,6 +322,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
+        metrics: &LoaderMetricTracker,
     ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
             FileType::LoraBeaconIngestReport => {
@@ -340,7 +344,7 @@ impl Loader {
                             report_type: ReportType::Beacon,
                             status: LoraStatus::Pending,
                         };
-                        metrics::increment_counter!("oracles_iot_verifier_loader_beacon");
+                        metrics.increment_beacons();
                         if let Some(xor_data) = xor_data {
                             let key_hash = filter_key_hash(&beacon.report.data);
                             xor_data.lock().await.deref_mut().push(key_hash)
@@ -372,9 +376,7 @@ impl Loader {
                                         report_type: ReportType::Witness,
                                         status: LoraStatus::Ready,
                                     };
-                                    metrics::increment_counter!(
-                                        "oracles_iot_verifier_loader_witness"
-                                    );
+                                    metrics.increment_witnesses();
                                     Ok(Some(res))
                                 }
                                 false => Ok(None),
@@ -385,10 +387,7 @@ impl Loader {
                                 "dropping witness report as no associated beacon data: {:?}",
                                 packet_data
                             );
-                            metrics::increment_counter!(
-                                "iot_verifier_invalid_witness_report",
-                                &[("status", "ok"), ("reason", "no_associated_beacon_data")]
-                            );
+                            metrics.increment_witnesses_no_beacon();
                             Ok(None)
                         }
                     }
