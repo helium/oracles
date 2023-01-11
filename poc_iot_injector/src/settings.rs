@@ -2,7 +2,7 @@ use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
     /// "poc_iot_injector=debug,poc_store=info"
