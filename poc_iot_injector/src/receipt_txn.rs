@@ -28,6 +28,8 @@ pub enum TxnConstructionError {
     FileStoreError(#[from] file_store::Error),
     #[error("signing error: {0}")]
     CryptoError(#[from] Box<helium_crypto::Error>),
+    #[error("zero rewards_shares")]
+    ZeroRewards,
 }
 
 pub fn handle_report_msg(
@@ -46,7 +48,7 @@ pub fn handle_report_msg(
         max_witnesses_per_receipt as usize,
     );
 
-    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(lora_valid_poc.beacon_report);
+    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(lora_valid_poc.beacon_report)?;
 
     // TODO: Double check whether the gateway in the poc_receipt is challengee?
     let path_element =
@@ -130,21 +132,23 @@ fn construct_poc_witnesses(
             .to_u32()
             .unwrap_or_default();
 
-        // NOTE: channel is irrelevant now
-        let poc_witness = BlockchainPocWitnessV1 {
-            gateway: witness_report.report.pub_key.into(),
-            timestamp: witness_report.report.timestamp.timestamp() as u64,
-            signal: witness_report.report.signal,
-            packet_hash: witness_report.report.data,
-            signature: witness_report.report.signature,
-            snr: witness_report.report.snr as f32,
-            frequency: hz_to_mhz(witness_report.report.frequency),
-            datarate: witness_report.report.datarate.to_string(),
-            channel: 0,
-            reward_shares,
-        };
+        if reward_shares > 0 {
+            // NOTE: channel is irrelevant now
+            let poc_witness = BlockchainPocWitnessV1 {
+                gateway: witness_report.report.pub_key.into(),
+                timestamp: witness_report.report.timestamp.timestamp() as u64,
+                signal: witness_report.report.signal,
+                packet_hash: witness_report.report.data,
+                signature: witness_report.report.signature,
+                snr: witness_report.report.snr as f32,
+                frequency: hz_to_mhz(witness_report.report.frequency),
+                datarate: witness_report.report.datarate.to_string(),
+                channel: 0,
+                reward_shares,
+            };
 
-        poc_witnesses.push(poc_witness)
+            poc_witnesses.push(poc_witness)
+        }
     }
     poc_witnesses
 }
@@ -155,17 +159,22 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
     freq_mhz.to_f32().unwrap_or_default()
 }
 
-fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> (BlockchainPocReceiptV1, i64) {
+fn construct_poc_receipt(
+    beacon_report: LoraValidBeaconReport,
+) -> Result<(BlockchainPocReceiptV1, i64), TxnConstructionError> {
     let reward_shares = ((beacon_report.hex_scale * beacon_report.reward_unit)
         * REWARD_SHARE_MULTIPLIER)
         .to_u32()
         .unwrap_or_default();
+    if reward_shares == 0 {
+        return Err(TxnConstructionError::ZeroRewards);
+    }
 
     // NOTE: This timestamp will also be used as the top-level txn timestamp
     let beacon_received_ts = beacon_report.received_timestamp.timestamp_millis();
 
     // NOTE: signal, origin, snr and addr_hash are irrelevant now
-    (
+    Ok((
         BlockchainPocReceiptV1 {
             gateway: beacon_report.report.pub_key.into(),
             timestamp: beacon_report.report.timestamp.timestamp() as u64,
@@ -182,7 +191,7 @@ fn construct_poc_receipt(beacon_report: LoraValidBeaconReport) -> (BlockchainPoc
             reward_shares,
         },
         beacon_received_ts,
-    )
+    ))
 }
 
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
@@ -259,7 +268,9 @@ mod tests {
         let reward_unit = dec!(1.7903);
         let dec_rs = hex_scale * reward_unit;
         assert_eq!(
-            (dec_rs * Decimal::ONE_HUNDRED).to_u32().unwrap_or_default(),
+            (dec_rs * REWARD_SHARE_MULTIPLIER)
+                .to_u32()
+                .unwrap_or_default(),
             126
         );
 
@@ -268,7 +279,9 @@ mod tests {
         let reward_unit = dec!(0.0000);
         let dec_rs = hex_scale * reward_unit;
         assert_eq!(
-            (dec_rs * Decimal::ONE_HUNDRED).to_u32().unwrap_or_default(),
+            (dec_rs * REWARD_SHARE_MULTIPLIER)
+                .to_u32()
+                .unwrap_or_default(),
             0
         );
     }

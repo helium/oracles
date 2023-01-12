@@ -196,6 +196,9 @@ async fn process_submission(
                         tracing::warn!("unable to submit_txn, {err:?}")
                     }
                 }
+            } else {
+                tracing::info!("not submitting txn: {:?}", txn_details.hash_b64_url);
+                metrics::increment_counter!("poc_injector_receipt_count");
             }
         }
         Err(err) => tracing::warn!("unable to construct txn_details, {err:?}"),
