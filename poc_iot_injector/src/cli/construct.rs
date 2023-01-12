@@ -26,7 +26,7 @@ impl Cmd {
 
         while let Some(result) = file_stream.next().await {
             let msg = result?;
-            process_msg(msg, shared_key.clone(), max_witnesses_per_receipt).await?;
+            let _ = process_msg(msg, shared_key.clone(), max_witnesses_per_receipt).await;
         }
 
         Ok(())
