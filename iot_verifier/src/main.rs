@@ -4,8 +4,8 @@ use density_scaler::Server as DensityScaler;
 use file_store::{file_sink, file_upload, FileType};
 use futures::TryFutureExt;
 use iot_verifier::{
-    entropy_loader, gateway_cache::GatewayCache, loader, purger, rewarder::Rewarder, runner,
-    Settings,
+    entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, poc_report::Report,
+    purger, rewarder::Rewarder, runner, Settings,
 };
 use std::path;
 use tokio::signal;
@@ -61,6 +61,9 @@ impl Server {
         // Create database pool and run migrations
         let pool = settings.database.connect(2).await?;
         sqlx::migrate!().run(&pool).await?;
+
+        let count_all_beacons = Report::count_all_beacons(&pool).await?;
+        Metrics::num_beacons(count_all_beacons);
 
         // configure shutdown trigger
         let (shutdown_trigger, shutdown) = triggered::trigger();

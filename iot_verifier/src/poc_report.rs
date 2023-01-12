@@ -379,6 +379,20 @@ impl Report {
         .await?)
     }
 
+    pub async fn count_all_beacons(
+        executor: impl sqlx::PgExecutor<'_>,
+    ) -> Result<u64, ReportError> {
+        Ok(sqlx::query_scalar::<_, i64>(
+            r#"
+            select count(*) from poc_report
+            where report_type = 'beacon' and status in ('pending','ready')
+            "#,
+        )
+        .fetch_one(executor)
+        .await
+        .map(|count| count as u64)?)
+    }
+
     pub async fn get_stale_witnesses<'c, E>(
         executor: E,
         stale_period: i64,
