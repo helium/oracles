@@ -284,5 +284,16 @@ mod tests {
                 .unwrap_or_default(),
             0
         );
+
+        // dec_rs: 0, hex_scale: 0.09, reward_unit: 0.09
+        let hex_scale = dec!(0.09);
+        let reward_unit = dec!(0.09);
+        let dec_rs = hex_scale * reward_unit;
+        assert_eq!(
+            (dec_rs * REWARD_SHARE_MULTIPLIER)
+                .to_u32()
+                .unwrap_or_default(),
+            0
+        );
     }
 }
