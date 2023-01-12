@@ -213,7 +213,8 @@ impl Purger {
         file_sink_write!(
             "invalid_beacon",
             lora_invalid_beacon_tx,
-            invalid_beacon_proto
+            invalid_beacon_proto,
+            &[("reason", InvalidReason::Stale.as_str_name())]
         )
         .await?;
         // delete the report from the DB
@@ -243,7 +244,8 @@ impl Purger {
         file_sink_write!(
             "invalid_witness_report",
             lora_invalid_witness_tx,
-            invalid_witness_report_proto
+            invalid_witness_report_proto,
+            &[("reason", InvalidReason::Stale.as_str_name())]
         )
         .await?;
 
