@@ -13,6 +13,8 @@ create table routes (
 
 select trigger_updated_at('routes');
 
+create index route_oui_idx on routes (oui);
+
 create table route_eui_pairs (
     route_id uuid not null references routes(id) on delete cascade,
     app_eui bigint not null,
@@ -24,6 +26,8 @@ create table route_eui_pairs (
 
 select trigger_updated_at('route_eui_pairs');
 
+create index eui_pair_route_idx on route_eui_pairs (route_id);
+
 create table route_devaddr_ranges (
     route_id uuid not null references routes(id) on delete cascade,
     start_addr bigint not null,
@@ -34,3 +38,5 @@ create table route_devaddr_ranges (
 );
 
 select trigger_updated_at('route_devaddr_ranges');
+
+create index devaddr_range_route_idx on route_devaddr_ranges (route_id);

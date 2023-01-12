@@ -133,7 +133,7 @@ pub async fn get_with_constraints(
 ) -> Result<OrgWithConstraints, sqlx::Error> {
     let row = sqlx::query(
         r#"
-        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.enabled org_const.start_addr, org_const.end_addr
+        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.status, org_const.start_addr, org_const.end_addr
         from organizations org join organization_devaddr_constraints org_const
         on org.oui = org_const.oui
         "#,

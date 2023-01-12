@@ -230,7 +230,7 @@ async fn insert_euis(
     let id = Uuid::try_parse(id)?;
     let euis = euis.iter().map(|eui| (id, eui));
 
-    const EUI_INSERT_SQL: &str = "insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
+    const EUI_INSERT_SQL: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(EUI_INSERT_SQL);
     query_builder.push_values(euis, |mut builder, (id, eui)| {
@@ -260,30 +260,25 @@ pub async fn modify_euis(
         }
         proto::RouteEuisActionV1::RemoveEuis => {
             let uuid = Uuid::try_parse(id)?;
-            let pairs: Vec<Eui> = sqlx::query(
-                r#"
-                delete from route_eui_pairs where route_id = $1 returning *
-                "#,
-            )
-            .bind(uuid)
-            .fetch(&mut transaction)
-            .map_err(sqlx::Error::from)
-            .and_then(|row| async move {
-                Ok(Eui::new(
-                    row.get::<i64, &str>("app_eui").into(),
-                    row.get::<i64, &str>("dev_eui").into(),
-                ))
-            })
-            .filter_map(|pair| async move { pair.ok() })
-            .collect()
-            .await;
+            const EUI_REMOVE_PAIRS_SNIPPET: &str =
+                " delete from route_eui_pairs where (app_eui, dev_eui) in ";
+            const EUI_FILTER_ID_SNIPPET: &str = " and (route_id) = ";
+            let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+                sqlx::QueryBuilder::new(EUI_REMOVE_PAIRS_SNIPPET);
+            query_builder
+                .push_tuples(euis, |mut builder, eui| {
+                    builder
+                        .push_bind(i64::from(eui.app_eui))
+                        .push_bind(i64::from(eui.dev_eui));
+                })
+                .push(EUI_FILTER_ID_SNIPPET)
+                .push_bind(uuid);
 
-            let retained_pairs: Vec<Eui> = pairs
-                .into_iter()
-                .filter(|eui| !euis.contains(eui))
-                .collect();
-
-            insert_euis(id, &retained_pairs, &mut transaction).await?;
+            query_builder
+                .build()
+                .execute(&mut transaction)
+                .await
+                .map(|_| ())?;
         }
         proto::RouteEuisActionV1::UpdateEuis => {
             sqlx::query(
@@ -350,30 +345,25 @@ pub async fn modify_devaddr_ranges(
         }
         proto::RouteDevaddrsActionV1::RemoveDevaddrs => {
             let uuid = Uuid::try_parse(id)?;
-            let ranges: Vec<DevAddrRange> = sqlx::query(
-                r#"
-                delete from route_devaddr_ranges where route_id = $1 returning *
-                "#,
-            )
-            .bind(uuid)
-            .fetch(&mut transaction)
-            .map_err(sqlx::Error::from)
-            .and_then(|row| async move {
-                Ok(DevAddrRange {
-                    start_addr: row.get::<i64, &str>("start_addr").into(),
-                    end_addr: row.get::<i64, &str>("end_addr").into(),
+            const DEVADDR_REMOVE_RANGE_SNIPPET: &str =
+                " delete from route_devaddr_ranges where (start_addr, end_addr) in ";
+            const DEVADDR_FILTER_ID_SNIPPET: &str = " and (route_id) = ";
+            let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+                sqlx::QueryBuilder::new(DEVADDR_REMOVE_RANGE_SNIPPET);
+            query_builder
+                .push_tuples(devaddr_ranges, |mut builder, range| {
+                    builder
+                        .push_bind(i64::from(range.start_addr))
+                        .push_bind(i64::from(range.end_addr));
                 })
-            })
-            .filter_map(|range| async move { range.ok() })
-            .collect()
-            .await;
+                .push(DEVADDR_FILTER_ID_SNIPPET)
+                .push_bind(uuid);
 
-            let retained_ranges: Vec<DevAddrRange> = ranges
-                .into_iter()
-                .filter(|range| !devaddr_ranges.contains(range))
-                .collect();
-
-            insert_devaddr_ranges(id, &retained_ranges, &mut transaction).await?;
+            query_builder
+                .build()
+                .execute(&mut transaction)
+                .await
+                .map(|_| ())?;
         }
         proto::RouteDevaddrsActionV1::UpdateDevaddrs => {
             sqlx::query(
@@ -442,7 +432,7 @@ pub async fn route_stream_by_status<'a>(
     sqlx::query_as::<_, StorageRoute>(
         r#"
         select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts,
-            array(select distinct row(app_eui,dev_eui) from route_eui_pairs e where e.route_id = r.id) as eui_pairs,
+            array(select distinct row(app_eui, dev_eui) from route_eui_pairs e where e.route_id = r.id) as eui_pairs,
             array(select distinct row(start_addr, end_addr) from route_devaddr_ranges d where d.route_id = r.id) as devaddr_ranges
             from routes r
             join organizations o on r.oui = o.oui

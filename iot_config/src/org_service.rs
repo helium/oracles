@@ -4,7 +4,7 @@ use file_store::traits::MsgVerify;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::iot_config::{
     self, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1, OrgDisableResV1,
-    OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgV1,
+    OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgV1,
 };
 use sqlx::{Pool, Postgres};
 use tonic::{Request, Response, Status};
@@ -97,7 +97,7 @@ impl iot_config::Org for OrgService {
         let requested_addrs = req.devaddrs;
         let devaddr_range = org::next_helium_devaddr(&self.pool)
             .await
-            .map_err(|_| Status::internal("org constraints failed"))?
+            .map_err(|_| Status::failed_precondition("helium address unavailable"))?
             .to_range(requested_addrs);
 
         let org = org::create_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
@@ -149,6 +149,10 @@ impl iot_config::Org for OrgService {
     }
 
     async fn disable(&self, _request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {
+        unimplemented!()
+    }
+
+    async fn enable(&self, _request: Request<OrgEnableReqV1>) -> GrpcResult<OrgEnableResV1> {
         unimplemented!()
     }
 }
