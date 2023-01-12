@@ -68,7 +68,11 @@ impl TransactionService {
                 Some(client) => Ok(client),
                 None => Err(Error::ClientNotFound),
             },
-            None => Err(Error::ClientNotFound),
+            None => {
+                // Use the singular transaction client if there are no configured optional multiple
+                // clients
+                Ok(self.client.clone())
+            }
         }
     }
 }
