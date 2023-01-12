@@ -17,7 +17,7 @@ keypair = "/path/to/key_pair"
 
 # Whether to do txn submission to mainnet
 #
-# do_submission = false
+do_submission = true
 
 # Number of witnesses allowed per receipt
 #
@@ -26,7 +26,7 @@ keypair = "/path/to/key_pair"
 [database]
 
 # Url for database to write indexed rewards to
-url = "postgres://postgres:postgres@127.0.0.1:5432/index_db"
+url = "postgres://postgres:postgres@127.0.0.1:5432/poc_iot_injector_db"
 
 # Max connections to the database. Default below
 #
@@ -49,6 +49,12 @@ block = 0
 
 # batch size for gateway stream results. Default 100
 # batch = 100
+
+# Optionally provide multiple submission_urls (for poc-injector) like so:
+# [[transactions.submission_urls]]
+# url = "http://127.0.0.1:8083"
+# [[transactions.submission_urls]]
+# url = "http://127.0.0.1:8084"
 
 [verifier]
 

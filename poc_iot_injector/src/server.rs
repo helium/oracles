@@ -4,7 +4,7 @@ use crate::{
 };
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
-use file_store::{file_sink, file_sink_write, FileStore, FileType};
+use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
@@ -23,7 +23,6 @@ pub struct Server {
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
-    receipt_sender: file_sink::MessageSender,
     settings: Settings,
 }
 
@@ -38,10 +37,7 @@ pub enum NewServerError {
 }
 
 impl Server {
-    pub async fn new(
-        settings: &Settings,
-        receipt_sender: file_sink::MessageSender,
-    ) -> Result<Self, NewServerError> {
+    pub async fn new(settings: &Settings) -> Result<Self, NewServerError> {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
@@ -64,7 +60,6 @@ impl Server {
                 .then_some(TransactionService::from_settings(&settings.transactions)),
             iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
-            receipt_sender,
         };
         Ok(result)
     }
@@ -108,7 +103,6 @@ impl Server {
             &mut self.txn_service,
             &mut self.iot_verifier_store,
             self.keypair.clone(),
-            &self.receipt_sender,
             after_utc,
             before_utc,
             self.settings.clone(),
@@ -133,7 +127,6 @@ async fn submit_txns(
     txn_service: &mut Option<TransactionService>,
     store: &mut FileStore,
     keypair: Arc<Keypair>,
-    receipt_sender: &file_sink::MessageSender,
     after_utc: DateTime<Utc>,
     before_utc: DateTime<Utc>,
     settings: Settings,
@@ -153,7 +146,6 @@ async fn submit_txns(
             Ok(buf) => {
                 let shared_key = keypair.clone();
                 let mut shared_txn_service = txn_service.clone();
-                let receipt_sender_clone = receipt_sender.clone();
 
                 tracing::info!("Spawning submission tasks...");
                 set.spawn(async move {
@@ -162,7 +154,6 @@ async fn submit_txns(
                         shared_key,
                         settings.do_submission,
                         settings.max_witnesses_per_receipt,
-                        &receipt_sender_clone,
                         &mut shared_txn_service,
                     )
                     .await;
@@ -189,7 +180,6 @@ async fn process_submission(
     shared_key: Arc<Keypair>,
     do_submission: bool,
     max_witnesses_per_receipt: u64,
-    receipt_sender: &file_sink::MessageSender,
     txn_service: &mut Option<TransactionService>,
 ) -> anyhow::Result<()> {
     match handle_report_msg(buf, shared_key, max_witnesses_per_receipt) {
@@ -207,9 +197,8 @@ async fn process_submission(
                     }
                 }
             } else {
-                tracing::info!("only storing txn: {:?}", txn_details.hash_b64_url);
+                tracing::info!("not submitting txn: {:?}", txn_details.hash_b64_url);
                 metrics::increment_counter!("poc_injector_receipt_count");
-                file_sink_write!("signed_poc_receipt_txn", receipt_sender, txn_details.txn).await?;
             }
         }
         Err(err) => tracing::warn!("unable to construct txn_details, {err:?}"),
@@ -224,7 +213,7 @@ async fn handle_txn_submission(
     match txn_service {
         Some(txn_service) => {
             txn_service
-                .submit(txn_details.txn, &txn_details.hash)
+                .submit_random(txn_details.txn, &txn_details.hash)
                 .await?;
             Ok(())
         }
