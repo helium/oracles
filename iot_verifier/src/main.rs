@@ -63,7 +63,7 @@ impl Server {
         sqlx::migrate!().run(&pool).await?;
 
         let count_all_beacons = Report::count_all_beacons(&pool).await?;
-        Metrics::num_beacons(count_all_beacons as f64);
+        Metrics::num_beacons(count_all_beacons);
 
         // configure shutdown trigger
         let (shutdown_trigger, shutdown) = triggered::trigger();

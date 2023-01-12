@@ -20,12 +20,12 @@ impl Metrics {
         metrics::counter!(INVALID_WITNESS_COUNTER, count, labels);
     }
 
-    pub fn num_beacons(count: f64) {
-        metrics::gauge!(BEACON_GUAGE, count);
+    pub fn num_beacons(count: u64) {
+        metrics::gauge!(BEACON_GUAGE, count as f64);
     }
 
-    pub fn increment_num_beacons_by(count: f64) {
-        metrics::increment_gauge!(BEACON_GUAGE, count);
+    pub fn increment_num_beacons_by(count: u64) {
+        metrics::increment_gauge!(BEACON_GUAGE, count as f64);
     }
 
     pub fn decrement_num_beacons() {
@@ -64,7 +64,7 @@ impl LoaderMetricTracker {
 
         if beacons > 0 {
             Metrics::count_loader_beacons(beacons);
-            Metrics::increment_num_beacons_by(beacons as f64);
+            Metrics::increment_num_beacons_by(beacons);
         }
 
         if witnesses > 0 {
