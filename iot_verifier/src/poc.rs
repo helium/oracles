@@ -6,14 +6,14 @@ use crate::{
 use chrono::{DateTime, Duration, Utc};
 use density_scaler::HexDensityMap;
 use file_store::{
-    lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
-    lora_valid_poc::LoraValidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
+    iot_beacon_report::IotBeaconIngestReport, iot_invalid_poc::IotInvalidWitnessReport,
+    iot_valid_poc::IotValidWitnessReport, iot_witness_report::IotWitnessIngestReport,
 };
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_lora::{InvalidParticipantSide, InvalidReason},
+    services::poc_iot::{InvalidParticipantSide, InvalidReason},
     GatewayStakingMode, Region,
 };
 use node_follower::gateway_resp::GatewayInfo;
@@ -41,8 +41,8 @@ pub enum VerificationStatus {
 }
 
 pub struct Poc {
-    beacon_report: LoraBeaconIngestReport,
-    witness_reports: Vec<LoraWitnessIngestReport>,
+    beacon_report: IotBeaconIngestReport,
+    witness_reports: Vec<IotWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
 }
@@ -62,9 +62,9 @@ pub struct VerifyWitnessResult {
 }
 
 pub struct VerifyWitnessesResult {
-    pub valid_witnesses: Vec<LoraValidWitnessReport>,
-    pub invalid_witnesses: Vec<LoraInvalidWitnessReport>,
-    pub failed_witnesses: Vec<LoraInvalidWitnessReport>,
+    pub valid_witnesses: Vec<IotValidWitnessReport>,
+    pub invalid_witnesses: Vec<IotInvalidWitnessReport>,
+    pub failed_witnesses: Vec<IotInvalidWitnessReport>,
 }
 
 impl VerifyWitnessesResult {
@@ -87,8 +87,8 @@ pub enum VerificationError {
 
 impl Poc {
     pub async fn new(
-        beacon_report: LoraBeaconIngestReport,
-        witness_reports: Vec<LoraWitnessIngestReport>,
+        beacon_report: IotBeaconIngestReport,
+        witness_reports: Vec<IotWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
     ) -> Self {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
@@ -143,9 +143,9 @@ impl Poc {
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
-        let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
-        let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
-        let mut failed_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
+        let mut valid_witnesses: Vec<IotValidWitnessReport> = Vec::new();
+        let mut invalid_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
+        let mut failed_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
             match self
@@ -212,7 +212,7 @@ impl Poc {
 
     async fn verify_witness(
         &mut self,
-        witness_report: &LoraWitnessIngestReport,
+        witness_report: &IotWitnessIngestReport,
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &impl HexDensityMap,
@@ -272,7 +272,7 @@ impl Poc {
     pub async fn do_witness_verifications(
         &mut self,
         witness_info: &GatewayInfo,
-        witness_report: &LoraWitnessIngestReport,
+        witness_report: &IotWitnessIngestReport,
         beaconer_info: &GatewayInfo,
     ) -> GenericVerifyResult {
         tracing::debug!(
@@ -315,8 +315,8 @@ impl Poc {
     async fn valid_witness_report(
         &self,
         witness_result: VerifyWitnessResult,
-        witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraValidWitnessReport, VerificationError> {
+        witness_report: IotWitnessIngestReport,
+    ) -> Result<IotValidWitnessReport, VerificationError> {
         let gw_info = witness_result
             .gateway_info
             .ok_or(VerificationError::NotFound(
@@ -325,7 +325,7 @@ impl Poc {
         let hex_scale = witness_result
             .hex_scale
             .ok_or(VerificationError::NotFound("expected hex scale not found"))?;
-        Ok(LoraValidWitnessReport {
+        Ok(IotValidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             location: gw_info.location,
             hex_scale,
@@ -339,14 +339,14 @@ impl Poc {
     async fn invalid_witness_report(
         &self,
         witness_result: VerifyWitnessResult,
-        witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
+        witness_report: IotWitnessIngestReport,
+    ) -> Result<IotInvalidWitnessReport, VerificationError> {
         let invalid_reason = witness_result
             .invalid_reason
             .ok_or(VerificationError::NotFound(
                 "expected invalid_reason not found",
             ))?;
-        Ok(LoraInvalidWitnessReport {
+        Ok(IotInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             reason: invalid_reason,
             report: witness_report.report,
@@ -357,9 +357,9 @@ impl Poc {
     async fn failed_witness_report(
         &self,
         failed_reason: InvalidReason,
-        witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
-        Ok(LoraInvalidWitnessReport {
+        witness_report: IotWitnessIngestReport,
+    ) -> Result<IotInvalidWitnessReport, VerificationError> {
+        Ok(IotInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
             reason: failed_reason,
             report: witness_report.report,
@@ -732,7 +732,7 @@ mod tests {
     use super::*;
     use crate::last_beacon::LastBeacon;
     use chrono::Duration;
-    use helium_proto::{services::poc_lora::InvalidReason, GatewayStakingMode, Region};
+    use helium_proto::{services::poc_iot::InvalidReason, GatewayStakingMode, Region};
     use std::str::FromStr;
 
     #[test]

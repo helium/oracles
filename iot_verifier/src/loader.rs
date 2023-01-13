@@ -2,20 +2,20 @@ use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
     metrics::LoaderMetricTracker,
-    poc_report::{InsertBindings, LoraStatus, Report, ReportType},
+    poc_report::{InsertBindings, IotStatus, Report, ReportType},
     Settings,
 };
 use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
-    lora_beacon_report::LoraBeaconIngestReport, lora_witness_report::LoraWitnessIngestReport,
+    iot_beacon_report::IotBeaconIngestReport, iot_witness_report::IotWitnessIngestReport,
     traits::IngestId, FileInfo, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
+    services::poc_iot::{IotBeaconIngestReportV1, IotWitnessIngestReportV1},
     Message,
 };
 use sqlx::PgPool;
@@ -168,7 +168,7 @@ impl Loader {
         // filter is not required for beacons
         match self
             .process_events(
-                FileType::LoraBeaconIngestReport,
+                FileType::IotBeaconIngestReport,
                 &self.ingest_store,
                 gateway_cache,
                 after,
@@ -181,7 +181,7 @@ impl Loader {
             Ok(()) => (),
             Err(err) => tracing::warn!(
                 "error whilst processing {:?} from s3, error: {err:?}",
-                FileType::LoraBeaconIngestReport
+                FileType::IotBeaconIngestReport
             ),
         }
         tracing::info!("creating beacon xor filter");
@@ -199,7 +199,7 @@ impl Loader {
         // for witnesses we do need the filter but not the arc
         match self
             .process_events(
-                FileType::LoraWitnessIngestReport,
+                FileType::IotWitnessIngestReport,
                 &self.ingest_store,
                 gateway_cache,
                 after - ChronoDuration::seconds(60 * 2),
@@ -212,7 +212,7 @@ impl Loader {
             Ok(()) => (),
             Err(err) => tracing::warn!(
                 "error whilst processing {:?} from s3, error: {err:?}",
-                FileType::LoraWitnessIngestReport
+                FileType::IotWitnessIngestReport
             ),
         }
         Ok(())
@@ -325,9 +325,9 @@ impl Loader {
         metrics: &LoaderMetricTracker,
     ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
-            FileType::LoraBeaconIngestReport => {
-                let beacon: LoraBeaconIngestReport =
-                    LoraBeaconIngestReportV1::decode(buf)?.try_into()?;
+            FileType::IotBeaconIngestReport => {
+                let beacon: IotBeaconIngestReport =
+                    IotBeaconIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);
                 let packet_data = beacon.report.data.clone();
                 match self
@@ -342,7 +342,7 @@ impl Loader {
                             buf: buf.to_vec(),
                             received_ts: beacon.received_timestamp,
                             report_type: ReportType::Beacon,
-                            status: LoraStatus::Pending,
+                            status: IotStatus::Pending,
                         };
                         metrics.increment_beacons();
                         if let Some(xor_data) = xor_data {
@@ -354,9 +354,9 @@ impl Loader {
                     false => Ok(None),
                 }
             }
-            FileType::LoraWitnessIngestReport => {
-                let witness: LoraWitnessIngestReport =
-                    LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
+            FileType::IotWitnessIngestReport => {
+                let witness: IotWitnessIngestReport =
+                    IotWitnessIngestReportV1::decode(buf)?.try_into()?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
                 let packet_data = witness.report.data.clone();
                 if let Some(filter) = xor_filter {
@@ -374,7 +374,7 @@ impl Loader {
                                         buf: buf.to_vec(),
                                         received_ts: witness.received_timestamp,
                                         report_type: ReportType::Witness,
-                                        status: LoraStatus::Ready,
+                                        status: IotStatus::Ready,
                                     };
                                     metrics.increment_witnesses();
                                     Ok(Some(res))

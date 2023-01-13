@@ -1,6 +1,6 @@
 
 # log settings for the application (RUST_LOG format). Default below
-# 
+#
 # log = "ingest=debug,poc_store=info"
 
 # Mode to run the ingest in. This adjustst the allowed grpc endpoints. "iot" or
@@ -8,7 +8,7 @@
 mode = "iot"
 
 # Token for ingest grpc endpoint bearer authentication. This is required for
-# "mobile" mode and ignored for lora. 
+# "mobile" mode and ignored for iot.
 #
 # token = "api-token"
 

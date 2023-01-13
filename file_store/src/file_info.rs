@@ -96,11 +96,11 @@ pub const CELL_SPEEDTEST_INGEST_REPORT: &str = "speedtest_report";
 pub const ENTROPY: &str = "entropy";
 pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
 pub const ENTROPY_REPORT: &str = "entropy_report";
-pub const LORA_BEACON_INGEST_REPORT: &str = "lora_beacon_ingest_report";
-pub const LORA_WITNESS_INGEST_REPORT: &str = "lora_witness_ingest_report";
-pub const LORA_VALID_POC: &str = "lora_valid_poc";
-pub const LORA_INVALID_BEACON_REPORT: &str = "lora_invalid_beacon";
-pub const LORA_INVALID_WITNESS_REPORT: &str = "lora_invalid_witness";
+pub const IOT_BEACON_INGEST_REPORT: &str = "iot_beacon_ingest_report";
+pub const IOT_WITNESS_INGEST_REPORT: &str = "iot_witness_ingest_report";
+pub const IOT_VALID_POC: &str = "iot_valid_poc";
+pub const IOT_INVALID_BEACON_REPORT: &str = "iot_invalid_beacon";
+pub const IOT_INVALID_WITNESS_REPORT: &str = "iot_invalid_witness";
 pub const SPEEDTEST_AVG: &str = "speedtest_avg";
 pub const VALIDATED_HEARTBEAT: &str = "validated_heartbeat";
 pub const SIGNED_POC_RECEIPT_TXN: &str = "signed_poc_receipt_txn";
@@ -119,11 +119,11 @@ pub enum FileType {
     CellHeartbeatIngestReport,
     CellSpeedtestIngestReport,
     EntropyReport,
-    LoraBeaconIngestReport,
-    LoraWitnessIngestReport,
-    LoraValidPoc,
-    LoraInvalidBeaconReport,
-    LoraInvalidWitnessReport,
+    IotBeaconIngestReport,
+    IotWitnessIngestReport,
+    IotValidPoc,
+    IotInvalidBeaconReport,
+    IotInvalidWitnessReport,
     SpeedtestAvg,
     ValidatedHeartbeat,
     SignedPocReceiptTxn,
@@ -143,11 +143,11 @@ impl fmt::Display for FileType {
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
             Self::EntropyReport => ENTROPY_REPORT,
-            Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
-            Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
-            Self::LoraValidPoc => LORA_VALID_POC,
-            Self::LoraInvalidBeaconReport => LORA_INVALID_BEACON_REPORT,
-            Self::LoraInvalidWitnessReport => LORA_INVALID_WITNESS_REPORT,
+            Self::IotBeaconIngestReport => IOT_BEACON_INGEST_REPORT,
+            Self::IotWitnessIngestReport => IOT_WITNESS_INGEST_REPORT,
+            Self::IotValidPoc => IOT_VALID_POC,
+            Self::IotInvalidBeaconReport => IOT_INVALID_BEACON_REPORT,
+            Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
             Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
@@ -170,11 +170,11 @@ impl FileType {
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
             Self::EntropyReport => ENTROPY_REPORT,
-            Self::LoraBeaconIngestReport => LORA_BEACON_INGEST_REPORT,
-            Self::LoraWitnessIngestReport => LORA_WITNESS_INGEST_REPORT,
-            Self::LoraValidPoc => LORA_VALID_POC,
-            Self::LoraInvalidBeaconReport => LORA_INVALID_BEACON_REPORT,
-            Self::LoraInvalidWitnessReport => LORA_INVALID_WITNESS_REPORT,
+            Self::IotBeaconIngestReport => IOT_BEACON_INGEST_REPORT,
+            Self::IotWitnessIngestReport => IOT_WITNESS_INGEST_REPORT,
+            Self::IotValidPoc => IOT_VALID_POC,
+            Self::IotInvalidBeaconReport => IOT_INVALID_BEACON_REPORT,
+            Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
             Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
@@ -197,11 +197,11 @@ impl FromStr for FileType {
             ENTROPY => Self::Entropy,
             SUBNETWORK_REWARDS => Self::SubnetworkRewards,
             ENTROPY_REPORT => Self::EntropyReport,
-            LORA_BEACON_INGEST_REPORT => Self::LoraBeaconIngestReport,
-            LORA_WITNESS_INGEST_REPORT => Self::LoraWitnessIngestReport,
-            LORA_VALID_POC => Self::LoraValidPoc,
-            LORA_INVALID_BEACON_REPORT => Self::LoraInvalidBeaconReport,
-            LORA_INVALID_WITNESS_REPORT => Self::LoraInvalidWitnessReport,
+            IOT_BEACON_INGEST_REPORT => Self::IotBeaconIngestReport,
+            IOT_WITNESS_INGEST_REPORT => Self::IotWitnessIngestReport,
+            IOT_VALID_POC => Self::IotValidPoc,
+            IOT_INVALID_BEACON_REPORT => Self::IotInvalidBeaconReport,
+            IOT_INVALID_WITNESS_REPORT => Self::IotInvalidWitnessReport,
             SPEEDTEST_AVG => Self::SpeedtestAvg,
             VALIDATED_HEARTBEAT => Self::ValidatedHeartbeat,
             SIGNED_POC_RECEIPT_TXN => Self::SignedPocReceiptTxn,

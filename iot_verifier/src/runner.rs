@@ -14,18 +14,18 @@ use file_store::{
     file_sink::MessageSender,
     file_sink_write,
     file_upload::MessageSender as FileUploadSender,
-    lora_beacon_report::LoraBeaconIngestReport,
-    lora_invalid_poc::{LoraInvalidBeaconReport, LoraInvalidWitnessReport},
-    lora_valid_poc::{LoraValidBeaconReport, LoraValidPoc},
-    lora_witness_report::LoraWitnessIngestReport,
+    iot_beacon_report::IotBeaconIngestReport,
+    iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},
+    iot_valid_poc::{IotValidBeaconReport, IotValidPoc},
+    iot_witness_report::IotWitnessIngestReport,
     traits::{IngestId, ReportId},
     FileType,
 };
 use futures::stream::{self, StreamExt};
 use helium_proto::{
-    services::poc_lora::{
-        InvalidParticipantSide, InvalidReason, LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1,
-        LoraInvalidWitnessReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+    services::poc_iot::{
+        InvalidParticipantSide, InvalidReason, IotBeaconIngestReportV1, IotInvalidBeaconReportV1,
+        IotInvalidWitnessReportV1, IotValidPocV1, IotWitnessIngestReportV1,
     },
     Message,
 };
@@ -81,34 +81,34 @@ impl Runner {
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.settings.cache);
-        let (lora_invalid_beacon_tx, lora_invalid_beacon_rx) = file_sink::message_channel(50);
-        let (lora_invalid_witness_tx, lora_invalid_witness_rx) = file_sink::message_channel(50);
-        let (lora_valid_poc_tx, lora_valid_poc_rx) = file_sink::message_channel(50);
+        let (iot_invalid_beacon_tx, iot_invalid_beacon_rx) = file_sink::message_channel(50);
+        let (iot_invalid_witness_tx, iot_invalid_witness_rx) = file_sink::message_channel(50);
+        let (iot_valid_poc_tx, iot_valid_poc_rx) = file_sink::message_channel(50);
 
-        let mut lora_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraInvalidBeaconReport,
+        let mut iot_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
+            FileType::IotInvalidBeaconReport,
             store_base_path,
-            lora_invalid_beacon_rx,
+            iot_invalid_beacon_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(ChronoDuration::minutes(5))
         .create()
         .await?;
 
-        let mut lora_invalid_witness_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraInvalidWitnessReport,
+        let mut iot_invalid_witness_sink = file_sink::FileSinkBuilder::new(
+            FileType::IotInvalidWitnessReport,
             store_base_path,
-            lora_invalid_witness_rx,
+            iot_invalid_witness_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(ChronoDuration::minutes(5))
         .create()
         .await?;
 
-        let mut lora_valid_poc_sink = file_sink::FileSinkBuilder::new(
-            FileType::LoraValidPoc,
+        let mut iot_valid_poc_sink = file_sink::FileSinkBuilder::new(
+            FileType::IotValidPoc,
             store_base_path,
-            lora_valid_poc_rx,
+            iot_valid_poc_rx,
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(ChronoDuration::minutes(2))
@@ -120,9 +120,9 @@ impl Runner {
         let shutdown2 = shutdown.clone();
         let shutdown3 = shutdown.clone();
         let shutdown4 = shutdown.clone();
-        tokio::spawn(async move { lora_invalid_beacon_sink.run(&shutdown2).await });
-        tokio::spawn(async move { lora_invalid_witness_sink.run(&shutdown3).await });
-        tokio::spawn(async move { lora_valid_poc_sink.run(&shutdown4).await });
+        tokio::spawn(async move { iot_invalid_beacon_sink.run(&shutdown2).await });
+        tokio::spawn(async move { iot_invalid_witness_sink.run(&shutdown3).await });
+        tokio::spawn(async move { iot_valid_poc_sink.run(&shutdown4).await });
 
         loop {
             if shutdown.is_triggered() {
@@ -132,9 +132,9 @@ impl Runner {
                 _ = shutdown.clone() => break,
                 _ = db_timer.tick() =>
                     match self.handle_db_tick(  shutdown.clone(),
-                                                lora_invalid_beacon_tx.clone(),
-                                                lora_invalid_witness_tx.clone(),
-                                                lora_valid_poc_tx.clone(),
+                                                iot_invalid_beacon_tx.clone(),
+                                                iot_invalid_witness_tx.clone(),
+                                                iot_valid_poc_tx.clone(),
                                                 gateway_cache, hex_density_map.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
@@ -150,9 +150,9 @@ impl Runner {
     async fn handle_db_tick(
         &self,
         _shutdown: triggered::Listener,
-        lora_invalid_beacon_tx: MessageSender,
-        lora_invalid_witness_tx: MessageSender,
-        lora_valid_poc_tx: MessageSender,
+        iot_invalid_beacon_tx: MessageSender,
+        iot_invalid_witness_tx: MessageSender,
+        iot_valid_poc_tx: MessageSender,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
@@ -173,9 +173,9 @@ impl Runner {
 
         stream::iter(db_beacon_reports)
             .for_each_concurrent(BEACON_WORKERS, |db_beacon| {
-                let tx1 = lora_invalid_beacon_tx.clone();
-                let tx2 = lora_invalid_witness_tx.clone();
-                let tx3 = lora_valid_poc_tx.clone();
+                let tx1 = iot_invalid_beacon_tx.clone();
+                let tx2 = iot_invalid_witness_tx.clone();
+                let tx3 = iot_valid_poc_tx.clone();
                 let hdm = hex_density_map.clone();
                 async move {
                     let beacon_id = db_beacon.id.clone();
@@ -199,9 +199,9 @@ impl Runner {
     async fn handle_beacon_report(
         &self,
         db_beacon: Report,
-        lora_invalid_beacon_tx: MessageSender,
-        lora_invalid_witness_tx: MessageSender,
-        lora_valid_poc_tx: MessageSender,
+        iot_invalid_beacon_tx: MessageSender,
+        iot_invalid_witness_tx: MessageSender,
+        iot_valid_poc_tx: MessageSender,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
@@ -212,8 +212,8 @@ impl Runner {
         let packet_data = &db_beacon.packet_data;
 
         let beacon_buf: &[u8] = &db_beacon.report_data;
-        let beacon_report: LoraBeaconIngestReport =
-            LoraBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
+        let beacon_report: IotBeaconIngestReport =
+            IotBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
         let beacon = &beacon_report.report;
         let beacon_received_ts = beacon_report.received_timestamp;
 
@@ -222,10 +222,10 @@ impl Runner {
         tracing::debug!("found {witness_len} witness for beacon");
 
         // get the beacon and witness report PBs from the db reports
-        let mut witnesses: Vec<LoraWitnessIngestReport> = Vec::new();
+        let mut witnesses: Vec<IotWitnessIngestReport> = Vec::new();
         for db_witness in db_witnesses {
             let witness_buf: &[u8] = &db_witness.report_data;
-            witnesses.push(LoraWitnessIngestReportV1::decode(witness_buf)?.try_into()?);
+            witnesses.push(IotWitnessIngestReportV1::decode(witness_buf)?.try_into()?);
         }
 
         // create the struct defining this POC
@@ -264,7 +264,7 @@ impl Runner {
 
                     verified_witnesses_result.update_reward_units(witness_reward_units);
 
-                    let valid_beacon_report = LoraValidBeaconReport {
+                    let valid_beacon_report = IotValidBeaconReport {
                         received_timestamp: beacon_received_ts,
                         location: beacon_info.location,
                         hex_scale: beacon_verify_result
@@ -276,8 +276,8 @@ impl Runner {
                     self.handle_valid_poc(
                         valid_beacon_report,
                         verified_witnesses_result,
-                        &lora_valid_poc_tx,
-                        &lora_invalid_witness_tx,
+                        &iot_valid_poc_tx,
+                        &iot_invalid_witness_tx,
                     )
                     .await?;
                 }
@@ -292,8 +292,8 @@ impl Runner {
                     &beacon_report,
                     witnesses,
                     invalid_reason,
-                    &lora_invalid_beacon_tx,
-                    &lora_invalid_witness_tx,
+                    &iot_invalid_beacon_tx,
+                    &iot_invalid_witness_tx,
                 )
                 .await?;
             }
@@ -313,33 +313,27 @@ impl Runner {
 
     async fn handle_invalid_poc(
         &self,
-        beacon_report: &LoraBeaconIngestReport,
-        witness_reports: Vec<LoraWitnessIngestReport>,
+        beacon_report: &IotBeaconIngestReport,
+        witness_reports: Vec<IotWitnessIngestReport>,
         invalid_reason: InvalidReason,
-        lora_invalid_beacon_tx: &MessageSender,
-        lora_invalid_witness_tx: &MessageSender,
+        iot_invalid_beacon_tx: &MessageSender,
+        iot_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         // the beacon is invalid, which in turn renders all witnesses invalid
         let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
         let beacon_report_id = beacon_report.ingest_id();
-        let invalid_poc: LoraInvalidBeaconReport = LoraInvalidBeaconReport {
+        let invalid_poc: IotInvalidBeaconReport = IotInvalidBeaconReport {
             received_timestamp: beacon_report.received_timestamp,
             reason: invalid_reason,
             report: beacon.clone(),
         };
-        let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
-        tracing::debug!(
-            "invalid poc.  beaconer: {:?}, reason: {:?}, witness count:{:?}",
-            beacon_report.report.pub_key,
-            invalid_reason,
-            witness_reports.len()
-        );
+        let invalid_poc_proto: IotInvalidBeaconReportV1 = invalid_poc.into();
         // save invalid poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
         match file_sink_write!(
             "invalid_beacon_report",
-            lora_invalid_beacon_tx,
+            iot_invalid_beacon_tx,
             invalid_poc_proto,
             &[("reason", invalid_reason.as_str_name())]
         )
@@ -358,17 +352,17 @@ impl Runner {
         // and also the invalid poc
         // so if a report fails from this point on, it shall be lost for ever more
         for witness_report in witness_reports {
-            let invalid_witness_report: LoraInvalidWitnessReport = LoraInvalidWitnessReport {
+            let invalid_witness_report: IotInvalidWitnessReport = IotInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
                 report: witness_report.report,
                 reason: invalid_reason,
                 participant_side: InvalidParticipantSide::Beaconer,
             };
-            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
+            let invalid_witness_report_proto: IotInvalidWitnessReportV1 =
                 invalid_witness_report.into();
             match file_sink_write!(
                 "invalid_witness_report",
-                lora_invalid_witness_tx,
+                iot_invalid_witness_tx,
                 invalid_witness_report_proto,
                 &[("reason", invalid_reason.as_str_name())]
             )
@@ -388,23 +382,17 @@ impl Runner {
 
     async fn handle_valid_poc(
         &self,
-        valid_beacon_report: LoraValidBeaconReport,
+        valid_beacon_report: IotValidBeaconReport,
         witnesses_result: VerifyWitnessesResult,
-        lora_valid_poc_tx: &MessageSender,
-        lora_invalid_witness_tx: &MessageSender,
+        iot_valid_poc_tx: &MessageSender,
+        iot_invalid_witness_tx: &MessageSender,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
         let pub_key = valid_beacon_report.report.pub_key.clone();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
-        tracing::debug!(
-            "valid poc.  beaconer: {:?}, valid witness count:  {:?}  invalid witness count: {:?}",
-            pub_key,
-            witnesses_result.valid_witnesses.len(),
-            witnesses_result.invalid_witnesses.len()
-        );
-        let valid_poc: LoraValidPoc = LoraValidPoc {
+        let valid_poc: IotValidPoc = IotValidPoc {
             poc_id: beacon_id,
             beacon_report: valid_beacon_report,
             witness_reports: witnesses_result.valid_witnesses,
@@ -417,10 +405,10 @@ impl Runner {
         // TODO: expand this transaction to cover all of the database access below?
         transaction.commit().await?;
 
-        let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
+        let valid_poc_proto: IotValidPocV1 = valid_poc.into();
         // save the poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
-        match file_sink_write!("valid_poc", lora_valid_poc_tx, valid_poc_proto).await {
+        match file_sink_write!("valid_poc", iot_valid_poc_tx, valid_poc_proto).await {
             Ok(_) => (),
             Err(err) => {
                 tracing::error!("failed to save invalid_witness_report to s3, {err}");
@@ -435,11 +423,11 @@ impl Runner {
         // so if a report fails from this point on, it shall be lost for ever more
         for invalid_witness_report in witnesses_result.invalid_witnesses {
             let invalid_reason = invalid_witness_report.reason;
-            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
+            let invalid_witness_report_proto: IotInvalidWitnessReportV1 =
                 invalid_witness_report.into();
             match file_sink_write!(
                 "invalid_witness_report",
-                lora_invalid_witness_tx,
+                iot_invalid_witness_tx,
                 invalid_witness_report_proto,
                 &[("reason", invalid_reason.as_str_name())]
             )

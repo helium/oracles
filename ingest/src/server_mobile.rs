@@ -208,7 +208,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         settings.mode
     );
 
-    //TODO start a service with either the poc mobile or poc lora endpoints only - not both
+    //TODO start a service with either the poc mobile or poc iot endpoints only - not both
     //     use _server_mode (set above ) to decide
     let server = transport::Server::builder()
         .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
