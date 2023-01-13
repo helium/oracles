@@ -1,4 +1,5 @@
 use crate::{
+    metrics::Metrics,
     pending_txn::{PendingTxn, Status},
     txn_status::TxnStatus,
     Settings,
@@ -138,7 +139,7 @@ impl Server {
                         return Ok(());
                     }
                     Err(err) => {
-                        metrics::increment_counter!("reward_server_txn_stream_error_count");
+                        Metrics::increment_txn_stream_errors();
                         tracing::warn!("txn stream error {err:?}");
                         return Ok(());
                     }
@@ -177,6 +178,7 @@ impl Server {
         let txn_hash = &base64::encode_config(&envelope.txn_hash, base64::URL_SAFE_NO_PAD);
         let txn_ts = envelope.timestamp.to_timestamp()?;
         PendingTxn::update(&self.pool, txn_hash, Status::Cleared, txn_ts).await?;
+        Metrics::increment_cleared_txns();
         Ok(())
     }
 
@@ -206,7 +208,7 @@ impl Server {
         }
 
         record_duration!(
-            "reward_server_emission_duration",
+            "mobile_rewards_emission_duration",
             self.handle_rewards(reward_period).await?
         );
 
@@ -343,8 +345,8 @@ impl Server {
             )
             .await
         {
-            metrics::increment_counter!("reward_server_emission");
             PendingTxn::update(&self.pool, &txn_hash_str, Status::Pending, Utc::now()).await?;
+            Metrics::increment_pending_txns();
         }
         Ok(())
     }
@@ -368,6 +370,7 @@ impl Server {
                 {
                     PendingTxn::update(&self.pool, &pending_txn.hash, Status::Pending, Utc::now())
                         .await?;
+                    Metrics::increment_pending_txns();
                 }
             }
         }
