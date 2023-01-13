@@ -782,12 +782,9 @@ mod tests {
             timestamp: now - *BEACON_INTERVAL,
         });
         // last beacon was BEACON_INTERVAL in the past, expectation pass
-        assert_eq!(Ok(()), verify_beacon_schedule(&last_beacon, now));
+        assert!(verify_beacon_schedule(&last_beacon, now).is_ok());
         // last beacon was BEACON_INTERVAL + 1hr in the past, expectation pass
-        assert_eq!(
-            Ok(()),
-            verify_beacon_schedule(&last_beacon, now + Duration::minutes(60))
-        );
+        assert!(verify_beacon_schedule(&last_beacon, now + Duration::minutes(60)).is_ok());
         // last beacon was BEACON_INTERVAL - 1 hr, too soon after our last beacon,
         // expectation fail
         assert_eq!(
@@ -805,15 +802,13 @@ mod tests {
         );
         // last beacon was just inside of our tolerance period by 2 mins
         // expectation pass
-        assert_eq!(
-            Ok(()),
-            verify_beacon_schedule(
-                &last_beacon,
-                now - (*BEACON_INTERVAL_TOLERANCE - Duration::minutes(2))
-            )
-        );
+        assert!(verify_beacon_schedule(
+            &last_beacon,
+            now - (*BEACON_INTERVAL_TOLERANCE - Duration::minutes(2))
+        )
+        .is_ok());
         //we dont have any last beacon data, expectation pass
-        assert_eq!(Ok(()), verify_beacon_schedule(&None, now));
+        assert!(verify_beacon_schedule(&None, now).is_ok());
     }
 
     #[test]
@@ -821,10 +816,7 @@ mod tests {
         let now = Utc::now();
         let entropy_start = now - Duration::seconds(60);
         let entropy_end = now - Duration::seconds(10);
-        assert_eq!(
-            Ok(()),
-            verify_entropy(entropy_start, entropy_end, now - Duration::seconds(30))
-        );
+        assert!(verify_entropy(entropy_start, entropy_end, now - Duration::seconds(30)).is_ok());
         assert_eq!(
             Err(InvalidReason::EntropyExpired),
             verify_entropy(entropy_start, entropy_end, now - Duration::seconds(1))
@@ -838,14 +830,14 @@ mod tests {
     #[test]
     fn test_verify_location() {
         let location = 631252734740306943;
-        assert_eq!(Ok(()), verify_gw_location(Some(location)));
+        assert!(verify_gw_location(Some(location)).is_ok());
         assert_eq!(Err(InvalidReason::NotAsserted), verify_gw_location(None));
     }
 
     #[test]
     fn test_verify_capability() {
-        assert_eq!(Ok(()), verify_gw_capability(GatewayStakingMode::Full));
-        assert_eq!(Ok(()), verify_gw_capability(GatewayStakingMode::Light));
+        assert!(verify_gw_capability(GatewayStakingMode::Full).is_ok());
+        assert!(verify_gw_capability(GatewayStakingMode::Light).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidCapability),
             verify_gw_capability(GatewayStakingMode::Dataonly)
@@ -859,7 +851,7 @@ mod tests {
                 .unwrap();
         let key2 = PublicKeyBinary::from_str("11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo")
             .unwrap();
-        assert_eq!(Ok(()), verify_self_witness(&key1, &key2));
+        assert!(verify_self_witness(&key1, &key2).is_ok());
         assert_eq!(
             Err(InvalidReason::SelfWitness),
             verify_self_witness(&key1, &key1)
@@ -876,8 +868,9 @@ mod tests {
         let witness2_freq = beacon_freq + (1000 * 100);
         // over the tolerance level
         let witness3_freq = beacon_freq + (1000 * 110);
-        assert_eq!(Ok(()), verify_witness_freq(beacon_freq, witness1_freq));
-        assert_eq!(Ok(()), verify_witness_freq(beacon_freq, witness2_freq));
+
+        assert!(verify_witness_freq(beacon_freq, witness1_freq).is_ok());
+        assert!(verify_witness_freq(beacon_freq, witness2_freq).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidFrequency),
             verify_witness_freq(beacon_freq, witness3_freq)
@@ -889,10 +882,7 @@ mod tests {
         let beacon_region = Region::Us915;
         let witness1_region = Region::Us915;
         let witness2_region = Region::Eu868;
-        assert_eq!(
-            Ok(()),
-            verify_witness_region(beacon_region, witness1_region)
-        );
+        assert!(verify_witness_region(beacon_region, witness1_region).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidRegion),
             verify_witness_region(beacon_region, witness2_region)
@@ -904,10 +894,7 @@ mod tests {
         let beacon_loc = 631615575095659519; // malta
         let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
         let witness2_loc = 631278052025960447; // armenia
-        assert_eq!(
-            Ok(()),
-            verify_witness_distance(Some(beacon_loc), Some(witness1_loc))
-        );
+        assert!(verify_witness_distance(Some(beacon_loc), Some(witness1_loc)).is_ok());
         assert_eq!(
             Err(InvalidReason::MaxDistanceExceeded),
             verify_witness_distance(Some(beacon_loc), Some(witness2_loc))
@@ -926,18 +913,15 @@ mod tests {
         let beacon1_gain = 80;
         let witness1_signal = -1060;
         let witness1_freq = 904700032;
-        assert_eq!(
-            Ok(()),
-            verify_witness_rssi(
-                witness1_signal,
-                witness1_freq,
-                beacon1_tx_power,
-                beacon1_gain,
-                Some(beacon_loc),
-                Some(witness1_loc),
-            )
-        );
-
+        assert!(verify_witness_rssi(
+            witness1_signal,
+            witness1_freq,
+            beacon1_tx_power,
+            beacon1_gain,
+            Some(beacon_loc),
+            Some(witness1_loc),
+        )
+        .is_ok());
         let beacon2_tx_power = 27;
         let beacon2_gain = 12;
         let witness2_signal = -19;
@@ -960,7 +944,7 @@ mod tests {
         let beacon_data = "data1".as_bytes().to_vec();
         let witness1_data = "data1".as_bytes().to_vec();
         let witness2_data = "data2".as_bytes().to_vec();
-        assert_eq!(Ok(()), verify_witness_data(&beacon_data, &witness1_data));
+        assert!(verify_witness_data(&beacon_data, &witness1_data).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidPacket),
             verify_witness_data(&beacon_data, &witness2_data)
