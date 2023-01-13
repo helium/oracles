@@ -1,7 +1,7 @@
 mod cell_type;
-mod metrics;
 pub mod pending_txn;
 pub mod server;
+mod server_metrics;
 mod settings;
 pub mod token_type;
 pub mod txn_status;
