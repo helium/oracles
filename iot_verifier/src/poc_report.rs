@@ -123,7 +123,8 @@ impl Report {
                 .push_bind(insert.report_type)
                 .push_bind(insert.status);
         });
-
+        // append conflict strategy to each insert row
+        query_builder.push(" on conflict (poc_report.id) do nothing ");
         let query = query_builder.build();
         query
             .execute(executor)

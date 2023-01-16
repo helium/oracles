@@ -28,12 +28,9 @@ const PURGER_DB_POOL_SIZE: usize = PURGER_WORKERS * 4;
 // opportunity to be verified and after this point extremely unlikely to ever be verified
 // successfully
 // this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const BEACON_STALE_PERIOD: i64 = 60 * 30;
+const BEACON_STALE_PERIOD: i64 = 60 * 45;
 /// the period in seconds after when a witness report in the DB will be deemed stale
-// extend witness stale period beyond that of beacons
-// witnesses are inserted into the DB up to 10 mins before beacons
-// due to the loader sequentially loading witnesses then beacons
-const WITNESS_STALE_PERIOD: i64 = BEACON_STALE_PERIOD + (15 * 60);
+const WITNESS_STALE_PERIOD: i64 = 60 * 45;
 /// the period of time in seconds after which entropy will be deemed stale
 /// and purged from the DB
 // this value should be > that beacon stale period to allow for any beacon
