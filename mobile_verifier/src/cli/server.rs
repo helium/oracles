@@ -13,6 +13,8 @@ pub struct Cmd {}
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
+        metrics::register_counter!(concat!(env!("CARGO_PKG_NAME"), "-reward_manifest"));
+        metrics::register_counter!(concat!(env!("CARGO_PKG_NAME"), "-heartbeat"));
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
