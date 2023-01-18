@@ -60,6 +60,12 @@ impl SharedHexDensityMap {
     }
 }
 
+impl Default for SharedHexDensityMap {
+    fn default() -> Self {
+        Self(Arc::new(RwLock::new(HashMap::new())))
+    }
+}
+
 #[async_trait::async_trait]
 impl HexDensityMap for SharedHexDensityMap {
     async fn get(&self, hex: u64) -> Option<Decimal> {
@@ -112,6 +118,12 @@ impl GlobalHexMap {
             &mut self.clipped_hexes,
             starting_hexes,
         )
+    }
+}
+
+impl Default for GlobalHexMap {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

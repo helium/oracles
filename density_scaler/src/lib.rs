@@ -1,5 +1,5 @@
 mod error;
-mod hex;
+pub mod hex;
 pub mod server;
 pub mod settings;
 

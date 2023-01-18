@@ -1,11 +1,10 @@
 use anyhow::{Error, Result};
 use clap::Parser;
-use density_scaler::Server as DensityScaler;
 use file_store::{file_sink, file_upload, FileType};
 use futures::TryFutureExt;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, poc_report::Report,
-    purger, rewarder::Rewarder, runner, Settings,
+    purger, region_cache::RegionCache, rewarder::Rewarder, runner, Settings,
 };
 use std::path;
 use tokio::signal;
@@ -72,7 +71,9 @@ impl Server {
             shutdown_trigger.trigger()
         });
 
-        let gateway_cache = GatewayCache::from_settings(settings);
+        let gateway_cache = GatewayCache::from_settings(settings).await?;
+        gateway_cache.prewarm().await?;
+        let region_cache = RegionCache::from_settings(settings).await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
@@ -113,8 +114,6 @@ impl Server {
         let mut entropy_loader = entropy_loader::EntropyLoader::from_settings(settings).await?;
         let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
-        let mut density_scaler =
-            DensityScaler::from_settings(settings.density_scaler.clone()).await?;
         tokio::try_join!(
             gateway_rewards_server.run(&shutdown).map_err(Error::from),
             reward_manifests_server.run(&shutdown).map_err(Error::from),
@@ -122,14 +121,13 @@ impl Server {
             runner.run(
                 file_upload_tx.clone(),
                 &gateway_cache,
-                density_scaler.hex_density_map(),
+                &region_cache,
                 &shutdown
             ),
             entropy_loader.run(&shutdown),
             loader.run(&shutdown, &gateway_cache),
             purger.run(&shutdown),
             rewarder.run(&shutdown),
-            density_scaler.run(&shutdown).map_err(Error::from),
         )
         .map(|_| ())
     }

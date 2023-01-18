@@ -18,6 +18,7 @@ pub struct Settings {
     #[serde(default = "default_base_stale_period")]
     pub base_stale_period: i64,
     pub database: db_store::Settings,
+    pub helius: db_store::Settings,
     pub follower: node_follower::Settings,
     pub ingest: file_store::Settings,
     pub entropy: file_store::Settings,
