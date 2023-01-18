@@ -1,6 +1,9 @@
 use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
-use helium_proto::services::poc_iot::{IotBeaconReportReqV1, IotWitnessReportReqV1};
+use helium_proto::services::{
+    iot_config::{OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1},
+    poc_iot::{IotBeaconReportReqV1, IotWitnessReportReqV1},
+};
 use helium_proto::{
     services::poc_mobile::{CellHeartbeatReqV1, DataTransferSessionReqV1, SpeedtestReqV1},
     Message,
@@ -29,6 +32,9 @@ impl_msg_verify!(SpeedtestReqV1, signature);
 impl_msg_verify!(IotBeaconReportReqV1, signature);
 impl_msg_verify!(IotWitnessReportReqV1, signature);
 impl_msg_verify!(DataTransferSessionReqV1, signature);
+impl_msg_verify!(OrgCreateHeliumReqV1, signature);
+impl_msg_verify!(OrgCreateRoamerReqV1, signature);
+impl_msg_verify!(OrgDisableReqV1, signature);
 
 #[cfg(test)]
 mod test {

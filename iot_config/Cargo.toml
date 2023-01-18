@@ -1,0 +1,34 @@
+[package]
+name = "iot-config"
+version = "0.1.0"
+description = "Configuration APIs for the IoT subnetwork"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = {workspace = true}
+async-trait = {workspace = true}
+base64 = {workspace = true}
+clap = {workspace = true}
+config = {workspace = true}
+db-store = {path = "../db_store"}
+file-store = {path = "../file_store"}
+futures = {workspace = true}
+futures-util = {workspace = true}
+helium-crypto = {workspace = true}
+helium-proto = {workspace = true}
+metrics = {workspace = true}
+metrics-exporter-prometheus = {workspace = true}
+poc-metrics = {path = "../metrics"}
+prost = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+sqlx = {workspace = true}
+thiserror = {workspace = true}
+tokio = {workspace = true}
+tokio-stream = "0"
+tonic = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = {workspace = true}
+triggered = {workspace = true}
