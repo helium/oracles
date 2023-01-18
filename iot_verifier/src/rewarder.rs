@@ -1,15 +1,15 @@
 use crate::{reward_share::GatewayShares, scheduler::Scheduler};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink, file_sink_write, traits::TimestampEncode};
+use file_store::{file_sink, traits::TimestampEncode};
 use helium_proto::RewardManifest;
 use sqlx::{PgExecutor, Pool, Postgres};
 use tokio::time::sleep;
 
 pub struct Rewarder {
     pub pool: Pool<Postgres>,
-    pub gateway_rewards_tx: file_sink::MessageSender,
-    pub reward_manifest_tx: file_sink::MessageSender,
+    pub gateway_rewards_sink: file_sink::FileSinkClient,
+    pub reward_manifests_sink: file_sink::FileSinkClient,
     pub reward_period_hours: i64,
     pub reward_offset: Duration,
 }
@@ -53,32 +53,29 @@ impl Rewarder {
     pub async fn reward(&mut self, scheduler: &Scheduler) -> anyhow::Result<()> {
         let reward_shares = GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
         for reward_share in reward_shares.into_gateway_reward_shares(&scheduler.reward_period) {
-            file_sink_write!(
-                "gateway_reward_shares",
-                &self.gateway_rewards_tx,
-                reward_share
-            )
-            .await?
-            // Await the returned oneshot to ensure we wrote the file
-            .await??;
+            self.gateway_rewards_sink
+                .write(reward_share, [])
+                .await?
+                // Await the returned oneshot to ensure we wrote the file
+                .await??;
         }
 
-        let written_files = file_sink::commit(&self.gateway_rewards_tx).await?.await??;
+        let written_files = self.gateway_rewards_sink.commit().await?.await??;
 
         // Write the rewards manifest for the completed period
-        file_sink_write!(
-            "iot_reward_manifest",
-            &self.reward_manifest_tx,
-            RewardManifest {
-                start_timestamp: scheduler.reward_period.start.encode_timestamp(),
-                end_timestamp: scheduler.reward_period.end.encode_timestamp(),
-                written_files
-            }
-        )
-        .await?
-        .await??;
+        self.reward_manifests_sink
+            .write(
+                RewardManifest {
+                    start_timestamp: scheduler.reward_period.start.encode_timestamp(),
+                    end_timestamp: scheduler.reward_period.end.encode_timestamp(),
+                    written_files,
+                },
+                [],
+            )
+            .await?
+            .await??;
 
-        file_sink::commit(&self.reward_manifest_tx).await?;
+        self.reward_manifests_sink.commit().await?;
 
         let mut transaction = self.pool.begin().await?;
 

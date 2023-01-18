@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use file_store::{file_sink, file_sink_write, speedtest::CellSpeedtest, traits::TimestampEncode};
+use file_store::{file_sink, speedtest::CellSpeedtest, traits::TimestampEncode};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
@@ -135,7 +135,7 @@ impl SpeedtestRollingAverage {
         .map(|result| result.inserted)
     }
 
-    pub async fn write(&self, averages_tx: &file_sink::MessageSender) -> file_store::Result {
+    pub async fn write(&self, averages: &file_sink::FileSinkClient) -> file_store::Result {
         // Write out the speedtests to S3
         let average = Average::from(&self.speedtests);
         let validity = average.validity() as i32;
@@ -148,31 +148,31 @@ impl SpeedtestRollingAverage {
             latency_avg_ms,
             ..
         } = average;
-        file_sink_write!(
-            "speedtest_average",
-            averages_tx,
-            proto::SpeedtestAvg {
-                pub_key: self.id.clone().into(),
-                upload_speed_avg_bps,
-                download_speed_avg_bps,
-                latency_avg_ms,
-                timestamp: Utc::now().encode_timestamp(),
-                speedtests: speedtests_without_lapsed(
-                    self.speedtests.iter(),
-                    Duration::hours(SPEEDTEST_LAPSE)
-                )
-                .map(|st| proto::Speedtest {
-                    timestamp: st.timestamp.timestamp() as u64,
-                    upload_speed_bps: st.upload_speed as u64,
-                    download_speed_bps: st.download_speed as u64,
-                    latency_ms: st.latency as u32,
-                })
-                .collect(),
-                validity,
-                reward_multiplier,
-            }
-        )
-        .await?;
+        averages
+            .write(
+                proto::SpeedtestAvg {
+                    pub_key: self.id.clone().into(),
+                    upload_speed_avg_bps,
+                    download_speed_avg_bps,
+                    latency_avg_ms,
+                    timestamp: Utc::now().encode_timestamp(),
+                    speedtests: speedtests_without_lapsed(
+                        self.speedtests.iter(),
+                        Duration::hours(SPEEDTEST_LAPSE),
+                    )
+                    .map(|st| proto::Speedtest {
+                        timestamp: st.timestamp.timestamp() as u64,
+                        upload_speed_bps: st.upload_speed as u64,
+                        download_speed_bps: st.download_speed as u64,
+                        latency_ms: st.latency as u32,
+                    })
+                    .collect(),
+                    validity,
+                    reward_multiplier,
+                },
+                [],
+            )
+            .await?;
 
         Ok(())
     }

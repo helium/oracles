@@ -49,93 +49,8 @@ pub enum Message {
 pub type MessageSender = mpsc::Sender<Message>;
 pub type MessageReceiver = mpsc::Receiver<Message>;
 
-pub fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
+fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
     mpsc::channel(size)
-}
-
-#[macro_export]
-macro_rules! file_sink_write {
-    ($tag:literal, $tx:expr, $item:expr) => {
-        file_store::_file_sink_write!($tag, $tx, $item, std::iter::empty())
-    };
-
-    ($tag:literal, $tx:expr, $item:expr, $labels:expr) => {
-        file_store::_file_sink_write!($tag, $tx, $item, $labels)
-    };
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! _file_sink_write {
-    ($tag:literal, $tx:expr, $item:expr, $labels:expr) => {
-        file_store::file_sink::write(
-            concat!(env!("CARGO_PKG_NAME"), "-", $tag),
-            $tx,
-            $item,
-            $labels,
-        )
-    };
-}
-
-const OK_LABEL: Label = Label::from_static_parts("status", "ok");
-const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
-
-// Meant to be used indirectly, via file_sink_write macro.
-#[doc(hidden)]
-pub async fn write<T: prost::Message>(
-    tag: &'static str,
-    tx: &MessageSender,
-    item: T,
-    labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
-) -> Result<oneshot::Receiver<Result>> {
-    let (on_write_tx, on_write_rx) = oneshot::channel();
-    let bytes = item.encode_to_vec();
-    let labels = labels.into_iter().map(Label::from);
-
-    match tx.send(Message::Data(on_write_tx, bytes)).await {
-        Ok(_) => {
-            metrics::increment_counter!(
-                tag,
-                labels
-                    .chain(std::iter::once(OK_LABEL))
-                    .collect::<Vec<Label>>()
-            );
-            tracing::debug!("file_sink write succeeded for {tag:?}");
-            Ok(on_write_rx)
-        }
-        Err(e) => {
-            metrics::increment_counter!(
-                tag,
-                labels
-                    .chain(std::iter::once(ERROR_LABEL))
-                    .collect::<Vec<Label>>()
-            );
-            tracing::error!("file_sink write failed for {tag:?} with {e:?}");
-            Err(Error::channel())
-        }
-    }
-}
-
-pub async fn commit(tx: &MessageSender) -> Result<oneshot::Receiver<Result<FileManifest>>> {
-    let (on_commit_tx, on_commit_rx) = oneshot::channel();
-    tx.send(Message::Commit(on_commit_tx))
-        .await
-        .map_err(|e| {
-            tracing::error!("file_sink failed to commit with {e:?}");
-            Error::channel()
-        })
-        .map(|_| on_commit_rx)
-}
-
-pub async fn rollback(tx: &MessageSender) -> Result<oneshot::Receiver<Result<FileManifest>>> {
-    let (on_rollback_tx, on_rollback_rx) = oneshot::channel();
-    tx.send(Message::Rollback(on_rollback_tx))
-        .await
-        .map_err(|e| {
-            tracing::error!("file_sink failed to rollback with {e:?}");
-            Error::channel()
-        })
-        .map(|_| on_rollback_rx)
 }
 
 pub struct FileSinkBuilder {
@@ -144,13 +59,13 @@ pub struct FileSinkBuilder {
     tmp_path: PathBuf,
     max_size: usize,
     roll_time: Duration,
-    messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
     auto_commit: bool,
+    metric: &'static str,
 }
 
 impl FileSinkBuilder {
-    pub fn new(file_type: FileType, target_path: &Path, messages: MessageReceiver) -> Self {
+    pub fn new(file_type: FileType, target_path: &Path, metric: &'static str) -> Self {
         Self {
             prefix: file_type.to_string(),
             target_path: target_path.to_path_buf(),
@@ -159,7 +74,7 @@ impl FileSinkBuilder {
             roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
             deposits: None,
             auto_commit: true,
-            messages,
+            metric,
         }
     }
 
@@ -199,7 +114,16 @@ impl FileSinkBuilder {
         }
     }
 
-    pub async fn create(self) -> Result<FileSink> {
+    pub async fn create(self) -> Result<(FileSinkClient, FileSink)> {
+        let (tx, rx) = message_channel(50);
+
+        let client = FileSinkClient {
+            sender: tx,
+            metric: self.metric,
+        };
+
+        metrics::register_counter!(client.metric);
+
         let mut sink = FileSink {
             target_path: self.target_path,
             tmp_path: self.tmp_path,
@@ -207,13 +131,81 @@ impl FileSinkBuilder {
             max_size: self.max_size,
             deposits: self.deposits,
             roll_time: self.roll_time,
-            messages: self.messages,
+            messages: rx,
             staged_files: Vec::new(),
             auto_commit: self.auto_commit,
             active_sink: None,
         };
         sink.init().await?;
-        Ok(sink)
+        Ok((client, sink))
+    }
+}
+
+#[derive(Debug)]
+pub struct FileSinkClient {
+    sender: MessageSender,
+    metric: &'static str,
+}
+
+const OK_LABEL: Label = Label::from_static_parts("status", "ok");
+const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
+
+impl FileSinkClient {
+    pub async fn write<T: prost::Message>(
+        &self,
+        item: T,
+        labels: impl IntoIterator<Item = &(&'static str, &'static str)>,
+    ) -> Result<oneshot::Receiver<Result>> {
+        let (on_write_tx, on_write_rx) = oneshot::channel();
+        let bytes = item.encode_to_vec();
+        let labels = labels.into_iter().map(Label::from);
+
+        match self.sender.send(Message::Data(on_write_tx, bytes)).await {
+            Ok(_) => {
+                metrics::increment_counter!(
+                    self.metric,
+                    labels
+                        .chain(std::iter::once(OK_LABEL))
+                        .collect::<Vec<Label>>()
+                );
+                tracing::debug!("file_sink write succeeded for {:?}", self.metric);
+                Ok(on_write_rx)
+            }
+            Err(e) => {
+                metrics::increment_counter!(
+                    self.metric,
+                    labels
+                        .chain(std::iter::once(ERROR_LABEL))
+                        .collect::<Vec<Label>>()
+                );
+                tracing::error!("file_sink write failed for {:?} with {e:?}", self.metric);
+                Err(Error::channel())
+            }
+        }
+    }
+
+    pub async fn commit(&self) -> Result<oneshot::Receiver<Result<FileManifest>>> {
+        let (on_commit_tx, on_commit_rx) = oneshot::channel();
+        self.sender
+            .send(Message::Commit(on_commit_tx))
+            .await
+            .map_err(|e| {
+                tracing::error!("file_sink failed to commit with {e:?}");
+                Error::channel()
+            })
+            .map(|_| on_commit_rx)
+    }
+
+    pub async fn rollback(&self) -> Result<oneshot::Receiver<Result<FileManifest>>> {
+        let (on_rollback_tx, on_rollback_rx) = oneshot::channel();
+        self.sender
+            .send(Message::Rollback(on_rollback_tx))
+            .await
+            .map_err(|e| {
+                tracing::error!("file_sink failed to rollback with {e:?}");
+                Error::channel()
+            })
+            .map(|_| on_rollback_rx)
     }
 }
 
@@ -497,16 +489,16 @@ mod tests {
     async fn writes_a_framed_gzip_encoded_file() {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let (sender, receiver) = message_channel(10);
 
-        let mut file_sink = FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), receiver)
-            .roll_time(chrono::Duration::milliseconds(100))
-            .create()
-            .await
-            .expect("failed to create file sink");
+        let (file_sink_client, mut file_sink_server) =
+            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
+                .roll_time(chrono::Duration::milliseconds(100))
+                .create()
+                .await
+                .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
-            file_sink
+            file_sink_server
                 .run(&shutdown_listener)
                 .await
                 .expect("failed to complete file sink");
@@ -514,7 +506,8 @@ mod tests {
 
         let (on_write_tx, _on_write_rx) = oneshot::channel();
 
-        sender
+        file_sink_client
+            .sender
             .try_send(Message::Data(
                 on_write_tx,
                 String::into_bytes("hello".to_string()),
@@ -536,26 +529,27 @@ mod tests {
     async fn only_uploads_after_commit_when_auto_commit_is_false() {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let (sender, receiver) = message_channel(10);
         let (file_upload_tx, mut file_upload_rx) = file_upload::message_channel();
 
-        let mut file_sink = FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), receiver)
-            .roll_time(chrono::Duration::milliseconds(100))
-            .auto_commit(false)
-            .deposits(Some(file_upload_tx))
-            .create()
-            .await
-            .expect("failed to create file sink");
+        let (file_sink_client, mut file_sink_server) =
+            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
+                .roll_time(chrono::Duration::milliseconds(100))
+                .auto_commit(false)
+                .deposits(Some(file_upload_tx))
+                .create()
+                .await
+                .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
-            file_sink
+            file_sink_server
                 .run(&shutdown_listener)
                 .await
                 .expect("failed to complete file sink");
         });
 
         let (on_write_tx, _on_write_rx) = oneshot::channel();
-        sender
+        file_sink_client
+            .sender
             .try_send(Message::Data(
                 on_write_tx,
                 String::into_bytes("hello".to_string()),
@@ -570,7 +564,7 @@ mod tests {
             file_upload_rx.try_recv()
         );
 
-        let receiver = commit(&sender).await.expect("commit failed");
+        let receiver = file_sink_client.commit().await.expect("commit failed");
         let _ = receiver.await.expect("commit didn't complete completed");
 
         assert!(file_upload_rx.try_recv().is_ok());

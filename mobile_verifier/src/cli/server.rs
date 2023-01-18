@@ -32,11 +32,10 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         // Heartbeats
-        let (heartbeats_tx, heartbeats_rx) = file_sink::message_channel(50);
-        let mut heartbeats = file_sink::FileSinkBuilder::new(
+        let (heartbeats, mut heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
             store_base_path,
-            heartbeats_rx,
+            concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(15))
@@ -44,11 +43,10 @@ impl Cmd {
         .await?;
 
         // Speedtest averages
-        let (speedtest_avg_tx, speedtest_avg_rx) = file_sink::message_channel(50);
-        let mut speedtest_avgs = file_sink::FileSinkBuilder::new(
+        let (speedtest_avgs, mut speedtest_avgs_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
             store_base_path,
-            speedtest_avg_rx,
+            concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(15))
@@ -56,11 +54,10 @@ impl Cmd {
         .await?;
 
         // Radio share rewards
-        let (radio_rewards_tx, radio_rewards_rx) = file_sink::message_channel(50);
-        let mut radio_rewards = file_sink::FileSinkBuilder::new(
+        let (radio_rewards, mut radio_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::RadioRewardShare,
             store_base_path,
-            radio_rewards_rx,
+            concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -68,11 +65,10 @@ impl Cmd {
         .await?;
 
         // Reward manifest
-        let (reward_manifest_tx, reward_manifest_rx) = file_sink::message_channel(50);
-        let mut reward_manifests = file_sink::FileSinkBuilder::new(
+        let (reward_manifests, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
-            reward_manifest_rx,
+            concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -90,21 +86,27 @@ impl Cmd {
         let verifier_daemon = VerifierDaemon {
             verification_offset: settings.verification_offset_duration(),
             pool,
-            heartbeats_tx,
-            speedtest_avg_tx,
-            radio_rewards_tx,
-            reward_manifest_tx,
+            heartbeats,
+            speedtest_avgs,
+            radio_rewards,
+            reward_manifests,
             reward_period_hours,
             verifications_per_period,
             verifier,
         };
 
         tokio::try_join!(
-            heartbeats.run(&shutdown_listener).map_err(Error::from),
-            speedtest_avgs.run(&shutdown_listener).map_err(Error::from),
-            radio_rewards.run(&shutdown_listener).map_err(Error::from),
+            heartbeats_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
+            speedtest_avgs_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
+            radio_rewards_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
-            reward_manifests
+            reward_manifests_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
             verifier_daemon.run(&shutdown_listener),

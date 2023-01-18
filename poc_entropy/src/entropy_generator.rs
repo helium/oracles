@@ -1,5 +1,5 @@
 use chrono::Utc;
-use file_store::{file_sink, file_sink_write};
+use file_store::file_sink;
 use futures::TryFutureExt;
 use helium_proto::EntropyReportV1;
 use jsonrpsee::{
@@ -106,7 +106,7 @@ impl EntropyGenerator {
 
     pub async fn run(
         &mut self,
-        file_sink: file_sink::MessageSender,
+        file_sink: file_sink::FileSinkClient,
         shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
         tracing::info!("started entropy generator");
@@ -138,7 +138,7 @@ impl EntropyGenerator {
 
     async fn handle_entropy_tick(
         &mut self,
-        file_sink: &file_sink::MessageSender,
+        file_sink: &file_sink::FileSinkClient,
     ) -> anyhow::Result<()> {
         match Self::get_entropy(&self.client).await {
             Ok(data) => self.sender.send_modify(|entry| {
@@ -158,12 +158,9 @@ impl EntropyGenerator {
             entropy.to_string(),
             entropy.timestamp
         );
-        file_sink_write!(
-            "report_submission",
-            file_sink,
-            EntropyReportV1::from(entropy)
-        )
-        .await?;
+
+        file_sink.write(EntropyReportV1::from(entropy), []).await?;
+
         Ok(())
     }
 

@@ -75,13 +75,15 @@ impl Server {
         let mut entropy_generator = EntropyGenerator::new(&settings.source).await?;
         let entropy_watch = entropy_generator.receiver();
 
-        let (entropy_tx, entropy_rx) = file_sink::message_channel(50);
-        let mut entropy_sink =
-            file_sink::FileSinkBuilder::new(FileType::EntropyReport, store_base_path, entropy_rx)
-                .deposits(Some(file_upload_tx.clone()))
-                .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
-                .create()
-                .await?;
+        let (entropy_sink, mut entropy_sink_server) = file_sink::FileSinkBuilder::new(
+            FileType::EntropyReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_VERSION"), "_report_submission"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
+        .create()
+        .await?;
 
         // server
         let socket_addr: SocketAddr = settings.listen.parse()?;
@@ -92,9 +94,9 @@ impl Server {
         tokio::try_join!(
             api_server.run(&shutdown),
             entropy_generator
-                .run(entropy_tx, &shutdown)
+                .run(entropy_sink, &shutdown)
                 .map_err(Error::from),
-            entropy_sink.run(&shutdown).map_err(Error::from),
+            entropy_sink_server.run(&shutdown).map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),
         )
         .map(|_| ())

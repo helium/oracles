@@ -80,11 +80,10 @@ impl Server {
 
         let store_base_path = std::path::Path::new(&settings.cache);
         // Gateway reward shares sink
-        let (gateway_rewards_tx, gateway_rewards_rx) = file_sink::message_channel(50);
-        let mut gateway_rewards = file_sink::FileSinkBuilder::new(
+        let (gateway_rewards_sink, mut gateway_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::GatewayRewardShare,
             store_base_path,
-            gateway_rewards_rx,
+            concat!(env!("CARGO_PKG_VERSION"), "_gateway_reward_shares"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -92,11 +91,10 @@ impl Server {
         .await?;
 
         // Reward manifest
-        let (reward_manifest_tx, reward_manifest_rx) = file_sink::message_channel(50);
-        let mut reward_manifests = file_sink::FileSinkBuilder::new(
+        let (reward_manifests_sink, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
-            reward_manifest_rx,
+            concat!(env!("CARGO_PKG_VERSION"), "_iot_reward_manifest"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -105,8 +103,8 @@ impl Server {
 
         let rewarder = Rewarder {
             pool,
-            gateway_rewards_tx,
-            reward_manifest_tx,
+            gateway_rewards_sink,
+            reward_manifests_sink,
             reward_period_hours: settings.rewards,
             reward_offset: settings.reward_offset_duration(),
         };
@@ -118,8 +116,8 @@ impl Server {
         let mut density_scaler =
             DensityScaler::from_settings(settings.density_scaler.clone()).await?;
         tokio::try_join!(
-            gateway_rewards.run(&shutdown).map_err(Error::from),
-            reward_manifests.run(&shutdown).map_err(Error::from),
+            gateway_rewards_server.run(&shutdown).map_err(Error::from),
+            reward_manifests_server.run(&shutdown).map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),
             runner.run(
                 file_upload_tx.clone(),
