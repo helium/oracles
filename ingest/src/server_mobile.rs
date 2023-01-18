@@ -85,7 +85,6 @@ impl poc_mobile::PocMobile for GrpcServer {
             })?;
 
         _ = self.speedtest_report_sink.write(report, []).await;
-        metrics::increment_counter!("ingest_server_speedtest_count");
 
         let id = timestamp.to_string();
         Ok(Response::new(SpeedtestRespV1 { id }))
@@ -108,7 +107,6 @@ impl poc_mobile::PocMobile for GrpcServer {
             })?;
 
         _ = self.heartbeat_report_sink.write(report, []).await;
-        metrics::increment_counter!("ingest_server_heartbeat_count");
 
         let id = timestamp.to_string();
         Ok(Response::new(CellHeartbeatRespV1 { id }))
@@ -131,7 +129,6 @@ impl poc_mobile::PocMobile for GrpcServer {
             })?;
 
         _ = self.data_transfer_session_sink.write(report, []).await;
-        metrics::increment_counter!("ingest_server_mobile_data_transfer_session_count");
 
         Ok(Response::new(DataTransferSessionRespV1 {
             id: timestamp.to_string(),
