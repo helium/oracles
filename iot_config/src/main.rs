@@ -79,6 +79,8 @@ impl Daemon {
         let session_key_filter_svc = SessionKeyFilterService {};
 
         transport::Server::builder()
+            .http2_keepalive_interval(Some(Duration::from_secs(250)))
+            .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(GatewayServer::new(gateway_svc))
             .add_service(OrgServer::new(org_svc))
             .add_service(RouteServer::new(route_svc))
