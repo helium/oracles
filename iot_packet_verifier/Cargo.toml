@@ -9,7 +9,7 @@ license = "Apache-2.0"
 anyhow = {workspace = true}
 anchor-lang = {workspace = true}
 anchor-client = "0.26"
-data-credits = {workspace = true}
+async-trait = {workspace = true}
 clap = {workspace = true}
 config = {workspace = true}
 chrono = {workspace = true}
@@ -18,7 +18,7 @@ futures = {workspace = true}
 futures-util = {workspace = true}
 file-store = {path = "../file_store"}
 helium-proto = {workspace = true}
-helium-crypto = {workspace = true}
+helium-crypto = {workspace = true, features = ["sqlx-postgres", "multisig", "solana"]}
 solana-client = {workspace = true}
 solana-sdk = {workspace = true}
 solana-program = "1.11"
@@ -35,4 +35,8 @@ tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
 sha256 = "1.1.1"
+
+data-credits = {git = "https://github.com/helium/helium-program-library.git"}
+helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git"}
+
 

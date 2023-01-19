@@ -10,8 +10,9 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
+    /// Solana RpcClient URL:
+    pub solana_rpc: String,
     pub database: db_store::Settings,
-    pub follower: node_follower::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,

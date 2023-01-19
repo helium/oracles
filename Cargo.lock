@@ -1293,9 +1293,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chrono"
-version = "0.4.22"
+version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfd4d1b31faaa3a89d7934dbded3111da0d2ef28e3ebccdb4f0179f5929d1ef1"
+checksum = "16b0a3d9ed01224b22057780a37bb8c5dbfe1be8ba48678e7bf57ec4b385411f"
 dependencies = [
  "iana-time-zone",
  "js-sys",
@@ -2713,7 +2713,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=map/verified-packet#4e1b66dd15b24349f4a2e2309a03043d972f90f1"
+source = "git+https://github.com/helium/proto?branch=map/verified-packet#1447d73573db67e1e198ffcb8d770d68c59a9e31"
 dependencies = [
  "bytes",
  "prost",
@@ -3057,6 +3057,7 @@ dependencies = [
  "anchor-client",
  "anchor-lang",
  "anyhow",
+ "async-trait",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -3067,6 +3068,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
+ "helium-sub-daos",
  "node-follower",
  "poc-metrics",
  "prost",
@@ -3610,7 +3612,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.7.3",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3650,7 +3652,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.7.3",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -4247,7 +4249,7 @@ dependencies = [
  "node-follower",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.7.3",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -4896,7 +4898,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.7.3",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -7014,7 +7016,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 

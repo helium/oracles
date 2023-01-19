@@ -3,18 +3,17 @@ use file_store::{FileStore, FileType};
 use futures::{Stream, StreamExt};
 use helium_proto::services::router::PacketRouterPacketReportV1;
 use prost::Message;
-use std::ops::Range;
 
 pub const DOWNLOAD_WORKERS: usize = 50;
 
 pub fn ingest_reports(
     file_store: &FileStore,
-    epoch: &Range<DateTime<Utc>>,
+    start: Option<DateTime<Utc>>,
 ) -> impl Stream<Item = PacketRouterPacketReportV1> {
     file_store
         .source(
             file_store
-                .list(FileType::IotPacketReport, epoch.start, epoch.end)
+                .list(FileType::IotPacketReport, start, None)
                 .boxed(),
         )
         .filter_map(|msg| async move {
