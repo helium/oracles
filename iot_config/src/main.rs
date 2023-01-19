@@ -8,7 +8,7 @@ use iot_config::{
     gateway_service::GatewayService, org_service::OrgService, route_service::RouteService,
     session_key_service::SessionKeyFilterService, settings::Settings,
 };
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 use tokio::signal;
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -79,6 +79,8 @@ impl Daemon {
         let session_key_filter_svc = SessionKeyFilterService {};
 
         transport::Server::builder()
+            .http2_keepalive_interval(Some(Duration::from_secs(250)))
+            .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(GatewayServer::new(gateway_svc))
             .add_service(OrgServer::new(org_svc))
             .add_service(RouteServer::new(route_svc))
