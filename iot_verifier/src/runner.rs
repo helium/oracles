@@ -17,16 +17,13 @@ use file_store::{
     iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},
     iot_valid_poc::{IotValidBeaconReport, IotValidPoc},
     iot_witness_report::IotWitnessIngestReport,
-    traits::{IngestId, ReportId},
+    traits::{IngestId, MsgDecode, ReportId},
     FileType,
 };
 use futures::stream::{self, StreamExt};
-use helium_proto::{
-    services::poc_iot::{
-        InvalidParticipantSide, InvalidReason, IotBeaconIngestReportV1, IotInvalidBeaconReportV1,
-        IotInvalidWitnessReportV1, IotValidPocV1, IotWitnessIngestReportV1,
-    },
-    Message,
+use helium_proto::services::poc_lora::{
+    InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
+    LoraValidPocV1,
 };
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
@@ -214,8 +211,7 @@ impl Runner {
         let packet_data = &db_beacon.packet_data;
 
         let beacon_buf: &[u8] = &db_beacon.report_data;
-        let beacon_report: IotBeaconIngestReport =
-            IotBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
+        let beacon_report = IotBeaconIngestReport::decode(beacon_buf)?;
         let beacon = &beacon_report.report;
         let beacon_received_ts = beacon_report.received_timestamp;
 
@@ -227,7 +223,7 @@ impl Runner {
         let mut witnesses: Vec<IotWitnessIngestReport> = Vec::new();
         for db_witness in db_witnesses {
             let witness_buf: &[u8] = &db_witness.report_data;
-            witnesses.push(IotWitnessIngestReportV1::decode(witness_buf)?.try_into()?);
+            witnesses.push(IotWitnessIngestReport::decode(witness_buf)?);
         }
 
         // create the struct defining this POC
@@ -330,7 +326,7 @@ impl Runner {
             reason: invalid_reason,
             report: beacon.clone(),
         };
-        let invalid_poc_proto: IotInvalidBeaconReportV1 = invalid_poc.into();
+        let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
         // save invalid poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
         match iot_invalid_beacon_sink
@@ -359,7 +355,7 @@ impl Runner {
                 reason: invalid_reason,
                 participant_side: InvalidParticipantSide::Beaconer,
             };
-            let invalid_witness_report_proto: IotInvalidWitnessReportV1 =
+            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.into();
             match iot_invalid_witness_sink
                 .write(
@@ -405,7 +401,7 @@ impl Runner {
         // TODO: expand this transaction to cover all of the database access below?
         transaction.commit().await?;
 
-        let valid_poc_proto: IotValidPocV1 = valid_poc.into();
+        let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
         // save the poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
         match iot_valid_poc_sink.write(valid_poc_proto, []).await {
@@ -423,7 +419,7 @@ impl Runner {
         // so if a report fails from this point on, it shall be lost for ever more
         for invalid_witness_report in witnesses_result.invalid_witnesses {
             let invalid_reason = invalid_witness_report.reason;
-            let invalid_witness_report_proto: IotInvalidWitnessReportV1 =
+            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
                 invalid_witness_report.into();
             match iot_invalid_witness_sink
                 .write(

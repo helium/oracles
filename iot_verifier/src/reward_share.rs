@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::{iot_valid_poc::IotValidPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_iot as proto;
+use helium_proto::services::poc_lora as proto;
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use sqlx::{Postgres, Transaction};

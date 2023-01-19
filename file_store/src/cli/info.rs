@@ -7,8 +7,8 @@ use crate::{
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use helium_proto::services::poc_iot::{
-    IotBeaconIngestReportV1, IotValidPocV1, IotWitnessIngestReportV1,
+use helium_proto::services::poc_lora::{
+    LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
 };
 use helium_proto::{
     services::poc_mobile::{
@@ -101,13 +101,13 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::EntropyReport => EntropyReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::IotBeaconIngestReport => IotBeaconIngestReportV1::decode(buf)
+        FileType::IotBeaconIngestReport => LoraBeaconIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::IotWitnessIngestReport => IotWitnessIngestReportV1::decode(buf)
+        FileType::IotWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::IotValidPoc => IotValidPocV1::decode(buf)
+        FileType::IotValidPoc => LoraValidPocV1::decode(buf)
             .map_err(Error::from)
             .and_then(|report| {
                 report.beacon_report.ok_or_else(|| {

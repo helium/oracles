@@ -6,7 +6,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_iot::{IotBeaconIngestReportV1, IotBeaconReportReqV1};
+use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconReportReqV1};
 use helium_proto::DataRate;
 use serde::Serialize;
 
@@ -33,12 +33,12 @@ pub struct IotBeaconIngestReport {
 }
 
 impl MsgDecode for IotBeaconIngestReport {
-    type Msg = IotBeaconIngestReportV1;
+    type Msg = LoraBeaconIngestReportV1;
 }
 
-impl TryFrom<IotBeaconReportReqV1> for IotBeaconIngestReport {
+impl TryFrom<LoraBeaconReportReqV1> for IotBeaconIngestReport {
     type Error = Error;
-    fn try_from(v: IotBeaconReportReqV1) -> Result<Self> {
+    fn try_from(v: LoraBeaconReportReqV1) -> Result<Self> {
         Ok(Self {
             received_timestamp: Utc::now(),
             report: v.try_into()?,
@@ -46,7 +46,7 @@ impl TryFrom<IotBeaconReportReqV1> for IotBeaconIngestReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for IotBeaconReportReqV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraBeaconReportReqV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp_nanos()
     }
@@ -58,7 +58,7 @@ impl MsgTimestamp<u64> for IotBeaconReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for IotBeaconIngestReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraBeaconIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
     }
@@ -70,9 +70,9 @@ impl MsgTimestamp<u64> for IotBeaconIngestReport {
     }
 }
 
-impl TryFrom<IotBeaconIngestReportV1> for IotBeaconIngestReport {
+impl TryFrom<LoraBeaconIngestReportV1> for IotBeaconIngestReport {
     type Error = Error;
-    fn try_from(v: IotBeaconIngestReportV1) -> Result<Self> {
+    fn try_from(v: LoraBeaconIngestReportV1) -> Result<Self> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
@@ -83,7 +83,7 @@ impl TryFrom<IotBeaconIngestReportV1> for IotBeaconIngestReport {
     }
 }
 
-impl From<IotBeaconIngestReport> for IotBeaconReportReqV1 {
+impl From<IotBeaconIngestReport> for LoraBeaconReportReqV1 {
     fn from(v: IotBeaconIngestReport) -> Self {
         let timestamp = v.report.timestamp();
         Self {
@@ -102,9 +102,9 @@ impl From<IotBeaconIngestReport> for IotBeaconReportReqV1 {
     }
 }
 
-impl TryFrom<IotBeaconReportReqV1> for IotBeaconReport {
+impl TryFrom<LoraBeaconReportReqV1> for IotBeaconReport {
     type Error = Error;
-    fn try_from(v: IotBeaconReportReqV1) -> Result<Self> {
+    fn try_from(v: LoraBeaconReportReqV1) -> Result<Self> {
         let dr = v.datarate;
         let data_rate: DataRate = DataRate::from_i32(dr)
             .ok_or_else(|| DecodeError::unsupported_datarate("iot_beacon_report_req_v1", dr))?;
@@ -126,7 +126,7 @@ impl TryFrom<IotBeaconReportReqV1> for IotBeaconReport {
     }
 }
 
-impl From<IotBeaconReport> for IotBeaconReportReqV1 {
+impl From<IotBeaconReport> for LoraBeaconReportReqV1 {
     fn from(v: IotBeaconReport) -> Self {
         let timestamp = v.timestamp();
         Self {

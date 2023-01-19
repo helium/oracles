@@ -9,15 +9,13 @@ use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
-    iot_beacon_report::IotBeaconIngestReport, iot_witness_report::IotWitnessIngestReport,
-    traits::IngestId, FileInfo, FileStore, FileType,
+    iot_beacon_report::IotBeaconIngestReport,
+    iot_witness_report::IotWitnessIngestReport,
+    traits::{IngestId, MsgDecode},
+    FileInfo, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::poc_iot::{IotBeaconIngestReportV1, IotWitnessIngestReportV1},
-    Message,
-};
 use sqlx::PgPool;
 use std::{hash::Hasher, ops::DerefMut, time::Duration};
 use tokio::{
@@ -326,8 +324,7 @@ impl Loader {
     ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
             FileType::IotBeaconIngestReport => {
-                let beacon: IotBeaconIngestReport =
-                    IotBeaconIngestReportV1::decode(buf)?.try_into()?;
+                let beacon = IotBeaconIngestReport::decode(buf)?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);
                 let packet_data = beacon.report.data.clone();
                 match self
@@ -355,8 +352,7 @@ impl Loader {
                 }
             }
             FileType::IotWitnessIngestReport => {
-                let witness: IotWitnessIngestReport =
-                    IotWitnessIngestReportV1::decode(buf)?.try_into()?;
+                let witness = IotWitnessIngestReport::decode(buf)?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
                 let packet_data = witness.report.data.clone();
                 if let Some(filter) = xor_filter {

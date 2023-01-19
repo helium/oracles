@@ -1,17 +1,20 @@
 use crate::{entropy::Entropy, metrics::Metrics, poc_report::Report, Settings};
 use file_store::{
-    file_sink, file_sink::FileSinkClient, file_upload, iot_beacon_report::IotBeaconIngestReport,
-    iot_invalid_poc::IotInvalidBeaconReport, iot_invalid_poc::IotInvalidWitnessReport,
-    iot_witness_report::IotWitnessIngestReport, traits::IngestId, FileType,
+    file_sink::{self, FileSinkClient},
+    file_upload,
+    iot_beacon_report::IotBeaconIngestReport,
+    iot_invalid_poc::IotInvalidBeaconReport,
+    iot_invalid_poc::IotInvalidWitnessReport,
+    iot_witness_report::IotWitnessIngestReport,
+    traits::{IngestId, MsgDecode},
+    FileType,
 };
-use helium_proto::services::poc_iot::{
-    InvalidParticipantSide, InvalidReason, IotBeaconIngestReportV1, IotInvalidBeaconReportV1,
-    IotInvalidWitnessReportV1, IotWitnessIngestReportV1,
+use helium_proto::services::poc_lora::{
+    InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
 };
 use std::{ops::DerefMut, path::Path};
 
 use futures::stream::{self, StreamExt};
-use helium_proto::Message;
 use sqlx::{PgPool, Postgres};
 use tokio::{
     sync::Mutex,
@@ -195,12 +198,11 @@ impl Purger {
         invalid_beacon_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let beacon_buf: &[u8] = &db_beacon.report_data;
-        let beacon_report: IotBeaconIngestReport =
-            IotBeaconIngestReportV1::decode(beacon_buf)?.try_into()?;
+        let beacon_report = IotBeaconIngestReport::decode(beacon_buf)?;
         let beacon_id = beacon_report.ingest_id();
         let beacon = &beacon_report.report;
         let received_timestamp = beacon_report.received_timestamp;
-        let invalid_beacon_proto: IotInvalidBeaconReportV1 = IotInvalidBeaconReport {
+        let invalid_beacon_proto: LoraInvalidBeaconReportV1 = IotInvalidBeaconReport {
             received_timestamp,
             reason: InvalidReason::Stale,
             report: beacon.clone(),
@@ -226,11 +228,10 @@ impl Purger {
         invalid_witness_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let witness_buf: &[u8] = &db_witness.report_data;
-        let witness_report: IotWitnessIngestReport =
-            IotWitnessIngestReportV1::decode(witness_buf)?.try_into()?;
+        let witness_report = IotWitnessIngestReport::decode(witness_buf)?;
         let witness_id = witness_report.ingest_id();
         let received_timestamp = witness_report.received_timestamp;
-        let invalid_witness_report_proto: IotInvalidWitnessReportV1 = IotInvalidWitnessReport {
+        let invalid_witness_report_proto: LoraInvalidWitnessReportV1 = IotInvalidWitnessReport {
             received_timestamp,
             report: witness_report.report,
             reason: InvalidReason::Stale,
