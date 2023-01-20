@@ -30,6 +30,8 @@ pub enum TxnConstructionError {
     CryptoError(#[from] Box<helium_crypto::Error>),
     #[error("zero rewards_shares")]
     ZeroRewards,
+    #[error("zero witnesses")]
+    ZeroWitnesses,
 }
 
 pub fn handle_report_msg(
@@ -52,7 +54,7 @@ pub fn handle_report_msg(
 
     // TODO: Double check whether the gateway in the poc_receipt is challengee?
     let path_element =
-        construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses);
+        construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses)?;
 
     path.push(path_element);
 
@@ -64,7 +66,7 @@ pub fn handle_report_msg(
     })
 }
 
-/// Maybe squish poc_witnesses if the length is >= max_witnesses_per_receipt
+/// Maybe squish poc_witnesses if the length is > max_witnesses_per_receipt
 fn maybe_squish_witnesses(
     poc_witnesses: &mut Vec<BlockchainPocWitnessV1>,
     poc_id: &Vec<u8>,
@@ -114,12 +116,15 @@ fn construct_path_element(
     challengee: Vec<u8>,
     poc_receipt: BlockchainPocReceiptV1,
     poc_witnesses: Vec<BlockchainPocWitnessV1>,
-) -> BlockchainPocPathElementV1 {
-    BlockchainPocPathElementV1 {
+) -> Result<BlockchainPocPathElementV1, TxnConstructionError> {
+    if poc_witnesses.is_empty() {
+        return Err(TxnConstructionError::ZeroWitnesses);
+    }
+    Ok(BlockchainPocPathElementV1 {
         challengee,
         receipt: Some(poc_receipt),
         witnesses: poc_witnesses,
-    }
+    })
 }
 
 fn construct_poc_witnesses(
