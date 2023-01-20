@@ -1,11 +1,7 @@
-use crate::{
-    balances::Balances,
-    burner::{Burn, Burner},
-    ingest,
-    settings::Settings,
-};
+use crate::{balances::Balances, burner::Burner, ingest, settings::Settings};
 use anyhow::{Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
+use db_store::meta;
 use file_store::{file_sink, file_sink_write, file_upload, FileStore, FileType};
 use futures::StreamExt;
 use futures_util::TryFutureExt;
@@ -14,7 +10,6 @@ use helium_proto::services::packet_verifier::ValidPacket;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::time;
 
 struct Daemon {
@@ -22,7 +17,6 @@ struct Daemon {
     file_store: FileStore,
     balances: Balances,
     valid_packets_tx: file_sink::MessageSender,
-    burn_tx: UnboundedSender<Burn>,
 }
 
 const POLL_TIME: time::Duration = time::Duration::from_secs(303);
@@ -32,19 +26,8 @@ impl Daemon {
         let mut timer = time::interval(POLL_TIME);
         timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
-        let mut last_verified: Option<NaiveDateTime> =
-            sqlx::query_scalar("SELECT MAX(timestamp) FROM verified_packets")
-                .fetch_optional(&self.pool)
-                .await?;
-
-        // If we do not have a last verified time, set it to the last burned packet.
-        if last_verified.is_none() {
-            last_verified = Some(
-                sqlx::query_scalar("SELECT value FROM meta WHERE name = 'last_burned_packet'")
-                    .fetch_one(&self.pool)
-                    .await?,
-            );
-        }
+        let mut last_verified: NaiveDateTime =
+            meta::fetch(&self.pool, "last_verified_packet").await?;
 
         loop {
             tokio::select! {
@@ -58,32 +41,47 @@ impl Daemon {
         Ok(())
     }
 
-    async fn handle_tick(
-        &mut self,
-        mut last_verified: Option<NaiveDateTime>,
-    ) -> Result<Option<NaiveDateTime>> {
-        let reports = ingest::ingest_reports(
-            &self.file_store,
-            last_verified.clone().map(|dt| DateTime::from_utc(dt, Utc)),
-        );
+    async fn handle_tick(&mut self, mut last_verified: NaiveDateTime) -> Result<NaiveDateTime> {
+        let reports =
+            ingest::ingest_reports(&self.file_store, DateTime::from_utc(last_verified, Utc));
 
         tokio::pin!(reports);
 
         while let Some(report) = reports.next().await {
+            let report_timestamp =
+                NaiveDateTime::from_timestamp_millis(report.gateway_timestamp_ms as i64).unwrap();
+
+            if report_timestamp <= last_verified {
+                continue;
+            }
+
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
             let Ok(gateway) = PublicKey::from_bytes(&report.gateway) else {
                 tracing::error!("Invalid gateway address: {:?}", report.gateway);
                 continue;
             };
-            last_verified =
-                NaiveDateTime::from_timestamp_millis(report.gateway_timestamp_ms as i64);
-            // TODO: Throw error if last_verified is none
+
             // TODO: Use transactions and write manifests
-            let suficient_balance = self
+            if self
                 .balances
                 .debit_if_sufficient(&gateway, debit_amount)
+                .await?
+            {
+                // Add the amount burned into the pending burns table
+                sqlx::query(
+                    r#"
+                    INSERT INTO pending_burns (gateway, amount)
+                    VALUES ($1, $2)
+                    ON CONFLICT (gateway) DO UPDATE SET
+                    amount = pending_burns.amount + $2
+                    RETURNING (xmax = 0) as inserted
+                    "#,
+                )
+                .bind(PublicKeyBinary::from(gateway.clone()))
+                .bind(debit_amount as i64)
+                .fetch_one(&self.pool)
                 .await?;
-            if suficient_balance {
+
                 // This packet is valid
                 file_sink_write!(
                     "valid_packet",
@@ -99,19 +97,8 @@ impl Daemon {
                 // Write invalid packets
             }
 
-            // Insert the verified packet
-            sqlx::query("INSERT INTO verified_packets (timestamp) VALUES ($1)")
-                .bind(last_verified)
-                .execute(&self.pool)
-                .await?;
-
-            // If the balance was suficient, send a burn request.
-            if suficient_balance {
-                self.burn_tx.send(Burn {
-                    gateway: PublicKeyBinary::from(gateway),
-                    amount: debit_amount as i64,
-                })?;
-            }
+            meta::store(&self.pool, "last_verified", report_timestamp).await?;
+            last_verified = report_timestamp;
         }
 
         Ok(last_verified)
@@ -136,7 +123,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let balances = Balances::new(rpc_client.clone());
 
     // Set up the balance burner:
-    let (burner, burn_tx) = Burner::new(&pool, rpc_client, &balances).await?;
+    let burner = Burner::new(&pool, rpc_client, &balances).await?;
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
@@ -163,7 +150,6 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         file_store,
         balances,
         valid_packets_tx,
-        burn_tx,
     };
 
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();

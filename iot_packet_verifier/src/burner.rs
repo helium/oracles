@@ -2,26 +2,21 @@ use crate::{
     balances::{Balance, Balances},
     pdas,
 };
-use anchor_client::RequestBuilder;
+use anchor_client::{RequestBuilder, RequestNamespace};
 use data_credits::{accounts, instruction};
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, transaction::Transaction};
+use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer, transaction::Transaction};
 use sqlx::{FromRow, Pool, Postgres};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    Mutex,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 use tokio::task;
 
 pub struct Burner {
     pool: Pool<Postgres>,
     balances: Arc<Mutex<HashMap<PublicKey, Balance>>>,
-    pending_burns: i64,
     provider: Arc<RpcClient>,
-    burns: UnboundedReceiver<Burn>,
-    program_cache: Option<BurnProgramCache>,
+    program_cache: BurnProgramCache,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -34,68 +29,27 @@ pub enum BurnError {
     SolanaClientError(#[from] ClientError),
 }
 
-const MAX_NUM_PENDING_BURNS: i64 = 10;
-
-#[derive(FromRow)]
-struct NewBurn {
-    inserted: bool,
-}
+const MAX_NUM_BURNS_PER_TRANSACTION: i64 = 2;
 
 impl Burner {
     pub async fn new(
         pool: &Pool<Postgres>,
         provider: Arc<RpcClient>,
         balances: &Balances,
-    ) -> Result<(Self, UnboundedSender<Burn>), BurnError> {
-        let (sender, receiver) = unbounded_channel();
-
-        // Fetch the current pending burns
-        let pending_burns: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pending_burns")
-            .fetch_one(pool)
-            .await?;
-
-        Ok((
-            Self {
-                pool: pool.clone(),
-                balances: balances.balances(),
-                burns: receiver,
-                program_cache: None,
-                provider,
-                pending_burns,
-            },
-            sender,
-        ))
+    ) -> Result<Self, BurnError> {
+        Ok(Self {
+            pool: pool.clone(),
+            balances: balances.balances(),
+            program_cache: BurnProgramCache::new(),
+            provider,
+        })
     }
 
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), BurnError> {
         let burn_service = task::spawn(async move {
             loop {
-                if self.pending_burns >= MAX_NUM_PENDING_BURNS {
-                    self.burn().await?;
-                }
-
-                let Some(burn) = self.burns.recv().await else {
-                    return Ok(());
-                };
-
-                // Add the pending burn to the burn table
-                let NewBurn { inserted } = sqlx::query_as::<_, NewBurn>(
-                    r#"
-                    INSERT INTO pending_burns (gateway, amount)
-                    VALUES ($1, $2)
-                    ON CONFLICT (gateway) DO UPDATE SET
-                    amount = pending_burns.amount + $2
-                    RETURNING (xmax = 0) as inserted
-                    "#,
-                )
-                .bind(burn.gateway)
-                .bind(burn.amount)
-                .fetch_one(&self.pool)
-                .await?;
-
-                if inserted {
-                    self.pending_burns += 1;
-                }
+                self.burn().await?;
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
 
@@ -123,31 +77,36 @@ impl Burner {
             &helium_sub_daos::ID,
         );
 
-        if self.program_cache.is_none() {
-            // Populate the program cache:
-            self.program_cache = Some(BurnProgramCache::new());
-        }
-
         // We would _like_ to have this streamed, but RequestBuilder does not implement Send
         // Everything past this point must be synchronous
-        let pending_burns: Vec<Burn> = sqlx::query_as("SELECT * FROM pending_burns")
-            .fetch_all(&self.pool)
-            .await?;
+        let pending_burns: Vec<Burn> =
+            sqlx::query_as("SELECT * FROM pending_burns ORDER BY RAND () LIMIT $1")
+                .bind(MAX_NUM_BURNS_PER_TRANSACTION)
+                .fetch_all(&self.pool)
+                .await?;
 
         let instructions = {
-            let program_cache = self.program_cache.as_ref().unwrap();
-            let mut request = RequestBuilder::from(todo!(), todo!(), todo!(), todo!(), todo!());
+            let program_id = todo!();
+            let cluster = "todo";
+            let payer: std::rc::Rc<dyn Signer> = todo!();
+            let options = None;
+            let namespace = RequestNamespace::Global;
+            let mut request = RequestBuilder::from(program_id, cluster, payer, options, namespace);
 
-            for Burn { gateway, amount } in pending_burns {
+            for Burn {
+                id,
+                gateway,
+                amount,
+            } in &pending_burns
+            {
+                let gateway = PublicKey::try_from(gateway.clone()).unwrap();
                 let accounts = accounts::BurnDelegatedDataCreditsV0 {
                     sub_dao_epoch_info,
-                    dao: program_cache.dao.clone(),
-                    sub_dao: program_cache.sub_dao.clone(),
-                    account_payer: program_cache.account_payer.clone(),
-                    data_credits: program_cache.data_credits.clone(),
-                    delegated_data_credits: pdas::delegated_data_credits(
-                        &PublicKey::try_from(gateway).unwrap(),
-                    ),
+                    dao: self.program_cache.dao.clone(),
+                    sub_dao: self.program_cache.sub_dao.clone(),
+                    account_payer: self.program_cache.account_payer.clone(),
+                    data_credits: self.program_cache.data_credits.clone(),
+                    delegated_data_credits: pdas::delegated_data_credits(&gateway),
                     token_program: spl_token::id(),
                     helium_sub_daos_program: helium_sub_daos::id(),
                     system_program: solana_program::system_program::id(),
@@ -160,11 +119,14 @@ impl Burner {
                 };
                 let args = instruction::BurnDelegatedDataCreditsV0 {
                     args: data_credits::BurnDelegatedDataCreditsArgsV0 {
-                        amount: amount as u64,
+                        amount: *amount as u64,
                     },
                 };
 
                 request = request.accounts(accounts).args(args);
+
+                // Remove the entry from the balance sheet
+                balances_lock.remove(&gateway);
             }
 
             // As far as I can tell, the instructions does not actually have any
@@ -180,22 +142,14 @@ impl Burner {
 
         let signature = self.provider.send_and_confirm_transaction(&tx).await?;
 
-        // TODO: We probably need to keep track of the last verified burn timestamp
-        // and only truncate verified packets that come before that timestamp
-        sqlx::query(
-            r#"
-            UPDATE meta SET value = (
-                SELECT MAX(timestamp) FROM verified_packets
-            ) WHERE key = 'last_burned_packet';
-            TRUNCATE TABLE pending_burns;
-            TRUNCATE TABLE verified_packets;
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Clear all of the balances, requiring a refresh
-        balances_lock.clear();
+        // Now that we have successfully executed the burns and are no long in
+        // sync land, we can delete the entries
+        for Burn { id, .. } in pending_burns {
+            sqlx::query("DELETE FROM pending_burns WHERE id = $1")
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        }
 
         Ok(())
     }
@@ -203,20 +157,12 @@ impl Burner {
 
 #[derive(FromRow, Debug)]
 pub struct Burn {
+    pub id: i32,
     pub gateway: PublicKeyBinary,
     pub amount: i64,
 }
 
-impl Burn {
-    pub fn new(gateway: PublicKey, amount: i64) -> Self {
-        Self {
-            gateway: PublicKeyBinary::from(gateway),
-            amount,
-        }
-    }
-}
-
-/// Cached accounts and pubkeys for the burn program
+/// Cached pubkeys for the burn program
 pub struct BurnProgramCache {
     pub account_payer: Pubkey,
     pub data_credits: Pubkey,

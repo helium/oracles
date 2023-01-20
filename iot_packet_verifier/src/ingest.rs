@@ -8,7 +8,7 @@ pub const DOWNLOAD_WORKERS: usize = 50;
 
 pub fn ingest_reports(
     file_store: &FileStore,
-    start: Option<DateTime<Utc>>,
+    start: DateTime<Utc>,
 ) -> impl Stream<Item = PacketRouterPacketReportV1> {
     file_store
         .source(
