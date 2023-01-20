@@ -33,17 +33,17 @@ pub enum BurnError {
 }
 
 impl Burner {
-    pub async fn new(
+    pub fn new(
         pool: &Pool<Postgres>,
         provider: Arc<RpcClient>,
         balances: &Balances,
-    ) -> Result<Self, BurnError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             pool: pool.clone(),
             balances: balances.balances(),
             program_cache: BurnProgramCache::new(),
             provider,
-        })
+        }
     }
 
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), BurnError> {

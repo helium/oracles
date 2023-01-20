@@ -133,7 +133,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let balances = Balances::new(&pool, rpc_client.clone()).await?;
 
     // Set up the balance burner:
-    let burner = Burner::new(&pool, rpc_client, &balances).await?;
+    let burner = Burner::new(&pool, rpc_client, &balances);
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
