@@ -2,7 +2,8 @@ use std::cell::RefCell;
 
 const LOADER_BEACON_COUNTER: &str = "oracles_iot_verifier_loader_beacon";
 const LOADER_WITNESS_COUNTER: &str = "oracles_iot_verifier_loader_witness";
-const INVALID_BEACON_COUNTER: &str = "iot_verifier_invalid_beacon_report";
+const LOADER_DROPPED_BEACON_COUNTER: &str = "iot_verifier_dropped_beacon";
+const LOADER_DROPPED_WITNESS_COUNTER: &str = "iot_verifier_dropped_witness";
 const INVALID_WITNESS_COUNTER: &str = "iot_verifier_invalid_witness_report";
 const BEACON_GUAGE: &str = "oracles_iot_verifier_num_beacons";
 
@@ -17,8 +18,12 @@ impl Metrics {
         metrics::counter!(LOADER_WITNESS_COUNTER, count);
     }
 
-    pub fn count_loader_invalid_beacons(count: u64, labels: &[(&'static str, &'static str)]) {
-        metrics::counter!(INVALID_BEACON_COUNTER, count, labels);
+    pub fn count_loader_dropped_beacons(count: u64, labels: &[(&'static str, &'static str)]) {
+        metrics::counter!(LOADER_DROPPED_BEACON_COUNTER, count, labels);
+    }
+
+    pub fn count_loader_dropped_witnesses(count: u64, labels: &[(&'static str, &'static str)]) {
+        metrics::counter!(LOADER_DROPPED_WITNESS_COUNTER, count, labels);
     }
 
     pub fn count_loader_invalid_witnesses(count: u64, labels: &[(&'static str, &'static str)]) {
@@ -98,14 +103,14 @@ impl LoaderMetricTracker {
         }
 
         if beacons_denied > 0 {
-            Metrics::count_loader_invalid_beacons(
+            Metrics::count_loader_dropped_beacons(
                 beacons_denied,
                 &[("status", "ok"), ("reason", "denied")],
             );
         }
 
         if beacons_unknown > 0 {
-            Metrics::count_loader_invalid_beacons(
+            Metrics::count_loader_dropped_beacons(
                 beacons_unknown,
                 &[("status", "ok"), ("reason", "gateway not found")],
             );
@@ -123,14 +128,14 @@ impl LoaderMetricTracker {
         }
 
         if witnesses_denied > 0 {
-            Metrics::count_loader_invalid_witnesses(
+            Metrics::count_loader_dropped_witnesses(
                 witnesses_denied,
                 &[("status", "ok"), ("reason", "denied")],
             );
         }
 
         if witnesses_unknown > 0 {
-            Metrics::count_loader_invalid_witnesses(
+            Metrics::count_loader_dropped_witnesses(
                 witnesses_unknown,
                 &[("status", "ok"), ("reason", "gateway not found")],
             );
