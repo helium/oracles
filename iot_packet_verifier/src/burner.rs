@@ -6,7 +6,10 @@ use anchor_client::{RequestBuilder, RequestNamespace};
 use data_credits::{accounts, instruction};
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer, transaction::Transaction};
+use solana_sdk::{
+    commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair, signer::Signer,
+    transaction::Transaction,
+};
 use sqlx::{FromRow, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -16,7 +19,6 @@ pub struct Burner {
     pool: Pool<Postgres>,
     balances: Arc<Mutex<HashMap<PublicKey, Balance>>>,
     provider: Arc<RpcClient>,
-    program_id: Pubkey,
     program_cache: BurnProgramCache,
 }
 
@@ -30,20 +32,16 @@ pub enum BurnError {
     SolanaClientError(#[from] ClientError),
 }
 
-const MAX_NUM_BURNS_PER_TRANSACTION: i64 = 2;
-
 impl Burner {
     pub async fn new(
         pool: &Pool<Postgres>,
         provider: Arc<RpcClient>,
         balances: &Balances,
-        program_id: Pubkey,
     ) -> Result<Self, BurnError> {
         Ok(Self {
             pool: pool.clone(),
             balances: balances.balances(),
             program_cache: BurnProgramCache::new(),
-            program_id,
             provider,
         })
     }
@@ -80,59 +78,57 @@ impl Burner {
             &helium_sub_daos::ID,
         );
 
-        // We would _like_ to have this streamed, but RequestBuilder does not implement Send
-        // Everything past this point must be synchronous
-        let pending_burns: Vec<Burn> =
-            sqlx::query_as("SELECT * FROM pending_burns ORDER BY RAND () LIMIT $1")
-                .bind(MAX_NUM_BURNS_PER_TRANSACTION)
-                .fetch_all(&self.pool)
-                .await?;
+        let Some(Burn { gateway, amount, id }): Option<Burn> =
+            sqlx::query_as("SELECT * FROM pending_burns ORDER BY RAND ()")
+                .fetch_optional(&self.pool)
+            .await? else {
+                return Ok(());
+            };
 
         let instructions = {
-            let cluster = "todo";
             let payer: std::rc::Rc<dyn Signer> = todo!();
-            let options = None;
-            let namespace = RequestNamespace::Global;
-            let mut request =
-                RequestBuilder::from(self.program_id.clone(), cluster, payer, options, namespace);
+            let request = RequestBuilder::from(
+                data_credits::id(),
+                "devnet",
+                payer,
+                Some(CommitmentConfig::confirmed()),
+                RequestNamespace::Global,
+            );
 
-            for Burn {
-                gateway, amount, ..
-            } in &pending_burns
-            {
-                let gateway = PublicKey::try_from(gateway.clone()).unwrap();
-                let accounts = accounts::BurnDelegatedDataCreditsV0 {
-                    sub_dao_epoch_info,
-                    dao: self.program_cache.dao.clone(),
-                    sub_dao: self.program_cache.sub_dao.clone(),
-                    account_payer: self.program_cache.account_payer.clone(),
-                    data_credits: self.program_cache.data_credits.clone(),
-                    delegated_data_credits: pdas::delegated_data_credits(&gateway),
-                    token_program: spl_token::id(),
-                    helium_sub_daos_program: helium_sub_daos::id(),
-                    system_program: solana_program::system_program::id(),
+            let gateway = PublicKey::try_from(gateway.clone()).unwrap();
+            let accounts = accounts::BurnDelegatedDataCreditsV0 {
+                sub_dao_epoch_info,
+                dao: self.program_cache.dao.clone(),
+                sub_dao: self.program_cache.sub_dao.clone(),
+                account_payer: self.program_cache.account_payer.clone(),
+                data_credits: self.program_cache.data_credits.clone(),
+                delegated_data_credits: pdas::delegated_data_credits(&gateway),
+                token_program: spl_token::id(),
+                helium_sub_daos_program: helium_sub_daos::id(),
+                system_program: solana_program::system_program::id(),
 
-                    // Fields that I do not know how to populate:
-                    dc_burn_authority: todo!(),
-                    dc_mint: todo!(),
-                    escrow_account: todo!(),
-                    registrar: todo!(),
-                };
-                let args = instruction::BurnDelegatedDataCreditsV0 {
-                    args: data_credits::BurnDelegatedDataCreditsArgsV0 {
-                        amount: *amount as u64,
-                    },
-                };
+                // Fields that I do not know how to populate:
+                dc_burn_authority: todo!(),
+                dc_mint: todo!(),
+                escrow_account: todo!(),
+                registrar: todo!(),
+            };
+            let args = instruction::BurnDelegatedDataCreditsV0 {
+                args: data_credits::BurnDelegatedDataCreditsArgsV0 {
+                    amount: amount as u64,
+                },
+            };
 
-                request = request.accounts(accounts).args(args);
-
-                // Remove the entry from the balance sheet
-                balances_lock.remove(&gateway);
-            }
+            // Remove the entry from the balance sheet
+            balances_lock.remove(&gateway);
 
             // As far as I can tell, the instructions does not actually have any
             // error paths.
-            request.instructions().unwrap()
+            request
+                .accounts(accounts)
+                .args(args)
+                .instructions()
+                .unwrap()
         };
 
         let blockhash = self.provider.get_latest_blockhash().await?;
@@ -143,14 +139,12 @@ impl Burner {
 
         let signature = self.provider.send_and_confirm_transaction(&tx).await?;
 
-        // Now that we have successfully executed the burns and are no long in
+        // Now that we have successfully executed the burn and are no long in
         // sync land, we can delete the entries
-        for Burn { id, .. } in pending_burns {
-            sqlx::query("DELETE FROM pending_burns WHERE id = $1")
-                .bind(id)
-                .execute(&self.pool)
-                .await?;
-        }
+        sqlx::query("DELETE FROM pending_burns WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }

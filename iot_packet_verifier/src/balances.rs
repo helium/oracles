@@ -1,14 +1,14 @@
 use crate::{burner::Burn, pdas};
 use anchor_lang::AccountDeserialize;
 use data_credits::DelegatedDataCreditsV0;
+use futures_util::StreamExt;
 use helium_crypto::PublicKey;
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::program_pack::Pack;
+use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use sqlx::{Pool, Postgres};
-use futures_util::StreamExt;
 
 pub struct Balances {
     pub provider: Arc<RpcClient>,
@@ -31,16 +31,26 @@ impl Balances {
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
     pub async fn new(pool: &Pool<Postgres>, provider: Arc<RpcClient>) -> Result<Self, DebitError> {
-        let mut burns = sqlx::query_as("SELECT * FROM pending_burns")
-            .fetch(pool);
+        let mut burns = sqlx::query_as("SELECT * FROM pending_burns").fetch(pool);
 
         let mut balances = HashMap::new();
 
-        while let Some(Burn { gateway, amount: burn_amount, .. }) = burns.next().await.transpose()? {
+        while let Some(Burn {
+            gateway,
+            amount: burn_amount,
+            ..
+        }) = burns.next().await.transpose()?
+        {
             // Look up the current balance of the gateway
             let gateway = PublicKey::try_from(gateway).unwrap();
             let balance = gateway_balance(provider.as_ref(), &gateway).await?;
-            balances.insert(gateway, Balance { last_recorded_balance: balance, curr_balance: balance - burn_amount as u64 });
+            balances.insert(
+                gateway,
+                Balance {
+                    last_recorded_balance: balance,
+                    curr_balance: balance - burn_amount as u64,
+                },
+            );
         }
 
         Ok(Self {
@@ -90,16 +100,15 @@ impl Balances {
 
         Ok(sufficient)
     }
-
 }
 
 pub async fn gateway_balance(provider: &RpcClient, gateway: &PublicKey) -> Result<u64, DebitError> {
     let ddc_key = pdas::delegated_data_credits(gateway);
-        let account_data = provider.get_account_data(&ddc_key).await?;
-        let mut account_data = account_data.as_ref();
-        let ddc = DelegatedDataCreditsV0::try_deserialize(&mut account_data)?;
-        let account_data = provider.get_account_data(&ddc.escrow_account).await?;
-        let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
+    let account_data = provider.get_account_data(&ddc_key).await?;
+    let mut account_data = account_data.as_ref();
+    let ddc = DelegatedDataCreditsV0::try_deserialize(&mut account_data)?;
+    let account_data = provider.get_account_data(&ddc.escrow_account).await?;
+    let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
     Ok(account_layout.amount)
 }
 
