@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use mobile_rewards::{Server as MobileServer, Settings};
+use mobile_rewards::{server_metrics, Server as MobileServer, Settings};
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -51,6 +51,7 @@ impl Server {
 
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
+        server_metrics::register_metrics();
 
         // Create database pool and migrate
         let pool = settings.database.connect(2).await?;

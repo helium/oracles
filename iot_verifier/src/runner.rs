@@ -11,8 +11,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use density_scaler::{HexDensityMap, SCALING_PRECISION};
 use file_store::{
     file_sink,
-    file_sink::MessageSender,
-    file_sink_write,
+    file_sink::FileSinkClient,
     file_upload::MessageSender as FileUploadSender,
     iot_beacon_report::IotBeaconIngestReport,
     iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},
@@ -81,34 +80,33 @@ impl Runner {
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.settings.cache);
-        let (iot_invalid_beacon_tx, iot_invalid_beacon_rx) = file_sink::message_channel(50);
-        let (iot_invalid_witness_tx, iot_invalid_witness_rx) = file_sink::message_channel(50);
-        let (iot_valid_poc_tx, iot_valid_poc_rx) = file_sink::message_channel(50);
 
-        let mut iot_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
-            FileType::IotInvalidBeaconReport,
-            store_base_path,
-            iot_invalid_beacon_rx,
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(5))
-        .create()
-        .await?;
+        let (iot_invalid_beacon_sink, mut iot_invalid_beacon_sink_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::IotInvalidBeaconReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon_report"),
+            )
+            .deposits(Some(file_upload_tx.clone()))
+            .roll_time(ChronoDuration::minutes(5))
+            .create()
+            .await?;
 
-        let mut iot_invalid_witness_sink = file_sink::FileSinkBuilder::new(
-            FileType::IotInvalidWitnessReport,
-            store_base_path,
-            iot_invalid_witness_rx,
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .roll_time(ChronoDuration::minutes(5))
-        .create()
-        .await?;
+        let (iot_invalid_witness_sink, mut iot_invalid_witness_sink_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::IotInvalidWitnessReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
+            )
+            .deposits(Some(file_upload_tx.clone()))
+            .roll_time(ChronoDuration::minutes(5))
+            .create()
+            .await?;
 
-        let mut iot_valid_poc_sink = file_sink::FileSinkBuilder::new(
+        let (iot_valid_poc_sink, mut iot_valid_poc_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::IotValidPoc,
             store_base_path,
-            iot_valid_poc_rx,
+            concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(ChronoDuration::minutes(2))
@@ -120,9 +118,9 @@ impl Runner {
         let shutdown2 = shutdown.clone();
         let shutdown3 = shutdown.clone();
         let shutdown4 = shutdown.clone();
-        tokio::spawn(async move { iot_invalid_beacon_sink.run(&shutdown2).await });
-        tokio::spawn(async move { iot_invalid_witness_sink.run(&shutdown3).await });
-        tokio::spawn(async move { iot_valid_poc_sink.run(&shutdown4).await });
+        tokio::spawn(async move { iot_invalid_beacon_sink_server.run(&shutdown2).await });
+        tokio::spawn(async move { iot_invalid_witness_sink_server.run(&shutdown3).await });
+        tokio::spawn(async move { iot_valid_poc_sink_server.run(&shutdown4).await });
 
         loop {
             if shutdown.is_triggered() {
@@ -132,9 +130,9 @@ impl Runner {
                 _ = shutdown.clone() => break,
                 _ = db_timer.tick() =>
                     match self.handle_db_tick(  shutdown.clone(),
-                                                iot_invalid_beacon_tx.clone(),
-                                                iot_invalid_witness_tx.clone(),
-                                                iot_valid_poc_tx.clone(),
+                                                &iot_invalid_beacon_sink,
+                                                &iot_invalid_witness_sink,
+                                                &iot_valid_poc_sink,
                                                 gateway_cache, hex_density_map.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
@@ -150,9 +148,9 @@ impl Runner {
     async fn handle_db_tick(
         &self,
         _shutdown: triggered::Listener,
-        iot_invalid_beacon_tx: MessageSender,
-        iot_invalid_witness_tx: MessageSender,
-        iot_valid_poc_tx: MessageSender,
+        iot_invalid_beacon_sink: &FileSinkClient,
+        iot_invalid_witness_sink: &FileSinkClient,
+        iot_valid_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
@@ -173,14 +171,18 @@ impl Runner {
 
         stream::iter(db_beacon_reports)
             .for_each_concurrent(BEACON_WORKERS, |db_beacon| {
-                let tx1 = iot_invalid_beacon_tx.clone();
-                let tx2 = iot_invalid_witness_tx.clone();
-                let tx3 = iot_valid_poc_tx.clone();
                 let hdm = hex_density_map.clone();
                 async move {
                     let beacon_id = db_beacon.id.clone();
                     match self
-                        .handle_beacon_report(db_beacon, tx1, tx2, tx3, gateway_cache, hdm)
+                        .handle_beacon_report(
+                            db_beacon,
+                            iot_invalid_beacon_sink,
+                            iot_invalid_witness_sink,
+                            iot_valid_poc_sink,
+                            gateway_cache,
+                            hdm,
+                        )
                         .await
                     {
                         Ok(()) => (),
@@ -199,9 +201,9 @@ impl Runner {
     async fn handle_beacon_report(
         &self,
         db_beacon: Report,
-        iot_invalid_beacon_tx: MessageSender,
-        iot_invalid_witness_tx: MessageSender,
-        iot_valid_poc_tx: MessageSender,
+        iot_invalid_beacon_sink: &FileSinkClient,
+        iot_invalid_witness_sink: &FileSinkClient,
+        iot_valid_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
@@ -276,8 +278,8 @@ impl Runner {
                     self.handle_valid_poc(
                         valid_beacon_report,
                         verified_witnesses_result,
-                        &iot_valid_poc_tx,
-                        &iot_invalid_witness_tx,
+                        iot_valid_poc_sink,
+                        iot_invalid_witness_sink,
                     )
                     .await?;
                 }
@@ -292,8 +294,8 @@ impl Runner {
                     &beacon_report,
                     witnesses,
                     invalid_reason,
-                    &iot_invalid_beacon_tx,
-                    &iot_invalid_witness_tx,
+                    iot_invalid_beacon_sink,
+                    iot_invalid_witness_sink,
                 )
                 .await?;
             }
@@ -316,8 +318,8 @@ impl Runner {
         beacon_report: &IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
         invalid_reason: InvalidReason,
-        iot_invalid_beacon_tx: &MessageSender,
-        iot_invalid_witness_tx: &MessageSender,
+        iot_invalid_beacon_sink: &FileSinkClient,
+        iot_invalid_witness_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         // the beacon is invalid, which in turn renders all witnesses invalid
         let beacon = &beacon_report.report;
@@ -331,13 +333,12 @@ impl Runner {
         let invalid_poc_proto: IotInvalidBeaconReportV1 = invalid_poc.into();
         // save invalid poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
-        match file_sink_write!(
-            "invalid_beacon_report",
-            iot_invalid_beacon_tx,
-            invalid_poc_proto,
-            &[("reason", invalid_reason.as_str_name())]
-        )
-        .await
+        match iot_invalid_beacon_sink
+            .write(
+                invalid_poc_proto,
+                &[("reason", invalid_reason.as_str_name())],
+            )
+            .await
         {
             Ok(_) => (),
             Err(err) => {
@@ -360,13 +361,12 @@ impl Runner {
             };
             let invalid_witness_report_proto: IotInvalidWitnessReportV1 =
                 invalid_witness_report.into();
-            match file_sink_write!(
-                "invalid_witness_report",
-                iot_invalid_witness_tx,
-                invalid_witness_report_proto,
-                &[("reason", invalid_reason.as_str_name())]
-            )
-            .await
+            match iot_invalid_witness_sink
+                .write(
+                    invalid_witness_report_proto,
+                    &[("reason", invalid_reason.as_str_name())],
+                )
+                .await
             {
                 Ok(_) => (),
                 Err(err) => {
@@ -384,8 +384,8 @@ impl Runner {
         &self,
         valid_beacon_report: IotValidBeaconReport,
         witnesses_result: VerifyWitnessesResult,
-        iot_valid_poc_tx: &MessageSender,
-        iot_invalid_witness_tx: &MessageSender,
+        iot_valid_poc_sink: &FileSinkClient,
+        iot_invalid_witness_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
         let pub_key = valid_beacon_report.report.pub_key.clone();
@@ -408,7 +408,7 @@ impl Runner {
         let valid_poc_proto: IotValidPocV1 = valid_poc.into();
         // save the poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
-        match file_sink_write!("valid_poc", iot_valid_poc_tx, valid_poc_proto).await {
+        match iot_valid_poc_sink.write(valid_poc_proto, []).await {
             Ok(_) => (),
             Err(err) => {
                 tracing::error!("failed to save invalid_witness_report to s3, {err}");
@@ -425,13 +425,12 @@ impl Runner {
             let invalid_reason = invalid_witness_report.reason;
             let invalid_witness_report_proto: IotInvalidWitnessReportV1 =
                 invalid_witness_report.into();
-            match file_sink_write!(
-                "invalid_witness_report",
-                iot_invalid_witness_tx,
-                invalid_witness_report_proto,
-                &[("reason", invalid_reason.as_str_name())]
-            )
-            .await
+            match iot_invalid_witness_sink
+                .write(
+                    invalid_witness_report_proto,
+                    &[("reason", invalid_reason.as_str_name())],
+                )
+                .await
             {
                 Ok(_) => (),
                 Err(err) => {

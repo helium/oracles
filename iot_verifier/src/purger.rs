@@ -1,9 +1,8 @@
 use crate::{entropy::Entropy, metrics::Metrics, poc_report::Report, Settings};
 use file_store::{
-    file_sink, file_sink::MessageSender, file_sink_write, file_upload,
-    iot_beacon_report::IotBeaconIngestReport, iot_invalid_poc::IotInvalidBeaconReport,
-    iot_invalid_poc::IotInvalidWitnessReport, iot_witness_report::IotWitnessIngestReport,
-    traits::IngestId, FileType,
+    file_sink, file_sink::FileSinkClient, file_upload, iot_beacon_report::IotBeaconIngestReport,
+    iot_invalid_poc::IotInvalidBeaconReport, iot_invalid_poc::IotInvalidWitnessReport,
+    iot_witness_report::IotWitnessIngestReport, traits::IngestId, FileType,
 };
 use helium_proto::services::poc_iot::{
     InvalidParticipantSide, InvalidReason, IotBeaconIngestReportV1, IotInvalidBeaconReportV1,
@@ -70,38 +69,38 @@ impl Purger {
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.settings.cache);
-        let (iot_invalid_beacon_tx, iot_invalid_beacon_rx) = file_sink::message_channel(50);
-        let (iot_invalid_witness_tx, iot_invalid_witness_rx) = file_sink::message_channel(50);
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
             file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
 
-        let mut iot_invalid_beacon_sink = file_sink::FileSinkBuilder::new(
-            FileType::IotInvalidBeaconReport,
-            store_base_path,
-            iot_invalid_beacon_rx,
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (invalid_beacon_sink, mut invalid_beacon_sink_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::IotInvalidBeaconReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon"),
+            )
+            .deposits(Some(file_upload_tx.clone()))
+            .auto_commit(false)
+            .create()
+            .await?;
 
-        let mut iot_invalid_witness_sink = file_sink::FileSinkBuilder::new(
-            FileType::IotInvalidWitnessReport,
-            store_base_path,
-            iot_invalid_witness_rx,
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .auto_commit(false)
-        .create()
-        .await?;
+        let (invalid_witness_sink, mut invalid_witness_sink_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::IotInvalidWitnessReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
+            )
+            .deposits(Some(file_upload_tx.clone()))
+            .auto_commit(false)
+            .create()
+            .await?;
 
         // spawn off the file sinks
         let shutdown2 = shutdown.clone();
         let shutdown3 = shutdown.clone();
         let shutdown4 = shutdown.clone();
-        tokio::spawn(async move { iot_invalid_beacon_sink.run(&shutdown2).await });
-        tokio::spawn(async move { iot_invalid_witness_sink.run(&shutdown3).await });
+        tokio::spawn(async move { invalid_beacon_sink_server.run(&shutdown2).await });
+        tokio::spawn(async move { invalid_witness_sink_server.run(&shutdown3).await });
         tokio::spawn(async move { file_upload.run(&shutdown4).await });
 
         loop {
@@ -111,7 +110,7 @@ impl Purger {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = db_timer.tick() =>
-                    match self.handle_db_tick(&iot_invalid_beacon_tx, &iot_invalid_witness_tx).await {
+                    match self.handle_db_tick(&invalid_beacon_sink, &invalid_witness_sink).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal purger error: {err:?}");
@@ -125,8 +124,8 @@ impl Purger {
 
     async fn handle_db_tick(
         &self,
-        iot_invalid_beacon_tx: &MessageSender,
-        iot_invalid_witness_tx: &MessageSender,
+        invalid_beacon_sink: &FileSinkClient,
+        invalid_witness_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
@@ -144,7 +143,7 @@ impl Purger {
         stream::iter(stale_beacons)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_beacon(&tx, report, iot_invalid_beacon_tx)
+                    .handle_purged_beacon(&tx, report, invalid_beacon_sink)
                     .await
                 {
                     Ok(()) => (),
@@ -154,7 +153,7 @@ impl Purger {
                 }
             })
             .await;
-        file_sink::commit(iot_invalid_beacon_tx).await?;
+        invalid_beacon_sink.commit().await?;
         tx.into_inner().commit().await?;
 
         let witness_stale_period = self.base_stale_period + WITNESS_STALE_PERIOD;
@@ -170,7 +169,7 @@ impl Purger {
         stream::iter(stale_witnesses)
             .for_each_concurrent(PURGER_WORKERS, |report| async {
                 match self
-                    .handle_purged_witness(&tx, report, iot_invalid_witness_tx)
+                    .handle_purged_witness(&tx, report, invalid_witness_sink)
                     .await
                 {
                     Ok(()) => (),
@@ -180,7 +179,7 @@ impl Purger {
                 }
             })
             .await;
-        file_sink::commit(iot_invalid_witness_tx).await?;
+        invalid_witness_sink.commit().await?;
         tx.into_inner().commit().await?;
         tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
 
@@ -193,7 +192,7 @@ impl Purger {
         &self,
         tx: &Mutex<sqlx::Transaction<'_, Postgres>>,
         db_beacon: Report,
-        iot_invalid_beacon_tx: &MessageSender,
+        invalid_beacon_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let beacon_buf: &[u8] = &db_beacon.report_data;
         let beacon_report: IotBeaconIngestReport =
@@ -207,13 +206,13 @@ impl Purger {
             report: beacon.clone(),
         }
         .into();
-        file_sink_write!(
-            "invalid_beacon",
-            iot_invalid_beacon_tx,
-            invalid_beacon_proto,
-            &[("reason", InvalidReason::Stale.as_str_name())]
-        )
-        .await?;
+
+        invalid_beacon_sink
+            .write(
+                invalid_beacon_proto,
+                &[("reason", InvalidReason::Stale.as_str_name())],
+            )
+            .await?;
         // delete the report from the DB
         Report::delete_report(tx.lock().await.deref_mut(), &beacon_id).await?;
         Metrics::decrement_num_beacons();
@@ -224,7 +223,7 @@ impl Purger {
         &self,
         tx: &Mutex<sqlx::Transaction<'_, Postgres>>,
         db_witness: Report,
-        iot_invalid_witness_tx: &MessageSender,
+        invalid_witness_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let witness_buf: &[u8] = &db_witness.report_data;
         let witness_report: IotWitnessIngestReport =
@@ -238,13 +237,13 @@ impl Purger {
             participant_side: InvalidParticipantSide::Witness,
         }
         .into();
-        file_sink_write!(
-            "invalid_witness_report",
-            iot_invalid_witness_tx,
-            invalid_witness_report_proto,
-            &[("reason", InvalidReason::Stale.as_str_name())]
-        )
-        .await?;
+
+        invalid_witness_sink
+            .write(
+                invalid_witness_report_proto,
+                &[("reason", InvalidReason::Stale.as_str_name())],
+            )
+            .await?;
 
         // delete the report from the DB
         Report::delete_report(tx.lock().await.deref_mut(), &witness_id).await?;

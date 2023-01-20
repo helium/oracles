@@ -1,8 +1,12 @@
 use crate::Settings;
 use anyhow::{Error, Result};
 use chrono::{Duration, Utc};
-use file_store::traits::MsgVerify;
-use file_store::{file_sink, file_sink_write, file_upload, FileType};
+use file_store::{
+    file_sink::{self, FileSinkClient},
+    file_upload,
+    traits::MsgVerify,
+    FileType,
+};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_iot::{
@@ -16,20 +20,20 @@ pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer {
-    iot_beacon_report_tx: file_sink::MessageSender,
-    iot_witness_report_tx: file_sink::MessageSender,
+    beacon_report_sink: FileSinkClient,
+    witness_report_sink: FileSinkClient,
     required_network: Network,
 }
 
 impl GrpcServer {
     fn new(
-        iot_beacon_report_tx: file_sink::MessageSender,
-        iot_witness_report_tx: file_sink::MessageSender,
+        beacon_report_sink: FileSinkClient,
+        witness_report_sink: FileSinkClient,
         required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
-            iot_beacon_report_tx,
-            iot_witness_report_tx,
+            beacon_report_sink,
+            witness_report_sink,
             required_network,
         })
     }
@@ -75,8 +79,7 @@ impl poc_iot::PocIot for GrpcServer {
                 report: Some(event),
             })?;
 
-        _ = file_sink_write!("beacon_report", &self.iot_beacon_report_tx, report).await;
-        metrics::increment_counter!("ingest_server_beacon_report_count");
+        _ = self.beacon_report_sink.write(report, []).await;
 
         let id = timestamp.to_string();
         Ok(Response::new(IotBeaconReportRespV1 { id }))
@@ -98,8 +101,7 @@ impl poc_iot::PocIot for GrpcServer {
                 report: Some(event),
             })?;
 
-        _ = file_sink_write!("witness_report", &self.iot_witness_report_tx, report).await;
-        metrics::increment_counter!("ingest_server_witness_report_count");
+        _ = self.witness_report_sink.write(report, []).await;
 
         let id = timestamp.to_string();
         Ok(Response::new(IotWitnessReportRespV1 { id }))
@@ -117,11 +119,10 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     let store_base_path = Path::new(&settings.cache);
 
     // iot beacon reports
-    let (iot_beacon_report_tx, iot_beacon_report_rx) = file_sink::message_channel(50);
-    let mut iot_beacon_report_sink = file_sink::FileSinkBuilder::new(
+    let (beacon_report_sink, mut beacon_report_sink_server) = file_sink::FileSinkBuilder::new(
         FileType::IotBeaconIngestReport,
         store_base_path,
-        iot_beacon_report_rx,
+        concat!(env!("CARGO_PKG_NAME"), "_beacon_report"),
     )
     .deposits(Some(file_upload_tx.clone()))
     .roll_time(Duration::minutes(5))
@@ -129,22 +130,17 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     .await?;
 
     // iot witness reports
-    let (iot_witness_report_tx, iot_witness_report_rx) = file_sink::message_channel(50);
-    let mut iot_witness_report_sink = file_sink::FileSinkBuilder::new(
+    let (witness_report_sink, mut witness_report_sink_server) = file_sink::FileSinkBuilder::new(
         FileType::IotWitnessIngestReport,
         store_base_path,
-        iot_witness_report_rx,
+        concat!(env!("CARGO_PKG_NAME"), "_witness_report"),
     )
     .deposits(Some(file_upload_tx.clone()))
     .roll_time(Duration::minutes(5))
     .create()
     .await?;
 
-    let grpc_server = GrpcServer::new(
-        iot_beacon_report_tx,
-        iot_witness_report_tx,
-        settings.network,
-    )?;
+    let grpc_server = GrpcServer::new(beacon_report_sink, witness_report_sink, settings.network)?;
 
     tracing::info!(
         "grpc listening on {grpc_addr} and server mode {:?}",
@@ -159,8 +155,12 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     tokio::try_join!(
         server,
-        iot_beacon_report_sink.run(&shutdown).map_err(Error::from),
-        iot_witness_report_sink.run(&shutdown).map_err(Error::from),
+        beacon_report_sink_server
+            .run(&shutdown)
+            .map_err(Error::from),
+        witness_report_sink_server
+            .run(&shutdown)
+            .map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
     )
     .map(|_| ())

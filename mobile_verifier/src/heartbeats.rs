@@ -2,7 +2,7 @@
 
 use crate::cell_type::CellType;
 use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
-use file_store::{file_sink, file_sink_write, heartbeat::CellHeartbeat};
+use file_store::{file_sink, heartbeat::CellHeartbeat};
 use futures::stream::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
@@ -161,21 +161,21 @@ impl Heartbeat {
         })
     }
 
-    pub async fn write(&self, heartbeats_tx: &file_sink::MessageSender) -> file_store::Result {
+    pub async fn write(&self, heartbeats: &file_sink::FileSinkClient) -> file_store::Result {
         let cell_type = CellType::from_cbsd_id(&self.cbsd_id).unwrap_or(CellType::Nova436H) as i32;
-        file_sink_write!(
-            "heartbeat",
-            heartbeats_tx,
-            proto::Heartbeat {
-                cbsd_id: self.cbsd_id.clone(),
-                pub_key: self.hotspot_key.clone().into(),
-                reward_multiplier: self.reward_weight.to_f32().unwrap_or(0.0),
-                cell_type,
-                validity: self.validity as i32,
-                timestamp: self.timestamp.timestamp() as u64,
-            }
-        )
-        .await?;
+        heartbeats
+            .write(
+                proto::Heartbeat {
+                    cbsd_id: self.cbsd_id.clone(),
+                    pub_key: self.hotspot_key.clone().into(),
+                    reward_multiplier: self.reward_weight.to_f32().unwrap_or(0.0),
+                    cell_type,
+                    validity: self.validity as i32,
+                    timestamp: self.timestamp.timestamp() as u64,
+                },
+                [],
+            )
+            .await?;
         Ok(())
     }
 

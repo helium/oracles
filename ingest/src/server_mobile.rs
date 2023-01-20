@@ -1,8 +1,12 @@
 use crate::Settings;
 use anyhow::{bail, Error, Result};
 use chrono::{Duration, Utc};
-use file_store::traits::MsgVerify;
-use file_store::{file_sink, file_sink_write, file_upload, FileType};
+use file_store::{
+    file_sink::{self, FileSinkClient},
+    file_upload,
+    traits::MsgVerify,
+    FileType,
+};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_mobile::{
@@ -19,22 +23,22 @@ pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer {
-    heartbeat_report_tx: file_sink::MessageSender,
-    speedtest_report_tx: file_sink::MessageSender,
-    data_transfer_session_tx: file_sink::MessageSender,
+    heartbeat_report_sink: FileSinkClient,
+    speedtest_report_sink: FileSinkClient,
+    data_transfer_session_sink: FileSinkClient,
     required_network: Network,
 }
 impl GrpcServer {
     fn new(
-        heartbeat_report_tx: file_sink::MessageSender,
-        speedtest_report_tx: file_sink::MessageSender,
-        data_transfer_session_tx: file_sink::MessageSender,
+        heartbeat_report_sink: FileSinkClient,
+        speedtest_report_sink: FileSinkClient,
+        data_transfer_session_sink: FileSinkClient,
         required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
-            heartbeat_report_tx,
-            speedtest_report_tx,
-            data_transfer_session_tx,
+            heartbeat_report_sink,
+            speedtest_report_sink,
+            data_transfer_session_sink,
             required_network,
         })
     }
@@ -80,8 +84,7 @@ impl poc_mobile::PocMobile for GrpcServer {
                 report: Some(event),
             })?;
 
-        _ = file_sink_write!("speedtest_report", &self.speedtest_report_tx, report).await;
-        metrics::increment_counter!("ingest_server_speedtest_count");
+        _ = self.speedtest_report_sink.write(report, []).await;
 
         let id = timestamp.to_string();
         Ok(Response::new(SpeedtestRespV1 { id }))
@@ -103,8 +106,7 @@ impl poc_mobile::PocMobile for GrpcServer {
                 report: Some(event),
             })?;
 
-        _ = file_sink_write!("heartbeat_report", &self.heartbeat_report_tx, report).await;
-        metrics::increment_counter!("ingest_server_heartbeat_count");
+        _ = self.heartbeat_report_sink.write(report, []).await;
 
         let id = timestamp.to_string();
         Ok(Response::new(CellHeartbeatRespV1 { id }))
@@ -126,14 +128,7 @@ impl poc_mobile::PocMobile for GrpcServer {
                 report: Some(event),
             })?;
 
-        _ = file_sink_write!(
-            "mobile_data_transfer_session_report",
-            &self.data_transfer_session_tx,
-            report
-        )
-        .await;
-
-        metrics::increment_counter!("ingest_server_mobile_data_transfer_session_count");
+        _ = self.data_transfer_session_sink.write(report, []).await;
 
         Ok(Response::new(DataTransferSessionRespV1 {
             id: timestamp.to_string(),
@@ -151,44 +146,47 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     let store_base_path = Path::new(&settings.cache);
 
-    let (heartbeat_report_tx, heartbeat_report_rx) = file_sink::message_channel(50);
-    let mut heartbeat_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::CellHeartbeatIngestReport,
-        store_base_path,
-        heartbeat_report_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
-    .create()
-    .await?;
+    let (heartbeat_report_sink, mut heartbeat_report_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::CellHeartbeatIngestReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .create()
+        .await?;
 
     // speedtests
-    let (speedtest_report_tx, speedtest_report_rx) = file_sink::message_channel(50);
-    let mut speedtest_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::CellSpeedtestIngestReport,
-        store_base_path,
-        speedtest_report_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
-    .create()
-    .await?;
+    let (speedtest_report_sink, mut speedtest_report_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::CellSpeedtestIngestReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .create()
+        .await?;
 
-    let (data_transfer_session_tx, data_transfer_session_rx) = file_sink::message_channel(50);
-    let mut data_transfer_session_sink = file_sink::FileSinkBuilder::new(
-        FileType::DataTransferSessionIngestReport,
-        store_base_path,
-        data_transfer_session_rx,
-    )
-    .deposits(Some(file_upload_tx.clone()))
-    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
-    .create()
-    .await?;
+    let (data_transfer_session_sink, mut data_transfer_session_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::DataTransferSessionIngestReport,
+            store_base_path,
+            concat!(
+                env!("CARGO_PKG_NAME"),
+                "_mobile_data_transfer_session_report"
+            ),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .create()
+        .await?;
 
     let grpc_server = GrpcServer::new(
-        heartbeat_report_tx,
-        speedtest_report_tx,
-        data_transfer_session_tx,
+        heartbeat_report_sink,
+        speedtest_report_sink,
+        data_transfer_session_sink,
         settings.network,
     )?;
 
@@ -224,9 +222,13 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     tokio::try_join!(
         server,
-        heartbeat_report_sink.run(&shutdown).map_err(Error::from),
-        speedtest_report_sink.run(&shutdown).map_err(Error::from),
-        data_transfer_session_sink
+        heartbeat_report_sink_server
+            .run(&shutdown)
+            .map_err(Error::from),
+        speedtest_report_sink_server
+            .run(&shutdown)
+            .map_err(Error::from),
+        data_transfer_session_sink_server
             .run(&shutdown)
             .map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
