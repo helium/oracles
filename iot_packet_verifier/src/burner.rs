@@ -16,6 +16,7 @@ pub struct Burner {
     pool: Pool<Postgres>,
     balances: Arc<Mutex<HashMap<PublicKey, Balance>>>,
     provider: Arc<RpcClient>,
+    program_id: Pubkey,
     program_cache: BurnProgramCache,
 }
 
@@ -36,11 +37,13 @@ impl Burner {
         pool: &Pool<Postgres>,
         provider: Arc<RpcClient>,
         balances: &Balances,
+        program_id: Pubkey,
     ) -> Result<Self, BurnError> {
         Ok(Self {
             pool: pool.clone(),
             balances: balances.balances(),
             program_cache: BurnProgramCache::new(),
+            program_id,
             provider,
         })
     }
@@ -86,17 +89,15 @@ impl Burner {
                 .await?;
 
         let instructions = {
-            let program_id = todo!();
             let cluster = "todo";
             let payer: std::rc::Rc<dyn Signer> = todo!();
             let options = None;
             let namespace = RequestNamespace::Global;
-            let mut request = RequestBuilder::from(program_id, cluster, payer, options, namespace);
+            let mut request =
+                RequestBuilder::from(self.program_id.clone(), cluster, payer, options, namespace);
 
             for Burn {
-                id,
-                gateway,
-                amount,
+                gateway, amount, ..
             } in &pending_burns
             {
                 let gateway = PublicKey::try_from(gateway.clone()).unwrap();

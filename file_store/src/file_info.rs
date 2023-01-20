@@ -107,7 +107,8 @@ pub const SIGNED_POC_RECEIPT_TXN: &str = "signed_poc_receipt_txn";
 pub const RADIO_REWARD_SHARE: &str = "radio_reward_share";
 pub const REWARD_MANIFEST: &str = "reward_manifest";
 pub const IOT_PACKET_REPORT: &str = "packet_report";
-pub const VERIFIED_PACKET: &str = "verified_packet";
+pub const VALID_PACKET: &str = "valid_packet";
+pub const INVALID_PACKET: &str = "invalid_packet";
 pub const GATEWAY_REWARD_SHARE: &str = "gateway_reward_share";
 pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
 
@@ -132,7 +133,8 @@ pub enum FileType {
     RadioRewardShare,
     RewardManifest,
     IotPacketReport,
-    VerifiedPacket,
+    ValidPacket,
+    InvalidPacket,
     GatewayRewardShare,
     DataTransferSessionIngestReport,
 }
@@ -158,7 +160,8 @@ impl fmt::Display for FileType {
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
             Self::IotPacketReport => IOT_PACKET_REPORT,
-            Self::VerifiedPacket => VERIFIED_PACKET,
+            Self::ValidPacket => VALID_PACKET,
+            Self::InvalidPacket => INVALID_PACKET,
             Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
         };
@@ -187,7 +190,8 @@ impl FileType {
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
             Self::IotPacketReport => IOT_PACKET_REPORT,
-            Self::VerifiedPacket => VERIFIED_PACKET,
+            Self::ValidPacket => VALID_PACKET,
+            Self::InvalidPacket => INVALID_PACKET,
             Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
         }
@@ -216,7 +220,8 @@ impl FromStr for FileType {
             RADIO_REWARD_SHARE => Self::RadioRewardShare,
             REWARD_MANIFEST => Self::RewardManifest,
             IOT_PACKET_REPORT => Self::IotPacketReport,
-            VERIFIED_PACKET => Self::VerifiedPacket,
+            VALID_PACKET => Self::ValidPacket,
+            INVALID_PACKET => Self::InvalidPacket,
             GATEWAY_REWARD_SHARE => Self::GatewayRewardShare,
             DATA_TRANSFER_SESSION_INGEST_REPORT => Self::DataTransferSessionIngestReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),

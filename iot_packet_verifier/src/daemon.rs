@@ -17,6 +17,7 @@ struct Daemon {
     file_store: FileStore,
     balances: Balances,
     valid_packets_tx: file_sink::MessageSender,
+    invalid_packets_tx: file_sink::MessageSender,
 }
 
 const POLL_TIME: time::Duration = time::Duration::from_secs(303);
@@ -51,6 +52,8 @@ impl Daemon {
             let report_timestamp =
                 NaiveDateTime::from_timestamp_millis(report.gateway_timestamp_ms as i64).unwrap();
 
+            // Since the report timestamp will always be behind the timestamp for the while,
+            // the first few reports we see upon restarting will have already been processed.
             if report_timestamp <= last_verified {
                 continue;
             }
@@ -74,7 +77,6 @@ impl Daemon {
                     VALUES ($1, $2)
                     ON CONFLICT (gateway) DO UPDATE SET
                     amount = pending_burns.amount + $2
-                    RETURNING (xmax = 0) as inserted
                     "#,
                 )
                 .bind(PublicKeyBinary::from(gateway.clone()))
@@ -82,7 +84,6 @@ impl Daemon {
                 .fetch_one(&self.pool)
                 .await?;
 
-                // This packet is valid
                 file_sink_write!(
                     "valid_packet",
                     &self.valid_packets_tx,
@@ -94,7 +95,16 @@ impl Daemon {
                 )
                 .await?;
             } else {
-                // Write invalid packets
+                file_sink_write!(
+                    "invalid_packet",
+                    &self.invalid_packets_tx,
+                    ValidPacket {
+                        payload_size: report.payload_size,
+                        gateway: report.gateway,
+                        payload_hash: report.payload_hash,
+                    }
+                )
+                .await?;
             }
 
             meta::store(&self.pool, "last_verified", report_timestamp).await?;
@@ -123,7 +133,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let balances = Balances::new(rpc_client.clone());
 
     // Set up the balance burner:
-    let burner = Burner::new(&pool, rpc_client, &balances).await?;
+    let burner = Burner::new(&pool, rpc_client, &balances, settings.program_id.clone()).await?;
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
@@ -133,10 +143,17 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
 
     // Verified packets:
     let (valid_packets_tx, valid_packets_rx) = file_sink::message_channel(50);
-    let mut verified_packets = file_sink::FileSinkBuilder::new(
-        FileType::VerifiedPacket,
+    let mut valid_packets =
+        file_sink::FileSinkBuilder::new(FileType::ValidPacket, store_base_path, valid_packets_rx)
+            .deposits(Some(file_upload_tx.clone()))
+            .create()
+            .await?;
+
+    let (invalid_packets_tx, invalid_packets_rx) = file_sink::message_channel(50);
+    let mut invalid_packets = file_sink::FileSinkBuilder::new(
+        FileType::InvalidPacket,
         store_base_path,
-        valid_packets_rx,
+        invalid_packets_rx,
     )
     .deposits(Some(file_upload_tx.clone()))
     .create()
@@ -150,6 +167,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         file_store,
         balances,
         valid_packets_tx,
+        invalid_packets_tx,
     };
 
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();
@@ -163,9 +181,8 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         burner.run(&shutdown_listener).map_err(Error::from),
         file_upload.run(&shutdown_listener).map_err(Error::from),
         verifier_daemon.run(&shutdown_listener).map_err(Error::from),
-        verified_packets
-            .run(&shutdown_listener)
-            .map_err(Error::from),
+        valid_packets.run(&shutdown_listener).map_err(Error::from),
+        invalid_packets.run(&shutdown_listener).map_err(Error::from),
     )?;
 
     Ok(())
