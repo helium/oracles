@@ -13,7 +13,7 @@ use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_iot::{InvalidParticipantSide, InvalidReason},
+    services::poc_lora::{InvalidParticipantSide, InvalidReason},
     GatewayStakingMode, Region,
 };
 use lazy_static::lazy_static;
@@ -738,7 +738,7 @@ mod tests {
     use super::*;
     use crate::last_beacon::LastBeacon;
     use chrono::Duration;
-    use helium_proto::{services::poc_iot::InvalidReason, GatewayStakingMode, Region};
+    use helium_proto::{services::poc_lora::InvalidReason, GatewayStakingMode, Region};
     use std::str::FromStr;
 
     #[test]

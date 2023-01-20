@@ -6,9 +6,9 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use density_scaler::SCALING_PRECISION;
-use helium_proto::services::poc_iot::{
-    IotBeaconReportReqV1, IotValidBeaconReportV1, IotValidPocV1, IotValidWitnessReportV1,
-    IotWitnessReportReqV1,
+use helium_proto::services::poc_lora::{
+    LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidPocV1, LoraValidWitnessReportV1,
+    LoraWitnessReportReqV1,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -42,10 +42,10 @@ pub struct IotValidPoc {
 }
 
 impl MsgDecode for IotValidPoc {
-    type Msg = IotValidPocV1;
+    type Msg = LoraValidPocV1;
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for IotValidBeaconReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraValidBeaconReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
     }
@@ -57,7 +57,7 @@ impl MsgTimestamp<u64> for IotValidBeaconReport {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for IotValidWitnessReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for LoraValidWitnessReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
     }
@@ -69,9 +69,9 @@ impl MsgTimestamp<u64> for IotValidWitnessReport {
     }
 }
 
-impl TryFrom<IotValidPocV1> for IotValidPoc {
+impl TryFrom<LoraValidPocV1> for IotValidPoc {
     type Error = Error;
-    fn try_from(v: IotValidPocV1) -> Result<Self> {
+    fn try_from(v: LoraValidPocV1) -> Result<Self> {
         let witnesses = v
             .witness_reports
             .into_iter()
@@ -89,7 +89,7 @@ impl TryFrom<IotValidPocV1> for IotValidPoc {
     }
 }
 
-impl From<IotValidPoc> for IotValidPocV1 {
+impl From<IotValidPoc> for LoraValidPocV1 {
     fn from(v: IotValidPoc) -> Self {
         let witnesses = v.witness_reports.into_iter().map(From::from).collect();
 
@@ -101,9 +101,9 @@ impl From<IotValidPoc> for IotValidPocV1 {
     }
 }
 
-impl TryFrom<IotValidBeaconReportV1> for IotValidBeaconReport {
+impl TryFrom<LoraValidBeaconReportV1> for IotValidBeaconReport {
     type Error = Error;
-    fn try_from(v: IotValidBeaconReportV1) -> Result<Self> {
+    fn try_from(v: LoraValidBeaconReportV1) -> Result<Self> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             location: v.location.parse().ok(),
@@ -117,10 +117,10 @@ impl TryFrom<IotValidBeaconReportV1> for IotValidBeaconReport {
     }
 }
 
-impl From<IotValidBeaconReport> for IotValidBeaconReportV1 {
+impl From<IotValidBeaconReport> for LoraValidBeaconReportV1 {
     fn from(v: IotValidBeaconReport) -> Self {
         let received_timestamp = v.timestamp();
-        let report: IotBeaconReportReqV1 = v.report.into();
+        let report: LoraBeaconReportReqV1 = v.report.into();
 
         Self {
             received_timestamp,
@@ -135,9 +135,9 @@ impl From<IotValidBeaconReport> for IotValidBeaconReportV1 {
     }
 }
 
-impl TryFrom<IotValidWitnessReportV1> for IotValidWitnessReport {
+impl TryFrom<LoraValidWitnessReportV1> for IotValidWitnessReport {
     type Error = Error;
-    fn try_from(v: IotValidWitnessReportV1) -> Result<Self> {
+    fn try_from(v: LoraValidWitnessReportV1) -> Result<Self> {
         let received_timestamp = v.timestamp()?;
         Ok(Self {
             received_timestamp,
@@ -151,10 +151,10 @@ impl TryFrom<IotValidWitnessReportV1> for IotValidWitnessReport {
         })
     }
 }
-impl From<IotValidWitnessReport> for IotValidWitnessReportV1 {
+impl From<IotValidWitnessReport> for LoraValidWitnessReportV1 {
     fn from(v: IotValidWitnessReport) -> Self {
         let received_timestamp = v.timestamp();
-        let report: IotWitnessReportReqV1 = v.report.into();
+        let report: LoraWitnessReportReqV1 = v.report.into();
 
         Self {
             received_timestamp,

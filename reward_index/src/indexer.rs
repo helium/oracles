@@ -5,7 +5,7 @@ use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
 use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::{
-    services::poc_iot::GatewayRewardShare, services::poc_mobile::RadioRewardShare, Message,
+    services::poc_lora::GatewayRewardShare, services::poc_mobile::RadioRewardShare, Message,
     RewardManifest,
 };
 use poc_metrics::record_duration;
