@@ -54,6 +54,12 @@ pub enum NewLoaderError {
     DenyListError(#[from] denylist::Error),
 }
 
+pub enum ValidGatewayResult {
+    Valid,
+    Denied,
+    Unknown,
+}
+
 impl Loader {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier loader");
@@ -334,7 +340,7 @@ impl Loader {
                     .check_valid_gateway(&beacon.report.pub_key, gateway_cache)
                     .await
                 {
-                    true => {
+                    ValidGatewayResult::Valid => {
                         let res = InsertBindings {
                             id: beacon.ingest_id(),
                             remote_entropy: beacon.report.remote_entropy,
@@ -351,7 +357,15 @@ impl Loader {
                         };
                         Ok(Some(res))
                     }
-                    false => Ok(None),
+                    ValidGatewayResult::Denied => {
+                        metrics.increment_beacons_denied();
+                        Ok(None)
+                    }
+
+                    ValidGatewayResult::Unknown => {
+                        metrics.increment_beacons_unknown();
+                        Ok(None)
+                    }
                 }
             }
             FileType::IotWitnessIngestReport => {
@@ -366,7 +380,7 @@ impl Loader {
                                 .check_valid_gateway(&witness.report.pub_key, gateway_cache)
                                 .await
                             {
-                                true => {
+                                ValidGatewayResult::Valid => {
                                     let res = InsertBindings {
                                         id: witness.ingest_id(),
                                         remote_entropy: Vec::<u8>::with_capacity(0),
@@ -379,7 +393,14 @@ impl Loader {
                                     metrics.increment_witnesses();
                                     Ok(Some(res))
                                 }
-                                false => Ok(None),
+                                ValidGatewayResult::Denied => {
+                                    metrics.increment_witnesses_denied();
+                                    Ok(None)
+                                }
+                                ValidGatewayResult::Unknown => {
+                                    metrics.increment_witnesses_unknown();
+                                    Ok(None)
+                                }
                             }
                         }
                         false => {
@@ -406,16 +427,16 @@ impl Loader {
         &self,
         pub_key: &PublicKeyBinary,
         gateway_cache: &GatewayCache,
-    ) -> bool {
+    ) -> ValidGatewayResult {
         if self.check_gw_denied(pub_key).await {
             tracing::debug!("dropping denied gateway : {:?}", &pub_key);
-            return false;
+            return ValidGatewayResult::Denied;
         }
         if self.check_unknown_gw(pub_key, gateway_cache).await {
             tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
-            return false;
+            return ValidGatewayResult::Unknown;
         }
-        true
+        ValidGatewayResult::Valid
     }
 
     async fn check_unknown_gw(
