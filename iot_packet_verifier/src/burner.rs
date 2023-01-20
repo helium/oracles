@@ -22,8 +22,8 @@ pub struct Burner {
 
 #[derive(thiserror::Error, Debug)]
 pub enum BurnError {
-    #[error("Database error: {0}")]
-    DbError(#[from] sqlx::Error),
+    #[error("Sql error: {0}")]
+    SqlError(#[from] sqlx::Error),
     #[error("Join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("Solana client error: {0}")]

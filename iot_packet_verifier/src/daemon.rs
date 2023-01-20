@@ -20,7 +20,7 @@ struct Daemon {
     invalid_packets_tx: file_sink::MessageSender,
 }
 
-const POLL_TIME: time::Duration = time::Duration::from_secs(303);
+const POLL_TIME: time::Duration = time::Duration::from_secs(10);
 
 impl Daemon {
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
@@ -130,7 +130,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let rpc_client = Arc::new(RpcClient::new(settings.solana_rpc.clone()));
 
     // Set up the balance tracker:
-    let balances = Balances::new(rpc_client.clone());
+    let balances = Balances::new(&pool, rpc_client.clone()).await?;
 
     // Set up the balance burner:
     let burner = Burner::new(&pool, rpc_client, &balances, settings.program_id.clone()).await?;
