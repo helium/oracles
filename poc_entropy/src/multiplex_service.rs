@@ -1,3 +1,6 @@
+// From
+// https://github.com/tokio-rs/axum/blob/main/examples/rest-grpc-multiplex/src/multiplex_service.rs
+
 use axum::{body::BoxBody, http::header::CONTENT_TYPE, response::IntoResponse};
 use futures::{future::BoxFuture, ready};
 use hyper::{Body, Request, Response};
