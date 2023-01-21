@@ -31,6 +31,16 @@ pub struct Entropy {
     pub data: Vec<u8>,
 }
 
+impl From<Entropy> for EntropyReportV1 {
+    fn from(value: Entropy) -> Self {
+        Self {
+            version: value.version,
+            timestamp: value.timestamp as u64,
+            data: value.data,
+        }
+    }
+}
+
 fn ser_base64<T, S>(key: &T, serializer: S) -> std::result::Result<S::Ok, S::Error>
 where
     T: AsRef<[u8]>,

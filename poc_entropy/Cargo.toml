@@ -16,15 +16,16 @@ serde_json = {workspace = true}
 base64 = {workspace = true}
 sha2 = {workspace = true}
 http = {workspace = true}
-hyper = "*"
-axum = { version = "0", features = ["headers"] }
+tonic = {workspace = true}
+hyper = "0"
+axum = { version = "0.6.3", features = ["headers"] }
 jsonrpsee = { version = "0", features = ["async-client", "http-client"] }
-tower-http = {version = "*", features = ["trace"]}
+tower = {version = "0.4" }
 triggered = {workspace = true}
 futures = {workspace = true}
 futures-util = {workspace = true}
 prost = {workspace = true}
-bs58 = "*"
+bs58 = "0"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 metrics = {workspace = true }

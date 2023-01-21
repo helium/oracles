@@ -556,12 +556,12 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.6.0"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "744864363a200a5e724a7e61bc8c11b6628cf2e3ec519c8a1a48e609a8156b40"
+checksum = "678c5130a507ae3a7c797f9a17393c14849300b8440eac47cdb90a5bdcb3a543"
 dependencies = [
  "async-trait",
- "axum-core 0.3.0",
+ "axum-core 0.3.2",
  "bitflags",
  "bytes",
  "futures-util",
@@ -570,7 +570,7 @@ dependencies = [
  "http-body",
  "hyper",
  "itoa 1.0.4",
- "matchit 0.6.0",
+ "matchit 0.7.0",
  "memchr",
  "mime",
  "percent-encoding",
@@ -606,9 +606,9 @@ dependencies = [
 
 [[package]]
 name = "axum-core"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79b8558f5a0581152dc94dcd289132a1d377494bdeafcd41869b3258e3e2ad92"
+checksum = "1cae3e661676ffbacb30f1a824089a8c9150e71017f7e1e38f2aa32009188d34"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1867,7 +1867,7 @@ dependencies = [
  "p256",
  "rand_core",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "signature",
  "sqlx",
  "thiserror",
@@ -1876,7 +1876,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#816871e55d1cc28b086cce90fedf011e43671798"
+source = "git+https://github.com/helium/proto?branch=madninja/poc_entropy#9edd556a78618278ec8c700555aa45949d932812"
 dependencies = [
  "bytes",
  "prost",
@@ -2101,7 +2101,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",
@@ -2187,7 +2187,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2395,9 +2395,9 @@ checksum = "73cbba799671b762df5a175adf59ce145165747bb891505c43d09aefbbf38beb"
 
 [[package]]
 name = "matchit"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dfc802da7b1cf80aefffa0c7b2f77247c8b32206cc83c270b61264f5b360a80"
+checksum = "b87248edafb776e59e6ee64a79086f65890d3510f2c656c000bf2a7e8a0aea40"
 
 [[package]]
 name = "md-5"
@@ -2901,7 +2901,7 @@ name = "poc-entropy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum 0.6.0",
+ "axum 0.6.3",
  "base64",
  "bs58",
  "chrono",
@@ -2924,7 +2924,8 @@ dependencies = [
  "sha2 0.10.6",
  "thiserror",
  "tokio",
- "tower-http",
+ "tonic",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "triggered",
@@ -3387,7 +3388,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -4363,7 +4364,6 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
- "tracing",
 ]
 
 [[package]]
