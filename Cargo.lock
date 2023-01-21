@@ -1876,7 +1876,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=madninja/poc_entropy#9edd556a78618278ec8c700555aa45949d932812"
+source = "git+https://github.com/helium/proto?branch=master#dc3b7bbbf1f946b4d70c3d592df036ea3e57e61c"
 dependencies = [
  "bytes",
  "prost",
