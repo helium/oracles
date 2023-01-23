@@ -71,12 +71,11 @@ impl Daemon {
             shutdown_trigger.trigger()
         });
 
-        let admin_pubkey = Arc::new(settings.admin_pubkey()?);
         let _signing_keypair = Arc::new(settings.signing_keypair()?);
         let listen_addr = settings.listen_addr()?;
 
         let gateway_svc = GatewayService {};
-        let org_svc = OrgService::new(admin_pubkey.clone(), settings).await?;
+        let org_svc = OrgService::new(settings).await?;
         let route_svc = RouteService::new(settings).await?;
         let session_key_filter_svc = SessionKeyFilterService {};
 

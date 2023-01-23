@@ -7,19 +7,18 @@ use helium_proto::services::iot_config::{
     OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgV1,
 };
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct OrgService {
-    admin_pubkey: Arc<PublicKey>,
+    admin_pubkey: PublicKey,
     pool: Pool<Postgres>,
     required_network: Network,
 }
 
 impl OrgService {
-    pub async fn new(admin_pubkey: Arc<PublicKey>, settings: &Settings) -> Result<Self> {
+    pub async fn new(settings: &Settings) -> Result<Self> {
         Ok(Self {
-            admin_pubkey,
+            admin_pubkey: settings.admin_pubkey()?,
             pool: settings.database.connect(10).await?,
             required_network: settings.network,
         })
