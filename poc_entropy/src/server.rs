@@ -1,4 +1,7 @@
-use crate::entropy_generator::{Entropy, MessageReceiver, ENTROPY_TICK_TIME};
+use crate::{
+    entropy_generator::{Entropy, MessageReceiver, ENTROPY_TICK_TIME},
+    multiplex_service::MultiplexService,
+};
 use axum::{
     extract::Extension,
     headers::{CacheControl, HeaderMap, HeaderMapExt},
@@ -8,13 +11,32 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use helium_proto::{
+    services::poc_entropy::{EntropyReqV1, PocEntropy, Server as GrpcServer},
+    EntropyReportV1,
+};
 use std::net::SocketAddr;
 use tokio::{sync::watch, time::Duration};
-use tower_http::trace::TraceLayer;
+
+struct EntropyServer {
+    entropy_watch: MessageReceiver,
+}
+
+#[tonic::async_trait]
+impl PocEntropy for EntropyServer {
+    async fn entropy(
+        &self,
+        _request: tonic::Request<EntropyReqV1>,
+    ) -> Result<tonic::Response<EntropyReportV1>, tonic::Status> {
+        let entropy = &*self.entropy_watch.borrow();
+        metrics::increment_counter!("entropy_server_get_count");
+        Ok(tonic::Response::new(entropy.into()))
+    }
+}
 
 pub struct ApiServer {
     pub socket_addr: SocketAddr,
-    app: Router,
+    service: MultiplexService<Router, GrpcServer<EntropyServer>>,
 }
 
 impl ApiServer {
@@ -22,22 +44,28 @@ impl ApiServer {
         socket_addr: SocketAddr,
         entropy_watch: MessageReceiver,
     ) -> anyhow::Result<Self> {
-        let app = Router::new()
+        let rest = Router::new()
             // health
             .route("/health", get(empty_handler))
             // entropy
             .route("/entropy", get(get_entropy))
             .layer(poc_metrics::request_layer!("entropy_request"))
-            .layer(TraceLayer::new_for_http())
-            .layer(Extension(entropy_watch));
+            .layer(Extension(entropy_watch.clone()));
 
-        Ok(Self { socket_addr, app })
+        let grpc = GrpcServer::new(EntropyServer { entropy_watch });
+
+        let service = MultiplexService::new(rest, grpc);
+
+        Ok(Self {
+            socket_addr,
+            service,
+        })
     }
 
     pub async fn run(self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting api server");
+        tracing::info!(listen = self.socket_addr.to_string(), "starting");
         axum::Server::bind(&self.socket_addr)
-            .serve(self.app.into_make_service())
+            .serve(tower::make::Shared::new(self.service))
             .with_graceful_shutdown(shutdown.clone())
             .await?;
         tracing::info!("stopping api server");
