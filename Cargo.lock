@@ -2192,6 +2192,7 @@ dependencies = [
  "helium-proto",
  "metrics",
  "metrics-exporter-prometheus",
+ "node-follower",
  "poc-metrics",
  "prost",
  "serde",

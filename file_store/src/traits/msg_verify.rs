@@ -2,8 +2,8 @@ use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
     iot_config::{
-        OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1, RouteCreateReqV1,
-        RouteDeleteDevaddrRangesReqV1, RouteDeleteEuisReqV1, RouteDeleteReqV1,
+        GatewayRegionParamsReqV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1,
+        RouteCreateReqV1, RouteDeleteDevaddrRangesReqV1, RouteDeleteEuisReqV1, RouteDeleteReqV1,
         RouteGetDevaddrRangesReqV1, RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1,
         RouteStreamReqV1, RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1, RouteUpdateReqV1,
     },
@@ -52,6 +52,7 @@ impl_msg_verify!(RouteUpdateEuisReqV1, signature);
 impl_msg_verify!(RouteGetDevaddrRangesReqV1, signature);
 impl_msg_verify!(RouteUpdateDevaddrRangesReqV1, signature);
 impl_msg_verify!(RouteDeleteDevaddrRangesReqV1, signature);
+impl_msg_verify!(GatewayRegionParamsReqV1, signature);
 
 #[cfg(test)]
 mod test {
