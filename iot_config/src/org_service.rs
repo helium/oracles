@@ -10,6 +10,7 @@ use sqlx::{Pool, Postgres};
 use tonic::{Request, Response, Status};
 
 pub struct OrgService {
+    admin_pubkey: PublicKey,
     pool: Pool<Postgres>,
     required_network: Network,
 }
@@ -17,6 +18,7 @@ pub struct OrgService {
 impl OrgService {
     pub async fn new(settings: &Settings) -> Result<Self> {
         Ok(Self {
+            admin_pubkey: settings.admin_pubkey()?,
             pool: settings.database.connect(10).await?,
             required_network: settings.network,
         })
@@ -26,26 +28,26 @@ impl OrgService {
         if self.required_network == public_key.network {
             Ok(public_key)
         } else {
-            Err(Status::invalid_argument("invalid network"))
+            Err(Status::invalid_argument(format!(
+                "invalid network: {}",
+                public_key.network
+            )))
         }
     }
 
     fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes).map_err(|_| Status::invalid_argument("invalid public key"))
+        PublicKey::try_from(bytes)
+            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
     }
 
-    fn verify_signature<R>(
-        &self,
-        public_key: PublicKey,
-        request: R,
-    ) -> Result<(PublicKey, R), Status>
+    fn verify_admin_signature<R>(&self, request: R) -> Result<R, Status>
     where
         R: MsgVerify,
     {
         request
-            .verify(&public_key)
-            .map_err(|_| Status::invalid_argument("invalid signature"))?;
-        Ok((public_key, request))
+            .verify(&self.admin_pubkey)
+            .map_err(|_| Status::permission_denied("invalid admin signature"))?;
+        Ok(request)
     }
 }
 
@@ -84,15 +86,20 @@ impl iot_config::Org for OrgService {
     async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        let (_, req) = self
-            .verify_public_key(request.signer.as_ref())
-            .and_then(|pub_key| self.verify_network(pub_key))
-            .and_then(|pub_key| self.verify_signature(pub_key, request))?;
+        let req = self.verify_admin_signature(request)?;
 
-        self.verify_public_key(req.owner.as_ref())
-            .and_then(|pub_key| self.verify_network(pub_key))?;
-        self.verify_public_key(req.payer.as_ref())
-            .and_then(|pub_key| self.verify_network(pub_key))?;
+        let verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
+
+        _ = verify_keys
+            .iter()
+            .map(|key| {
+                self.verify_public_key(key)
+                    .and_then(|pub_key| self.verify_network(pub_key))
+                    .map_err(|err| {
+                        Status::invalid_argument(format!("failed pubkey validation: {err}"))
+                    })
+            })
+            .collect::<Result<Vec<PublicKey>, Status>>()?;
 
         let requested_addrs = req.devaddrs;
         let devaddr_range = org::next_helium_devaddr(&self.pool)
@@ -118,15 +125,18 @@ impl iot_config::Org for OrgService {
     async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        let (_, req) = self
-            .verify_public_key(request.signer.as_ref())
-            .and_then(|pub_key| self.verify_network(pub_key))
-            .and_then(|pub_key| self.verify_signature(pub_key, request))?;
-
-        self.verify_public_key(req.owner.as_ref())
-            .and_then(|pub_key| self.verify_network(pub_key))?;
-        self.verify_public_key(req.payer.as_ref())
-            .and_then(|pub_key| self.verify_network(pub_key))?;
+        let req = self.verify_admin_signature(request)?;
+        let verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
+        _ = verify_keys
+            .iter()
+            .map(|key| {
+                self.verify_public_key(key)
+                    .and_then(|pub_key| self.verify_network(pub_key))
+                    .map_err(|err| {
+                        Status::invalid_argument(format!("failed pubkey validation: {err}"))
+                    })
+            })
+            .collect::<Result<Vec<PublicKey>, Status>>()?;
 
         let net_id = lora_field::net_id(req.net_id);
         let devaddr_range = net_id

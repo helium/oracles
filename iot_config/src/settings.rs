@@ -16,6 +16,10 @@ pub struct Settings {
     /// Listen address. Required. Default is 0.0.0.0:8080
     #[serde(default = "default_listen_addr")]
     pub listen: String,
+    /// File from which to load config server signing keypair
+    pub keypair: String,
+    /// B58 encoded public key of the admin keypair
+    pub admin: String,
     /// Network required in all public keys: mainnet | testnet
     pub network: Network,
     pub database: db_store::Settings,
@@ -56,5 +60,14 @@ impl Settings {
 
     pub fn listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
         SocketAddr::from_str(&self.listen)
+    }
+
+    pub fn signing_keypair(&self) -> Result<helium_crypto::Keypair, Box<helium_crypto::Error>> {
+        let data = std::fs::read(&self.keypair).map_err(helium_crypto::Error::from)?;
+        Ok(helium_crypto::Keypair::try_from(&data[..])?)
+    }
+
+    pub fn admin_pubkey(&self) -> Result<helium_crypto::PublicKey, helium_crypto::Error> {
+        helium_crypto::PublicKey::from_str(&self.admin)
     }
 }

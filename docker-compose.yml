@@ -15,7 +15,11 @@ services:
       CFG_LISTEN: 0.0.0.0:8080
       CFG_METRICS_ENDPOINT: 0.0.0.0:19000
       CFG_NETWORK: mainnet
+      CFG_ADMIN: ${CONFIG_ADMIN_PUBKEY}
+      CFG_KEYPAIR: /config-signing-key.bin
       CFG_LOG: info
+    volumes:
+      - ${CONFIG_SIGNING_KEY}:/config-signing-key.bin:ro
 
   postgres:
     image: postgres:latest
