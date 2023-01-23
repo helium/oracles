@@ -28,7 +28,7 @@ impl Cmd {
         let before_utc = Utc.from_utc_datetime(&self.before);
 
         let file_list = store
-            .list_all(FileType::IotValidPoc, after_utc, before_utc)
+            .list_all(FileType::IotPoc, after_utc, before_utc)
             .await?;
 
         let poc_oracle_key = settings.keypair()?;

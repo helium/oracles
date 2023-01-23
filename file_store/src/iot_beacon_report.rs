@@ -137,7 +137,7 @@ impl From<IotBeaconReport> for LoraBeaconReportReqV1 {
             frequency: v.frequency,
             channel: v.channel,
             //TODO: fix datarate
-            datarate: 0,
+            datarate: v.datarate.into(),
             tx_power: v.tx_power,
             timestamp,
             signature: vec![],

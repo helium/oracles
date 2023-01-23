@@ -7,13 +7,13 @@ use chrono::{DateTime, Duration, Utc};
 use density_scaler::HexDensityMap;
 use file_store::{
     iot_beacon_report::IotBeaconIngestReport, iot_invalid_poc::IotInvalidWitnessReport,
-    iot_valid_poc::IotValidWitnessReport, iot_witness_report::IotWitnessIngestReport,
+    iot_valid_poc::IotVerifiedWitnessReport, iot_witness_report::IotWitnessIngestReport,
 };
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_lora::{InvalidParticipantSide, InvalidReason},
+    services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
     GatewayStakingMode, Region,
 };
 use lazy_static::lazy_static;
@@ -39,13 +39,6 @@ lazy_static! {
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
-#[derive(Debug)]
-pub enum VerificationStatus {
-    Valid,
-    Invalid,
-    Failed,
-}
-
 pub struct Poc {
     beacon_report: IotBeaconIngestReport,
     witness_reports: Vec<IotWitnessIngestReport>,
@@ -55,27 +48,27 @@ pub struct Poc {
 
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
-    pub invalid_reason: Option<InvalidReason>,
+    pub invalid_reason: InvalidReason,
     pub gateway_info: Option<GatewayInfo>,
     pub hex_scale: Option<Decimal>,
 }
 
 pub struct VerifyWitnessResult {
     result: VerificationStatus,
-    invalid_reason: Option<InvalidReason>,
+    invalid_reason: InvalidReason,
     pub gateway_info: Option<GatewayInfo>,
     hex_scale: Option<Decimal>,
+    participant_side: InvalidParticipantSide,
 }
 
 pub struct VerifyWitnessesResult {
-    pub valid_witnesses: Vec<IotValidWitnessReport>,
-    pub invalid_witnesses: Vec<IotInvalidWitnessReport>,
+    pub verified_witnesses: Vec<IotVerifiedWitnessReport>,
     pub failed_witnesses: Vec<IotInvalidWitnessReport>,
 }
 
 impl VerifyWitnessesResult {
     pub fn update_reward_units(&mut self, reward_units: Decimal) {
-        self.valid_witnesses
+        self.verified_witnesses
             .iter_mut()
             .for_each(|witness| witness.reward_unit = reward_units)
     }
@@ -149,8 +142,7 @@ impl Poc {
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
-        let mut valid_witnesses: Vec<IotValidWitnessReport> = Vec::new();
-        let mut invalid_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
+        let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
@@ -170,7 +162,7 @@ impl Poc {
                                 .valid_witness_report(witness_result, witness_report)
                                 .await
                             {
-                                valid_witnesses.push(valid_witness)
+                                verified_witnesses.push(valid_witness)
                             };
                         }
                         VerificationStatus::Invalid => {
@@ -178,16 +170,13 @@ impl Poc {
                                 .invalid_witness_report(witness_result, witness_report)
                                 .await
                             {
-                                invalid_witnesses.push(invalid_witness)
+                                verified_witnesses.push(invalid_witness)
                             }
                         }
                         VerificationStatus::Failed => {
                             // if a witness check returns failed it suggests something
                             // unexpected has occurred. Fail the witness
-                            let failed_reason = invalid_reason_or_default(
-                                witness_result.invalid_reason,
-                                InvalidReason::UnknownError,
-                            );
+                            let failed_reason = InvalidReason::UnknownError;
                             if let Ok(failed_witness) = self
                                 .failed_witness_report(failed_reason, witness_report)
                                 .await
@@ -209,8 +198,7 @@ impl Poc {
             }
         }
         let resp = VerifyWitnessesResult {
-            invalid_witnesses,
-            valid_witnesses,
+            verified_witnesses,
             failed_witnesses,
         };
         Ok(resp)
@@ -322,7 +310,7 @@ impl Poc {
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: IotWitnessIngestReport,
-    ) -> Result<IotValidWitnessReport, VerificationError> {
+    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
         let gw_info = witness_result
             .gateway_info
             .ok_or(VerificationError::NotFound(
@@ -331,14 +319,17 @@ impl Poc {
         let hex_scale = witness_result
             .hex_scale
             .ok_or(VerificationError::NotFound("expected hex scale not found"))?;
-        Ok(IotValidWitnessReport {
+        Ok(IotVerifiedWitnessReport {
             received_timestamp: witness_report.received_timestamp,
+            status: witness_result.result,
+            report: witness_report.report,
             location: gw_info.location,
             hex_scale,
-            report: witness_report.report,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
             reward_unit: Decimal::ZERO,
+            invalid_reason: InvalidReason::ReasonNone,
+            participant_side: InvalidParticipantSide::SideNone,
         })
     }
 
@@ -346,17 +337,18 @@ impl Poc {
         &self,
         witness_result: VerifyWitnessResult,
         witness_report: IotWitnessIngestReport,
-    ) -> Result<IotInvalidWitnessReport, VerificationError> {
-        let invalid_reason = witness_result
-            .invalid_reason
-            .ok_or(VerificationError::NotFound(
-                "expected invalid_reason not found",
-            ))?;
-        Ok(IotInvalidWitnessReport {
+    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
+        Ok(IotVerifiedWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            reason: invalid_reason,
+            status: witness_result.result,
             report: witness_report.report,
-            participant_side: InvalidParticipantSide::Witness,
+            location: None,
+            hex_scale: Decimal::ZERO,
+            // default reward units to zero until we've got the full count of
+            // valid, non-failed witnesses for the final validated poc report
+            reward_unit: Decimal::ZERO,
+            invalid_reason: witness_result.invalid_reason,
+            participant_side: witness_result.participant_side,
         })
     }
 
@@ -610,20 +602,10 @@ fn hex_adjustment(loc: &H3Cell) -> Result<f64, h3ron::Error> {
     )
 }
 
-fn invalid_reason_or_default(
-    invalid_reason: Option<InvalidReason>,
-    default: InvalidReason,
-) -> InvalidReason {
-    match invalid_reason {
-        Some(reason) => reason,
-        None => default,
-    }
-}
-
 impl VerifyBeaconResult {
     pub fn new(
         result: VerificationStatus,
-        invalid_reason: Option<InvalidReason>,
+        invalid_reason: InvalidReason,
         gateway_info: Option<GatewayInfo>,
         hex_scale: Option<Decimal>,
     ) -> Self {
@@ -638,7 +620,7 @@ impl VerifyBeaconResult {
     pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
         Self::new(
             VerificationStatus::Valid,
-            None,
+            InvalidReason::ReasonNone,
             Some(gateway_info),
             Some(hex_scale),
         )
@@ -647,7 +629,7 @@ impl VerifyBeaconResult {
     pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
         Self::new(
             VerificationStatus::Invalid,
-            Some(invalid_reason),
+            invalid_reason,
             Some(gateway_info),
             None,
         )
@@ -656,7 +638,7 @@ impl VerifyBeaconResult {
     pub fn gateway_not_found() -> Self {
         Self::new(
             VerificationStatus::Invalid,
-            Some(InvalidReason::GatewayNotFound),
+            InvalidReason::GatewayNotFound,
             None,
             None,
         )
@@ -665,7 +647,7 @@ impl VerifyBeaconResult {
     pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
         Self::new(
             VerificationStatus::Invalid,
-            Some(InvalidReason::ScalingFactorNotFound),
+            InvalidReason::ScalingFactorNotFound,
             Some(gateway_info),
             None,
         )
@@ -675,60 +657,67 @@ impl VerifyBeaconResult {
 impl VerifyWitnessResult {
     pub fn new(
         result: VerificationStatus,
-        invalid_reason: Option<InvalidReason>,
+        invalid_reason: InvalidReason,
         gateway_info: Option<GatewayInfo>,
         hex_scale: Option<Decimal>,
+        participant_side: InvalidParticipantSide,
     ) -> Self {
         VerifyWitnessResult {
             result,
             invalid_reason,
             gateway_info,
             hex_scale,
+            participant_side,
         }
     }
 
     pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
         Self::new(
             VerificationStatus::Valid,
-            None,
+            InvalidReason::ReasonNone,
             Some(gateway_info),
             Some(hex_scale),
+            InvalidParticipantSide::Witness,
         )
     }
 
     pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
         Self::new(
             VerificationStatus::Invalid,
-            Some(invalid_reason),
+            invalid_reason,
             Some(gateway_info),
             None,
+            InvalidParticipantSide::Witness,
         )
     }
 
     pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
         Self::new(
             VerificationStatus::Invalid,
-            Some(InvalidReason::ScalingFactorNotFound),
+            InvalidReason::ScalingFactorNotFound,
             Some(gateway_info),
             None,
+            InvalidParticipantSide::Witness,
         )
     }
 
     pub fn gateway_not_found() -> Self {
         Self::new(
             VerificationStatus::Invalid,
-            Some(InvalidReason::GatewayNotFound),
+            InvalidReason::GatewayNotFound,
             None,
             None,
+            InvalidParticipantSide::Witness,
         )
     }
 
     pub fn not_asserted() -> Self {
         Self::new(
             VerificationStatus::Invalid,
-            Some(InvalidReason::NotAsserted),
+            InvalidReason::NotAsserted,
             None,
             None,
+            InvalidParticipantSide::Witness,
         )
     }
 }
