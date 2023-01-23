@@ -14,6 +14,8 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 const REWARD_SHARE_MULTIPLIER: Decimal = Decimal::ONE_HUNDRED;
+const SIGNAL_MULTIPLIER: i32 = 10;
+const SNR_MULTIPLIER: f32 = 10.0;
 type PocPath = Vec<BlockchainPocPathElementV1>;
 
 #[derive(Clone, Debug)]
@@ -150,10 +152,10 @@ fn construct_poc_witnesses(
             let poc_witness = BlockchainPocWitnessV1 {
                 gateway: witness_report.report.pub_key.into(),
                 timestamp: witness_report.report.timestamp.timestamp() as u64,
-                signal: witness_report.report.signal,
+                signal: witness_report.report.signal / SIGNAL_MULTIPLIER,
                 packet_hash: witness_report.report.data,
                 signature: witness_report.report.signature,
-                snr: witness_report.report.snr as f32,
+                snr: witness_report.report.snr as f32 / SNR_MULTIPLIER,
                 frequency: hz_to_mhz(witness_report.report.frequency),
                 datarate: witness_report.report.datarate.to_string(),
                 channel: 0,
