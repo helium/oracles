@@ -47,8 +47,8 @@ impl Balances {
             balances.insert(
                 gateway,
                 Balance {
-                    last_recorded_balance: balance,
-                    curr_balance: balance - burn_amount as u64,
+                    burned: burn_amount as u64,
+                    balance,
                 },
             );
         }
@@ -80,19 +80,15 @@ impl Balances {
             let mut balance = balances.get_mut(gateway).unwrap();
 
             // If the balance is not sufficient, check to see if it has been increased
-            if balance.curr_balance < amount {
-                let new_balance = gateway_balance(self.provider.as_ref(), gateway).await?;
-                if new_balance > balance.last_recorded_balance {
-                    balance.curr_balance += new_balance - balance.last_recorded_balance;
-                    balance.last_recorded_balance = new_balance;
-                }
+            if balance.balance < amount + balance.burned {
+                balance.balance = gateway_balance(self.provider.as_ref(), gateway).await?;
             }
 
             balance
         };
 
-        let sufficient = if balance.curr_balance >= amount {
-            balance.curr_balance -= amount;
+        let sufficient = if balance.balance >= amount + balance.burned {
+            balance.burned += amount;
             true
         } else {
             false
@@ -113,15 +109,12 @@ pub async fn gateway_balance(provider: &RpcClient, gateway: &PublicKey) -> Resul
 }
 
 pub struct Balance {
-    last_recorded_balance: u64,
-    curr_balance: u64,
+    pub balance: u64,
+    pub burned: u64,
 }
 
 impl Balance {
     pub fn new(balance: u64) -> Self {
-        Self {
-            last_recorded_balance: balance,
-            curr_balance: balance,
-        }
+        Self { balance, burned: 0 }
     }
 }

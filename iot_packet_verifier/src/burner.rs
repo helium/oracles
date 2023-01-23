@@ -33,11 +33,7 @@ pub enum BurnError {
 }
 
 impl Burner {
-    pub fn new(
-        pool: &Pool<Postgres>,
-        provider: Arc<RpcClient>,
-        balances: &Balances,
-    ) -> Self {
+    pub fn new(pool: &Pool<Postgres>, provider: Arc<RpcClient>, balances: &Balances) -> Self {
         Self {
             pool: pool.clone(),
             balances: balances.balances(),
@@ -61,10 +57,6 @@ impl Burner {
     }
 
     pub async fn burn(&mut self) -> Result<(), BurnError> {
-        // Do not update any balances until we have successfully burned
-        // the accounts
-        let balances_lock = self.balances.lock().await;
-
         // Create burn transaction and execute it:
 
         // Fetch the sub dao epoch info:
@@ -85,6 +77,8 @@ impl Burner {
                 return Ok(());
             };
 
+        let gateway = PublicKey::try_from(gateway.clone()).unwrap();
+
         let instructions = {
             let payer: std::rc::Rc<dyn Signer> = todo!();
             let request = RequestBuilder::from(
@@ -95,7 +89,6 @@ impl Burner {
                 RequestNamespace::Global,
             );
 
-            let gateway = PublicKey::try_from(gateway.clone()).unwrap();
             let accounts = accounts::BurnDelegatedDataCreditsV0 {
                 sub_dao_epoch_info,
                 dao: self.program_cache.dao.clone(),
@@ -119,10 +112,7 @@ impl Burner {
                 },
             };
 
-            // Remove the entry from the balance sheet
-            balances_lock.remove(&gateway);
-
-            // As far as I can tell, the instructions does not actually have any
+            // As far as I can tell, the instructions function does not actually have any
             // error paths.
             request
                 .accounts(accounts)
@@ -140,11 +130,14 @@ impl Burner {
         let signature = self.provider.send_and_confirm_transaction(&tx).await?;
 
         // Now that we have successfully executed the burn and are no long in
-        // sync land, we can delete the entries
-        sqlx::query("DELETE FROM pending_burns WHERE id = $1")
+        // sync land, we can remove the amount burned.
+        sqlx::query("UPDATE pending_burns SET burn = burn - $1 WHERE id = $2")
+            .bind(amount)
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+        self.balances.lock().await.get_mut(&gateway).unwrap().burned -= amount as u64;
 
         Ok(())
     }
