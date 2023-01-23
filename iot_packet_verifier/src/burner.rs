@@ -3,6 +3,7 @@ use crate::{
     pdas,
 };
 use anchor_client::{RequestBuilder, RequestNamespace};
+use chrono::Utc;
 use data_credits::{accounts, instruction};
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
@@ -31,6 +32,8 @@ pub enum BurnError {
     #[error("Solana client error: {0}")]
     SolanaClientError(#[from] ClientError),
 }
+
+const BURN_THRESHOLD: i64 = 10_000;
 
 impl Burner {
     pub fn new(pool: &Pool<Postgres>, provider: Arc<RpcClient>, balances: &Balances) -> Self {
@@ -71,7 +74,8 @@ impl Burner {
         );
 
         let Some(Burn { gateway, amount, id }): Option<Burn> =
-            sqlx::query_as("SELECT * FROM pending_burns ORDER BY RAND ()")
+            sqlx::query_as("SELECT * FROM pending_burns WHERE amount >= $1 ORDER BY last_burn ASC")
+                .bind(BURN_THRESHOLD)
                 .fetch_optional(&self.pool)
             .await? else {
                 return Ok(());
@@ -131,11 +135,19 @@ impl Burner {
 
         // Now that we have successfully executed the burn and are no long in
         // sync land, we can remove the amount burned.
-        sqlx::query("UPDATE pending_burns SET burn = burn - $1 WHERE id = $2")
-            .bind(amount)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            r#"
+            UPDATE pending_burns SET
+              burn = burn - $1,
+              last_burn = $2
+            WHERE id = $3
+            "#,
+        )
+        .bind(amount)
+        .bind(Utc::now().naive_utc())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
 
         self.balances.lock().await.get_mut(&gateway).unwrap().burned -= amount as u64;
 

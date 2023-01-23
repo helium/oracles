@@ -73,14 +73,15 @@ impl Daemon {
                 // Add the amount burned into the pending burns table
                 sqlx::query(
                     r#"
-                    INSERT INTO pending_burns (gateway, amount)
-                    VALUES ($1, $2)
+                    INSERT INTO pending_burns (gateway, amount, last_burn)
+                    VALUES ($1, $2, $3)
                     ON CONFLICT (gateway) DO UPDATE SET
                     amount = pending_burns.amount + $2
                     "#,
                 )
                 .bind(PublicKeyBinary::from(gateway.clone()))
                 .bind(debit_amount as i64)
+                .bind(Utc::now().naive_utc())
                 .fetch_one(&self.pool)
                 .await?;
 
