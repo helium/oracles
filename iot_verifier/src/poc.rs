@@ -155,26 +155,24 @@ impl Poc {
                 )
                 .await
             {
-                Ok(witness_result) => {
-                    match witness_result.result {
-                        VerificationStatus::Valid => {
-                            if let Ok(valid_witness) = self
-                                .valid_witness_report(witness_result, witness_report)
-                                .await
-                            {
-                                verified_witnesses.push(valid_witness)
-                            };
-                        }
-                        VerificationStatus::Invalid => {
-                            if let Ok(invalid_witness) = self
-                                .invalid_witness_report(witness_result, witness_report)
-                                .await
-                            {
-                                verified_witnesses.push(invalid_witness)
-                            }
+                Ok(witness_result) => match witness_result.result {
+                    VerificationStatus::Valid => {
+                        if let Ok(valid_witness) = self
+                            .valid_witness_report(witness_result, witness_report)
+                            .await
+                        {
+                            verified_witnesses.push(valid_witness)
+                        };
+                    }
+                    VerificationStatus::Invalid => {
+                        if let Ok(invalid_witness) = self
+                            .invalid_witness_report(witness_result, witness_report)
+                            .await
+                        {
+                            verified_witnesses.push(invalid_witness)
                         }
                     }
-                }
+                },
                 Err(err) => {
                     tracing::warn!("Unexpected error verifying witness: {err:?}");
                     if let Ok(failed_witness) = self
