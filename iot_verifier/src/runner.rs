@@ -45,6 +45,8 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 pub struct Runner {
     pool: PgPool,
     settings: Settings,
+    beacon_interval: ChronoDuration,
+    beacon_interval_tolerance: ChronoDuration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -60,9 +62,13 @@ pub enum RunnerError {
 impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewRunnerError> {
         let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
+        let beacon_interval = settings.beacon_interval();
+        let beacon_interval_tolerance = settings.beacon_interval_tolerance();
         Ok(Self {
             pool,
             settings: settings.clone(),
+            beacon_interval,
+            beacon_interval_tolerance,
         })
     }
 
@@ -233,7 +239,13 @@ impl Runner {
 
         // verify POC beacon
         let beacon_verify_result = poc
-            .verify_beacon(hex_density_map.clone(), gateway_cache, &self.pool)
+            .verify_beacon(
+                hex_density_map.clone(),
+                gateway_cache,
+                &self.pool,
+                self.beacon_interval,
+                self.beacon_interval_tolerance,
+            )
             .await?;
         match beacon_verify_result.result {
             VerificationStatus::Valid => {
