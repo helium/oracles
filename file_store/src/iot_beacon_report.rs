@@ -96,7 +96,7 @@ impl From<IotBeaconIngestReport> for LoraBeaconReportReqV1 {
             datarate: v.report.datarate as i32,
             tx_power: v.report.tx_power,
             timestamp,
-            signature: vec![],
+            signature: v.report.signature,
             tmst: v.report.tmst,
         }
     }
@@ -105,9 +105,8 @@ impl From<IotBeaconIngestReport> for LoraBeaconReportReqV1 {
 impl TryFrom<LoraBeaconReportReqV1> for IotBeaconReport {
     type Error = Error;
     fn try_from(v: LoraBeaconReportReqV1) -> Result<Self> {
-        let dr = v.datarate;
-        let data_rate: DataRate = DataRate::from_i32(dr)
-            .ok_or_else(|| DecodeError::unsupported_datarate("iot_beacon_report_req_v1", dr))?;
+        let data_rate: DataRate = DataRate::from_i32(v.datarate)
+            .ok_or_else(|| DecodeError::unsupported_datarate("iot_beacon_report_req_v1", v.datarate))?;
         let timestamp = v.timestamp()?;
 
         Ok(Self {
@@ -136,11 +135,10 @@ impl From<IotBeaconReport> for LoraBeaconReportReqV1 {
             data: v.data,
             frequency: v.frequency,
             channel: v.channel,
-            //TODO: fix datarate
-            datarate: v.datarate.into(),
+            datarate: v.datarate as i32,
             tx_power: v.tx_power,
             timestamp,
-            signature: vec![],
+            signature: v.signature,
             tmst: v.tmst,
         }
     }

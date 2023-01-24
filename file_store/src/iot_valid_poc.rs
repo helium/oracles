@@ -202,8 +202,8 @@ impl From<IotVerifiedWitnessReport> for LoraVerifiedWitnessReportV1 {
                 .unwrap_or_else(String::new),
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             reward_unit: (v.reward_unit * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
-            invalid_reason: v.invalid_reason.into(),
-            participant_side: v.participant_side.into(),
+            invalid_reason: v.invalid_reason as i32,
+            participant_side: v.participant_side as i32,
         }
     }
 }
