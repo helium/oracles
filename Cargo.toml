@@ -60,7 +60,7 @@ tracing = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
 rust_decimal = "1"
 rust_decimal_macros = "1"
-base64 = "0"
+base64 = ">=0.21"
 sha2 = "*"
 tonic = "0"
 http = "*"
