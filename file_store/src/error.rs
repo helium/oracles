@@ -113,7 +113,6 @@ impl DecodeError {
     pub fn unsupported_status_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
     }
-
 }
 
 impl From<helium_crypto::Error> for Error {
