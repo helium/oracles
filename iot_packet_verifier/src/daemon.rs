@@ -6,16 +6,21 @@ use file_store::{file_sink, file_sink_write, file_upload, FileStore, FileType};
 use futures::StreamExt;
 use futures_util::TryFutureExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
-use helium_proto::services::packet_verifier::ValidPacket;
+use helium_proto::services::{
+    iot_config::{org_client::OrgClient, OrgGetReqV1},
+    packet_verifier::ValidPacket,
+    Channel,
+};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::time;
 
 struct Daemon {
     pool: Pool<Postgres>,
     file_store: FileStore,
     balances: Balances,
+    org_client: OrgClient<Channel>,
     valid_packets_tx: file_sink::MessageSender,
     invalid_packets_tx: file_sink::MessageSender,
 }
@@ -48,6 +53,8 @@ impl Daemon {
 
         tokio::pin!(reports);
 
+        let mut org_cache = HashMap::<u64, PublicKey>::new();
+
         while let Some(report) = reports.next().await {
             let report_timestamp =
                 NaiveDateTime::from_timestamp_millis(report.gateway_timestamp_ms as i64).unwrap();
@@ -59,27 +66,34 @@ impl Daemon {
             }
 
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
-            let Ok(gateway) = PublicKey::from_bytes(&report.gateway) else {
-                tracing::error!("Invalid gateway address: {:?}", report.gateway);
-                continue;
-            };
+
+            if !org_cache.contains_key(&report.oui) {
+                let req = OrgGetReqV1 { oui: report.oui };
+                let Ok(pubkey) = PublicKey::try_from(self.org_client.get(req).await?.into_inner().org.unwrap().owner) else {
+                    tracing::error!("Invalid payer for OUI {}", report.oui);
+                    continue;
+                };
+                org_cache.insert(report.oui, pubkey);
+            }
+
+            let payer = org_cache.get(&report.oui).unwrap();
 
             // TODO: Use transactions and write manifests
             if self
                 .balances
-                .debit_if_sufficient(&gateway, debit_amount)
+                .debit_if_sufficient(payer, debit_amount)
                 .await?
             {
                 // Add the amount burned into the pending burns table
                 sqlx::query(
                     r#"
-                    INSERT INTO pending_burns (gateway, amount, last_burn)
+                    INSERT INTO pending_burns (payer, amount, last_burn)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (gateway) DO UPDATE SET
+                    ON CONFLICT (payer) DO UPDATE SET
                     amount = pending_burns.amount + $2
                     "#,
                 )
-                .bind(PublicKeyBinary::from(gateway.clone()))
+                .bind(PublicKeyBinary::from(payer.clone()))
                 .bind(debit_amount as i64)
                 .bind(Utc::now().naive_utc())
                 .fetch_one(&self.pool)
@@ -160,6 +174,8 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     .create()
     .await?;
 
+    let org_client = settings.org.connect_org();
+
     let file_store = FileStore::from_settings(&settings.ingest).await?;
 
     // Set up the verifier Daemon:
@@ -167,6 +183,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         pool,
         file_store,
         balances,
+        org_client,
         valid_packets_tx,
         invalid_packets_tx,
     };

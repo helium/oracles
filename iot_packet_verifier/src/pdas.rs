@@ -1,8 +1,8 @@
 use helium_crypto::PublicKey;
 use solana_sdk::pubkey::Pubkey;
 
-pub fn delegated_data_credits(gateway: &PublicKey) -> Pubkey {
-    let sha_digest = sha256::digest(gateway.to_vec().as_slice());
+pub fn delegated_data_credits(payer: &PublicKey) -> Pubkey {
+    let sha_digest = sha256::digest(payer.to_vec().as_slice());
     let (ddc_key, _) = Pubkey::find_program_address(
         &[
             "delegated_data_credits".as_bytes(),

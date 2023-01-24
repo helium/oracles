@@ -36,16 +36,16 @@ impl Balances {
         let mut balances = HashMap::new();
 
         while let Some(Burn {
-            gateway,
+            payer,
             amount: burn_amount,
             ..
         }) = burns.next().await.transpose()?
         {
-            // Look up the current balance of the gateway
-            let gateway = PublicKey::try_from(gateway).unwrap();
-            let balance = gateway_balance(provider.as_ref(), &gateway).await?;
+            // Look up the current balance of the payer
+            let payer = PublicKey::try_from(payer).unwrap();
+            let balance = payer_balance(provider.as_ref(), &payer).await?;
             balances.insert(
-                gateway,
+                payer,
                 Balance {
                     burned: burn_amount as u64,
                     balance,
@@ -67,21 +67,21 @@ impl Balances {
     /// balance and false otherwise.
     pub async fn debit_if_sufficient(
         &self,
-        gateway: &PublicKey,
+        payer: &PublicKey,
         amount: u64,
     ) -> Result<bool, DebitError> {
         let mut balances = self.balances.lock().await;
 
-        let mut balance = if !balances.contains_key(gateway) {
-            let new_balance = gateway_balance(self.provider.as_ref(), gateway).await?;
-            balances.insert(gateway.clone(), Balance::new(new_balance));
-            balances.get_mut(&gateway).unwrap()
+        let mut balance = if !balances.contains_key(payer) {
+            let new_balance = payer_balance(self.provider.as_ref(), payer).await?;
+            balances.insert(payer.clone(), Balance::new(new_balance));
+            balances.get_mut(&payer).unwrap()
         } else {
-            let mut balance = balances.get_mut(gateway).unwrap();
+            let mut balance = balances.get_mut(payer).unwrap();
 
             // If the balance is not sufficient, check to see if it has been increased
             if balance.balance < amount + balance.burned {
-                balance.balance = gateway_balance(self.provider.as_ref(), gateway).await?;
+                balance.balance = payer_balance(self.provider.as_ref(), payer).await?;
             }
 
             balance
@@ -98,8 +98,8 @@ impl Balances {
     }
 }
 
-pub async fn gateway_balance(provider: &RpcClient, gateway: &PublicKey) -> Result<u64, DebitError> {
-    let ddc_key = pdas::delegated_data_credits(gateway);
+pub async fn payer_balance(provider: &RpcClient, payer: &PublicKey) -> Result<u64, DebitError> {
+    let ddc_key = pdas::delegated_data_credits(payer);
     let account_data = provider.get_account_data(&ddc_key).await?;
     let mut account_data = account_data.as_ref();
     let ddc = DelegatedDataCreditsV0::try_deserialize(&mut account_data)?;

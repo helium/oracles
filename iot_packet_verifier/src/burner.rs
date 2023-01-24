@@ -73,7 +73,7 @@ impl Burner {
             &helium_sub_daos::ID,
         );
 
-        let Some(Burn { gateway, amount, id }): Option<Burn> =
+        let Some(Burn { payer, amount, id }): Option<Burn> =
             sqlx::query_as("SELECT * FROM pending_burns WHERE amount >= $1 ORDER BY last_burn ASC")
                 .bind(BURN_THRESHOLD)
                 .fetch_optional(&self.pool)
@@ -81,14 +81,16 @@ impl Burner {
                 return Ok(());
             };
 
-        let gateway = PublicKey::try_from(gateway.clone()).unwrap();
+        let payer = PublicKey::try_from(payer.clone()).unwrap();
+
+        tracing::info!("Burning {} DC from {}", amount, payer);
 
         let instructions = {
-            let payer: std::rc::Rc<dyn Signer> = todo!();
+            let transaction_payer: std::rc::Rc<dyn Signer> = todo!();
             let request = RequestBuilder::from(
                 data_credits::id(),
                 "devnet",
-                payer,
+                transaction_payer,
                 Some(CommitmentConfig::confirmed()),
                 RequestNamespace::Global,
             );
@@ -99,7 +101,7 @@ impl Burner {
                 sub_dao: self.program_cache.sub_dao.clone(),
                 account_payer: self.program_cache.account_payer.clone(),
                 data_credits: self.program_cache.data_credits.clone(),
-                delegated_data_credits: pdas::delegated_data_credits(&gateway),
+                delegated_data_credits: pdas::delegated_data_credits(&payer),
                 token_program: spl_token::id(),
                 helium_sub_daos_program: helium_sub_daos::id(),
                 system_program: solana_program::system_program::id(),
@@ -149,7 +151,7 @@ impl Burner {
         .execute(&self.pool)
         .await?;
 
-        self.balances.lock().await.get_mut(&gateway).unwrap().burned -= amount as u64;
+        self.balances.lock().await.get_mut(&payer).unwrap().burned -= amount as u64;
 
         Ok(())
     }
@@ -158,7 +160,7 @@ impl Burner {
 #[derive(FromRow, Debug)]
 pub struct Burn {
     pub id: i32,
-    pub gateway: PublicKeyBinary,
+    pub payer: PublicKeyBinary,
     pub amount: i64,
 }
 
