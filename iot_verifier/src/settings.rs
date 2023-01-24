@@ -98,4 +98,12 @@ impl Settings {
     pub fn reward_offset_duration(&self) -> Duration {
         Duration::minutes(self.reward_offset_minutes)
     }
+
+    pub fn beacon_interval(&self) -> Duration {
+        Duration::seconds(self.beacon_interval)
+    }
+
+    pub fn beacon_interval_tolerance(&self) -> Duration {
+        Duration::seconds(self.beacon_interval_tolerance)
+    }
 }

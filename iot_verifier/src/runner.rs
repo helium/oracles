@@ -62,8 +62,8 @@ pub enum RunnerError {
 impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewRunnerError> {
         let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
-        let beacon_interval = ChronoDuration::seconds(settings.beacon_interval);
-        let beacon_interval_tolerance = ChronoDuration::seconds(settings.beacon_interval_tolerance);
+        let beacon_interval = settings.beacon_interval();
+        let beacon_interval_tolerance = settings.beacon_interval_tolerance();
         Ok(Self {
             pool,
             settings: settings.clone(),
