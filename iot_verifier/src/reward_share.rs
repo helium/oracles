@@ -1,6 +1,6 @@
 use crate::poc_report::ReportType;
 use chrono::{DateTime, Duration, Utc};
-use file_store::{iot_valid_poc::IotValidPoc, traits::TimestampEncode};
+use file_store::{iot_valid_poc::IotPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora as proto;
@@ -77,7 +77,7 @@ impl GatewayShare {
         .inserted)
     }
 
-    pub fn shares_from_poc(report: &IotValidPoc) -> impl Iterator<Item = Self> {
+    pub fn shares_from_poc(report: &IotPoc) -> impl Iterator<Item = Self> {
         let mut shares: Vec<Self> = Vec::new();
         let poc_id = report.poc_id.clone();
         let beacon_scaling_factor = report.beacon_report.hex_scale;
@@ -92,10 +92,13 @@ impl GatewayShare {
                 poc_id: poc_id.clone(),
             })
         };
-        for witness in &report.witness_reports {
+        for witness in &report.selected_witnesses {
             let witness_hex_scale = witness.hex_scale;
             let witness_reward_unit = witness.reward_unit;
-            if witness_hex_scale > Decimal::ZERO && witness_reward_unit > Decimal::ZERO {
+            if witness.status == proto::VerificationStatus::Valid
+                && witness_hex_scale > Decimal::ZERO
+                && witness_reward_unit > Decimal::ZERO
+            {
                 shares.push(Self {
                     hotspot_key: witness.report.pub_key.clone(),
                     reward_type: ReportType::Witness,

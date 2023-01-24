@@ -68,7 +68,7 @@ impl From<IotWitnessIngestReport> for LoraWitnessReportReqV1 {
             snr: v.report.snr,
             frequency: v.report.frequency,
             datarate: 0,
-            signature: vec![],
+            signature: v.report.signature,
             tmst: v.report.tmst,
         }
     }
@@ -130,8 +130,8 @@ impl From<IotWitnessReport> for LoraWitnessReportReqV1 {
             signal: v.signal,
             snr: v.snr,
             frequency: v.frequency,
-            datarate: 0,
-            signature: vec![],
+            datarate: v.datarate as i32,
+            signature: v.signature,
             tmst: v.tmst,
         }
     }

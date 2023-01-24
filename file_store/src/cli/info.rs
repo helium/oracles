@@ -8,7 +8,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use helium_proto::services::poc_lora::{
-    LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1,
+    LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
 };
 use helium_proto::{
     services::poc_mobile::{
@@ -107,7 +107,7 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::IotWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::IotValidPoc => LoraValidPocV1::decode(buf)
+        FileType::IotPoc => LoraPocV1::decode(buf)
             .map_err(Error::from)
             .and_then(|report| {
                 report.beacon_report.ok_or_else(|| {

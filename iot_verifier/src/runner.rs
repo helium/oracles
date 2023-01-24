@@ -2,7 +2,7 @@ use crate::{
     gateway_cache::GatewayCache,
     last_beacon::LastBeacon,
     metrics::Metrics,
-    poc::{Poc, VerificationStatus, VerifyWitnessesResult},
+    poc::{Poc, VerifyWitnessesResult},
     poc_report::Report,
     reward_share::GatewayShare,
     Settings,
@@ -15,7 +15,7 @@ use file_store::{
     file_upload::MessageSender as FileUploadSender,
     iot_beacon_report::IotBeaconIngestReport,
     iot_invalid_poc::{IotInvalidBeaconReport, IotInvalidWitnessReport},
-    iot_valid_poc::{IotValidBeaconReport, IotValidPoc},
+    iot_valid_poc::{IotPoc, IotValidBeaconReport, IotVerifiedWitnessReport},
     iot_witness_report::IotWitnessIngestReport,
     traits::{IngestId, MsgDecode, ReportId},
     FileType,
@@ -23,10 +23,12 @@ use file_store::{
 use futures::stream::{self, StreamExt};
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
-    LoraValidPocV1,
+    LoraPocV1, VerificationStatus,
 };
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time::{self, MissedTickBehavior};
@@ -100,8 +102,8 @@ impl Runner {
             .create()
             .await?;
 
-        let (iot_valid_poc_sink, mut iot_valid_poc_sink_server) = file_sink::FileSinkBuilder::new(
-            FileType::IotValidPoc,
+        let (iot_poc_sink, mut iot_poc_sink_server) = file_sink::FileSinkBuilder::new(
+            FileType::IotPoc,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
         )
@@ -117,7 +119,7 @@ impl Runner {
         let shutdown4 = shutdown.clone();
         tokio::spawn(async move { iot_invalid_beacon_sink_server.run(&shutdown2).await });
         tokio::spawn(async move { iot_invalid_witness_sink_server.run(&shutdown3).await });
-        tokio::spawn(async move { iot_valid_poc_sink_server.run(&shutdown4).await });
+        tokio::spawn(async move { iot_poc_sink_server.run(&shutdown4).await });
 
         loop {
             if shutdown.is_triggered() {
@@ -129,7 +131,7 @@ impl Runner {
                     match self.handle_db_tick(  shutdown.clone(),
                                                 &iot_invalid_beacon_sink,
                                                 &iot_invalid_witness_sink,
-                                                &iot_valid_poc_sink,
+                                                &iot_poc_sink,
                                                 gateway_cache, hex_density_map.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
@@ -147,7 +149,7 @@ impl Runner {
         _shutdown: triggered::Listener,
         iot_invalid_beacon_sink: &FileSinkClient,
         iot_invalid_witness_sink: &FileSinkClient,
-        iot_valid_poc_sink: &FileSinkClient,
+        iot_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
@@ -176,7 +178,7 @@ impl Runner {
                             db_beacon,
                             iot_invalid_beacon_sink,
                             iot_invalid_witness_sink,
-                            iot_valid_poc_sink,
+                            iot_poc_sink,
                             gateway_cache,
                             hdm,
                         )
@@ -200,7 +202,7 @@ impl Runner {
         db_beacon: Report,
         iot_invalid_beacon_sink: &FileSinkClient,
         iot_invalid_witness_sink: &FileSinkClient,
-        iot_valid_poc_sink: &FileSinkClient,
+        iot_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
@@ -257,7 +259,7 @@ impl Runner {
                     };
 
                     let witness_reward_units = poc_challengee_reward_unit(
-                        verified_witnesses_result.valid_witnesses.len() as u32,
+                        verified_witnesses_result.verified_witnesses.len() as u32,
                     )?;
 
                     verified_witnesses_result.update_reward_units(witness_reward_units);
@@ -274,36 +276,21 @@ impl Runner {
                     self.handle_valid_poc(
                         valid_beacon_report,
                         verified_witnesses_result,
-                        iot_valid_poc_sink,
-                        iot_invalid_witness_sink,
+                        iot_poc_sink,
                     )
                     .await?;
                 }
             }
             VerificationStatus::Invalid => {
                 // the beacon is invalid, which in turn renders all witnesses invalid
-                let Some(invalid_reason) = beacon_verify_result
-                    .invalid_reason else {
-                        anyhow::bail!("invalid_reason is None");
-                    };
                 self.handle_invalid_poc(
                     &beacon_report,
                     witnesses,
-                    invalid_reason,
+                    beacon_verify_result.invalid_reason,
                     iot_invalid_beacon_sink,
                     iot_invalid_witness_sink,
                 )
                 .await?;
-            }
-            VerificationStatus::Failed => {
-                // something went wrong whilst verifying the beacon report
-                // halt here and allow things to be reprocessed next tick
-                tracing::info!(
-                    "failed beacon. entropy: {:?}, addr: {:?}",
-                    beacon.data,
-                    beacon.pub_key
-                );
-                Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now()).await?;
             }
         }
         Ok(())
@@ -380,58 +367,43 @@ impl Runner {
         &self,
         valid_beacon_report: IotValidBeaconReport,
         witnesses_result: VerifyWitnessesResult,
-        iot_valid_poc_sink: &FileSinkClient,
-        iot_invalid_witness_sink: &FileSinkClient,
+        iot_poc_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
         let pub_key = valid_beacon_report.report.pub_key.clone();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
-        let valid_poc: IotValidPoc = IotValidPoc {
+        let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
+        let mut selected_witnesses = witnesses_result.verified_witnesses;
+        let unselected_witnesses = shuffle_and_split_witnesses(
+            &beacon_id,
+            &mut selected_witnesses,
+            max_witnesses_per_poc,
+        )?;
+        let iot_poc: IotPoc = IotPoc {
             poc_id: beacon_id,
             beacon_report: valid_beacon_report,
-            witness_reports: witnesses_result.valid_witnesses,
+            selected_witnesses,
+            unselected_witnesses,
         };
 
         let mut transaction = self.pool.begin().await?;
-        for reward_share in GatewayShare::shares_from_poc(&valid_poc) {
+        for reward_share in GatewayShare::shares_from_poc(&iot_poc) {
             reward_share.save(&mut transaction).await?;
         }
         // TODO: expand this transaction to cover all of the database access below?
         transaction.commit().await?;
 
-        let valid_poc_proto: LoraValidPocV1 = valid_poc.into();
+        let poc_proto: LoraPocV1 = iot_poc.into();
         // save the poc to s3, if write fails update attempts and go no further
         // allow the poc to be reprocessed next tick
-        match iot_valid_poc_sink.write(valid_poc_proto, []).await {
+        match iot_poc_sink.write(poc_proto, []).await {
             Ok(_) => (),
             Err(err) => {
                 tracing::error!("failed to save invalid_witness_report to s3, {err}");
                 Report::update_attempts(&self.pool, &beacon_report_id, Utc::now()).await?;
                 return Ok(());
-            }
-        }
-
-        // save invalid witnesses to s3, ignore any failed witness writes
-        // taking the lossly approach here as if we re attempt the POC later
-        // we will have to clean out any sucessful write of the valid poc above
-        // so if a report fails from this point on, it shall be lost for ever more
-        for invalid_witness_report in witnesses_result.invalid_witnesses {
-            let invalid_reason = invalid_witness_report.reason;
-            let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
-                invalid_witness_report.into();
-            match iot_invalid_witness_sink
-                .write(
-                    invalid_witness_report_proto,
-                    &[("reason", invalid_reason.as_str_name())],
-                )
-                .await
-            {
-                Ok(_) => (),
-                Err(err) => {
-                    tracing::error!("failed to save invalid_witness_report to s3, {err}");
-                }
             }
         }
         // update timestamp of last beacon for the beaconer
@@ -457,4 +429,87 @@ fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
         }
     };
     Ok(reward_units.round_dp(SCALING_PRECISION))
+}
+
+/// maybe shuffle & split the verified witness list
+// if the number of witnesses exceeds our cap
+// split the list into two
+// one representing selected witnesses
+// the other representing unselected witnesses
+fn shuffle_and_split_witnesses(
+    poc_id: &[u8],
+    witnesses: &mut Vec<IotVerifiedWitnessReport>,
+    max_count: usize,
+) -> anyhow::Result<Vec<IotVerifiedWitnessReport>> {
+    if witnesses.len() <= max_count {
+        return Ok(Vec::new());
+    }
+    // Seed a random number from the poc_id for shuffling the witnesses
+    let seed = Sha256::digest(poc_id);
+    let mut rng = StdRng::from_seed(seed.into());
+    witnesses.shuffle(&mut rng);
+    let unselected_witnesses = witnesses.split_off(max_count);
+    Ok(unselected_witnesses)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use file_store::iot_witness_report::IotWitnessReport;
+    use helium_crypto::PublicKeyBinary;
+    use helium_proto::services::poc_lora::InvalidReason;
+    use helium_proto::DataRate;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    #[test]
+    fn max_witnesses_per_poc_test() {
+        let key1 =
+            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
+                .unwrap();
+        let report = IotWitnessReport {
+            pub_key: key1,
+            data: vec![],
+            timestamp: Utc::now(),
+            tmst: 1,
+            signal: 100,
+            snr: 10,
+            frequency: 68000,
+            datarate: DataRate::Sf11bw125,
+            signature: vec![],
+        };
+
+        let witness = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report,
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::ReasonNone,
+            participant_side: InvalidParticipantSide::SideNone,
+        };
+        let poc_id: Vec<u8> = vec![0];
+        let max_witnesses_per_poc = 14;
+
+        // list of 20 witnesses
+        let mut selected_witnesses = vec![witness.clone(); 20];
+        assert_eq!(20, selected_witnesses.len());
+        // after shuffle and split we should have 14 selected and 6 unselected
+        let unselected_witnesses =
+            shuffle_and_split_witnesses(&poc_id, &mut selected_witnesses, max_witnesses_per_poc)
+                .unwrap();
+        assert_eq!(14, selected_witnesses.len());
+        assert_eq!(6, unselected_witnesses.len());
+
+        // list of 10 witnesses
+        let mut selected_witnesses2 = vec![witness; 10];
+        assert_eq!(10, selected_witnesses2.len());
+        // after shuffle and split we should have 10 selected and 0 unselected
+        let unselected_witnesses2 =
+            shuffle_and_split_witnesses(&poc_id, &mut selected_witnesses2, max_witnesses_per_poc)
+                .unwrap();
+        assert_eq!(10, selected_witnesses2.len());
+        assert_eq!(0, unselected_witnesses2.len());
+    }
 }

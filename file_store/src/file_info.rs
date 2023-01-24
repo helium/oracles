@@ -98,7 +98,7 @@ pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
 pub const ENTROPY_REPORT: &str = "entropy_report";
 pub const IOT_BEACON_INGEST_REPORT: &str = "iot_beacon_ingest_report";
 pub const IOT_WITNESS_INGEST_REPORT: &str = "iot_witness_ingest_report";
-pub const IOT_VALID_POC: &str = "iot_valid_poc";
+pub const IOT_POC: &str = "iot_poc";
 pub const IOT_INVALID_BEACON_REPORT: &str = "iot_invalid_beacon";
 pub const IOT_INVALID_WITNESS_REPORT: &str = "iot_invalid_witness";
 pub const SPEEDTEST_AVG: &str = "speedtest_avg";
@@ -121,7 +121,7 @@ pub enum FileType {
     EntropyReport,
     IotBeaconIngestReport,
     IotWitnessIngestReport,
-    IotValidPoc,
+    IotPoc,
     IotInvalidBeaconReport,
     IotInvalidWitnessReport,
     SpeedtestAvg,
@@ -145,7 +145,7 @@ impl fmt::Display for FileType {
             Self::EntropyReport => ENTROPY_REPORT,
             Self::IotBeaconIngestReport => IOT_BEACON_INGEST_REPORT,
             Self::IotWitnessIngestReport => IOT_WITNESS_INGEST_REPORT,
-            Self::IotValidPoc => IOT_VALID_POC,
+            Self::IotPoc => IOT_POC,
             Self::IotInvalidBeaconReport => IOT_INVALID_BEACON_REPORT,
             Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
@@ -172,7 +172,7 @@ impl FileType {
             Self::EntropyReport => ENTROPY_REPORT,
             Self::IotBeaconIngestReport => IOT_BEACON_INGEST_REPORT,
             Self::IotWitnessIngestReport => IOT_WITNESS_INGEST_REPORT,
-            Self::IotValidPoc => IOT_VALID_POC,
+            Self::IotPoc => IOT_POC,
             Self::IotInvalidBeaconReport => IOT_INVALID_BEACON_REPORT,
             Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
@@ -199,7 +199,7 @@ impl FromStr for FileType {
             ENTROPY_REPORT => Self::EntropyReport,
             IOT_BEACON_INGEST_REPORT => Self::IotBeaconIngestReport,
             IOT_WITNESS_INGEST_REPORT => Self::IotWitnessIngestReport,
-            IOT_VALID_POC => Self::IotValidPoc,
+            IOT_POC => Self::IotPoc,
             IOT_INVALID_BEACON_REPORT => Self::IotInvalidBeaconReport,
             IOT_INVALID_WITNESS_REPORT => Self::IotInvalidWitnessReport,
             SPEEDTEST_AVG => Self::SpeedtestAvg,

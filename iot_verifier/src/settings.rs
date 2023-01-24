@@ -32,6 +32,8 @@ pub struct Settings {
     /// of the reward period + reward_offset_minutes
     #[serde(default = "default_reward_offset_minutes")]
     pub reward_offset_minutes: i64,
+    #[serde(default = "default_max_witnesses_per_poc")]
+    pub max_witnesses_per_poc: u64,
 }
 
 pub fn default_log() -> String {
@@ -48,6 +50,10 @@ fn default_reward_period() -> i64 {
 
 fn default_reward_offset_minutes() -> i64 {
     30
+}
+
+pub fn default_max_witnesses_per_poc() -> u64 {
+    14
 }
 
 impl Settings {

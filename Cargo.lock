@@ -1891,7 +1891,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#dc3b7bbbf1f946b4d70c3d592df036ea3e57e61c"
+source = "git+https://github.com/helium/proto?branch=master#8172a605903fb6730a918075c077848bd664c4c4"
 dependencies = [
  "bytes",
  "prost",
@@ -2207,6 +2207,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
+ "rand",
  "retainer",
  "rust_decimal",
  "rust_decimal_macros",

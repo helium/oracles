@@ -132,7 +132,7 @@ async fn submit_txns(
     settings: Settings,
 ) -> anyhow::Result<()> {
     let file_list = store
-        .list_all(FileType::IotValidPoc, after_utc, before_utc)
+        .list_all(FileType::IotPoc, after_utc, before_utc)
         .await?;
 
     let mut stream =

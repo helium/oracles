@@ -52,3 +52,4 @@ rust_decimal_macros = {workspace = true}
 humantime = {workspace = true}
 twox-hash = {workspace = true}
 itertools = {workspace = true}
+rand = {workspace = true}

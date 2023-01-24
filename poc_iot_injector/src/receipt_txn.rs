@@ -1,6 +1,6 @@
 use base64::Engine;
 use file_store::{
-    iot_valid_poc::{IotValidBeaconReport, IotValidPoc, IotValidWitnessReport},
+    iot_valid_poc::{IotPoc, IotValidBeaconReport, IotVerifiedWitnessReport},
     traits::MsgDecode,
 };
 use helium_crypto::{Keypair, Sign};
@@ -42,16 +42,23 @@ pub fn handle_report_msg(
 ) -> Result<TxnDetails, TxnConstructionError> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
-    let iot_valid_poc = IotValidPoc::decode(msg)?;
+    let iot_poc = IotPoc::decode(msg)?;
 
-    let mut poc_witnesses = construct_poc_witnesses(iot_valid_poc.witness_reports);
+    // verifier now places a cap on the number of selected witnesses
+    // so squishing here is now duplicate
+    // but leaving it in as backup in case
+    // verifier and injector diverge on this point
+    // the squishing will only take place anyway if the
+    // selected witness count exceeds max_witnesses_per_receipt
+    // which it should not
+    let mut poc_witnesses = construct_poc_witnesses(iot_poc.selected_witnesses);
     maybe_squish_witnesses(
         &mut poc_witnesses,
-        &iot_valid_poc.poc_id,
+        &iot_poc.poc_id,
         max_witnesses_per_receipt as usize,
     );
 
-    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(iot_valid_poc.beacon_report)?;
+    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(iot_poc.beacon_report)?;
 
     // TODO: Double check whether the gateway in the poc_receipt is challengee?
     let path_element =
@@ -129,7 +136,7 @@ fn construct_path_element(
 }
 
 fn construct_poc_witnesses(
-    witness_reports: Vec<IotValidWitnessReport>,
+    witness_reports: Vec<IotVerifiedWitnessReport>,
 ) -> Vec<BlockchainPocWitnessV1> {
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
