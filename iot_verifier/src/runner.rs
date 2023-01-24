@@ -292,16 +292,6 @@ impl Runner {
                 )
                 .await?;
             }
-            VerificationStatus::Failed => {
-                // something went wrong whilst verifying the beacon report
-                // halt here and allow things to be reprocessed next tick
-                tracing::info!(
-                    "failed beacon. entropy: {:?}, addr: {:?}",
-                    beacon.data,
-                    beacon.pub_key
-                );
-                Report::update_attempts(&self.pool, &beacon_report.ingest_id(), Utc::now()).await?;
-            }
         }
         Ok(())
     }

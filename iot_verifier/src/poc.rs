@@ -173,17 +173,6 @@ impl Poc {
                                 verified_witnesses.push(invalid_witness)
                             }
                         }
-                        VerificationStatus::Failed => {
-                            // if a witness check returns failed it suggests something
-                            // unexpected has occurred. Fail the witness
-                            let failed_reason = InvalidReason::UnknownError;
-                            if let Ok(failed_witness) = self
-                                .failed_witness_report(failed_reason, witness_report)
-                                .await
-                            {
-                                failed_witnesses.push(failed_witness)
-                            }
-                        }
                     }
                 }
                 Err(err) => {

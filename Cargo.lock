@@ -1891,7 +1891,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/valid-poc-to-poc#ee999a4476c70aeeefc25ada90e2d91a848364ab"
+source = "git+https://github.com/helium/proto?branch=andymck/valid-poc-to-poc#b8c468ff86a83f5963fc0ba5e10079d6bf4ba883"
 dependencies = [
  "bytes",
  "prost",
