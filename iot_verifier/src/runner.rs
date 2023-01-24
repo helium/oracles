@@ -375,14 +375,12 @@ impl Runner {
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
         let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
-        // shuffle the verified witness list
-        // and then if the number of witnesses exceeds our cap
-        // split the list into two
-        // one representing selected witnesses
-        // the other representing unselected witnesses
         let mut selected_witnesses = witnesses_result.verified_witnesses;
-        maybe_shuffle_witnesses(&beacon_id, &mut selected_witnesses, max_witnesses_per_poc);
-        let unselected_witnesses = selected_witnesses.split_off(max_witnesses_per_poc);
+        let unselected_witnesses = shuffle_and_split_witnesses(
+            &beacon_id,
+            &mut selected_witnesses,
+            max_witnesses_per_poc,
+        )?;
         let iot_poc: IotPoc = IotPoc {
             poc_id: beacon_id,
             beacon_report: valid_beacon_report,
@@ -433,17 +431,23 @@ fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
     Ok(reward_units.round_dp(SCALING_PRECISION))
 }
 
-/// squish verified witnesses if the length is > max_count
-fn maybe_shuffle_witnesses(
+/// maybe shuffle & split the verified witness list
+// if the number of witnesses exceeds our cap
+// split the list into two
+// one representing selected witnesses
+// the other representing unselected witnesses
+fn shuffle_and_split_witnesses(
     poc_id: &Vec<u8>,
     witnesses: &mut Vec<IotVerifiedWitnessReport>,
     max_count: usize,
-) {
+) -> anyhow::Result<Vec<IotVerifiedWitnessReport>> {
     if witnesses.len() <= max_count {
-        return;
+        return Ok(Vec::new());
     }
     // Seed a random number from the poc_id for shuffling the witnesses
     let seed = Sha256::digest(poc_id);
     let mut rng = StdRng::from_seed(seed.into());
     witnesses.shuffle(&mut rng);
+    let unselected_witnesses = witnesses.split_off(max_count);
+    Ok(unselected_witnesses)
 }
