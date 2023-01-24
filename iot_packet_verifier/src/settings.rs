@@ -1,5 +1,6 @@
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
+use solana_sdk::pubkey::Pubkey;
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -12,6 +13,12 @@ pub struct Settings {
     pub cache: String,
     /// Solana RpcClient URL:
     pub solana_rpc: String,
+    pub dc_mint: Pubkey,
+    pub dnt_mint: Pubkey,
+    pub hnt_mint: Pubkey,
+    pub dc_burn_authority: Pubkey,
+    pub escrow_account: Pubkey,
+    pub registrar: Pubkey,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,

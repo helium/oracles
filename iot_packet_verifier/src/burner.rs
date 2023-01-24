@@ -1,6 +1,7 @@
 use crate::{
     balances::{Balance, Balances},
     pdas,
+    settings::Settings,
 };
 use anchor_client::{RequestBuilder, RequestNamespace};
 use chrono::Utc;
@@ -36,11 +37,16 @@ pub enum BurnError {
 const BURN_THRESHOLD: i64 = 10_000;
 
 impl Burner {
-    pub fn new(pool: &Pool<Postgres>, provider: Arc<RpcClient>, balances: &Balances) -> Self {
+    pub fn new(
+        settings: &Settings,
+        pool: &Pool<Postgres>,
+        provider: Arc<RpcClient>,
+        balances: &Balances,
+    ) -> Self {
         Self {
             pool: pool.clone(),
             balances: balances.balances(),
-            program_cache: BurnProgramCache::new(),
+            program_cache: BurnProgramCache::new(settings),
             provider,
         }
     }
@@ -67,7 +73,7 @@ impl Burner {
         let (sub_dao_epoch_info, _) = Pubkey::find_program_address(
             &[
                 "sub_dao_epoch_info".as_bytes(),
-                crate::SUB_DAO.as_ref(),
+                self.program_cache.sub_dao.as_ref(),
                 &epoch.to_le_bytes(),
             ],
             &helium_sub_daos::ID,
@@ -101,16 +107,17 @@ impl Burner {
                 sub_dao: self.program_cache.sub_dao.clone(),
                 account_payer: self.program_cache.account_payer.clone(),
                 data_credits: self.program_cache.data_credits.clone(),
-                delegated_data_credits: pdas::delegated_data_credits(&payer),
+                delegated_data_credits: pdas::delegated_data_credits(
+                    &self.program_cache.sub_dao,
+                    &payer,
+                ),
                 token_program: spl_token::id(),
                 helium_sub_daos_program: helium_sub_daos::id(),
                 system_program: solana_program::system_program::id(),
-
-                // Fields that I do not know how to populate:
-                dc_burn_authority: todo!(),
-                dc_mint: todo!(),
-                escrow_account: todo!(),
-                registrar: todo!(),
+                dc_burn_authority: self.program_cache.dc_burn_authority.clone(),
+                dc_mint: self.program_cache.dc_mint.clone(),
+                escrow_account: self.program_cache.escrow_account.clone(),
+                registrar: self.program_cache.registrar.clone(),
             };
             let args = instruction::BurnDelegatedDataCreditsV0 {
                 args: data_credits::BurnDelegatedDataCreditsArgsV0 {
@@ -170,22 +177,26 @@ pub struct BurnProgramCache {
     pub data_credits: Pubkey,
     pub sub_dao: Pubkey,
     pub dao: Pubkey,
+    pub dc_mint: Pubkey,
+    pub dc_burn_authority: Pubkey,
+    pub escrow_account: Pubkey,
+    pub registrar: Pubkey,
 }
 
 impl BurnProgramCache {
-    pub fn new() -> Self {
+    pub fn new(settings: &Settings) -> Self {
         let (account_payer, _) =
             Pubkey::find_program_address(&["account_payer".as_bytes()], &data_credits::ID);
         let (data_credits, _) = Pubkey::find_program_address(
-            &["dc".as_bytes(), crate::DC_MINT.as_ref()],
+            &["dc".as_bytes(), settings.dc_mint.as_ref()],
             &data_credits::ID,
         );
         let (sub_dao, _) = Pubkey::find_program_address(
-            &["sub_dao".as_bytes(), crate::DNT_MINT.as_ref()],
+            &["sub_dao".as_bytes(), settings.dnt_mint.as_ref()],
             &helium_sub_daos::ID,
         );
         let (dao, _) = Pubkey::find_program_address(
-            &["dao".as_bytes(), crate::HNT_MINT.as_ref()],
+            &["dao".as_bytes(), settings.hnt_mint.as_ref()],
             &helium_sub_daos::ID,
         );
         Self {
@@ -193,6 +204,10 @@ impl BurnProgramCache {
             data_credits,
             sub_dao,
             dao,
+            dc_mint: settings.dc_mint.clone(),
+            dc_burn_authority: settings.dc_burn_authority.clone(),
+            escrow_account: settings.escrow_account.clone(),
+            registrar: settings.registrar.clone(),
         }
     }
 }

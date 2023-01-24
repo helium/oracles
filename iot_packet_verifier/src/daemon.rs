@@ -12,6 +12,7 @@ use helium_proto::services::{
     Channel,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::time;
@@ -21,6 +22,7 @@ struct Daemon {
     file_store: FileStore,
     balances: Balances,
     org_client: OrgClient<Channel>,
+    sub_dao: Pubkey,
     valid_packets_tx: file_sink::MessageSender,
     invalid_packets_tx: file_sink::MessageSender,
 }
@@ -81,7 +83,7 @@ impl Daemon {
             // TODO: Use transactions and write manifests
             if self
                 .balances
-                .debit_if_sufficient(payer, debit_amount)
+                .debit_if_sufficient(&self.sub_dao, payer, debit_amount)
                 .await?
             {
                 // Add the amount burned into the pending burns table
@@ -144,11 +146,16 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     // Set up the solana RpcClient:
     let rpc_client = Arc::new(RpcClient::new(settings.solana_rpc.clone()));
 
+    let (sub_dao, _) = Pubkey::find_program_address(
+        &["sub_dao".as_bytes(), settings.dnt_mint.as_ref()],
+        &helium_sub_daos::ID,
+    );
+
     // Set up the balance tracker:
-    let balances = Balances::new(&pool, rpc_client.clone()).await?;
+    let balances = Balances::new(&pool, &sub_dao, rpc_client.clone()).await?;
 
     // Set up the balance burner:
-    let burner = Burner::new(&pool, rpc_client, &balances);
+    let burner = Burner::new(settings, &pool, rpc_client, &balances);
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
@@ -184,6 +191,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         file_store,
         balances,
         org_client,
+        sub_dao,
         valid_packets_tx,
         invalid_packets_tx,
     };
