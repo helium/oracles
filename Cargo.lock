@@ -1276,7 +1276,7 @@ dependencies = [
 name = "denylist"
 version = "0.1.0"
 dependencies = [
- "base64 0.21.0",
+ "base64 0.13.1",
  "bincode",
  "bytes",
  "chrono",
@@ -1455,7 +1455,7 @@ dependencies = [
  "async-compression",
  "aws-config",
  "aws-sdk-s3",
- "base64 0.21.0",
+ "base64 0.13.1",
  "blake3",
  "bytes",
  "chrono",
@@ -2110,7 +2110,7 @@ name = "ingest"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.21.0",
+ "base64 0.13.1",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -2150,7 +2150,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.0",
+ "base64 0.13.1",
  "clap 3.2.23",
  "config",
  "db-store",
@@ -2181,7 +2181,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.0",
+ "base64 0.13.1",
  "blake3",
  "chrono",
  "clap 3.2.23",
@@ -2556,7 +2556,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.0",
+ "base64 0.13.1",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -2595,7 +2595,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.0",
+ "base64 0.13.1",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -2930,7 +2930,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.6.3",
- "base64 0.21.0",
+ "base64 0.13.1",
  "bs58",
  "chrono",
  "clap 3.2.23",
@@ -2964,7 +2964,7 @@ name = "poc-iot-injector"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.21.0",
+ "base64 0.13.1",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -3394,7 +3394,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.0",
+ "base64 0.13.1",
  "chrono",
  "clap 3.2.23",
  "config",
