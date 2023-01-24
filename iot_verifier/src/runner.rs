@@ -451,3 +451,65 @@ fn shuffle_and_split_witnesses(
     let unselected_witnesses = witnesses.split_off(max_count);
     Ok(unselected_witnesses)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use file_store::iot_witness_report::IotWitnessReport;
+    use helium_crypto::PublicKeyBinary;
+    use helium_proto::services::poc_lora::InvalidReason;
+    use helium_proto::DataRate;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    #[test]
+    fn max_witnesses_per_poc_test() {
+        let key1 =
+            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
+                .unwrap();
+        let report = IotWitnessReport {
+            pub_key: key1,
+            data: vec![],
+            timestamp: Utc::now(),
+            tmst: 1,
+            signal: 100,
+            snr: 10,
+            frequency: 68000,
+            datarate: DataRate::Sf11bw125,
+            signature: vec![],
+        };
+
+        let witness = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report,
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::ReasonNone,
+            participant_side: InvalidParticipantSide::SideNone,
+        };
+        let poc_id: Vec<u8> = vec![0];
+        let max_witnesses_per_poc = 14;
+
+        // list of 20 witnesses
+        let mut selected_witnesses = vec![witness.clone(); 20];
+        assert_eq!(20, selected_witnesses.len());
+        // after shuffle and split we should have 14 selected and 6 unselected
+        let unselected_witnesses =
+            shuffle_and_split_witnesses(&poc_id, &mut selected_witnesses, max_witnesses_per_poc)
+                .unwrap();
+        assert_eq!(14, selected_witnesses.len());
+        assert_eq!(6, unselected_witnesses.len());
+
+        // list of 10 witnesses
+        let mut selected_witnesses2 = vec![witness.clone(); 10];
+        assert_eq!(10, selected_witnesses2.len());
+        // after shuffle and split we should have 10 selected and 0 unselected
+        let unselected_witnesses2 =
+            shuffle_and_split_witnesses(&poc_id, &mut selected_witnesses2, max_witnesses_per_poc)
+                .unwrap();
+        assert_eq!(10, selected_witnesses2.len());
+        assert_eq!(0, unselected_witnesses2.len());
+    }
+}
