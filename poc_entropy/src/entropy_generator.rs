@@ -1,3 +1,4 @@
+use base64::Engine;
 use chrono::Utc;
 use file_store::file_sink;
 use futures::TryFutureExt;
@@ -46,11 +47,11 @@ where
     T: AsRef<[u8]>,
     S: serde::ser::Serializer,
 {
-    serializer.serialize_str(&base64::encode(key.as_ref()))
+    serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(key.as_ref()))
 }
 impl std::fmt::Display for Entropy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&base64::encode(&self.data))
+        f.write_str(&base64::engine::general_purpose::STANDARD.encode(&self.data))
     }
 }
 

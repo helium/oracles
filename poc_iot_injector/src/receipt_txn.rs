@@ -1,3 +1,4 @@
+use base64::Engine;
 use file_store::{
     iot_valid_poc::{IotValidBeaconReport, IotValidPoc, IotValidWitnessReport},
     traits::MsgDecode,
@@ -69,7 +70,7 @@ pub fn handle_report_msg(
 /// Maybe squish poc_witnesses if the length is > max_witnesses_per_receipt
 fn maybe_squish_witnesses(
     poc_witnesses: &mut Vec<BlockchainPocWitnessV1>,
-    poc_id: &Vec<u8>,
+    poc_id: &[u8],
     max_witnesses_per_receipt: usize,
 ) {
     if poc_witnesses.len() <= max_witnesses_per_receipt {
@@ -202,10 +203,10 @@ fn construct_poc_receipt(
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
     let mut txn = txn.clone();
     txn.signature = vec![];
-    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
+    let digest = Sha256::digest(&txn.encode_to_vec()).to_vec();
     (
         digest.clone(),
-        base64::encode_config(&digest, base64::URL_SAFE_NO_PAD),
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&digest),
     )
 }
 
