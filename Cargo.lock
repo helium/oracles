@@ -1276,7 +1276,7 @@ dependencies = [
 name = "denylist"
 version = "0.1.0"
 dependencies = [
- "base64 0.13.1",
+ "base64 0.21.0",
  "bincode",
  "bytes",
  "chrono",
@@ -1285,7 +1285,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "structopt",
  "thiserror",
  "tracing",
@@ -1455,7 +1455,7 @@ dependencies = [
  "async-compression",
  "aws-config",
  "aws-sdk-s3",
- "base64 0.13.1",
+ "base64 0.21.0",
  "blake3",
  "bytes",
  "chrono",
@@ -1478,7 +1478,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "strum",
  "strum_macros",
  "tempfile",
@@ -1882,7 +1882,7 @@ dependencies = [
  "p256",
  "rand_core",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "signature",
  "sqlx",
  "thiserror",
@@ -2110,7 +2110,7 @@ name = "ingest"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.13.1",
+ "base64 0.21.0",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -2126,7 +2126,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "tokio",
  "tonic",
@@ -2150,7 +2150,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.21.0",
  "clap 3.2.23",
  "config",
  "db-store",
@@ -2181,7 +2181,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.21.0",
  "blake3",
  "chrono",
  "clap 3.2.23",
@@ -2212,7 +2212,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2555,7 +2555,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.21.0",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -2578,7 +2578,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2594,7 +2594,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.21.0",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -2618,7 +2618,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2929,7 +2929,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.6.3",
- "base64",
+ "base64 0.21.0",
  "bs58",
  "chrono",
  "clap 3.2.23",
@@ -2948,7 +2948,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "tokio",
  "tonic",
@@ -2963,7 +2963,7 @@ name = "poc-iot-injector"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.13.1",
+ "base64 0.21.0",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -2985,7 +2985,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3336,12 +3336,12 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.11.13"
+version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68cc60575865c7831548863cc02356512e3f1dc2f3f82cb837d7fc4cc8f3c97c"
+checksum = "21eed90ec8570952d53b772ecf8f206aa1ec9a3d76b2521c56c42973f2d91ee9"
 dependencies = [
  "async-compression",
- "base64 0.13.1",
+ "base64 0.21.0",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -3393,7 +3393,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.21.0",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -3415,7 +3415,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",

@@ -5,6 +5,7 @@ use crate::{
     Settings,
 };
 use anyhow::{bail, Result};
+use base64::Engine;
 use chrono::{Duration, Utc};
 use db_store::{meta, MetaValue};
 use file_store::{traits::TimestampDecode, FileInfo, FileStore, FileType};
@@ -175,7 +176,7 @@ impl Server {
             return Ok(());
         }
 
-        let txn_hash = &base64::encode_config(&envelope.txn_hash, base64::URL_SAFE_NO_PAD);
+        let txn_hash = &base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&envelope.txn_hash);
         let txn_ts = envelope.timestamp.to_timestamp()?;
         PendingTxn::update(&self.pool, txn_hash, Status::Cleared, txn_ts).await?;
         server_metrics::increment_cleared_txns();
@@ -427,8 +428,8 @@ pub fn construct_txn(
 fn hash_txn_b64_url(txn: &BlockchainTxnSubnetworkRewardsV1) -> String {
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
-    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
-    base64::encode_config(digest, base64::URL_SAFE_NO_PAD)
+    let digest = Sha256::digest(&txn.encode_to_vec()).to_vec();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
 }
 
 fn sign_txn(txn: &BlockchainTxnSubnetworkRewardsV1, keypair: &Keypair) -> Result<Vec<u8>> {
