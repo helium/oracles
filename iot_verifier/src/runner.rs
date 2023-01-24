@@ -437,7 +437,7 @@ fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
 // one representing selected witnesses
 // the other representing unselected witnesses
 fn shuffle_and_split_witnesses(
-    poc_id: &Vec<u8>,
+    poc_id: &[u8],
     witnesses: &mut Vec<IotVerifiedWitnessReport>,
     max_count: usize,
 ) -> anyhow::Result<Vec<IotVerifiedWitnessReport>> {
