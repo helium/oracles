@@ -34,17 +34,17 @@ pub struct Settings {
     pub reward_offset_minutes: i64,
     #[serde(default = "default_max_witnesses_per_poc")]
     pub max_witnesses_per_poc: u64,
-    /// beacon_interval (in seconds)
+    /// The cadence at which hotspots are permitted to beacon (in seconds)
     #[serde(default = "default_beacon_interval")]
     pub beacon_interval: i64,
-    /// beacon_interval_tolerance (in seconds)
+    /// Tolerance applied to beacon intervals within which beacons will be accepted (in seconds)
     #[serde(default = "default_beacon_interval_tolerance")]
     pub beacon_interval_tolerance: i64,
 }
 
 // Default: 10 minutes
 pub fn default_beacon_interval_tolerance() -> i64 {
-    10 * 60 * 60
+    10 * 60
 }
 
 // Default: 6 hours
