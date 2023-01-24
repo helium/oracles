@@ -16,7 +16,6 @@ use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
     GatewayStakingMode, Region,
 };
-use lazy_static::lazy_static;
 use node_follower::gateway_resp::GatewayInfo;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -29,13 +28,6 @@ pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
 pub const R: f64 = 6.371e6;
 
-lazy_static! {
-    /// the cadence at which hotspots are permitted to beacon
-    static ref BEACON_INTERVAL: Duration = Duration::hours(6);
-    /// a tolerance applied to beacon intervals within which beacons
-    /// will be accepted
-    static ref BEACON_INTERVAL_TOLERANCE: Duration = Duration::minutes(10);
-}
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
@@ -104,6 +96,8 @@ impl Poc {
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
         pool: &PgPool,
+        beacon_interval: Duration,
+        beacon_interval_tolerance: Duration,
     ) -> Result<VerifyBeaconResult, VerificationError> {
         let beacon = &self.beacon_report.report;
         let beaconer_pub_key = beacon.pub_key.clone();
@@ -118,7 +112,12 @@ impl Poc {
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
         match self
-            .do_beacon_verifications(last_beacon, &beaconer_info)
+            .do_beacon_verifications(
+                last_beacon,
+                &beaconer_info,
+                beacon_interval,
+                beacon_interval_tolerance,
+            )
             .await
         {
             Ok(()) => {
@@ -233,6 +232,8 @@ impl Poc {
         &mut self,
         last_beacon: Option<LastBeacon>,
         beaconer_info: &GatewayInfo,
+        beacon_interval: Duration,
+        beacon_interval_tolerance: Duration,
     ) -> GenericVerifyResult {
         tracing::debug!(
             "verifying beacon from beaconer: {:?}",
@@ -240,7 +241,12 @@ impl Poc {
         );
         let beacon_received_ts = self.beacon_report.received_timestamp;
         verify_entropy(self.entropy_start, self.entropy_end, beacon_received_ts)?;
-        verify_beacon_schedule(&last_beacon, beacon_received_ts)?;
+        verify_beacon_schedule(
+            &last_beacon,
+            beacon_received_ts,
+            beacon_interval,
+            beacon_interval_tolerance,
+        )?;
         verify_gw_location(beaconer_info.location)?;
         verify_gw_capability(beaconer_info.staking_mode)?;
         tracing::debug!(
@@ -357,11 +363,13 @@ impl Poc {
 fn verify_beacon_schedule(
     last_beacon: &Option<LastBeacon>,
     beacon_received_ts: DateTime<Utc>,
+    beacon_interval: Duration,
+    beacon_interval_tolerance: Duration,
 ) -> GenericVerifyResult {
     match last_beacon {
         Some(last_beacon) => {
             let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-            if interval_since_last_beacon < (*BEACON_INTERVAL - *BEACON_INTERVAL_TOLERANCE) {
+            if interval_since_last_beacon < (beacon_interval - beacon_interval_tolerance) {
                 tracing::debug!(
                     "beacon verification failed, reason:
                         IrregularInterval. Seconds since last beacon {:?}",
@@ -753,19 +761,38 @@ mod tests {
     fn test_verify_beacon_schedule() {
         let now = Utc::now();
         let id: &str = "test_id";
+        let beacon_interval = Duration::hours(6);
+        let beacon_interval_tolerance = Duration::minutes(10);
         let last_beacon = Some(LastBeacon {
             id: id.as_bytes().to_vec(),
-            timestamp: now - *BEACON_INTERVAL,
+            timestamp: now - beacon_interval,
         });
         // last beacon was BEACON_INTERVAL in the past, expectation pass
-        assert!(verify_beacon_schedule(&last_beacon, now).is_ok());
+        assert!(verify_beacon_schedule(
+            &last_beacon,
+            now,
+            beacon_interval,
+            beacon_interval_tolerance
+        )
+        .is_ok());
         // last beacon was BEACON_INTERVAL + 1hr in the past, expectation pass
-        assert!(verify_beacon_schedule(&last_beacon, now + Duration::minutes(60)).is_ok());
+        assert!(verify_beacon_schedule(
+            &last_beacon,
+            now + Duration::minutes(60),
+            beacon_interval,
+            beacon_interval_tolerance
+        )
+        .is_ok());
         // last beacon was BEACON_INTERVAL - 1 hr, too soon after our last beacon,
         // expectation fail
         assert_eq!(
             Err(InvalidReason::IrregularInterval),
-            verify_beacon_schedule(&last_beacon, now - Duration::minutes(60))
+            verify_beacon_schedule(
+                &last_beacon,
+                now - Duration::minutes(60),
+                beacon_interval,
+                beacon_interval_tolerance
+            )
         );
         // last beacon was just outside of our tolerance period by 2 mins
         // therefore beacon too soon, expectation fail
@@ -773,18 +800,24 @@ mod tests {
             Err(InvalidReason::IrregularInterval),
             verify_beacon_schedule(
                 &last_beacon,
-                now - (*BEACON_INTERVAL_TOLERANCE + Duration::minutes(2))
+                now - (beacon_interval_tolerance + Duration::minutes(2)),
+                beacon_interval,
+                beacon_interval_tolerance
             )
         );
         // last beacon was just inside of our tolerance period by 2 mins
         // expectation pass
         assert!(verify_beacon_schedule(
             &last_beacon,
-            now - (*BEACON_INTERVAL_TOLERANCE - Duration::minutes(2))
+            now - (beacon_interval_tolerance - Duration::minutes(2)),
+            beacon_interval,
+            beacon_interval_tolerance
         )
         .is_ok());
         //we dont have any last beacon data, expectation pass
-        assert!(verify_beacon_schedule(&None, now).is_ok());
+        assert!(
+            verify_beacon_schedule(&None, now, beacon_interval, beacon_interval_tolerance).is_ok()
+        );
     }
 
     #[test]
