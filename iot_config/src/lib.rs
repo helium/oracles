@@ -2,6 +2,7 @@ pub mod gateway_service;
 pub mod lora_field;
 pub mod org;
 pub mod org_service;
+pub mod region_map;
 pub mod route;
 pub mod route_service;
 pub mod session_key_service;

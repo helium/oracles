@@ -64,6 +64,9 @@ impl Daemon {
         let pool = settings.database.connect(10).await?;
         sqlx::migrate!().run(&pool).await?;
 
+        let rows = sqlx::query(r#"select * from regions"#).fetch_all(&pool).await?;
+        tracing::error!("REGION RECORDS {}", rows.len());
+
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
@@ -73,7 +76,7 @@ impl Daemon {
 
         let listen_addr = settings.listen_addr()?;
 
-        let gateway_svc = GatewayService::new(settings)?;
+        let gateway_svc = GatewayService::new(settings).await?;
         let org_svc = OrgService::new(settings).await?;
         let route_svc = RouteService::new(settings).await?;
         let session_key_filter_svc = SessionKeyFilterService {};
