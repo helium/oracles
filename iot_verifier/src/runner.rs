@@ -503,7 +503,7 @@ mod tests {
         assert_eq!(6, unselected_witnesses.len());
 
         // list of 10 witnesses
-        let mut selected_witnesses2 = vec![witness.clone(); 10];
+        let mut selected_witnesses2 = vec![witness; 10];
         assert_eq!(10, selected_witnesses2.len());
         // after shuffle and split we should have 10 selected and 0 unselected
         let unselected_witnesses2 =
