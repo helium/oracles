@@ -1455,7 +1455,7 @@ dependencies = [
  "async-compression",
  "aws-config",
  "aws-sdk-s3",
- "base64 0.13.1",
+ "base64 0.21.0",
  "blake3",
  "bytes",
  "chrono",
