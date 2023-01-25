@@ -4,9 +4,12 @@ use crate::{
     settings::Settings,
 };
 use anchor_client::{RequestBuilder, RequestNamespace};
+use anchor_lang::AccountDeserialize;
 use chrono::Utc;
+use data_credits::DelegatedDataCreditsV0;
 use data_credits::{accounts, instruction};
 use helium_crypto::PublicKeyBinary;
+use helium_sub_daos::{DaoV0, SubDaoV0};
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::{
     commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair, signer::Signer,
@@ -34,25 +37,27 @@ pub enum BurnError {
     JoinError(#[from] tokio::task::JoinError),
     #[error("Solana client error: {0}")]
     SolanaClientError(#[from] ClientError),
+    #[error("Anchor error: {0}")]
+    AnchorError(#[from] anchor_lang::error::Error),
 }
 
 const BURN_THRESHOLD: i64 = 10_000;
 
 impl Burner {
-    pub fn new(
+    pub async fn new(
         settings: &Settings,
         pool: &Pool<Postgres>,
         balances: &Balances,
         provider: Arc<RpcClient>,
         keypair: Keypair,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, BurnError> {
+        Ok(Self {
             pool: pool.clone(),
             balances: balances.balances(),
-            program_cache: BurnProgramCache::new(settings),
+            program_cache: BurnProgramCache::new(settings, provider.as_ref()).await?,
             provider,
             keypair: keypair.to_bytes(),
-        }
+        })
     }
 
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), BurnError> {
@@ -91,6 +96,13 @@ impl Burner {
                 return Ok(());
             };
 
+        // Fetch escrow account
+        let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, &payer);
+        let account_data = self.provider.get_account_data(&ddc_key).await?;
+        let mut account_data = account_data.as_ref();
+        let escrow_account =
+            DelegatedDataCreditsV0::try_deserialize(&mut account_data)?.escrow_account;
+
         tracing::info!("Burning {} DC from {}", amount, payer);
 
         let instructions = {
@@ -117,7 +129,7 @@ impl Burner {
                 system_program: solana_program::system_program::id(),
                 dc_burn_authority: self.program_cache.dc_burn_authority.clone(),
                 dc_mint: self.program_cache.dc_mint.clone(),
-                escrow_account: self.program_cache.escrow_account.clone(),
+                escrow_account,
                 registrar: self.program_cache.registrar.clone(),
             };
             let args = instruction::BurnDelegatedDataCreditsV0 {
@@ -184,12 +196,11 @@ pub struct BurnProgramCache {
     pub dao: Pubkey,
     pub dc_mint: Pubkey,
     pub dc_burn_authority: Pubkey,
-    pub escrow_account: Pubkey,
     pub registrar: Pubkey,
 }
 
 impl BurnProgramCache {
-    pub fn new(settings: &Settings) -> Self {
+    pub async fn new(settings: &Settings, provider: &RpcClient) -> Result<Self, BurnError> {
         let (account_payer, _) =
             Pubkey::find_program_address(&["account_payer".as_bytes()], &data_credits::ID);
         let (data_credits, _) = Pubkey::find_program_address(
@@ -200,19 +211,28 @@ impl BurnProgramCache {
             &["sub_dao".as_bytes(), settings.dnt_mint.as_ref()],
             &helium_sub_daos::ID,
         );
+        let dc_burn_authority = {
+            let account_data = provider.get_account_data(&sub_dao).await?;
+            let mut account_data = account_data.as_ref();
+            SubDaoV0::try_deserialize(&mut account_data)?.dc_burn_authority
+        };
         let (dao, _) = Pubkey::find_program_address(
             &["dao".as_bytes(), settings.hnt_mint.as_ref()],
             &helium_sub_daos::ID,
         );
-        Self {
+        let registrar = {
+            let account_data = provider.get_account_data(&dao).await?;
+            let mut account_data = account_data.as_ref();
+            DaoV0::try_deserialize(&mut account_data)?.registrar
+        };
+        Ok(Self {
             account_payer,
             data_credits,
             sub_dao,
             dao,
             dc_mint: settings.dc_mint.clone(),
-            dc_burn_authority: settings.dc_burn_authority.clone(),
-            escrow_account: settings.escrow_account.clone(),
-            registrar: settings.registrar.clone(),
-        }
+            dc_burn_authority,
+            registrar,
+        })
     }
 }

@@ -163,7 +163,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let Ok(keypair) = read_keypair_file(&settings.keypair) else {
         bail!("Failed to read keypair file ({})", settings.keypair.display());
     };
-    let burner = Burner::new(settings, &pool, &balances, rpc_client, keypair);
+    let burner = Burner::new(settings, &pool, &balances, rpc_client, keypair).await?;
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
