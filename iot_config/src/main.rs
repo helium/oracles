@@ -64,9 +64,6 @@ impl Daemon {
         let pool = settings.database.connect(10).await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let rows = sqlx::query(r#"select * from regions"#).fetch_all(&pool).await?;
-        tracing::error!("REGION RECORDS {}", rows.len());
-
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {

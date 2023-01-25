@@ -1,4 +1,7 @@
-use crate::{region_map, GrpcResult, Settings};
+use crate::{
+    region_map::{self, RegionMap},
+    GrpcResult, Settings,
+};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
@@ -19,6 +22,7 @@ pub struct GatewayService {
     admin_pubkey: PublicKey,
     follower_service: FollowerService,
     pool: Pool<Postgres>,
+    region_map: RegionMap,
     signing_key: Keypair,
 }
 
@@ -28,6 +32,7 @@ impl GatewayService {
             admin_pubkey: settings.admin_pubkey()?,
             follower_service: FollowerService::from_settings(&settings.follower),
             pool: settings.database.connect(10).await?,
+            region_map: RegionMap::new(),
             signing_key: settings.signing_keypair()?,
         })
     }
@@ -91,17 +96,23 @@ impl iot_config::Gateway for GatewayService {
             None => return Err(Status::invalid_argument("missing region")),
         };
 
-        region_map::persist_params(req.region, params, &self.pool)
-            .await
-            .map_err(|_| Status::internal("region params save failed"))?;
-
-        if let Some(indexes) = req.hex_indexes {
-            region_map::persist_indexes(req.region, &indexes, &self.pool)
-                .await
-                .map_err(|_| Status::internal("region indexes save failed"))?;
-        } else {
-            tracing::debug!("h3 region index update skipped")
+        let indexes = match req.hex_indexes {
+            Some(indexes) => indexes,
+            None => {
+                tracing::debug!("h3 region index update skipped");
+                vec![]
+            }
         };
+
+        let _updated_region = region_map::update_region(req.region, params, &indexes, &self.pool)
+            .await
+            .map_err(|_| Status::internal("region update failed"))?;
+
+        let new_region_map = region_map::build_region_map(&self.pool)
+            .await
+            .map_err(|_| Status::internal("region hextree failed to build"))?;
+
+        self.region_map.swap(new_region_map).await;
 
         Ok(Response::new(LoadRegionResV1 {}))
     }
