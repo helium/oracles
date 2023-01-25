@@ -9,7 +9,7 @@ use helium_proto::{
     services::iot_config::{
         self, GatewayRegionParamsReqV1, GatewayRegionParamsResV1, LoadRegionReqV1, LoadRegionResV1,
     },
-    Message,
+    Message, Region,
 };
 use node_follower::{
     follower_service::FollowerService,
@@ -28,11 +28,13 @@ pub struct GatewayService {
 
 impl GatewayService {
     pub async fn new(settings: &Settings) -> Result<Self> {
+        let pool = settings.database.connect(10).await?;
+        let region_map = RegionMap::new(&pool).await?;
         Ok(Self {
             admin_pubkey: settings.admin_pubkey()?,
             follower_service: FollowerService::from_settings(&settings.follower),
-            pool: settings.database.connect(10).await?,
-            region_map: RegionMap::new(),
+            pool,
+            region_map,
             signing_key: settings.signing_keypair()?,
         })
     }
@@ -69,14 +71,18 @@ impl iot_config::Gateway for GatewayService {
             .await
             .map_err(|_| Status::internal("gateway lookup error"))?;
 
-        match location {
-            Some(hex) => tracing::info!("Gateway located at hex index {hex}"),
-            None => tracing::info!("Gateway location undefined"),
-        }
+        let location = location.ok_or_else(|| Status::internal("gateway location undefined"))?;
+
+        let region = self
+            .region_map
+            .get_region(location)
+            .await
+            .ok_or_else(|| Status::internal("region lookup failed for asserted location"))?;
+        let params = self.region_map.get_params(&region).await;
 
         let mut resp = GatewayRegionParamsResV1 {
-            region: helium_proto::Region::Us915.into(),
-            params: None,
+            region: region.into(),
+            params,
             gain: gain as u64,
             signature: vec![],
         };
@@ -91,6 +97,9 @@ impl iot_config::Gateway for GatewayService {
         let request = request.into_inner();
         let req = self.verify_admin_signature(request)?;
 
+        let region = Region::from_i32(req.region)
+            .ok_or_else(|| Status::invalid_argument("invalid region"))?;
+
         let params = match req.params {
             Some(params) => params,
             None => return Err(Status::invalid_argument("missing region")),
@@ -104,15 +113,14 @@ impl iot_config::Gateway for GatewayService {
             }
         };
 
-        let _updated_region = region_map::update_region(req.region, params, &indexes, &self.pool)
+        let updated_region = region_map::update_region(req.region, &params, &indexes, &self.pool)
             .await
             .map_err(|_| Status::internal("region update failed"))?;
 
-        let new_region_map = region_map::build_region_map(&self.pool)
-            .await
-            .map_err(|_| Status::internal("region hextree failed to build"))?;
-
-        self.region_map.swap(new_region_map).await;
+        self.region_map.insert_params(region, params).await;
+        if let Some(region_tree) = updated_region {
+            self.region_map.swap_tree(region_tree).await;
+        }
 
         Ok(Response::new(LoadRegionResV1 {}))
     }
