@@ -6,7 +6,7 @@ use crate::{
 use anchor_client::{RequestBuilder, RequestNamespace};
 use chrono::Utc;
 use data_credits::{accounts, instruction};
-use helium_crypto::{PublicKey, PublicKeyBinary};
+use helium_crypto::PublicKeyBinary;
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::{
     commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair, signer::Signer,
@@ -19,7 +19,7 @@ use tokio::task;
 
 pub struct Burner {
     pool: Pool<Postgres>,
-    balances: Arc<Mutex<HashMap<PublicKey, Balance>>>,
+    balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
     provider: Arc<RpcClient>,
     program_cache: BurnProgramCache,
     // We store the keypair as bytes since the type does not implement clone (for some reason).
@@ -90,8 +90,6 @@ impl Burner {
             .await? else {
                 return Ok(());
             };
-
-        let payer = PublicKey::try_from(payer.clone()).unwrap();
 
         tracing::info!("Burning {} DC from {}", amount, payer);
 

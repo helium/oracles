@@ -5,7 +5,7 @@ use db_store::meta;
 use file_store::{file_sink, file_sink_write, file_upload, FileStore, FileType};
 use futures::StreamExt;
 use futures_util::TryFutureExt;
-use helium_crypto::{PublicKey, PublicKeyBinary};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     iot_config::{org_client::OrgClient, OrgGetReqV1},
     packet_verifier::ValidPacket,
@@ -55,7 +55,7 @@ impl Daemon {
 
         tokio::pin!(reports);
 
-        let mut org_cache = HashMap::<u64, PublicKey>::new();
+        let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
 
         while let Some(report) = reports.next().await {
             let report_timestamp =
@@ -71,10 +71,15 @@ impl Daemon {
 
             if !org_cache.contains_key(&report.oui) {
                 let req = OrgGetReqV1 { oui: report.oui };
-                let Ok(pubkey) = PublicKey::try_from(self.org_client.get(req).await?.into_inner().org.unwrap().owner) else {
-                    tracing::error!("Invalid payer for OUI {}", report.oui);
-                    continue;
-                };
+                let pubkey = PublicKeyBinary::from(
+                    self.org_client
+                        .get(req)
+                        .await?
+                        .into_inner()
+                        .org
+                        .unwrap()
+                        .owner,
+                );
                 org_cache.insert(report.oui, pubkey);
             }
 
@@ -95,7 +100,7 @@ impl Daemon {
                     amount = pending_burns.amount + $2
                     "#,
                 )
-                .bind(PublicKeyBinary::from(payer.clone()))
+                .bind(payer)
                 .bind(debit_amount as i64)
                 .bind(Utc::now().naive_utc())
                 .fetch_one(&self.pool)

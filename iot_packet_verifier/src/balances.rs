@@ -2,7 +2,7 @@ use crate::{burner::Burn, pdas};
 use anchor_lang::AccountDeserialize;
 use data_credits::DelegatedDataCreditsV0;
 use futures_util::StreamExt;
-use helium_crypto::PublicKey;
+use helium_crypto::PublicKeyBinary;
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 
 pub struct Balances {
     pub provider: Arc<RpcClient>,
-    pub balances: Arc<Mutex<HashMap<PublicKey, Balance>>>,
+    pub balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -47,7 +47,6 @@ impl Balances {
         }) = burns.next().await.transpose()?
         {
             // Look up the current balance of the payer
-            let payer = PublicKey::try_from(payer).unwrap();
             let balance = payer_balance(provider.as_ref(), sub_dao, &payer).await?;
             balances.insert(
                 payer,
@@ -64,7 +63,7 @@ impl Balances {
         })
     }
 
-    pub fn balances(&self) -> Arc<Mutex<HashMap<PublicKey, Balance>>> {
+    pub fn balances(&self) -> Arc<Mutex<HashMap<PublicKeyBinary, Balance>>> {
         self.balances.clone()
     }
 
@@ -73,7 +72,7 @@ impl Balances {
     pub async fn debit_if_sufficient(
         &self,
         sub_dao: &Pubkey,
-        payer: &PublicKey,
+        payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<bool, DebitError> {
         let mut balances = self.balances.lock().await;
@@ -107,7 +106,7 @@ impl Balances {
 pub async fn payer_balance(
     provider: &RpcClient,
     sub_dao: &Pubkey,
-    payer: &PublicKey,
+    payer: &PublicKeyBinary,
 ) -> Result<u64, DebitError> {
     let ddc_key = pdas::delegated_data_credits(sub_dao, payer);
     let account_data = provider.get_account_data(&ddc_key).await?;
