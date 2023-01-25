@@ -31,8 +31,6 @@ pub enum TxnConstructionError {
     FileStoreError(#[from] file_store::Error),
     #[error("signing error: {0}")]
     CryptoError(#[from] Box<helium_crypto::Error>),
-    #[error("zero rewards_shares")]
-    ZeroRewards,
     #[error("zero witnesses")]
     ZeroWitnesses,
 }
@@ -147,23 +145,21 @@ fn construct_poc_witnesses(
             .to_u32()
             .unwrap_or_default();
 
-        if reward_shares > 0 {
-            // NOTE: channel is irrelevant now
-            let poc_witness = BlockchainPocWitnessV1 {
-                gateway: witness_report.report.pub_key.into(),
-                timestamp: witness_report.report.timestamp.timestamp() as u64,
-                signal: witness_report.report.signal / SIGNAL_MULTIPLIER,
-                packet_hash: witness_report.report.data,
-                signature: witness_report.report.signature,
-                snr: witness_report.report.snr as f32 / SNR_MULTIPLIER,
-                frequency: hz_to_mhz(witness_report.report.frequency),
-                datarate: witness_report.report.datarate.to_string(),
-                channel: 0,
-                reward_shares,
-            };
+        // NOTE: channel is irrelevant now
+        let poc_witness = BlockchainPocWitnessV1 {
+            gateway: witness_report.report.pub_key.into(),
+            timestamp: witness_report.report.timestamp.timestamp() as u64,
+            signal: witness_report.report.signal / SIGNAL_MULTIPLIER,
+            packet_hash: witness_report.report.data,
+            signature: witness_report.report.signature,
+            snr: witness_report.report.snr as f32 / SNR_MULTIPLIER,
+            frequency: hz_to_mhz(witness_report.report.frequency),
+            datarate: witness_report.report.datarate.to_string(),
+            channel: 0,
+            reward_shares,
+        };
 
-            poc_witnesses.push(poc_witness)
-        }
+        poc_witnesses.push(poc_witness)
     }
     poc_witnesses
 }
@@ -181,9 +177,6 @@ fn construct_poc_receipt(
         * REWARD_SHARE_MULTIPLIER)
         .to_u32()
         .unwrap_or_default();
-    if reward_shares == 0 {
-        return Err(TxnConstructionError::ZeroRewards);
-    }
 
     // NOTE: This timestamp will also be used as the top-level txn timestamp
     let beacon_received_ts = beacon_report.received_timestamp.timestamp_millis();
