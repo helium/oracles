@@ -62,7 +62,10 @@ impl VerifyWitnessesResult {
     pub fn update_reward_units(&mut self, reward_units: Decimal) {
         self.verified_witnesses
             .iter_mut()
-            .for_each(|witness| witness.reward_unit = reward_units)
+            .for_each(|witness| match witness.status {
+                VerificationStatus::Valid => witness.reward_unit = reward_units,
+                VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
+            })
     }
 }
 
