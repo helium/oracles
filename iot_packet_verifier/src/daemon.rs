@@ -5,7 +5,7 @@ use db_store::meta;
 use file_store::{file_sink, file_sink_write, file_upload, FileStore, FileType};
 use futures::StreamExt;
 use futures_util::TryFutureExt;
-use helium_crypto::PublicKeyBinary;
+use helium_crypto::{Keypair, PublicKeyBinary};
 use helium_proto::services::{
     iot_config::{org_client::OrgClient, OrgGetReqV1},
     packet_verifier::ValidPacket,
@@ -19,6 +19,7 @@ use tokio::time;
 
 struct Daemon {
     pool: Pool<Postgres>,
+    keypair: Keypair,
     file_store: FileStore,
     balances: Balances,
     org_client: OrgClient<Channel>,
@@ -84,13 +85,13 @@ impl Daemon {
             }
 
             let payer = org_cache.get(&report.oui).unwrap();
-
-            // TODO: Use transactions and write manifests
-            if self
+            let sufficiency = self
                 .balances
                 .debit_if_sufficient(&self.sub_dao, payer, debit_amount)
-                .await?
-            {
+                .await?;
+
+            if sufficiency.is_sufficient() {
+                // TODO: Use transactions and write manifests
                 // Add the amount burned into the pending burns table
                 sqlx::query(
                     r#"
@@ -129,6 +130,10 @@ impl Daemon {
                 .await?;
             }
 
+            sufficiency
+                .configure_org(&mut self.org_client, &self.keypair, report.oui)
+                .await?;
+
             meta::store(&self.pool, "last_verified", report_timestamp).await?;
             last_verified = report_timestamp;
         }
@@ -160,10 +165,10 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let balances = Balances::new(&pool, &sub_dao, rpc_client.clone()).await?;
 
     // Set up the balance burner:
-    let Ok(keypair) = read_keypair_file(&settings.keypair) else {
-        bail!("Failed to read keypair file ({})", settings.keypair.display());
+    let Ok(burn_keypair) = read_keypair_file(&settings.burn_keypair) else {
+        bail!("Failed to read keypair file ({})", settings.burn_keypair.display());
     };
-    let burner = Burner::new(settings, &pool, &balances, rpc_client, keypair).await?;
+    let burner = Burner::new(settings, &pool, &balances, rpc_client, burn_keypair).await?;
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
@@ -194,8 +199,10 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let file_store = FileStore::from_settings(&settings.ingest).await?;
 
     // Set up the verifier Daemon:
+    let config_keypair = settings.config_keypair()?;
     let verifier_daemon = Daemon {
         pool,
+        keypair: config_keypair,
         file_store,
         balances,
         org_client,

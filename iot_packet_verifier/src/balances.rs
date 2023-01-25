@@ -1,14 +1,23 @@
 use crate::{burner::Burn, pdas};
 use anchor_lang::AccountDeserialize;
+use chrono::Utc;
 use data_credits::DelegatedDataCreditsV0;
 use futures_util::StreamExt;
-use helium_crypto::PublicKeyBinary;
+use helium_crypto::{Keypair, PublicKeyBinary, Sign};
+use helium_proto::{
+    services::{
+        iot_config::{org_client::OrgClient, OrgDisableReqV1, OrgEnableReqV1},
+        packet_verifier::ValidPacket,
+        Channel,
+    },
+    Message,
+};
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::{mem, sync::Arc};
 use tokio::sync::Mutex;
 
 pub struct Balances {
@@ -53,6 +62,7 @@ impl Balances {
                 Balance {
                     burned: burn_amount as u64,
                     balance,
+                    enabled: true,
                 },
             );
         }
@@ -74,7 +84,7 @@ impl Balances {
         sub_dao: &Pubkey,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<bool, DebitError> {
+    ) -> Result<BalanceSufficiency, DebitError> {
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {
@@ -94,12 +104,78 @@ impl Balances {
 
         let sufficient = if balance.balance >= amount + balance.burned {
             balance.burned += amount;
-            true
+            BalanceSufficiency::sufficient(&mut balance.enabled)
         } else {
-            false
+            BalanceSufficiency::insufficient(&mut balance.enabled)
         };
 
         Ok(sufficient)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum BalanceSufficiency {
+    Sufficient { enable: bool },
+    Insufficient { disable: bool },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ConfigureOrgError {
+    #[error("Rpc error: {0}")]
+    RpcError(#[from] tonic::Status),
+    #[error("Crypto error: {0}")]
+    CryptoError(#[from] helium_crypto::Error),
+}
+
+impl BalanceSufficiency {
+    pub fn insufficient(enabled: &mut bool) -> Self {
+        Self::Sufficient {
+            enable: !mem::replace(enabled, true),
+        }
+    }
+
+    pub fn sufficient(enabled: &mut bool) -> Self {
+        Self::Insufficient {
+            disable: mem::replace(enabled, false),
+        }
+    }
+
+    pub fn is_sufficient(&self) -> bool {
+        matches!(self, BalanceSufficiency::Sufficient { .. })
+    }
+
+    pub async fn configure_org(
+        self,
+        client: &mut OrgClient<Channel>,
+        keypair: &Keypair,
+        oui: u64,
+    ) -> Result<(), ConfigureOrgError> {
+        match self {
+            Self::Sufficient { enable: true } => {
+                let mut req = OrgEnableReqV1 {
+                    oui,
+                    timestamp: Utc::now().timestamp_millis() as u64,
+                    signer: keypair.public_key().to_vec(),
+                    signature: vec![],
+                };
+                let signature = keypair.sign(&req.encode_to_vec())?;
+                req.signature = signature;
+                let _ = client.enable(req).await?;
+            }
+            Self::Insufficient { disable: true } => {
+                let mut req = OrgDisableReqV1 {
+                    oui,
+                    timestamp: Utc::now().timestamp_millis() as u64,
+                    signer: keypair.public_key().to_vec(),
+                    signature: vec![],
+                };
+                let signature = keypair.sign(&req.encode_to_vec())?;
+                req.signature = signature;
+                let _ = client.disable(req).await?;
+            }
+            _ => (),
+        }
+        Ok(())
     }
 }
 
@@ -120,10 +196,15 @@ pub async fn payer_balance(
 pub struct Balance {
     pub balance: u64,
     pub burned: u64,
+    pub enabled: bool,
 }
 
 impl Balance {
     pub fn new(balance: u64) -> Self {
-        Self { balance, burned: 0 }
+        Self {
+            balance,
+            burned: 0,
+            enabled: true,
+        }
     }
 }

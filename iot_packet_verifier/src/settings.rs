@@ -13,8 +13,10 @@ pub struct Settings {
     pub cache: String,
     /// Solana RpcClient URL:
     pub solana_rpc: String,
-    /// Path to keypair for signing burn transactions
-    pub keypair: PathBuf,
+    /// Path to the keypair for signing burn transactions
+    pub burn_keypair: PathBuf,
+    /// Path to the keypair for signing config changes
+    pub config_keypair: PathBuf,
     pub dc_mint: Pubkey,
     pub dnt_mint: Pubkey,
     pub hnt_mint: Pubkey,
@@ -50,5 +52,10 @@ impl Settings {
             .add_source(Environment::with_prefix("PACKET_VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
+    }
+
+    pub fn config_keypair(&self) -> Result<helium_crypto::Keypair, Box<helium_crypto::Error>> {
+        let data = std::fs::read(&self.config_keypair).map_err(helium_crypto::Error::from)?;
+        Ok(helium_crypto::Keypair::try_from(&data[..])?)
     }
 }
