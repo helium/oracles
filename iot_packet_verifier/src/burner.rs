@@ -22,6 +22,8 @@ pub struct Burner {
     balances: Arc<Mutex<HashMap<PublicKey, Balance>>>,
     provider: Arc<RpcClient>,
     program_cache: BurnProgramCache,
+    // We store the keypair as bytes since the type does not implement clone (for some reason).
+    keypair: [u8; 64],
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -40,14 +42,16 @@ impl Burner {
     pub fn new(
         settings: &Settings,
         pool: &Pool<Postgres>,
-        provider: Arc<RpcClient>,
         balances: &Balances,
+        provider: Arc<RpcClient>,
+        keypair: Keypair,
     ) -> Self {
         Self {
             pool: pool.clone(),
             balances: balances.balances(),
             program_cache: BurnProgramCache::new(settings),
             provider,
+            keypair: keypair.to_bytes(),
         }
     }
 
@@ -92,11 +96,10 @@ impl Burner {
         tracing::info!("Burning {} DC from {}", amount, payer);
 
         let instructions = {
-            let transaction_payer: std::rc::Rc<dyn Signer> = todo!();
             let request = RequestBuilder::from(
                 data_credits::id(),
                 "devnet",
-                transaction_payer,
+                std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::confirmed()),
                 RequestNamespace::Global,
             );
@@ -135,12 +138,16 @@ impl Burner {
         };
 
         let blockhash = self.provider.get_latest_blockhash().await?;
-        let signer: Keypair = todo!();
+        let signer = Keypair::from_bytes(&self.keypair).unwrap();
 
-        let tx =
-            Transaction::new_signed_with_payer(&instructions, Some(todo!()), &[&signer], blockhash);
+        let tx = Transaction::new_signed_with_payer(
+            &instructions,
+            Some(&signer.pubkey()),
+            &[&signer],
+            blockhash,
+        );
 
-        let signature = self.provider.send_and_confirm_transaction(&tx).await?;
+        let _signature = self.provider.send_and_confirm_transaction(&tx).await?;
 
         // Now that we have successfully executed the burn and are no long in
         // sync land, we can remove the amount burned.

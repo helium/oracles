@@ -1,5 +1,5 @@
 use crate::{balances::Balances, burner::Burner, ingest, settings::Settings};
-use anyhow::{Error, Result};
+use anyhow::{bail, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use db_store::meta;
 use file_store::{file_sink, file_sink_write, file_upload, FileStore, FileType};
@@ -12,7 +12,7 @@ use helium_proto::services::{
     Channel,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{pubkey::Pubkey, signature::read_keypair_file};
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::time;
@@ -155,7 +155,10 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let balances = Balances::new(&pool, &sub_dao, rpc_client.clone()).await?;
 
     // Set up the balance burner:
-    let burner = Burner::new(settings, &pool, rpc_client, &balances);
+    let Ok(keypair) = read_keypair_file(&settings.keypair) else {
+        bail!("Failed to read keypair file ({})", settings.keypair.display());
+    };
+    let burner = Burner::new(settings, &pool, &balances, rpc_client, keypair);
 
     let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
     let file_upload =
