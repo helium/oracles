@@ -4,3 +4,4 @@ pub mod daemon;
 pub mod ingest;
 pub mod pdas;
 pub mod settings;
+pub mod verifier;

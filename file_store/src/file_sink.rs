@@ -141,7 +141,7 @@ impl FileSinkBuilder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FileSinkClient {
     sender: MessageSender,
     metric: &'static str,

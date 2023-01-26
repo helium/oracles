@@ -1,31 +1,21 @@
-use crate::{balances::Balances, burner::Burner, ingest, settings::Settings};
+use crate::{balances::Balances, burner::Burner, ingest, settings::Settings, verifier::Verifier};
 use anyhow::{bail, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use db_store::meta;
-use file_store::{file_sink::FileSinkClient, file_upload, FileSinkBuilder, FileStore, FileType};
+use file_store::{file_upload, FileSinkBuilder, FileStore, FileType};
 use futures::StreamExt;
 use futures_util::TryFutureExt;
-use helium_crypto::{Keypair, PublicKeyBinary};
-use helium_proto::services::{
-    iot_config::{org_client::OrgClient, OrgGetReqV1},
-    packet_verifier::{InvalidPacket, ValidPacket},
-    Channel,
-};
+
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, signature::read_keypair_file};
 use sqlx::{Pool, Postgres};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 use tokio::time;
 
 struct Daemon {
     pool: Pool<Postgres>,
-    keypair: Keypair,
+    verifier: Verifier,
     file_store: FileStore,
-    balances: Balances,
-    org_client: OrgClient<Channel>,
-    sub_dao: Pubkey,
-    valid_packets: FileSinkClient,
-    invalid_packets: FileSinkClient,
 }
 
 const POLL_TIME: time::Duration = time::Duration::from_secs(10);
@@ -36,7 +26,7 @@ impl Daemon {
         timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         let mut last_verified: NaiveDateTime =
-            meta::fetch(&self.pool, "last_verified_packet").await?;
+            meta::fetch(&self.pool, "last_verified_report").await?;
 
         loop {
             tokio::select! {
@@ -51,99 +41,28 @@ impl Daemon {
     }
 
     async fn handle_tick(&mut self, mut last_verified: NaiveDateTime) -> Result<NaiveDateTime> {
-        let reports =
-            ingest::ingest_reports(&self.file_store, DateTime::from_utc(last_verified, Utc));
+        let mut reports = self
+            .file_store
+            .list(
+                FileType::IotPacketReport,
+                DateTime::from_utc(last_verified, Utc),
+                None,
+            )
+            .boxed();
 
-        tokio::pin!(reports);
-
-        let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
-
-        while let Some(report) = reports.next().await {
-            let report_timestamp =
-                NaiveDateTime::from_timestamp_millis(report.gateway_timestamp_ms as i64).unwrap();
-
-            // Since the report timestamp will always be behind the timestamp for the while,
-            // the first few reports we see upon restarting will have already been processed.
-            if report_timestamp <= last_verified {
-                continue;
-            }
-
-            let debit_amount = payload_size_to_dc(report.payload_size as u64);
-
-            if !org_cache.contains_key(&report.oui) {
-                let req = OrgGetReqV1 { oui: report.oui };
-                let pubkey = PublicKeyBinary::from(
-                    self.org_client
-                        .get(req)
-                        .await?
-                        .into_inner()
-                        .org
-                        .unwrap()
-                        .owner,
-                );
-                org_cache.insert(report.oui, pubkey);
-            }
-
-            let payer = org_cache.get(&report.oui).unwrap();
-            let sufficiency = self
-                .balances
-                .debit_if_sufficient(&self.sub_dao, payer, debit_amount)
-                .await?;
-
-            // TODO: Use transactions and write manifests
-            if sufficiency.is_sufficient() {
-                // Add the amount burned into the pending burns table
-                sqlx::query(
-                    r#"
-                    INSERT INTO pending_burns (payer, amount, last_burn)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (payer) DO UPDATE SET
-                    amount = pending_burns.amount + $2
-                    "#,
+        while let Some(report) = reports.next().await.transpose()? {
+            last_verified = report.timestamp.naive_utc();
+            meta::store(&self.pool, "last_verified_report", last_verified).await?;
+            self.verifier
+                .verify(
+                    &self.pool,
+                    ingest::ingest_reports(&self.file_store, report).await?,
                 )
-                .bind(payer)
-                .bind(debit_amount as i64)
-                .bind(Utc::now().naive_utc())
-                .fetch_one(&self.pool)
                 .await?;
-
-                self.valid_packets
-                    .write(
-                        ValidPacket {
-                            payload_size: report.payload_size,
-                            gateway: report.gateway,
-                            payload_hash: report.payload_hash,
-                        },
-                        [],
-                    )
-                    .await?;
-            } else {
-                self.invalid_packets
-                    .write(
-                        InvalidPacket {
-                            payload_size: report.payload_size,
-                            gateway: report.gateway,
-                            payload_hash: report.payload_hash,
-                        },
-                        [],
-                    )
-                    .await?;
-            }
-
-            sufficiency
-                .configure_org(&mut self.org_client, &self.keypair, report.oui)
-                .await?;
-
-            meta::store(&self.pool, "last_verified", report_timestamp).await?;
-            last_verified = report_timestamp;
         }
 
         Ok(last_verified)
     }
-}
-
-pub fn payload_size_to_dc(payload_size: u64) -> u64 {
-    payload_size.min(24) / 24
 }
 
 pub async fn run_daemon(settings: &Settings) -> Result<()> {
@@ -165,8 +84,9 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let balances = Balances::new(&pool, &sub_dao, rpc_client.clone()).await?;
 
     // Set up the balance burner:
-    let Ok(burn_keypair) = read_keypair_file(&settings.burn_keypair) else {
-        bail!("Failed to read keypair file ({})", settings.burn_keypair.display());
+    let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
+        Ok(kp) => kp,
+        Err(e) => bail!("Failed to read keypair file ({})", e),
     };
     let burner = Burner::new(settings, &pool, &balances, rpc_client, burn_keypair).await?;
 
@@ -203,13 +123,15 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let config_keypair = settings.config_keypair()?;
     let verifier_daemon = Daemon {
         pool,
-        keypair: config_keypair,
         file_store,
-        balances,
-        org_client,
-        sub_dao,
-        valid_packets,
-        invalid_packets,
+        verifier: Verifier {
+            keypair: config_keypair,
+            balances,
+            org_client,
+            sub_dao,
+            valid_packets,
+            invalid_packets,
+        },
     };
 
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();
