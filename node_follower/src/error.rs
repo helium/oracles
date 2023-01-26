@@ -16,4 +16,6 @@ pub enum Error {
     Region(String),
     #[error("hotspot not found {0}")]
     GatewayNotFound(String),
+    #[error("no grpc client")]
+    ClientNotFound,
 }

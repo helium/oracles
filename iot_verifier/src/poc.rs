@@ -6,14 +6,14 @@ use crate::{
 use chrono::{DateTime, Duration, Utc};
 use density_scaler::HexDensityMap;
 use file_store::{
-    lora_beacon_report::LoraBeaconIngestReport, lora_invalid_poc::LoraInvalidWitnessReport,
-    lora_valid_poc::LoraValidWitnessReport, lora_witness_report::LoraWitnessIngestReport,
+    iot_beacon_report::IotBeaconIngestReport, iot_invalid_poc::IotInvalidWitnessReport,
+    iot_valid_poc::IotVerifiedWitnessReport, iot_witness_report::IotWitnessIngestReport,
 };
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_lora::{InvalidParticipantSide, InvalidReason},
+    services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
     GatewayStakingMode, Region,
 };
 use node_follower::gateway_resp::GatewayInfo;
@@ -28,50 +28,44 @@ pub const C: f64 = 2.998e8;
 /// R is the (average) radius of the earth
 pub const R: f64 = 6.371e6;
 
-/// the cadence in seconds at which hotspots are permitted to beacon
-const BEACON_INTERVAL: i64 = (10 * 60) - 10; // 10 mins ( minus 10 sec tolerance )
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
 
-#[derive(Debug)]
-pub enum VerificationStatus {
-    Valid,
-    Invalid,
-    Failed,
-}
-
 pub struct Poc {
-    beacon_report: LoraBeaconIngestReport,
-    witness_reports: Vec<LoraWitnessIngestReport>,
+    beacon_report: IotBeaconIngestReport,
+    witness_reports: Vec<IotWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
 }
 
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
-    pub invalid_reason: Option<InvalidReason>,
+    pub invalid_reason: InvalidReason,
     pub gateway_info: Option<GatewayInfo>,
     pub hex_scale: Option<Decimal>,
 }
 
 pub struct VerifyWitnessResult {
     result: VerificationStatus,
-    invalid_reason: Option<InvalidReason>,
+    invalid_reason: InvalidReason,
     pub gateway_info: Option<GatewayInfo>,
     hex_scale: Option<Decimal>,
+    participant_side: InvalidParticipantSide,
 }
 
 pub struct VerifyWitnessesResult {
-    pub valid_witnesses: Vec<LoraValidWitnessReport>,
-    pub invalid_witnesses: Vec<LoraInvalidWitnessReport>,
-    pub failed_witnesses: Vec<LoraInvalidWitnessReport>,
+    pub verified_witnesses: Vec<IotVerifiedWitnessReport>,
+    pub failed_witnesses: Vec<IotInvalidWitnessReport>,
 }
 
 impl VerifyWitnessesResult {
     pub fn update_reward_units(&mut self, reward_units: Decimal) {
-        self.valid_witnesses
+        self.verified_witnesses
             .iter_mut()
-            .for_each(|witness| witness.reward_unit = reward_units)
+            .for_each(|witness| match witness.status {
+                VerificationStatus::Valid => witness.reward_unit = reward_units,
+                VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
+            })
     }
 }
 
@@ -87,8 +81,8 @@ pub enum VerificationError {
 
 impl Poc {
     pub async fn new(
-        beacon_report: LoraBeaconIngestReport,
-        witness_reports: Vec<LoraWitnessIngestReport>,
+        beacon_report: IotBeaconIngestReport,
+        witness_reports: Vec<IotWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
     ) -> Self {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
@@ -105,6 +99,8 @@ impl Poc {
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
         pool: &PgPool,
+        beacon_interval: Duration,
+        beacon_interval_tolerance: Duration,
     ) -> Result<VerifyBeaconResult, VerificationError> {
         let beacon = &self.beacon_report.report;
         let beaconer_pub_key = beacon.pub_key.clone();
@@ -113,45 +109,32 @@ impl Poc {
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return self.beacon_result(
-                    VerificationStatus::Invalid,
-                    Some(InvalidReason::GatewayNotFound),
-                    None,
-                    None,
-                );
+                return Ok(VerifyBeaconResult::gateway_not_found());
             }
         };
-        tracing::debug!("beacon info {:?}", beaconer_info);
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
         match self
-            .do_beacon_verifications(last_beacon, &beaconer_info)
+            .do_beacon_verifications(
+                last_beacon,
+                &beaconer_info,
+                beacon_interval,
+                beacon_interval_tolerance,
+            )
             .await
         {
             Ok(()) => {
-                let beaconer_location = beaconer_info.location.unwrap();
+                let beaconer_location = beaconer_info
+                    .location
+                    .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
+
                 if let Some(scaling_factor) = hex_density_map.get(beaconer_location).await {
-                    self.beacon_result(
-                        VerificationStatus::Valid,
-                        None,
-                        Some(beaconer_info),
-                        Some(scaling_factor),
-                    )
+                    Ok(VerifyBeaconResult::valid(beaconer_info, scaling_factor))
                 } else {
-                    self.beacon_result(
-                        VerificationStatus::Invalid,
-                        Some(InvalidReason::ScalingFactorNotFound),
-                        Some(beaconer_info),
-                        None,
-                    )
+                    Ok(VerifyBeaconResult::scaling_factor_not_found(beaconer_info))
                 }
             }
-            Err(invalid_reason) => self.beacon_result(
-                VerificationStatus::Invalid,
-                Some(invalid_reason),
-                Some(beaconer_info),
-                None,
-            ),
+            Err(invalid_reason) => Ok(VerifyBeaconResult::invalid(invalid_reason, beaconer_info)),
         }
     }
 
@@ -161,46 +144,50 @@ impl Poc {
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
-        let mut valid_witnesses: Vec<LoraValidWitnessReport> = Vec::new();
-        let mut invalid_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
-        let mut failed_witnesses: Vec<LoraInvalidWitnessReport> = Vec::new();
+        let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
+        let mut failed_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            let witness_result = self
+            match self
                 .verify_witness(
                     &witness_report,
                     beacon_info,
                     gateway_cache,
                     &hex_density_map,
                 )
-                .await?;
-            match witness_result.result {
-                VerificationStatus::Valid => {
-                    let valid_witness = self
-                        .valid_witness_report(witness_result, witness_report)
-                        .await?;
-                    valid_witnesses.push(valid_witness)
-                }
-                VerificationStatus::Invalid => {
-                    let invalid_witness = self
-                        .invalid_witness_report(witness_result, witness_report)
-                        .await?;
-                    invalid_witnesses.push(invalid_witness)
-                }
-                VerificationStatus::Failed => {
-                    // if a witness check returns failed it suggests something
-                    // unexpected has occurred. propogate this back to caller
-                    // and allow it to do its things
-                    let failed_witness = self
-                        .failed_witness_report(witness_result, witness_report)
-                        .await?;
-                    failed_witnesses.push(failed_witness)
+                .await
+            {
+                Ok(witness_result) => match witness_result.result {
+                    VerificationStatus::Valid => {
+                        if let Ok(valid_witness) = self
+                            .valid_witness_report(witness_result, witness_report)
+                            .await
+                        {
+                            verified_witnesses.push(valid_witness)
+                        };
+                    }
+                    VerificationStatus::Invalid => {
+                        if let Ok(invalid_witness) = self
+                            .invalid_witness_report(witness_result, witness_report)
+                            .await
+                        {
+                            verified_witnesses.push(invalid_witness)
+                        }
+                    }
+                },
+                Err(err) => {
+                    tracing::warn!("Unexpected error verifying witness: {err:?}");
+                    if let Ok(failed_witness) = self
+                        .failed_witness_report(InvalidReason::UnknownError, witness_report)
+                        .await
+                    {
+                        failed_witnesses.push(failed_witness)
+                    }
                 }
             }
         }
         let resp = VerifyWitnessesResult {
-            invalid_witnesses,
-            valid_witnesses,
+            verified_witnesses,
             failed_witnesses,
         };
         Ok(resp)
@@ -208,7 +195,7 @@ impl Poc {
 
     async fn verify_witness(
         &mut self,
-        witness_report: &LoraWitnessIngestReport,
+        witness_report: &IotWitnessIngestReport,
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &impl HexDensityMap,
@@ -219,58 +206,28 @@ impl Poc {
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return self.witness_result(
-                    VerificationStatus::Invalid,
-                    Some(InvalidReason::GatewayNotFound),
-                    None,
-                    None,
-                );
+                return Ok(VerifyWitnessResult::gateway_not_found());
             }
         };
-        tracing::debug!("witness info {:?}", beaconer_info);
-
-        // calculate distance of witness to beaconer
-        let witness_location = witness_info
-            .location
-            .ok_or(VerificationError::NotFound("invalid witness_location"))?;
-        let beacon_location = beaconer_info
-            .location
-            .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
-        let witness_distance = calc_distance(beacon_location, witness_location)?;
-
         // run the witness verifications
         match self
-            .do_witness_verifications(
-                &witness_info,
-                witness_report,
-                beaconer_info,
-                witness_distance,
-            )
+            .do_witness_verifications(&witness_info, witness_report, beaconer_info)
             .await
         {
             Ok(()) => {
+                // to avoid assuming witness location is set and to avoid unwrap
+                // we explicity match location here again
+                let Some(witness_location) = witness_info.location else {
+                    return Ok(VerifyWitnessResult::not_asserted())
+                };
+
                 if let Some(hex_scale) = hex_density_map.get(witness_location).await {
-                    self.witness_result(
-                        VerificationStatus::Valid,
-                        None,
-                        Some(witness_info),
-                        Some(hex_scale),
-                    )
+                    Ok(VerifyWitnessResult::valid(witness_info, hex_scale))
                 } else {
-                    self.witness_result(
-                        VerificationStatus::Invalid,
-                        Some(InvalidReason::ScalingFactorNotFound),
-                        Some(witness_info),
-                        None,
-                    )
+                    Ok(VerifyWitnessResult::scaling_factor_not_found(witness_info))
                 }
             }
-            Err(invalid_reason) => self.witness_result(
-                VerificationStatus::Invalid,
-                Some(invalid_reason),
-                Some(witness_info),
-                None,
-            ),
+            Err(invalid_reason) => Ok(VerifyWitnessResult::invalid(invalid_reason, witness_info)),
         }
     }
 
@@ -278,22 +235,40 @@ impl Poc {
         &mut self,
         last_beacon: Option<LastBeacon>,
         beaconer_info: &GatewayInfo,
+        beacon_interval: Duration,
+        beacon_interval_tolerance: Duration,
     ) -> GenericVerifyResult {
+        tracing::debug!(
+            "verifying beacon from beaconer: {:?}",
+            PublicKeyBinary::from(beaconer_info.address.clone())
+        );
         let beacon_received_ts = self.beacon_report.received_timestamp;
         verify_entropy(self.entropy_start, self.entropy_end, beacon_received_ts)?;
-        verify_beacon_schedule(&last_beacon, beacon_received_ts)?;
+        verify_beacon_schedule(
+            &last_beacon,
+            beacon_received_ts,
+            beacon_interval,
+            beacon_interval_tolerance,
+        )?;
         verify_gw_location(beaconer_info.location)?;
         verify_gw_capability(beaconer_info.staking_mode)?;
+        tracing::debug!(
+            "valid beacon from beaconer: {:?}",
+            PublicKeyBinary::from(beaconer_info.address.clone())
+        );
         Ok(())
     }
 
     pub async fn do_witness_verifications(
         &mut self,
         witness_info: &GatewayInfo,
-        witness_report: &LoraWitnessIngestReport,
+        witness_report: &IotWitnessIngestReport,
         beaconer_info: &GatewayInfo,
-        witness_distance: f64,
     ) -> GenericVerifyResult {
+        tracing::debug!(
+            "verifying witness from gateway: {:?}",
+            PublicKeyBinary::from(witness_info.address.clone())
+        );
         let beacon_report = &self.beacon_report;
         verify_self_witness(
             &beacon_report.report.pub_key,
@@ -304,114 +279,85 @@ impl Poc {
             self.entropy_end,
             witness_report.received_timestamp,
         )?;
+        verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
         verify_gw_location(witness_info.location)?;
         verify_witness_freq(
             beacon_report.report.frequency,
             witness_report.report.frequency,
         )?;
         verify_witness_region(beaconer_info.region, witness_info.region)?;
-        verify_witness_distance(witness_distance)?;
+        verify_witness_distance(beaconer_info.location, witness_info.location)?;
         verify_witness_rssi(
             witness_report.report.signal,
             witness_report.report.frequency,
             beacon_report.report.tx_power,
             beaconer_info.gain,
-            witness_distance,
+            beaconer_info.location,
+            witness_info.location,
         )?;
-        verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
+        tracing::debug!(
+            "valid witness from gateway: {:?}",
+            PublicKeyBinary::from(witness_info.address.clone())
+        );
         Ok(())
     }
 
     async fn valid_witness_report(
         &self,
         witness_result: VerifyWitnessResult,
-        witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraValidWitnessReport, VerificationError> {
+        witness_report: IotWitnessIngestReport,
+    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
         let gw_info = witness_result
             .gateway_info
-            .ok_or(VerificationError::NotFound("invalid witness_location"))?;
-        Ok(LoraValidWitnessReport {
+            .ok_or(VerificationError::NotFound(
+                "expected gateway info not found",
+            ))?;
+        let hex_scale = witness_result
+            .hex_scale
+            .ok_or(VerificationError::NotFound("expected hex scale not found"))?;
+        Ok(IotVerifiedWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            location: gw_info.location,
-            // witnesses should no longer validate if scaling factor not found, so this should be changed
-            // to a `ValidationError(NoScalingFactor)` or similar post-anyhow migration
-            hex_scale: witness_result
-                .hex_scale
-                .ok_or(VerificationError::NotFound("invalid hex scaling factor"))?,
+            status: witness_result.result,
             report: witness_report.report,
+            location: gw_info.location,
+            hex_scale,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
             reward_unit: Decimal::ZERO,
+            invalid_reason: InvalidReason::ReasonNone,
+            participant_side: InvalidParticipantSide::SideNone,
         })
     }
 
     async fn invalid_witness_report(
         &self,
         witness_result: VerifyWitnessResult,
-        witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
-        Ok(LoraInvalidWitnessReport {
+        witness_report: IotWitnessIngestReport,
+    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
+        Ok(IotVerifiedWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            reason: witness_result
-                .invalid_reason
-                .ok_or(VerificationError::NotFound("invalid witness_location"))?,
+            status: witness_result.result,
             report: witness_report.report,
-            participant_side: InvalidParticipantSide::Witness,
+            location: None,
+            hex_scale: Decimal::ZERO,
+            // default reward units to zero until we've got the full count of
+            // valid, non-failed witnesses for the final validated poc report
+            reward_unit: Decimal::ZERO,
+            invalid_reason: witness_result.invalid_reason,
+            participant_side: witness_result.participant_side,
         })
     }
 
     async fn failed_witness_report(
         &self,
-        witness_result: VerifyWitnessResult,
-        witness_report: LoraWitnessIngestReport,
-    ) -> Result<LoraInvalidWitnessReport, VerificationError> {
-        Ok(LoraInvalidWitnessReport {
+        failed_reason: InvalidReason,
+        witness_report: IotWitnessIngestReport,
+    ) -> Result<IotInvalidWitnessReport, VerificationError> {
+        Ok(IotInvalidWitnessReport {
             received_timestamp: witness_report.received_timestamp,
-            reason: witness_result
-                .invalid_reason
-                .ok_or(VerificationError::NotFound("invalid witness_location"))?,
+            reason: failed_reason,
             report: witness_report.report,
             participant_side: InvalidParticipantSide::Witness,
-        })
-    }
-
-    fn beacon_result(
-        &self,
-        result: VerificationStatus,
-        invalid_reason: Option<InvalidReason>,
-        beaconer_info: Option<GatewayInfo>,
-        scaling_factor: Option<Decimal>,
-    ) -> Result<VerifyBeaconResult, VerificationError> {
-        tracing::debug!(
-            "beacon verification result: {:?}, reason: {:?}",
-            result,
-            invalid_reason
-        );
-        Ok(VerifyBeaconResult {
-            result,
-            invalid_reason,
-            gateway_info: beaconer_info,
-            hex_scale: scaling_factor,
-        })
-    }
-
-    fn witness_result(
-        &self,
-        result: VerificationStatus,
-        invalid_reason: Option<InvalidReason>,
-        gateway_info: Option<GatewayInfo>,
-        hex_scale: Option<Decimal>,
-    ) -> Result<VerifyWitnessResult, VerificationError> {
-        tracing::debug!(
-            "witness verification result: {:?}, reason: {:?}",
-            result,
-            invalid_reason
-        );
-        Ok(VerifyWitnessResult {
-            result,
-            invalid_reason,
-            gateway_info,
-            hex_scale,
         })
     }
 }
@@ -420,11 +366,13 @@ impl Poc {
 fn verify_beacon_schedule(
     last_beacon: &Option<LastBeacon>,
     beacon_received_ts: DateTime<Utc>,
+    beacon_interval: Duration,
+    beacon_interval_tolerance: Duration,
 ) -> GenericVerifyResult {
     match last_beacon {
         Some(last_beacon) => {
             let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-            if interval_since_last_beacon < Duration::seconds(BEACON_INTERVAL) {
+            if interval_since_last_beacon < (beacon_interval - beacon_interval_tolerance) {
                 tracing::debug!(
                     "beacon verification failed, reason:
                         IrregularInterval. Seconds since last beacon {:?}",
@@ -449,12 +397,15 @@ fn verify_entropy(
 ) -> GenericVerifyResult {
     if received_ts < entropy_start || received_ts > entropy_end {
         tracing::debug!(
-                "report verification failed, reason: {:?}. received_ts: {:?}, entropy_start_time: {:?}, entropy_end_time: {:?}",
-                InvalidReason::EntropyExpired,
-                received_ts,
-                entropy_start,
-                entropy_end
-            );
+            "report verification failed, reason: {:?}.
+                received_ts: {:?},
+                entropy_start_time: {:?},
+                entropy_end_time: {:?}",
+            InvalidReason::EntropyExpired,
+            received_ts,
+            entropy_start,
+            entropy_end
+        );
         return Err(InvalidReason::EntropyExpired);
     }
     Ok(())
@@ -479,6 +430,11 @@ fn verify_gw_location(gateway_loc: Option<u64>) -> GenericVerifyResult {
 fn verify_gw_capability(staking_mode: GatewayStakingMode) -> GenericVerifyResult {
     match staking_mode {
         GatewayStakingMode::Dataonly => {
+            tracing::debug!(
+                "witness verification failed, reason: {:?}. gateway staking mode: {:?}",
+                InvalidReason::InvalidCapability,
+                staking_mode
+            );
             return Err(InvalidReason::InvalidCapability);
         }
         GatewayStakingMode::Full => (),
@@ -493,6 +449,10 @@ fn verify_self_witness(
     witness_pub_key: &PublicKeyBinary,
 ) -> GenericVerifyResult {
     if witness_pub_key == beacon_pub_key {
+        tracing::debug!(
+            "witness verification failed, reason: {:?}",
+            InvalidReason::SelfWitness
+        );
         return Err(InvalidReason::SelfWitness);
     }
     Ok(())
@@ -503,7 +463,7 @@ fn verify_self_witness(
 fn verify_witness_freq(beacon_freq: u64, witness_freq: u64) -> GenericVerifyResult {
     if (beacon_freq.abs_diff(witness_freq) as i32) > 1000 * 100 {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            "witness verification failed, reason: {:?}. beaconer freq: {beacon_freq}, witness freq: {witness_freq}",
             InvalidReason::InvalidFrequency
         );
         return Err(InvalidReason::InvalidFrequency);
@@ -515,7 +475,7 @@ fn verify_witness_freq(beacon_freq: u64, witness_freq: u64) -> GenericVerifyResu
 fn verify_witness_region(beacon_region: Region, witness_region: Region) -> GenericVerifyResult {
     if beacon_region != witness_region {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            "witness verification failed, reason: {:?}. beaconer region: {beacon_region}, witness region: {witness_region}",
             InvalidReason::InvalidRegion
         );
         return Err(InvalidReason::InvalidRegion);
@@ -524,11 +484,23 @@ fn verify_witness_region(beacon_region: Region, witness_region: Region) -> Gener
 }
 
 /// verify witness does not exceed max distance from beaconer
-fn verify_witness_distance(witness_distance: f64) -> GenericVerifyResult {
-    tracing::debug!("witness distance in mtrs: {:?}", witness_distance);
+fn verify_witness_distance(
+    beacon_loc: Option<u64>,
+    witness_loc: Option<u64>,
+) -> GenericVerifyResult {
+    // other verifications handle location checks but dont assume
+    // we have a valid location passed in here
+    // if no location for either beaconer or witness then default
+    // this verification to a fail
+    let l1 = beacon_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
+    let l2 = witness_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
+    let witness_distance = match calc_distance(l1, l2) {
+        Ok(d) => d,
+        Err(_) => return Err(InvalidReason::MaxDistanceExceeded),
+    };
     if witness_distance.round() as i32 / 1000 > POC_DISTANCE_LIMIT {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            "witness verification failed, reason: {:?}. distance {witness_distance}",
             InvalidReason::MaxDistanceExceeded
         );
         return Err(InvalidReason::MaxDistanceExceeded);
@@ -542,22 +514,31 @@ fn verify_witness_rssi(
     witness_freq: u64,
     beacon_tx_power: i32,
     beacon_gain: i32,
-    distance: f64,
+    beacon_loc: Option<u64>,
+    witness_loc: Option<u64>,
 ) -> GenericVerifyResult {
+    // other verifications handle location checks but dont assume
+    // we have a valid location passed in here
+    // if no location for either beaconer or witness or
+    // distance between the two cannot be determined
+    // then default this verification to a fail
+    let l1 = beacon_loc.ok_or(InvalidReason::BadRssi)?;
+    let l2 = witness_loc.ok_or(InvalidReason::BadRssi)?;
+    let distance = match calc_distance(l1, l2) {
+        Ok(d) => d,
+        Err(_) => return Err(InvalidReason::BadRssi),
+    };
     let min_rcv_signal = calc_fspl(beacon_tx_power, witness_freq, distance, beacon_gain);
-    tracing::debug!(
-        "beaconer tx_power: {beacon_tx_power},
-            beaconer gain: {beacon_gain},
-            witness signal: {witness_signal},
-            witness freq: {:?},
-            min_rcv_signal: {min_rcv_signal}",
-        witness_freq
-    );
     // signal is submitted as DBM * 10
-    // min_rcv_signal is plain old DBM
+    // min_rcv_signal    is plain old DBM
     if witness_signal / 10 > min_rcv_signal as i32 {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
+            "witness verification failed, reason: {:?}
+            beaconer tx_power: {beacon_tx_power},
+            beaconer gain: {beacon_gain},
+            witness signal: {witness_signal},
+            witness freq: {witness_freq},
+            min_rcv_signal: {min_rcv_signal}",
             InvalidReason::BadRssi
         );
         return Err(InvalidReason::BadRssi);
@@ -570,8 +551,9 @@ fn verify_witness_rssi(
 fn verify_witness_data(beacon_data: &Vec<u8>, witness_data: &Vec<u8>) -> GenericVerifyResult {
     if witness_data != beacon_data {
         tracing::debug!(
-            "witness verification failed, reason: {:?}",
-            InvalidReason::InvalidPacket
+            "witness verification failed, reason: {:?}. witness_data: {:?}",
+            InvalidReason::InvalidPacket,
+            witness_data
         );
         return Err(InvalidReason::InvalidPacket);
     }
@@ -618,6 +600,126 @@ fn hex_adjustment(loc: &H3Cell) -> Result<f64, h3ron::Error> {
     )
 }
 
+impl VerifyBeaconResult {
+    pub fn new(
+        result: VerificationStatus,
+        invalid_reason: InvalidReason,
+        gateway_info: Option<GatewayInfo>,
+        hex_scale: Option<Decimal>,
+    ) -> Self {
+        Self {
+            result,
+            invalid_reason,
+            gateway_info,
+            hex_scale,
+        }
+    }
+
+    pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
+        Self::new(
+            VerificationStatus::Valid,
+            InvalidReason::ReasonNone,
+            Some(gateway_info),
+            Some(hex_scale),
+        )
+    }
+
+    pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            invalid_reason,
+            Some(gateway_info),
+            None,
+        )
+    }
+
+    pub fn gateway_not_found() -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            InvalidReason::GatewayNotFound,
+            None,
+            None,
+        )
+    }
+
+    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            InvalidReason::ScalingFactorNotFound,
+            Some(gateway_info),
+            None,
+        )
+    }
+}
+
+impl VerifyWitnessResult {
+    pub fn new(
+        result: VerificationStatus,
+        invalid_reason: InvalidReason,
+        gateway_info: Option<GatewayInfo>,
+        hex_scale: Option<Decimal>,
+        participant_side: InvalidParticipantSide,
+    ) -> Self {
+        VerifyWitnessResult {
+            result,
+            invalid_reason,
+            gateway_info,
+            hex_scale,
+            participant_side,
+        }
+    }
+
+    pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
+        Self::new(
+            VerificationStatus::Valid,
+            InvalidReason::ReasonNone,
+            Some(gateway_info),
+            Some(hex_scale),
+            InvalidParticipantSide::Witness,
+        )
+    }
+
+    pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            invalid_reason,
+            Some(gateway_info),
+            None,
+            InvalidParticipantSide::Witness,
+        )
+    }
+
+    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            InvalidReason::ScalingFactorNotFound,
+            Some(gateway_info),
+            None,
+            InvalidParticipantSide::Witness,
+        )
+    }
+
+    pub fn gateway_not_found() -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            InvalidReason::GatewayNotFound,
+            None,
+            None,
+            InvalidParticipantSide::Witness,
+        )
+    }
+
+    pub fn not_asserted() -> Self {
+        Self::new(
+            VerificationStatus::Invalid,
+            InvalidReason::NotAsserted,
+            None,
+            None,
+            InvalidParticipantSide::Witness,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,18 +764,62 @@ mod tests {
     fn test_verify_beacon_schedule() {
         let now = Utc::now();
         let id: &str = "test_id";
-        let last_beacon_a = Some(LastBeacon {
+        let beacon_interval = Duration::hours(6);
+        let beacon_interval_tolerance = Duration::minutes(10);
+        let last_beacon = Some(LastBeacon {
             id: id.as_bytes().to_vec(),
-            timestamp: now - Duration::seconds(60 * 12),
+            timestamp: now - beacon_interval,
         });
-        // last beacon was 12 mins in the past, expectation pass
-        assert_eq!(Ok(()), verify_beacon_schedule(&last_beacon_a, now));
-        //we dont have any last beacon data, expectation pass
-        assert_eq!(Ok(()), verify_beacon_schedule(&None, now));
-        // too soon after our last beacon, expectation fail
+        // last beacon was BEACON_INTERVAL in the past, expectation pass
+        assert!(verify_beacon_schedule(
+            &last_beacon,
+            now,
+            beacon_interval,
+            beacon_interval_tolerance
+        )
+        .is_ok());
+        // last beacon was BEACON_INTERVAL + 1hr in the past, expectation pass
+        assert!(verify_beacon_schedule(
+            &last_beacon,
+            now + Duration::minutes(60),
+            beacon_interval,
+            beacon_interval_tolerance
+        )
+        .is_ok());
+        // last beacon was BEACON_INTERVAL - 1 hr, too soon after our last beacon,
+        // expectation fail
         assert_eq!(
             Err(InvalidReason::IrregularInterval),
-            verify_beacon_schedule(&last_beacon_a, now - Duration::seconds(60 * 5))
+            verify_beacon_schedule(
+                &last_beacon,
+                now - Duration::minutes(60),
+                beacon_interval,
+                beacon_interval_tolerance
+            )
+        );
+        // last beacon was just outside of our tolerance period by 2 mins
+        // therefore beacon too soon, expectation fail
+        assert_eq!(
+            Err(InvalidReason::IrregularInterval),
+            verify_beacon_schedule(
+                &last_beacon,
+                now - (beacon_interval_tolerance + Duration::minutes(2)),
+                beacon_interval,
+                beacon_interval_tolerance
+            )
+        );
+        // last beacon was just inside of our tolerance period by 2 mins
+        // expectation pass
+        assert!(verify_beacon_schedule(
+            &last_beacon,
+            now - (beacon_interval_tolerance - Duration::minutes(2)),
+            beacon_interval,
+            beacon_interval_tolerance
+        )
+        .is_ok());
+        //we dont have any last beacon data, expectation pass
+        assert!(
+            verify_beacon_schedule(&None, now, beacon_interval, beacon_interval_tolerance).is_ok()
         );
     }
 
@@ -682,10 +828,7 @@ mod tests {
         let now = Utc::now();
         let entropy_start = now - Duration::seconds(60);
         let entropy_end = now - Duration::seconds(10);
-        assert_eq!(
-            Ok(()),
-            verify_entropy(entropy_start, entropy_end, now - Duration::seconds(30))
-        );
+        assert!(verify_entropy(entropy_start, entropy_end, now - Duration::seconds(30)).is_ok());
         assert_eq!(
             Err(InvalidReason::EntropyExpired),
             verify_entropy(entropy_start, entropy_end, now - Duration::seconds(1))
@@ -699,14 +842,14 @@ mod tests {
     #[test]
     fn test_verify_location() {
         let location = 631252734740306943;
-        assert_eq!(Ok(()), verify_gw_location(Some(location)));
+        assert!(verify_gw_location(Some(location)).is_ok());
         assert_eq!(Err(InvalidReason::NotAsserted), verify_gw_location(None));
     }
 
     #[test]
     fn test_verify_capability() {
-        assert_eq!(Ok(()), verify_gw_capability(GatewayStakingMode::Full));
-        assert_eq!(Ok(()), verify_gw_capability(GatewayStakingMode::Light));
+        assert!(verify_gw_capability(GatewayStakingMode::Full).is_ok());
+        assert!(verify_gw_capability(GatewayStakingMode::Light).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidCapability),
             verify_gw_capability(GatewayStakingMode::Dataonly)
@@ -720,7 +863,7 @@ mod tests {
                 .unwrap();
         let key2 = PublicKeyBinary::from_str("11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo")
             .unwrap();
-        assert_eq!(Ok(()), verify_self_witness(&key1, &key2));
+        assert!(verify_self_witness(&key1, &key2).is_ok());
         assert_eq!(
             Err(InvalidReason::SelfWitness),
             verify_self_witness(&key1, &key1)
@@ -737,8 +880,9 @@ mod tests {
         let witness2_freq = beacon_freq + (1000 * 100);
         // over the tolerance level
         let witness3_freq = beacon_freq + (1000 * 110);
-        assert_eq!(Ok(()), verify_witness_freq(beacon_freq, witness1_freq));
-        assert_eq!(Ok(()), verify_witness_freq(beacon_freq, witness2_freq));
+
+        assert!(verify_witness_freq(beacon_freq, witness1_freq).is_ok());
+        assert!(verify_witness_freq(beacon_freq, witness2_freq).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidFrequency),
             verify_witness_freq(beacon_freq, witness3_freq)
@@ -750,10 +894,7 @@ mod tests {
         let beacon_region = Region::Us915;
         let witness1_region = Region::Us915;
         let witness2_region = Region::Eu868;
-        assert_eq!(
-            Ok(()),
-            verify_witness_region(beacon_region, witness1_region)
-        );
+        assert!(verify_witness_region(beacon_region, witness1_region).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidRegion),
             verify_witness_region(beacon_region, witness2_region)
@@ -765,12 +906,10 @@ mod tests {
         let beacon_loc = 631615575095659519; // malta
         let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
         let witness2_loc = 631278052025960447; // armenia
-        let witness1_dist = calc_distance(beacon_loc, witness1_loc).unwrap();
-        let witness2_dist = calc_distance(beacon_loc, witness2_loc).unwrap();
-        assert_eq!(Ok(()), verify_witness_distance(witness1_dist));
+        assert!(verify_witness_distance(Some(beacon_loc), Some(witness1_loc)).is_ok());
         assert_eq!(
             Err(InvalidReason::MaxDistanceExceeded),
-            verify_witness_distance(witness2_dist)
+            verify_witness_distance(Some(beacon_loc), Some(witness2_loc))
         );
     }
 
@@ -778,25 +917,25 @@ mod tests {
     fn test_verify_witness_rssi() {
         //TODO: values here were taken from real work success and fail scenarios
         //      get someone in the know to verify
+        let beacon_loc = 631615575095659519; // malta
+        let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
+        let witness2_loc = 631278052025960447; // armenia
+
         let beacon1_tx_power = 27;
         let beacon1_gain = 80;
-        let witness1_distance = 2011.0; //metres
         let witness1_signal = -1060;
         let witness1_freq = 904700032;
-        assert_eq!(
-            Ok(()),
-            verify_witness_rssi(
-                witness1_signal,
-                witness1_freq,
-                beacon1_tx_power,
-                beacon1_gain,
-                witness1_distance
-            )
-        );
-
+        assert!(verify_witness_rssi(
+            witness1_signal,
+            witness1_freq,
+            beacon1_tx_power,
+            beacon1_gain,
+            Some(beacon_loc),
+            Some(witness1_loc),
+        )
+        .is_ok());
         let beacon2_tx_power = 27;
         let beacon2_gain = 12;
-        let witness2_distance = 1683.0; //metres
         let witness2_signal = -19;
         let witness2_freq = 904499968;
         assert_eq!(
@@ -806,7 +945,8 @@ mod tests {
                 witness2_freq,
                 beacon2_tx_power,
                 beacon2_gain,
-                witness2_distance
+                Some(beacon_loc),
+                Some(witness2_loc),
             )
         );
     }
@@ -816,7 +956,7 @@ mod tests {
         let beacon_data = "data1".as_bytes().to_vec();
         let witness1_data = "data1".as_bytes().to_vec();
         let witness2_data = "data2".as_bytes().to_vec();
-        assert_eq!(Ok(()), verify_witness_data(&beacon_data, &witness1_data));
+        assert!(verify_witness_data(&beacon_data, &witness1_data).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidPacket),
             verify_witness_data(&beacon_data, &witness2_data)

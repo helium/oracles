@@ -1,7 +1,7 @@
 [package]
 name = "iot-verifier"
 version = "0.1.0"
-description = "PoC Verifier Server for the Helium Lora Network"
+description = "PoC Verifier Server for the Helium Iot Network"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -52,3 +52,4 @@ rust_decimal_macros = {workspace = true}
 humantime = {workspace = true}
 twox-hash = {workspace = true}
 itertools = {workspace = true}
+rand = {workspace = true}

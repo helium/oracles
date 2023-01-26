@@ -2,7 +2,7 @@ use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
     /// "poc_iot_injector=debug,poc_store=info"
@@ -24,9 +24,8 @@ pub struct Settings {
     pub transactions: node_follower::Settings,
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,
-    /// Local folder for storing intermediate files
-    pub cache: String,
-    pub output: file_store::Settings,
+    #[serde(default = "default_max_witnesses_per_receipt")]
+    pub max_witnesses_per_receipt: u64,
 }
 
 pub fn default_log() -> String {
@@ -43,6 +42,10 @@ pub fn default_do_submission() -> bool {
 
 fn default_trigger_interval() -> u64 {
     1800
+}
+
+pub fn default_max_witnesses_per_receipt() -> u64 {
+    14
 }
 
 impl Settings {

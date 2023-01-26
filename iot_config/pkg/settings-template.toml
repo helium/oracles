@@ -1,0 +1,28 @@
+# log settings for the application (RUST_LOG format). Default below
+# 
+# log = "iot-config=debug,poc_store=info"
+
+
+# Listen addres for public grpc. Default below
+#
+# listen = "0.0.0.0:8080"
+
+network = "mainnet"
+
+[database]
+
+# Url for the main service database
+url = "postgres://postgres:postgres@127.0.0.1:5432/config_db"
+
+# Url for the solana on-chain data such as hotspot asserted hexes
+chain = "postgres://postgres:postgres@127.0.0.1:5432/chain_db"
+
+# Max connections to the database. Default below
+#
+# max_connections = 10
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

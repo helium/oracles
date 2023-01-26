@@ -17,6 +17,7 @@ members = [
     "metrics",
     "denylist",
     "iot_packet_verifier",
+    "iot_config"
 ]
 
 [workspace.package]
@@ -51,8 +52,8 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "map/verified-packet", features = ["services"]}
 helium-crypto = {version="0.6.3", features=["sqlx-postgres", "multisig"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "map/verified-packet", features = ["services"]}
 solana-client = "1.14"
 solana-sdk = "1.14"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
@@ -63,7 +64,7 @@ tracing = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
 rust_decimal = "1"
 rust_decimal_macros = "1"
-base64 = "0"
+base64 = ">=0.21"
 sha2 = "*"
 tonic = "0"
 http = "*"

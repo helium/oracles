@@ -32,6 +32,24 @@ pub struct Settings {
     /// of the reward period + reward_offset_minutes
     #[serde(default = "default_reward_offset_minutes")]
     pub reward_offset_minutes: i64,
+    #[serde(default = "default_max_witnesses_per_poc")]
+    pub max_witnesses_per_poc: u64,
+    /// The cadence at which hotspots are permitted to beacon (in seconds)
+    #[serde(default = "default_beacon_interval")]
+    pub beacon_interval: i64,
+    /// Tolerance applied to beacon intervals within which beacons will be accepted (in seconds)
+    #[serde(default = "default_beacon_interval_tolerance")]
+    pub beacon_interval_tolerance: i64,
+}
+
+// Default: 10 minutes
+pub fn default_beacon_interval_tolerance() -> i64 {
+    10 * 60
+}
+
+// Default: 6 hours
+pub fn default_beacon_interval() -> i64 {
+    6 * 60 * 60
 }
 
 pub fn default_log() -> String {
@@ -48,6 +66,10 @@ fn default_reward_period() -> i64 {
 
 fn default_reward_offset_minutes() -> i64 {
     30
+}
+
+pub fn default_max_witnesses_per_poc() -> u64 {
+    14
 }
 
 impl Settings {
@@ -75,5 +97,13 @@ impl Settings {
 
     pub fn reward_offset_duration(&self) -> Duration {
         Duration::minutes(self.reward_offset_minutes)
+    }
+
+    pub fn beacon_interval(&self) -> Duration {
+        Duration::seconds(self.beacon_interval)
+    }
+
+    pub fn beacon_interval_tolerance(&self) -> Duration {
+        Duration::seconds(self.beacon_interval_tolerance)
     }
 }

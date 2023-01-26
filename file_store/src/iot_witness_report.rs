@@ -11,7 +11,8 @@ use helium_proto::DataRate;
 use serde::Serialize;
 
 #[derive(Serialize, Clone, Debug)]
-pub struct LoraWitnessReport {
+pub struct IotWitnessReport {
+    #[serde(alias = "pubKey")]
     pub pub_key: PublicKeyBinary,
     pub data: Vec<u8>,
     pub timestamp: DateTime<Utc>,
@@ -24,16 +25,16 @@ pub struct LoraWitnessReport {
 }
 
 #[derive(Serialize, Clone, Debug)]
-pub struct LoraWitnessIngestReport {
+pub struct IotWitnessIngestReport {
     pub received_timestamp: DateTime<Utc>,
-    pub report: LoraWitnessReport,
+    pub report: IotWitnessReport,
 }
 
-impl MsgDecode for LoraWitnessIngestReport {
+impl MsgDecode for IotWitnessIngestReport {
     type Msg = LoraWitnessIngestReportV1;
 }
 
-impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessIngestReport {
+impl TryFrom<LoraWitnessReportReqV1> for IotWitnessIngestReport {
     type Error = Error;
     fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
         Ok(Self {
@@ -43,21 +44,21 @@ impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessIngestReport {
     }
 }
 
-impl TryFrom<LoraWitnessIngestReportV1> for LoraWitnessIngestReport {
+impl TryFrom<LoraWitnessIngestReportV1> for IotWitnessIngestReport {
     type Error = Error;
     fn try_from(v: LoraWitnessIngestReportV1) -> Result<Self> {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             report: v
                 .report
-                .ok_or_else(|| Error::not_found("lora witness ingest report v1"))?
+                .ok_or_else(|| Error::not_found("iot witness ingest report v1"))?
                 .try_into()?,
         })
     }
 }
 
-impl From<LoraWitnessIngestReport> for LoraWitnessReportReqV1 {
-    fn from(v: LoraWitnessIngestReport) -> Self {
+impl From<IotWitnessIngestReport> for LoraWitnessReportReqV1 {
+    fn from(v: IotWitnessIngestReport) -> Self {
         let timestamp = v.report.timestamp();
         Self {
             pub_key: v.report.pub_key.into(),
@@ -67,18 +68,18 @@ impl From<LoraWitnessIngestReport> for LoraWitnessReportReqV1 {
             snr: v.report.snr,
             frequency: v.report.frequency,
             datarate: 0,
-            signature: vec![],
+            signature: v.report.signature,
             tmst: v.report.tmst,
         }
     }
 }
 
-impl TryFrom<LoraWitnessReportReqV1> for LoraWitnessReport {
+impl TryFrom<LoraWitnessReportReqV1> for IotWitnessReport {
     type Error = Error;
     fn try_from(v: LoraWitnessReportReqV1) -> Result<Self> {
         let dr = v.datarate;
         let data_rate: DataRate = DataRate::from_i32(dr)
-            .ok_or_else(|| DecodeError::unsupported_datarate("lora_witness_report_req_v1", dr))?;
+            .ok_or_else(|| DecodeError::unsupported_datarate("iot_witness_report_req_v1", dr))?;
         let timestamp = v.timestamp()?;
 
         Ok(Self {
@@ -101,7 +102,7 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for LoraWitnessReportReqV1 {
     }
 }
 
-impl MsgTimestamp<u64> for LoraWitnessReport {
+impl MsgTimestamp<u64> for IotWitnessReport {
     fn timestamp(&self) -> u64 {
         self.timestamp.encode_timestamp_nanos()
     }
@@ -113,14 +114,14 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for LoraWitnessIngestReportV1 {
     }
 }
 
-impl MsgTimestamp<u64> for LoraWitnessIngestReport {
+impl MsgTimestamp<u64> for IotWitnessIngestReport {
     fn timestamp(&self) -> u64 {
         self.received_timestamp.encode_timestamp_millis()
     }
 }
 
-impl From<LoraWitnessReport> for LoraWitnessReportReqV1 {
-    fn from(v: LoraWitnessReport) -> Self {
+impl From<IotWitnessReport> for LoraWitnessReportReqV1 {
+    fn from(v: IotWitnessReport) -> Self {
         let timestamp = v.timestamp();
         Self {
             pub_key: v.pub_key.into(),
@@ -129,8 +130,8 @@ impl From<LoraWitnessReport> for LoraWitnessReportReqV1 {
             signal: v.signal,
             snr: v.snr,
             frequency: v.frequency,
-            datarate: 0,
-            signature: vec![],
+            datarate: v.datarate as i32,
+            signature: v.signature,
             tmst: v.tmst,
         }
     }

@@ -1,0 +1,543 @@
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::{fmt::Display, str::FromStr};
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LoraField<const WIDTH: usize>(pub u64);
+
+pub type NetIdField = LoraField<6>;
+pub type DevAddrField = LoraField<8>;
+pub type EuiField = LoraField<16>;
+
+pub mod proto {
+    pub use helium_proto::services::iot_config::{DevaddrRangeV1, EuiV1, OrgV1};
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DevAddrRange {
+    #[serde(alias = "lower")]
+    pub start_addr: DevAddrField,
+    #[serde(alias = "upper")]
+    pub end_addr: DevAddrField,
+}
+
+impl DevAddrRange {
+    pub fn new(
+        start_addr: DevAddrField,
+        end_addr: DevAddrField,
+    ) -> Result<Self, DevAddrRangeError> {
+        if end_addr < start_addr {
+            return Err(DevAddrRangeError::EndLessThanStart);
+        }
+
+        Ok(Self {
+            start_addr,
+            end_addr,
+        })
+    }
+
+    pub fn next_start(&self) -> Result<DevAddrField, DevAddrRangeError> {
+        let end: u64 = self.end_addr.into();
+        Ok(devaddr(end + 1))
+    }
+
+    pub fn contains(&self, range: &Self) -> bool {
+        self.start_addr <= range.start_addr && self.end_addr >= range.end_addr
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Eui {
+    pub app_eui: EuiField,
+    pub dev_eui: EuiField,
+}
+
+impl Eui {
+    pub fn new(app_eui: EuiField, dev_eui: EuiField) -> Self {
+        Self { app_eui, dev_eui }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ParseError {
+    #[error("char len mismatch: expected {0}, found {1}")]
+    LengthMismatch(usize, usize),
+    #[error("parse int failed: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("net_id field error: {0}")]
+pub struct NetIdError(#[from] ParseError);
+
+#[derive(thiserror::Error, Debug)]
+#[error("devaddr field error: {0}")]
+pub struct DevAddrError(#[from] ParseError);
+
+#[derive(thiserror::Error, Debug)]
+#[error("eui field error: {0}")]
+pub struct EuiError(#[from] ParseError);
+
+#[derive(thiserror::Error, Debug)]
+#[error("invalid net id type: {0}")]
+pub struct InvalidNetId(u32);
+
+#[derive(thiserror::Error, Debug)]
+pub enum DevAddrRangeError {
+    #[error("devaddr end less than start")]
+    EndLessThanStart,
+    #[error("devaddr next addr failed")]
+    NextStartUnavailable,
+}
+
+impl<const WIDTH: usize> PartialOrd for LoraField<WIDTH> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+// Freely convert any LoraField to and from 64-bit integers
+// but limit conversion between 32-bit integers to the NetId
+// and DevAddr fields only
+impl<const WIDTH: usize> From<LoraField<WIDTH>> for u64 {
+    fn from(field: LoraField<WIDTH>) -> Self {
+        field.0
+    }
+}
+
+impl<const WIDTH: usize> From<LoraField<WIDTH>> for i64 {
+    fn from(field: LoraField<WIDTH>) -> Self {
+        field.0 as i64
+    }
+}
+
+impl From<LoraField<6>> for u32 {
+    fn from(field: LoraField<6>) -> Self {
+        field.0 as u32
+    }
+}
+
+impl From<LoraField<8>> for u32 {
+    fn from(field: LoraField<8>) -> Self {
+        field.0 as u32
+    }
+}
+
+impl From<LoraField<6>> for i32 {
+    fn from(field: LoraField<6>) -> Self {
+        field.0 as i32
+    }
+}
+
+impl From<LoraField<8>> for i32 {
+    fn from(field: LoraField<8>) -> Self {
+        field.0 as i32
+    }
+}
+
+impl<const WIDTH: usize> From<u64> for LoraField<WIDTH> {
+    fn from(val: u64) -> Self {
+        LoraField(val)
+    }
+}
+
+impl<const WIDTH: usize> From<i64> for LoraField<WIDTH> {
+    fn from(val: i64) -> Self {
+        LoraField(val as u64)
+    }
+}
+
+impl From<u32> for LoraField<6> {
+    fn from(val: u32) -> Self {
+        LoraField::<6>(val as u64)
+    }
+}
+
+impl From<u32> for LoraField<8> {
+    fn from(val: u32) -> Self {
+        LoraField::<8>(val as u64)
+    }
+}
+
+impl From<i32> for LoraField<6> {
+    fn from(val: i32) -> Self {
+        LoraField::<6>(val as u64)
+    }
+}
+
+impl From<i32> for LoraField<8> {
+    fn from(val: i32) -> Self {
+        LoraField::<8>(val as u64)
+    }
+}
+
+impl<const WIDTH: usize> Display for LoraField<WIDTH> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // pad with 0s to the left up to WIDTH
+        write!(f, "{:0>width$X}", self.0, width = WIDTH)
+    }
+}
+
+impl<const WIDTH: usize> FromStr for LoraField<WIDTH> {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<LoraField<WIDTH>, Self::Err> {
+        if "*" == s {
+            return Ok(LoraField::<WIDTH>(0));
+        }
+        verify_len(s, WIDTH)?;
+        Ok(LoraField::<WIDTH>(u64::from_str_radix(s, 16)?))
+    }
+}
+
+impl<const WIDTH: usize> Serialize for LoraField<WIDTH> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&format!("{self}"))
+    }
+}
+
+impl<'de, const WIDTH: usize> Deserialize<'de> for LoraField<WIDTH> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct LoraFieldVisitor<const IN_WIDTH: usize>;
+
+        impl<'de, const IN_WIDTH: usize> serde::de::Visitor<'de> for LoraFieldVisitor<IN_WIDTH> {
+            type Value = LoraField<IN_WIDTH>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(&format!("field string {} wide", IN_WIDTH))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<LoraField<IN_WIDTH>, E>
+            where
+                E: serde::de::Error,
+            {
+                let field = LoraField::<IN_WIDTH>::from_str(value)
+                    .map_err(|_| serde::de::Error::invalid_length(value.len(), &self))?;
+                Ok(field)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(LoraField::<IN_WIDTH>(v))
+            }
+        }
+
+        deserializer.deserialize_any(LoraFieldVisitor::<WIDTH>)
+    }
+}
+
+pub fn validate_net_id(s: &str) -> Result<NetIdField, NetIdError> {
+    NetIdField::from_str(s).map_err(NetIdError)
+}
+
+pub fn validate_devaddr(s: &str) -> Result<DevAddrField, DevAddrError> {
+    DevAddrField::from_str(s).map_err(DevAddrError)
+}
+
+pub fn validate_eui(s: &str) -> Result<EuiField, EuiError> {
+    EuiField::from_str(s).map_err(EuiError)
+}
+
+pub fn devaddr(val: u64) -> DevAddrField {
+    val.into()
+}
+
+pub fn eui(val: u64) -> EuiField {
+    val.into()
+}
+
+pub fn net_id(val: u64) -> NetIdField {
+    val.into()
+}
+
+fn verify_len(input: &str, expected_len: usize) -> Result<(), ParseError> {
+    match input.len() {
+        len if len == expected_len => Ok(()),
+        len => Err(ParseError::LengthMismatch(len, expected_len)),
+    }
+}
+
+impl NetIdField {
+    fn net_id_type(&self) -> u32 {
+        const BIT_WIDTH: usize = 24;
+        const TYPE_LEN: usize = 3;
+        let net_id = self.0 as u32;
+        net_id >> (BIT_WIDTH - TYPE_LEN)
+    }
+
+    pub fn nwk_id(&self) -> u32 {
+        let prefix_length = self.net_id_type() + 1;
+
+        let mut temp = self.0 as u32;
+        const BIT32PAD: u32 = 8;
+
+        // clear prefix
+        temp <<= prefix_length + BIT32PAD;
+        // shift to start
+        temp >>= prefix_length + BIT32PAD;
+        temp
+    }
+
+    fn devaddr_type_bits(id_type: u32) -> Result<u32, InvalidNetId> {
+        match id_type {
+            0 => Ok(0),
+            1 => Ok(2 << (32 - 2)),
+            2 => Ok(6 << (32 - 3)),
+            3 => Ok(14 << (32 - 4)),
+            4 => Ok(30 << (32 - 5)),
+            5 => Ok(62 << (32 - 6)),
+            6 => Ok(126 << (32 - 7)),
+            7 => Ok(254 << (32 - 8)),
+            other => Err(InvalidNetId(other)),
+        }
+    }
+
+    fn nwk_id_bits(id_type: u32, nwk_id: u32) -> Result<u32, InvalidNetId> {
+        match id_type {
+            0 => Ok(nwk_id << 25),
+            1 => Ok(nwk_id << 24),
+            2 => Ok(nwk_id << 20),
+            3 => Ok(nwk_id << 17),
+            4 => Ok(nwk_id << 15),
+            5 => Ok(nwk_id << 13),
+            6 => Ok(nwk_id << 10),
+            7 => Ok(nwk_id << 7),
+            other => Err(InvalidNetId(other)),
+        }
+    }
+
+    fn max_nwk_addr_bit(id_type: u32) -> Result<u32, InvalidNetId> {
+        match id_type {
+            0 => Ok(2u32.pow(25) - 1),
+            1 => Ok(2u32.pow(24) - 1),
+            2 => Ok(2u32.pow(20) - 1),
+            3 => Ok(2u32.pow(17) - 1),
+            4 => Ok(2u32.pow(15) - 1),
+            5 => Ok(2u32.pow(13) - 1),
+            6 => Ok(2u32.pow(10) - 1),
+            7 => Ok(2u32.pow(7) - 1),
+            other => Err(InvalidNetId(other)),
+        }
+    }
+
+    pub fn range_start(&self) -> Result<DevAddrField, InvalidNetId> {
+        let id_type = self.net_id_type();
+        let nwk_id = self.nwk_id();
+
+        let left = Self::devaddr_type_bits(id_type)?;
+        let middle = Self::nwk_id_bits(id_type, nwk_id)?;
+
+        let min_addr = left | middle;
+        Ok(devaddr(min_addr as u64))
+    }
+
+    pub fn range_end(&self) -> Result<DevAddrField, InvalidNetId> {
+        let id_type = self.net_id_type();
+        let nwk_id = self.nwk_id();
+
+        let left = Self::devaddr_type_bits(id_type)?;
+        let middle = Self::nwk_id_bits(id_type, nwk_id)?;
+        let right = Self::max_nwk_addr_bit(id_type)?;
+
+        let max_devaddr = left | middle | right;
+        Ok(devaddr(max_devaddr as u64))
+    }
+
+    pub fn full_range(&self) -> Result<DevAddrRange, InvalidNetId> {
+        Ok(DevAddrRange {
+            start_addr: self.range_start()?,
+            end_addr: self.range_end()?,
+        })
+    }
+}
+
+impl DevAddrField {
+    pub fn to_range(self, add: u64) -> DevAddrRange {
+        let end = (self.0 + (add - 1)).into();
+        DevAddrRange {
+            start_addr: self,
+            end_addr: end,
+        }
+    }
+
+    pub fn to_net_id(self) -> Result<NetIdField, InvalidNetId> {
+        let addr = self.0 as u32;
+        let id = match addr.leading_ones() {
+            0 => (addr & 0b01111110000000000000000000000000) >> 25,
+            1 => (addr & 0b00111111000000000000000000000000) >> 24,
+            2 => (addr & 0b00011111111100000000000000000000) >> 20,
+            3 => (addr & 0b00001111111111100000000000000000) >> 17,
+            4 => (addr & 0b00000111111111111000000000000000) >> 15,
+            5 => (addr & 0b00000011111111111110000000000000) >> 13,
+            6 => (addr & 0b00000001111111111111110000000000) >> 10,
+            7 => (addr & 0b00000000111111111111111110000000) >> 7,
+            other => return Err(InvalidNetId(other)),
+        };
+        Ok(id.into())
+    }
+}
+
+impl From<proto::DevaddrRangeV1> for DevAddrRange {
+    fn from(range: proto::DevaddrRangeV1) -> Self {
+        Self {
+            start_addr: range.start_addr.into(),
+            end_addr: range.end_addr.into(),
+        }
+    }
+}
+
+impl From<&proto::DevaddrRangeV1> for DevAddrRange {
+    fn from(range: &proto::DevaddrRangeV1) -> Self {
+        Self {
+            start_addr: range.start_addr.into(),
+            end_addr: range.end_addr.into(),
+        }
+    }
+}
+
+impl From<DevAddrRange> for proto::DevaddrRangeV1 {
+    fn from(range: DevAddrRange) -> Self {
+        Self {
+            start_addr: range.start_addr.into(),
+            end_addr: range.end_addr.into(),
+        }
+    }
+}
+
+impl From<proto::EuiV1> for Eui {
+    fn from(range: proto::EuiV1) -> Self {
+        Self {
+            app_eui: range.app_eui.into(),
+            dev_eui: range.dev_eui.into(),
+        }
+    }
+}
+
+impl From<&proto::EuiV1> for Eui {
+    fn from(range: &proto::EuiV1) -> Self {
+        Self {
+            app_eui: range.app_eui.into(),
+            dev_eui: range.dev_eui.into(),
+        }
+    }
+}
+
+impl From<Eui> for proto::EuiV1 {
+    fn from(range: Eui) -> Self {
+        Self {
+            app_eui: range.app_eui.into(),
+            dev_eui: range.dev_eui.into(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn range_from_net_id() {
+        struct Test {
+            net_id: u64,
+            start_addr: u64,
+            end_addr: u64,
+            net_id_type: u32,
+            nwk_id: u32,
+        }
+        let tests = vec![
+            Test {
+                net_id: 0xc00053,
+                start_addr: 0xfc01_4c00,
+                end_addr: 0xfc01_4fff,
+                net_id_type: 6,
+                nwk_id: 83,
+            },
+            Test {
+                net_id: 12_582_995,
+                start_addr: 4_227_943_424,
+                end_addr: 4_227_944_447,
+                net_id_type: 6,
+                nwk_id: 83,
+            },
+            Test {
+                net_id: 0x00001d,
+                start_addr: 0x3a00_0000,
+                end_addr: 0x3bff_ffff,
+                net_id_type: 0,
+                nwk_id: 29,
+            },
+            Test {
+                net_id: 0x600020,
+                start_addr: 0xe040_0000,
+                end_addr: 0xe041_ffff,
+                net_id_type: 3,
+                nwk_id: 32,
+            },
+            Test {
+                net_id: 0xe00040,
+                start_addr: 0xfe00_2000,
+                end_addr: 0xfe00_207f,
+                net_id_type: 7,
+                nwk_id: 64,
+            },
+        ];
+
+        for test in tests {
+            let net_id = net_id(test.net_id);
+            assert_eq!(test.net_id_type, net_id.net_id_type());
+            assert_eq!(test.nwk_id, net_id.nwk_id());
+            assert_eq!(
+                DevAddrRange::new(devaddr(test.start_addr), devaddr(test.end_addr))
+                    .expect("invalid devaddr order"),
+                net_id.full_range().expect("invalid net id")
+            );
+            assert_eq!(
+                devaddr(test.start_addr)
+                    .to_net_id()
+                    .expect("invalid devaddr"),
+                test.nwk_id.into()
+            );
+        }
+    }
+
+    #[test]
+    fn net_id_field() {
+        let field = &net_id(0xc00053);
+        let val = serde_json::to_string(field).expect("serialize net id failed");
+        // value includes quotes
+        assert_eq!(6 + 2, val.len());
+        assert_eq!(r#""C00053""#.to_string(), val);
+    }
+
+    #[test]
+    fn devaddr_field() {
+        let field = &devaddr(0x22ab);
+        let val = serde_json::to_string(field).expect("serialize devaddr failed");
+        // value includes quotes
+        assert_eq!(8 + 2, val.len());
+        assert_eq!(r#""000022AB""#.to_string(), val);
+    }
+
+    #[test]
+    fn eui_field() {
+        let field = &eui(0x0abd_68fd_e91e_e0db);
+        let val = serde_json::to_string(field).expect("serialize eui failed");
+        // value includes quotes
+        assert_eq!(16 + 2, val.len());
+        assert_eq!(r#""0ABD68FDE91EE0DB""#.to_string(), val);
+    }
+
+    #[test]
+    fn wildcard_eui_field() {
+        let val = EuiField::from_str("*").expect("direct from str failed");
+        assert_eq!(0, val.0);
+        let val: EuiField = serde_json::from_str(r#""*""#).expect("serialize from_str failed");
+        assert_eq!(0, val.0);
+    }
+}

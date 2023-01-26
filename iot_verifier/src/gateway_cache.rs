@@ -34,7 +34,6 @@ impl GatewayCache {
     ) -> Result<GatewayInfo, GatewayNotFound> {
         match self.cache.get(address).await {
             Some(hit) => {
-                tracing::debug!("gateway cache hit: {:?}", address);
                 metrics::increment_counter!("oracles_iot_verifier_gateway_cache_hit");
                 Ok(hit.value().clone())
             }

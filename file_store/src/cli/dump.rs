@@ -10,7 +10,7 @@ use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::{
     services::{
-        poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
+        poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
             CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, RadioRewardShare,
             SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
@@ -57,7 +57,7 @@ impl Cmd {
                     let ingest_report = CellSpeedtestIngestReport::try_from(dec_msg)?;
                     print_json(&ingest_report)?;
                 }
-                FileType::LoraBeaconIngestReport => {
+                FileType::IotBeaconIngestReport => {
                     let dec_msg = LoraBeaconIngestReportV1::decode(msg)?;
                     let json = json!({
                         "received_timestamp": dec_msg.received_timestamp,
@@ -66,9 +66,9 @@ impl Cmd {
                     // TODO: tmp dump out as json
                     // printing to json here as csv serializing failing due on header generation from struct
                     print_json(&json)?;
-                    // wtr.serialize(LoraBeaconIngestReport::try_from(dec_msg)?)?;
+                    // wtr.serialize(IotBeaconIngestReport::try_from(dec_msg)?)?;
                 }
-                FileType::LoraWitnessIngestReport => {
+                FileType::IotWitnessIngestReport => {
                     let dec_msg = LoraWitnessIngestReportV1::decode(msg)?;
                     let json = json!({
                         "received_timestamp": dec_msg.received_timestamp,
@@ -77,7 +77,20 @@ impl Cmd {
                     // TODO: tmp dump out as json
                     // printing to json here as csv serializing failing due on header generation from struct
                     print_json(&json)?;
-                    // wtr.serialize(LoraWitnessIngestReport::try_from(dec_msg)?)?;
+                    // wtr.serialize(IotWitnessIngestReport::try_from(dec_msg)?)?;
+                }
+                FileType::IotPoc => {
+                    let dec_msg = LoraPocV1::decode(msg)?;
+                    let json = json!({
+                        "poc_id": dec_msg.poc_id,
+                        "beacon_report":  dec_msg.beacon_report,
+                        "selected_witnesses": dec_msg.selected_witnesses,
+                        "unselected_witnesses": dec_msg.unselected_witnesses,
+                    });
+                    // TODO: tmp dump out as json
+                    // printing to json here as csv serializing failing due on header generation from struct
+                    print_json(&json)?;
+                    // wtr.serialize(IotValidPoc::try_from(dec_msg)?)?;
                 }
                 FileType::SubnetworkRewards => {
                     let proto_rewards = SubnetworkRewards::decode(msg)?.rewards;

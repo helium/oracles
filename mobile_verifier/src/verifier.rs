@@ -7,7 +7,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink, file_sink_write, traits::TimestampEncode, FileStore};
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use futures::{stream::Stream, StreamExt};
 use helium_proto::{
     services::{follower, Channel},
@@ -20,10 +20,10 @@ use tokio::time::sleep;
 
 pub struct VerifierDaemon {
     pub pool: Pool<Postgres>,
-    pub heartbeats_tx: file_sink::MessageSender,
-    pub speedtest_avg_tx: file_sink::MessageSender,
-    pub radio_rewards_tx: file_sink::MessageSender,
-    pub reward_manifest_tx: file_sink::MessageSender,
+    pub heartbeats: FileSinkClient,
+    pub speedtest_avgs: FileSinkClient,
+    pub radio_rewards: FileSinkClient,
+    pub reward_manifests: FileSinkClient,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
     pub verification_offset: Duration,
@@ -89,12 +89,12 @@ impl VerifierDaemon {
 
         // TODO: switch to a bulk transaction
         while let Some(heartbeat) = heartbeats.next().await {
-            heartbeat.write(&self.heartbeats_tx).await?;
+            heartbeat.write(&self.heartbeats).await?;
             heartbeat.save(&mut transaction).await?;
         }
 
         while let Some(speedtest) = speedtests.next().await.transpose()? {
-            speedtest.write(&self.speedtest_avg_tx).await?;
+            speedtest.write(&self.speedtest_avgs).await?;
             speedtest.save(&mut transaction).await?;
         }
 
@@ -118,28 +118,29 @@ impl VerifierDaemon {
                 .entry(reward_share.owner_key.clone())
                 .or_default() += reward_share.amount;
 
-            file_sink_write!("radio_reward_shares", &self.radio_rewards_tx, reward_share)
+            self.radio_rewards
+                .write(reward_share, [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
         }
 
-        let written_files = file_sink::commit(&self.radio_rewards_tx).await?.await??;
+        let written_files = self.radio_rewards.commit().await?.await??;
 
         // Write out the manifest file
-        file_sink_write!(
-            "reward_manifest",
-            &self.reward_manifest_tx,
-            RewardManifest {
-                start_timestamp: scheduler.reward_period.start.encode_timestamp(),
-                end_timestamp: scheduler.reward_period.end.encode_timestamp(),
-                written_files
-            }
-        )
-        .await?
-        .await??;
+        self.reward_manifests
+            .write(
+                RewardManifest {
+                    start_timestamp: scheduler.reward_period.start.encode_timestamp(),
+                    end_timestamp: scheduler.reward_period.end.encode_timestamp(),
+                    written_files,
+                },
+                [],
+            )
+            .await?
+            .await??;
 
-        file_sink::commit(&self.reward_manifest_tx).await?;
+        self.reward_manifests.commit().await?;
 
         let mut transaction = self.pool.begin().await?;
 

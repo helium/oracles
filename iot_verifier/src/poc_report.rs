@@ -25,8 +25,8 @@ pub enum ReportType {
 }
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
-#[sqlx(type_name = "lorastatus", rename_all = "lowercase")]
-pub enum LoraStatus {
+#[sqlx(type_name = "iotstatus", rename_all = "lowercase")]
+pub enum IotStatus {
     Pending,
     Ready,
     Valid,
@@ -40,7 +40,7 @@ pub struct InsertBindings {
     pub buf: Vec<u8>,
     pub received_ts: DateTime<Utc>,
     pub report_type: ReportType,
-    pub status: LoraStatus,
+    pub status: IotStatus,
 }
 
 #[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
@@ -51,7 +51,7 @@ pub struct Report {
     pub packet_data: Vec<u8>,
     pub report_data: Vec<u8>,
     pub report_type: ReportType,
-    pub status: LoraStatus,
+    pub status: IotStatus,
     pub attempts: i32,
     pub report_timestamp: Option<DateTime<Utc>>,
     pub last_processed: Option<DateTime<Utc>>,
@@ -74,7 +74,7 @@ impl Report {
         report_data: Vec<u8>,
         report_timestamp: &DateTime<Utc>,
         report_type: ReportType,
-        status: LoraStatus,
+        status: IotStatus,
     ) -> Result<(), ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -123,7 +123,8 @@ impl Report {
                 .push_bind(insert.report_type)
                 .push_bind(insert.status);
         });
-
+        // append conflict strategy to each insert row
+        query_builder.push(" on conflict (id) do nothing ");
         let query = query_builder.build();
         query
             .execute(executor)
@@ -281,7 +282,7 @@ impl Report {
     pub async fn update_status<'c, E>(
         executor: E,
         id: &Vec<u8>,
-        status: LoraStatus,
+        status: IotStatus,
         timestamp: DateTime<Utc>,
     ) -> Result<(), ReportError>
     where
@@ -306,7 +307,7 @@ impl Report {
     pub async fn update_status_all<'c, E>(
         executor: E,
         packet_data: &Vec<u8>,
-        status: LoraStatus,
+        status: IotStatus,
         timestamp: DateTime<Utc>,
     ) -> Result<(), ReportError>
     where
@@ -377,6 +378,20 @@ impl Report {
         .bind(stale_time)
         .fetch_all(executor)
         .await?)
+    }
+
+    pub async fn count_all_beacons(
+        executor: impl sqlx::PgExecutor<'_>,
+    ) -> Result<u64, ReportError> {
+        Ok(sqlx::query_scalar::<_, i64>(
+            r#"
+            select count(*) from poc_report
+            where report_type = 'beacon' and status in ('pending','ready')
+            "#,
+        )
+        .fetch_one(executor)
+        .await
+        .map(|count| count as u64)?)
     }
 
     pub async fn get_stale_witnesses<'c, E>(

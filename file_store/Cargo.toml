@@ -40,8 +40,8 @@ poc-metrics = { path = "../metrics" }
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 density-scaler = {path = "../density_scaler"}
+base64 = {workspace = true}
 
 [dev-dependencies]
-base64 = "0"
 hex-literal = "0"
 tempfile = "3"

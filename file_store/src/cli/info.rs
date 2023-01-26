@@ -7,7 +7,9 @@ use crate::{
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1};
+use helium_proto::services::poc_lora::{
+    LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
+};
 use helium_proto::{
     services::poc_mobile::{
         CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1, SpeedtestReqV1,
@@ -99,12 +101,21 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
         FileType::EntropyReport => EntropyReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::LoraBeaconIngestReport => LoraBeaconIngestReportV1::decode(buf)
+        FileType::IotBeaconIngestReport => LoraBeaconIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::LoraWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
+        FileType::IotWitnessIngestReport => LoraWitnessIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
+        FileType::IotPoc => LoraPocV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(|report| {
+                report.beacon_report.ok_or_else(|| {
+                    Error::not_found("IotValidPocV1 does not contain a IotBeaconIngestReportV1")
+                })
+            })
+            .and_then(|beacon_report| beacon_report.timestamp())?,
+
         _ => Utc::now(),
     };
     Ok(result)

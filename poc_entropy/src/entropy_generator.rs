@@ -1,5 +1,6 @@
+use base64::Engine;
 use chrono::Utc;
-use file_store::{file_sink, file_sink_write};
+use file_store::file_sink;
 use futures::TryFutureExt;
 use helium_proto::EntropyReportV1;
 use jsonrpsee::{
@@ -31,16 +32,26 @@ pub struct Entropy {
     pub data: Vec<u8>,
 }
 
+impl From<Entropy> for EntropyReportV1 {
+    fn from(value: Entropy) -> Self {
+        Self {
+            version: value.version,
+            timestamp: value.timestamp as u64,
+            data: value.data,
+        }
+    }
+}
+
 fn ser_base64<T, S>(key: &T, serializer: S) -> std::result::Result<S::Ok, S::Error>
 where
     T: AsRef<[u8]>,
     S: serde::ser::Serializer,
 {
-    serializer.serialize_str(&base64::encode(key.as_ref()))
+    serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(key.as_ref()))
 }
 impl std::fmt::Display for Entropy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&base64::encode(&self.data))
+        f.write_str(&base64::engine::general_purpose::STANDARD.encode(&self.data))
     }
 }
 
@@ -106,7 +117,7 @@ impl EntropyGenerator {
 
     pub async fn run(
         &mut self,
-        file_sink: file_sink::MessageSender,
+        file_sink: file_sink::FileSinkClient,
         shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
         tracing::info!("started entropy generator");
@@ -138,7 +149,7 @@ impl EntropyGenerator {
 
     async fn handle_entropy_tick(
         &mut self,
-        file_sink: &file_sink::MessageSender,
+        file_sink: &file_sink::FileSinkClient,
     ) -> anyhow::Result<()> {
         match Self::get_entropy(&self.client).await {
             Ok(data) => self.sender.send_modify(|entry| {
@@ -158,12 +169,9 @@ impl EntropyGenerator {
             entropy.to_string(),
             entropy.timestamp
         );
-        file_sink_write!(
-            "report_submission",
-            file_sink,
-            EntropyReportV1::from(entropy)
-        )
-        .await?;
+
+        file_sink.write(EntropyReportV1::from(entropy), []).await?;
+
         Ok(())
     }
 

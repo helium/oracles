@@ -1,8 +1,12 @@
 use crate::Settings;
 use anyhow::{Error, Result};
 use chrono::{Duration, Utc};
-use file_store::traits::MsgVerify;
-use file_store::{file_sink, file_sink_write, file_upload, FileType};
+use file_store::{
+    file_sink::{self, FileSinkClient},
+    file_upload,
+    traits::MsgVerify,
+    FileType,
+};
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_lora::{
@@ -16,20 +20,20 @@ pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer {
-    lora_beacon_report_tx: file_sink::MessageSender,
-    lora_witness_report_tx: file_sink::MessageSender,
+    beacon_report_sink: FileSinkClient,
+    witness_report_sink: FileSinkClient,
     required_network: Network,
 }
 
 impl GrpcServer {
     fn new(
-        lora_beacon_report_tx: file_sink::MessageSender,
-        lora_witness_report_tx: file_sink::MessageSender,
+        beacon_report_sink: FileSinkClient,
+        witness_report_sink: FileSinkClient,
         required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
-            lora_beacon_report_tx,
-            lora_witness_report_tx,
+            beacon_report_sink,
+            witness_report_sink,
             required_network,
         })
     }
@@ -75,8 +79,7 @@ impl poc_lora::PocLora for GrpcServer {
                 report: Some(event),
             })?;
 
-        _ = file_sink_write!("beacon_report", &self.lora_beacon_report_tx, report).await;
-        metrics::increment_counter!("ingest_server_beacon_report_count");
+        _ = self.beacon_report_sink.write(report, []).await;
 
         let id = timestamp.to_string();
         Ok(Response::new(LoraBeaconReportRespV1 { id }))
@@ -98,8 +101,7 @@ impl poc_lora::PocLora for GrpcServer {
                 report: Some(event),
             })?;
 
-        _ = file_sink_write!("witness_report", &self.lora_witness_report_tx, report).await;
-        metrics::increment_counter!("ingest_server_witness_report_count");
+        _ = self.witness_report_sink.write(report, []).await;
 
         let id = timestamp.to_string();
         Ok(Response::new(LoraWitnessReportRespV1 { id }))
@@ -116,35 +118,29 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     let store_base_path = Path::new(&settings.cache);
 
-    // lora beacon reports
-    let (lora_beacon_report_tx, lora_beacon_report_rx) = file_sink::message_channel(50);
-    let mut lora_beacon_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::LoraBeaconIngestReport,
+    // iot beacon reports
+    let (beacon_report_sink, mut beacon_report_sink_server) = file_sink::FileSinkBuilder::new(
+        FileType::IotBeaconIngestReport,
         store_base_path,
-        lora_beacon_report_rx,
+        concat!(env!("CARGO_PKG_NAME"), "_beacon_report"),
     )
     .deposits(Some(file_upload_tx.clone()))
     .roll_time(Duration::minutes(5))
     .create()
     .await?;
 
-    // lora witness reports
-    let (lora_witness_report_tx, lora_witness_report_rx) = file_sink::message_channel(50);
-    let mut lora_witness_report_sink = file_sink::FileSinkBuilder::new(
-        FileType::LoraWitnessIngestReport,
+    // iot witness reports
+    let (witness_report_sink, mut witness_report_sink_server) = file_sink::FileSinkBuilder::new(
+        FileType::IotWitnessIngestReport,
         store_base_path,
-        lora_witness_report_rx,
+        concat!(env!("CARGO_PKG_NAME"), "_witness_report"),
     )
     .deposits(Some(file_upload_tx.clone()))
     .roll_time(Duration::minutes(5))
     .create()
     .await?;
 
-    let grpc_server = GrpcServer::new(
-        lora_beacon_report_tx,
-        lora_witness_report_tx,
-        settings.network,
-    )?;
+    let grpc_server = GrpcServer::new(beacon_report_sink, witness_report_sink, settings.network)?;
 
     tracing::info!(
         "grpc listening on {grpc_addr} and server mode {:?}",
@@ -152,15 +148,19 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     );
 
     let server = transport::Server::builder()
-        .layer(poc_metrics::request_layer!("ingest_server_lora_connection"))
+        .layer(poc_metrics::request_layer!("ingest_server_iot_connection"))
         .add_service(poc_lora::Server::new(grpc_server))
         .serve_with_shutdown(grpc_addr, shutdown.clone())
         .map_err(Error::from);
 
     tokio::try_join!(
         server,
-        lora_beacon_report_sink.run(&shutdown).map_err(Error::from),
-        lora_witness_report_sink.run(&shutdown).map_err(Error::from),
+        beacon_report_sink_server
+            .run(&shutdown)
+            .map_err(Error::from),
+        witness_report_sink_server
+            .run(&shutdown)
+            .map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
     )
     .map(|_| ())

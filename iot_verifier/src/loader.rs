@@ -1,22 +1,21 @@
 use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
-    poc_report::{InsertBindings, LoraStatus, Report, ReportType},
+    metrics::LoaderMetricTracker,
+    poc_report::{InsertBindings, IotStatus, Report, ReportType},
     Settings,
 };
 use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
-    lora_beacon_report::LoraBeaconIngestReport, lora_witness_report::LoraWitnessIngestReport,
-    traits::IngestId, FileInfo, FileStore, FileType,
+    iot_beacon_report::IotBeaconIngestReport,
+    iot_witness_report::IotWitnessIngestReport,
+    traits::{IngestId, MsgDecode},
+    FileInfo, FileStore, FileType,
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::{
-    services::poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
-    Message,
-};
 use sqlx::PgPool;
 use std::{hash::Hasher, ops::DerefMut, time::Duration};
 use tokio::{
@@ -51,6 +50,12 @@ pub enum NewLoaderError {
     DbStoreError(#[from] db_store::Error),
     #[error("denylist error: {0}")]
     DenyListError(#[from] denylist::Error),
+}
+
+pub enum ValidGatewayResult {
+    Valid,
+    Denied,
+    Unknown,
 }
 
 impl Loader {
@@ -167,7 +172,7 @@ impl Loader {
         // filter is not required for beacons
         match self
             .process_events(
-                FileType::LoraBeaconIngestReport,
+                FileType::IotBeaconIngestReport,
                 &self.ingest_store,
                 gateway_cache,
                 after,
@@ -180,7 +185,7 @@ impl Loader {
             Ok(()) => (),
             Err(err) => tracing::warn!(
                 "error whilst processing {:?} from s3, error: {err:?}",
-                FileType::LoraBeaconIngestReport
+                FileType::IotBeaconIngestReport
             ),
         }
         tracing::info!("creating beacon xor filter");
@@ -198,7 +203,7 @@ impl Loader {
         // for witnesses we do need the filter but not the arc
         match self
             .process_events(
-                FileType::LoraWitnessIngestReport,
+                FileType::IotWitnessIngestReport,
                 &self.ingest_store,
                 gateway_cache,
                 after - ChronoDuration::seconds(60 * 2),
@@ -211,7 +216,7 @@ impl Loader {
             Ok(()) => (),
             Err(err) => tracing::warn!(
                 "error whilst processing {:?} from s3, error: {err:?}",
-                FileType::LoraWitnessIngestReport
+                FileType::IotWitnessIngestReport
             ),
         }
         Ok(())
@@ -277,6 +282,7 @@ impl Loader {
     ) -> anyhow::Result<()> {
         let file_type = file_info.file_type;
         let tx = Mutex::new(self.pool.begin().await?);
+        let metrics = LoaderMetricTracker::new();
         store
             .stream_file(file_info.clone())
             .await?
@@ -289,7 +295,7 @@ impl Loader {
                             tracing::warn!("skipping report of type {file_type} due to error {err:?}")
                         }
                         Ok(buf) => {
-                            match self.handle_report(file_type, &buf, gateway_cache, xor_data, xor_filter).await
+                            match self.handle_report(file_type, &buf, gateway_cache, xor_data, xor_filter, &metrics).await
                                 {
                                     Ok(Some(bindings)) =>  inserts.push(bindings),
                                     Ok(None) => (),
@@ -309,6 +315,7 @@ impl Loader {
             }).await;
 
         tx.into_inner().commit().await?;
+        metrics.record_metrics();
         Ok(())
     }
 
@@ -319,18 +326,18 @@ impl Loader {
         gateway_cache: &GatewayCache,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
+        metrics: &LoaderMetricTracker,
     ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
-            FileType::LoraBeaconIngestReport => {
-                let beacon: LoraBeaconIngestReport =
-                    LoraBeaconIngestReportV1::decode(buf)?.try_into()?;
+            FileType::IotBeaconIngestReport => {
+                let beacon = IotBeaconIngestReport::decode(buf)?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);
                 let packet_data = beacon.report.data.clone();
                 match self
                     .check_valid_gateway(&beacon.report.pub_key, gateway_cache)
                     .await
                 {
-                    true => {
+                    ValidGatewayResult::Valid => {
                         let res = InsertBindings {
                             id: beacon.ingest_id(),
                             remote_entropy: beacon.report.remote_entropy,
@@ -338,21 +345,28 @@ impl Loader {
                             buf: buf.to_vec(),
                             received_ts: beacon.received_timestamp,
                             report_type: ReportType::Beacon,
-                            status: LoraStatus::Pending,
+                            status: IotStatus::Pending,
                         };
-                        metrics::increment_counter!("oracles_iot_verifier_loader_beacon");
+                        metrics.increment_beacons();
                         if let Some(xor_data) = xor_data {
                             let key_hash = filter_key_hash(&beacon.report.data);
                             xor_data.lock().await.deref_mut().push(key_hash)
                         };
                         Ok(Some(res))
                     }
-                    false => Ok(None),
+                    ValidGatewayResult::Denied => {
+                        metrics.increment_beacons_denied();
+                        Ok(None)
+                    }
+
+                    ValidGatewayResult::Unknown => {
+                        metrics.increment_beacons_unknown();
+                        Ok(None)
+                    }
                 }
             }
-            FileType::LoraWitnessIngestReport => {
-                let witness: LoraWitnessIngestReport =
-                    LoraWitnessIngestReportV1::decode(buf)?.try_into()?;
+            FileType::IotWitnessIngestReport => {
+                let witness = IotWitnessIngestReport::decode(buf)?;
                 tracing::debug!("witness report from ingestor: {:?}", &witness);
                 let packet_data = witness.report.data.clone();
                 if let Some(filter) = xor_filter {
@@ -362,7 +376,7 @@ impl Loader {
                                 .check_valid_gateway(&witness.report.pub_key, gateway_cache)
                                 .await
                             {
-                                true => {
+                                ValidGatewayResult::Valid => {
                                     let res = InsertBindings {
                                         id: witness.ingest_id(),
                                         remote_entropy: Vec::<u8>::with_capacity(0),
@@ -370,14 +384,19 @@ impl Loader {
                                         buf: buf.to_vec(),
                                         received_ts: witness.received_timestamp,
                                         report_type: ReportType::Witness,
-                                        status: LoraStatus::Ready,
+                                        status: IotStatus::Ready,
                                     };
-                                    metrics::increment_counter!(
-                                        "oracles_iot_verifier_loader_witness"
-                                    );
+                                    metrics.increment_witnesses();
                                     Ok(Some(res))
                                 }
-                                false => Ok(None),
+                                ValidGatewayResult::Denied => {
+                                    metrics.increment_witnesses_denied();
+                                    Ok(None)
+                                }
+                                ValidGatewayResult::Unknown => {
+                                    metrics.increment_witnesses_unknown();
+                                    Ok(None)
+                                }
                             }
                         }
                         false => {
@@ -385,10 +404,7 @@ impl Loader {
                                 "dropping witness report as no associated beacon data: {:?}",
                                 packet_data
                             );
-                            metrics::increment_counter!(
-                                "iot_verifier_invalid_witness_report",
-                                &vec![("status", "ok"), ("reason", "no_associated_beacon_data")]
-                            );
+                            metrics.increment_witnesses_no_beacon();
                             Ok(None)
                         }
                     }
@@ -407,16 +423,16 @@ impl Loader {
         &self,
         pub_key: &PublicKeyBinary,
         gateway_cache: &GatewayCache,
-    ) -> bool {
+    ) -> ValidGatewayResult {
         if self.check_gw_denied(pub_key).await {
             tracing::debug!("dropping denied gateway : {:?}", &pub_key);
-            return false;
+            return ValidGatewayResult::Denied;
         }
         if self.check_unknown_gw(pub_key, gateway_cache).await {
             tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
-            return false;
+            return ValidGatewayResult::Unknown;
         }
-        true
+        ValidGatewayResult::Valid
     }
 
     async fn check_unknown_gw(

@@ -1,8 +1,14 @@
-use helium_proto::services::{
-    follower, iot_config::org_client::OrgClient, transaction, Channel, Endpoint,
-};
+use crate::txn_service::{TransactionClient, TransactionClients};
+use helium_proto::services::{follower, transaction, Channel, Endpoint};
 use serde::Deserialize;
 use std::time::Duration;
+
+// Wrapper to make serde happy with an Option<Vec<http::Uri>>
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+pub struct NodeUrl {
+    #[serde(with = "http_serde::uri")]
+    pub url: http::Uri,
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -20,6 +26,8 @@ pub struct Settings {
     /// batch size for gateway stream results. Default 100
     #[serde(default = "default_batch_size")]
     pub batch: u32,
+    /// Optional list of Node urls to submit txns to
+    pub submission_urls: Option<Vec<NodeUrl>>,
 }
 
 pub fn default_url() -> http::Uri {
@@ -47,7 +55,7 @@ impl Settings {
         follower::Client::new(channel)
     }
 
-    pub fn connect_transactions(&self) -> transaction::Client<Channel> {
+    pub fn connect_transactions(&self) -> TransactionClient {
         let channel = Endpoint::from(self.url.clone())
             .connect_timeout(Duration::from_secs(self.connect))
             .timeout(Duration::from_secs(self.rpc))
@@ -61,5 +69,24 @@ impl Settings {
             .timeout(Duration::from_secs(self.rpc))
             .connect_lazy();
         OrgClient::new(channel)
+    }
+
+    pub fn connect_multiple_transactions(&self) -> Option<TransactionClients> {
+        match &self.submission_urls {
+            Some(urls) => {
+                let clients = urls
+                    .iter()
+                    .map(|node_url| {
+                        let channel = Endpoint::from(node_url.url.clone())
+                            .connect_timeout(Duration::from_secs(self.connect))
+                            .timeout(Duration::from_secs(self.rpc))
+                            .connect_lazy();
+                        transaction::Client::new(channel)
+                    })
+                    .collect();
+                Some(clients)
+            }
+            None => None,
+        }
     }
 }

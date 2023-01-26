@@ -9,10 +9,10 @@ use helium_crypto::Keypair;
 use helium_proto::Message;
 use std::{path::PathBuf, sync::Arc};
 
-/// Construct raw poc receipt txns from a given lora_valid_poc file
+/// Construct raw poc receipt txns from a given iot_valid_poc file
 #[derive(Debug, clap::Args)]
 pub struct Cmd {
-    /// Required path to lora_valid_poc file
+    /// Required path to iot_valid_poc file
     #[clap(long)]
     in_path: PathBuf,
 }
@@ -21,11 +21,12 @@ impl Cmd {
     pub async fn run(&self, settings: &Settings) -> anyhow::Result<()> {
         let mut file_stream = file_source::source([&self.in_path]);
         let poc_oracle_key = settings.keypair()?;
+        let max_witnesses_per_receipt = settings.max_witnesses_per_receipt;
         let shared_key = Arc::new(poc_oracle_key);
 
         while let Some(result) = file_stream.next().await {
             let msg = result?;
-            process_msg(msg, shared_key.clone()).await?;
+            let _ = process_msg(msg, shared_key.clone(), max_witnesses_per_receipt).await;
         }
 
         Ok(())
@@ -35,8 +36,9 @@ impl Cmd {
 async fn process_msg(
     msg: prost::bytes::BytesMut,
     shared_key_clone: Arc<Keypair>,
+    max_witnesses_per_receipt: u64,
 ) -> anyhow::Result<TxnDetails> {
-    if let Ok(txn_details) = handle_report_msg(msg, shared_key_clone) {
+    if let Ok(txn_details) = handle_report_msg(msg, shared_key_clone, max_witnesses_per_receipt) {
         tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
         Ok(txn_details)
     } else {
