@@ -40,6 +40,41 @@ pub struct Settings {
     /// Tolerance applied to beacon intervals within which beacons will be accepted (in seconds)
     #[serde(default = "default_beacon_interval_tolerance")]
     pub beacon_interval_tolerance: i64,
+    /// window width for the entropy and poc report loader ( in seconds )
+    /// each poll the loader will load reports from start time to start time + window width
+    #[serde(default = "default_poc_loader_window_width")]
+    pub poc_loader_window_width: i64,
+    /// max window age for the entropy and poc report loader ( in seconds )
+    /// the starting point of the window will never be older than now - max age
+    #[serde(default = "default_poc_loader_window_max_lookback_age")]
+    pub poc_loader_window_max_lookback_age: i64,
+    /// cadence for how often to look for poc reports from s3 buckets
+    #[serde(default = "default_poc_loader_poll_time")]
+    pub poc_loader_poll_time: u64,
+    /// cadence for how often to look for entropy reports from s3 buckets
+    #[serde(default = "default_poc_loader_entropy_poll_time")]
+    pub poc_loader_entropy_poll_time: u64,
+}
+
+// Default: 3 minutes
+pub fn default_poc_loader_entropy_poll_time() -> u64 {
+    3 * 60
+}
+
+// Default: 5 minutes
+pub fn default_poc_loader_poll_time() -> u64 {
+    5 * 60
+}
+
+// Default: 60 minutes
+// this should be at least poc_loader_window_width * 2
+pub fn default_poc_loader_window_max_lookback_age() -> i64 {
+    60 * 60
+}
+
+// Default: 15 minutes
+pub fn default_poc_loader_window_width() -> i64 {
+    15 * 60
 }
 
 // Default: 10 minutes
@@ -106,4 +141,5 @@ impl Settings {
     pub fn beacon_interval_tolerance(&self) -> Duration {
         Duration::seconds(self.beacon_interval_tolerance)
     }
+
 }

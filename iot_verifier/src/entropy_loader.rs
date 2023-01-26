@@ -8,15 +8,13 @@ use sqlx::PgPool;
 use tokio::time::{self, MissedTickBehavior};
 
 const ENTROPY_META_NAME: &str = "entropy_report";
-/// cadence for how often to look for entropy from s3 buckets
-const ENTROPY_POLL_TIME: i64 = 60 * 5;
-
 const STORE_WORKERS: usize = 10;
 const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
 
 pub struct EntropyLoader {
     entropy_store: FileStore,
     pool: PgPool,
+    settings: Settings,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -35,12 +33,15 @@ impl EntropyLoader {
         Ok(Self {
             pool,
             entropy_store,
+            settings: settings.clone(),
         })
     }
 
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("started verifier entropy loader");
-        let mut report_timer = time::interval(time::Duration::from_secs(ENTROPY_POLL_TIME as u64));
+        let mut report_timer = time::interval(time::Duration::from_secs(
+            self.settings.poc_loader_entropy_poll_time,
+        ));
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             if shutdown.is_triggered() {
@@ -66,17 +67,19 @@ impl EntropyLoader {
         // the loader loads files from s3 via a sliding window
         // its start point is Now() - (ENTROPY_POLL_TIME * 3)
         // as such data being loaded is always stale by a time equal to ENTROPY_POLL_TIME
-
+        let window_width = self.settings.poc_loader_window_width;
         // if there is NO last timestamp in the DB, we will start our sliding window from this point
-        let window_default_lookback = now - ChronoDuration::seconds(ENTROPY_POLL_TIME * 6);
+        let window_default_lookback = now - ChronoDuration::seconds(window_width * 6);
         // if there IS a last timestamp in the DB, we will use it as the starting point for our sliding window
         // but cap it at the max below.
-        let window_max_lookback = now - ChronoDuration::seconds(ENTROPY_POLL_TIME * 12);
+        let window_max_lookback =
+            now - ChronoDuration::seconds(self.settings.poc_loader_window_max_lookback_age);
         let after = Meta::last_timestamp(&self.pool, ENTROPY_META_NAME)
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
-        let before = now - ChronoDuration::seconds(ENTROPY_POLL_TIME);
+        let before_max = after + ChronoDuration::seconds(window_width);
+        let before = (now - ChronoDuration::seconds(window_width)).min(before_max);
         let window_width = (before - after).num_minutes() as u64;
         tracing::info!(
             "entropy sliding window, after: {after}, before: {before}, width: {window_width}"

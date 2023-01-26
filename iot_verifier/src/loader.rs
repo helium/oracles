@@ -26,8 +26,6 @@ use twox_hash::XxHash64;
 use xorf::{Filter as XorFilter, Xor16};
 
 const REPORTS_META_NAME: &str = "report";
-/// cadence for how often to look for  reports from s3 buckets
-const REPORTS_POLL_TIME: u64 = 60 * 5;
 
 const STORE_WORKERS: usize = 100;
 // DB pool size if the store worker count multiplied by the number of file types
@@ -37,6 +35,7 @@ const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
 pub struct Loader {
     ingest_store: FileStore,
     pool: PgPool,
+    settings: Settings,
     deny_list_latest_url: String,
     deny_list_trigger_interval: Duration,
     deny_list: DenyList,
@@ -67,6 +66,7 @@ impl Loader {
         Ok(Self {
             pool,
             ingest_store,
+            settings: settings.clone(),
             deny_list_latest_url: settings.denylist.denylist_url.clone(),
             deny_list_trigger_interval: settings.denylist.trigger_interval(),
             deny_list,
@@ -79,7 +79,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
     ) -> anyhow::Result<()> {
         tracing::info!("started verifier loader");
-        let mut report_timer = time::interval(time::Duration::from_secs(REPORTS_POLL_TIME));
+        let mut report_timer = time::interval(time::Duration::from_secs(self.settings.poc_loader_poll_time as u64));
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
         denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -132,20 +132,17 @@ impl Loader {
         // the window defaults to a width = REPORTS_POLL_TIME
         // its start point is Now() - (REPORTS_POLL_TIME * 2)
         // as such data being loaded is always stale by a time equal to REPORTS_POLL_TIME
-
+        let window_width = self.settings.poc_loader_window_width;
         // if there is NO last timestamp in the DB, we will start our sliding window from this point
-        let window_default_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
-        // NOTE: Atm we never look back more than window_default_lookback
-        // The experience has been that once we start processing a window longer than default
-        // we never recover the time and end up stuck on a window of the extended size
-        // The option is here however to extend the window size should it be needed
-        let window_max_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
+        let window_default_lookback = now - ChronoDuration::seconds(window_width  * 2);
+        let window_max_lookback = now - ChronoDuration::seconds(self.settings.poc_loader_window_max_lookback_age);
+        tracing::info!("default window: {window_default_lookback}, max window: {window_max_lookback}");
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
-
-        let before = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
+        let before_max = after + ChronoDuration::seconds(window_width);
+        let before = (now - ChronoDuration::seconds(window_width)).min(before_max);
         let window_width = (before - after).num_minutes() as u64;
         tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
         self.process_window(gateway_cache, after, before).await?;
