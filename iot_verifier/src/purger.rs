@@ -1,4 +1,5 @@
 use crate::{entropy::Entropy, metrics::Metrics, poc_report::Report, Settings};
+use chrono::Duration;
 use file_store::{
     file_sink::{self, FileSinkClient},
     file_upload,
@@ -9,13 +10,13 @@ use file_store::{
     traits::{IngestId, MsgDecode},
     FileType,
 };
+use futures::stream::{self, StreamExt};
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
 };
-use std::{ops::DerefMut, path::Path};
-
-use futures::stream::{self, StreamExt};
+use lazy_static::lazy_static;
 use sqlx::{PgPool, Postgres};
+use std::{ops::DerefMut, path::Path};
 use tokio::{
     sync::Mutex,
     time::{self, MissedTickBehavior},
@@ -24,28 +25,20 @@ use tokio::{
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
 
-/// the period in seconds after when a beacon report in the DB will be deemed stale
-// this period needs to be sufficiently long that we can be sure the beacon has had the
-// opportunity to be verified and after this point extremely unlikely to ever be verified
-// successfully
-// this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const BEACON_STALE_PERIOD: i64 = 60 * 45;
-/// the period in seconds after when a witness report in the DB will be deemed stale
-const WITNESS_STALE_PERIOD: i64 = 60 * 45;
-/// the period of time in seconds after which entropy will be deemed stale
-/// and purged from the DB
-// this value should be > that beacon stale period to allow for any beacon
-// to be verified right up to the end of its stale period
-// any beacon or witness using this entropy & received after this period will fail
-// due to being stale
-// the report itself will never be verified but instead handled by the stale purger
-// this value will be added to the env var BASE_STALE_PERIOD to determine final setting
-const ENTROPY_STALE_PERIOD: i64 = BEACON_STALE_PERIOD + (15 * 60);
+lazy_static! {
+    /// the period after which a beacon report in the DB will be deemed stale
+    static ref BEACON_STALE_PERIOD: Duration = Duration::minutes(45);
+    /// the period after which a witness report in the DB will be deemed stale
+    static ref WITNESS_STALE_PERIOD: Duration = Duration::minutes(45);
+    /// the period after which an entropy entry in the DB will be deemed stale
+    static ref ENTROPY_STALE_PERIOD: Duration = Duration::minutes(60);
+}
 
 pub struct Purger {
     pool: PgPool,
-    base_stale_period: i64,
-    settings: Settings,
+    cache: String,
+    output: file_store::Settings,
+    base_stale_period: Duration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -54,11 +47,13 @@ pub struct NewPurgerError(#[from] db_store::Error);
 
 impl Purger {
     pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, NewPurgerError> {
-        let settings = settings.clone();
-        let base_stale_period = settings.base_stale_period;
+        let cache = settings.cache.clone();
+        let output = settings.output.clone();
+        let base_stale_period = settings.base_stale_period();
         Ok(Self {
             pool,
-            settings,
+            cache,
+            output,
             base_stale_period,
         })
     }
@@ -69,10 +64,10 @@ impl Purger {
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        let store_base_path = Path::new(&self.settings.cache);
+        let store_base_path = Path::new(&self.cache);
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
-            file_upload::FileUpload::from_settings(&self.settings.output, file_upload_rx).await?;
+            file_upload::FileUpload::from_settings(&self.output, file_upload_rx).await?;
 
         let (invalid_beacon_sink, mut invalid_beacon_sink_server) =
             file_sink::FileSinkBuilder::new(
@@ -132,7 +127,7 @@ impl Purger {
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        let beacon_stale_period = self.base_stale_period + BEACON_STALE_PERIOD;
+        let beacon_stale_period = self.base_stale_period + *BEACON_STALE_PERIOD;
         tracing::info!(
             "starting query get_stale_pending_beacons with stale period: {beacon_stale_period}"
         );
@@ -157,7 +152,7 @@ impl Purger {
         invalid_beacon_sink.commit().await?;
         tx.into_inner().commit().await?;
 
-        let witness_stale_period = self.base_stale_period + WITNESS_STALE_PERIOD;
+        let witness_stale_period = self.base_stale_period + *WITNESS_STALE_PERIOD;
         tracing::info!(
             "starting query get_stale_pending_witnesses with stale period: {witness_stale_period}"
         );
@@ -185,7 +180,7 @@ impl Purger {
         tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
 
         // purge any stale entropy, no need to output anything to s3 here
-        _ = Entropy::purge(&self.pool, self.base_stale_period + ENTROPY_STALE_PERIOD).await;
+        _ = Entropy::purge(&self.pool, self.base_stale_period + *ENTROPY_STALE_PERIOD).await;
         Ok(())
     }
 
