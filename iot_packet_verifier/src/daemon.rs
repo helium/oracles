@@ -2,13 +2,13 @@ use crate::{balances::Balances, burner::Burner, ingest, settings::Settings};
 use anyhow::{bail, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use db_store::meta;
-use file_store::{file_sink, file_sink_write, file_upload, FileStore, FileType};
+use file_store::{file_sink::FileSinkClient, file_upload, FileSinkBuilder, FileStore, FileType};
 use futures::StreamExt;
 use futures_util::TryFutureExt;
 use helium_crypto::{Keypair, PublicKeyBinary};
 use helium_proto::services::{
     iot_config::{org_client::OrgClient, OrgGetReqV1},
-    packet_verifier::ValidPacket,
+    packet_verifier::{InvalidPacket, ValidPacket},
     Channel,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -24,8 +24,8 @@ struct Daemon {
     balances: Balances,
     org_client: OrgClient<Channel>,
     sub_dao: Pubkey,
-    valid_packets_tx: file_sink::MessageSender,
-    invalid_packets_tx: file_sink::MessageSender,
+    valid_packets: FileSinkClient,
+    invalid_packets: FileSinkClient,
 }
 
 const POLL_TIME: time::Duration = time::Duration::from_secs(10);
@@ -107,27 +107,27 @@ impl Daemon {
                 .fetch_one(&self.pool)
                 .await?;
 
-                file_sink_write!(
-                    "valid_packet",
-                    &self.valid_packets_tx,
-                    ValidPacket {
-                        payload_size: report.payload_size,
-                        gateway: report.gateway,
-                        payload_hash: report.payload_hash,
-                    }
-                )
-                .await?;
+                self.valid_packets
+                    .write(
+                        ValidPacket {
+                            payload_size: report.payload_size,
+                            gateway: report.gateway,
+                            payload_hash: report.payload_hash,
+                        },
+                        [],
+                    )
+                    .await?;
             } else {
-                file_sink_write!(
-                    "invalid_packet",
-                    &self.invalid_packets_tx,
-                    ValidPacket {
-                        payload_size: report.payload_size,
-                        gateway: report.gateway,
-                        payload_hash: report.payload_hash,
-                    }
-                )
-                .await?;
+                self.invalid_packets
+                    .write(
+                        InvalidPacket {
+                            payload_size: report.payload_size,
+                            gateway: report.gateway,
+                            payload_hash: report.payload_hash,
+                        },
+                        [],
+                    )
+                    .await?;
             }
 
             sufficiency
@@ -177,18 +177,19 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let store_base_path = std::path::Path::new(&settings.cache);
 
     // Verified packets:
-    let (valid_packets_tx, valid_packets_rx) = file_sink::message_channel(50);
-    let mut valid_packets =
-        file_sink::FileSinkBuilder::new(FileType::ValidPacket, store_base_path, valid_packets_rx)
-            .deposits(Some(file_upload_tx.clone()))
-            .create()
-            .await?;
+    let (valid_packets, mut valid_packets_server) = FileSinkBuilder::new(
+        FileType::ValidPacket,
+        store_base_path,
+        concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
+    )
+    .deposits(Some(file_upload_tx.clone()))
+    .create()
+    .await?;
 
-    let (invalid_packets_tx, invalid_packets_rx) = file_sink::message_channel(50);
-    let mut invalid_packets = file_sink::FileSinkBuilder::new(
+    let (invalid_packets, mut invalid_packets_server) = FileSinkBuilder::new(
         FileType::InvalidPacket,
         store_base_path,
-        invalid_packets_rx,
+        concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
     )
     .deposits(Some(file_upload_tx.clone()))
     .create()
@@ -207,8 +208,8 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         balances,
         org_client,
         sub_dao,
-        valid_packets_tx,
-        invalid_packets_tx,
+        valid_packets,
+        invalid_packets,
     };
 
     let (shutdown_trigger, shutdown_listener) = triggered::trigger();
@@ -222,8 +223,12 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         burner.run(&shutdown_listener).map_err(Error::from),
         file_upload.run(&shutdown_listener).map_err(Error::from),
         verifier_daemon.run(&shutdown_listener).map_err(Error::from),
-        valid_packets.run(&shutdown_listener).map_err(Error::from),
-        invalid_packets.run(&shutdown_listener).map_err(Error::from),
+        valid_packets_server
+            .run(&shutdown_listener)
+            .map_err(Error::from),
+        invalid_packets_server
+            .run(&shutdown_listener)
+            .map_err(Error::from),
     )?;
 
     Ok(())

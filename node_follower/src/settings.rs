@@ -1,5 +1,7 @@
 use crate::txn_service::{TransactionClient, TransactionClients};
-use helium_proto::services::{follower, transaction, Channel, Endpoint};
+use helium_proto::services::{
+    follower, iot_config::org_client::OrgClient, transaction, Channel, Endpoint,
+};
 use serde::Deserialize;
 use std::time::Duration;
 

@@ -7,7 +7,6 @@ use helium_crypto::{Keypair, PublicKeyBinary, Sign};
 use helium_proto::{
     services::{
         iot_config::{org_client::OrgClient, OrgDisableReqV1, OrgEnableReqV1},
-        packet_verifier::ValidPacket,
         Channel,
     },
     Message,
