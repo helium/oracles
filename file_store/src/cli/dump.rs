@@ -10,7 +10,7 @@ use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::{
     services::{
-        poc_lora::{LoraBeaconIngestReportV1, LoraValidPocV1, LoraWitnessIngestReportV1},
+        poc_lora::{LoraBeaconIngestReportV1, LoraWitnessIngestReportV1},
         poc_mobile::{
             CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, RadioRewardShare,
             SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
@@ -78,18 +78,6 @@ impl Cmd {
                     // printing to json here as csv serializing failing due on header generation from struct
                     print_json(&json)?;
                     // wtr.serialize(LoraWitnessIngestReport::try_from(dec_msg)?)?;
-                }
-                FileType::LoraValidPoc => {
-                    let dec_msg = LoraValidPocV1::decode(msg)?;
-                    let json = json!({
-                        "poc_id": dec_msg.poc_id,
-                        "beacon_report":  dec_msg.beacon_report,
-                        "witnesses": dec_msg.witness_reports,
-                    });
-                    // TODO: tmp dump out as json
-                    // printing to json here as csv serializing failing due on header generation from struct
-                    print_json(&json)?;
-                    // wtr.serialize(LoraValidPoc::try_from(dec_msg)?)?;
                 }
                 FileType::SubnetworkRewards => {
                     let proto_rewards = SubnetworkRewards::decode(msg)?.rewards;

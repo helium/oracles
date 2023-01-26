@@ -90,8 +90,8 @@ impl Daemon {
                 .debit_if_sufficient(&self.sub_dao, payer, debit_amount)
                 .await?;
 
+            // TODO: Use transactions and write manifests
             if sufficiency.is_sufficient() {
-                // TODO: Use transactions and write manifests
                 // Add the amount burned into the pending burns table
                 sqlx::query(
                     r#"

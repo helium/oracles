@@ -1,8 +1,7 @@
 use crate::{
     heartbeat::CellHeartbeat, lora_beacon_report::LoraBeaconIngestReport,
-    lora_valid_poc::LoraValidPoc, lora_witness_report::LoraWitnessIngestReport,
-    speedtest::CellSpeedtest, traits::MsgDecode, Error, FileInfoStream, FileStore, FileType,
-    Result, Settings,
+    lora_witness_report::LoraWitnessIngestReport, speedtest::CellSpeedtest, traits::MsgDecode,
+    Error, FileInfoStream, FileStore, FileType, Result, Settings,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
@@ -217,9 +216,6 @@ fn locate(
         FileType::LoraWitnessIngestReport => {
             LoraWitnessIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
-        FileType::LoraValidPoc => {
-            LoraValidPoc::decode(buf).and_then(|event| event.to_value_if(pub_key))
-        }
         _ => Ok(None),
     }
 }
@@ -278,11 +274,5 @@ impl Gateway for LoraBeaconIngestReport {
 impl Gateway for LoraWitnessIngestReport {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.report.pub_key.as_ref() == pub_key
-    }
-}
-
-impl Gateway for LoraValidPoc {
-    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
-        self.beacon_report.report.pub_key.as_ref() == pub_key
     }
 }

@@ -7,7 +7,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use density_scaler::SCALING_PRECISION;
 use helium_proto::services::poc_lora::{
-    LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidPocV1, LoraValidWitnessReportV1,
+    LoraBeaconReportReqV1, LoraValidBeaconReportV1, LoraValidWitnessReportV1,
     LoraWitnessReportReqV1,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -34,17 +34,6 @@ pub struct LoraValidWitnessReport {
     pub reward_unit: Decimal,
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct LoraValidPoc {
-    pub poc_id: Vec<u8>,
-    pub beacon_report: LoraValidBeaconReport,
-    pub witness_reports: Vec<LoraValidWitnessReport>,
-}
-
-impl MsgDecode for LoraValidPoc {
-    type Msg = LoraValidPocV1;
-}
-
 impl MsgTimestamp<Result<DateTime<Utc>>> for LoraValidBeaconReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
@@ -66,38 +55,6 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for LoraValidWitnessReportV1 {
 impl MsgTimestamp<u64> for LoraValidWitnessReport {
     fn timestamp(&self) -> u64 {
         self.received_timestamp.encode_timestamp_millis()
-    }
-}
-
-impl TryFrom<LoraValidPocV1> for LoraValidPoc {
-    type Error = Error;
-    fn try_from(v: LoraValidPocV1) -> Result<Self> {
-        let witnesses = v
-            .witness_reports
-            .into_iter()
-            .map(LoraValidWitnessReport::try_from)
-            .collect::<Result<Vec<LoraValidWitnessReport>>>()?;
-
-        Ok(Self {
-            poc_id: v.poc_id,
-            witness_reports: witnesses,
-            beacon_report: v
-                .beacon_report
-                .ok_or_else(|| Error::not_found("lora valid poc v1"))?
-                .try_into()?,
-        })
-    }
-}
-
-impl From<LoraValidPoc> for LoraValidPocV1 {
-    fn from(v: LoraValidPoc) -> Self {
-        let witnesses = v.witness_reports.into_iter().map(From::from).collect();
-
-        Self {
-            poc_id: v.poc_id,
-            beacon_report: Some(v.beacon_report.into()),
-            witness_reports: witnesses,
-        }
     }
 }
 
