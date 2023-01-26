@@ -1,26 +1,38 @@
-use crate::{lora_field, org, GrpcResult, Settings, HELIUM_NET_ID};
+use crate::{
+    lora_field,
+    org::{self, OrgStatus},
+    route::list_routes,
+    GrpcResult, Settings, HELIUM_NET_ID,
+};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::iot_config::{
-    self, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1, OrgDisableResV1,
+    self, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1, OrgDisableResV1,
     OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgV1,
+    RouteStreamResV1,
 };
 use sqlx::{Pool, Postgres};
+use tokio::sync::broadcast::Sender;
 use tonic::{Request, Response, Status};
 
 pub struct OrgService {
     admin_pubkey: PublicKey,
     pool: Pool<Postgres>,
     required_network: Network,
+    route_update_tx: Sender<RouteStreamResV1>,
 }
 
 impl OrgService {
-    pub async fn new(settings: &Settings) -> Result<Self> {
+    pub async fn new(
+        settings: &Settings,
+        route_update_tx: Sender<RouteStreamResV1>,
+    ) -> Result<Self> {
         Ok(Self {
             admin_pubkey: settings.admin_pubkey()?,
             pool: settings.database.connect(10).await?,
             required_network: settings.network,
+            route_update_tx,
         })
     }
 
@@ -164,11 +176,71 @@ impl iot_config::Org for OrgService {
         }))
     }
 
-    async fn disable(&self, _request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {
-        unimplemented!()
+    async fn disable(&self, request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {
+        let request = request.into_inner();
+
+        let req = self.verify_admin_signature(request)?;
+
+        org::toggle_status(req.oui, OrgStatus::Disabled, &self.pool)
+            .await
+            .map_err(|_| Status::internal(format!("org disable failed for: {}", req.oui)))?;
+
+        let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
+            Status::internal(format!(
+                "error retrieving routes for disabled org: {}",
+                req.oui
+            ))
+        })?;
+
+        for route in org_routes {
+            let route_id = route.id.clone();
+            self.route_update_tx
+                .send(RouteStreamResV1 {
+                    action: ActionV1::Delete.into(),
+                    route: Some(route.into()),
+                })
+                .map_err(|_| {
+                    Status::internal(format!(
+                        "failed updating routers with deleted route: {route_id}"
+                    ))
+                })?;
+            tracing::debug!("updated packet routers with removed route: {route_id}");
+        }
+
+        Ok(Response::new(OrgDisableResV1 { oui: req.oui }))
     }
 
-    async fn enable(&self, _request: Request<OrgEnableReqV1>) -> GrpcResult<OrgEnableResV1> {
-        unimplemented!()
+    async fn enable(&self, request: Request<OrgEnableReqV1>) -> GrpcResult<OrgEnableResV1> {
+        let request = request.into_inner();
+
+        let req = self.verify_admin_signature(request)?;
+
+        org::toggle_status(req.oui, OrgStatus::Enabled, &self.pool)
+            .await
+            .map_err(|_| Status::internal(format!("org enable failed for: {}", req.oui)))?;
+
+        let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
+            Status::internal(format!(
+                "error retrieving routes for enabled org: {}",
+                req.oui
+            ))
+        })?;
+
+        for route in org_routes {
+            let route_id = route.id.clone();
+            self.route_update_tx
+                .send(RouteStreamResV1 {
+                    action: ActionV1::Create.into(),
+                    route: Some(route.into()),
+                })
+                .map_err(|_| {
+                    Status::internal(format!(
+                        "failed updating routers with created route: {route_id}"
+                    ))
+                })?;
+            tracing::debug!("updated packet routers with recreated route: {route_id}");
+        }
+
+        Ok(Response::new(OrgEnableResV1 { oui: req.oui }))
     }
 }

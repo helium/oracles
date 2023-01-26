@@ -16,7 +16,6 @@ use helium_proto::services::iot_config::{
     RouteUpdateEuisReqV1, RouteUpdateReqV1, RouteV1,
 };
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
 use tokio::{
     pin,
     sync::broadcast::{Receiver, Sender},
@@ -26,7 +25,7 @@ use tonic::{Request, Response, Status};
 pub struct RouteService {
     admin_pubkey: PublicKey,
     pool: Pool<Postgres>,
-    update_channel: Arc<Sender<RouteStreamResV1>>,
+    update_channel: Sender<RouteStreamResV1>,
 }
 
 impl RouteService {
@@ -36,12 +35,16 @@ impl RouteService {
         Ok(Self {
             admin_pubkey: settings.admin_pubkey()?,
             pool: settings.database.connect(10).await?,
-            update_channel: Arc::new(update_tx),
+            update_channel: update_tx,
         })
     }
 
     fn subscribe_to_routes(&self) -> Receiver<RouteStreamResV1> {
         self.update_channel.subscribe()
+    }
+
+    pub fn clone_update_channel(&self) -> Sender<RouteStreamResV1> {
+        self.update_channel.clone()
     }
 
     fn verify_admin_signature<R>(&self, request: R) -> Result<R, Status>
@@ -129,7 +132,7 @@ impl iot_config::Route for RouteService {
             .into();
 
         let new_route: Route =
-            route::create_route(route.clone(), &self.pool, self.update_channel.clone())
+            route::create_route(route.clone(), &self.pool, self.clone_update_channel())
                 .await
                 .map_err(|err| {
                     tracing::error!("route create failed {err:?}");
@@ -154,7 +157,7 @@ impl iot_config::Route for RouteService {
             .map_err(|_| Status::internal("authorization error"))?;
         self.verify_authorized_signature(&request, org_keys)?;
 
-        let updated_route = route::update_route(route, &self.pool, self.update_channel.clone())
+        let updated_route = route::update_route(route, &self.pool, self.clone_update_channel())
             .await
             .map_err(|_| Status::internal("update route failed"))?;
 
@@ -173,7 +176,7 @@ impl iot_config::Route for RouteService {
             .await
             .map_err(|_| Status::internal("fetch route failed"))?;
 
-        route::delete_route(&request.id, &self.pool, self.update_channel.clone())
+        route::delete_route(&request.id, &self.pool, self.clone_update_channel())
             .await
             .map_err(|_| Status::internal("delete route failed"))?;
 

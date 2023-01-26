@@ -74,8 +74,8 @@ impl Daemon {
         let listen_addr = settings.listen_addr()?;
 
         let gateway_svc = GatewayService::new(settings).await?;
-        let org_svc = OrgService::new(settings).await?;
         let route_svc = RouteService::new(settings).await?;
+        let org_svc = OrgService::new(settings, route_svc.clone_update_channel()).await?;
         let session_key_filter_svc = SessionKeyFilterService {};
 
         transport::Server::builder()

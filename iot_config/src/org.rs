@@ -142,6 +142,26 @@ pub async fn get_with_constraints(
     })
 }
 
+pub async fn toggle_status(
+    oui: u64,
+    status: OrgStatus,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        update organizations
+        set status = $1
+        where oui = $2
+        "#,
+    )
+    .bind(status)
+    .bind(oui as i64)
+    .execute(db)
+    .await?;
+
+    Ok(())
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum OrgPubkeysError {
     #[error("error retrieving saved org keys: {0}")]
