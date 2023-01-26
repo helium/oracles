@@ -157,7 +157,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let rpc_client = Arc::new(RpcClient::new(settings.solana_rpc.clone()));
 
     let (sub_dao, _) = Pubkey::find_program_address(
-        &["sub_dao".as_bytes(), settings.dnt_mint.as_ref()],
+        &["sub_dao".as_bytes(), settings.dnt_mint()?.as_ref()],
         &helium_sub_daos::ID,
     );
 

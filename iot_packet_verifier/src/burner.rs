@@ -12,7 +12,10 @@ use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::{
-    commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair, signer::Signer,
+    commitment_config::CommitmentConfig,
+    pubkey::{ParsePubkeyError, Pubkey},
+    signature::Keypair,
+    signer::Signer,
     transaction::Transaction,
 };
 use sqlx::{FromRow, Pool, Postgres};
@@ -39,6 +42,8 @@ pub enum BurnError {
     SolanaClientError(#[from] ClientError),
     #[error("Anchor error: {0}")]
     AnchorError(#[from] anchor_lang::error::Error),
+    #[error("Parse pubkey error: {0}")]
+    ParsePubkeyError(#[from] ParsePubkeyError),
 }
 
 const BURN_THRESHOLD: i64 = 10_000;
@@ -164,7 +169,7 @@ impl Burner {
         sqlx::query(
             r#"
             UPDATE pending_burns SET
-              burn = burn - $1,
+              amount = amount - $1,
               last_burn = $2
             WHERE id = $3
             "#,
@@ -204,11 +209,11 @@ impl BurnProgramCache {
         let (account_payer, _) =
             Pubkey::find_program_address(&["account_payer".as_bytes()], &data_credits::ID);
         let (data_credits, _) = Pubkey::find_program_address(
-            &["dc".as_bytes(), settings.dc_mint.as_ref()],
+            &["dc".as_bytes(), settings.dc_mint()?.as_ref()],
             &data_credits::ID,
         );
         let (sub_dao, _) = Pubkey::find_program_address(
-            &["sub_dao".as_bytes(), settings.dnt_mint.as_ref()],
+            &["sub_dao".as_bytes(), settings.dnt_mint()?.as_ref()],
             &helium_sub_daos::ID,
         );
         let dc_burn_authority = {
@@ -217,7 +222,7 @@ impl BurnProgramCache {
             SubDaoV0::try_deserialize(&mut account_data)?.dc_burn_authority
         };
         let (dao, _) = Pubkey::find_program_address(
-            &["dao".as_bytes(), settings.hnt_mint.as_ref()],
+            &["dao".as_bytes(), settings.hnt_mint()?.as_ref()],
             &helium_sub_daos::ID,
         );
         let registrar = {
@@ -230,7 +235,7 @@ impl BurnProgramCache {
             data_credits,
             sub_dao,
             dao,
-            dc_mint: settings.dc_mint.clone(),
+            dc_mint: settings.dc_mint()?,
             dc_burn_authority,
             registrar,
         })
