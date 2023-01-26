@@ -105,21 +105,18 @@ impl iot_config::Gateway for GatewayService {
             None => return Err(Status::invalid_argument("missing region")),
         };
 
-        let indexes = match req.hex_indexes {
-            Some(indexes) => indexes,
-            None => {
-                tracing::debug!("h3 region index update skipped");
-                vec![]
-            }
-        };
-
-        let updated_region = region_map::update_region(req.region, &params, &indexes, &self.pool)
-            .await
-            .map_err(|_| Status::internal("region update failed"))?;
+        let updated_region = region_map::update_region(
+            req.region,
+            &params,
+            req.hex_indexes.as_ref().map(Vec::as_ref),
+            &self.pool,
+        )
+        .await
+        .map_err(|_| Status::internal("region update failed"))?;
 
         self.region_map.insert_params(region, params).await;
         if let Some(region_tree) = updated_region {
-            self.region_map.swap_tree(region_tree).await;
+            self.region_map.replace_tree(region_tree).await;
         }
 
         Ok(Response::new(LoadRegionResV1 {}))

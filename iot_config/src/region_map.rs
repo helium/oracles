@@ -40,7 +40,7 @@ impl RegionMap {
         _ = self.params_hashmap.write().await.insert(region, params)
     }
 
-    pub async fn swap_tree(&self, new_map: HexTreeMap<Region, EqCompactor>) {
+    pub async fn replace_tree(&self, new_map: HexTreeMap<Region, EqCompactor>) {
         *self.region_hextree.write().await = new_map
     }
 }
@@ -53,6 +53,8 @@ pub enum RegionMapError {
     ParamsDecode(#[from] helium_proto::DecodeError),
     #[error("indices gunzip error")]
     IdxGunzip(#[from] std::io::Error),
+    #[error("malformed region h3 index list")]
+    MalformedH3Indexes,
     #[error("unsupported region error: {0}")]
     UnsupportedRegion(i32),
 }
@@ -80,6 +82,10 @@ pub async fn build_region_tree(
 
         let mut idx_buf = [0_u8; 8];
         for chunk in buf.chunks(8) {
+            if chunk.len() < idx_buf.len() {
+                tracing::error!("h3 index list malformed; cannot parse to u64: {chunk:?}");
+                return Err(RegionMapError::MalformedH3Indexes);
+            };
             idx_buf.as_mut_slice().copy_from_slice(chunk);
             let idx = u64::from_le_bytes(idx_buf);
             region_tree.insert(H3Cell::from_h3index(idx), region);
@@ -108,7 +114,7 @@ pub async fn build_params_map(
 pub async fn update_region(
     region: i32,
     params: &BlockchainRegionParamsV1,
-    indexes: &[u8],
+    indexes: Option<&[u8]>,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
 ) -> Result<Option<HexTreeMap<Region, EqCompactor>>, RegionMapError> {
     let mut transaction = db.begin().await?;
@@ -125,7 +131,7 @@ pub async fn update_region(
     .execute(&mut transaction)
     .await?;
 
-    let updated_region = if !indexes.is_empty() {
+    let updated_region = if let Some(indexes) = indexes {
         sqlx::query(
             r#"
             insert into regions (region, indexes)
@@ -140,6 +146,7 @@ pub async fn update_region(
 
         Some(build_region_tree(&mut transaction).await?)
     } else {
+        tracing::debug!("h3 region index update skipped");
         None
     };
 
