@@ -208,7 +208,7 @@ impl<'de, const WIDTH: usize> Deserialize<'de> for LoraField<WIDTH> {
             type Value = LoraField<IN_WIDTH>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str(&format!("field string {} wide", IN_WIDTH))
+                formatter.write_str(&format!("field string {IN_WIDTH} wide"))
             }
 
             fn visit_str<E>(self, value: &str) -> Result<LoraField<IN_WIDTH>, E>
