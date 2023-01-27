@@ -170,4 +170,8 @@ impl Settings {
     pub fn poc_entropy_lifespan(&self) -> Duration {
         Duration::seconds(self.poc_entropy_lifespan)
     }
+
+    pub fn base_stale_period(&self) -> Duration {
+        Duration::seconds(self.base_stale_period)
+    }
 }
