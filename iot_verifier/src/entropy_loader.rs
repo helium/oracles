@@ -32,8 +32,8 @@ impl EntropyLoader {
         tracing::info!("from_settings verifier entropy loader");
         let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
-        let poll_time = settings.poc_loader_poll_time();
-        let window_width = settings.poc_loader_window_width();
+        let poll_time = settings.poc_loader_entropy_poll_time();
+        let window_width = settings.poc_loader_entropy_window_width();
         let max_lookback_age = settings.poc_loader_window_max_lookback_age();
 
         Ok(Self {
