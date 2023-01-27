@@ -216,15 +216,12 @@ impl BurnProgramCache {
             &["sub_dao".as_bytes(), settings.dnt_mint()?.as_ref()],
             &helium_sub_daos::ID,
         );
-        let dc_burn_authority = {
+        let (dao, dc_burn_authority) = {
             let account_data = provider.get_account_data(&sub_dao).await?;
             let mut account_data = account_data.as_ref();
-            SubDaoV0::try_deserialize(&mut account_data)?.dc_burn_authority
+            let sub_dao = SubDaoV0::try_deserialize(&mut account_data)?;
+            (sub_dao.dao, sub_dao.dc_burn_authority)
         };
-        let (dao, _) = Pubkey::find_program_address(
-            &["dao".as_bytes(), settings.hnt_mint()?.as_ref()],
-            &helium_sub_daos::ID,
-        );
         let registrar = {
             let account_data = provider.get_account_data(&dao).await?;
             let mut account_data = account_data.as_ref();

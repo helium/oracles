@@ -127,13 +127,13 @@ pub enum ConfigureOrgError {
 }
 
 impl BalanceSufficiency {
-    pub fn insufficient(enabled: &mut bool) -> Self {
+    pub fn sufficient(enabled: &mut bool) -> Self {
         Self::Sufficient {
             enable: !mem::replace(enabled, true),
         }
     }
 
-    pub fn sufficient(enabled: &mut bool) -> Self {
+    pub fn insufficient(enabled: &mut bool) -> Self {
         Self::Insufficient {
             disable: mem::replace(enabled, false),
         }
