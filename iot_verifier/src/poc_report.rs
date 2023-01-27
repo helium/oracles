@@ -1,4 +1,3 @@
-use crate::entropy::ENTROPY_LIFESPAN;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -188,11 +187,14 @@ impl Report {
         Ok(())
     }
 
-    pub async fn get_next_beacons<'c, E>(executor: E) -> Result<Vec<Self>, ReportError>
+    pub async fn get_next_beacons<'c, E>(
+        executor: E,
+        entropy_lifespan: Duration,
+    ) -> Result<Vec<Self>, ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
+        let entropy_min_time = Utc::now() - entropy_lifespan;
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select poc_report.id,

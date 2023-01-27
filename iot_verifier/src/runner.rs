@@ -47,6 +47,7 @@ pub struct Runner {
     settings: Settings,
     beacon_interval: ChronoDuration,
     beacon_interval_tolerance: ChronoDuration,
+    entropy_lifespan: ChronoDuration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -64,11 +65,13 @@ impl Runner {
         let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
         let beacon_interval = settings.beacon_interval();
         let beacon_interval_tolerance = settings.beacon_interval_tolerance();
+        let entropy_lifespan = settings.poc_entropy_lifespan();
         Ok(Self {
             pool,
             settings: settings.clone(),
             beacon_interval,
             beacon_interval_tolerance,
+            entropy_lifespan,
         })
     }
 
@@ -160,7 +163,7 @@ impl Runner {
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
-        let db_beacon_reports = Report::get_next_beacons(&self.pool).await?;
+        let db_beacon_reports = Report::get_next_beacons(&self.pool, self.entropy_lifespan).await?;
         tracing::info!("completed query get_next_beacons");
         if db_beacon_reports.is_empty() {
             tracing::info!("no beacons ready for verification");
@@ -235,7 +238,13 @@ impl Runner {
         }
 
         // create the struct defining this POC
-        let mut poc = Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await;
+        let mut poc = Poc::new(
+            beacon_report.clone(),
+            witnesses.clone(),
+            entropy_start_time,
+            self.entropy_lifespan,
+        )
+        .await;
 
         // verify POC beacon
         let beacon_verify_result = poc

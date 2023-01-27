@@ -1,5 +1,4 @@
 use crate::{
-    entropy::ENTROPY_LIFESPAN,
     gateway_cache::GatewayCache,
     last_beacon::{LastBeacon, LastBeaconError},
 };
@@ -84,8 +83,9 @@ impl Poc {
         beacon_report: IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
+        entropy_lifespan: Duration,
     ) -> Self {
-        let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
+        let entropy_end = entropy_start + entropy_lifespan;
         Self {
             beacon_report,
             witness_reports,

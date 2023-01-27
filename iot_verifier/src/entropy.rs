@@ -1,13 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-/// measurement in seconds of a piece of entropy
-/// its lifespan will be valid from entropy.timestamp to entropy.timestamp + ENTROPY_LIFESPAN
-/// any beacon or witness report received after this period and before the ENTROPY_STALE_PERIOD
-/// defined in the purger module will be rejected due to being outside of the entropy lifespan
-/// TODO: determine a sane value here
-pub const ENTROPY_LIFESPAN: i64 = 180;
-
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
 #[sqlx(type_name = "report_type", rename_all = "lowercase")]
 pub enum ReportType {

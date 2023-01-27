@@ -2,6 +2,7 @@ use chrono::Duration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
+use tokio::time;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -54,6 +55,14 @@ pub struct Settings {
     /// cadence for how often to look for entropy reports from s3 buckets
     #[serde(default = "default_poc_loader_entropy_poll_time")]
     pub poc_loader_entropy_poll_time: u64,
+    /// the lifespan of a piece of entropy
+    #[serde(default = "default_poc_entropy_lifespan ")]
+    pub poc_entropy_lifespan: i64,
+}
+
+// Default: 3 minutes
+pub fn default_poc_entropy_lifespan() -> i64 {
+    3 * 60
 }
 
 // Default: 3 minutes
@@ -142,4 +151,23 @@ impl Settings {
         Duration::seconds(self.beacon_interval_tolerance)
     }
 
+    pub fn poc_loader_window_width(&self) -> Duration {
+        Duration::seconds(self.poc_loader_window_width)
+    }
+
+    pub fn poc_loader_window_max_lookback_age(&self) -> Duration {
+        Duration::seconds(self.poc_loader_window_max_lookback_age)
+    }
+
+    pub fn poc_loader_poll_time(&self) -> time::Duration {
+        time::Duration::from_secs(self.poc_loader_poll_time)
+    }
+
+    pub fn poc_loader_entropy_poll_time(&self) -> time::Duration {
+        time::Duration::from_secs(self.poc_loader_entropy_poll_time)
+    }
+
+    pub fn poc_entropy_lifespan(&self) -> Duration {
+        Duration::seconds(self.poc_entropy_lifespan)
+    }
 }
