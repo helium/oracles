@@ -136,11 +136,11 @@ impl Loader {
         tracing::info!("handling report tick");
         let now = Utc::now();
         // the loader loads files from s3 via a sliding window
-        // the window defaults to a width = REPORTS_POLL_TIME
-        // its start point is Now() - (REPORTS_POLL_TIME * 2)
-        // as such data being loaded is always stale by a time equal to REPORTS_POLL_TIME
-        // if there is NO last timestamp in the DB, we will start our sliding window from this point
+        // if there is no last timestamp in the meta db, the window start point will be
+        // Now() - (window_width * 2)
+        // as such data loading is always behind by a value equal to window_width
         let window_default_lookback = now - (self.window_width * 2);
+        // cap the starting point of the window at the max below.
         let window_max_lookback = now - self.max_lookback_age;
         tracing::info!(
             "default window: {window_default_lookback}, max window: {window_max_lookback}"

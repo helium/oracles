@@ -65,12 +65,24 @@ pub fn default_poc_entropy_lifespan() -> i64 {
     3 * 60
 }
 
-// Default: 3 minutes
+// Default: 5 minutes
+// in normal operational mode the poll time should be set same as that of the window width
+// however, if for example we are loading historic data, ie looking back 24hours, we will want
+// the loader to be catching up as quickly as possible and so we will want to poll more often
+// in order to iterate quickly over the historic data
+// the average time it takes to load the data available within with window width needs to be
+// considered here
 pub fn default_poc_loader_entropy_poll_time() -> u64 {
-    3 * 60
+    5 * 60
 }
 
 // Default: 5 minutes
+// in normal operational mode the poll time should be set same as that of the window width
+// however, if for example we are loading historic data, ie looking back 24hours, we will want
+// the loader to be catching up as quickly as possible and so we will want to poll more often
+// in order to iterate quickly over the historic data
+// the average time it takes to load the data available within with window width needs to be
+// considered here
 pub fn default_poc_loader_poll_time() -> u64 {
     5 * 60
 }
@@ -81,9 +93,9 @@ pub fn default_poc_loader_window_max_lookback_age() -> i64 {
     60 * 60
 }
 
-// Default: 15 minutes
+// Default: 5 minutes
 pub fn default_poc_loader_window_width() -> i64 {
-    15 * 60
+    5 * 60
 }
 
 // Default: 10 minutes

@@ -71,12 +71,11 @@ impl EntropyLoader {
         tracing::info!("handling entropy tick");
         let now = Utc::now();
         // the loader loads files from s3 via a sliding window
-        // its start point is Now() - (ENTROPY_POLL_TIME * 3)
-        // as such data being loaded is always stale by a time equal to ENTROPY_POLL_TIME
-        // if there is NO last timestamp in the DB, we will start our sliding window from this point
-        let window_default_lookback = now - (self.window_width * 6);
-        // if there IS a last timestamp in the DB, we will use it as the starting point for our sliding window
-        // but cap it at the max below.
+        // if there is no last timestamp in the meta db, the window start point will be
+        // Now() - (window_width * 2)
+        // as such data loading is always behind by a value equal to window_width
+        let window_default_lookback = now - (self.window_width * 2);
+        // cap the starting point of the window at the max below.
         let window_max_lookback = now - self.max_lookback_age;
         let after = Meta::last_timestamp(&self.pool, ENTROPY_META_NAME)
             .await?
