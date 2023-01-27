@@ -57,7 +57,7 @@ humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"
 tracing = "0"
-tracing-subscriber = { version = "0", features = ["env-filter"] }
+tracing-subscriber = { version = "0", default-features=false, features = ["env-filter", "registry", "fmt"] }
 rust_decimal = "1"
 rust_decimal_macros = "1"
 base64 = ">=0.21"
