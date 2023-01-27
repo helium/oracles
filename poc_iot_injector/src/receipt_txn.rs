@@ -31,8 +31,6 @@ pub enum TxnConstructionError {
     FileStoreError(#[from] file_store::Error),
     #[error("signing error: {0}")]
     CryptoError(#[from] Box<helium_crypto::Error>),
-    #[error("zero witnesses")]
-    ZeroWitnesses,
 }
 
 pub fn handle_report_msg(
@@ -58,11 +56,11 @@ pub fn handle_report_msg(
         max_witnesses_per_receipt as usize,
     );
 
-    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(iot_poc.beacon_report)?;
+    let (poc_receipt, beacon_received_ts) = construct_poc_receipt(iot_poc.beacon_report);
 
     // TODO: Double check whether the gateway in the poc_receipt is challengee?
     let path_element =
-        construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses)?;
+        construct_path_element(poc_receipt.clone().gateway, poc_receipt, poc_witnesses);
 
     path.push(path_element);
 
@@ -124,15 +122,12 @@ fn construct_path_element(
     challengee: Vec<u8>,
     poc_receipt: BlockchainPocReceiptV1,
     poc_witnesses: Vec<BlockchainPocWitnessV1>,
-) -> Result<BlockchainPocPathElementV1, TxnConstructionError> {
-    if poc_witnesses.is_empty() {
-        return Err(TxnConstructionError::ZeroWitnesses);
-    }
-    Ok(BlockchainPocPathElementV1 {
+) -> BlockchainPocPathElementV1 {
+    BlockchainPocPathElementV1 {
         challengee,
         receipt: Some(poc_receipt),
         witnesses: poc_witnesses,
-    })
+    }
 }
 
 fn construct_poc_witnesses(
@@ -170,9 +165,7 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
     freq_mhz.to_f32().unwrap_or_default()
 }
 
-fn construct_poc_receipt(
-    beacon_report: IotValidBeaconReport,
-) -> Result<(BlockchainPocReceiptV1, i64), TxnConstructionError> {
+fn construct_poc_receipt(beacon_report: IotValidBeaconReport) -> (BlockchainPocReceiptV1, i64) {
     let reward_shares = ((beacon_report.hex_scale * beacon_report.reward_unit)
         * REWARD_SHARE_MULTIPLIER)
         .to_u32()
@@ -182,24 +175,23 @@ fn construct_poc_receipt(
     let beacon_received_ts = beacon_report.received_timestamp.timestamp_millis();
 
     // NOTE: signal, origin, snr and addr_hash are irrelevant now
-    Ok((
-        BlockchainPocReceiptV1 {
-            gateway: beacon_report.report.pub_key.into(),
-            timestamp: beacon_report.report.timestamp.timestamp() as u64,
-            signal: 0,
-            data: beacon_report.report.data,
-            origin: 0,
-            signature: beacon_report.report.signature,
-            snr: 0.0,
-            frequency: hz_to_mhz(beacon_report.report.frequency),
-            channel: beacon_report.report.channel,
-            datarate: beacon_report.report.datarate.to_string(),
-            tx_power: beacon_report.report.tx_power,
-            addr_hash: vec![],
-            reward_shares,
-        },
-        beacon_received_ts,
-    ))
+    let poc_receipt = BlockchainPocReceiptV1 {
+        gateway: beacon_report.report.pub_key.into(),
+        timestamp: beacon_report.report.timestamp.timestamp() as u64,
+        signal: 0,
+        data: beacon_report.report.data,
+        origin: 0,
+        signature: beacon_report.report.signature,
+        snr: 0.0,
+        frequency: hz_to_mhz(beacon_report.report.frequency),
+        channel: beacon_report.report.channel,
+        datarate: beacon_report.report.datarate.to_string(),
+        tx_power: beacon_report.report.tx_power,
+        addr_hash: vec![],
+        reward_shares,
+    };
+
+    (poc_receipt, beacon_received_ts)
 }
 
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
