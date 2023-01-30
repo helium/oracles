@@ -52,13 +52,11 @@ impl Daemon {
 
         while let Some(report) = reports.next().await.transpose()? {
             last_verified = report.timestamp.naive_utc();
-            meta::store(&self.pool, "last_verified_report", last_verified).await?;
-            self.verifier
-                .verify(
-                    &self.pool,
-                    ingest::ingest_reports(&self.file_store, report).await?,
-                )
-                .await?;
+            let reports = ingest::ingest_reports(&self.file_store, report).await?;
+            let mut transaction = self.pool.begin().await?;
+            self.verifier.verify(&mut transaction, reports).await?;
+            meta::store(&mut transaction, "last_verified_report", last_verified).await?;
+            transaction.commit().await?;
         }
 
         Ok(last_verified)
@@ -103,6 +101,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
     )
     .deposits(Some(file_upload_tx.clone()))
+    .auto_commit(false)
     .create()
     .await?;
 
@@ -112,6 +111,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
     )
     .deposits(Some(file_upload_tx.clone()))
+    .auto_commit(false)
     .create()
     .await?;
 

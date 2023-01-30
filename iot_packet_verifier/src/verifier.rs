@@ -12,7 +12,7 @@ use helium_proto::services::{
     packet_verifier::{InvalidPacket, ValidPacket},
 };
 use solana_sdk::pubkey::Pubkey;
-use sqlx::{Pool, Postgres};
+use sqlx::{Postgres, Transaction};
 use std::collections::{HashMap, HashSet};
 
 pub struct Verifier {
@@ -48,7 +48,7 @@ pub enum VerificationError {
 impl Verifier {
     pub async fn verify(
         &mut self,
-        pool: &Pool<Postgres>,
+        conn: &mut Transaction<'_, Postgres>,
         reports: impl Stream<Item = PacketRouterPacketReportV1>,
     ) -> Result<(), VerificationError> {
         let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
@@ -105,7 +105,7 @@ impl Verifier {
                 .bind(payer)
                 .bind(debit_amount as i64)
                 .bind(Utc::now().naive_utc())
-                .fetch_one(pool)
+                .fetch_one(&mut *conn)
                 .await?;
 
                 self.valid_packets
@@ -135,6 +135,9 @@ impl Verifier {
                 .configure_org(&mut self.org_client, &self.keypair, report.oui)
                 .await?;
         }
+
+        self.valid_packets.commit().await?;
+        self.invalid_packets.commit().await?;
 
         Ok(())
     }
