@@ -1891,7 +1891,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#8172a605903fb6730a918075c077848bd664c4c4"
+source = "git+https://github.com/helium/proto?branch=andymck/add-min-distance-invalid-reason#49936da4317cb52ee06a0cd104260d987570a079"
 dependencies = [
  "bytes",
  "prost",
