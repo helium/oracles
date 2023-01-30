@@ -20,6 +20,7 @@ use std::{mem, sync::Arc};
 use tokio::sync::Mutex;
 
 pub struct Balances {
+    pub sub_dao: Pubkey,
     pub provider: Arc<RpcClient>,
     pub balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
 }
@@ -41,7 +42,7 @@ impl Balances {
     /// we have an accurate cache.
     pub async fn new(
         pool: &Pool<Postgres>,
-        sub_dao: &Pubkey,
+        sub_dao: Pubkey,
         provider: Arc<RpcClient>,
     ) -> Result<Self, DebitError> {
         let mut burns = sqlx::query_as("SELECT * FROM pending_burns").fetch(pool);
@@ -55,7 +56,7 @@ impl Balances {
         }) = burns.next().await.transpose()?
         {
             // Look up the current balance of the payer
-            let balance = payer_balance(provider.as_ref(), sub_dao, &payer).await?;
+            let balance = payer_balance(provider.as_ref(), &sub_dao, &payer).await?;
             balances.insert(
                 payer,
                 Balance {
@@ -67,6 +68,7 @@ impl Balances {
         }
 
         Ok(Self {
+            sub_dao,
             provider,
             balances: Arc::new(Mutex::new(balances)),
         })
@@ -80,14 +82,13 @@ impl Balances {
     /// balance and false otherwise.
     pub async fn debit_if_sufficient(
         &self,
-        sub_dao: &Pubkey,
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<BalanceSufficiency, DebitError> {
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {
-            let new_balance = payer_balance(self.provider.as_ref(), sub_dao, payer).await?;
+            let new_balance = payer_balance(self.provider.as_ref(), &self.sub_dao, payer).await?;
             balances.insert(payer.clone(), Balance::new(new_balance));
             balances.get_mut(&payer).unwrap()
         } else {
@@ -95,7 +96,8 @@ impl Balances {
 
             // If the balance is not sufficient, check to see if it has been increased
             if balance.balance < amount + balance.burned {
-                balance.balance = payer_balance(self.provider.as_ref(), sub_dao, payer).await?;
+                balance.balance =
+                    payer_balance(self.provider.as_ref(), &self.sub_dao, payer).await?;
             }
 
             balance

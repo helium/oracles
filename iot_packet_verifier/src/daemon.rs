@@ -90,7 +90,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     );
 
     // Set up the balance tracker:
-    let balances = Balances::new(&pool, &sub_dao, rpc_client.clone()).await?;
+    let balances = Balances::new(&pool, sub_dao, rpc_client.clone()).await?;
 
     // Set up the balance burner:
     let burn_keypair = match read_keypair_file(&settings.burn_keypair) {

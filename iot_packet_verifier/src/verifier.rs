@@ -23,7 +23,7 @@ pub struct Verifier {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct PacketId {
+struct PacketId {
     ts: u64,
     oui: u64,
     hash: Vec<u8>,
@@ -88,7 +88,7 @@ impl Verifier {
             let payer = org_cache.get(&report.oui).unwrap();
             let sufficiency = self
                 .balances
-                .debit_if_sufficient(&self.sub_dao, payer, debit_amount)
+                .debit_if_sufficient(payer, debit_amount)
                 .await?;
 
             // TODO: Use transactions and write manifests
