@@ -2,7 +2,7 @@ use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
     Settings, LOADER_WORKERS,
 };
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
@@ -23,7 +23,7 @@ pub struct Server {
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
-    submission_offset: StdDuration,
+    submission_offset: ChronoDuration,
     settings: Settings,
 }
 
@@ -69,7 +69,7 @@ impl Server {
 
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting poc-iot-injector server");
-        let mut poc_iot_timer = time::interval(self.tick_time + self.submission_offset);
+        let mut poc_iot_timer = time::interval(self.tick_time);
         poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
@@ -95,7 +95,12 @@ impl Server {
             *self.last_poc_submission_ts.value(),
             0,
         ));
-        let before_utc = Utc::now();
+
+        let now = Utc::now();
+        let before_utc = now
+            .checked_sub_signed(self.submission_offset)
+            .unwrap_or(now);
+
         tracing::info!(
             "handling poc_tick, after_utc: {:?}, before_utc: {:?}",
             after_utc,
