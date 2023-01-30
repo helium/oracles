@@ -2,9 +2,9 @@ use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
     Settings, LOADER_WORKERS,
 };
-use chrono::{DateTime, Duration as ChronoDuration, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use db_store::MetaValue;
-use file_store::{FileStore, FileType};
+use file_store::{traits::TimestampDecode, FileStore, FileType};
 use futures::stream::{self, StreamExt};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
@@ -91,10 +91,7 @@ impl Server {
     }
 
     async fn handle_poc_tick(&mut self) -> anyhow::Result<()> {
-        let after_utc = Utc.from_utc_datetime(&NaiveDateTime::from_timestamp(
-            *self.last_poc_submission_ts.value(),
-            0,
-        ));
+        let after_utc = (*self.last_poc_submission_ts.value() as u64).to_timestamp_millis()?;
 
         let now = Utc::now();
         let before_utc = now
