@@ -1,3 +1,4 @@
+use chrono::Duration as ChronoDuration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
@@ -26,6 +27,11 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(default = "default_max_witnesses_per_receipt")]
     pub max_witnesses_per_receipt: u64,
+    /// Offset receipt submission to wait for S3 files being written (secs)
+    /// Receipts would be submitted from last_poc_submission_ts to utc::now - submission_offset
+    /// Default = 5 mins
+    #[serde(default = "default_submission_offset")]
+    pub submission_offset: i64,
 }
 
 pub fn default_log() -> String {
@@ -42,6 +48,10 @@ pub fn default_do_submission() -> bool {
 
 fn default_trigger_interval() -> u64 {
     1800
+}
+
+fn default_submission_offset() -> i64 {
+    5 * 60
 }
 
 pub fn default_max_witnesses_per_receipt() -> u64 {
@@ -78,5 +88,9 @@ impl Settings {
 
     pub fn trigger_interval(&self) -> Duration {
         Duration::from_secs(self.trigger)
+    }
+
+    pub fn submission_offset(&self) -> ChronoDuration {
+        ChronoDuration::seconds(self.submission_offset)
     }
 }

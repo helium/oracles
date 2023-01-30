@@ -2,7 +2,7 @@ use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
     Settings, LOADER_WORKERS,
 };
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, NaiveDateTime, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
@@ -23,6 +23,7 @@ pub struct Server {
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
+    submission_offset: ChronoDuration,
     settings: Settings,
 }
 
@@ -41,6 +42,7 @@ impl Server {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
+        let submission_offset = settings.submission_offset();
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
@@ -54,6 +56,7 @@ impl Server {
             settings: settings.clone(),
             keypair: Arc::new(keypair),
             tick_time,
+            submission_offset,
             // Only create txn_service if do_submission is true
             txn_service: settings
                 .do_submission
@@ -92,7 +95,12 @@ impl Server {
             *self.last_poc_submission_ts.value(),
             0,
         ));
-        let before_utc = Utc::now();
+
+        let now = Utc::now();
+        let before_utc = now
+            .checked_sub_signed(self.submission_offset)
+            .unwrap_or(now);
+
         tracing::info!(
             "handling poc_tick, after_utc: {:?}, before_utc: {:?}",
             after_utc,
