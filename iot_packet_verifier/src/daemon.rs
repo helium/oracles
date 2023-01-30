@@ -2,7 +2,7 @@ use crate::{balances::Balances, burner::Burner, ingest, settings::Settings, veri
 use anyhow::{bail, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use db_store::meta;
-use file_store::{file_upload, FileSinkBuilder, FileStore, FileType};
+use file_store::{file_sink::FileSinkClient, file_upload, FileSinkBuilder, FileStore, FileType};
 use futures::StreamExt;
 use futures_util::TryFutureExt;
 
@@ -16,6 +16,8 @@ struct Daemon {
     pool: Pool<Postgres>,
     verifier: Verifier,
     file_store: FileStore,
+    valid_packets: FileSinkClient,
+    invalid_packets: FileSinkClient,
 }
 
 const POLL_TIME: time::Duration = time::Duration::from_secs(10);
@@ -54,9 +56,18 @@ impl Daemon {
             last_verified = report.timestamp.naive_utc();
             let reports = ingest::ingest_reports(&self.file_store, report).await?;
             let mut transaction = self.pool.begin().await?;
-            self.verifier.verify(&mut transaction, reports).await?;
+            self.verifier
+                .verify(
+                    &mut transaction,
+                    reports,
+                    &self.valid_packets,
+                    &self.invalid_packets,
+                )
+                .await?;
             meta::store(&mut transaction, "last_verified_report", last_verified).await?;
             transaction.commit().await?;
+            self.valid_packets.commit().await?;
+            self.invalid_packets.commit().await?;
         }
 
         Ok(last_verified)
@@ -124,13 +135,13 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let verifier_daemon = Daemon {
         pool,
         file_store,
+        valid_packets,
+        invalid_packets,
         verifier: Verifier {
             keypair: config_keypair,
             balances,
             org_client,
             sub_dao,
-            valid_packets,
-            invalid_packets,
         },
     };
 

@@ -20,8 +20,6 @@ pub struct Verifier {
     pub sub_dao: Pubkey,
     pub balances: Balances,
     pub org_client: OrgClient<Channel>,
-    pub valid_packets: FileSinkClient,
-    pub invalid_packets: FileSinkClient,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -50,6 +48,8 @@ impl Verifier {
         &mut self,
         conn: &mut Transaction<'_, Postgres>,
         reports: impl Stream<Item = PacketRouterPacketReportV1>,
+        valid_packets: &FileSinkClient,
+        invalid_packets: &FileSinkClient,
     ) -> Result<(), VerificationError> {
         let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
         // This may need to be in the database so that we can set last_verified_report
@@ -108,7 +108,7 @@ impl Verifier {
                 .fetch_one(&mut *conn)
                 .await?;
 
-                self.valid_packets
+                valid_packets
                     .write(
                         ValidPacket {
                             payload_size: report.payload_size,
@@ -119,7 +119,7 @@ impl Verifier {
                     )
                     .await?;
             } else {
-                self.invalid_packets
+                invalid_packets
                     .write(
                         InvalidPacket {
                             payload_size: report.payload_size,
@@ -135,9 +135,6 @@ impl Verifier {
                 .configure_org(&mut self.org_client, &self.keypair, report.oui)
                 .await?;
         }
-
-        self.valid_packets.commit().await?;
-        self.invalid_packets.commit().await?;
 
         Ok(())
     }
