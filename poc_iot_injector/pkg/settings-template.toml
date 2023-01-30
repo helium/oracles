@@ -11,6 +11,10 @@ keypair = "/path/to/key_pair"
 #
 # trigger = 1800
 
+# Submission offset in seconds. (Default is 600; 5 minutes)
+#
+# submission_offset = 600
+
 # Last PoC submission timestamp in seconds since unix epoch. (Default is unix epoch)
 #
 # last_poc_submission = 0

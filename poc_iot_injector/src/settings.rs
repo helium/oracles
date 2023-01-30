@@ -26,6 +26,11 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(default = "default_max_witnesses_per_receipt")]
     pub max_witnesses_per_receipt: u64,
+    /// Offset receipt submission to wait for S3 files being written (secs)
+    /// Receipts would be submitted at trigger_interval + submission_offset
+    /// Default = 5 mins
+    #[serde(default = "default_submission_offset")]
+    pub submission_offset: u64,
 }
 
 pub fn default_log() -> String {
@@ -42,6 +47,10 @@ pub fn default_do_submission() -> bool {
 
 fn default_trigger_interval() -> u64 {
     1800
+}
+
+fn default_submission_offset() -> u64 {
+    5 * 60
 }
 
 pub fn default_max_witnesses_per_receipt() -> u64 {
@@ -78,5 +87,9 @@ impl Settings {
 
     pub fn trigger_interval(&self) -> Duration {
         Duration::from_secs(self.trigger)
+    }
+
+    pub fn submission_offset(&self) -> Duration {
+        Duration::from_secs(self.submission_offset)
     }
 }

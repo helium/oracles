@@ -23,6 +23,7 @@ pub struct Server {
     iot_verifier_store: FileStore,
     last_poc_submission_ts: MetaValue<i64>,
     tick_time: StdDuration,
+    submission_offset: StdDuration,
     settings: Settings,
 }
 
@@ -41,6 +42,7 @@ impl Server {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
+        let submission_offset = settings.submission_offset();
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
@@ -54,6 +56,7 @@ impl Server {
             settings: settings.clone(),
             keypair: Arc::new(keypair),
             tick_time,
+            submission_offset,
             // Only create txn_service if do_submission is true
             txn_service: settings
                 .do_submission
@@ -66,7 +69,7 @@ impl Server {
 
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting poc-iot-injector server");
-        let mut poc_iot_timer = time::interval(self.tick_time);
+        let mut poc_iot_timer = time::interval(self.tick_time + self.submission_offset);
         poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
