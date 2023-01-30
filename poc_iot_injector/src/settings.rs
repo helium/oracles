@@ -15,7 +15,7 @@ pub struct Settings {
     #[serde(default = "default_trigger_interval")]
     pub trigger: u64,
     /// Last PoC submission timestamp in seconds since unix epoch. (Default is
-    /// unix epoch)
+    /// unix epoch) (in ms)
     #[serde(default = "default_last_poc_submission")]
     pub last_poc_submission: i64,
     #[serde(default = "default_do_submission")]

@@ -46,7 +46,7 @@ impl Server {
 
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
-            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
+            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_poc_submission_ts", || {
                 settings.last_poc_submission
             })
             .await?;
@@ -124,7 +124,7 @@ impl Server {
         // at least submitted all the receipts we could for that time period and will look at the
         // next incoming reports in the next poc_iot_timer tick.
         self.last_poc_submission_ts
-            .update(&self.pool, before_utc.timestamp())
+            .update(&self.pool, before_utc.timestamp_millis())
             .await?;
 
         Ok(())
