@@ -11,6 +11,7 @@ use helium_proto::{
     },
     Message, Region,
 };
+use hextree::Cell;
 use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
@@ -71,7 +72,12 @@ impl iot_config::Gateway for GatewayService {
             .await
             .map_err(|_| Status::internal("gateway lookup error"))?;
 
-        let location = location.ok_or_else(|| Status::internal("gateway location undefined"))?;
+        let location = {
+            let location =
+                location.ok_or_else(|| Status::internal("gateway location undefined"))?;
+            Cell::from_raw(location)
+                .map_err(|_| Status::permission_denied("invalid h3 index"))?
+        };
 
         let region = self
             .region_map
