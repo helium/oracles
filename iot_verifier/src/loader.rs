@@ -134,18 +134,18 @@ impl Loader {
         // as such data being loaded is always stale by a time equal to REPORTS_POLL_TIME
 
         // if there is NO last timestamp in the DB, we will start our sliding window from this point
-        let window_default_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
+        let window_default_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 3);
         // NOTE: Atm we never look back more than window_default_lookback
         // The experience has been that once we start processing a window longer than default
         // we never recover the time and end up stuck on a window of the extended size
         // The option is here however to extend the window size should it be needed
-        let window_max_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
+        let window_max_lookback = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 3);
         let after = Meta::last_timestamp(&self.pool, REPORTS_META_NAME)
             .await?
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
 
-        let before = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64);
+        let before = now - ChronoDuration::seconds(REPORTS_POLL_TIME as i64 * 2);
         let window_width = (before - after).num_minutes() as u64;
         tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
         self.process_window(gateway_cache, after, before).await?;
