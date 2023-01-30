@@ -1,10 +1,6 @@
 use futures::stream::TryStreamExt;
 use helium_proto::{BlockchainRegionParamsV1, Message, Region};
-use hextree::{
-    compaction::EqCompactor,
-    h3ron::{FromH3Index, H3Cell},
-    HexTreeMap,
-};
+use hextree::{compaction::EqCompactor, Cell, HexTreeMap};
 use libflate::gzip::Decoder;
 use std::{collections::HashMap, io::Read, sync::Arc};
 use tokio::sync::RwLock;
@@ -24,12 +20,8 @@ impl RegionMap {
         })
     }
 
-    pub async fn get_region(&self, location: u64) -> Option<Region> {
-        self.region_hextree
-            .read()
-            .await
-            .get(H3Cell::from_h3index(location))
-            .cloned()
+    pub async fn get_region(&self, location: Cell) -> Option<Region> {
+        self.region_hextree.read().await.get(location).cloned()
     }
 
     pub async fn get_params(&self, region: &Region) -> Option<BlockchainRegionParamsV1> {
@@ -76,19 +68,28 @@ pub async fn build_region_tree(
     while let Some(region_row) = regions.try_next().await? {
         let region = Region::from_i32(region_row.region)
             .ok_or(RegionMapError::UnsupportedRegion(region_row.region))?;
-        let mut idx_decoder = Decoder::new(&region_row.indexes[..])?;
-        let mut buf = Vec::new();
-        idx_decoder.read_to_end(&mut buf)?;
+        let mut h3_idx_decoder = Decoder::new(&region_row.indexes[..])?;
+        let mut raw_h3_indices = Vec::new();
+        h3_idx_decoder.read_to_end(&mut raw_h3_indices)?;
 
-        let mut idx_buf = [0_u8; 8];
-        for chunk in buf.chunks(8) {
-            if chunk.len() < idx_buf.len() {
-                tracing::error!("h3 index list malformed; cannot parse to u64: {chunk:?}");
-                return Err(RegionMapError::MalformedH3Indexes);
-            };
-            idx_buf.as_mut_slice().copy_from_slice(chunk);
-            let idx = u64::from_le_bytes(idx_buf);
-            region_tree.insert(H3Cell::from_h3index(idx), region);
+        if raw_h3_indices.len() % std::mem::size_of::<u64>() != 0 {
+            tracing::error!("h3 index list malformed; indices are not an index-byte-size multiple; region: {region}");
+            return Err(RegionMapError::MalformedH3Indexes);
+        }
+
+        let mut h3_idx_buf = [0_u8; 8];
+        for (chunk_num, chunk) in raw_h3_indices.chunks(8).enumerate() {
+            h3_idx_buf.as_mut_slice().copy_from_slice(chunk);
+            let h3_idx = u64::from_le_bytes(h3_idx_buf);
+            match Cell::from_raw(h3_idx) {
+                Ok(cell) => region_tree.insert(cell, region),
+                Err(_) => {
+                    tracing::error!(
+                        "h3 index list malformed; region, chunk, bits: {region}, {chunk_num}, {h3_idx:x}"
+                    );
+                    return Err(RegionMapError::MalformedH3Indexes);
+                }
+            }
         }
     }
 

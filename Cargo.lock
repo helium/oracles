@@ -1274,7 +1274,7 @@ dependencies = [
  "chrono",
  "config",
  "futures",
- "h3ron 0.16.0",
+ "h3ron",
  "helium-proto",
  "http",
  "itertools",
@@ -1682,21 +1682,6 @@ dependencies = [
 
 [[package]]
 name = "geo"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0943f2fcf1e21429a6d3a9842308ee363a6d9018fda475c47c564156d44eef3"
-dependencies = [
- "float_next_after",
- "geo-types",
- "geographiclib-rs",
- "log",
- "num-traits",
- "robust",
- "rstar",
-]
-
-[[package]]
-name = "geo"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b684179d4c034f9e6718692601a7ec77e4a3b654dbc09b5e4fd342f0e48f2ba1"
@@ -1803,26 +1788,12 @@ dependencies = [
 
 [[package]]
 name = "h3ron"
-version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7d52875c47f35a0db141bef968682165623e7d1671a0da40b87f581a3a953fd"
-dependencies = [
- "ahash 0.8.2",
- "geo 0.22.1",
- "geo-types",
- "h3ron-h3-sys",
- "hashbrown 0.12.3",
- "thiserror",
-]
-
-[[package]]
-name = "h3ron"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d71b40c852263f760233f189e324930e1672276f1c91fe079bd9fd58e590600"
 dependencies = [
  "ahash 0.8.2",
- "geo 0.23.0",
+ "geo",
  "geo-types",
  "h3ron-h3-sys",
  "hashbrown 0.12.3",
@@ -1993,11 +1964,12 @@ checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 
 [[package]]
 name = "hextree"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b441cd933ac3eadde9f01898ef12bb3d4560fbe1aeaf3eb2e5bff5bdd7715a17"
+checksum = "0a6ffc35fc0fb2af599742de1938d44cd18b0ae7cf7a7faf4b067f43cc863902"
 dependencies = [
- "h3ron 0.15.1",
+ "bitfield",
+ "thiserror",
 ]
 
 [[package]]
@@ -2271,9 +2243,9 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "geo 0.23.0",
+ "geo",
  "geo-types",
- "h3ron 0.16.0",
+ "h3ron",
  "helium-crypto",
  "helium-proto",
  "http-serde",
