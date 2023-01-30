@@ -76,7 +76,7 @@ impl iot_config::Gateway for GatewayService {
             let location =
                 location.ok_or_else(|| Status::internal("gateway location undefined"))?;
             Cell::from_raw(location)
-                .map_err(|_| Status::permission_denied("invalid h3 index"))?
+                .map_err(|_| Status::internal("gateway location is not a valid h3 index"))?
         };
 
         let region = self
