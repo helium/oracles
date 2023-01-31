@@ -21,6 +21,7 @@ use tokio::time;
 struct Daemon {
     pool: Pool<Postgres>,
     verifier: Verifier<BalanceCache, CachedOrgClient>,
+    last_verified: NaiveDateTime,
     file_store: FileStore,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
@@ -33,33 +34,29 @@ impl Daemon {
         let mut timer = time::interval(POLL_TIME);
         timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
-        let mut last_verified: NaiveDateTime =
-            meta::fetch(&self.pool, "last_verified_report").await?;
-
         loop {
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = timer.tick() => {
-                    last_verified = self.handle_tick(last_verified.clone()).await?;
-                }
+                _ = timer.tick() =>  self.handle_tick().await?,
+
             }
         }
 
         Ok(())
     }
 
-    async fn handle_tick(&mut self, mut last_verified: NaiveDateTime) -> Result<NaiveDateTime> {
+    async fn handle_tick(&mut self) -> Result<()> {
         let mut reports = self
             .file_store
             .list(
                 FileType::IotPacketReport,
-                DateTime::from_utc(last_verified, Utc),
+                DateTime::from_utc(self.last_verified, Utc),
                 None,
             )
             .boxed();
 
         while let Some(report) = reports.next().await.transpose()? {
-            last_verified = report.timestamp.naive_utc();
+            self.last_verified = report.timestamp.naive_utc();
             let reports = ingest::ingest_reports(&self.file_store, report).await?;
             let mut transaction = self.pool.begin().await?;
             self.verifier
@@ -70,13 +67,13 @@ impl Daemon {
                     &self.invalid_packets,
                 )
                 .await?;
-            meta::store(&mut transaction, "last_verified_report", last_verified).await?;
+            meta::store(&mut transaction, "last_verified_report", self.last_verified).await?;
             transaction.commit().await?;
             self.valid_packets.commit().await?;
             self.invalid_packets.commit().await?;
         }
 
-        Ok(last_verified)
+        Ok(())
     }
 }
 
@@ -137,9 +134,12 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     let file_store = FileStore::from_settings(&settings.ingest).await?;
 
     // Set up the verifier Daemon:
+    let last_verified = meta::fetch(&pool, "last_verified_report").await?;
+
     let config_keypair = settings.config_keypair()?;
     let verifier_daemon = Daemon {
         pool,
+        last_verified,
         file_store,
         valid_packets,
         invalid_packets,

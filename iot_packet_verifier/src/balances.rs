@@ -7,12 +7,11 @@ use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClien
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
-/// Caches balances fetched from the solana chain and debits made by the 
-/// packet verifier. 
+/// Caches balances fetched from the solana chain and debits made by the
+/// packet verifier.
 pub struct BalanceCache {
     sub_dao: Pubkey,
     provider: Arc<RpcClient>,
@@ -132,9 +131,6 @@ pub struct Balance {
 
 impl Balance {
     pub fn new(balance: u64) -> Self {
-        Self {
-            balance,
-            burned: 0,
-        }
+        Self { balance, burned: 0 }
     }
 }
