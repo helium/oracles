@@ -242,6 +242,7 @@ impl Poc {
             "verifying beacon from beaconer: {:?}",
             PublicKeyBinary::from(beaconer_info.address.clone())
         );
+        verify_gw_location(beaconer_info.location)?;
         let beacon_received_ts = self.beacon_report.received_timestamp;
         verify_entropy(self.entropy_start, self.entropy_end, beacon_received_ts)?;
         verify_beacon_schedule(
@@ -250,7 +251,6 @@ impl Poc {
             beacon_interval,
             beacon_interval_tolerance,
         )?;
-        verify_gw_location(beaconer_info.location)?;
         verify_gw_capability(beaconer_info.staking_mode)?;
         tracing::debug!(
             "valid beacon from beaconer: {:?}",
@@ -269,7 +269,13 @@ impl Poc {
             "verifying witness from gateway: {:?}",
             PublicKeyBinary::from(witness_info.address.clone())
         );
+        verify_gw_location(witness_info.location)?;
         let beacon_report = &self.beacon_report;
+        // at this point the location has been verified for both beaconer and witness
+        // we need to use the location values for both in subsequent verifications
+        // derive the asserted value whilst avoiding unwraps
+        let beaconer_location = beaconer_info.location.ok_or(InvalidReason::NotAsserted)?;
+        let witness_location = witness_info.location.ok_or(InvalidReason::NotAsserted)?;
         verify_self_witness(
             &beacon_report.report.pub_key,
             &witness_report.report.pub_key,
@@ -279,21 +285,21 @@ impl Poc {
             self.entropy_end,
             witness_report.received_timestamp,
         )?;
+
         verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
-        verify_gw_location(witness_info.location)?;
         verify_witness_freq(
             beacon_report.report.frequency,
             witness_report.report.frequency,
         )?;
         verify_witness_region(beaconer_info.region, witness_info.region)?;
-        verify_witness_distance(beaconer_info.location, witness_info.location)?;
+        verify_witness_distance(beaconer_location, witness_location)?;
         verify_witness_rssi(
             witness_report.report.signal,
             witness_report.report.frequency,
             beacon_report.report.tx_power,
             beaconer_info.gain,
-            beaconer_info.location,
-            witness_info.location,
+            beaconer_location,
+            witness_location,
         )?;
         tracing::debug!(
             "valid witness from gateway: {:?}",
@@ -417,7 +423,7 @@ fn verify_gw_location(gateway_loc: Option<u64>) -> GenericVerifyResult {
         Some(location) => location,
         None => {
             tracing::debug!(
-                "beacon verification failed, reason: {:?}",
+                "report verification failed, reason: {:?}",
                 InvalidReason::NotAsserted
             );
             return Err(InvalidReason::NotAsserted);
@@ -484,16 +490,7 @@ fn verify_witness_region(beacon_region: Region, witness_region: Region) -> Gener
 }
 
 /// verify witness does not exceed max distance from beaconer
-fn verify_witness_distance(
-    beacon_loc: Option<u64>,
-    witness_loc: Option<u64>,
-) -> GenericVerifyResult {
-    // other verifications handle location checks but dont assume
-    // we have a valid location passed in here
-    // if no location for either beaconer or witness then default
-    // this verification to a fail
-    let l1 = beacon_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
-    let l2 = witness_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
+fn verify_witness_distance(l1: u64, l2: u64) -> GenericVerifyResult {
     let witness_distance = match calc_distance(l1, l2) {
         Ok(d) => d,
         Err(_) => return Err(InvalidReason::MaxDistanceExceeded),
@@ -514,16 +511,9 @@ fn verify_witness_rssi(
     witness_freq: u64,
     beacon_tx_power: i32,
     beacon_gain: i32,
-    beacon_loc: Option<u64>,
-    witness_loc: Option<u64>,
+    l1: u64,
+    l2: u64,
 ) -> GenericVerifyResult {
-    // other verifications handle location checks but dont assume
-    // we have a valid location passed in here
-    // if no location for either beaconer or witness or
-    // distance between the two cannot be determined
-    // then default this verification to a fail
-    let l1 = beacon_loc.ok_or(InvalidReason::BadRssi)?;
-    let l2 = witness_loc.ok_or(InvalidReason::BadRssi)?;
     let distance = match calc_distance(l1, l2) {
         Ok(d) => d,
         Err(_) => return Err(InvalidReason::BadRssi),
@@ -906,10 +896,10 @@ mod tests {
         let beacon_loc = 631615575095659519; // malta
         let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
         let witness2_loc = 631278052025960447; // armenia
-        assert!(verify_witness_distance(Some(beacon_loc), Some(witness1_loc)).is_ok());
+        assert!(verify_witness_distance(beacon_loc, witness1_loc).is_ok());
         assert_eq!(
             Err(InvalidReason::MaxDistanceExceeded),
-            verify_witness_distance(Some(beacon_loc), Some(witness2_loc))
+            verify_witness_distance(beacon_loc, witness2_loc)
         );
     }
 
@@ -930,8 +920,8 @@ mod tests {
             witness1_freq,
             beacon1_tx_power,
             beacon1_gain,
-            Some(beacon_loc),
-            Some(witness1_loc),
+            beacon_loc,
+            witness1_loc,
         )
         .is_ok());
         let beacon2_tx_power = 27;
@@ -945,8 +935,8 @@ mod tests {
                 witness2_freq,
                 beacon2_tx_power,
                 beacon2_gain,
-                Some(beacon_loc),
-                Some(witness2_loc),
+                beacon_loc,
+                witness2_loc,
             )
         );
     }
