@@ -30,6 +30,10 @@ pub const R: f64 = 6.371e6;
 
 /// max permitted distance of a witness from a beaconer measured in KM
 const POC_DISTANCE_LIMIT: i32 = 100;
+/// the minimum distance in cells between a beaconer and witness
+const POC_CELL_DISTANCE_MINIMUM: u32 = 8;
+/// the resolution at which parent cell distance is derived
+const POC_CELL_PARENT_RES: u8 = 11;
 
 pub struct Poc {
     beacon_report: IotBeaconIngestReport,
@@ -286,6 +290,7 @@ impl Poc {
             witness_report.report.frequency,
         )?;
         verify_witness_region(beaconer_info.region, witness_info.region)?;
+        verify_witness_cell_distance(beaconer_info.location, witness_info.location)?;
         verify_witness_distance(beaconer_info.location, witness_info.location)?;
         verify_witness_rssi(
             witness_report.report.signal,
@@ -508,6 +513,31 @@ fn verify_witness_distance(
     Ok(())
 }
 
+/// verify min hex distance between beaconer and witness
+fn verify_witness_cell_distance(
+    beacon_loc: Option<u64>,
+    witness_loc: Option<u64>,
+) -> GenericVerifyResult {
+    // other verifications handle location checks but dont assume
+    // we have a valid location passed in here
+    // if no location for either beaconer or witness then default
+    // this verification to a fail
+    let l1 = beacon_loc.ok_or(InvalidReason::BelowMinDistance)?;
+    let l2 = witness_loc.ok_or(InvalidReason::BelowMinDistance)?;
+    let cell_distance = match calc_cell_distance(l1, l2) {
+        Ok(d) => d,
+        Err(_) => return Err(InvalidReason::BelowMinDistance),
+    };
+    if cell_distance < POC_CELL_DISTANCE_MINIMUM {
+        tracing::debug!(
+            "witness verification failed, reason: {:?}. cell distance {cell_distance}",
+            InvalidReason::BelowMinDistance
+        );
+        return Err(InvalidReason::BelowMinDistance);
+    }
+    Ok(())
+}
+
 /// verify witness rssi
 fn verify_witness_rssi(
     witness_signal: i32,
@@ -573,6 +603,15 @@ pub enum CalcDistanceError {
     ConvergenceError(#[from] FailedToConvergeError),
     #[error("h3ron error: {0}")]
     H3ronError(#[from] h3ron::Error),
+}
+
+fn calc_cell_distance(p1: u64, p2: u64) -> Result<u32, CalcDistanceError> {
+    let p1_cell = H3Cell::new(p1);
+    let p2_cell = H3Cell::new(p2);
+    let source_parent = H3Cell::get_parent(&p1_cell, POC_CELL_PARENT_RES)?;
+    let dest_parent = H3Cell::get_parent(&p2_cell, POC_CELL_PARENT_RES)?;
+    let cell_distance = H3Cell::grid_distance_to(&source_parent, dest_parent)? as u32;
+    Ok(cell_distance)
 }
 
 fn calc_distance(p1: u64, p2: u64) -> Result<f64, CalcDistanceError> {
@@ -744,6 +783,20 @@ mod tests {
     }
 
     #[test]
+    fn test_calc_cell_distance() {
+        // location 1 is 51.51231394840223, -0.2919014665284206 ( ealing, london)
+        // location 2 is 51.5649315958581, -0.10295780727096393 ( finsbury pk, london)
+        // google maps distance is ~14.32km
+        // converted co-ords to h3 index at resolution 15
+        let loc1 = 644459695463521437;
+        let loc2 = 644460986971331488;
+        let dist: i32 = calc_cell_distance(loc1, loc2).unwrap() as i32;
+        // verify the calculated cell distance is more than min cell distance
+        // the correct cell distance between the two locations at resolution 11 = 360
+        assert_eq!(360, dist);
+    }
+
+    #[test]
     fn test_calc_fspl() {
         //TODO: values here were taken from real work success and fail scenarios
         //      get someone in the know to verify
@@ -911,6 +964,21 @@ mod tests {
             Err(InvalidReason::MaxDistanceExceeded),
             verify_witness_distance(Some(beacon_loc), Some(witness2_loc))
         );
+    }
+
+    #[test]
+    fn test_verify_witness_cell_distance() {
+        let beacon_loc = 631615575095659519; // malta
+        let witness1_loc = 627111975468974079; // 7 cells away from beaconer
+        let witness2_loc = 627111975465463807; // 28 cells away from beaconer
+
+        // witness 1 location is 7 cells from the beaconer and thus invalid
+        assert_eq!(
+            Err(InvalidReason::BelowMinDistance),
+            verify_witness_cell_distance(Some(beacon_loc), Some(witness1_loc))
+        );
+        // witness 2's location is 28 cells from the beaconer and thus valid
+        assert!(verify_witness_cell_distance(Some(beacon_loc), Some(witness2_loc)).is_ok());
     }
 
     #[test]
