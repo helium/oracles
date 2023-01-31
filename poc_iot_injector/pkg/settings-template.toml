@@ -1,6 +1,6 @@
 
 # log settings for the application (RUST_LOG format). Default below
-# 
+#
 # log = "poc-iot-injector=debug,poc_store=info"
 
 #file to load keypair from
@@ -26,6 +26,10 @@ do_submission = true
 # Number of witnesses allowed per receipt
 #
 # max_witnesses_per_receipt = 14
+
+# max lookback age for the injector when loading files from s3 ( in seconds )
+#
+max_lookback_age = 3600
 
 [database]
 

@@ -32,6 +32,9 @@ pub struct Settings {
     /// Default = 5 mins
     #[serde(default = "default_submission_offset")]
     pub submission_offset: i64,
+    /// max lookback age for the injector when loading files from s3 ( in seconds )
+    #[serde(default = "default_max_lookback_age")]
+    pub max_lookback_age: i64,
 }
 
 pub fn default_log() -> String {
@@ -56,6 +59,11 @@ fn default_submission_offset() -> i64 {
 
 pub fn default_max_witnesses_per_receipt() -> u64 {
     14
+}
+
+// Default: 60 minutes ( in seconds )
+pub fn default_max_lookback_age() -> i64 {
+    60 * 60
 }
 
 impl Settings {
@@ -92,5 +100,9 @@ impl Settings {
 
     pub fn submission_offset(&self) -> ChronoDuration {
         ChronoDuration::seconds(self.submission_offset)
+    }
+
+    pub fn max_lookback_age(&self) -> ChronoDuration {
+        ChronoDuration::seconds(self.max_lookback_age)
     }
 }

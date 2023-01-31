@@ -25,6 +25,7 @@ pub struct Server {
     tick_time: StdDuration,
     submission_offset: ChronoDuration,
     settings: Settings,
+    max_lookback_age: ChronoDuration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -43,7 +44,7 @@ impl Server {
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
         let submission_offset = settings.submission_offset();
-
+        let max_lookback_age = settings.max_lookback_age();
         // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
         let last_poc_submission_ts =
             MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
@@ -63,6 +64,7 @@ impl Server {
                 .then_some(TransactionService::from_settings(&settings.transactions)),
             iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
             last_poc_submission_ts,
+            max_lookback_age,
         };
         Ok(result)
     }
@@ -91,12 +93,15 @@ impl Server {
     }
 
     async fn handle_poc_tick(&mut self) -> anyhow::Result<()> {
-        let after_utc = Utc.from_utc_datetime(&NaiveDateTime::from_timestamp(
-            *self.last_poc_submission_ts.value(),
-            0,
-        ));
-
         let now = Utc::now();
+        let max_lookback_time = now - self.max_lookback_age;
+        let after_utc = Utc
+            .from_utc_datetime(&NaiveDateTime::from_timestamp(
+                *self.last_poc_submission_ts.value(),
+                0,
+            ))
+            .max(max_lookback_time);
+
         let before_utc = now
             .checked_sub_signed(self.submission_offset)
             .unwrap_or(now);
