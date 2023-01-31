@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration as ChronoDuration, NaiveDateTime, TimeZone, Utc}
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
-use governor::{Quota, RateLimiter};
+use governor::{Jitter, Quota, RateLimiter};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
 use nonzero_ext::nonzero;
@@ -157,6 +157,9 @@ async fn submit_txns(
         NonZeroU32::new(settings.max_txns_per_min).unwrap_or(nonzero!(MAX_TXNS_PER_MIN));
     let bucket = Arc::new(RateLimiter::direct(Quota::per_minute(max_txns_per_min)));
 
+    // To ensure that multiple tasks don't wake up at the exact same time
+    let jitter = Jitter::up_to(StdDuration::from_secs(5));
+
     let mut set = JoinSet::new();
 
     while let Some(msg) = stream.next().await {
@@ -169,7 +172,9 @@ async fn submit_txns(
                 let mut shared_txn_service = txn_service.clone();
 
                 tracing::info!("Spawning submission tasks...");
-                let handle = set.spawn(async move {
+                set.spawn(async move {
+                    bucket.until_ready_with_jitter(jitter).await;
+
                     let _ = process_submission(
                         buf,
                         shared_key,
@@ -179,11 +184,6 @@ async fn submit_txns(
                     )
                     .await;
                 });
-
-                // Abort tasks if we've hit the bucket limit
-                if bucket.check().is_err() {
-                    handle.abort()
-                }
 
                 if set.len() > MAX_CONCURRENT_SUBMISSIONS {
                     tracing::info!("Processing {MAX_CONCURRENT_SUBMISSIONS} submissions");
