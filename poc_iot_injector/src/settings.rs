@@ -35,6 +35,13 @@ pub struct Settings {
     /// max lookback age for the injector when loading files from s3 ( in seconds )
     #[serde(default = "default_max_lookback_age")]
     pub max_lookback_age: i64,
+    /// max txns to submit per min (default = 2000)
+    #[serde(default = "default_max_txns_per_min")]
+    pub max_txns_per_min: u32,
+}
+
+pub fn default_max_txns_per_min() -> u32 {
+    2000
 }
 
 pub fn default_log() -> String {

@@ -6,14 +6,16 @@ use chrono::{DateTime, Duration as ChronoDuration, NaiveDateTime, TimeZone, Utc}
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
+use governor::{Quota, RateLimiter};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
+use nonzero_ext::nonzero;
 use prost::bytes::BytesMut;
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::{num::NonZeroU32, sync::Arc, time::Duration as StdDuration};
 use tokio::{task::JoinSet, time};
 
+const MAX_TXNS_PER_MIN: u32 = 2000;
 const MAX_CONCURRENT_SUBMISSIONS: usize = 16;
 
 pub struct Server {
@@ -151,9 +153,15 @@ async fn submit_txns(
     let mut stream =
         store.source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed());
 
+    let max_txns_per_min =
+        NonZeroU32::new(settings.max_txns_per_min).unwrap_or(nonzero!(MAX_TXNS_PER_MIN));
+    let bucket = Arc::new(RateLimiter::direct(Quota::per_minute(max_txns_per_min)));
+
     let mut set = JoinSet::new();
 
     while let Some(msg) = stream.next().await {
+        let bucket = Arc::clone(&bucket);
+
         match msg {
             Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
             Ok(buf) => {
@@ -161,7 +169,7 @@ async fn submit_txns(
                 let mut shared_txn_service = txn_service.clone();
 
                 tracing::info!("Spawning submission tasks...");
-                set.spawn(async move {
+                let handle = set.spawn(async move {
                     let _ = process_submission(
                         buf,
                         shared_key,
@@ -171,6 +179,11 @@ async fn submit_txns(
                     )
                     .await;
                 });
+
+                // Abort tasks if we've hit the bucket limit
+                if bucket.check().is_err() {
+                    handle.abort()
+                }
 
                 if set.len() > MAX_CONCURRENT_SUBMISSIONS {
                     tracing::info!("Processing {MAX_CONCURRENT_SUBMISSIONS} submissions");
