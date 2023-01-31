@@ -181,30 +181,36 @@ impl iot_config::Org for OrgService {
 
         let req = self.verify_admin_signature(request)?;
 
-        org::toggle_status(req.oui, OrgStatus::Disabled, &self.pool)
+        if org::get_status(req.oui, &self.pool)
             .await
-            .map_err(|_| Status::internal(format!("org disable failed for: {}", req.oui)))?;
+            .map_err(|_| Status::internal("error retrieving current status"))?
+            == OrgStatus::Enabled
+        {
+            org::toggle_status(req.oui, OrgStatus::Disabled, &self.pool)
+                .await
+                .map_err(|_| Status::internal(format!("org disable failed for: {}", req.oui)))?;
 
-        let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
-            Status::internal(format!(
-                "error retrieving routes for disabled org: {}",
-                req.oui
-            ))
-        })?;
+            let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
+                Status::internal(format!(
+                    "error retrieving routes for disabled org: {}",
+                    req.oui
+                ))
+            })?;
 
-        for route in org_routes {
-            let route_id = route.id.clone();
-            self.route_update_tx
-                .send(RouteStreamResV1 {
-                    action: ActionV1::Delete.into(),
-                    route: Some(route.into()),
-                })
-                .map_err(|_| {
-                    Status::internal(format!(
-                        "failed updating routers with deleted route: {route_id}"
-                    ))
-                })?;
-            tracing::debug!("updated packet routers with removed route: {route_id}");
+            for route in org_routes {
+                let route_id = route.id.clone();
+                self.route_update_tx
+                    .send(RouteStreamResV1 {
+                        action: ActionV1::Delete.into(),
+                        route: Some(route.into()),
+                    })
+                    .map_err(|_| {
+                        Status::internal(format!(
+                            "failed updating routers with deleted route: {route_id}"
+                        ))
+                    })?;
+                tracing::debug!("updated packet routers with removed route: {route_id}");
+            }
         }
 
         Ok(Response::new(OrgDisableResV1 { oui: req.oui }))
@@ -215,30 +221,36 @@ impl iot_config::Org for OrgService {
 
         let req = self.verify_admin_signature(request)?;
 
-        org::toggle_status(req.oui, OrgStatus::Enabled, &self.pool)
+        if org::get_status(req.oui, &self.pool)
             .await
-            .map_err(|_| Status::internal(format!("org enable failed for: {}", req.oui)))?;
+            .map_err(|_| Status::internal("error retrieving current status"))?
+            == OrgStatus::Disabled
+        {
+            org::toggle_status(req.oui, OrgStatus::Enabled, &self.pool)
+                .await
+                .map_err(|_| Status::internal(format!("org enable failed for: {}", req.oui)))?;
 
-        let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
-            Status::internal(format!(
-                "error retrieving routes for enabled org: {}",
-                req.oui
-            ))
-        })?;
+            let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
+                Status::internal(format!(
+                    "error retrieving routes for enabled org: {}",
+                    req.oui
+                ))
+            })?;
 
-        for route in org_routes {
-            let route_id = route.id.clone();
-            self.route_update_tx
-                .send(RouteStreamResV1 {
-                    action: ActionV1::Create.into(),
-                    route: Some(route.into()),
-                })
-                .map_err(|_| {
-                    Status::internal(format!(
-                        "failed updating routers with created route: {route_id}"
-                    ))
-                })?;
-            tracing::debug!("updated packet routers with recreated route: {route_id}");
+            for route in org_routes {
+                let route_id = route.id.clone();
+                self.route_update_tx
+                    .send(RouteStreamResV1 {
+                        action: ActionV1::Create.into(),
+                        route: Some(route.into()),
+                    })
+                    .map_err(|_| {
+                        Status::internal(format!(
+                            "failed updating routers with created route: {route_id}"
+                        ))
+                    })?;
+                tracing::debug!("updated packet routers with recreated route: {route_id}");
+            }
         }
 
         Ok(Response::new(OrgEnableResV1 { oui: req.oui }))
