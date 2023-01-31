@@ -1,5 +1,5 @@
 use crate::{
-    balances::{Balance, Balances},
+    balances::{Balance, BalanceCache},
     pdas,
     settings::Settings,
 };
@@ -52,7 +52,7 @@ impl Burner {
     pub async fn new(
         settings: &Settings,
         pool: &Pool<Postgres>,
-        balances: &Balances,
+        balances: &BalanceCache,
         provider: Arc<RpcClient>,
         keypair: Keypair,
     ) -> Result<Self, BurnError> {

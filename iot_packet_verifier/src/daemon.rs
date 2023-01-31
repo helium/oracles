@@ -1,4 +1,10 @@
-use crate::{balances::Balances, burner::Burner, ingest, settings::Settings, verifier::Verifier};
+use crate::{
+    balances::BalanceCache,
+    burner::Burner,
+    ingest,
+    settings::Settings,
+    verifier::{CachedOrgClient, Verifier},
+};
 use anyhow::{bail, Error, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use db_store::meta;
@@ -14,7 +20,7 @@ use tokio::time;
 
 struct Daemon {
     pool: Pool<Postgres>,
-    verifier: Verifier,
+    verifier: Verifier<BalanceCache, CachedOrgClient>,
     file_store: FileStore,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
@@ -89,8 +95,8 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         &helium_sub_daos::ID,
     );
 
-    // Set up the balance tracker:
-    let balances = Balances::new(&pool, sub_dao, rpc_client.clone()).await?;
+    // Set up the balance cache:
+    let balances = BalanceCache::new(&pool, sub_dao, rpc_client.clone()).await?;
 
     // Set up the balance burner:
     let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
@@ -138,10 +144,8 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         valid_packets,
         invalid_packets,
         verifier: Verifier {
-            keypair: config_keypair,
-            balances,
-            org_client,
-            sub_dao,
+            debiter: balances,
+            config_server: CachedOrgClient::new(org_client, config_keypair),
         },
     };
 

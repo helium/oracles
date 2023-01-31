@@ -1,28 +1,22 @@
-use crate::{burner::Burn, pdas};
+use crate::{burner::Burn, pdas, verifier::Debiter};
 use anchor_lang::AccountDeserialize;
-use chrono::Utc;
 use data_credits::DelegatedDataCreditsV0;
 use futures_util::StreamExt;
-use helium_crypto::{Keypair, PublicKeyBinary, Sign};
-use helium_proto::{
-    services::{
-        iot_config::{org_client::OrgClient, OrgDisableReqV1, OrgEnableReqV1},
-        Channel,
-    },
-    Message,
-};
+use helium_crypto::PublicKeyBinary;
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
-use std::{mem, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
-pub struct Balances {
-    pub sub_dao: Pubkey,
-    pub provider: Arc<RpcClient>,
-    pub balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
+/// Caches balances fetched from the solana chain and debits made by the 
+/// packet verifier. 
+pub struct BalanceCache {
+    sub_dao: Pubkey,
+    provider: Arc<RpcClient>,
+    balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -37,7 +31,7 @@ pub enum DebitError {
     ProgramError(#[from] solana_sdk::program_error::ProgramError),
 }
 
-impl Balances {
+impl BalanceCache {
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
     pub async fn new(
@@ -62,7 +56,6 @@ impl Balances {
                 Balance {
                     burned: burn_amount as u64,
                     balance,
-                    enabled: true,
                 },
             );
         }
@@ -77,14 +70,19 @@ impl Balances {
     pub fn balances(&self) -> Arc<Mutex<HashMap<PublicKeyBinary, Balance>>> {
         self.balances.clone()
     }
+}
+
+#[async_trait::async_trait]
+impl Debiter for BalanceCache {
+    type Error = DebitError;
 
     /// Debits the balance from the cache, returning true if there was enough
     /// balance and false otherwise.
-    pub async fn debit_if_sufficient(
+    async fn debit_if_sufficient(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<BalanceSufficiency, DebitError> {
+    ) -> Result<bool, DebitError> {
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {
@@ -103,80 +101,13 @@ impl Balances {
             balance
         };
 
-        let sufficient = if balance.balance >= amount + balance.burned {
+        let sufficient = balance.balance >= amount + balance.burned;
+
+        if sufficient {
             balance.burned += amount;
-            BalanceSufficiency::sufficient(&mut balance.enabled)
-        } else {
-            BalanceSufficiency::insufficient(&mut balance.enabled)
-        };
+        }
 
         Ok(sufficient)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum BalanceSufficiency {
-    Sufficient { enable: bool },
-    Insufficient { disable: bool },
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ConfigureOrgError {
-    #[error("Rpc error: {0}")]
-    RpcError(#[from] tonic::Status),
-    #[error("Crypto error: {0}")]
-    CryptoError(#[from] helium_crypto::Error),
-}
-
-impl BalanceSufficiency {
-    pub fn sufficient(enabled: &mut bool) -> Self {
-        Self::Sufficient {
-            enable: !mem::replace(enabled, true),
-        }
-    }
-
-    pub fn insufficient(enabled: &mut bool) -> Self {
-        Self::Insufficient {
-            disable: mem::replace(enabled, false),
-        }
-    }
-
-    pub fn is_sufficient(&self) -> bool {
-        matches!(self, BalanceSufficiency::Sufficient { .. })
-    }
-
-    pub async fn configure_org(
-        self,
-        client: &mut OrgClient<Channel>,
-        keypair: &Keypair,
-        oui: u64,
-    ) -> Result<(), ConfigureOrgError> {
-        match self {
-            Self::Sufficient { enable: true } => {
-                let mut req = OrgEnableReqV1 {
-                    oui,
-                    timestamp: Utc::now().timestamp_millis() as u64,
-                    signer: keypair.public_key().to_vec(),
-                    signature: vec![],
-                };
-                let signature = keypair.sign(&req.encode_to_vec())?;
-                req.signature = signature;
-                let _ = client.enable(req).await?;
-            }
-            Self::Insufficient { disable: true } => {
-                let mut req = OrgDisableReqV1 {
-                    oui,
-                    timestamp: Utc::now().timestamp_millis() as u64,
-                    signer: keypair.public_key().to_vec(),
-                    signature: vec![],
-                };
-                let signature = keypair.sign(&req.encode_to_vec())?;
-                req.signature = signature;
-                let _ = client.disable(req).await?;
-            }
-            _ => (),
-        }
-        Ok(())
     }
 }
 
@@ -195,9 +126,8 @@ pub async fn payer_balance(
 }
 
 pub struct Balance {
-    pub balance: u64,
+    balance: u64,
     pub burned: u64,
-    pub enabled: bool,
 }
 
 impl Balance {
@@ -205,7 +135,6 @@ impl Balance {
         Self {
             balance,
             burned: 0,
-            enabled: true,
         }
     }
 }
