@@ -94,7 +94,7 @@ impl Server {
 
     async fn handle_poc_tick(&mut self) -> anyhow::Result<()> {
         let now = Utc::now();
-        let max_lookback_time = now - self.max_lookback_age;
+        let max_lookback_time = now.checked_sub_signed(self.max_lookback_age).unwrap_or(now);
         let after_utc = Utc
             .from_utc_datetime(&NaiveDateTime::from_timestamp(
                 *self.last_poc_submission_ts.value(),
