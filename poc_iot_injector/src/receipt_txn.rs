@@ -150,7 +150,7 @@ fn construct_poc_witnesses(
             snr: witness_report.report.snr as f32 / SNR_MULTIPLIER,
             frequency: hz_to_mhz(witness_report.report.frequency),
             datarate: witness_report.report.datarate.to_string(),
-            channel: 0,
+            channel: witness_report.invalid_reason as i32,
             reward_shares,
         };
 
