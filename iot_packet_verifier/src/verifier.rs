@@ -137,7 +137,7 @@ where
 }
 
 pub fn payload_size_to_dc(payload_size: u64) -> u64 {
-    payload_size.min(24) / 24
+    payload_size.max(24) / 24
 }
 
 #[async_trait]
@@ -324,5 +324,167 @@ impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
     async fn write(&mut self, packet: T) -> Result<(), ()> {
         (*self).push(packet);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use futures_util::stream;
+
+    struct MockConfig {
+        payer: PublicKeyBinary,
+        enabled: bool,
+    }
+
+    #[derive(Default)]
+    struct MockConfigServer {
+        payers: HashMap<u64, MockConfig>,
+    }
+
+    impl MockConfigServer {
+        fn insert(&mut self, oui: u64, payer: PublicKeyBinary) {
+            self.payers.insert(
+                oui,
+                MockConfig {
+                    payer,
+                    enabled: false,
+                },
+            );
+        }
+    }
+
+    #[async_trait]
+    impl ConfigServer for MockConfigServer {
+        type Error = ();
+
+        async fn fetch_org(
+            &mut self,
+            oui: u64,
+            _cache: &mut HashMap<u64, PublicKeyBinary>,
+        ) -> Result<PublicKeyBinary, ()> {
+            Ok(self.payers.get(&oui).unwrap().payer.clone())
+        }
+
+        async fn enable_org(&mut self, oui: u64) -> Result<(), ()> {
+            self.payers.get_mut(&oui).unwrap().enabled = true;
+            Ok(())
+        }
+
+        async fn disable_org(&mut self, oui: u64) -> Result<(), ()> {
+            self.payers.get_mut(&oui).unwrap().enabled = false;
+            Ok(())
+        }
+    }
+
+    fn packet_report(
+        oui: u64,
+        timestamp: u64,
+        payload_size: u32,
+        payload_hash: Vec<u8>,
+    ) -> PacketRouterPacketReportV1 {
+        PacketRouterPacketReportV1 {
+            gateway_timestamp_ms: timestamp,
+            oui,
+            net_id: 0,
+            rssi: 0,
+            frequency: 0,
+            snr: 0.0,
+            datarate: 0,
+            region: 0,
+            gateway: vec![],
+            payload_hash,
+            payload_size,
+        }
+    }
+
+    fn valid_packet(payload_size: u32, payload_hash: Vec<u8>) -> ValidPacket {
+        ValidPacket {
+            payload_size,
+            payload_hash,
+            gateway: vec![],
+        }
+    }
+
+    fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
+        InvalidPacket {
+            payload_size,
+            payload_hash,
+            gateway: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_verifier() {
+        let packets = vec![
+            // Packets for first OUI
+            packet_report(0, 0, 24, vec![1]),
+            packet_report(0, 1, 48, vec![2]),
+            packet_report(0, 2, 1, vec![3]),
+            // Packets for second OUI
+            packet_report(1, 0, 24, vec![4]),
+            packet_report(1, 1, 48, vec![5]),
+            packet_report(1, 1, 48, vec![5]),
+            packet_report(1, 2, 1, vec![6]),
+            // Packets for third OUI
+            packet_report(2, 0, 24, vec![7]),
+            packet_report(2, 0, 24, vec![7]),
+        ];
+        // Set up orgs:
+        let mut orgs = MockConfigServer::default();
+        orgs.insert(0_u64, PublicKeyBinary::from(vec![0]));
+        orgs.insert(1_u64, PublicKeyBinary::from(vec![1]));
+        orgs.insert(2_u64, PublicKeyBinary::from(vec![2]));
+        // Set up balances:
+        let mut balances = HashMap::new();
+        balances.insert(PublicKeyBinary::from(vec![0]), 3);
+        balances.insert(PublicKeyBinary::from(vec![1]), 4);
+        balances.insert(PublicKeyBinary::from(vec![2]), 1);
+        let balances = Arc::new(Mutex::new(balances));
+        // Set up output:
+        let mut valid_packets = Vec::new();
+        let mut invalid_packets = Vec::new();
+        // Set up verifier:
+        let mut verifier = Verifier {
+            debiter: balances.clone(),
+            config_server: orgs,
+        };
+
+        // Run the verifier:
+        verifier
+            .verify(
+                balances.clone(),
+                stream::iter(packets),
+                &mut valid_packets,
+                &mut invalid_packets,
+            )
+            .await
+            .unwrap();
+
+        // Verify packet reports:
+        assert_eq!(
+            valid_packets,
+            vec![
+                // First two packets for OUI #0 are valid
+                valid_packet(24, vec![1]),
+                valid_packet(48, vec![2]),
+                // All packets for OUI #1 are valid
+                valid_packet(24, vec![4]),
+                valid_packet(48, vec![5]),
+                valid_packet(1, vec![6]),
+                // All packets for OUI #2 are valid
+                valid_packet(24, vec![7]),
+            ]
+        );
+
+        assert_eq!(invalid_packets, vec![invalid_packet(1, vec![3]),]);
+
+        // Verify that only org #0 is disabled:
+        assert_eq!(
+            verifier.config_server.payers.get(&0).unwrap().enabled,
+            false
+        );
+        assert_eq!(verifier.config_server.payers.get(&1).unwrap().enabled, true);
+        assert_eq!(verifier.config_server.payers.get(&2).unwrap().enabled, true);
     }
 }
