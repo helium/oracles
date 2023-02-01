@@ -267,7 +267,7 @@ pub async fn update_euis(
 pub async fn delete_euis(
     id: &str,
     db: impl sqlx::PgExecutor<'_> + Copy,
-    update_tx: Arc<Sender<proto::RouteStreamResV1>>,
+    update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<(), RouteStorageError> {
     let euis = list_euis_for_route(id, db).await?;
     let id = Uuid::try_parse(id)?;
@@ -389,7 +389,7 @@ pub async fn update_devaddr_ranges(
 pub async fn delete_devaddr_ranges(
     id: &str,
     db: impl sqlx::PgExecutor<'_> + Copy,
-    update_tx: Arc<Sender<proto::RouteStreamResV1>>,
+    update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<(), RouteStorageError> {
     let devaddr_ranges = list_devaddr_ranges_for_route(id, db).await?;
     let id = Uuid::try_parse(id)?;

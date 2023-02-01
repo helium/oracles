@@ -8,9 +8,9 @@ use anyhow::Result;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::iot_config::{
-    self, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1, OrgDisableResV1,
-    OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1, OrgListReqV1, OrgListResV1, OrgResV1, OrgV1,
-    RouteStreamResV1,
+    self, route_stream_res_v1, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1,
+    OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1, OrgListReqV1,
+    OrgListResV1, OrgResV1, OrgV1, RouteStreamResV1,
 };
 use sqlx::{Pool, Postgres};
 use tokio::sync::broadcast::Sender;
@@ -199,16 +199,19 @@ impl iot_config::Org for OrgService {
 
             for route in org_routes {
                 let route_id = route.id.clone();
-                self.route_update_tx
+                if self
+                    .route_update_tx
                     .send(RouteStreamResV1 {
-                        action: ActionV1::Delete.into(),
-                        route: Some(route.into()),
+                        action: ActionV1::Remove.into(),
+                        data: Some(route_stream_res_v1::Data::Route(route.into())),
                     })
-                    .map_err(|_| {
-                        Status::internal(format!(
-                            "failed updating routers with deleted route: {route_id}"
-                        ))
-                    })?;
+                    .is_err()
+                {
+                    tracing::info!(
+                        "all subscribers disconnected; route disable failed at route {route_id}"
+                    );
+                    break;
+                };
                 tracing::debug!("updated packet routers with removed route: {route_id}");
             }
         }
@@ -239,16 +242,19 @@ impl iot_config::Org for OrgService {
 
             for route in org_routes {
                 let route_id = route.id.clone();
-                self.route_update_tx
+                if self
+                    .route_update_tx
                     .send(RouteStreamResV1 {
-                        action: ActionV1::Create.into(),
-                        route: Some(route.into()),
+                        action: ActionV1::Add.into(),
+                        data: Some(route_stream_res_v1::Data::Route(route.into())),
                     })
-                    .map_err(|_| {
-                        Status::internal(format!(
-                            "failed updating routers with created route: {route_id}"
-                        ))
-                    })?;
+                    .is_err()
+                {
+                    tracing::info!(
+                        "all subscribers disconnected; route enable failed at route {route_id}"
+                    );
+                    break;
+                };
                 tracing::debug!("updated packet routers with recreated route: {route_id}");
             }
         }
