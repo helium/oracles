@@ -387,7 +387,11 @@ impl Runner {
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
         let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
-        let mut selected_witnesses = witnesses_result.verified_witnesses;
+        let mut selected_witnesses = witnesses_result
+            .verified_witnesses
+            .into_iter()
+            .filter(|witness| witness.invalid_reason != InvalidReason::SelfWitness)
+            .collect();
         let unselected_witnesses = shuffle_and_split_witnesses(
             &beacon_id,
             &mut selected_witnesses,
