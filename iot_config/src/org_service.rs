@@ -79,7 +79,7 @@ impl iot_config::Org for OrgService {
         Ok(Response::new(OrgResV1 {
             org: Some(org.org.into()),
             net_id: net_id.into(),
-            devaddr_ranges: vec![org.constraints.into()],
+            devaddr_constraints: vec![org.constraints.into()],
         }))
     }
 
@@ -102,23 +102,29 @@ impl iot_config::Org for OrgService {
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
         let requested_addrs = req.devaddrs;
-        let devaddr_range = org::next_helium_devaddr(&self.pool)
+        let devaddr_constraint = org::next_helium_devaddr(&self.pool)
             .await
             .map_err(|_| Status::failed_precondition("helium address unavailable"))?
             .to_range(requested_addrs);
 
         let org = org::create_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
             .await
-            .map_err(|_| Status::internal("org save failed"))?;
+            .map_err(|err| {
+                tracing::error!("org save failed: {err:?}");
+                Status::internal("org save failed")
+            })?;
 
-        org::insert_constraints(org.oui, HELIUM_NET_ID, &devaddr_range, &self.pool)
+        org::insert_constraints(org.oui, HELIUM_NET_ID, &devaddr_constraint, &self.pool)
             .await
-            .map_err(|_| Status::internal("org constraints save failed"))?;
+            .map_err(|err| {
+                tracing::error!("org constraints save failed: {err:?}");
+                Status::internal("org constraints save failed")
+            })?;
 
         Ok(Response::new(OrgResV1 {
             org: Some(org.into()),
             net_id: HELIUM_NET_ID.into(),
-            devaddr_ranges: vec![devaddr_range.into()],
+            devaddr_constraints: vec![devaddr_constraint.into()],
         }))
     }
 
@@ -154,7 +160,7 @@ impl iot_config::Org for OrgService {
         Ok(Response::new(OrgResV1 {
             org: Some(org.into()),
             net_id: net_id.into(),
-            devaddr_ranges: vec![devaddr_range.into()],
+            devaddr_constraints: vec![devaddr_range.into()],
         }))
     }
 
