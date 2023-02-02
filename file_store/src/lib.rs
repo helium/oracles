@@ -6,6 +6,7 @@ pub mod file_source;
 pub mod file_store;
 pub mod file_upload;
 pub mod heartbeat;
+pub mod incoming_data;
 pub mod iot_beacon_report;
 pub mod iot_invalid_poc;
 pub mod iot_valid_poc;
