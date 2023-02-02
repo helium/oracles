@@ -3007,7 +3007,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "node-follower",
- "nonzero_ext",
  "poc-metrics",
  "prost",
  "rand",

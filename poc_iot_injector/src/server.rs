@@ -9,13 +9,11 @@ use futures::stream::{self, StreamExt};
 use governor::{Jitter, Quota, RateLimiter};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
-use nonzero_ext::nonzero;
 use prost::bytes::BytesMut;
 use sqlx::{Pool, Postgres};
 use std::{num::NonZeroU32, sync::Arc, time::Duration as StdDuration};
 use tokio::{task::JoinSet, time};
 
-const MAX_TXNS_PER_MIN: u32 = 2000;
 const MAX_CONCURRENT_SUBMISSIONS: usize = 16;
 
 pub struct Server {
@@ -38,6 +36,12 @@ pub enum NewServerError {
     KeypairError(#[from] Box<helium_crypto::Error>),
     #[error("file store error: {0}")]
     FileStoreError(#[from] file_store::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum SubmissionError {
+    #[error("rate limit not set")]
+    RateLimitNotSet,
 }
 
 impl Server {
@@ -154,7 +158,7 @@ async fn submit_txns(
         store.source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed());
 
     let max_txns_per_min =
-        NonZeroU32::new(settings.max_txns_per_min).unwrap_or(nonzero!(MAX_TXNS_PER_MIN));
+        NonZeroU32::new(settings.max_txns_per_min).ok_or(SubmissionError::RateLimitNotSet)?;
     let bucket = Arc::new(RateLimiter::direct(Quota::per_minute(max_txns_per_min)));
 
     // To ensure that multiple tasks don't wake up at the exact same time
@@ -163,7 +167,7 @@ async fn submit_txns(
     let mut set = JoinSet::new();
 
     while let Some(msg) = stream.next().await {
-        let bucket = Arc::clone(&bucket);
+        let bucket = bucket.clone();
 
         match msg {
             Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
