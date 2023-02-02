@@ -31,6 +31,10 @@ do_submission = true
 #
 max_lookback_age = 3600
 
+# max txns to submit per minute
+#
+max_txns_per_min = 2000
+
 [database]
 
 # Url for database to write indexed rewards to

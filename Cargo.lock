@@ -1235,6 +1235,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "907076dfda823b0b36d2a1bb5f90c96660a5bbcd7729e10727f07858f22c4edc"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.12.3",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core 0.9.4",
+]
+
+[[package]]
 name = "db-store"
 version = "0.1.0"
 dependencies = [
@@ -1285,7 +1298,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "structopt",
  "thiserror",
  "tracing",
@@ -1478,7 +1491,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "strum",
  "strum_macros",
  "tempfile",
@@ -1720,6 +1733,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
 
 [[package]]
+name = "governor"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c390a940a5d157878dd057c78680a33ce3415bcd05b4799509ea44210914b4d5"
+dependencies = [
+ "cfg-if",
+ "dashmap",
+ "futures",
+ "futures-timer",
+ "no-std-compat",
+ "nonzero_ext",
+ "parking_lot 0.12.1",
+ "quanta 0.9.3",
+ "rand",
+ "smallvec",
+]
+
+[[package]]
 name = "group"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1882,7 +1913,7 @@ dependencies = [
  "p256",
  "rand_core",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "signature",
  "sqlx",
  "thiserror",
@@ -2126,7 +2157,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",
@@ -2213,7 +2244,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2474,7 +2505,7 @@ dependencies = [
  "metrics-util",
  "parking_lot 0.12.1",
  "portable-atomic",
- "quanta",
+ "quanta 0.10.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -2504,7 +2535,7 @@ dependencies = [
  "num_cpus",
  "parking_lot 0.12.1",
  "portable-atomic",
- "quanta",
+ "quanta 0.10.1",
  "sketches-ddsketch",
 ]
 
@@ -2579,7 +2610,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2619,7 +2650,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2682,6 +2713,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "546c37ac5d9e56f55e73b677106873d9d9f5190605e41a856503623648488cae"
 
 [[package]]
+name = "no-std-compat"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
+
+[[package]]
 name = "node-follower"
 version = "0.1.0"
 dependencies = [
@@ -2707,6 +2744,12 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonzero_ext"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 
 [[package]]
 name = "num-bigint"
@@ -2933,7 +2976,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",
@@ -2957,6 +3000,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
+ "governor",
  "helium-crypto",
  "helium-proto",
  "http-serde",
@@ -2970,7 +3014,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3193,6 +3237,22 @@ dependencies = [
 
 [[package]]
 name = "quanta"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20afe714292d5e879d8b12740aa223c6a88f118af41870e8b6196e39a02238a8"
+dependencies = [
+ "crossbeam-utils",
+ "libc",
+ "mach",
+ "once_cell",
+ "raw-cpuid",
+ "wasi 0.10.2+wasi-snapshot-preview1",
+ "web-sys",
+ "winapi",
+]
+
+[[package]]
+name = "quanta"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7e31331286705f455e56cca62e0e717158474ff02b7936c1fa596d983f4ae27"
@@ -3400,7 +3460,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
