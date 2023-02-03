@@ -4,18 +4,23 @@ use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
 use chrono::{DateTime, Duration, Utc};
 use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt};
+use retainer::Cache;
 use tokio::{
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
 };
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
-const CLEAN_DURATION_SECS: u64 = 12 * 60 * 60;
+const DEFAULT_POLL_DURATION: std::time::Duration =
+    std::time::Duration::from_secs(DEFAULT_POLL_DURATION_SECS as u64);
+const CLEAN_DURATION: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
+const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3 * 60 * 60);
+
+type MemoryFileCache = Cache<String, bool>;
 
 pub struct IncomingDataStream<T> {
     pub file_info: FileInfo,
     pub stream: BoxStream<'static, T>,
-    sender: tokio::sync::oneshot::Sender<bool>,
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -37,7 +42,7 @@ impl<T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static> Inco
         self,
         shutdown: triggered::Listener,
     ) -> Result<(Receiver<IncomingDataStream<T>>, JoinHandle<Result>)> {
-        let (sender, receiver) = tokio::sync::mpsc::channel(50);
+        let (sender, receiver) = tokio::sync::mpsc::channel(4);
         let join_handle = tokio::spawn(async move { self.run(shutdown, sender).await });
 
         Ok((receiver, join_handle))
@@ -48,17 +53,16 @@ impl<T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static> Inco
         shutdown: triggered::Listener,
         sender: Sender<IncomingDataStream<T>>,
     ) -> Result {
-        let duration = self
+        let poll_duration = self
             .poll_duration
             .to_std()
-            .unwrap_or_else(|_| std::time::Duration::from_secs(DEFAULT_POLL_DURATION_SECS as u64));
+            .unwrap_or_else(|_| DEFAULT_POLL_DURATION);
 
-        let mut trigger = tokio::time::interval(duration);
-        let mut cleanup_trigger =
-            tokio::time::interval(std::time::Duration::from_secs(CLEAN_DURATION_SECS));
+        let cache = create_cache();
+        let mut trigger = tokio::time::interval(poll_duration);
+        let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
 
         let mut latest_ts = db_latest_ts(&self.db, self.start_after, self.file_type).await?;
-        println!("Latest_ts: {latest_ts:?}");
 
         loop {
             let after = latest_ts - self.offset;
@@ -71,8 +75,9 @@ impl<T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static> Inco
                 _ = trigger.tick() => {
                     let files = self.store.list_all(self.file_type, after, before).await?;
                     for file in files {
-                        if !db_exists(&self.db, &file).await? {
+                        if !is_already_processed(&self.db, &cache, &file).await? {
                             latest_ts = file.timestamp;
+                            cache_file(&cache, &file).await;
                             send_stream(&sender, &self.store, file).await?;
                         }
                     }
@@ -89,7 +94,6 @@ impl<T> IncomingDataStream<T> {
         transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result {
         db_insert(transaction, self.file_info).await?;
-        let _ = self.sender.send(true);
         Ok(())
     }
 }
@@ -102,7 +106,6 @@ async fn send_stream<T>(
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
-    let (os_sender, os_receiver) = tokio::sync::oneshot::channel();
     let stream = store
         .stream_file(file.clone())
         .await?
@@ -126,12 +129,30 @@ where
     let incoming_data_stream = IncomingDataStream {
         file_info: file,
         stream,
-        sender: os_sender,
     };
 
     let _ = sender.send(incoming_data_stream).await;
-    let _ = os_receiver.await;
     Ok(())
+}
+
+fn create_cache() -> MemoryFileCache {
+    Cache::new()
+}
+
+async fn is_already_processed(
+    db: impl sqlx::PgExecutor<'_>,
+    cache: &MemoryFileCache,
+    file_info: &FileInfo,
+) -> Result<bool> {
+    if let Some(_) = cache.get(&file_info.key).await {
+        Ok(true)
+    } else {
+        db_exists(db, file_info).await
+    }
+}
+
+async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {
+    cache.insert(file_info.key.clone(), true, CACHE_TTL).await;
 }
 
 async fn db_latest_ts(
@@ -230,7 +251,7 @@ mod tests {
             .build()
             .expect("Poller");
 
-        let (mut receiver, join_handle) =
+        let (mut receiver, _join_handle) =
             poller.start(shutdown_listener).await.expect("start poller");
 
         let mut tx = pool.begin().await.expect("TX BEGIN");
