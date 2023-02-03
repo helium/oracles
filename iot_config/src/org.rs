@@ -4,7 +4,7 @@ use serde::Serialize;
 use sqlx::{types::Uuid, Row};
 
 use crate::{
-    lora_field::{DevAddrField, DevAddrRange, NetIdField},
+    lora_field::{DevAddrConstraint, DevAddrField, NetIdField},
     HELIUM_NET_ID,
 };
 
@@ -39,7 +39,7 @@ pub struct OrgList {
 #[derive(Debug)]
 pub struct OrgWithConstraints {
     pub org: Org,
-    pub constraints: DevAddrRange,
+    pub constraints: DevAddrConstraint,
 }
 
 pub async fn create_org(
@@ -68,7 +68,7 @@ pub async fn create_org(
 pub async fn insert_constraints(
     oui: u64,
     net_id: NetIdField,
-    devaddr_range: &DevAddrRange,
+    devaddr_range: &DevAddrConstraint,
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
@@ -135,7 +135,7 @@ pub async fn get_with_constraints(
             delegate_keys: row.get("delegate_keys"),
             status: row.get("status"),
         },
-        constraints: DevAddrRange {
+        constraints: DevAddrConstraint {
             start_addr: start_addr.into(),
             end_addr: end_addr.into(),
         },
@@ -257,7 +257,6 @@ impl From<proto::OrgV1> for Org {
     }
 }
 
-#[allow(deprecated)]
 impl From<Org> for proto::OrgV1 {
     fn from(org: Org) -> Self {
         Self {
@@ -269,8 +268,6 @@ impl From<Org> for proto::OrgV1 {
                 .iter()
                 .map(|key| key.as_ref().into())
                 .collect(),
-            // Deprecated proto field; flagged above to avoid compiler warning
-            nonce: 0,
         }
     }
 }

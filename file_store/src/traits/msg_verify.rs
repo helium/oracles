@@ -3,8 +3,9 @@ use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
     iot_config::{
         OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1, RouteCreateReqV1,
-        RouteDeleteReqV1, RouteDevaddrsReqV1, RouteEuisReqV1, RouteGetReqV1, RouteListReqV1,
-        RouteStreamReqV1, RouteUpdateReqV1,
+        RouteDeleteDevaddrRangesReqV1, RouteDeleteEuisReqV1, RouteDeleteReqV1,
+        RouteGetDevaddrRangesReqV1, RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1,
+        RouteStreamReqV1, RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1, RouteUpdateReqV1,
     },
     poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
 };
@@ -45,8 +46,12 @@ impl_msg_verify!(RouteGetReqV1, signature);
 impl_msg_verify!(RouteCreateReqV1, signature);
 impl_msg_verify!(RouteUpdateReqV1, signature);
 impl_msg_verify!(RouteDeleteReqV1, signature);
-impl_msg_verify!(RouteEuisReqV1, signature);
-impl_msg_verify!(RouteDevaddrsReqV1, signature);
+impl_msg_verify!(RouteGetEuisReqV1, signature);
+impl_msg_verify!(RouteDeleteEuisReqV1, signature);
+impl_msg_verify!(RouteUpdateEuisReqV1, signature);
+impl_msg_verify!(RouteGetDevaddrRangesReqV1, signature);
+impl_msg_verify!(RouteUpdateDevaddrRangesReqV1, signature);
+impl_msg_verify!(RouteDeleteDevaddrRangesReqV1, signature);
 
 #[cfg(test)]
 mod test {

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sqlx::{postgres::PgRow, FromRow, Row};
 use std::{fmt::Display, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -9,18 +10,45 @@ pub type DevAddrField = LoraField<8>;
 pub type EuiField = LoraField<16>;
 
 pub mod proto {
-    pub use helium_proto::services::iot_config::{DevaddrRangeV1, EuiV1, OrgV1};
+    pub use helium_proto::services::iot_config::{
+        DevaddrConstraintV1, DevaddrRangeV1, EuiPairV1, OrgV1,
+    };
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DevAddrRange {
-    #[serde(alias = "lower")]
+    pub route_id: String,
     pub start_addr: DevAddrField,
-    #[serde(alias = "upper")]
     pub end_addr: DevAddrField,
 }
 
 impl DevAddrRange {
+    pub fn new(route_id: String, start_addr: DevAddrField, end_addr: DevAddrField) -> Self {
+        Self {
+            route_id,
+            start_addr,
+            end_addr,
+        }
+    }
+}
+
+impl FromRow<'_, PgRow> for DevAddrRange {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            route_id: row.try_get::<String, &str>("route_id")?,
+            start_addr: row.try_get::<i64, &str>("start_addr")?.into(),
+            end_addr: row.try_get::<i64, &str>("end_addr")?.into(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DevAddrConstraint {
+    pub start_addr: DevAddrField,
+    pub end_addr: DevAddrField,
+}
+
+impl DevAddrConstraint {
     pub fn new(
         start_addr: DevAddrField,
         end_addr: DevAddrField,
@@ -46,14 +74,29 @@ impl DevAddrRange {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Eui {
+pub struct EuiPair {
+    pub route_id: String,
     pub app_eui: EuiField,
     pub dev_eui: EuiField,
 }
 
-impl Eui {
-    pub fn new(app_eui: EuiField, dev_eui: EuiField) -> Self {
-        Self { app_eui, dev_eui }
+impl EuiPair {
+    pub fn new(route_id: String, app_eui: EuiField, dev_eui: EuiField) -> Self {
+        Self {
+            route_id,
+            app_eui,
+            dev_eui,
+        }
+    }
+}
+
+impl FromRow<'_, PgRow> for EuiPair {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            route_id: row.try_get::<String, &str>("route_id")?,
+            app_eui: row.try_get::<i64, &str>("app_eui")?.into(),
+            dev_eui: row.try_get::<i64, &str>("dev_eui")?.into(),
+        })
     }
 }
 
@@ -349,8 +392,8 @@ impl NetIdField {
         Ok(devaddr(max_devaddr as u64))
     }
 
-    pub fn full_range(&self) -> Result<DevAddrRange, InvalidNetId> {
-        Ok(DevAddrRange {
+    pub fn full_range(&self) -> Result<DevAddrConstraint, InvalidNetId> {
+        Ok(DevAddrConstraint {
             start_addr: self.range_start()?,
             end_addr: self.range_end()?,
         })
@@ -358,9 +401,9 @@ impl NetIdField {
 }
 
 impl DevAddrField {
-    pub fn to_range(self, add: u64) -> DevAddrRange {
+    pub fn to_range(self, add: u64) -> DevAddrConstraint {
         let end = (self.0 + (add - 1)).into();
-        DevAddrRange {
+        DevAddrConstraint {
             start_addr: self,
             end_addr: end,
         }
@@ -383,8 +426,8 @@ impl DevAddrField {
     }
 }
 
-impl From<proto::DevaddrRangeV1> for DevAddrRange {
-    fn from(range: proto::DevaddrRangeV1) -> Self {
+impl From<DevAddrConstraint> for proto::DevaddrConstraintV1 {
+    fn from(range: DevAddrConstraint) -> Self {
         Self {
             start_addr: range.start_addr.into(),
             end_addr: range.end_addr.into(),
@@ -392,9 +435,10 @@ impl From<proto::DevaddrRangeV1> for DevAddrRange {
     }
 }
 
-impl From<&proto::DevaddrRangeV1> for DevAddrRange {
-    fn from(range: &proto::DevaddrRangeV1) -> Self {
+impl From<&DevAddrRange> for proto::DevaddrRangeV1 {
+    fn from(range: &DevAddrRange) -> Self {
         Self {
+            route_id: range.route_id.clone(),
             start_addr: range.start_addr.into(),
             end_addr: range.end_addr.into(),
         }
@@ -404,35 +448,59 @@ impl From<&proto::DevaddrRangeV1> for DevAddrRange {
 impl From<DevAddrRange> for proto::DevaddrRangeV1 {
     fn from(range: DevAddrRange) -> Self {
         Self {
+            route_id: range.route_id,
             start_addr: range.start_addr.into(),
             end_addr: range.end_addr.into(),
         }
     }
 }
 
-impl From<proto::EuiV1> for Eui {
-    fn from(range: proto::EuiV1) -> Self {
+impl From<proto::DevaddrRangeV1> for DevAddrRange {
+    fn from(range: proto::DevaddrRangeV1) -> Self {
         Self {
+            route_id: range.route_id,
+            start_addr: range.start_addr.into(),
+            end_addr: range.end_addr.into(),
+        }
+    }
+}
+
+impl From<proto::EuiPairV1> for EuiPair {
+    fn from(range: proto::EuiPairV1) -> Self {
+        Self {
+            route_id: range.route_id,
             app_eui: range.app_eui.into(),
             dev_eui: range.dev_eui.into(),
         }
     }
 }
 
-impl From<&proto::EuiV1> for Eui {
-    fn from(range: &proto::EuiV1) -> Self {
+impl From<&proto::EuiPairV1> for EuiPair {
+    fn from(range: &proto::EuiPairV1) -> Self {
         Self {
+            route_id: range.route_id.clone(),
             app_eui: range.app_eui.into(),
             dev_eui: range.dev_eui.into(),
         }
     }
 }
 
-impl From<Eui> for proto::EuiV1 {
-    fn from(range: Eui) -> Self {
+impl From<EuiPair> for proto::EuiPairV1 {
+    fn from(range: EuiPair) -> Self {
         Self {
+            route_id: range.route_id,
             app_eui: range.app_eui.into(),
             dev_eui: range.dev_eui.into(),
+        }
+    }
+}
+
+impl From<&EuiPair> for proto::EuiPairV1 {
+    fn from(eui: &EuiPair) -> Self {
+        Self {
+            route_id: eui.route_id.clone(),
+            app_eui: eui.app_eui.into(),
+            dev_eui: eui.dev_eui.into(),
         }
     }
 }
@@ -493,7 +561,7 @@ mod tests {
             assert_eq!(test.net_id_type, net_id.net_id_type());
             assert_eq!(test.nwk_id, net_id.nwk_id());
             assert_eq!(
-                DevAddrRange::new(devaddr(test.start_addr), devaddr(test.end_addr))
+                DevAddrConstraint::new(devaddr(test.start_addr), devaddr(test.end_addr))
                     .expect("invalid devaddr order"),
                 net_id.full_range().expect("invalid net id")
             );

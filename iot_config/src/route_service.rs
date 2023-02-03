@@ -1,17 +1,19 @@
 use crate::{
-    lora_field::{DevAddrRange, Eui},
+    lora_field::{DevAddrRange, EuiPair},
     org::{get_org_pubkeys, get_org_pubkeys_by_route, OrgStatus},
     route::{self, Route},
-    GrpcResult, GrpcStreamResult, Settings,
+    GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
 };
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::services::iot_config::{
-    self, ActionV1, RouteCreateReqV1, RouteDeleteReqV1, RouteDevaddrsReqV1, RouteDevaddrsResV1,
-    RouteEuisReqV1, RouteEuisResV1, RouteGetReqV1, RouteListReqV1, RouteListResV1,
-    RouteStreamReqV1, RouteStreamResV1, RouteUpdateReqV1, RouteV1,
+    self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
+    RouteDeleteDevaddrRangesReqV1, RouteDeleteEuisReqV1, RouteDeleteReqV1, RouteDevaddrRangesResV1,
+    RouteEuisResV1, RouteGetDevaddrRangesReqV1, RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1,
+    RouteListResV1, RouteStreamReqV1, RouteStreamResV1, RouteUpdateDevaddrRangesReqV1,
+    RouteUpdateEuisReqV1, RouteUpdateReqV1, RouteV1,
 };
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
@@ -129,7 +131,10 @@ impl iot_config::Route for RouteService {
         let new_route: Route =
             route::create_route(route.clone(), &self.pool, self.update_channel.clone())
                 .await
-                .map_err(|_| Status::internal("route create failed"))?;
+                .map_err(|err| {
+                    tracing::error!("route create failed {err:?}");
+                    Status::internal("route create failed")
+                })?;
 
         Ok(Response::new(new_route.into()))
     }
@@ -175,67 +180,6 @@ impl iot_config::Route for RouteService {
         Ok(Response::new(route.into()))
     }
 
-    async fn euis(&self, request: Request<RouteEuisReqV1>) -> GrpcResult<RouteEuisResV1> {
-        let request = request.into_inner();
-
-        let org_keys = get_org_pubkeys_by_route(&request.id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
-
-        let euis: Vec<Eui> = request.euis.iter().map(|eui| eui.into()).collect();
-
-        route::modify_euis(
-            &request.id,
-            request.action(),
-            &euis,
-            &self.pool,
-            self.update_channel.clone(),
-        )
-        .await
-        .map_err(|_| Status::internal("eui modify failed"))?;
-
-        Ok(Response::new(RouteEuisResV1 {
-            id: request.id,
-            action: request.action,
-            euis: request.euis,
-        }))
-    }
-
-    async fn devaddrs(
-        &self,
-        request: Request<RouteDevaddrsReqV1>,
-    ) -> GrpcResult<RouteDevaddrsResV1> {
-        let request = request.into_inner();
-
-        let org_keys = get_org_pubkeys_by_route(&request.id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
-
-        let ranges: Vec<DevAddrRange> = request
-            .devaddr_ranges
-            .iter()
-            .map(|range| range.into())
-            .collect();
-
-        route::modify_devaddr_ranges(
-            &request.id,
-            request.action(),
-            &ranges,
-            &self.pool,
-            self.update_channel.clone(),
-        )
-        .await
-        .map_err(|_| Status::internal("devaddr ranges modify failed"))?;
-
-        Ok(Response::new(RouteDevaddrsResV1 {
-            id: request.id,
-            action: request.action,
-            devaddr_ranges: request.devaddr_ranges,
-        }))
-    }
-
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
@@ -254,8 +198,8 @@ impl iot_config::Route for RouteService {
 
             while let Some(active_route) = active_routes.next().await {
                 if (tx.send(Ok(RouteStreamResV1 {
-                    action: ActionV1::Create.into(),
-                    route: Some(active_route.into()),
+                    action: ActionV1::Add.into(),
+                    data: Some(route_stream_res_v1::Data::Route(active_route.into())),
                 })))
                 .await
                 .is_err()
@@ -272,5 +216,137 @@ impl iot_config::Route for RouteService {
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    type get_euisStream = GrpcStreamResult<EuiPairV1>;
+    async fn get_euis(
+        &self,
+        request: Request<RouteGetEuisReqV1>,
+    ) -> GrpcResult<Self::get_euisStream> {
+        let request = request.into_inner();
+
+        let euis = route::list_euis_for_route(&request.route_id, &self.pool)
+            .await
+            .map_err(|_| Status::internal("get euis failed"))?;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
+        tokio::spawn(async move {
+            for eui in euis {
+                if tx.send(Ok(eui.into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    async fn update_euis(
+        &self,
+        request: GrpcStreamRequest<RouteUpdateEuisReqV1>,
+    ) -> GrpcResult<RouteEuisResV1> {
+        let mut request = request.into_inner();
+
+        let mut to_add: Vec<EuiPair> = vec![];
+        let mut to_remove: Vec<EuiPair> = vec![];
+
+        while let Ok(Some(update)) = request.message().await {
+            match (update.action(), update.eui_pair) {
+                (ActionV1::Add, Some(eui_pair)) => to_add.push(eui_pair.into()),
+                (ActionV1::Remove, Some(eui_pair)) => to_remove.push(eui_pair.into()),
+                _ => return Err(Status::invalid_argument("no eui pair provided")),
+            }
+        }
+        tracing::debug!(
+            adding = to_add.len(),
+            removing = to_remove.len(),
+            "updating euis"
+        );
+
+        route::update_euis(&to_add, &to_remove, &self.pool, self.update_channel.clone())
+            .await
+            .map_err(|err| {
+                tracing::error!("eui update failed: {err:?}");
+                Status::internal("eui update failed")
+            })?;
+
+        Ok(Response::new(RouteEuisResV1 {}))
+    }
+
+    async fn delete_euis(
+        &self,
+        request: Request<RouteDeleteEuisReqV1>,
+    ) -> GrpcResult<RouteEuisResV1> {
+        let request = request.into_inner();
+        route::delete_euis(&request.route_id, &self.pool, self.update_channel.clone())
+            .await
+            .map_err(|_| Status::internal("eui delete failed"))?;
+        Ok(Response::new(RouteEuisResV1 {}))
+    }
+
+    type get_devaddr_rangesStream = GrpcStreamResult<DevaddrRangeV1>;
+    async fn get_devaddr_ranges(
+        &self,
+        request: Request<RouteGetDevaddrRangesReqV1>,
+    ) -> GrpcResult<Self::get_devaddr_rangesStream> {
+        let request = request.into_inner();
+
+        let devaddrs = route::list_devaddr_ranges_for_route(&request.route_id, &self.pool)
+            .await
+            .map_err(|_| Status::internal("get devaddr ranges failed"))?;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
+        tokio::spawn(async move {
+            for devaddr in devaddrs {
+                if tx.send(Ok(devaddr.into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    async fn update_devaddr_ranges(
+        &self,
+        request: GrpcStreamRequest<RouteUpdateDevaddrRangesReqV1>,
+    ) -> GrpcResult<RouteDevaddrRangesResV1> {
+        let mut request = request.into_inner();
+
+        let mut to_add: Vec<DevAddrRange> = vec![];
+        let mut to_remove: Vec<DevAddrRange> = vec![];
+
+        while let Ok(Some(update)) = request.message().await {
+            match (update.action(), update.devaddr_range) {
+                (ActionV1::Add, Some(devaddr)) => to_add.push(devaddr.into()),
+                (ActionV1::Remove, Some(devaddr)) => to_remove.push(devaddr.into()),
+                _ => return Err(Status::invalid_argument("no devaddr range provided")),
+            }
+        }
+        tracing::debug!(
+            adding = to_add.len(),
+            removing = to_remove.len(),
+            "updating devaddr ranges"
+        );
+
+        // TODO: check devaddr ranges against org constraints.
+        route::update_devaddr_ranges(&to_add, &to_remove, &self.pool, self.update_channel.clone())
+            .await
+            .map_err(|err| {
+                tracing::error!("devaddr range update failed: {err:?}");
+                Status::internal("devaddr range update failed")
+            })?;
+        Ok(Response::new(RouteDevaddrRangesResV1 {}))
+    }
+
+    async fn delete_devaddr_ranges(
+        &self,
+        request: Request<RouteDeleteDevaddrRangesReqV1>,
+    ) -> GrpcResult<RouteDevaddrRangesResV1> {
+        let request = request.into_inner();
+        route::delete_devaddr_ranges(&request.route_id, &self.pool, self.update_channel.clone())
+            .await
+            .map_err(|_| Status::internal("devaddr range delete failed"))?;
+        Ok(Response::new(RouteDevaddrRangesResV1 {}))
     }
 }

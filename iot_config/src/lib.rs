@@ -19,5 +19,6 @@ use tonic::{Response, Status};
 
 pub type GrpcResult<T> = Result<Response<T>, Status>;
 pub type GrpcStreamResult<T> = ReceiverStream<Result<T, Status>>;
+pub type GrpcStreamRequest<T> = tonic::Request<tonic::Streaming<T>>;
 
 pub const HELIUM_NET_ID: NetIdField = LoraField(0xc00053);
