@@ -72,18 +72,20 @@ impl iot_config::Gateway for GatewayService {
             .await
             .map_err(|_| Status::internal("gateway lookup error"))?;
 
-        let location = {
-            let location =
-                location.ok_or_else(|| Status::internal("gateway location undefined"))?;
-            Cell::from_raw(location)
-                .map_err(|_| Status::internal("gateway location is not a valid h3 index"))?
+        let region = match location {
+            Some(location) => {
+                let h3_location = Cell::from_raw(location).map_err(|_| {
+                    Status::internal("gateway asserted location is not a valid h3 index")
+                })?;
+                self.region_map
+                    .get_region(h3_location)
+                    .await
+                    .ok_or_else(|| Status::internal("region lookup failed for assert location"))?
+            }
+            None => Region::from_i32(request.region)
+                .ok_or_else(|| Status::invalid_argument("invalid default region"))?,
         };
 
-        let region = self
-            .region_map
-            .get_region(location)
-            .await
-            .ok_or_else(|| Status::internal("region lookup failed for asserted location"))?;
         let params = self.region_map.get_params(&region).await;
 
         let mut resp = GatewayRegionParamsResV1 {
