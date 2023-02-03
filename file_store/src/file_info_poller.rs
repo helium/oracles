@@ -66,13 +66,6 @@ where
         Ok((receiver, join_handle))
     }
 
-    fn after(&self, latest: DateTime<Utc>) -> DateTime<Utc> {
-        self.max_lookback
-            .map(|max_lookback| Utc::now() - max_lookback)
-            .map(|max_ts| max_ts.max(latest))
-            .unwrap_or(latest)
-    }
-
     async fn run(self, shutdown: triggered::Listener, sender: Sender<FileInfoStream<T>>) -> Result {
         let cache = create_cache();
         let mut poll_trigger = tokio::time::interval(self.poll_duration());
@@ -101,6 +94,13 @@ where
             }
         }
         Ok(())
+    }
+
+    fn after(&self, latest: DateTime<Utc>) -> DateTime<Utc> {
+        self.max_lookback
+            .map(|max_lookback| Utc::now() - max_lookback)
+            .map(|max_ts| max_ts.max(latest))
+            .unwrap_or(latest)
     }
 
     async fn clean(&self, cache: &MemoryFileCache) -> Result {
@@ -244,8 +244,8 @@ mod tests {
     use chrono::TimeZone;
     use sqlx::postgres::PgPoolOptions;
 
-    use crate::iot_beacon_report::IotBeaconIngestReport;
     use crate::file_source::continuous_source;
+    use crate::iot_beacon_report::IotBeaconIngestReport;
 
     use super::*;
 
