@@ -602,11 +602,11 @@ fn calc_expected_rssi(
     conducted_tx_power_dbm: i32,
     freq: u64,
     distance_mtrs: u32,
-    beaconer_gain_dbm: i32,
-    witness_gain_dbm: i32,
+    beaconer_gain_ddb: i32,
+    witness_gain_ddb: i32,
 ) -> f64 {
-    let beaconer_gain_db = beaconer_gain_dbm / 10;
-    let witness_gain_db = witness_gain_dbm / 10;
+    let beaconer_gain_db = beaconer_gain_ddb / 10;
+    let witness_gain_db = witness_gain_ddb / 10;
     let fpsl =
         20.0 * (4.0 * PI * distance_mtrs as f64 * (freq as f64) / C).log10();
     conducted_tx_power_dbm as f64 + beaconer_gain_db as f64 - fpsl + witness_gain_db as f64
