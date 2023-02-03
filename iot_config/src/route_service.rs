@@ -1,5 +1,5 @@
 use crate::{
-    lora_field::{DevAddrRange, Eui},
+    lora_field::{DevAddrRange, EuiPair},
     org::{get_org_pubkeys, get_org_pubkeys_by_route, OrgStatus},
     route::{self, Route},
     GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
@@ -247,8 +247,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<RouteEuisResV1> {
         let mut request = request.into_inner();
 
-        let mut to_add: Vec<Eui> = vec![];
-        let mut to_remove: Vec<Eui> = vec![];
+        let mut to_add: Vec<EuiPair> = vec![];
+        let mut to_remove: Vec<EuiPair> = vec![];
 
         while let Ok(Some(update)) = request.message().await {
             match (update.action(), update.eui_pair) {

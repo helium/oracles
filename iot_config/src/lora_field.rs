@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sqlx::{postgres::PgRow, FromRow, Row};
 use std::{fmt::Display, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -28,6 +29,16 @@ impl DevAddrRange {
             start_addr,
             end_addr,
         }
+    }
+}
+
+impl FromRow<'_, PgRow> for DevAddrRange {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            route_id: row.try_get::<String, &str>("route_id")?,
+            start_addr: row.try_get::<i64, &str>("start_addr")?.into(),
+            end_addr: row.try_get::<i64, &str>("end_addr")?.into(),
+        })
     }
 }
 
@@ -63,19 +74,29 @@ impl DevAddrConstraint {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Eui {
+pub struct EuiPair {
     pub route_id: String,
     pub app_eui: EuiField,
     pub dev_eui: EuiField,
 }
 
-impl Eui {
+impl EuiPair {
     pub fn new(route_id: String, app_eui: EuiField, dev_eui: EuiField) -> Self {
         Self {
             route_id,
             app_eui,
             dev_eui,
         }
+    }
+}
+
+impl FromRow<'_, PgRow> for EuiPair {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            route_id: row.try_get::<String, &str>("route_id")?,
+            app_eui: row.try_get::<i64, &str>("app_eui")?.into(),
+            dev_eui: row.try_get::<i64, &str>("dev_eui")?.into(),
+        })
     }
 }
 
@@ -444,7 +465,7 @@ impl From<proto::DevaddrRangeV1> for DevAddrRange {
     }
 }
 
-impl From<proto::EuiPairV1> for Eui {
+impl From<proto::EuiPairV1> for EuiPair {
     fn from(range: proto::EuiPairV1) -> Self {
         Self {
             route_id: range.route_id,
@@ -454,7 +475,7 @@ impl From<proto::EuiPairV1> for Eui {
     }
 }
 
-impl From<&proto::EuiPairV1> for Eui {
+impl From<&proto::EuiPairV1> for EuiPair {
     fn from(range: &proto::EuiPairV1) -> Self {
         Self {
             route_id: range.route_id.clone(),
@@ -464,8 +485,8 @@ impl From<&proto::EuiPairV1> for Eui {
     }
 }
 
-impl From<Eui> for proto::EuiPairV1 {
-    fn from(range: Eui) -> Self {
+impl From<EuiPair> for proto::EuiPairV1 {
+    fn from(range: EuiPair) -> Self {
         Self {
             route_id: range.route_id,
             app_eui: range.app_eui.into(),
@@ -474,8 +495,8 @@ impl From<Eui> for proto::EuiPairV1 {
     }
 }
 
-impl From<&Eui> for proto::EuiPairV1 {
-    fn from(eui: &Eui) -> Self {
+impl From<&EuiPair> for proto::EuiPairV1 {
+    fn from(eui: &EuiPair) -> Self {
         Self {
             route_id: eui.route_id.clone(),
             app_eui: eui.app_eui.into(),

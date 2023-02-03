@@ -1,5 +1,5 @@
 use crate::{
-    lora_field::{DevAddrRange, Eui, NetIdField},
+    lora_field::{DevAddrRange, EuiPair, NetIdField},
     org::OrgStatus,
 };
 use futures::stream::{Stream, StreamExt, TryStreamExt};
@@ -10,12 +10,14 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::broadcast::{self, Sender};
 
 pub mod proto {
-    pub use helium_proto::services::iot_config::{
-        protocol_http_roaming_v1::FlowTypeV1, route_stream_res_v1, server_v1::Protocol, ActionV1,
-        ProtocolGwmpMappingV1, ProtocolGwmpV1, ProtocolHttpRoamingV1, ProtocolPacketRouterV1,
-        RouteStreamResV1, RouteV1, ServerV1,
+    pub use helium_proto::{
+        services::iot_config::{
+            protocol_http_roaming_v1::FlowTypeV1, route_stream_res_v1, server_v1::Protocol,
+            ActionV1, ProtocolGwmpMappingV1, ProtocolGwmpV1, ProtocolHttpRoamingV1,
+            ProtocolPacketRouterV1, RouteStreamResV1, RouteV1, ServerV1,
+        },
+        Region,
     };
-    pub use helium_proto::Region;
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -60,20 +62,6 @@ pub struct StorageRoute {
     pub server_host: String,
     pub server_port: i32,
     pub server_protocol_opts: serde_json::Value,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-pub struct StorageEuiPair {
-    pub route_id: Uuid,
-    pub app_eui: i64,
-    pub dev_eui: i64,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-pub struct StorageDevAddrRange {
-    pub route_id: Uuid,
-    pub start_addr: i64,
-    pub end_addr: i64,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -182,7 +170,10 @@ pub async fn update_route(
     Ok(updated_route)
 }
 
-async fn insert_euis(euis: &[Eui], db: impl sqlx::PgExecutor<'_>) -> Result<(), RouteStorageError> {
+async fn insert_euis(
+    euis: &[EuiPair],
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), RouteStorageError> {
     // We don't want to take any actions if a route_id cannot be parsed.
     let mut eui_values = vec![];
     for eui in euis.iter() {
@@ -205,7 +196,10 @@ async fn insert_euis(euis: &[Eui], db: impl sqlx::PgExecutor<'_>) -> Result<(), 
     Ok(())
 }
 
-async fn remove_euis(euis: &[Eui], db: impl sqlx::PgExecutor<'_>) -> Result<(), RouteStorageError> {
+async fn remove_euis(
+    euis: &[EuiPair],
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), RouteStorageError> {
     // We don't want to take any actions if a route_id cannot be parsed.
     let mut eui_values = vec![];
     for eui in euis.iter() {
@@ -230,8 +224,8 @@ async fn remove_euis(euis: &[Eui], db: impl sqlx::PgExecutor<'_>) -> Result<(), 
 }
 
 pub async fn update_euis(
-    to_add: &[Eui],
-    to_remove: &[Eui],
+    to_add: &[EuiPair],
+    to_remove: &[EuiPair],
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
     update_tx: Arc<Sender<proto::RouteStreamResV1>>,
 ) -> Result<(), RouteStorageError> {
@@ -448,26 +442,19 @@ pub async fn list_routes(
 pub async fn list_euis_for_route(
     id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<Eui>, RouteStorageError> {
+) -> Result<Vec<EuiPair>, RouteStorageError> {
     let id = Uuid::try_parse(id)?;
     const EUI_SELECT_SQL: &str = r#"
     select eui.route_id, eui.app_eui, eui.dev_eui
         from route_eui_pairs eui
         where eui.route_id = $1
     "#;
-    Ok(sqlx::query_as::<_, StorageEuiPair>(EUI_SELECT_SQL)
+    Ok(sqlx::query_as::<_, EuiPair>(EUI_SELECT_SQL)
         .bind(id)
         .fetch(db)
         .map_err(RouteStorageError::from)
-        .and_then(|eui| async move {
-            Ok(Eui::new(
-                eui.route_id.to_string(),
-                eui.app_eui.into(),
-                eui.dev_eui.into(),
-            ))
-        })
         .filter_map(|eui| async move { eui.ok() })
-        .collect::<Vec<Eui>>()
+        .collect::<Vec<EuiPair>>()
         .await)
 }
 
@@ -481,22 +468,13 @@ pub async fn list_devaddr_ranges_for_route(
         from route_devaddr_ranges devaddr
         where devaddr.route_id = $1
     "#;
-    Ok(
-        sqlx::query_as::<_, StorageDevAddrRange>(DEVADDR_RANGE_SELECT_SQL)
-            .bind(id)
-            .fetch(db)
-            .map_err(RouteStorageError::from)
-            .and_then(|devaddr| async move {
-                Ok(DevAddrRange::new(
-                    devaddr.route_id.to_string(),
-                    devaddr.start_addr.into(),
-                    devaddr.end_addr.into(),
-                ))
-            })
-            .filter_map(|devaddr| async move { devaddr.ok() })
-            .collect::<Vec<DevAddrRange>>()
-            .await,
-    )
+    Ok(sqlx::query_as::<_, DevAddrRange>(DEVADDR_RANGE_SELECT_SQL)
+        .bind(id)
+        .fetch(db)
+        .map_err(RouteStorageError::from)
+        .filter_map(|devaddr| async move { devaddr.ok() })
+        .collect::<Vec<DevAddrRange>>()
+        .await)
 }
 
 pub async fn route_stream_by_status<'a>(
