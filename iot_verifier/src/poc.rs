@@ -569,7 +569,7 @@ fn verify_witness_rssi(
     );
     // signal is submitted as DBM * 10
     // min_rcv_signal is plain old DBM
-    if (witness_signal / 10) as f64 > min_rcv_signal {
+    if witness_signal as f64 / 10.0 > min_rcv_signal {
         tracing::debug!(
             "witness verification failed, reason: {:?}
             beaconer tx_power: {beacon_tx_power},
