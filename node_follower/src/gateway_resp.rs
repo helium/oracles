@@ -2,7 +2,8 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::follower::GatewayInfo as GatewayInfoProto, GatewayStakingMode, Region,
+    services::follower::GatewayInfo as GatewayInfoProto, BlockchainRegionParamV1,
+    GatewayStakingMode, Region,
 };
 
 #[async_trait]
@@ -18,6 +19,7 @@ pub struct GatewayInfo {
     pub staking_mode: GatewayStakingMode,
     pub gain: i32,
     pub region: Region,
+    pub region_params: Vec<BlockchainRegionParamV1>,
 }
 
 impl TryFrom<GatewayInfoProto> for GatewayInfo {
@@ -35,24 +37,7 @@ impl TryFrom<GatewayInfoProto> for GatewayInfo {
             staking_mode,
             gain: v.gain,
             region,
-        })
-    }
-}
-
-impl TryFrom<GatewayInfo> for GatewayInfoProto {
-    type Error = Error;
-    fn try_from(v: GatewayInfo) -> Result<Self> {
-        let location = match v.location {
-            None => String::new(),
-            Some(loc) => loc.to_string(),
-        };
-        Ok(Self {
-            location,
-            address: v.address,
-            owner: v.owner,
-            staking_mode: v.staking_mode as i32,
-            gain: v.gain,
-            region: v.region as i32,
+            region_params: Vec::new(),
         })
     }
 }
