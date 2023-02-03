@@ -53,6 +53,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
             staking_mode: v.staking_mode as i32,
             gain: v.gain,
             region: v.region as i32,
+            region_params: None,
         })
     }
 }
