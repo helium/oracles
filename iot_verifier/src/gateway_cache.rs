@@ -5,7 +5,7 @@ use node_follower::{
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
 use retainer::Cache;
-use std::{time::Duration, sync::Arc};
+use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 
 /// how long each cached items takes to expire ( 12 hours in seconds)
@@ -26,12 +26,11 @@ pub struct GatewayNotFound(PublicKeyBinary);
 impl GatewayCache {
     pub fn from_settings(settings: &Settings) -> Self {
         let follower_service = FollowerService::from_settings(&settings.follower);
-        let cache =  Arc::new(Cache::<PublicKeyBinary, GatewayInfo>::new());
+        let cache = Arc::new(Cache::<PublicKeyBinary, GatewayInfo>::new());
         let clone = cache.clone();
         // monitor cache to handle evictions
-        let cache_monitor = tokio::spawn(async move {
-            clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY).await
-        });
+        let cache_monitor =
+            tokio::spawn(async move { clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY).await });
         Self {
             follower_service,
             cache,
