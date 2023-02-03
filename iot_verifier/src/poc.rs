@@ -297,6 +297,7 @@ impl Poc {
             witness_report.report.frequency,
             beacon_report.report.tx_power,
             beaconer_info.gain,
+            witness_info.gain,
             beaconer_info.location,
             witness_info.location,
         )?;
@@ -544,6 +545,7 @@ fn verify_witness_rssi(
     witness_freq: u64,
     beacon_tx_power: i32,
     beacon_gain: i32,
+    witness_gain: i32,
     beacon_loc: Option<u64>,
     witness_loc: Option<u64>,
 ) -> GenericVerifyResult {
@@ -558,8 +560,13 @@ fn verify_witness_rssi(
         Ok(d) => d,
         Err(_) => return Err(InvalidReason::BadRssi),
     };
-    let min_rcv_signal =
-        calc_expected_rssi(beacon_tx_power, witness_freq, distance, beacon_gain, 0);
+    let min_rcv_signal = calc_expected_rssi(
+        beacon_tx_power,
+        witness_freq,
+        distance,
+        beacon_gain,
+        witness_gain,
+    );
     // signal is submitted as DBM * 10
     // min_rcv_signal is plain old DBM
     if witness_signal / 10 > min_rcv_signal {
@@ -592,19 +599,18 @@ fn verify_witness_data(beacon_data: &Vec<u8>, witness_data: &Vec<u8>) -> Generic
 }
 
 fn calc_expected_rssi(
-    conducted_tx_power: i32,
+    conducted_tx_power_dbm: i32,
     freq: u64,
-    distance: u32,
-    beaconer_gain: i32,
-    witness_gain: i32,
+    distance_mtrs: u32,
+    beaconer_gain_dbm: i32,
+    witness_gain_dbm: i32,
 ) -> i32 {
-    // beaconer gain is supplied as ddbm units, convert to dbm
-    let beaconer_gain_dbm = beaconer_gain / 10;
-    // witness gain currently defaults to zero by caller
-    // in order to replicate the erlang core implementation
-    // TODO: supply witness gain values
-    let fpsl = (20.0 * (4.0 * PI * distance as f64 * (freq as f64) / C).log10()).round() as i32;
-    conducted_tx_power + beaconer_gain_dbm - fpsl + witness_gain
+    // beaconer and witness gain is supplied as ddbm units, convert to db
+    let beaconer_gain_db = beaconer_gain_dbm / 10;
+    let witness_gain_db = witness_gain_dbm / 10;
+    let fpsl =
+        (20.0 * (4.0 * PI * distance_mtrs as f64 * (freq as f64) / C).log10()).round() as i32;
+    conducted_tx_power_dbm + beaconer_gain_db - fpsl + witness_gain_db
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -810,18 +816,19 @@ mod tests {
     fn test_calc_expected_rssi() {
         //TODO: values here were taken from real work success and fail scenarios
         //      get someone in the know to verify
-        let beacon1_tx_power = 27;
-        let beacon1_gain = 80;
-        let witness1_distance = 2011; //metres
-        let witness1_freq = 904700032;
+        let beacon1_tx_power = 12;
+        let beacon1_gain = 81;
+        let witness1_gain = 83;
+        let witness1_distance = 508; //metres
+        let witness1_freq = 867900024;
         let min_recv_signal = calc_expected_rssi(
             beacon1_tx_power,
             witness1_freq,
             witness1_distance,
             beacon1_gain,
-            0,
+            witness1_gain,
         );
-        assert_eq!(-63, min_recv_signal);
+        assert_eq!(-57, min_recv_signal);
     }
 
     #[test]
@@ -1002,6 +1009,7 @@ mod tests {
 
         let beacon1_tx_power = 27;
         let beacon1_gain = 80;
+        let witness1_gain = 12;
         let witness1_signal = -1060;
         let witness1_freq = 904700032;
         assert!(verify_witness_rssi(
@@ -1009,12 +1017,14 @@ mod tests {
             witness1_freq,
             beacon1_tx_power,
             beacon1_gain,
+            witness1_gain,
             Some(beacon_loc),
             Some(witness1_loc),
         )
         .is_ok());
         let beacon2_tx_power = 27;
         let beacon2_gain = 12;
+        let witness2_gain = 12;
         let witness2_signal = -19;
         let witness2_freq = 904499968;
         assert_eq!(
@@ -1024,6 +1034,7 @@ mod tests {
                 witness2_freq,
                 beacon2_tx_power,
                 beacon2_gain,
+                witness2_gain,
                 Some(beacon_loc),
                 Some(witness2_loc),
             )
