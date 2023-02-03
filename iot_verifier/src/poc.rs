@@ -569,7 +569,7 @@ fn verify_witness_rssi(
     );
     // signal is submitted as DBM * 10
     // min_rcv_signal is plain old DBM
-    if witness_signal / 10 > min_rcv_signal {
+    if (witness_signal / 10) as f64 > min_rcv_signal {
         tracing::debug!(
             "witness verification failed, reason: {:?}
             beaconer tx_power: {beacon_tx_power},
@@ -604,13 +604,12 @@ fn calc_expected_rssi(
     distance_mtrs: u32,
     beaconer_gain_dbm: i32,
     witness_gain_dbm: i32,
-) -> i32 {
-    // beaconer and witness gain is supplied as ddbm units, convert to db
+) -> f64 {
     let beaconer_gain_db = beaconer_gain_dbm / 10;
     let witness_gain_db = witness_gain_dbm / 10;
     let fpsl =
-        (20.0 * (4.0 * PI * distance_mtrs as f64 * (freq as f64) / C).log10()).round() as i32;
-    conducted_tx_power_dbm + beaconer_gain_db - fpsl + witness_gain_db
+        20.0 * (4.0 * PI * distance_mtrs as f64 * (freq as f64) / C).log10();
+    conducted_tx_power_dbm as f64 + beaconer_gain_db as f64 - fpsl + witness_gain_db as f64
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -828,7 +827,7 @@ mod tests {
             beacon1_gain,
             witness1_gain,
         );
-        assert_eq!(-57, min_recv_signal);
+        assert_eq!(-57.334232963418515, min_recv_signal);
     }
 
     #[test]
