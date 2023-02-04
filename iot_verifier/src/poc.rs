@@ -574,6 +574,7 @@ fn verify_witness_rssi(
             "witness verification failed, reason: {:?}
             beaconer tx_power: {beacon_tx_power},
             beaconer gain: {beacon_gain},
+            witness gain: {witness_gain},
             witness signal: {witness_signal},
             witness freq: {witness_freq},
             min_rcv_signal: {min_rcv_signal}",
