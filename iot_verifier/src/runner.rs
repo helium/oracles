@@ -280,8 +280,7 @@ impl Runner {
 
                     // get the number of valid witnesses in our selected list
                     let num_valid_selected_witnesses = selected_witnesses
-                        .clone()
-                        .into_iter()
+                        .iter()
                         .filter(|witness| witness.status != VerificationStatus::Valid)
                         .count();
 

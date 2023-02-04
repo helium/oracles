@@ -208,13 +208,13 @@ impl Poc {
             .await
         {
             Ok(()) => {
-                // to avoid assuming witness location is set and to avoid unwrap
+                // to avoid assuming beaconer location is set and to avoid unwrap
                 // we explicity match location here again
-                let Some(witness_location) = witness_info.location else {
-                    return Ok(VerifyWitnessResult::not_asserted())
+                let Some(beaconer_location) = beaconer_info.location else {
+                    return Ok(VerifyWitnessResult::not_asserted(InvalidParticipantSide::Beaconer))
                 };
 
-                if let Some(hex_scale) = hex_density_map.get(witness_location).await {
+                if let Some(hex_scale) = hex_density_map.get(beaconer_location).await {
                     Ok(VerifyWitnessResult::valid(witness_info, hex_scale))
                 } else {
                     Ok(VerifyWitnessResult::scaling_factor_not_found(witness_info))
@@ -755,13 +755,13 @@ impl VerifyWitnessResult {
         )
     }
 
-    pub fn not_asserted() -> Self {
+    pub fn not_asserted(participant_side: InvalidParticipantSide) -> Self {
         Self::new(
             VerificationStatus::Invalid,
             InvalidReason::NotAsserted,
             None,
             None,
-            InvalidParticipantSide::Witness,
+            participant_side,
         )
     }
 }
