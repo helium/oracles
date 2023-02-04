@@ -1,11 +1,6 @@
 use crate::{
-    gateway_cache::GatewayCache,
-    last_beacon::LastBeacon,
-    metrics::Metrics,
-    poc::{Poc, VerifyWitnessesResult},
-    poc_report::Report,
-    reward_share::GatewayShare,
-    Settings,
+    gateway_cache::GatewayCache, last_beacon::LastBeacon, metrics::Metrics, poc::Poc,
+    poc_report::Report, reward_share::GatewayShare, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use density_scaler::{HexDensityMap, SCALING_PRECISION};
@@ -251,7 +246,7 @@ impl Runner {
             VerificationStatus::Valid => {
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                    let mut verified_witnesses_result = poc
+                    let verified_witnesses_result = poc
                         .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
                         .await?;
                     // check if there are any failed witnesses
@@ -269,12 +264,36 @@ impl Runner {
                         }
                         return Ok(());
                     };
-
-                    let witness_reward_units = poc_challengee_reward_unit(
-                        verified_witnesses_result.verified_witnesses.len() as u32,
+                    // split our verified witness list up into selected and unselected items
+                    let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
+                    let beacon_id = beacon.report_id(beacon_received_ts);
+                    let mut selected_witnesses = verified_witnesses_result
+                        .verified_witnesses
+                        .into_iter()
+                        .filter(|witness| witness.invalid_reason != InvalidReason::SelfWitness)
+                        .collect();
+                    let unselected_witnesses = shuffle_and_split_witnesses(
+                        &beacon_id,
+                        &mut selected_witnesses,
+                        max_witnesses_per_poc,
                     )?;
 
-                    verified_witnesses_result.update_reward_units(witness_reward_units);
+                    // get the number of valid witnesses in our selected list
+                    let num_valid_selected_witnesses = selected_witnesses
+                        .iter()
+                        .filter(|witness| witness.status != VerificationStatus::Valid)
+                        .count();
+
+                    // get reward units based on the count of valid selected witnesses
+                    let witness_reward_units =
+                        poc_challengee_reward_unit(num_valid_selected_witnesses as u32)?;
+                    // update the reward units for those valid witnesses within our selected list
+                    selected_witnesses
+                        .iter_mut()
+                        .for_each(|witness| match witness.status {
+                            VerificationStatus::Valid => witness.reward_unit = witness_reward_units,
+                            VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
+                        });
 
                     let valid_beacon_report = IotValidBeaconReport {
                         received_timestamp: beacon_received_ts,
@@ -287,7 +306,8 @@ impl Runner {
                     };
                     self.handle_valid_poc(
                         valid_beacon_report,
-                        verified_witnesses_result,
+                        selected_witnesses,
+                        unselected_witnesses,
                         iot_poc_sink,
                     )
                     .await?;
@@ -378,7 +398,8 @@ impl Runner {
     async fn handle_valid_poc(
         &self,
         valid_beacon_report: IotValidBeaconReport,
-        witnesses_result: VerifyWitnessesResult,
+        selected_witnesses: Vec<IotVerifiedWitnessReport>,
+        unselected_witnesses: Vec<IotVerifiedWitnessReport>,
         iot_poc_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
@@ -386,17 +407,6 @@ impl Runner {
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
-        let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
-        let mut selected_witnesses = witnesses_result
-            .verified_witnesses
-            .into_iter()
-            .filter(|witness| witness.invalid_reason != InvalidReason::SelfWitness)
-            .collect();
-        let unselected_witnesses = shuffle_and_split_witnesses(
-            &beacon_id,
-            &mut selected_witnesses,
-            max_witnesses_per_poc,
-        )?;
         let iot_poc: IotPoc = IotPoc {
             poc_id: beacon_id,
             beacon_report: valid_beacon_report,
