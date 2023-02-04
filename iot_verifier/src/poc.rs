@@ -62,17 +62,6 @@ pub struct VerifyWitnessesResult {
     pub failed_witnesses: Vec<IotInvalidWitnessReport>,
 }
 
-impl VerifyWitnessesResult {
-    pub fn update_reward_units(&mut self, reward_units: Decimal) {
-        self.verified_witnesses
-            .iter_mut()
-            .for_each(|witness| match witness.status {
-                VerificationStatus::Valid => witness.reward_unit = reward_units,
-                VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
-            })
-    }
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum VerificationError {
     #[error("not found: {0}")]
