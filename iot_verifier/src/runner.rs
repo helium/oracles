@@ -281,7 +281,7 @@ impl Runner {
                     // get the number of valid witnesses in our selected list
                     let num_valid_selected_witnesses = selected_witnesses
                         .iter()
-                        .filter(|witness| witness.status != VerificationStatus::Valid)
+                        .filter(|witness| witness.status == VerificationStatus::Valid)
                         .count();
 
                     // get reward units based on the count of valid selected witnesses
