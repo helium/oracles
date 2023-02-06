@@ -10,7 +10,7 @@ use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
 pub fn continuous_source<T>() -> FileInfoPollerBuilder<T>
 where
-    T: Clone
+    T: Clone,
 {
     FileInfoPollerBuilder::<T>::default()
 }

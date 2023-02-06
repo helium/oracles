@@ -110,9 +110,7 @@ where
     }
 
     fn poll_duration(&self) -> std::time::Duration {
-        self.poll_duration
-            .to_std()
-            .unwrap_or(DEFAULT_POLL_DURATION)
+        self.poll_duration.to_std().unwrap_or(DEFAULT_POLL_DURATION)
     }
 }
 
@@ -186,7 +184,7 @@ async fn db_latest_ts(
 ) -> Result<DateTime<Utc>> {
     Ok(sqlx::query_scalar::<_, DateTime<Utc>>(
         r#"
-        SELECT COALESCE(MAX(file_timestamp), $1) FROM incoming_files where file_type = $2
+        SELECT COALESCE(MAX(file_timestamp), $1) FROM files_processed where file_type = $2
         "#,
     )
     .bind(start_after)
@@ -198,7 +196,7 @@ async fn db_latest_ts(
 async fn db_exists(db: impl sqlx::PgExecutor<'_>, file_info: &FileInfo) -> Result<bool> {
     Ok(sqlx::query_scalar::<_, bool>(
         r#"
-        SELECT EXISTS(SELECT 1 from incoming_files where file_name = $1)
+        SELECT EXISTS(SELECT 1 from files_processed where file_name = $1)
         "#,
     )
     .bind(file_info.key.clone())
@@ -208,7 +206,7 @@ async fn db_exists(db: impl sqlx::PgExecutor<'_>, file_info: &FileInfo) -> Resul
 
 async fn db_insert(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, file_info: FileInfo) -> Result {
     sqlx::query(r#"
-        INSERT INTO incoming_files(file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4)
+        INSERT INTO files_processed(file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4)
         "#)
     .bind(file_info.key)
     .bind(file_info.file_type.to_str())
@@ -223,9 +221,9 @@ async fn db_insert(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, file_info: Fi
 async fn db_clean(db: impl sqlx::PgExecutor<'_>, file_type: &FileType) -> Result {
     sqlx::query(
         r#"
-        DELETE FROM incoming_files where file_name in (
+        DELETE FROM files_processed where file_name in (
             SELECT file_name
-            FROM incoming_files
+            FROM files_processed
             WHERE file_type = $1
             ORDER BY file_timestamp DESC
             OFFSET 100 
@@ -238,4 +236,3 @@ async fn db_clean(db: impl sqlx::PgExecutor<'_>, file_type: &FileType) -> Result
 
     Ok(())
 }
-
