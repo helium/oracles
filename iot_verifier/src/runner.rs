@@ -444,7 +444,7 @@ fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
     let reward_units = if num_witnesses == 0 {
         Decimal::ZERO
     } else if num_witnesses < WITNESS_REDUNDANCY {
-        Decimal::from(WITNESS_REDUNDANCY / num_witnesses)
+        Decimal::from(num_witnesses / WITNESS_REDUNDANCY)
     } else {
         let exp = num_witnesses - WITNESS_REDUNDANCY;
         if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
