@@ -285,8 +285,10 @@ impl Runner {
                         .count();
 
                     // get reward units based on the count of valid selected witnesses
+                    let beaconer_reward_units =
+                        poc_beaconer_reward_unit(num_valid_selected_witnesses as u32)?;
                     let witness_reward_units =
-                        poc_challengee_reward_unit(num_valid_selected_witnesses as u32)?;
+                        poc_per_witness_reward_unit(num_valid_selected_witnesses as u32)?;
                     // update the reward units for those valid witnesses within our selected list
                     selected_witnesses
                         .iter_mut()
@@ -302,7 +304,7 @@ impl Runner {
                             .hex_scale
                             .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,
                         report: beacon.clone(),
-                        reward_unit: witness_reward_units,
+                        reward_unit: beaconer_reward_units,
                     };
                     self.handle_valid_poc(
                         valid_beacon_report,
@@ -440,18 +442,42 @@ impl Runner {
     }
 }
 
-fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
+fn poc_beaconer_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
     let reward_units = if num_witnesses == 0 {
         Decimal::ZERO
-    } else if num_witnesses < WITNESS_REDUNDANCY {
-        Decimal::from(WITNESS_REDUNDANCY / num_witnesses)
+    } else if num_witnesses <= WITNESS_REDUNDANCY {
+        if let Some(sub_redundancy_units) =
+            Decimal::from_f32_retain(num_witnesses as f32 / WITNESS_REDUNDANCY as f32)
+        {
+            sub_redundancy_units
+        } else {
+            anyhow::bail!("invalid fractional division: {num_witnesses} / {WITNESS_REDUNDANCY}");
+        }
     } else {
         let exp = num_witnesses - WITNESS_REDUNDANCY;
         if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
             let unnormalized = Decimal::TWO - to_sub;
             std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized)
         } else {
-            anyhow::bail!("invalid exponent: {}", exp);
+            anyhow::bail!("invalid exponent: {exp}");
+        }
+    };
+    Ok(reward_units.round_dp(SCALING_PRECISION))
+}
+
+fn poc_per_witness_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
+    let reward_units = if num_witnesses == 0 {
+        Decimal::ZERO
+    } else if num_witnesses <= WITNESS_REDUNDANCY {
+        Decimal::ONE
+    } else {
+        let exp = num_witnesses - WITNESS_REDUNDANCY;
+        if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
+            let unnormalized = (Decimal::from(WITNESS_REDUNDANCY) - (Decimal::ONE - to_sub))
+                / Decimal::from(num_witnesses);
+            std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized)
+        } else {
+            anyhow::bail!("invalid exponent: {exp}");
         }
     };
     Ok(reward_units.round_dp(SCALING_PRECISION))
@@ -537,5 +563,48 @@ mod tests {
                 .unwrap();
         assert_eq!(10, selected_witnesses2.len());
         assert_eq!(0, unselected_witnesses2.len());
+    }
+
+    #[test]
+    // this test is based off the example calculations defined in HIP 15
+    // https://github.com/helium/HIP/blob/main/0015-beaconing-rewards.md#example-reward-distribution
+    // expected values have been adjusted to a 4-decimal precision rounded result rather than the
+    // documented 2-decimal places defined in the HIP
+    fn reward_unit_calculations() {
+        let mut witness_rewards = vec![];
+        let mut beacon_rewards = vec![];
+        for witnesses in 1..=15 {
+            let witness_reward =
+                poc_per_witness_reward_unit(witnesses).expect("failed witness reward calculation");
+            witness_rewards.push(witness_reward);
+            let beacon_reward =
+                poc_beaconer_reward_unit(witnesses).expect("failed beacon reward calculation");
+            beacon_rewards.push(beacon_reward);
+        }
+
+        let expected_witness_rewards: Vec<Decimal> = vec![
+            1.0000, 1.0000, 1.0000, 1.0000, 0.7600, 0.6067, 0.5017, 0.4262, 0.3697, 0.3262, 0.2918,
+            0.2640, 0.2411, 0.2220, 0.2057,
+        ]
+        .into_iter()
+        .map(|float| {
+            Decimal::from_f32_retain(float)
+                .expect("failed float to decimal conversion")
+                .round_dp(SCALING_PRECISION)
+        })
+        .collect();
+        let expected_beacon_rewards: Vec<Decimal> = vec![
+            0.25, 0.50, 0.75, 1.0000, 1.2000, 1.3600, 1.4880, 1.5904, 1.6723, 1.7379, 1.7903,
+            1.8322, 1.8658, 1.8926, 1.9141,
+        ]
+        .into_iter()
+        .map(|float| {
+            Decimal::from_f32_retain(float)
+                .expect("failed float to decimal conversion")
+                .round_dp(SCALING_PRECISION)
+        })
+        .collect();
+        assert_eq!(expected_witness_rewards, witness_rewards);
+        assert_eq!(expected_beacon_rewards, beacon_rewards);
     }
 }
