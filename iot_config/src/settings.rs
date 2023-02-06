@@ -24,6 +24,8 @@ pub struct Settings {
     pub network: Network,
     pub database: db_store::Settings,
     pub metrics: poc_metrics::Settings,
+    /// Helium blockchain node client for gateway location lookups
+    pub follower: node_follower::Settings,
 }
 
 pub fn default_log() -> String {

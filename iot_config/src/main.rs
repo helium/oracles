@@ -8,7 +8,7 @@ use iot_config::{
     gateway_service::GatewayService, org_service::OrgService, route_service::RouteService,
     session_key_service::SessionKeyFilterService, settings::Settings,
 };
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, time::Duration};
 use tokio::signal;
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -71,10 +71,9 @@ impl Daemon {
             shutdown_trigger.trigger()
         });
 
-        let _signing_keypair = Arc::new(settings.signing_keypair()?);
         let listen_addr = settings.listen_addr()?;
 
-        let gateway_svc = GatewayService {};
+        let gateway_svc = GatewayService::new(settings).await?;
         let org_svc = OrgService::new(settings).await?;
         let route_svc = RouteService::new(settings).await?;
         let session_key_filter_svc = SessionKeyFilterService {};
