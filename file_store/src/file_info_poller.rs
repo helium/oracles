@@ -112,7 +112,7 @@ where
     fn poll_duration(&self) -> std::time::Duration {
         self.poll_duration
             .to_std()
-            .unwrap_or_else(|_| DEFAULT_POLL_DURATION)
+            .unwrap_or(DEFAULT_POLL_DURATION)
     }
 }
 
@@ -168,7 +168,7 @@ async fn is_already_processed(
     cache: &MemoryFileCache,
     file_info: &FileInfo,
 ) -> Result<bool> {
-    if let Some(_) = cache.get(&file_info.key).await {
+    if cache.get(&file_info.key).await.is_some() {
         Ok(true)
     } else {
         db_exists(db, file_info).await
@@ -239,64 +239,3 @@ async fn db_clean(db: impl sqlx::PgExecutor<'_>, file_type: &FileType) -> Result
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use chrono::TimeZone;
-    use sqlx::postgres::PgPoolOptions;
-
-    use crate::file_source::continuous_source;
-    use crate::iot_beacon_report::IotBeaconIngestReport;
-
-    use super::*;
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn stuff() {
-        let (_shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let pool = PgPoolOptions::new()
-            .connect("psql://postgres:password@localhost/iot_packet_verifier")
-            .await
-            .expect("db connection");
-
-        let settings = crate::Settings {
-            bucket: "devnet-iot-ingest".to_string(),
-            endpoint: None,
-            region: "us-east-1".to_string(),
-        };
-
-        let file_store = FileStore::from_settings(&settings)
-            .await
-            .expect("File Store");
-
-        let (mut receiver, _join_handle) = continuous_source::<IotBeaconIngestReport>()
-            .db(pool.clone())
-            .store(file_store)
-            .file_type(FileType::IotBeaconIngestReport)
-            .start_after(Utc.timestamp_millis(1675407541306))
-            .poll_duration(Duration::seconds(1))
-            .build()
-            .expect("Poller")
-            .start(shutdown_listener)
-            .await
-            .expect("Start poller");
-
-        loop {
-            tokio::select! {
-                msg = receiver.recv() => match msg {
-                    Some(msg) => {
-                        let mut tx = pool.begin().await.expect("TX BEGIN");
-                        let file_info = msg.file_info.clone();
-                        let count = msg.into_stream(&mut tx).await.expect("Stream")
-                            .fold(0, |total, _| async move { total + 1 })
-                            .await;
-
-                        println!("{:?} --> {count}", file_info);
-                        // msg.mark_done(&mut tx).await.expect("MARK DONE");
-
-                        tx.commit().await.expect("TX COMMIT");
-                    }
-                    None => println!("WTF"),
-                }
-            }
-        }
-    }
-}
