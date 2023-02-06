@@ -12,7 +12,7 @@ pub mod proto {
     pub use helium_proto::services::iot_config::{OrgResV1, OrgV1};
 }
 
-#[derive(Clone, Debug, Serialize, sqlx::Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, sqlx::Type)]
 #[sqlx(type_name = "org_status", rename_all = "snake_case")]
 pub enum OrgStatus {
     Enabled,
@@ -140,6 +140,37 @@ pub async fn get_with_constraints(
             end_addr: end_addr.into(),
         },
     })
+}
+
+pub async fn get_status(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<OrgStatus, sqlx::Error> {
+    sqlx::query_scalar::<_, OrgStatus>(
+        r#"
+        select status from organizations where oui = $1
+        "#,
+    )
+    .bind(oui as i64)
+    .fetch_one(db)
+    .await
+}
+
+pub async fn toggle_status(
+    oui: u64,
+    status: OrgStatus,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        update organizations
+        set status = $1
+        where oui = $2
+        "#,
+    )
+    .bind(status)
+    .bind(oui as i64)
+    .execute(db)
+    .await?;
+
+    Ok(())
 }
 
 #[derive(thiserror::Error, Debug)]
