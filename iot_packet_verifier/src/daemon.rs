@@ -129,7 +129,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
     .create()
     .await?;
 
-    let org_client = settings.org.connect_org();
+    let org_client = settings.connect_org();
 
     let file_store = FileStore::from_settings(&settings.ingest).await?;
 

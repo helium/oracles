@@ -1,4 +1,5 @@
 use config::{Config, ConfigError, Environment, File};
+use helium_proto::services::{iot_config::config_org_client::OrgClient, Channel, Endpoint};
 use serde::Deserialize;
 use solana_sdk::pubkey::{ParsePubkeyError, Pubkey};
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ pub struct Settings {
     pub burn_keypair: PathBuf,
     /// Path to the keypair for signing config changes
     pub config_keypair: PathBuf,
+    pub cluster: String,
     pub dc_mint: String,
     pub dnt_mint: String,
     pub hnt_mint: String,
@@ -24,7 +26,12 @@ pub struct Settings {
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
-    pub org: node_follower::Settings,
+    #[serde(with = "http_serde::uri", default = "default_url")]
+    pub org_url: http::Uri,
+}
+
+pub fn default_url() -> http::Uri {
+    http::Uri::from_static("http://127.0.0.1:8080")
 }
 
 pub fn default_log() -> String {
@@ -64,6 +71,10 @@ impl Settings {
 
     pub fn hnt_mint(&self) -> Result<Pubkey, ParsePubkeyError> {
         self.hnt_mint.parse()
+    }
+
+    pub fn connect_org(&self) -> OrgClient<Channel> {
+        OrgClient::new(Endpoint::from(self.org_url.clone()).connect_lazy())
     }
 
     pub fn config_keypair(&self) -> Result<helium_crypto::Keypair, Box<helium_crypto::Error>> {

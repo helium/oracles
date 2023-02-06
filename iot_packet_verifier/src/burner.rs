@@ -28,6 +28,7 @@ pub struct Burner {
     balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
     provider: Arc<RpcClient>,
     program_cache: BurnProgramCache,
+    cluster: String,
     // We store the keypair as bytes since the type does not implement clone (for some reason).
     keypair: [u8; 64],
 }
@@ -60,6 +61,7 @@ impl Burner {
             pool: pool.clone(),
             balances: balances.balances(),
             program_cache: BurnProgramCache::new(settings, provider.as_ref()).await?,
+            cluster: settings.cluster.clone(),
             provider,
             keypair: keypair.to_bytes(),
         })
@@ -113,7 +115,7 @@ impl Burner {
         let instructions = {
             let request = RequestBuilder::from(
                 data_credits::id(),
-                "devnet",
+                &self.cluster,
                 std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
                 Some(CommitmentConfig::confirmed()),
                 RequestNamespace::Global,

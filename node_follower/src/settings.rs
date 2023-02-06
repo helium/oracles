@@ -1,7 +1,5 @@
 use crate::txn_service::{TransactionClient, TransactionClients};
-use helium_proto::services::{
-    follower, iot_config::org_client::OrgClient, transaction, Channel, Endpoint,
-};
+use helium_proto::services::{follower, transaction, Channel, Endpoint};
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -63,14 +61,6 @@ impl Settings {
             .timeout(Duration::from_secs(self.rpc))
             .connect_lazy();
         transaction::Client::new(channel)
-    }
-
-    pub fn connect_org(&self) -> OrgClient<Channel> {
-        let channel = Endpoint::from(self.url.clone())
-            .connect_timeout(Duration::from_secs(self.connect))
-            .timeout(Duration::from_secs(self.rpc))
-            .connect_lazy();
-        OrgClient::new(channel)
     }
 
     pub fn connect_multiple_transactions(&self) -> Option<TransactionClients> {

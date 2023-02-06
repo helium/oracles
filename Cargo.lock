@@ -3103,6 +3103,8 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "helium-sub-daos",
+ "http",
+ "http-serde",
  "node-follower",
  "poc-metrics",
  "prost",

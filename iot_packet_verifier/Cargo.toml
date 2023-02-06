@@ -1,9 +1,10 @@
  [package]
 name = "iot-packet-verifier"
 version = "0.1.0"
-edition = "2021"
 description = "Packet verification for IOT"
-license = "Apache-2.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 anyhow = {workspace = true}
@@ -34,6 +35,8 @@ tonic = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
+http = {workspace = true}
+http-serde = {workspace = true}
 sha256 = "1.1.1"
 
 data-credits = {git = "https://github.com/helium/helium-program-library.git"}
