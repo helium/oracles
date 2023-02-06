@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt};
 use retainer::Cache;
@@ -36,6 +36,12 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum LookbackBehavior {
+    StartAfter(DateTime<Utc>),
+    Max(Duration),
+}
+
 #[derive(Debug, Clone, Builder)]
 pub struct FileInfoPoller<T> {
     #[builder(default = "Duration::seconds(DEFAULT_POLL_DURATION_SECS)")]
@@ -43,9 +49,7 @@ pub struct FileInfoPoller<T> {
     db: sqlx::Pool<sqlx::Postgres>,
     store: FileStore,
     file_type: FileType,
-    start_after: DateTime<Utc>,
-    #[builder(default = "None")]
-    max_lookback: Option<Duration>,
+    lookback: LookbackBehavior,
     #[builder(default = "Duration::minutes(10)")]
     offset: Duration,
     #[builder(setter(skip))]
@@ -71,10 +75,10 @@ where
         let mut poll_trigger = tokio::time::interval(self.poll_duration());
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
 
-        let mut latest_ts = db_latest_ts(&self.db, self.start_after, self.file_type).await?;
+        let mut latest_ts = db_latest_ts(&self.db, self.file_type).await?;
 
         loop {
-            let after = self.after(latest_ts - self.offset);
+            let after = self.after(latest_ts);
             let before = Utc::now();
             let shutdown = shutdown.clone();
 
@@ -85,7 +89,7 @@ where
                     let files = self.store.list_all(self.file_type, after, before).await?;
                     for file in files {
                         if !is_already_processed(&self.db, &cache, &file).await? {
-                            latest_ts = file.timestamp;
+                            latest_ts = Some(file.timestamp);
                             cache_file(&cache, &file).await;
                             send_stream(&sender, &self.store, file).await?;
                         }
@@ -96,11 +100,15 @@ where
         Ok(())
     }
 
-    fn after(&self, latest: DateTime<Utc>) -> DateTime<Utc> {
-        self.max_lookback
-            .map(|max_lookback| Utc::now() - max_lookback)
-            .map(|max_ts| max_ts.max(latest))
-            .unwrap_or(latest)
+    fn after(&self, latest: Option<DateTime<Utc>>) -> DateTime<Utc> {
+        let latest_offset = latest.map(|lt| lt - self.offset);
+        match self.lookback {
+            LookbackBehavior::StartAfter(start_after) => latest_offset.unwrap_or(start_after),
+            LookbackBehavior::Max(max_lookback) => {
+                let max_ts = Utc::now() - max_lookback;
+                latest_offset.map(|lt| lt.max(max_ts)).unwrap_or(max_ts)
+            }
+        }
     }
 
     async fn clean(&self, cache: &MemoryFileCache) -> Result {
@@ -179,18 +187,25 @@ async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {
 
 async fn db_latest_ts(
     db: impl sqlx::PgExecutor<'_>,
-    start_after: DateTime<Utc>,
     file_type: FileType,
-) -> Result<DateTime<Utc>> {
-    Ok(sqlx::query_scalar::<_, DateTime<Utc>>(
+) -> Result<Option<DateTime<Utc>>> {
+    let default = Utc.timestamp_millis(0);
+
+    let result = sqlx::query_scalar::<_, DateTime<Utc>>(
         r#"
         SELECT COALESCE(MAX(file_timestamp), $1) FROM files_processed where file_type = $2
         "#,
     )
-    .bind(start_after)
+    .bind(default)
     .bind(file_type.to_str())
     .fetch_one(db)
-    .await?)
+    .await?;
+
+    if result == default {
+        Ok(None)
+    } else {
+        Ok(Some(result))
+    }
 }
 
 async fn db_exists(db: impl sqlx::PgExecutor<'_>, file_info: &FileInfo) -> Result<bool> {
