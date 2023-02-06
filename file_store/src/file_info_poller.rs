@@ -31,7 +31,7 @@ where
         self,
         transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<BoxStream<'static, T>> {
-        db_insert(transaction, self.file_info).await?;
+        db::insert(transaction, self.file_info).await?;
         Ok(self.stream)
     }
 }
@@ -75,7 +75,7 @@ where
         let mut poll_trigger = tokio::time::interval(self.poll_duration());
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
 
-        let mut latest_ts = db_latest_ts(&self.db, self.file_type).await?;
+        let mut latest_ts = db::latest_ts(&self.db, self.file_type).await?;
 
         loop {
             let after = self.after(latest_ts);
@@ -113,7 +113,7 @@ where
 
     async fn clean(&self, cache: &MemoryFileCache) -> Result {
         cache.purge(4, 0.25).await;
-        db_clean(&self.db, &self.file_type).await?;
+        db::clean(&self.db, &self.file_type).await?;
         Ok(())
     }
 
@@ -177,7 +177,7 @@ async fn is_already_processed(
     if cache.get(&file_info.key).await.is_some() {
         Ok(true)
     } else {
-        db_exists(db, file_info).await
+        db::exists(db, file_info).await
     }
 }
 
@@ -185,42 +185,48 @@ async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {
     cache.insert(file_info.key.clone(), true, CACHE_TTL).await;
 }
 
-async fn db_latest_ts(
-    db: impl sqlx::PgExecutor<'_>,
-    file_type: FileType,
-) -> Result<Option<DateTime<Utc>>> {
-    let default = Utc.timestamp_millis(0);
+mod db {
+    use super::*;
 
-    let result = sqlx::query_scalar::<_, DateTime<Utc>>(
-        r#"
+    pub async fn latest_ts(
+        db: impl sqlx::PgExecutor<'_>,
+        file_type: FileType,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let default = Utc.timestamp_millis(0);
+
+        let result = sqlx::query_scalar::<_, DateTime<Utc>>(
+            r#"
         SELECT COALESCE(MAX(file_timestamp), $1) FROM files_processed where file_type = $2
         "#,
-    )
-    .bind(default)
-    .bind(file_type.to_str())
-    .fetch_one(db)
-    .await?;
+        )
+        .bind(default)
+        .bind(file_type.to_str())
+        .fetch_one(db)
+        .await?;
 
-    if result == default {
-        Ok(None)
-    } else {
-        Ok(Some(result))
+        if result == default {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
     }
-}
 
-async fn db_exists(db: impl sqlx::PgExecutor<'_>, file_info: &FileInfo) -> Result<bool> {
-    Ok(sqlx::query_scalar::<_, bool>(
-        r#"
+    pub async fn exists(db: impl sqlx::PgExecutor<'_>, file_info: &FileInfo) -> Result<bool> {
+        Ok(sqlx::query_scalar::<_, bool>(
+            r#"
         SELECT EXISTS(SELECT 1 from files_processed where file_name = $1)
         "#,
-    )
-    .bind(file_info.key.clone())
-    .fetch_one(db)
-    .await?)
-}
+        )
+        .bind(file_info.key.clone())
+        .fetch_one(db)
+        .await?)
+    }
 
-async fn db_insert(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, file_info: FileInfo) -> Result {
-    sqlx::query(r#"
+    pub async fn insert(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        file_info: FileInfo,
+    ) -> Result {
+        sqlx::query(r#"
         INSERT INTO files_processed(file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4)
         "#)
     .bind(file_info.key)
@@ -230,12 +236,12 @@ async fn db_insert(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, file_info: Fi
     .execute(tx)
     .await?;
 
-    Ok(())
-}
+        Ok(())
+    }
 
-async fn db_clean(db: impl sqlx::PgExecutor<'_>, file_type: &FileType) -> Result {
-    sqlx::query(
-        r#"
+    pub async fn clean(db: impl sqlx::PgExecutor<'_>, file_type: &FileType) -> Result {
+        sqlx::query(
+            r#"
         DELETE FROM files_processed where file_name in (
             SELECT file_name
             FROM files_processed
@@ -244,10 +250,11 @@ async fn db_clean(db: impl sqlx::PgExecutor<'_>, file_type: &FileType) -> Result
             OFFSET 100 
         )
         "#,
-    )
-    .bind(file_type.to_str())
-    .execute(db)
-    .await?;
+        )
+        .bind(file_type.to_str())
+        .execute(db)
+        .await?;
 
-    Ok(())
+        Ok(())
+    }
 }
