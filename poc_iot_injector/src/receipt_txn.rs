@@ -135,11 +135,23 @@ fn construct_poc_witnesses(
 ) -> Vec<BlockchainPocWitnessV1> {
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
+        let witness_invalid_reason = witness_report.invalid_reason as i32;
         let reward_shares = ((witness_report.hex_scale * witness_report.reward_unit)
             * REWARD_SHARE_MULTIPLIER)
             .to_u32()
             .unwrap_or_default();
 
+        if reward_shares == 0 && witness_invalid_reason == 0 {
+            tracing::warn!(
+                "valid witness with zero reward shares.
+                pubkey: {},
+                hex_scale: {}
+                reward_unit: {}",
+                witness_report.report.pub_key.clone(),
+                witness_report.hex_scale,
+                witness_report.reward_unit
+            );
+        }
         // NOTE: channel is irrelevant now
         let poc_witness = BlockchainPocWitnessV1 {
             gateway: witness_report.report.pub_key.into(),
@@ -150,7 +162,7 @@ fn construct_poc_witnesses(
             snr: witness_report.report.snr as f32 / SNR_MULTIPLIER,
             frequency: hz_to_mhz(witness_report.report.frequency),
             datarate: witness_report.report.datarate.to_string(),
-            channel: witness_report.invalid_reason as i32,
+            channel: witness_invalid_reason,
             reward_shares,
         };
 
