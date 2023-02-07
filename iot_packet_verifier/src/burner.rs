@@ -182,7 +182,10 @@ impl Burner {
         .execute(&self.pool)
         .await?;
 
-        self.balances.lock().await.get_mut(&payer).unwrap().burned -= amount as u64;
+        let mut balance_lock = self.balances.lock().await;
+        let balances = balance_lock.get_mut(&payer).unwrap();
+        balances.burned -= amount as u64;
+        balances.balance -= amount as u64;
 
         Ok(())
     }

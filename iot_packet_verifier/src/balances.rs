@@ -125,7 +125,7 @@ pub async fn payer_balance(
 }
 
 pub struct Balance {
-    balance: u64,
+    pub balance: u64,
     pub burned: u64,
 }
 
