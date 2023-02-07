@@ -6,7 +6,8 @@ use helium_proto::services::{
         GatewayRegionParamsReqV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1,
         OrgEnableReqV1, RouteCreateReqV1, RouteDeleteReqV1, RouteGetDevaddrRangesReqV1,
         RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1, RouteStreamReqV1,
-        RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1, RouteUpdateReqV1, SessionKeyFilterStreamReqV1,
+        RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1, RouteUpdateReqV1, SessionKeyFilterGetReqV1,
+        SessionKeyFilterListReqV1, SessionKeyFilterStreamReqV1, SessionKeyFilterUpdateReqV1,
     },
     poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
 };
@@ -53,11 +54,11 @@ impl_msg_verify!(RouteUpdateEuisReqV1, signature);
 impl_msg_verify!(RouteGetDevaddrRangesReqV1, signature);
 impl_msg_verify!(RouteUpdateDevaddrRangesReqV1, signature);
 impl_msg_verify!(GatewayLocationReqV1, signature);
-impl_msg_verify!(SessionKeyFilterStreamReqV1, signature);
 impl_msg_verify!(GatewayRegionParamsReqV1, signature);
 impl_msg_verify!(AdminAddKeyReqV1, signature);
 impl_msg_verify!(AdminLoadRegionReqV1, signature);
 impl_msg_verify!(AdminRemoveKeyReqV1, signature);
+impl_msg_verify!(SessionKeyFilterStreamReqV1, signature);
 
 #[cfg(test)]
 mod test {

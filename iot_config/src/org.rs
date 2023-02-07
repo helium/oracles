@@ -45,7 +45,6 @@ pub async fn create_org(
         r#"
         insert into organizations (owner_pubkey, payer_pubkey, delegate_keys)
         values ($1, $2, $3)
-        on conflict (owner_pubkey) do nothing
         returning *
         "#,
     )
