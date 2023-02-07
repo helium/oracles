@@ -54,6 +54,11 @@ pub enum RunnerError {
     NotFound(&'static str),
 }
 
+pub enum FilterStatus {
+    Drop,
+    Exclude,
+    Include,
+}
 impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewRunnerError> {
         let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
@@ -264,19 +269,35 @@ impl Runner {
                         }
                         return Ok(());
                     };
-                    // split our verified witness list up into selected and unselected items
+
                     let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
                     let beacon_id = beacon.report_id(beacon_received_ts);
-                    let mut selected_witnesses = verified_witnesses_result
-                        .verified_witnesses
-                        .into_iter()
-                        .filter(|witness| witness.invalid_reason != InvalidReason::SelfWitness)
-                        .collect();
-                    let unselected_witnesses = shuffle_and_split_witnesses(
+
+                    // filter witness list
+                    // 'drop' items are dropped to the floor, never make it to s3
+                    // 'exclude' items are not permitted in last 14 but
+                    // will make it into the unselected list and thus will goto s3
+                    // 'include' items are from where the last 14 are selected
+                    // any witness with include status which doesnt make it to the last 14
+                    // will join the excluded items in the unselected list and thus will goto s3
+                    let mut excluded_witnesses  = Vec::new();
+                    let mut selected_witnesses  = Vec::new();
+                    for witness in verified_witnesses_result.verified_witnesses {
+                        match filter_witness(witness.invalid_reason) {
+                            FilterStatus::Drop => continue,
+                            FilterStatus::Exclude => excluded_witnesses.push(witness),
+                            FilterStatus::Include => selected_witnesses.push(witness),
+                        }
+                    }
+                    // split our verified witness list up into selected and unselected items
+                    let mut unselected_witnesses = shuffle_and_split_witnesses(
                         &beacon_id,
                         &mut selected_witnesses,
                         max_witnesses_per_poc,
                     )?;
+                    // concat the unselected witnesses and the previously excluded witnesses
+                    // these will then form the unseleted list on the poc
+                    unselected_witnesses = [&unselected_witnesses[..], &excluded_witnesses[..]].concat();
 
                     // get the number of valid witnesses in our selected list
                     let num_valid_selected_witnesses = selected_witnesses
@@ -502,6 +523,19 @@ fn shuffle_and_split_witnesses(
     witnesses.shuffle(&mut rng);
     let unselected_witnesses = witnesses.split_off(max_count);
     Ok(unselected_witnesses)
+}
+
+fn filter_witness(invalid_reason: InvalidReason) -> FilterStatus {
+    match invalid_reason {
+        InvalidReason::SelfWitness => FilterStatus::Exclude,
+        InvalidReason::ReasonNone => FilterStatus::Include,
+        InvalidReason::BelowMinDistance => FilterStatus::Include,
+        InvalidReason::MaxDistanceExceeded => FilterStatus::Include,
+        InvalidReason::BadRssi => FilterStatus::Include,
+        InvalidReason::InvalidFrequency => FilterStatus::Include,
+        InvalidReason::InvalidRegion => FilterStatus::Include,
+        _ => FilterStatus::Exclude,
+    }
 }
 
 #[cfg(test)]
