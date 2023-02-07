@@ -92,7 +92,7 @@ impl Daemon {
             region_map.clone(),
             settings.network,
         );
-        let session_key_filter_svc = SessionKeyFilterService {};
+        let session_key_filter_svc = SessionKeyFilterService::new(settings).await?;
 
         transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))

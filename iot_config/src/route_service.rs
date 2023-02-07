@@ -359,7 +359,7 @@ impl iot_config::Route for RouteService {
             "updating euis"
         );
 
-        route::update_euis(&to_add, &to_remove, &self.pool, self.update_channel.clone())
+        route::update_euis(&to_add, &to_remove, &self.pool, self.clone_update_channel())
             .await
             .map_err(|err| {
                 tracing::error!("eui update failed: {err:?}");
