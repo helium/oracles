@@ -3046,6 +3046,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "node-follower",
+ "once_cell",
  "poc-metrics",
  "prost",
  "rand",
