@@ -5,9 +5,11 @@ This crates takes beacon and witness reports as input from an S3 bucket and veri
 
 ## S3 Inputs
 
-- `iot_beacon_ingest_report_v1`: a beacon report produced by the ingestor
-- `iot_witness_ingest_report_v1`: a witness report produced by the ingestor
-- `entropy_report_v1`: an entropy report produced by the entropy service
+| File Type | Pattern | |
+| :--- | :-- | :-- |
+| IotBeaconIngestReport | iot_beacon_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L83) |
+| IotWitnessIngestReport | iot_witness_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L90) |
+| Entropy | entropy.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/entropy.proto#L5) |
 
 ## Validations
 
@@ -34,9 +36,13 @@ witness reports
 
 ## S3 Outputs
 
-- `valid_poc`: A report consisting of a single valid beacon report and all associated valid witness reports
-- `invalid_beacon`: A report consisting of a single invalid beacon report along with its invalid reason
-- `invalid_witness`: A report consisting of a single invalid witness report along with its invalid reason
+| File Type | Pattern | |
+| :--- | :-- | :-- |
+| IotPoc | iot_poc.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L162) |
+| IotInvalidBeaconReport | iot_invalid_beacon.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L125) |
+| IotInvalidWitnessReport | iot_invalid_witness.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L133) |
+| GatewayRewardShare | gateway_reward_share.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L171) |
+| RewardManifest | reward_manifest.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/reward_manifest.proto#L5) |
 
 ## Env Vars
 
