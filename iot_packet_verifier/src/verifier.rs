@@ -301,7 +301,7 @@ impl Burner for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 pub trait PacketWriter<T> {
     type Error;
 
-    // The redundant &mut receivers we see for PacketWriter and Burner ars so
+    // The redundant &mut receivers we see for PacketWriter and Burner are so
     // that we are able to resolve to either a mutable or immutable ref without
     // having to take ownership of the mutable reference.
     async fn write(&mut self, packet: T) -> Result<(), Self::Error>;
