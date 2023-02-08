@@ -1,11 +1,11 @@
 use crate::{
     entropy::ENTROPY_LIFESPAN,
     gateway_cache::GatewayCache,
+    hex_density::HexDensityMap,
     last_beacon::{LastBeacon, LastBeaconError},
 };
 use beacon;
 use chrono::{DateTime, Duration, Utc};
-use density_scaler::HexDensityMap;
 use file_store::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_valid_poc::IotVerifiedWitnessReport,

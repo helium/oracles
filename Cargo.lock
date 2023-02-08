@@ -1320,31 +1320,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "density-scaler"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "config",
- "futures",
- "h3ron",
- "helium-proto",
- "http",
- "itertools",
- "node-follower",
- "prost",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "triggered",
-]
-
-[[package]]
 name = "denylist"
 version = "0.1.0"
 dependencies = [
@@ -1567,7 +1542,6 @@ dependencies = [
  "clap 3.2.23",
  "config",
  "csv",
- "density-scaler",
  "derive_builder",
  "futures",
  "futures-util",
@@ -2332,7 +2306,6 @@ dependencies = [
  "cmake",
  "config",
  "db-store",
- "density-scaler",
  "denylist",
  "file-store",
  "futures",
@@ -3130,7 +3103,6 @@ dependencies = [
  "clap 3.2.23",
  "config",
  "db-store",
- "density-scaler",
  "file-store",
  "futures",
  "futures-util",

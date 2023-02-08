@@ -1,5 +1,5 @@
 use crate::{
-    hex::{compute_hex_density_map, GlobalHexMap, HexDensityMap, SharedHexDensityMap},
+    hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap, SharedHexDensityMap},
     Result, Settings,
 };
 use chrono::{Duration, Utc};
@@ -18,7 +18,7 @@ impl Server {
         let mut server = Self {
             hex_density_map: SharedHexDensityMap::new(),
             follower: FollowerService::from_settings(&settings.follower),
-            trigger_interval: Duration::seconds(settings.trigger),
+            trigger_interval: Duration::seconds(settings.transmit_scale_interval),
         };
 
         server.refresh_scaling_map().await?;

@@ -23,7 +23,6 @@ pub struct Settings {
     pub entropy: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
-    pub density_scaler: density_scaler::Settings,
     pub denylist: denylist::Settings,
     /// Reward period in hours. (Default to 24)
     #[serde(default = "default_reward_period")]
@@ -40,6 +39,9 @@ pub struct Settings {
     /// Tolerance applied to beacon intervals within which beacons will be accepted (in seconds)
     #[serde(default = "default_beacon_interval_tolerance")]
     pub beacon_interval_tolerance: i64,
+    /// Trigger interval for generating a transmit scaling map
+    #[serde(default = "default_transmit_scale_interval")]
+    pub transmit_scale_interval: i64,
 }
 
 // Default: 10 minutes
@@ -50,6 +52,11 @@ pub fn default_beacon_interval_tolerance() -> i64 {
 // Default: 6 hours
 pub fn default_beacon_interval() -> i64 {
     6 * 60 * 60
+}
+
+// Default: 30 min
+pub fn default_transmit_scale_interval() -> i64 {
+    1800
 }
 
 pub fn default_log() -> String {

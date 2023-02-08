@@ -38,5 +38,4 @@ poc-metrics = { path = "../metrics" }
 file-store = {path = "../file_store"}
 db-store = {path = "../db_store"}
 node-follower = {path = "../node_follower"}
-density-scaler = {path = "../density_scaler"}
 governor = "0.5.1"

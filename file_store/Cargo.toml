@@ -39,7 +39,6 @@ blake3 = {workspace = true}
 poc-metrics = { path = "../metrics" }
 rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
-density-scaler = {path = "../density_scaler"}
 base64 = {workspace = true}
 beacon = {workspace = true}
 sqlx = {workspace = true}

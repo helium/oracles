@@ -13,4 +13,6 @@ pub mod rewarder;
 pub mod runner;
 pub mod scheduler;
 mod settings;
+mod hex_density;
+mod tx_scaler;
 pub use settings::Settings;
