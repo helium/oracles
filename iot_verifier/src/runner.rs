@@ -281,18 +281,8 @@ impl Runner {
                     // 'include' items are from where the last 14 are selected
                     // any witness with include status which doesnt make it to the last 14
                     // will join the excluded items in the unselected list and thus will goto s3
-                    let (excluded_witnesses, mut selected_witnesses) = verified_witnesses_result
-                        .verified_witnesses
-                        .into_iter()
-                        .filter(|witness| {
-                            matches!(filter_witness(witness.invalid_reason), FilterStatus::Drop)
-                        })
-                        .partition(|witness| {
-                            matches!(
-                                filter_witness(witness.invalid_reason),
-                                FilterStatus::Exclude
-                            )
-                        });
+                    let (excluded_witnesses, mut selected_witnesses) =
+                        filter_witnesses(verified_witnesses_result.verified_witnesses);
 
                     // split our verified witness list up into selected and unselected items
                     let mut unselected_witnesses = shuffle_and_split_witnesses(
@@ -531,6 +521,20 @@ fn shuffle_and_split_witnesses(
     Ok(unselected_witnesses)
 }
 
+fn filter_witnesses(
+    witnesses: Vec<IotVerifiedWitnessReport>,
+) -> (Vec<IotVerifiedWitnessReport>, Vec<IotVerifiedWitnessReport>) {
+    let (excluded_witnesses, included_witnesses) = witnesses
+        .into_iter()
+        .filter(|witness| !matches!(filter_witness(witness.invalid_reason), FilterStatus::Drop))
+        .partition(|witness| {
+            matches!(
+                filter_witness(witness.invalid_reason),
+                FilterStatus::Exclude
+            )
+        });
+    (excluded_witnesses, included_witnesses)
+}
 fn filter_witness(invalid_reason: InvalidReason) -> FilterStatus {
     match invalid_reason {
         InvalidReason::SelfWitness => FilterStatus::Drop,
@@ -553,6 +557,72 @@ mod tests {
     use helium_proto::DataRate;
     use rust_decimal::Decimal;
     use std::str::FromStr;
+
+    #[test]
+    fn witness_filtering() {
+        let key1 =
+            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
+                .unwrap();
+        let report = IotWitnessReport {
+            pub_key: key1,
+            data: vec![],
+            timestamp: Utc::now(),
+            tmst: 1,
+            signal: 100,
+            snr: 10,
+            frequency: 68000,
+            datarate: DataRate::Sf11bw125,
+            signature: vec![],
+        };
+
+        let witness1 = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report: report.clone(),
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::ReasonNone,
+            participant_side: InvalidParticipantSide::SideNone,
+        };
+
+        let witness2 = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report: report.clone(),
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::SelfWitness,
+            participant_side: InvalidParticipantSide::Witness,
+        };
+
+        let witness3 = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report,
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::Stale,
+            participant_side: InvalidParticipantSide::Witness,
+        };
+
+        // vec of 3 witnesses
+        let witnesses = vec![witness1, witness2, witness3];
+        let (excluded_witnesses, included_witnesses) = filter_witnesses(witnesses);
+
+        assert_eq!(1, excluded_witnesses.len());
+        assert_eq!(1, included_witnesses.len());
+        assert_eq!(
+            InvalidReason::Stale,
+            excluded_witnesses.first().unwrap().invalid_reason
+        );
+        assert_eq!(
+            InvalidReason::ReasonNone,
+            included_witnesses.first().unwrap().invalid_reason
+        );
+    }
 
     #[test]
     fn max_witnesses_per_poc_test() {
