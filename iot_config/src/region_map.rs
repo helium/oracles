@@ -55,7 +55,7 @@ pub enum RegionMapError {
 pub struct HexRegion {
     pub region: i32,
     pub params: Vec<u8>,
-    pub indexes: Vec<u8>,
+    pub indexes: Option<Vec<u8>>,
 }
 
 pub async fn build_region_tree(
@@ -65,10 +65,14 @@ pub async fn build_region_tree(
 
     let mut regions = sqlx::query_as::<_, HexRegion>("select * from regions").fetch(db);
 
-    while let Some(region_row) = regions.try_next().await? {
-        let region = Region::from_i32(region_row.region)
-            .ok_or(RegionMapError::UnsupportedRegion(region_row.region))?;
-        let mut h3_idx_decoder = Decoder::new(&region_row.indexes[..])?;
+    while let Some(HexRegion {
+        region,
+        indexes: Some(indexes),
+        ..
+    }) = regions.try_next().await?
+    {
+        let region = Region::from_i32(region).ok_or(RegionMapError::UnsupportedRegion(region))?;
+        let mut h3_idx_decoder = Decoder::new(&indexes[..])?;
         let mut raw_h3_indices = Vec::new();
         h3_idx_decoder.read_to_end(&mut raw_h3_indices)?;
 
@@ -135,13 +139,13 @@ pub async fn update_region(
     let updated_region = if let Some(indexes) = indexes {
         sqlx::query(
             r#"
-            insert into regions (region, indexes)
-            values ($1, $2)
-            on conflict (region) do update set indexes = excluded.indexes
+            update regions
+            set indexes = $1
+            where region = $2
             "#,
         )
-        .bind(region)
         .bind(indexes)
+        .bind(region)
         .execute(&mut transaction)
         .await?;
 
