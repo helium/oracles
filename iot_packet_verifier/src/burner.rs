@@ -164,7 +164,11 @@ impl Burner {
             blockhash,
         );
 
-        let _signature = self.provider.send_and_confirm_transaction(&tx).await?;
+        let signature = self.provider.send_and_confirm_transaction(&tx).await?;
+        tracing::info!(
+            "Successfully burned data credits. Transaction: {}",
+            signature
+        );
 
         // Now that we have successfully executed the burn and are no long in
         // sync land, we can remove the amount burned.
@@ -185,7 +189,8 @@ impl Burner {
         let mut balance_lock = self.balances.lock().await;
         let balances = balance_lock.get_mut(&payer).unwrap();
         balances.burned -= amount as u64;
-        balances.balance -= amount as u64;
+        // Zero the balance in order to force a reset:
+        balances.balance = 0;
 
         Ok(())
     }
