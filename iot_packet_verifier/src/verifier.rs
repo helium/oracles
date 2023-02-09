@@ -5,7 +5,7 @@ use futures::{Stream, StreamExt};
 use helium_crypto::{Keypair, PublicKeyBinary, Sign};
 use helium_proto::services::{
     iot_config::OrgGetReqV1,
-    packet_verifier::{InvalidPacket, ValidPacket},
+    packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
 };
 use helium_proto::{
     services::{
@@ -122,6 +122,7 @@ where
                         payload_size: report.payload_size,
                         gateway: report.gateway,
                         payload_hash: report.payload_hash,
+                        reason: InvalidPacketReason::InsufficientBalance as i32,
                     })
                     .await
                     .map_err(VerificationError::InvalidPacketWriterError)?;
@@ -229,7 +230,6 @@ impl ConfigServer for CachedOrgClient {
             let mut req = OrgEnableReqV1 {
                 oui,
                 timestamp: Utc::now().timestamp_millis() as u64,
-                signer: self.keypair.public_key().to_vec(),
                 signature: vec![],
             };
             let signature = self.keypair.sign(&req.encode_to_vec())?;
@@ -244,7 +244,6 @@ impl ConfigServer for CachedOrgClient {
             let mut req = OrgDisableReqV1 {
                 oui,
                 timestamp: Utc::now().timestamp_millis() as u64,
-                signer: self.keypair.public_key().to_vec(),
                 signature: vec![],
             };
             let signature = self.keypair.sign(&req.encode_to_vec())?;
