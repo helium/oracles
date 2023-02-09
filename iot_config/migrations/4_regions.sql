@@ -1,5 +1,5 @@
 create table regions (
-    region int primary key not null,
+    region text primary key not null,
     params bytea not null,
     indexes bytea,
 

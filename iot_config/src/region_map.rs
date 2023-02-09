@@ -2,7 +2,7 @@ use futures::stream::TryStreamExt;
 use helium_proto::{BlockchainRegionParamsV1, Message, Region};
 use hextree::{compaction::EqCompactor, Cell, HexTreeMap};
 use libflate::gzip::Decoder;
-use std::{collections::HashMap, io::Read, sync::Arc};
+use std::{collections::HashMap, io::Read, str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 
 pub struct RegionMap {
@@ -53,7 +53,7 @@ pub enum RegionMapError {
 
 #[derive(sqlx::FromRow)]
 pub struct HexRegion {
-    pub region: i32,
+    pub region: String,
     pub params: Vec<u8>,
     pub indexes: Option<Vec<u8>>,
 }
@@ -67,8 +67,7 @@ pub async fn build_region_tree(
 
     while let Some(region_row) = regions.try_next().await? {
         if let Some(indexes) = region_row.indexes {
-            let region = Region::from_i32(region_row.region)
-                .ok_or(RegionMapError::UnsupportedRegion(region_row.region))?;
+            let region = Region::from_str(&region_row.region)?;
             let mut h3_idx_decoder = Decoder::new(&indexes[..])?;
             let mut raw_h3_indices = Vec::new();
             h3_idx_decoder.read_to_end(&mut raw_h3_indices)?;
@@ -106,8 +105,7 @@ pub async fn build_params_map(
     let mut regions = sqlx::query_as::<_, HexRegion>("select * from regions").fetch(db);
 
     while let Some(region_row) = regions.try_next().await? {
-        let region = Region::from_i32(region_row.region)
-            .ok_or(RegionMapError::UnsupportedRegion(region_row.region))?;
+        let region = Region::from_str(&region_row.region)?;
         let params = BlockchainRegionParamsV1::decode(region_row.params.as_slice())?;
         params_map.insert(region, params);
     }
@@ -115,7 +113,7 @@ pub async fn build_params_map(
 }
 
 pub async fn update_region(
-    region: i32,
+    region: Region,
     params: &BlockchainRegionParamsV1,
     indexes: Option<&[u8]>,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
@@ -129,7 +127,7 @@ pub async fn update_region(
         on conflict (region) do update set params = excluded.params
         "#,
     )
-    .bind(region)
+    .bind(region.to_string())
     .bind(params.encode_to_vec())
     .execute(&mut transaction)
     .await?;
@@ -143,7 +141,7 @@ pub async fn update_region(
             "#,
         )
         .bind(indexes)
-        .bind(region)
+        .bind(region.to_string())
         .execute(&mut transaction)
         .await?;
 

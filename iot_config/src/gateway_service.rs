@@ -114,7 +114,7 @@ impl iot_config::Gateway for GatewayService {
         };
 
         let updated_region = region_map::update_region(
-            req.region,
+            region,
             &params,
             req.hex_indexes.as_ref().map(Vec::as_ref),
             &self.pool,
