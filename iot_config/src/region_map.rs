@@ -122,29 +122,23 @@ pub async fn update_region(
 
     sqlx::query(
         r#"
-        insert into regions (region, params)
-        values ($1, $2)
-        on conflict (region) do update set params = excluded.params
+        insert into regions (region, params, indexes)
+        values ($1, $2, $3)
+        on conflict (region) do update set
+            params = excluded.params,
+            indexes = case when excluded.indexes is not null
+                          then excluded.indexes
+                          else regions.indexes
+                      end
         "#,
     )
     .bind(region.to_string())
     .bind(params.encode_to_vec())
+    .bind(indexes)
     .execute(&mut transaction)
     .await?;
 
-    let updated_region = if let Some(indexes) = indexes {
-        sqlx::query(
-            r#"
-            update regions
-            set indexes = $1
-            where region = $2
-            "#,
-        )
-        .bind(indexes)
-        .bind(region.to_string())
-        .execute(&mut transaction)
-        .await?;
-
+    let updated_region = if indexes.is_some() {
         Some(build_region_tree(&mut transaction).await?)
     } else {
         tracing::debug!("h3 region index update skipped");

@@ -124,6 +124,7 @@ impl iot_config::Gateway for GatewayService {
 
         self.region_map.insert_params(region, params).await;
         if let Some(region_tree) = updated_region {
+            tracing::debug!("New compacted region map with {} cells", region_tree.len());
             self.region_map.replace_tree(region_tree).await;
         }
 
