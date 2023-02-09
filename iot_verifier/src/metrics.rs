@@ -6,6 +6,8 @@ const LOADER_DROPPED_BEACON_COUNTER: &str = concat!(env!("CARGO_PKG_NAME"), "_",
 const LOADER_DROPPED_WITNESS_COUNTER: &str =
     concat!(env!("CARGO_PKG_NAME"), "_", "dropped_witness");
 const BEACON_GUAGE: &str = concat!(env!("CARGO_PKG_NAME"), "_", "num_beacons");
+const INVALID_WITNESS_COUNTER: &str =
+    concat!(env!("CARGO_PKG_NAME"), "_", "invalid_witness_report");
 
 pub struct Metrics;
 
@@ -36,6 +38,9 @@ impl Metrics {
 
     pub fn decrement_num_beacons() {
         metrics::decrement_gauge!(BEACON_GUAGE, 1.0)
+    }
+    pub fn increment_invalid_witnesses(labels: &[(&'static str, &'static str)]) {
+        metrics::increment_counter!(INVALID_WITNESS_COUNTER, labels);
     }
 }
 
