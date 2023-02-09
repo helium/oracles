@@ -7,6 +7,19 @@ and writes a valid packet report to S3. If the payer's balance is insufficient,
 the verifier will tell the config server to disable the owner and writes an 
 invalid packet report to S3.
 
+## S3 Inputs
+
+| File Type | Pattern | |
+| :-- | :-- | :-- |
+| PacketRouterPacketReportV1 | packetreport.* | [Proto](https://github.com/helium/proto/blob/master/src/service/packet_router.proto#L8) |
+
+## S3 Outputs
+
+| File Type | Pattern | |
+| :-- | :-- | :-- |
+| ValidPacket | valid_packet.* | [Proto](https://github.com/helium/proto/blob/master/src/service/packet_verifier.proto#L5) |
+| InvalidPacket | invalid_packet.* | [Proto](https://github.com/helium/proto/blob/master/src/service/packet_verifier.proto#L11) |
+
 ## Details of operation 
 
 Checking the balance of an owner on the Solana chain is cheap, but burning data
