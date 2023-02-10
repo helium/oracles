@@ -205,12 +205,15 @@ async fn insert_euis(
         ));
     }
 
-    const EUI_INSERT_SQL: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
+    const EUI_INSERT_VALS: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
+    const EUI_INSERT_ON_CONF: &str = " on conflict (route_id, app_eui, dev_eui) do nothing ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(EUI_INSERT_SQL);
-    query_builder.push_values(eui_values, |mut builder, (id, app_eui, dev_eui)| {
-        builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
-    });
+        sqlx::QueryBuilder::new(EUI_INSERT_VALS);
+    query_builder
+        .push_values(eui_values, |mut builder, (id, app_eui, dev_eui)| {
+            builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
+        })
+        .push(EUI_INSERT_ON_CONF);
 
     query_builder.build().execute(db).await.map(|_| ())?;
 
@@ -323,13 +326,17 @@ async fn insert_devaddr_ranges(
         ));
     }
 
-    const DEVADDR_RANGE_INSERT_SQL: &str =
-        "insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
+    const DEVADDR_RANGE_INSERT_VALS: &str =
+        " insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
+    const DEVADDR_RANGE_INSERT_ON_CONF: &str =
+        " on conflict (route_id, start_addr, end_addr) do nothing ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_SQL);
-    query_builder.push_values(devaddr_values, |mut builder, (id, start, end)| {
-        builder.push_bind(id).push_bind(start).push_bind(end);
-    });
+        sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_VALS);
+    query_builder
+        .push_values(devaddr_values, |mut builder, (id, start, end)| {
+            builder.push_bind(id).push_bind(start).push_bind(end);
+        })
+        .push(DEVADDR_RANGE_INSERT_ON_CONF);
 
     query_builder.build().execute(db).await.map(|_| ())?;
 
