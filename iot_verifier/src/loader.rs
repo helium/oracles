@@ -209,8 +209,8 @@ impl Loader {
                 FileType::IotWitnessIngestReport,
                 &self.ingest_store,
                 gateway_cache,
-                after - ChronoDuration::seconds(60 * 6),
-                before + ChronoDuration::seconds(60 * 6),
+                after - ChronoDuration::minutes(6),
+                before + ChronoDuration::minutes(6),
                 None,
                 Some(&filter),
             )
