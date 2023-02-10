@@ -216,6 +216,10 @@ impl Runner {
             Some(v) => v,
             None => return Ok(()),
         };
+        let entropy_version = match db_beacon.version {
+            Some(v) => v,
+            None => return Ok(()),
+        };
         let packet_data = &db_beacon.packet_data;
 
         let beacon_buf: &[u8] = &db_beacon.report_data;
@@ -235,7 +239,13 @@ impl Runner {
         }
 
         // create the struct defining this POC
-        let mut poc = Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await;
+        let mut poc = Poc::new(
+            beacon_report.clone(),
+            witnesses.clone(),
+            entropy_start_time,
+            entropy_version,
+        )
+        .await;
 
         // verify POC beacon
         let beacon_verify_result = poc

@@ -58,6 +58,7 @@ pub struct Report {
     pub created_at: Option<DateTime<Utc>>,
     #[sqlx(default)]
     pub timestamp: Option<DateTime<Utc>>,
+    pub version: Option<i32>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -205,7 +206,8 @@ impl Report {
                 poc_report.report_timestamp,
                 poc_report.last_processed,
                 poc_report.created_at,
-                entropy.timestamp
+                entropy.timestamp,
+                entropy.version
             from poc_report
             inner join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'ready'

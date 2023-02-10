@@ -676,6 +676,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
 
 [[package]]
+name = "beacon"
+version = "0.1.0"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#665c6aeaf1d88272329c5c51c162a61b30b4a071"
+dependencies = [
+ "base64 0.21.0",
+ "byteorder",
+ "helium-proto",
+ "lazy_static",
+ "prost",
+ "rand",
+ "rand_chacha",
+ "rust_decimal",
+ "serde",
+ "sha2 0.10.6",
+ "thiserror",
+]
+
+[[package]]
 name = "beef"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1475,6 +1493,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "base64 0.21.0",
+ "beacon",
  "blake3",
  "bytes",
  "chrono",
@@ -2232,6 +2251,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.21.0",
+ "beacon",
  "blake3",
  "chrono",
  "clap 3.2.23",
@@ -2762,6 +2782,7 @@ name = "node-follower"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "beacon",
  "futures",
  "helium-crypto",
  "helium-proto",
