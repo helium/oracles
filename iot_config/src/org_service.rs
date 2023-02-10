@@ -1,9 +1,4 @@
-use crate::{
-    lora_field,
-    org::{self, OrgStatus},
-    route::list_routes,
-    GrpcResult, Settings, HELIUM_NET_ID,
-};
+use crate::{lora_field, org, route::list_routes, GrpcResult, Settings, HELIUM_NET_ID};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Network, PublicKey};
@@ -100,8 +95,10 @@ impl iot_config::Org for OrgService {
 
         let req = self.verify_admin_signature(request)?;
 
-        let verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
-
+        let mut verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
+        let mut verify_delegates: Vec<&[u8]> =
+            req.delegate_keys.iter().map(|key| key.as_slice()).collect();
+        verify_keys.append(&mut verify_delegates);
         _ = verify_keys
             .iter()
             .map(|key| {
@@ -119,12 +116,20 @@ impl iot_config::Org for OrgService {
             .map_err(|_| Status::failed_precondition("helium address unavailable"))?
             .to_range(requested_addrs);
 
-        let org = org::create_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
-            .await
-            .map_err(|err| {
-                tracing::error!("org save failed: {err:?}");
-                Status::internal("org save failed")
-            })?;
+        let org = org::create_org(
+            req.owner.into(),
+            req.payer.into(),
+            req.delegate_keys
+                .into_iter()
+                .map(|key| key.into())
+                .collect(),
+            &self.pool,
+        )
+        .await
+        .map_err(|err| {
+            tracing::error!("org save failed: {err:?}");
+            Status::internal("org save failed")
+        })?;
 
         org::insert_constraints(org.oui, HELIUM_NET_ID, &devaddr_constraint, &self.pool)
             .await
@@ -144,7 +149,11 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
 
         let req = self.verify_admin_signature(request)?;
-        let verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
+
+        let mut verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
+        let mut verify_delegates: Vec<&[u8]> =
+            req.delegate_keys.iter().map(|key| key.as_slice()).collect();
+        verify_keys.append(&mut verify_delegates);
         _ = verify_keys
             .iter()
             .map(|key| {
@@ -161,9 +170,17 @@ impl iot_config::Org for OrgService {
             .full_range()
             .map_err(|_| Status::invalid_argument("invalid net_id"))?;
 
-        let org = org::create_org(req.owner.into(), req.payer.into(), vec![], &self.pool)
-            .await
-            .map_err(|_| Status::internal("org save failed"))?;
+        let org = org::create_org(
+            req.owner.into(),
+            req.payer.into(),
+            req.delegate_keys
+                .into_iter()
+                .map(|key| key.into())
+                .collect(),
+            &self.pool,
+        )
+        .await
+        .map_err(|_| Status::internal("org save failed"))?;
 
         org::insert_constraints(org.oui, net_id, &devaddr_range, &self.pool)
             .await
@@ -181,12 +198,11 @@ impl iot_config::Org for OrgService {
 
         let req = self.verify_admin_signature(request)?;
 
-        if org::get_status(req.oui, &self.pool)
+        if !org::is_locked(req.oui, &self.pool)
             .await
             .map_err(|_| Status::internal("error retrieving current status"))?
-            == OrgStatus::Enabled
         {
-            org::toggle_status(req.oui, OrgStatus::Disabled, &self.pool)
+            org::toggle_locked(req.oui, &self.pool)
                 .await
                 .map_err(|_| Status::internal(format!("org disable failed for: {}", req.oui)))?;
 
@@ -224,12 +240,11 @@ impl iot_config::Org for OrgService {
 
         let req = self.verify_admin_signature(request)?;
 
-        if org::get_status(req.oui, &self.pool)
+        if org::is_locked(req.oui, &self.pool)
             .await
             .map_err(|_| Status::internal("error retrieving current status"))?
-            == OrgStatus::Disabled
         {
-            org::toggle_status(req.oui, OrgStatus::Enabled, &self.pool)
+            org::toggle_locked(req.oui, &self.pool)
                 .await
                 .map_err(|_| Status::internal(format!("org enable failed for: {}", req.oui)))?;
 
