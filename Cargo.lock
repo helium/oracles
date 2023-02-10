@@ -678,7 +678,7 @@ checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#665c6aeaf1d88272329c5c51c162a61b30b4a071"
+source = "git+https://github.com/helium/gateway-rs.git?branch=alpha-patches#18b8bc210f5c04972be59e7833aa457a06f422ac"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1947,14 +1947,13 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#41c03318556157a7014ffd75d3fa6bb5ed7d3de5"
+source = "git+https://github.com/helium/proto?branch=master#904377bf04f3960d4895c6590bcf5a829dc3861e"
 dependencies = [
  "bytes",
  "prost",
  "prost-build",
  "protoc-bin-vendored",
  "serde",
- "serde_derive",
  "serde_json",
  "tonic",
  "tonic-build",
