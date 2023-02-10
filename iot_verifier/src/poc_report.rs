@@ -56,8 +56,9 @@ pub struct Report {
     pub report_timestamp: Option<DateTime<Utc>>,
     pub last_processed: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
-    #[sqlx(default)]
+    #[sqlx(default)] // required to facilitate queries that don't include entropy
     pub timestamp: Option<DateTime<Utc>>,
+    #[sqlx(default)]
     pub version: Option<i32>,
 }
 
