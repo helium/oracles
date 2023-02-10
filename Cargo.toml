@@ -55,7 +55,7 @@ helium-crypto = {version = "0.6.3", features=["sqlx-postgres", "multisig"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 hextree = "*"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
-beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "main"}
+beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "alpha-patches"}
 humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"
