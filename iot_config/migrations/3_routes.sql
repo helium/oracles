@@ -20,6 +20,7 @@ create table route_eui_pairs (
     route_id uuid not null references routes(id) on delete cascade,
     app_eui bigint not null,
     dev_eui bigint not null,
+    primary key (route_id, app_eui, dev_eui),
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -33,6 +34,7 @@ create table route_devaddr_ranges (
     route_id uuid not null references routes(id) on delete cascade,
     start_addr int not null,
     end_addr int not null,
+    primary key (route_id, start_addr, end_addr),
 
     inserted_at timestamptz not null default now(),
     updated_at timestamptz not null default now()

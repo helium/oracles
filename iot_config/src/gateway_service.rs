@@ -7,7 +7,8 @@ use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, GatewayRegionParamsReqV1, GatewayRegionParamsResV1, LoadRegionReqV1, LoadRegionResV1,
+        self, GatewayLoadRegionReqV1, GatewayLoadRegionResV1, GatewayRegionParamsReqV1,
+        GatewayRegionParamsResV1,
     },
     Message, Region,
 };
@@ -101,7 +102,10 @@ impl iot_config::Gateway for GatewayService {
         Ok(Response::new(resp))
     }
 
-    async fn load_region(&self, request: Request<LoadRegionReqV1>) -> GrpcResult<LoadRegionResV1> {
+    async fn load_region(
+        &self,
+        request: Request<GatewayLoadRegionReqV1>,
+    ) -> GrpcResult<GatewayLoadRegionResV1> {
         let request = request.into_inner();
         let req = self.verify_admin_signature(request)?;
 
@@ -113,14 +117,15 @@ impl iot_config::Gateway for GatewayService {
             None => return Err(Status::invalid_argument("missing region")),
         };
 
-        let updated_region = region_map::update_region(
-            region,
-            &params,
-            req.hex_indexes.as_ref().map(Vec::as_ref),
-            &self.pool,
-        )
-        .await
-        .map_err(|_| Status::internal("region update failed"))?;
+        let idz = if !req.hex_indexes.is_empty() {
+            Some(req.hex_indexes.as_ref())
+        } else {
+            None
+        };
+
+        let updated_region = region_map::update_region(region, &params, idz, &self.pool)
+            .await
+            .map_err(|_| Status::internal("region update failed"))?;
 
         self.region_map.insert_params(region, params).await;
         if let Some(region_tree) = updated_region {
@@ -128,6 +133,6 @@ impl iot_config::Gateway for GatewayService {
             self.region_map.replace_tree(region_tree).await;
         }
 
-        Ok(Response::new(LoadRegionResV1 {}))
+        Ok(Response::new(GatewayLoadRegionResV1 {}))
     }
 }

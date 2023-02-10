@@ -35,7 +35,9 @@ impl DevAddrRange {
 impl FromRow<'_, PgRow> for DevAddrRange {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         Ok(Self {
-            route_id: row.try_get::<String, &str>("route_id")?,
+            route_id: row
+                .try_get::<sqlx::types::Uuid, &str>("route_id")?
+                .to_string(),
             start_addr: row.try_get::<i64, &str>("start_addr")?.into(),
             end_addr: row.try_get::<i64, &str>("end_addr")?.into(),
         })
@@ -93,7 +95,9 @@ impl EuiPair {
 impl FromRow<'_, PgRow> for EuiPair {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         Ok(Self {
-            route_id: row.try_get::<String, &str>("route_id")?,
+            route_id: row
+                .try_get::<sqlx::types::Uuid, &str>("route_id")?
+                .to_string(),
             app_eui: row.try_get::<i64, &str>("app_eui")?.into(),
             dev_eui: row.try_get::<i64, &str>("dev_eui")?.into(),
         })
