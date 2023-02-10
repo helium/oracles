@@ -52,6 +52,8 @@ pub struct FileInfoPoller<T> {
     lookback: LookbackBehavior,
     #[builder(default = "Duration::minutes(10)")]
     offset: Duration,
+    #[builder(default = "4")]
+    queue_size: usize,
     #[builder(setter(skip))]
     p: PhantomData<T>,
 }
@@ -64,7 +66,7 @@ where
         self,
         shutdown: triggered::Listener,
     ) -> Result<(Receiver<FileInfoStream<T>>, JoinHandle<Result>)> {
-        let (sender, receiver) = tokio::sync::mpsc::channel(4);
+        let (sender, receiver) = tokio::sync::mpsc::channel(self.queue_size);
         let join_handle = tokio::spawn(async move { self.run(shutdown, sender).await });
 
         Ok((receiver, join_handle))
