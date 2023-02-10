@@ -429,8 +429,8 @@ impl Runner {
         let iot_poc: IotPoc = IotPoc {
             poc_id: beacon_id,
             beacon_report: valid_beacon_report,
-            selected_witnesses,
-            unselected_witnesses,
+            selected_witnesses: selected_witnesses.clone(),
+            unselected_witnesses: unselected_witnesses.clone(),
         };
 
         let mut transaction = self.pool.begin().await?;
@@ -451,6 +451,13 @@ impl Runner {
                 return Ok(());
             }
         }
+        // write out metrics for any witness which failed verification
+        // TODO: work our approach that doesnt require the prior cloning of
+        // the selected and unselected witnesses vecs
+        // tried to do this directly from the now discarded poc_proto
+        // but could nae get it to get a way past the lack of COPY
+        fire_invalid_witness_metric(&selected_witnesses);
+        fire_invalid_witness_metric(&unselected_witnesses);
         // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
         Report::delete_poc(&self.pool, &packet_data).await?;
@@ -546,6 +553,18 @@ fn filter_witness(invalid_reason: InvalidReason) -> FilterStatus {
         InvalidReason::InvalidRegion => FilterStatus::Include,
         _ => FilterStatus::Exclude,
     }
+}
+
+fn fire_invalid_witness_metric(witnesses: &[IotVerifiedWitnessReport]) {
+    witnesses
+        .iter()
+        .filter(|witness| !matches!(witness.invalid_reason, InvalidReason::ReasonNone))
+        .for_each(|witness| {
+            Metrics::increment_invalid_witnesses(&[(
+                "reason",
+                witness.invalid_reason.as_str_name(),
+            )])
+        });
 }
 
 #[cfg(test)]
