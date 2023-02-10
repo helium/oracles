@@ -450,6 +450,7 @@ fn verify_beacon_payload(
         tracing::warn!("failed to cast report to beacon, reason: {:?}", e);
         InvalidReason::InvalidPacket
     })?;
+    tracing::debug!("generated beacon {:?}", generated_beacon);
 
     // cast the received beaconers report into a beacon
     let reported_beacon: beacon::Beacon =
@@ -460,7 +461,7 @@ fn verify_beacon_payload(
                 return Err(InvalidReason::InvalidPacket);
             }
         };
-
+    tracing::debug!("reported beacon {:?}", reported_beacon);
     // compare reports
     if reported_beacon != generated_beacon {
         tracing::debug!(
