@@ -1,4 +1,4 @@
-use futures::stream::StreamExt;
+use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use serde::Serialize;
 use sqlx::{types::Uuid, Row};
@@ -12,13 +12,6 @@ pub mod proto {
     pub use helium_proto::services::iot_config::{OrgResV1, OrgV1};
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, sqlx::Type)]
-#[sqlx(type_name = "org_status", rename_all = "snake_case")]
-pub enum OrgStatus {
-    Enabled,
-    Disabled,
-}
-
 #[derive(Clone, Debug, Serialize, sqlx::FromRow)]
 pub struct Org {
     #[sqlx(try_from = "i64")]
@@ -28,7 +21,7 @@ pub struct Org {
     #[sqlx(rename = "payer_pubkey")]
     pub payer: PublicKeyBinary,
     pub delegate_keys: Vec<PublicKeyBinary>,
-    pub status: OrgStatus,
+    pub locked: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,9 +71,9 @@ pub async fn insert_constraints(
         "#,
     )
     .bind(oui as i64)
-    .bind(i64::from(net_id))
-    .bind(i64::from(devaddr_range.start_addr))
-    .bind(i64::from(devaddr_range.end_addr))
+    .bind(i32::from(net_id))
+    .bind(i32::from(devaddr_range.start_addr))
+    .bind(i32::from(devaddr_range.end_addr))
     .execute(db)
     .await
     .map(|_| ())
@@ -115,7 +108,7 @@ pub async fn get_with_constraints(
 ) -> Result<OrgWithConstraints, sqlx::Error> {
     let row = sqlx::query(
         r#"
-        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.status, org_const.start_addr, org_const.end_addr
+        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.locked, org_const.start_addr, org_const.end_addr
         from organizations org join organization_devaddr_constraints org_const
         on org.oui = org_const.oui
         "#,
@@ -124,8 +117,8 @@ pub async fn get_with_constraints(
     .fetch_one(db)
     .await?;
 
-    let start_addr = row.get::<i64, &str>("start_addr");
-    let end_addr = row.get::<i64, &str>("end_addr");
+    let start_addr = row.get::<i32, &str>("start_addr");
+    let end_addr = row.get::<i32, &str>("end_addr");
 
     Ok(OrgWithConstraints {
         org: Org {
@@ -133,7 +126,7 @@ pub async fn get_with_constraints(
             owner: row.get("owner_pubkey"),
             payer: row.get("payer_pubkey"),
             delegate_keys: row.get("delegate_keys"),
-            status: row.get("status"),
+            locked: row.get("locked"),
         },
         constraints: DevAddrConstraint {
             start_addr: start_addr.into(),
@@ -142,10 +135,10 @@ pub async fn get_with_constraints(
     })
 }
 
-pub async fn get_status(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<OrgStatus, sqlx::Error> {
-    sqlx::query_scalar::<_, OrgStatus>(
+pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>(
         r#"
-        select status from organizations where oui = $1
+        select locked from organizations where oui = $1
         "#,
     )
     .bind(oui as i64)
@@ -153,19 +146,14 @@ pub async fn get_status(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<OrgSt
     .await
 }
 
-pub async fn toggle_status(
-    oui: u64,
-    status: OrgStatus,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), sqlx::Error> {
+pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         update organizations
-        set status = $1
-        where oui = $2
+        set locked = not locked
+        where oui = $1
         "#,
     )
-    .bind(status)
     .bind(oui as i64)
     .execute(db)
     .await?;
@@ -174,7 +162,7 @@ pub async fn toggle_status(
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum OrgPubkeysError {
+pub enum DbPubkeysError {
     #[error("error retrieving saved org keys: {0}")]
     DbError(#[from] sqlx::Error),
     #[error("unable to deserialize pubkey: {0}")]
@@ -186,7 +174,7 @@ pub enum OrgPubkeysError {
 pub async fn get_org_pubkeys(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, OrgPubkeysError> {
+) -> Result<Vec<PublicKey>, DbPubkeysError> {
     let org = get(oui, db).await?;
 
     let mut pubkeys: Vec<PublicKey> = vec![PublicKey::try_from(org.owner)?];
@@ -205,7 +193,7 @@ pub async fn get_org_pubkeys(
 pub async fn get_org_pubkeys_by_route(
     route_id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, OrgPubkeysError> {
+) -> Result<Vec<PublicKey>, DbPubkeysError> {
     let uuid = Uuid::try_parse(route_id)?;
 
     let org = sqlx::query_as::<_, Org>(
@@ -232,6 +220,18 @@ pub async fn get_org_pubkeys_by_route(
     Ok(pubkeys)
 }
 
+pub async fn hpr_keys(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<PublicKey>, DbPubkeysError> {
+    let mut keys = vec![];
+
+    let mut rows = sqlx::query(r#" select pubkey from hpr_keys "#).fetch(db);
+    while let Some(key_row) = rows.try_next().await? {
+        keys.push(PublicKey::try_from(
+            key_row.get::<PublicKeyBinary, &str>("pubkey"),
+        )?)
+    }
+    Ok(keys)
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum NextHeliumDevAddrError {
     #[error("error retrieving next available addr: {0}")]
@@ -242,13 +242,13 @@ pub enum NextHeliumDevAddrError {
 
 #[derive(sqlx::FromRow)]
 struct NextHeliumDevAddr {
-    coalesce: i64,
+    coalesce: i32,
 }
 
 pub async fn next_helium_devaddr(
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<DevAddrField, NextHeliumDevAddrError> {
-    let helium_default_start: i64 = HELIUM_NET_ID.range_start()?.into();
+    let helium_default_start: i32 = HELIUM_NET_ID.range_start()?.into();
 
     let addr = sqlx::query_as::<_, NextHeliumDevAddr>(
             r#"
@@ -256,7 +256,7 @@ pub async fn next_helium_devaddr(
             "#,
         )
         .bind(helium_default_start)
-        .bind(i64::from(HELIUM_NET_ID))
+        .bind(i32::from(HELIUM_NET_ID))
         .fetch_one(db)
         .await?
         .coalesce;
@@ -283,7 +283,7 @@ impl From<proto::OrgV1> for Org {
                 .into_iter()
                 .map(|key| key.into())
                 .collect(),
-            status: OrgStatus::Enabled,
+            locked: org.locked,
         }
     }
 }
@@ -299,6 +299,7 @@ impl From<Org> for proto::OrgV1 {
                 .iter()
                 .map(|key| key.as_ref().into())
                 .collect(),
+            locked: org.locked,
         }
     }
 }

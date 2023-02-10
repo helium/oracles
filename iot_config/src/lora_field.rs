@@ -64,7 +64,7 @@ impl DevAddrConstraint {
     }
 
     pub fn next_start(&self) -> Result<DevAddrField, DevAddrRangeError> {
-        let end: u64 = self.end_addr.into();
+        let end: u32 = self.end_addr.into();
         Ok(devaddr(end + 1))
     }
 
@@ -287,7 +287,7 @@ pub fn validate_eui(s: &str) -> Result<EuiField, EuiError> {
     EuiField::from_str(s).map_err(EuiError)
 }
 
-pub fn devaddr(val: u64) -> DevAddrField {
+pub fn devaddr(val: u32) -> DevAddrField {
     val.into()
 }
 
@@ -295,7 +295,7 @@ pub fn eui(val: u64) -> EuiField {
     val.into()
 }
 
-pub fn net_id(val: u64) -> NetIdField {
+pub fn net_id(val: u32) -> NetIdField {
     val.into()
 }
 
@@ -377,7 +377,7 @@ impl NetIdField {
         let middle = Self::nwk_id_bits(id_type, nwk_id)?;
 
         let min_addr = left | middle;
-        Ok(devaddr(min_addr as u64))
+        Ok(devaddr(min_addr))
     }
 
     pub fn range_end(&self) -> Result<DevAddrField, InvalidNetId> {
@@ -389,7 +389,7 @@ impl NetIdField {
         let right = Self::max_nwk_addr_bit(id_type)?;
 
         let max_devaddr = left | middle | right;
-        Ok(devaddr(max_devaddr as u64))
+        Ok(devaddr(max_devaddr))
     }
 
     pub fn full_range(&self) -> Result<DevAddrConstraint, InvalidNetId> {
@@ -512,9 +512,9 @@ mod tests {
     #[test]
     fn range_from_net_id() {
         struct Test {
-            net_id: u64,
-            start_addr: u64,
-            end_addr: u64,
+            net_id: u32,
+            start_addr: u32,
+            end_addr: u32,
             net_id_type: u32,
             nwk_id: u32,
         }

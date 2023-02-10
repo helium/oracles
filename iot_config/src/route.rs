@@ -1,7 +1,4 @@
-use crate::{
-    lora_field::{DevAddrRange, EuiPair, NetIdField},
-    org::OrgStatus,
-};
+use crate::lora_field::{DevAddrRange, EuiPair, NetIdField};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -27,6 +24,8 @@ pub struct Route {
     pub oui: u64,
     pub server: RouteServer,
     pub max_copies: u32,
+    pub active: bool,
+    pub locked: bool,
 }
 
 impl Route {
@@ -37,6 +36,8 @@ impl Route {
             oui,
             server: RouteServer::default(),
             max_copies,
+            active: true,
+            locked: false,
         }
     }
 
@@ -57,11 +58,13 @@ impl Route {
 pub struct StorageRoute {
     pub id: Uuid,
     pub oui: i64,
-    pub net_id: i64,
+    pub net_id: i32,
     pub max_copies: i32,
     pub server_host: String,
     pub server_port: i32,
     pub server_protocol_opts: serde_json::Value,
+    pub active: bool,
+    pub locked: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -83,7 +86,7 @@ pub async fn create_route(
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
     update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<Route, RouteStorageError> {
-    let net_id: i64 = route.net_id.into();
+    let net_id: i32 = route.net_id.into();
     let protocol_opts = route
         .server
         .protocol
@@ -95,8 +98,8 @@ pub async fn create_route(
 
     let row = sqlx::query(
             r#"
-            insert into routes (oui, net_id, max_copies, server_host, server_port, server_protocol_opts)
-            values ($1, $2, $3, $4, $5, $6)
+            insert into routes (oui, net_id, max_copies, server_host, server_port, server_protocol_opts, active)
+            values ($1, $2, $3, $4, $5, $6, $7)
             returning id
             "#,
         )
@@ -106,6 +109,7 @@ pub async fn create_route(
         .bind(&route.server.host)
         .bind(route.server.port as i32)
         .bind(json!(&protocol_opts))
+        .bind(route.active)
         .fetch_one(&mut transaction)
         .await?;
 
@@ -115,12 +119,14 @@ pub async fn create_route(
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
-        action: proto::ActionV1::Add.into(),
-        data: Some(proto::route_stream_res_v1::Data::Route(
-            new_route.clone().into(),
-        )),
-    });
+    if new_route.active && !new_route.locked {
+        _ = update_tx.send(proto::RouteStreamResV1 {
+            action: proto::ActionV1::Add.into(),
+            data: Some(proto::route_stream_res_v1::Data::Route(
+                new_route.clone().into(),
+            )),
+        });
+    };
 
     Ok(new_route)
 }
@@ -141,10 +147,15 @@ pub async fn update_route(
 
     let mut transaction = db.begin().await?;
 
+    let was_active = sqlx::query_scalar::<_, bool>(r#"select active from routes where id = $1"#)
+        .bind(uuid)
+        .fetch_one(&mut transaction)
+        .await?;
+
     sqlx::query(
         r#"
         update routes
-        set max_copies = $2, server_host = $3, server_port = $4, server_protocol_opts = $5
+        set max_copies = $2, server_host = $3, server_port = $4, server_protocol_opts = $5, active = $6
         where id = $1
         "#,
     )
@@ -153,6 +164,7 @@ pub async fn update_route(
     .bind(&route.server.host)
     .bind(route.server.port as i32)
     .bind(json!(&protocol_opts))
+    .bind(route.active)
     .execute(&mut transaction)
     .await?;
 
@@ -160,12 +172,21 @@ pub async fn update_route(
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
-        action: proto::ActionV1::Add.into(),
-        data: Some(proto::route_stream_res_v1::Data::Route(
-            updated_route.clone().into(),
-        )),
-    });
+    // if the route is not locked at the org level and it was or is now active, update downstream HPRs
+    if !updated_route.locked && (was_active || updated_route.active) {
+        let action = if updated_route.active {
+            proto::ActionV1::Add.into()
+        } else {
+            proto::ActionV1::Remove.into()
+        };
+
+        _ = update_tx.send(proto::RouteStreamResV1 {
+            action,
+            data: Some(proto::route_stream_res_v1::Data::Route(
+                updated_route.clone().into(),
+            )),
+        });
+    };
 
     Ok(updated_route)
 }
@@ -297,8 +318,8 @@ async fn insert_devaddr_ranges(
     for devaddr in ranges {
         devaddr_values.push((
             Uuid::try_parse(&devaddr.route_id)?,
-            i64::from(devaddr.start_addr),
-            i64::from(devaddr.end_addr),
+            i32::from(devaddr.start_addr),
+            i32::from(devaddr.end_addr),
         ));
     }
 
@@ -324,8 +345,8 @@ async fn remove_devaddr_ranges(
     for devaddr in ranges {
         devaddr_values.push((
             Uuid::try_parse(&devaddr.route_id)?,
-            i64::from(devaddr.start_addr),
-            i64::from(devaddr.end_addr),
+            i32::from(devaddr.start_addr),
+            i32::from(devaddr.end_addr),
         ));
     }
 
@@ -418,10 +439,11 @@ pub async fn list_routes(
 ) -> Result<Vec<Route>, RouteStorageError> {
     Ok(sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
             from routes r
-            where r.oui = $1
-            group by r.id
+            join organizations o on r.oui = o.oui
+            where o.oui = $1
+            group by r.id, o.locked
         "#,
     )
     .bind(oui as i64)
@@ -433,6 +455,8 @@ pub async fn list_routes(
             oui: route.oui as u64,
             server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_value(route.server_protocol_opts)?),
             max_copies: route.max_copies as u32,
+            active: route.active,
+            locked: route.locked,
         })})
     .filter_map(|route| async move { route.ok() })
     .collect::<Vec<Route>>()
@@ -477,20 +501,18 @@ pub async fn list_devaddr_ranges_for_route(
         .await)
 }
 
-pub async fn route_stream_by_status<'a>(
-    status: OrgStatus,
+pub async fn active_route_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a + Copy,
 ) -> impl Stream<Item = Route> + 'a {
     sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
             from routes r
             join organizations o on r.oui = o.oui
-            where o.status = $1
-            group by r.id
+            where o.locked = false and r.active = true
+            group by r.id, o.locked
         "#,
     )
-    .bind(status)
     .fetch(db)
     .map_err(RouteStorageError::from)
     .and_then(|route| async move { Ok(Route {
@@ -499,6 +521,8 @@ pub async fn route_stream_by_status<'a>(
             oui: route.oui as u64,
             server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_value(route.server_protocol_opts)?),
             max_copies: route.max_copies as u32,
+            active: route.active,
+            locked: route.locked,
         })})
     .filter_map(|route| async move { route.ok() })
 }
@@ -510,10 +534,11 @@ pub async fn get_route(
     let uuid = Uuid::try_parse(id)?;
     let route_row = sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
             from routes r
+            join organizations o on r.oui = o.oui
             where r.id = $1
-            group by r.id
+            group by r.id, o.locked
         "#,
     )
     .bind(uuid)
@@ -537,6 +562,8 @@ pub async fn get_route(
         oui: route.oui as u64,
         server,
         max_copies: route.max_copies as u32,
+        active: route.active,
+        locked: route.locked,
     })
 }
 
@@ -548,6 +575,8 @@ pub async fn delete_route(
     let uuid = Uuid::try_parse(id)?;
     let mut transaction = db.begin().await?;
 
+    let route = get_route(id, &mut transaction).await?;
+
     sqlx::query(
         r#"
         delete from routes
@@ -557,8 +586,6 @@ pub async fn delete_route(
     .bind(uuid)
     .execute(&mut transaction)
     .await?;
-
-    let route = get_route(id, &mut transaction).await?;
 
     transaction.commit().await?;
 
@@ -592,6 +619,8 @@ impl From<proto::RouteV1> for Route {
             oui: route.oui,
             server: route.server.map_or_else(RouteServer::default, |s| s.into()),
             max_copies: route.max_copies,
+            active: route.active,
+            locked: route.locked,
         }
     }
 }
@@ -604,6 +633,8 @@ impl From<Route> for proto::RouteV1 {
             oui: route.oui,
             server: Some(route.server.into()),
             max_copies: route.max_copies,
+            active: route.active,
+            locked: route.locked,
         }
     }
 }

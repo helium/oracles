@@ -1,6 +1,6 @@
 use crate::{
     lora_field::{DevAddrRange, EuiPair},
-    org::{get_org_pubkeys, get_org_pubkeys_by_route, OrgStatus},
+    org::{self, get_org_pubkeys, get_org_pubkeys_by_route},
     route::{self, Route},
     GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
 };
@@ -47,16 +47,6 @@ impl RouteService {
         self.update_channel.clone()
     }
 
-    fn verify_admin_signature<R>(&self, request: R) -> Result<R, Status>
-    where
-        R: MsgVerify,
-    {
-        request
-            .verify(&self.admin_pubkey)
-            .map_err(|_| Status::permission_denied("invalid admin signature"))?;
-        Ok(request)
-    }
-
     fn verify_authorized_signature<R>(
         &self,
         request: &R,
@@ -72,7 +62,7 @@ impl RouteService {
 
         for pubkey in signatures.iter() {
             if request.verify(pubkey).is_ok() {
-                tracing::debug!("request authorized by org");
+                tracing::debug!("request authorized by delegate {pubkey}");
                 return Ok(());
             }
         }
@@ -131,13 +121,12 @@ impl iot_config::Route for RouteService {
             .map_err(Status::invalid_argument)?
             .into();
 
-        let new_route: Route =
-            route::create_route(route.clone(), &self.pool, self.clone_update_channel())
-                .await
-                .map_err(|err| {
-                    tracing::error!("route create failed {err:?}");
-                    Status::internal("route create failed")
-                })?;
+        let new_route: Route = route::create_route(route, &self.pool, self.clone_update_channel())
+            .await
+            .map_err(|err| {
+                tracing::error!("route create failed {err:?}");
+                Status::internal("route create failed")
+            })?;
 
         Ok(Response::new(new_route.into()))
     }
@@ -186,7 +175,10 @@ impl iot_config::Route for RouteService {
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
-        _ = self.verify_admin_signature(request)?;
+        let hpr_keys = org::hpr_keys(&self.pool)
+            .await
+            .map_err(|_| Status::internal("authorization error"))?;
+        self.verify_authorized_signature(&request, hpr_keys)?;
 
         tracing::info!("client subscribed to route stream");
         let pool = self.pool.clone();
@@ -195,7 +187,7 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            let active_routes = route::route_stream_by_status(OrgStatus::Enabled, &pool).await;
+            let active_routes = route::active_route_stream(&pool).await;
 
             pin!(active_routes);
 
