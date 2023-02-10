@@ -201,14 +201,16 @@ impl Loader {
         // widen the window for these over that used for the beacons
         // this is to allow for a witness being in a rolled up file
         // from just before or after the beacon files
+        // the width extention needs to be at least equal to that
+        // of the ingestor roll up time
         // for witnesses we do need the filter but not the arc
         match self
             .process_events(
                 FileType::IotWitnessIngestReport,
                 &self.ingest_store,
                 gateway_cache,
-                after - ChronoDuration::seconds(60 * 2),
-                before + ChronoDuration::seconds(60 * 2),
+                after - ChronoDuration::seconds(60 * 6),
+                before + ChronoDuration::seconds(60 * 6),
                 None,
                 Some(&filter),
             )
