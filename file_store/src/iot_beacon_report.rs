@@ -4,6 +4,7 @@ use crate::{
     traits::{MsgTimestamp, TimestampDecode, TimestampEncode},
     Error, Result,
 };
+use beacon;
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora::{LoraBeaconIngestReportV1, LoraBeaconReportReqV1};
@@ -142,5 +143,32 @@ impl From<IotBeaconReport> for LoraBeaconReportReqV1 {
             signature: v.signature,
             tmst: v.tmst,
         }
+    }
+}
+
+impl IotBeaconReport {
+    pub fn to_beacon(
+        &self,
+        entropy_start: DateTime<Utc>,
+        entropy_version: u32,
+    ) -> Result<beacon::Beacon> {
+        let remote_entropy = beacon::Entropy {
+            timestamp: entropy_start.timestamp_millis(),
+            data: self.remote_entropy.clone(),
+            version: entropy_version,
+        };
+        let local_entropy = beacon::Entropy {
+            timestamp: 0,
+            data: self.local_entropy.clone(),
+            version: entropy_version,
+        };
+        Ok(beacon::Beacon {
+            data: self.data.clone(),
+            frequency: self.frequency,
+            datarate: self.datarate,
+            remote_entropy,
+            local_entropy,
+            conducted_power: self.tx_power as u32,
+        })
     }
 }

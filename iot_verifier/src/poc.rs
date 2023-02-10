@@ -3,18 +3,21 @@ use crate::{
     gateway_cache::GatewayCache,
     last_beacon::{LastBeacon, LastBeaconError},
 };
+use beacon;
 use chrono::{DateTime, Duration, Utc};
 use density_scaler::HexDensityMap;
 use file_store::{
-    iot_beacon_report::IotBeaconIngestReport, iot_invalid_poc::IotInvalidWitnessReport,
-    iot_valid_poc::IotVerifiedWitnessReport, iot_witness_report::IotWitnessIngestReport,
+    iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
+    iot_invalid_poc::IotInvalidWitnessReport,
+    iot_valid_poc::IotVerifiedWitnessReport,
+    iot_witness_report::IotWitnessIngestReport,
 };
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
-    GatewayStakingMode, Region,
+    BlockchainRegionParamV1, GatewayStakingMode, Region as ProtoRegion,
 };
 use node_follower::gateway_resp::GatewayInfo;
 use rust_decimal::Decimal;
@@ -40,6 +43,7 @@ pub struct Poc {
     witness_reports: Vec<IotWitnessIngestReport>,
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
+    entropy_version: i32,
 }
 
 pub struct VerifyBeaconResult {
@@ -77,6 +81,7 @@ impl Poc {
         beacon_report: IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
         entropy_start: DateTime<Utc>,
+        entropy_version: i32,
     ) -> Self {
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
         Self {
@@ -84,6 +89,7 @@ impl Poc {
             witness_reports,
             entropy_start,
             entropy_end,
+            entropy_version,
         }
     }
 
@@ -237,6 +243,14 @@ impl Poc {
         );
         let beacon_received_ts = self.beacon_report.received_timestamp;
         verify_entropy(self.entropy_start, self.entropy_end, beacon_received_ts)?;
+        verify_beacon_payload(
+            &self.beacon_report.report,
+            beaconer_info.region,
+            &beaconer_info.region_params,
+            beaconer_info.gain,
+            self.entropy_start,
+            self.entropy_version as u32,
+        )?;
         verify_beacon_schedule(
             &last_beacon,
             beacon_received_ts,
@@ -406,6 +420,58 @@ fn verify_entropy(
     Ok(())
 }
 
+/// verify beacon construction
+fn verify_beacon_payload(
+    beacon_report: &IotBeaconReport,
+    region: ProtoRegion,
+    region_params: &[BlockchainRegionParamV1],
+    gain: i32,
+    entropy_start: DateTime<Utc>,
+    entropy_version: u32,
+) -> GenericVerifyResult {
+    // cast some proto based structs to beacon structs
+    let beacon_region: beacon::Region = region.into();
+    // TODO: support RegionParams::new in gateway rs
+    // avoid need to specify gain scale outside of region.rs
+    let beacon_region_params = beacon::RegionParams {
+        region: beacon_region,
+        params: region_params.to_owned(),
+        gain: Decimal::new(gain as i64, 1),
+    };
+    // generate a gateway rs beacon from the generated entropy and the beaconers region data
+    let generated_beacon = generate_beacon(
+        &beacon_region_params,
+        entropy_start.timestamp_millis(),
+        entropy_version,
+        &beacon_report.local_entropy,
+        &beacon_report.remote_entropy,
+    )
+    .map_err(|e| {
+        tracing::warn!("failed to cast report to beacon, reason: {:?}", e);
+        InvalidReason::InvalidPacket
+    })?;
+
+    // cast the received beaconers report into a beacon
+    let reported_beacon: beacon::Beacon =
+        match beacon_report.to_beacon(entropy_start, entropy_version) {
+            Ok(res) => res,
+            Err(e) => {
+                tracing::warn!("failed to cast report to beacon, reason: {:?}", e);
+                return Err(InvalidReason::InvalidPacket);
+            }
+        };
+
+    // compare reports
+    if reported_beacon != generated_beacon {
+        tracing::debug!(
+            "beacon verification failed, reason: {:?}",
+            InvalidReason::InvalidPacket,
+        );
+        return Err(InvalidReason::InvalidPacket);
+    }
+    Ok(())
+}
+
 /// verify gateway has an asserted location
 fn verify_gw_location(gateway_loc: Option<u64>) -> GenericVerifyResult {
     match gateway_loc {
@@ -467,7 +533,10 @@ fn verify_witness_freq(beacon_freq: u64, witness_freq: u64) -> GenericVerifyResu
 }
 
 /// verify the witness is located in same region as beaconer
-fn verify_witness_region(beacon_region: Region, witness_region: Region) -> GenericVerifyResult {
+fn verify_witness_region(
+    beacon_region: ProtoRegion,
+    witness_region: ProtoRegion,
+) -> GenericVerifyResult {
     if beacon_region != witness_region {
         tracing::debug!(
             "witness verification failed, reason: {:?}. beaconer region: {beacon_region}, witness region: {witness_region}",
@@ -647,6 +716,28 @@ fn hex_adjustment(loc: &H3Cell) -> Result<f64, h3ron::Error> {
     )
 }
 
+fn generate_beacon(
+    region_params: &beacon::RegionParams,
+    entropy_start: i64,
+    entropy_version: u32,
+    local_entropy_data: &[u8],
+    remote_entropy_data: &[u8],
+) -> Result<beacon::Beacon, beacon::Error> {
+    // generate a gateway rs beacon
+    let remote_entropy = beacon::Entropy {
+        timestamp: entropy_start,
+        data: remote_entropy_data.to_vec(),
+        version: entropy_version,
+    };
+    let local_entropy = beacon::Entropy {
+        timestamp: 0, // local entroy timestamp is default to 0 on gateway rs side
+        data: local_entropy_data.to_vec(),
+        version: entropy_version,
+    };
+    let beacon = beacon::Beacon::new(remote_entropy, local_entropy, region_params)?;
+    Ok(beacon)
+}
+
 impl VerifyBeaconResult {
     pub fn new(
         result: VerificationStatus,
@@ -772,8 +863,24 @@ mod tests {
     use super::*;
     use crate::last_beacon::LastBeacon;
     use chrono::Duration;
-    use helium_proto::{services::poc_lora::InvalidReason, GatewayStakingMode, Region};
+    use helium_proto::services::poc_lora;
     use std::str::FromStr;
+
+    const EU868_PARAMS: &[u8] = &[
+        10, 35, 8, 224, 202, 187, 157, 3, 16, 200, 208, 7, 24, 161, 1, 34, 20, 10, 4, 8, 6, 16, 65,
+        10, 5, 8, 3, 16, 129, 1, 10, 5, 8, 2, 16, 238, 1, 10, 35, 8, 160, 229, 199, 157, 3, 16,
+        200, 208, 7, 24, 161, 1, 34, 20, 10, 4, 8, 6, 16, 65, 10, 5, 8, 3, 16, 129, 1, 10, 5, 8, 2,
+        16, 238, 1, 10, 35, 8, 224, 255, 211, 157, 3, 16, 200, 208, 7, 24, 161, 1, 34, 20, 10, 4,
+        8, 6, 16, 65, 10, 5, 8, 3, 16, 129, 1, 10, 5, 8, 2, 16, 238, 1, 10, 35, 8, 160, 154, 224,
+        157, 3, 16, 200, 208, 7, 24, 161, 1, 34, 20, 10, 4, 8, 6, 16, 65, 10, 5, 8, 3, 16, 129, 1,
+        10, 5, 8, 2, 16, 238, 1, 10, 35, 8, 224, 180, 236, 157, 3, 16, 200, 208, 7, 24, 161, 1, 34,
+        20, 10, 4, 8, 6, 16, 65, 10, 5, 8, 3, 16, 129, 1, 10, 5, 8, 2, 16, 238, 1, 10, 35, 8, 160,
+        207, 248, 157, 3, 16, 200, 208, 7, 24, 161, 1, 34, 20, 10, 4, 8, 6, 16, 65, 10, 5, 8, 3,
+        16, 129, 1, 10, 5, 8, 2, 16, 238, 1, 10, 35, 8, 224, 233, 132, 158, 3, 16, 200, 208, 7, 24,
+        161, 1, 34, 20, 10, 4, 8, 6, 16, 65, 10, 5, 8, 3, 16, 129, 1, 10, 5, 8, 2, 16, 238, 1, 10,
+        35, 8, 160, 132, 145, 158, 3, 16, 200, 208, 7, 24, 161, 1, 34, 20, 10, 4, 8, 6, 16, 65, 10,
+        5, 8, 3, 16, 129, 1, 10, 5, 8, 2, 16, 238, 1,
+    ];
 
     #[test]
     fn test_calc_distance() {
@@ -821,6 +928,56 @@ mod tests {
             witness1_gain,
         );
         assert_eq!(-57.334232963418515, min_recv_signal);
+    }
+
+    #[test]
+    fn test_verify_beacon_payload() {
+        let pub_key =
+            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
+                .unwrap();
+        let local_entropy_bytes: Vec<u8> = (0..50).map(|_| rand::random::<u8>()).collect();
+        let remote_entropy_bytes: Vec<u8> = (0..50).map(|_| rand::random::<u8>()).collect();
+        let entropy_start = Utc::now();
+        let entropy_version = 1;
+        let gain: i32 = 12;
+        let region: ProtoRegion = ProtoRegion::Eu868;
+
+        let region_params =
+            beacon::RegionParams::from_bytes(region.into(), gain as u64, EU868_PARAMS)
+                .expect("region params");
+
+        let generated_beacon = generate_beacon(
+            &region_params,
+            entropy_start.timestamp_millis(),
+            entropy_version,
+            &local_entropy_bytes,
+            &remote_entropy_bytes,
+        )
+        .unwrap();
+
+        // cast the beacon in to a beacon report
+        let mut lora_beacon_report =
+            poc_lora::LoraBeaconReportReqV1::try_from(generated_beacon).unwrap();
+        lora_beacon_report.pub_key = pub_key.try_into().unwrap();
+        let iot_beacon_ingest_report: IotBeaconIngestReport =
+            lora_beacon_report.try_into().unwrap();
+
+        // assert the beacon created from the iot report is sane
+        // the region params here should really come from gateway info
+        // which is where they will be derived in the real world
+        // but the test has no access to real gateway info
+        // and so we just use the same region params we generated above
+        // bit of a circular test but at least it verifies
+        // the beacon -> report -> beacon flows
+        assert!(verify_beacon_payload(
+            &iot_beacon_ingest_report.report,
+            region,
+            &region_params.params,
+            gain,
+            entropy_start,
+            entropy_version
+        )
+        .is_ok())
     }
 
     #[test]
@@ -954,9 +1111,9 @@ mod tests {
 
     #[test]
     fn test_verify_witness_region() {
-        let beacon_region = Region::Us915;
-        let witness1_region = Region::Us915;
-        let witness2_region = Region::Eu868;
+        let beacon_region = ProtoRegion::Us915;
+        let witness1_region = ProtoRegion::Us915;
+        let witness2_region = ProtoRegion::Eu868;
         assert!(verify_witness_region(beacon_region, witness1_region).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidRegion),

@@ -53,3 +53,4 @@ humantime = {workspace = true}
 twox-hash = {workspace = true}
 itertools = {workspace = true}
 rand = {workspace = true}
+beacon = {workspace = true}
