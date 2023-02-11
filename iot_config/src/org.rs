@@ -1,4 +1,4 @@
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use serde::Serialize;
 use sqlx::{types::Uuid, Row};
@@ -111,6 +111,7 @@ pub async fn get_with_constraints(
         select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.locked, org_const.start_addr, org_const.end_addr
         from organizations org join organization_devaddr_constraints org_const
         on org.oui = org_const.oui
+        where org.oui = $1
         "#,
     )
     .bind(oui as i64)
@@ -218,18 +219,6 @@ pub async fn get_org_pubkeys_by_route(
     pubkeys.append(&mut delegate_keys);
 
     Ok(pubkeys)
-}
-
-pub async fn hpr_keys(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<PublicKey>, DbPubkeysError> {
-    let mut keys = vec![];
-
-    let mut rows = sqlx::query(r#" select pubkey from hpr_keys "#).fetch(db);
-    while let Some(key_row) = rows.try_next().await? {
-        keys.push(PublicKey::try_from(
-            key_row.get::<PublicKeyBinary, &str>("pubkey"),
-        )?)
-    }
-    Ok(keys)
 }
 
 #[derive(thiserror::Error, Debug)]

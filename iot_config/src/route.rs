@@ -534,6 +534,34 @@ pub async fn active_route_stream<'a>(
     .filter_map(|route| async move { route.ok() })
 }
 
+pub async fn eui_stream<'a>(
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> impl Stream<Item = EuiPair> + 'a {
+    sqlx::query_as::<_, EuiPair>(
+        r#"
+        select eui.route_id, eui.app_eui, eui.dev_eui
+        from route_eui_pairs eui
+        "#,
+    )
+    .fetch(db)
+    .map_err(sqlx::Error::from)
+    .filter_map(|eui| async move { eui.ok() })
+}
+
+pub async fn devaddr_range_stream<'a>(
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> impl Stream<Item = DevAddrRange> + 'a {
+    sqlx::query_as::<_, DevAddrRange>(
+        r#"
+        select devaddr.route_id, devaddr.start_addr, devaddr.end_addr
+        from route_devaddr_ranges devaddr
+        "#,
+    )
+    .fetch(db)
+    .map_err(sqlx::Error::from)
+    .filter_map(|devaddr| async move { devaddr.ok() })
+}
+
 pub async fn get_route(
     id: &str,
     db: impl sqlx::PgExecutor<'_>,

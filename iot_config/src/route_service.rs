@@ -1,4 +1,5 @@
 use crate::{
+    admin::{self, KeyType},
     lora_field::{DevAddrRange, EuiPair},
     org::{self, get_org_pubkeys, get_org_pubkeys_by_route},
     route::{self, Route},
@@ -26,16 +27,18 @@ pub struct RouteService {
     admin_pubkey: PublicKey,
     pool: Pool<Postgres>,
     update_channel: Sender<RouteStreamResV1>,
+    shutdown: triggered::Listener,
 }
 
 impl RouteService {
-    pub async fn new(settings: &Settings) -> Result<Self> {
+    pub async fn new(settings: &Settings, shutdown: triggered::Listener) -> Result<Self> {
         let (update_tx, _) = tokio::sync::broadcast::channel(128);
 
         Ok(Self {
             admin_pubkey: settings.admin_pubkey()?,
             pool: settings.database.connect(10).await?,
             update_channel: update_tx,
+            shutdown,
         })
     }
 
@@ -121,6 +124,12 @@ impl iot_config::Route for RouteService {
             .map_err(Status::invalid_argument)?
             .into();
 
+        if route.oui != request.oui {
+            return Err(Status::invalid_argument(
+                "request oui does not match route oui",
+            ));
+        }
+
         let new_route: Route = route::create_route(route, &self.pool, self.clone_update_channel())
             .await
             .map_err(|err| {
@@ -175,20 +184,20 @@ impl iot_config::Route for RouteService {
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
-        let hpr_keys = org::hpr_keys(&self.pool)
+        let hpr_keys = admin::get_admin_keys(KeyType::PacketRouter, &self.pool)
             .await
             .map_err(|_| Status::internal("authorization error"))?;
         self.verify_authorized_signature(&request, hpr_keys)?;
 
         tracing::info!("client subscribed to route stream");
         let pool = self.pool.clone();
+        let shutdown_listener = self.shutdown.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
             let active_routes = route::active_route_stream(&pool).await;
-
             pin!(active_routes);
 
             while let Some(active_route) = active_routes.next().await {
@@ -203,8 +212,40 @@ impl iot_config::Route for RouteService {
                 }
             }
 
+            let eui_pairs = route::eui_stream(&pool).await;
+            pin!(eui_pairs);
+
+            while let Some(eui_pair) = eui_pairs.next().await {
+                if (tx.send(Ok(RouteStreamResV1 {
+                    action: ActionV1::Add.into(),
+                    data: Some(route_stream_res_v1::Data::EuiPair(eui_pair.into())),
+                })))
+                .await
+                .is_err()
+                {
+                    break;
+                }
+            }
+
+            let devaddr_ranges = route::devaddr_range_stream(&pool).await;
+            pin!(devaddr_ranges);
+
+            while let Some(devaddr_range) = devaddr_ranges.next().await {
+                if (tx.send(Ok(RouteStreamResV1 {
+                    action: ActionV1::Add.into(),
+                    data: Some(route_stream_res_v1::Data::DevaddrRange(
+                        devaddr_range.into(),
+                    )),
+                })))
+                .await
+                .is_err()
+                {
+                    break;
+                }
+            }
+
             while let Ok(update) = route_updates.recv().await {
-                if (tx.send(Ok(update)).await).is_err() {
+                if shutdown_listener.is_triggered() || (tx.send(Ok(update)).await).is_err() {
                     break;
                 }
             }
@@ -219,6 +260,11 @@ impl iot_config::Route for RouteService {
         request: Request<RouteGetEuisReqV1>,
     ) -> GrpcResult<Self::get_euisStream> {
         let request = request.into_inner();
+
+        let org_keys = get_org_pubkeys_by_route(&request.route_id, &self.pool)
+            .await
+            .map_err(|_| Status::internal("authorization error"))?;
+        self.verify_authorized_signature(&request, org_keys)?;
 
         let euis = route::list_euis_for_route(&request.route_id, &self.pool)
             .await
@@ -244,6 +290,21 @@ impl iot_config::Route for RouteService {
 
         let mut to_add: Vec<EuiPair> = vec![];
         let mut to_remove: Vec<EuiPair> = vec![];
+
+        if let Ok(Some(first_update)) = request.message().await {
+            if let Some(eui_pair) = &first_update.eui_pair {
+                let org_keys = org::get_org_pubkeys_by_route(&eui_pair.route_id, &self.pool)
+                    .await
+                    .map_err(|_| Status::internal("authorization error"))?;
+                self.verify_authorized_signature(&first_update, org_keys)?;
+                match first_update.action() {
+                    ActionV1::Add => to_add.push(eui_pair.into()),
+                    ActionV1::Remove => to_remove.push(eui_pair.into()),
+                }
+            }
+        } else {
+            return Err(Status::invalid_argument("no eui pair provided"));
+        }
 
         while let Ok(Some(update)) = request.message().await {
             match (update.action(), update.eui_pair) {
@@ -273,6 +334,12 @@ impl iot_config::Route for RouteService {
         request: Request<RouteDeleteEuisReqV1>,
     ) -> GrpcResult<RouteEuisResV1> {
         let request = request.into_inner();
+
+        let org_keys = org::get_org_pubkeys_by_route(&request.route_id, &self.pool)
+            .await
+            .map_err(|_| Status::internal("authorization error"))?;
+        self.verify_authorized_signature(&request, org_keys)?;
+
         route::delete_euis(&request.route_id, &self.pool, self.update_channel.clone())
             .await
             .map_err(|_| Status::internal("eui delete failed"))?;
@@ -285,6 +352,11 @@ impl iot_config::Route for RouteService {
         request: Request<RouteGetDevaddrRangesReqV1>,
     ) -> GrpcResult<Self::get_devaddr_rangesStream> {
         let request = request.into_inner();
+
+        let org_keys = org::get_org_pubkeys_by_route(&request.route_id, &self.pool)
+            .await
+            .map_err(|_| Status::internal("authorization error"))?;
+        self.verify_authorized_signature(&request, org_keys)?;
 
         let devaddrs = route::list_devaddr_ranges_for_route(&request.route_id, &self.pool)
             .await
@@ -310,6 +382,21 @@ impl iot_config::Route for RouteService {
 
         let mut to_add: Vec<DevAddrRange> = vec![];
         let mut to_remove: Vec<DevAddrRange> = vec![];
+
+        if let Ok(Some(first_update)) = request.message().await {
+            if let Some(devaddr) = &first_update.devaddr_range {
+                let org_keys = org::get_org_pubkeys_by_route(&devaddr.route_id, &self.pool)
+                    .await
+                    .map_err(|_| Status::internal("authorization error"))?;
+                self.verify_authorized_signature(&first_update, org_keys)?;
+                match first_update.action() {
+                    ActionV1::Add => to_add.push(devaddr.into()),
+                    ActionV1::Remove => to_remove.push(devaddr.into()),
+                }
+            }
+        } else {
+            return Err(Status::invalid_argument("no devaddr range provided"));
+        }
 
         while let Ok(Some(update)) = request.message().await {
             match (update.action(), update.devaddr_range) {
@@ -339,6 +426,12 @@ impl iot_config::Route for RouteService {
         request: Request<RouteDeleteDevaddrRangesReqV1>,
     ) -> GrpcResult<RouteDevaddrRangesResV1> {
         let request = request.into_inner();
+
+        let org_keys = org::get_org_pubkeys_by_route(&request.route_id, &self.pool)
+            .await
+            .map_err(|_| Status::internal("authorization error"))?;
+        self.verify_authorized_signature(&request, org_keys)?;
+
         route::delete_devaddr_ranges(&request.route_id, &self.pool, self.update_channel.clone())
             .await
             .map_err(|_| Status::internal("devaddr range delete failed"))?;
