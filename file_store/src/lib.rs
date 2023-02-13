@@ -1,6 +1,7 @@
 pub mod cli;
 mod error;
 mod file_info;
+pub mod file_info_poller;
 pub mod file_sink;
 pub mod file_source;
 pub mod file_store;

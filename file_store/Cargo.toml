@@ -42,6 +42,10 @@ rust_decimal_macros = {workspace = true}
 density-scaler = {path = "../density_scaler"}
 base64 = {workspace = true}
 beacon = {workspace = true}
+sqlx = {workspace = true}
+async-trait = {workspace = true}
+derive_builder = "0"
+retainer = {workspace = true}
 
 [dev-dependencies]
 hex-literal = "0"

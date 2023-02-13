@@ -1,4 +1,4 @@
-use crate::{file_sink, BytesMutStream, Error};
+use crate::{file_info_poller::FileInfoPollerBuilder, file_sink, BytesMutStream, Error};
 use async_compression::tokio::bufread::GzipDecoder;
 use futures::{
     stream::{self},
@@ -7,6 +7,13 @@ use futures::{
 use std::path::{Path, PathBuf};
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
+
+pub fn continuous_source<T>() -> FileInfoPollerBuilder<T>
+where
+    T: Clone,
+{
+    FileInfoPollerBuilder::<T>::default()
+}
 
 pub fn source<I, P>(paths: I) -> BytesMutStream
 where
