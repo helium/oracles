@@ -7,18 +7,6 @@
 #
 keypair = "/path/to/key_pair"
 
-# Trigger interval in seconds. (Default is 1800; 30 minutes)
-#
-# trigger = 1800
-
-# Submission offset in seconds. (Default is 600; 5 minutes)
-#
-# submission_offset = 600
-
-# Last PoC submission timestamp in seconds since unix epoch. (Default is unix epoch)
-#
-# last_poc_submission = 0
-
 # Whether to do txn submission to mainnet
 #
 do_submission = true

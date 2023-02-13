@@ -1,7 +1,7 @@
 use crate::{receipt_txn::handle_report_msg, Settings, LOADER_WORKERS};
 use anyhow::Result;
 use chrono::{NaiveDateTime, TimeZone, Utc};
-use file_store::{FileStore, FileType};
+use file_store::{iot_valid_poc::IotPoc, traits::MsgDecode, FileStore, FileType};
 use futures::{
     future,
     stream::{self, StreamExt},
@@ -44,8 +44,9 @@ impl Cmd {
 
         while let Some(msg) = files.next().await {
             let shared_key_clone = shared_key.clone();
+            let iot_poc = IotPoc::decode(msg.clone())?;
             if let Ok(txn_details) =
-                handle_report_msg(msg.clone(), shared_key_clone, max_witnesses_per_receipt)
+                handle_report_msg(iot_poc, shared_key_clone, max_witnesses_per_receipt)
             {
                 tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
                 success_counter += 1;

@@ -1,5 +1,8 @@
 use crate::{server::Server, Settings};
 use anyhow::{Error, Result};
+use file_store::{
+    file_info_poller::LookbackBehavior, file_source, iot_valid_poc::IotPoc, FileStore, FileType,
+};
 use futures_util::TryFutureExt;
 use tokio::signal;
 
@@ -23,12 +26,26 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
+        let file_store = FileStore::from_settings(&settings.verifier).await?;
+
+        let (receiver, source_join_handle) = file_source::continuous_source::<IotPoc>()
+            .db(pool)
+            .store(file_store)
+            .file_type(FileType::IotPoc)
+            .lookback(LookbackBehavior::Max(settings.max_lookback_age()))
+            .build()?
+            .start(shutdown_listener.clone())
+            .await?;
+
         // poc_iot_injector server
         let mut poc_iot_injector_server = Server::new(settings).await?;
 
-        tokio::try_join!(poc_iot_injector_server
-            .run(&shutdown_listener)
-            .map_err(Error::from),)?;
+        let _ = tokio::try_join!(
+            poc_iot_injector_server
+                .run(&shutdown_listener, receiver)
+                .map_err(Error::from),
+            source_join_handle.map_err(Error::from),
+        )?;
 
         tracing::info!("Shutting down injector server");
 

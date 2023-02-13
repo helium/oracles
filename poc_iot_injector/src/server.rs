@@ -1,18 +1,15 @@
 use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
-    Settings, LOADER_WORKERS,
+    Settings,
 };
-use chrono::{DateTime, Duration as ChronoDuration, NaiveDateTime, TimeZone, Utc};
-use db_store::MetaValue;
-use file_store::{FileStore, FileType};
-use futures::stream::{self, StreamExt};
+use file_store::{file_info_poller::FileInfoStream, iot_valid_poc::IotPoc};
+use futures::stream::StreamExt;
 use governor::{Jitter, Quota, RateLimiter};
 use helium_crypto::Keypair;
 use node_follower::txn_service::TransactionService;
-use prost::bytes::BytesMut;
 use sqlx::{Pool, Postgres};
 use std::{num::NonZeroU32, sync::Arc, time::Duration as StdDuration};
-use tokio::{task::JoinSet, time};
+use tokio::{sync::mpsc::Receiver, task::JoinSet};
 
 const MAX_CONCURRENT_SUBMISSIONS: usize = 16;
 
@@ -20,12 +17,7 @@ pub struct Server {
     pool: Pool<Postgres>,
     keypair: Arc<Keypair>,
     txn_service: Option<TransactionService>,
-    iot_verifier_store: FileStore,
-    last_poc_submission_ts: MetaValue<i64>,
-    tick_time: StdDuration,
-    submission_offset: ChronoDuration,
     settings: Settings,
-    max_lookback_age: ChronoDuration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,171 +40,96 @@ impl Server {
     pub async fn new(settings: &Settings) -> Result<Self, NewServerError> {
         let pool = settings.database.connect(10).await?;
         let keypair = settings.keypair()?;
-        let tick_time = settings.trigger_interval();
-        let submission_offset = settings.submission_offset();
-        let max_lookback_age = settings.max_lookback_age();
-        // Check meta for last_poc_submission_ts, if not found, use the env var and insert it
-        let last_poc_submission_ts =
-            MetaValue::<i64>::fetch_or_insert_with(&pool, "last_reward_end_time", || {
-                settings.last_poc_submission
-            })
-            .await?;
 
         let result = Self {
-            pool: pool.clone(),
+            pool,
             settings: settings.clone(),
             keypair: Arc::new(keypair),
-            tick_time,
-            submission_offset,
             // Only create txn_service if do_submission is true
             txn_service: settings
                 .do_submission
                 .then_some(TransactionService::from_settings(&settings.transactions)),
-            iot_verifier_store: FileStore::from_settings(&settings.verifier).await?,
-            last_poc_submission_ts,
-            max_lookback_age,
         };
         Ok(result)
     }
 
-    pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(
+        &mut self,
+        shutdown: &triggered::Listener,
+        mut receiver: Receiver<FileInfoStream<IotPoc>>,
+    ) -> anyhow::Result<()> {
         tracing::info!("starting poc-iot-injector server");
-        let mut poc_iot_timer = time::interval(self.tick_time);
-        poc_iot_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
-
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = poc_iot_timer.tick() => match self.handle_poc_tick().await {
-                    Ok(()) => (),
-                    Err(err) => {
-                        tracing::error!("fatal poc_iot_injector error: {err:?}");
-                        return Err(err)
-                    }
+                msg = receiver.recv() => if let Some(stream) =  msg {
+                    self.submit_txns(stream).await?;
                 }
             }
         }
         Ok(())
     }
 
-    async fn handle_poc_tick(&mut self) -> anyhow::Result<()> {
-        let now = Utc::now();
-        let max_lookback_time = now.checked_sub_signed(self.max_lookback_age).unwrap_or(now);
-        let after_utc = Utc
-            .from_utc_datetime(&NaiveDateTime::from_timestamp(
-                *self.last_poc_submission_ts.value(),
-                0,
-            ))
-            .max(max_lookback_time);
+    async fn submit_txns(&self, file_info_stream: FileInfoStream<IotPoc>) -> anyhow::Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        let mut stream = file_info_stream.into_stream(&mut transaction).await?;
 
-        let before_utc = now
-            .checked_sub_signed(self.submission_offset)
-            .unwrap_or(now);
+        let max_txns_per_min = NonZeroU32::new(self.settings.max_txns_per_min)
+            .ok_or(SubmissionError::RateLimitNotSet)?;
+        let bucket = Arc::new(RateLimiter::direct(Quota::per_minute(max_txns_per_min)));
 
-        tracing::info!(
-            "handling poc_tick, after_utc: {:?}, before_utc: {:?}",
-            after_utc,
-            before_utc
-        );
+        // To ensure that multiple tasks don't wake up at the exact same time
+        let jitter = Jitter::up_to(StdDuration::from_secs(5));
 
-        submit_txns(
-            &mut self.txn_service,
-            &mut self.iot_verifier_store,
-            self.keypair.clone(),
-            after_utc,
-            before_utc,
-            self.settings.clone(),
-        )
-        .await?;
+        let mut set = JoinSet::new();
 
-        tracing::info!("updating last_poc_submission_ts to {:?}", before_utc);
-        // NOTE: All the poc_receipt txns for the corresponding after-before period will be
-        // submitted above, may take a while to do that but we need to
-        // update_last_poc_submission_ts once we're done doing it. This should ensure that we have
-        // at least submitted all the receipts we could for that time period and will look at the
-        // next incoming reports in the next poc_iot_timer tick.
-        self.last_poc_submission_ts
-            .update(&self.pool, before_utc.timestamp())
-            .await?;
+        while let Some(iot_poc) = stream.next().await {
+            let bucket = bucket.clone();
+
+            let shared_key = self.keypair.clone();
+            let mut shared_txn_service = self.txn_service.clone();
+            let do_submission = self.settings.do_submission;
+            let max_witnesses_per_receipt = self.settings.max_witnesses_per_receipt;
+
+            tracing::info!("Spawning submission tasks...");
+            set.spawn(async move {
+                bucket.until_ready_with_jitter(jitter).await;
+
+                let _ = process_submission(
+                    iot_poc,
+                    shared_key,
+                    do_submission,
+                    max_witnesses_per_receipt,
+                    &mut shared_txn_service,
+                )
+                .await;
+            });
+
+            if set.len() > MAX_CONCURRENT_SUBMISSIONS {
+                tracing::info!("Processing {MAX_CONCURRENT_SUBMISSIONS} submissions");
+                set.join_next().await;
+            }
+        }
+
+        // Make sure the tasks are finished to completion even when we run out of stream items
+        while !set.is_empty() {
+            set.join_next().await;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }
-}
-
-async fn submit_txns(
-    txn_service: &mut Option<TransactionService>,
-    store: &mut FileStore,
-    keypair: Arc<Keypair>,
-    after_utc: DateTime<Utc>,
-    before_utc: DateTime<Utc>,
-    settings: Settings,
-) -> anyhow::Result<()> {
-    let file_list = store
-        .list_all(FileType::IotPoc, after_utc, before_utc)
-        .await?;
-
-    let mut stream =
-        store.source_unordered(LOADER_WORKERS, stream::iter(file_list).map(Ok).boxed());
-
-    let max_txns_per_min =
-        NonZeroU32::new(settings.max_txns_per_min).ok_or(SubmissionError::RateLimitNotSet)?;
-    let bucket = Arc::new(RateLimiter::direct(Quota::per_minute(max_txns_per_min)));
-
-    // To ensure that multiple tasks don't wake up at the exact same time
-    let jitter = Jitter::up_to(StdDuration::from_secs(5));
-
-    let mut set = JoinSet::new();
-
-    while let Some(msg) = stream.next().await {
-        let bucket = bucket.clone();
-
-        match msg {
-            Err(err) => tracing::warn!("skipping entry in stream: {err:?}"),
-            Ok(buf) => {
-                let shared_key = keypair.clone();
-                let mut shared_txn_service = txn_service.clone();
-
-                tracing::info!("Spawning submission tasks...");
-                set.spawn(async move {
-                    bucket.until_ready_with_jitter(jitter).await;
-
-                    let _ = process_submission(
-                        buf,
-                        shared_key,
-                        settings.do_submission,
-                        settings.max_witnesses_per_receipt,
-                        &mut shared_txn_service,
-                    )
-                    .await;
-                });
-
-                if set.len() > MAX_CONCURRENT_SUBMISSIONS {
-                    tracing::info!("Processing {MAX_CONCURRENT_SUBMISSIONS} submissions");
-                    set.join_next().await;
-                }
-            }
-        }
-    }
-
-    // Make sure the tasks are finished to completion even when we run out of stream items
-    while !set.is_empty() {
-        set.join_next().await;
-    }
-
-    Ok(())
 }
 
 async fn process_submission(
-    buf: BytesMut,
+    iot_poc: IotPoc,
     shared_key: Arc<Keypair>,
     do_submission: bool,
     max_witnesses_per_receipt: u64,
     txn_service: &mut Option<TransactionService>,
 ) -> anyhow::Result<()> {
-    match handle_report_msg(buf, shared_key, max_witnesses_per_receipt) {
+    match handle_report_msg(iot_poc, shared_key, max_witnesses_per_receipt) {
         Ok(txn_details) => {
             tracing::debug!("txn_details: {:?}", txn_details);
             if do_submission {

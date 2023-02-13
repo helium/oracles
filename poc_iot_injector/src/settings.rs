@@ -1,7 +1,7 @@
 use chrono::Duration as ChronoDuration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -11,13 +11,8 @@ pub struct Settings {
     pub log: String,
     /// File to load keypair from
     pub keypair: String,
-    /// Trigger interval in seconds. (Default is 1800; 30 minutes)
-    #[serde(default = "default_trigger_interval")]
-    pub trigger: u64,
     /// Last PoC submission timestamp in seconds since unix epoch. (Default is
     /// unix epoch)
-    #[serde(default = "default_last_poc_submission")]
-    pub last_poc_submission: i64,
     #[serde(default = "default_do_submission")]
     /// Whether to submit txns to mainnet, default: false
     pub do_submission: bool,
@@ -27,11 +22,6 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(default = "default_max_witnesses_per_receipt")]
     pub max_witnesses_per_receipt: u64,
-    /// Offset receipt submission to wait for S3 files being written (secs)
-    /// Receipts would be submitted from last_poc_submission_ts to utc::now - submission_offset
-    /// Default = 5 mins
-    #[serde(default = "default_submission_offset")]
-    pub submission_offset: i64,
     /// max lookback age for the injector when loading files from s3 ( in seconds )
     #[serde(default = "default_max_lookback_age")]
     pub max_lookback_age: i64,
@@ -48,20 +38,8 @@ pub fn default_log() -> String {
     "poc_iot_injector=debug,poc_store=info".to_string()
 }
 
-pub fn default_last_poc_submission() -> i64 {
-    0
-}
-
 pub fn default_do_submission() -> bool {
     false
-}
-
-fn default_trigger_interval() -> u64 {
-    1800
-}
-
-fn default_submission_offset() -> i64 {
-    5 * 60
 }
 
 pub fn default_max_witnesses_per_receipt() -> u64 {
@@ -99,14 +77,6 @@ impl Settings {
     pub fn keypair(&self) -> Result<helium_crypto::Keypair, Box<helium_crypto::Error>> {
         let data = std::fs::read(&self.keypair).map_err(helium_crypto::Error::from)?;
         Ok(helium_crypto::Keypair::try_from(&data[..])?)
-    }
-
-    pub fn trigger_interval(&self) -> Duration {
-        Duration::from_secs(self.trigger)
-    }
-
-    pub fn submission_offset(&self) -> ChronoDuration {
-        ChronoDuration::seconds(self.submission_offset)
     }
 
     pub fn max_lookback_age(&self) -> ChronoDuration {

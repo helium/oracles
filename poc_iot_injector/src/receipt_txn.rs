@@ -1,8 +1,5 @@
 use base64::Engine;
-use file_store::{
-    iot_valid_poc::{IotPoc, IotValidBeaconReport, IotVerifiedWitnessReport},
-    traits::MsgDecode,
-};
+use file_store::iot_valid_poc::{IotPoc, IotValidBeaconReport, IotVerifiedWitnessReport};
 use helium_crypto::{Keypair, Sign};
 use helium_proto::{
     blockchain_txn::Txn, BlockchainPocPathElementV1, BlockchainPocReceiptV1,
@@ -39,13 +36,12 @@ pub enum TxnConstructionError {
 }
 
 pub fn handle_report_msg(
-    msg: prost::bytes::BytesMut,
+    iot_poc: IotPoc,
     keypair: Arc<Keypair>,
     max_witnesses_per_receipt: u64,
 ) -> Result<TxnDetails, TxnConstructionError> {
     // Path is always single element, till we decide to change it at some point.
     let mut path: PocPath = Vec::with_capacity(1);
-    let iot_poc = IotPoc::decode(msg)?;
 
     // verifier now places a cap on the number of selected witnesses
     // so squishing here is now duplicate

@@ -3,7 +3,7 @@ use crate::{
     Settings,
 };
 use anyhow::bail;
-use file_store::file_source;
+use file_store::{file_source, iot_valid_poc::IotPoc, traits::MsgDecode};
 use futures::stream::StreamExt;
 use helium_crypto::Keypair;
 use helium_proto::Message;
@@ -38,7 +38,9 @@ async fn process_msg(
     shared_key_clone: Arc<Keypair>,
     max_witnesses_per_receipt: u64,
 ) -> anyhow::Result<TxnDetails> {
-    if let Ok(txn_details) = handle_report_msg(msg, shared_key_clone, max_witnesses_per_receipt) {
+    let iot_poc = IotPoc::decode(msg)?;
+    if let Ok(txn_details) = handle_report_msg(iot_poc, shared_key_clone, max_witnesses_per_receipt)
+    {
         tracing::debug!("txn_bin: {:?}", txn_details.txn.encode_to_vec());
         Ok(txn_details)
     } else {
