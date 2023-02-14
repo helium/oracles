@@ -20,9 +20,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     mem,
-    sync::Arc,
 };
-use tokio::sync::Mutex;
 
 pub struct Verifier<D, C> {
     pub debiter: D,
@@ -153,18 +151,6 @@ pub trait Debiter {
 }
 
 #[async_trait]
-impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    type Error = ();
-
-    async fn debit_if_sufficient(&self, payer: &PublicKeyBinary, amount: u64) -> Result<bool, ()> {
-        let map = self.lock().await;
-        let balance = map.get(payer).unwrap();
-        // Don't debit the amount if we're mocking. That is a job for the burner.
-        Ok(*balance >= amount)
-    }
-}
-
-#[async_trait]
 pub trait ConfigServer {
     type Error;
 
@@ -285,18 +271,6 @@ impl Burner for &'_ mut Transaction<'_, Postgres> {
 }
 
 #[async_trait]
-impl Burner for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    type Error = ();
-
-    async fn burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), ()> {
-        let mut map = self.lock().await;
-        let balance = map.get_mut(payer).unwrap();
-        *balance -= amount;
-        Ok(())
-    }
-}
-
-#[async_trait]
 pub trait PacketWriter<T> {
     type Error;
 
@@ -316,20 +290,50 @@ impl<T: prost::Message + 'static> PacketWriter<T> for &'_ FileSinkClient {
     }
 }
 
-#[async_trait]
-impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
-    type Error = ();
-
-    async fn write(&mut self, packet: T) -> Result<(), ()> {
-        (*self).push(packet);
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use futures_util::stream;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[async_trait]
+    impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+        type Error = ();
+
+        async fn debit_if_sufficient(
+            &self,
+            payer: &PublicKeyBinary,
+            amount: u64,
+        ) -> Result<bool, ()> {
+            let map = self.lock().await;
+            let balance = map.get(payer).unwrap();
+            // Don't debit the amount if we're mocking. That is a job for the burner.
+            Ok(*balance >= amount)
+        }
+    }
+
+    #[async_trait]
+    impl Burner for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+        type Error = ();
+
+        async fn burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), ()> {
+            let mut map = self.lock().await;
+            let balance = map.get_mut(payer).unwrap();
+            *balance -= amount;
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
+        type Error = ();
+
+        async fn write(&mut self, packet: T) -> Result<(), ()> {
+            (*self).push(packet);
+            Ok(())
+        }
+    }
 
     struct MockConfig {
         payer: PublicKeyBinary,
@@ -410,6 +414,7 @@ mod test {
             payload_size,
             payload_hash,
             gateway: vec![],
+            reason: InvalidPacketReason::InsufficientBalance as i32,
         }
     }
 
