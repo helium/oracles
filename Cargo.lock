@@ -1348,10 +1348,12 @@ dependencies = [
 name = "denylist"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64 0.21.0",
  "bincode",
  "bytes",
  "chrono",
+ "clap 3.2.23",
  "config",
  "helium-crypto",
  "reqwest",
@@ -1360,6 +1362,7 @@ dependencies = [
  "sha2 0.10.6",
  "structopt",
  "thiserror",
+ "tokio",
  "tracing",
  "twox-hash",
  "xorf",

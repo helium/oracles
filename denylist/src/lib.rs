@@ -1,5 +1,6 @@
 mod error;
 pub use error::{Error, Result};
+pub mod cli;
 pub mod client;
 pub mod denylist;
 pub mod models;

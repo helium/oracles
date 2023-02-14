@@ -2,7 +2,12 @@ use crate::{client::DenyListClient, models::metadata::Asset, Error, Result};
 use bytes::Buf;
 use helium_crypto::{PublicKey, Verify};
 use serde::Serialize;
-use std::{fs, hash::Hasher, path, str::FromStr};
+use std::{
+    fs,
+    hash::Hasher,
+    path::{self, Path},
+    str::FromStr,
+};
 use twox_hash::XxHash64;
 use xorf::{Filter as XorFilter, Xor32};
 
@@ -35,6 +40,24 @@ impl DenyList {
         // in the current dir and has previously successfully downloaded
         // a filter from github
         let bin: Vec<u8> = fs::read(FILTER_BIN_PATH).unwrap_or_else(|_| {
+            tracing::warn!(
+                "failed to initialise with a denylist filter, filter is currently empty"
+            );
+            Vec::new()
+        });
+        let filter = filter_from_bin(&bin).unwrap_or_else(|_| Xor32::from(Vec::new()));
+        let client = DenyListClient::new()?;
+        Ok(Self {
+            // default tag to 0, proper tag name will be set on first
+            // call to update_to_latest
+            tag_name: 0,
+            client,
+            filter,
+        })
+    }
+
+    pub fn from_filter<P: AsRef<Path>>(filter_path: P) -> Result<Self> {
+        let bin: Vec<u8> = fs::read(filter_path).unwrap_or_else(|_| {
             tracing::warn!(
                 "failed to initialise with a denylist filter, filter is currently empty"
             );
