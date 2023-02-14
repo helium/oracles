@@ -153,7 +153,7 @@ impl IotBeaconReport {
         entropy_version: u32,
     ) -> Result<beacon::Beacon> {
         let remote_entropy = beacon::Entropy {
-            timestamp: entropy_start.timestamp_millis(),
+            timestamp: entropy_start.timestamp(),
             data: self.remote_entropy.clone(),
             version: entropy_version,
         };
