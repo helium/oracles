@@ -45,17 +45,10 @@ impl DenyList {
             );
             Vec::new()
         });
-        let filter = filter_from_bin(&bin).unwrap_or_else(|_| Xor32::from(Vec::new()));
-        let client = DenyListClient::new()?;
-        Ok(Self {
-            // default tag to 0, proper tag name will be set on first
-            // call to update_to_latest
-            tag_name: 0,
-            client,
-            filter,
-        })
+        Self::construct(bin)
     }
 
+    /// Construct Denylist using a local filter_path
     pub fn from_filter<P: AsRef<Path>>(filter_path: P) -> Result<Self> {
         let bin: Vec<u8> = fs::read(filter_path).unwrap_or_else(|_| {
             tracing::warn!(
@@ -63,7 +56,11 @@ impl DenyList {
             );
             Vec::new()
         });
-        let filter = filter_from_bin(&bin).unwrap_or_else(|_| Xor32::from(Vec::new()));
+        Self::construct(bin)
+    }
+
+    fn construct(filter_bin: Vec<u8>) -> Result<Self> {
+        let filter = filter_from_bin(&filter_bin).unwrap_or_else(|_| Xor32::from(Vec::new()));
         let client = DenyListClient::new()?;
         Ok(Self {
             // default tag to 0, proper tag name will be set on first
