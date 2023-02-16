@@ -1,8 +1,8 @@
 create table files_processed (
 	file_name varchar primary key,
-	file_type varchar,
-	file_timestamp timestamptz,
-	processed_at timestamptz
+	file_type varchar not null,
+	file_timestamp timestamptz not null,
+	processed_at timestamptz not null
 );
 
 insert into files_processed (file_name, file_type, file_timestamp, processed_at)
