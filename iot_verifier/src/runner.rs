@@ -1,6 +1,6 @@
 use crate::{
-    gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon, metrics::Metrics, poc::Poc,
-    poc_report::Report, reward_share::GatewayShare, Settings,
+    gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon,
+    metrics::Metrics, poc::Poc, poc_report::Report, reward_share::GatewayShare, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use file_store::{

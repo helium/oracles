@@ -1,11 +1,10 @@
 use anyhow::{Error, Result};
 use clap::Parser;
-use density_scaler::Server as DensityScaler;
 use file_store::{file_sink, file_upload, FileType};
 use futures::TryFutureExt;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, poc_report::Report,
-    purger, rewarder::Rewarder, runner, Settings,
+    purger, rewarder::Rewarder, runner, tx_scaler::Server as DensityScaler, Settings,
 };
 use std::path;
 use tokio::signal;
@@ -113,8 +112,7 @@ impl Server {
         let mut entropy_loader = entropy_loader::EntropyLoader::from_settings(settings).await?;
         let mut runner = runner::Runner::from_settings(settings).await?;
         let purger = purger::Purger::from_settings(settings).await?;
-        let mut density_scaler =
-            DensityScaler::from_settings(settings.density_scaler.clone()).await?;
+        let mut density_scaler = DensityScaler::from_settings(settings).await?;
         tokio::try_join!(
             gateway_rewards_server.run(&shutdown).map_err(Error::from),
             reward_manifests_server.run(&shutdown).map_err(Error::from),
