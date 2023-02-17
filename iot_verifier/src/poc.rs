@@ -243,6 +243,14 @@ impl Poc {
         );
         let beacon_received_ts = self.beacon_report.received_timestamp;
         verify_entropy(self.entropy_start, self.entropy_end, beacon_received_ts)?;
+        verify_gw_location(beaconer_info.location)?;
+        verify_gw_capability(beaconer_info.staking_mode)?;
+        verify_beacon_schedule(
+            &last_beacon,
+            beacon_received_ts,
+            beacon_interval,
+            beacon_interval_tolerance,
+        )?;
         verify_beacon_payload(
             &self.beacon_report.report,
             beaconer_info.region,
@@ -251,14 +259,6 @@ impl Poc {
             self.entropy_start,
             self.entropy_version as u32,
         )?;
-        verify_beacon_schedule(
-            &last_beacon,
-            beacon_received_ts,
-            beacon_interval,
-            beacon_interval_tolerance,
-        )?;
-        verify_gw_location(beaconer_info.location)?;
-        verify_gw_capability(beaconer_info.staking_mode)?;
         tracing::debug!(
             "valid beacon from beaconer: {:?}",
             PublicKeyBinary::from(beaconer_info.address.clone())
