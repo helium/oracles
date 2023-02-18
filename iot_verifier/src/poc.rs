@@ -274,6 +274,7 @@ impl Poc {
         )?;
         verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
         verify_gw_location(witness_info.location)?;
+        verify_gw_capability(witness_info.staking_mode)?;
         verify_witness_freq(
             beacon_report.report.frequency,
             witness_report.report.frequency,
