@@ -106,7 +106,12 @@ impl Poc {
         // get the beaconer info from our follower
         // it not available then declare beacon invalid
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
-            Ok(res) => res,
+            Ok(res) => {
+                if res.staking_mode == GatewayStakingMode::Dataonly {
+                    return Ok(VerifyBeaconResult::gateway_not_found());
+                }
+                res
+            }
             Err(_e) => {
                 return Ok(VerifyBeaconResult::gateway_not_found());
             }
@@ -203,7 +208,12 @@ impl Poc {
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
-            Ok(res) => res,
+            Ok(res) => {
+                if res.staking_mode == GatewayStakingMode::Dataonly {
+                    return Ok(VerifyWitnessResult::gateway_not_found());
+                }
+                res
+            }
             Err(_e) => {
                 return Ok(VerifyWitnessResult::gateway_not_found());
             }
