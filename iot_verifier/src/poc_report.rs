@@ -274,6 +274,7 @@ impl Report {
             where packet_data = $1
             and report_type = 'witness'
             and attempts < $2
+            order by report_timestamp asc
             "#,
         )
         .bind(packet_data)

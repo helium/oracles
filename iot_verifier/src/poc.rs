@@ -12,6 +12,7 @@ use file_store::{
     iot_valid_poc::IotVerifiedWitnessReport,
     iot_witness_report::IotWitnessIngestReport,
 };
+
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
@@ -144,44 +145,62 @@ impl Poc {
         gateway_cache: &GatewayCache,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
+        let mut existing_gateways: Vec<PublicKeyBinary> = Vec::new();
         let mut failed_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            match self
-                .verify_witness(
-                    &witness_report,
-                    beacon_info,
-                    gateway_cache,
-                    &hex_density_map,
-                )
-                .await
-            {
-                Ok(witness_result) => match witness_result.result {
-                    VerificationStatus::Valid => {
-                        if let Ok(valid_witness) = self
-                            .valid_witness_report(witness_result, witness_report)
+            // have we already processed a report from the same gateway ?
+            // if not, run verifications
+            // if so, skip verifications and declare the report a dup
+            if !existing_gateways.contains(&witness_report.report.pub_key) {
+                match self
+                    .verify_witness(
+                        &witness_report,
+                        beacon_info,
+                        gateway_cache,
+                        &hex_density_map,
+                    )
+                    .await
+                {
+                    Ok(witness_result) => match witness_result.result {
+                        VerificationStatus::Valid => {
+                            // valid witness and we havent seen any prior valid witness from this gateway
+                            if let Ok(valid_witness) = self
+                                .valid_witness_report(witness_result, witness_report)
+                                .await
+                            {
+                                // track which gateways we have saw a witness report from
+                                existing_gateways.push(valid_witness.report.pub_key.clone());
+                                verified_witnesses.push(valid_witness)
+                            };
+                        }
+                        VerificationStatus::Invalid => {
+                            if let Ok(invalid_witness) = self
+                                .invalid_witness_report(witness_result, witness_report)
+                                .await
+                            {
+                                // track which gateways we have saw a witness report from
+                                existing_gateways.push(invalid_witness.report.pub_key.clone());
+                                verified_witnesses.push(invalid_witness)
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        tracing::warn!("Unexpected error verifying witness: {err:?}");
+                        if let Ok(failed_witness) = self
+                            .failed_witness_report(InvalidReason::UnknownError, witness_report)
                             .await
                         {
-                            verified_witnesses.push(valid_witness)
-                        };
-                    }
-                    VerificationStatus::Invalid => {
-                        if let Ok(invalid_witness) = self
-                            .invalid_witness_report(witness_result, witness_report)
-                            .await
-                        {
-                            verified_witnesses.push(invalid_witness)
+                            failed_witnesses.push(failed_witness)
                         }
                     }
-                },
-                Err(err) => {
-                    tracing::warn!("Unexpected error verifying witness: {err:?}");
-                    if let Ok(failed_witness) = self
-                        .failed_witness_report(InvalidReason::UnknownError, witness_report)
-                        .await
-                    {
-                        failed_witnesses.push(failed_witness)
-                    }
+                }
+            } else {
+                // the report is a dup
+                // we only accept the first report irrespective of its status
+                // invalidate this report with reason duplicate
+                if let Ok(dup_witness) = self.dup_witness_report(witness_report).await {
+                    verified_witnesses.push(dup_witness)
                 }
             }
         }
@@ -354,6 +373,24 @@ impl Poc {
             reward_unit: Decimal::ZERO,
             invalid_reason: witness_result.invalid_reason,
             participant_side: witness_result.participant_side,
+        })
+    }
+
+    async fn dup_witness_report(
+        &self,
+        witness_report: IotWitnessIngestReport,
+    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
+        Ok(IotVerifiedWitnessReport {
+            received_timestamp: witness_report.received_timestamp,
+            status: VerificationStatus::Invalid,
+            report: witness_report.report,
+            location: None,
+            hex_scale: Decimal::ZERO,
+            // default reward units to zero until we've got the full count of
+            // valid, non-failed witnesses for the final validated poc report
+            reward_unit: Decimal::ZERO,
+            invalid_reason: InvalidReason::InvalidCapability,
+            participant_side: InvalidParticipantSide::Witness,
         })
     }
 
