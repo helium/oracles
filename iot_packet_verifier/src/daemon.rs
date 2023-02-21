@@ -10,12 +10,11 @@ use file_store::{
     iot_packet::PacketRouterPacketReport, FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, signature::read_keypair_file};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
-use tokio::{sync::mpsc::Receiver, time};
+use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 struct Daemon {
     pool: Pool<Postgres>,
@@ -161,7 +160,16 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         invalid_packets_server
             .run(&shutdown_listener)
             .map_err(Error::from),
+        flatten(source_join_handle),
     )?;
 
     Ok(())
+}
+
+async fn flatten(x: JoinHandle<std::result::Result<(), file_store::Error>>) -> Result<(), Error> {
+    match x.await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(err)) => Err(Error::from(err)),
+        Err(err) => Err(Error::from(err)),
+    }
 }

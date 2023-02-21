@@ -2819,8 +2819,9 @@ dependencies = [
 
 [[package]]
 name = "helium-crypto"
-version = "0.6.6"
-source = "git+https://github.com/helium/helium-crypto-rs.git?branch=main#c7245e1f97f7ba84cf179fa0f3a1b3c9bd573a93"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "289576899272c1b9f6cb1a2d393c5f3c142b62b4343454bd1ada5d0eefd47ce7"
 dependencies = [
  "base64 0.21.0",
  "bs58 0.4.0",
@@ -3299,7 +3300,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.7.3",
+ "rand 0.8.5",
  "retainer",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3813,7 +3814,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.7.3",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3853,7 +3854,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.7.3",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -4011,7 +4012,7 @@ dependencies = [
  "helium-proto",
  "http",
  "http-serde",
- "rand 0.7.3",
+ "rand 0.8.5",
  "retainer",
  "serde",
  "thiserror",
@@ -4451,7 +4452,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.7.3",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -5066,7 +5067,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.7.3",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -7181,7 +7182,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
