@@ -164,7 +164,7 @@ impl Poc {
             } else {
                 // the report is a dup
                 let dup_witness = IotVerifiedWitnessReport::invalid(
-                    InvalidReason::InvalidCapability, //TODO change 'Duplicate' reason after proto is merged
+                    InvalidReason::Duplicate,
                     &witness_report.report,
                     witness_report.received_timestamp,
                     None,
