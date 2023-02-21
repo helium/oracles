@@ -130,12 +130,10 @@ impl Poc {
                     .location
                     .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
 
-                let tx_scale =
-                    if let Some(scaling_factor) = hex_density_map.get(beaconer_location).await {
-                        scaling_factor
-                    } else {
-                        *DEFAULT_TX_SCALE
-                    };
+                let tx_scale = hex_density_map
+                    .get(beaconer_location)
+                    .await
+                    .unwrap_or(*DEFAULT_TX_SCALE);
                 Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
             }
             Err(invalid_reason) => Ok(VerifyBeaconResult::invalid(invalid_reason, beaconer_info)),
@@ -237,13 +235,16 @@ impl Poc {
                     ))
                 };
 
-                let tx_scale = if let Some(hex_scale) = hex_density_map.get(beaconer_location).await
-                {
-                    hex_scale
-                } else {
-                    *DEFAULT_TX_SCALE
-                };
-                Ok(IotVerifiedWitnessReport::valid(&witness_report.report, witness_report.received_timestamp, witness_info.location, tx_scale))
+                let tx_scale = hex_density_map
+                    .get(beaconer_location)
+                    .await
+                    .unwrap_or(*DEFAULT_TX_SCALE);
+                Ok(IotVerifiedWitnessReport::valid(
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    witness_info.location,
+                    tx_scale,
+                ))
             }
             Err(invalid_reason) => Ok(IotVerifiedWitnessReport::invalid(
                 invalid_reason,

@@ -1,12 +1,13 @@
 use crate::{
     hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap, SharedHexDensityMap},
+    last_beacon::LastBeacon,
     Settings,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
-use helium_crypto::PublicKeyBinary;
 use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
 use sqlx::PgPool;
+use std::collections::HashMap;
 use tokio::time;
 
 // The number in minutes within which the gateway has registered a beacon
@@ -84,7 +85,7 @@ impl Server {
         }) = gw_stream.next().await
         {
             if let Some(h3index) = location {
-                if active_gateways.contains(&address.into()) {
+                if active_gateways.contains_key(&address) {
                     global_map.increment_unclipped(h3index)
                 }
             }
@@ -100,15 +101,14 @@ impl Server {
     async fn gateways_recent_activity(
         &self,
         now: DateTime<Utc>,
-    ) -> Result<Vec<PublicKeyBinary>, sqlx::Error> {
+    ) -> Result<HashMap<Vec<u8>, DateTime<Utc>>, sqlx::Error> {
         let interactivity_deadline = now - Duration::minutes(HIP_17_INTERACTIVITY_LIMIT);
-        sqlx::query_scalar::<_, PublicKeyBinary>(
-            r#"
-            select id from last_beacon where timestamp >= $1
-            "#,
+        Ok(
+            LastBeacon::get_all_since(interactivity_deadline, &self.pool)
+                .await?
+                .into_iter()
+                .map(|beacon| (beacon.id, beacon.timestamp))
+                .collect::<HashMap<Vec<u8>, DateTime<Utc>>>(),
         )
-        .bind(interactivity_deadline)
-        .fetch_all(&self.pool)
-        .await
     }
 }
