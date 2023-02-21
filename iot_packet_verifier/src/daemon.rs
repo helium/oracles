@@ -1,43 +1,42 @@
 use crate::{
     balances::BalanceCache,
     burner::Burner,
-    ingest,
     settings::Settings,
     verifier::{CachedOrgClient, Verifier},
 };
 use anyhow::{bail, Error, Result};
-use chrono::{DateTime, NaiveDateTime, Utc};
-use db_store::meta;
-use file_store::{file_sink::FileSinkClient, file_upload, FileSinkBuilder, FileStore, FileType};
-use futures::StreamExt;
+use file_store::{
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
+    iot_packet::PacketRouterPacketReport, FileSinkBuilder, FileStore, FileType,
+};
 use futures_util::TryFutureExt;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, signature::read_keypair_file};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
-use tokio::time;
+use tokio::{sync::mpsc::Receiver, time};
 
 struct Daemon {
     pool: Pool<Postgres>,
     verifier: Verifier<BalanceCache, CachedOrgClient>,
-    last_verified: NaiveDateTime,
-    file_store: FileStore,
+    report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
 }
 
-const POLL_TIME: time::Duration = time::Duration::from_secs(10);
-
 impl Daemon {
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
-        let mut timer = time::interval(POLL_TIME);
-        timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
-
         loop {
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = timer.tick() =>  self.handle_tick().await?,
+                file = self.report_files.recv() => {
+                    if let Some(file) = file {
+                        self.handle_file(file).await?
+                    } else {
+                        bail!("Report file stream was dropped")
+                    }
+                }
 
             }
         }
@@ -45,33 +44,24 @@ impl Daemon {
         Ok(())
     }
 
-    async fn handle_tick(&mut self) -> Result<()> {
-        let mut reports = self
-            .file_store
-            .list(
-                FileType::IotPacketReport,
-                DateTime::from_utc(self.last_verified, Utc),
-                None,
-            )
-            .boxed();
+    async fn handle_file(
+        &mut self,
+        report_file: FileInfoStream<PacketRouterPacketReport>,
+    ) -> Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        let reports = report_file.into_stream(&mut transaction).await?;
 
-        while let Some(report) = reports.next().await.transpose()? {
-            self.last_verified = report.timestamp.naive_utc();
-            let reports = ingest::ingest_reports(&self.file_store, report).await?;
-            let mut transaction = self.pool.begin().await?;
-            self.verifier
-                .verify(
-                    &mut transaction,
-                    reports,
-                    &self.valid_packets,
-                    &self.invalid_packets,
-                )
-                .await?;
-            meta::store(&mut transaction, "last_verified_report", self.last_verified).await?;
-            transaction.commit().await?;
-            self.valid_packets.commit().await?;
-            self.invalid_packets.commit().await?;
-        }
+        self.verifier
+            .verify(
+                &mut transaction,
+                reports,
+                &self.valid_packets,
+                &self.invalid_packets,
+            )
+            .await?;
+        transaction.commit().await?;
+        self.valid_packets.commit().await?;
+        self.invalid_packets.commit().await?;
 
         Ok(())
     }
@@ -133,14 +123,25 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
 
     let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-    // Set up the verifier Daemon:
-    let last_verified = meta::fetch(&pool, "last_verified_report").await?;
+    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        shutdown_trigger.trigger()
+    });
+
+    let (report_files, source_join_handle) =
+        file_source::continuous_source::<PacketRouterPacketReport>()
+            .db(pool.clone())
+            .store(file_store)
+            .file_type(FileType::IotPacketReport)
+            .build()?
+            .start(shutdown_listener.clone())
+            .await?;
 
     let config_keypair = settings.config_keypair()?;
     let verifier_daemon = Daemon {
         pool,
-        last_verified,
-        file_store,
+        report_files,
         valid_packets,
         invalid_packets,
         verifier: Verifier {
@@ -148,12 +149,6 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
             config_server: CachedOrgClient::new(org_client, config_keypair),
         },
     };
-
-    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-    tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
-        shutdown_trigger.trigger()
-    });
 
     // Run the services:
     tokio::try_join!(

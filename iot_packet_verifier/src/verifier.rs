@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use file_store::file_sink::FileSinkClient;
+use file_store::{
+    file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport, traits::MsgTimestamp,
+};
 use futures::{Stream, StreamExt};
 use helium_crypto::{Keypair, PublicKeyBinary, Sign};
 use helium_proto::services::{
@@ -10,7 +12,6 @@ use helium_proto::services::{
 use helium_proto::{
     services::{
         iot_config::{config_org_client::OrgClient, OrgDisableReqV1, OrgEnableReqV1},
-        router::PacketRouterPacketReportV1,
         Channel,
     },
     Message,
@@ -63,7 +64,7 @@ where
     ) -> Result<(), VerificationError<D::Error, C::Error, B::Error, VP::Error, IP::Error>>
     where
         B: Burner,
-        R: Stream<Item = PacketRouterPacketReportV1>,
+        R: Stream<Item = PacketRouterPacketReport>,
         VP: PacketWriter<ValidPacket>,
         IP: PacketWriter<InvalidPacket>,
     {
@@ -78,7 +79,7 @@ where
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
 
             let packet_id = PacketId {
-                ts: report.gateway_timestamp_ms,
+                ts: report.timestamp(),
                 oui: report.oui,
                 hash: report.payload_hash.clone(),
             };
@@ -105,7 +106,7 @@ where
                 valid_packets
                     .write(ValidPacket {
                         payload_size: report.payload_size,
-                        gateway: report.gateway,
+                        gateway: report.gateway.into(),
                         payload_hash: report.payload_hash,
                     })
                     .await
@@ -118,7 +119,7 @@ where
                 invalid_packets
                     .write(InvalidPacket {
                         payload_size: report.payload_size,
-                        gateway: report.gateway,
+                        gateway: report.gateway.into(),
                         payload_hash: report.payload_hash,
                         reason: InvalidPacketReason::InsufficientBalance as i32,
                     })
