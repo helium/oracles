@@ -1,20 +1,19 @@
-use crate::{
-    lora_field::{DevAddrRange, Eui, NetIdField},
-    org::OrgStatus,
-};
+use crate::lora_field::{DevAddrRange, EuiPair, NetIdField};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
-use helium_proto::Region;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{types::Uuid, Row};
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use tokio::sync::broadcast::{self, Sender};
 
 pub mod proto {
-    pub use helium_proto::services::iot_config::{
-        protocol_http_roaming_v1::FlowTypeV1, server_v1::Protocol, ActionV1, ProtocolGwmpMappingV1,
-        ProtocolGwmpV1, ProtocolHttpRoamingV1, ProtocolPacketRouterV1, RouteDevaddrsActionV1,
-        RouteEuisActionV1, RouteStreamResV1, RouteV1, ServerV1,
+    pub use helium_proto::{
+        services::iot_config::{
+            protocol_http_roaming_v1::FlowTypeV1, route_stream_res_v1, server_v1::Protocol,
+            ActionV1, ProtocolGwmpMappingV1, ProtocolGwmpV1, ProtocolHttpRoamingV1,
+            ProtocolPacketRouterV1, RouteStreamResV1, RouteV1, ServerV1,
+        },
+        Region,
     };
 }
 
@@ -22,11 +21,11 @@ pub mod proto {
 pub struct Route {
     pub id: String,
     pub net_id: NetIdField,
-    pub devaddr_ranges: Vec<DevAddrRange>,
-    pub euis: Vec<Eui>,
     pub oui: u64,
     pub server: RouteServer,
     pub max_copies: u32,
+    pub active: bool,
+    pub locked: bool,
 }
 
 impl Route {
@@ -34,28 +33,12 @@ impl Route {
         Self {
             id: "".into(),
             net_id,
-            devaddr_ranges: vec![],
-            euis: vec![],
             oui,
             server: RouteServer::default(),
             max_copies,
+            active: true,
+            locked: false,
         }
-    }
-
-    pub fn add_eui(&mut self, eui: Eui) {
-        self.euis.push(eui);
-    }
-
-    pub fn remove_eui(&mut self, eui: Eui) {
-        self.euis.retain(|e| e != &eui);
-    }
-
-    pub fn add_devaddr(&mut self, range: DevAddrRange) {
-        self.devaddr_ranges.push(range);
-    }
-
-    pub fn remove_devaddr(&mut self, range: DevAddrRange) {
-        self.devaddr_ranges.retain(|dr| dr != &range);
     }
 
     pub fn set_server(&mut self, server: RouteServer) {
@@ -75,13 +58,13 @@ impl Route {
 pub struct StorageRoute {
     pub id: Uuid,
     pub oui: i64,
-    pub net_id: i64,
+    pub net_id: i32,
     pub max_copies: i32,
     pub server_host: String,
     pub server_port: i32,
     pub server_protocol_opts: serde_json::Value,
-    pub devaddr_ranges: Vec<(i64, i64)>,
-    pub eui_pairs: Vec<(i64, i64)>,
+    pub active: bool,
+    pub locked: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -101,9 +84,9 @@ pub enum RouteStorageError {
 pub async fn create_route(
     route: Route,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    update_tx: Arc<Sender<proto::RouteStreamResV1>>,
+    update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<Route, RouteStorageError> {
-    let net_id: i64 = route.net_id.into();
+    let net_id: i32 = route.net_id.into();
     let protocol_opts = route
         .server
         .protocol
@@ -115,8 +98,8 @@ pub async fn create_route(
 
     let row = sqlx::query(
             r#"
-            insert into routes (oui, net_id, max_copies, server_host, server_port, server_protocol_opts)
-            values ($1, $2, $3, $4, $5, $6)
+            insert into routes (oui, net_id, max_copies, server_host, server_port, server_protocol_opts, active)
+            values ($1, $2, $3, $4, $5, $6, $7)
             returning id
             "#,
         )
@@ -126,27 +109,24 @@ pub async fn create_route(
         .bind(&route.server.host)
         .bind(route.server.port as i32)
         .bind(json!(&protocol_opts))
+        .bind(route.active)
         .fetch_one(&mut transaction)
         .await?;
 
     let route_id = row.get::<Uuid, &str>("id").to_string();
 
-    if !route.euis.is_empty() {
-        insert_euis(&route_id, &route.euis, &mut transaction).await?;
-    }
-
-    if !route.devaddr_ranges.is_empty() {
-        insert_devaddr_ranges(&route_id, &route.devaddr_ranges, &mut transaction).await?;
-    }
-
     let new_route = get_route(&route_id, &mut transaction).await?;
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
-        action: proto::ActionV1::Create.into(),
-        route: Some(new_route.clone().into()),
-    });
+    if new_route.active && !new_route.locked {
+        _ = update_tx.send(proto::RouteStreamResV1 {
+            action: proto::ActionV1::Add.into(),
+            data: Some(proto::route_stream_res_v1::Data::Route(
+                new_route.clone().into(),
+            )),
+        });
+    };
 
     Ok(new_route)
 }
@@ -154,7 +134,7 @@ pub async fn create_route(
 pub async fn update_route(
     route: Route,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    update_tx: Arc<Sender<proto::RouteStreamResV1>>,
+    update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<Route, RouteStorageError> {
     let protocol_opts = route
         .server
@@ -167,10 +147,15 @@ pub async fn update_route(
 
     let mut transaction = db.begin().await?;
 
+    let was_active = sqlx::query_scalar::<_, bool>(r#"select active from routes where id = $1"#)
+        .bind(uuid)
+        .fetch_one(&mut transaction)
+        .await?;
+
     sqlx::query(
         r#"
         update routes
-        set max_copies = $2, server_host = $3, server_port = $4, server_protocol_opts = $5
+        set max_copies = $2, server_host = $3, server_port = $4, server_protocol_opts = $5, active = $6
         where id = $1
         "#,
     )
@@ -179,65 +164,82 @@ pub async fn update_route(
     .bind(&route.server.host)
     .bind(route.server.port as i32)
     .bind(json!(&protocol_opts))
+    .bind(route.active)
     .execute(&mut transaction)
     .await?;
-
-    sqlx::query(
-        r#"
-        delete from route_eui_pairs
-        where route_id = $1
-        "#,
-    )
-    .bind(uuid)
-    .execute(&mut transaction)
-    .await?;
-
-    if !route.euis.is_empty() {
-        insert_euis(&route.id, &route.euis, &mut transaction).await?;
-    }
-
-    sqlx::query(
-        r#"
-        delete from route_devaddr_ranges
-        where route_id = $1
-        "#,
-    )
-    .bind(uuid)
-    .execute(&mut transaction)
-    .await?;
-
-    if !route.devaddr_ranges.is_empty() {
-        insert_devaddr_ranges(&route.id, &route.devaddr_ranges, &mut transaction).await?;
-    }
 
     let updated_route = get_route(&route.id, &mut transaction).await?;
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
-        action: proto::ActionV1::Update.into(),
-        route: Some(updated_route.clone().into()),
-    });
+    // if the route is not locked at the org level and it was or is now active, update downstream HPRs
+    if !updated_route.locked && (was_active || updated_route.active) {
+        let action = if updated_route.active {
+            proto::ActionV1::Add.into()
+        } else {
+            proto::ActionV1::Remove.into()
+        };
+
+        _ = update_tx.send(proto::RouteStreamResV1 {
+            action,
+            data: Some(proto::route_stream_res_v1::Data::Route(
+                updated_route.clone().into(),
+            )),
+        });
+    };
 
     Ok(updated_route)
 }
 
 async fn insert_euis(
-    id: &str,
-    euis: &[Eui],
+    euis: &[EuiPair],
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(), RouteStorageError> {
-    let id = Uuid::try_parse(id)?;
-    let euis = euis.iter().map(|eui| (id, eui));
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let mut eui_values = vec![];
+    for eui in euis.iter() {
+        eui_values.push((
+            Uuid::try_parse(&eui.route_id)?,
+            i64::from(eui.app_eui),
+            i64::from(eui.dev_eui),
+        ));
+    }
 
-    const EUI_INSERT_SQL: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
+    const EUI_INSERT_VALS: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
+    const EUI_INSERT_ON_CONF: &str = " on conflict (route_id, app_eui, dev_eui) do nothing ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(EUI_INSERT_SQL);
-    query_builder.push_values(euis, |mut builder, (id, eui)| {
-        builder
-            .push_bind(id)
-            .push_bind(i64::from(eui.app_eui))
-            .push_bind(i64::from(eui.dev_eui));
+        sqlx::QueryBuilder::new(EUI_INSERT_VALS);
+    query_builder
+        .push_values(eui_values, |mut builder, (id, app_eui, dev_eui)| {
+            builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
+        })
+        .push(EUI_INSERT_ON_CONF);
+
+    query_builder.build().execute(db).await.map(|_| ())?;
+
+    Ok(())
+}
+
+async fn remove_euis(
+    euis: &[EuiPair],
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), RouteStorageError> {
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let mut eui_values = vec![];
+    for eui in euis.iter() {
+        eui_values.push((
+            Uuid::try_parse(&eui.route_id)?,
+            i64::from(eui.app_eui),
+            i64::from(eui.dev_eui),
+        ));
+    }
+
+    const EUI_DELETE_SQL: &str =
+        " delete from route_eui_pairs where (route_id, app_eui, dev_eui) in ";
+    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+        sqlx::QueryBuilder::new(EUI_DELETE_SQL);
+    query_builder.push_tuples(eui_values, |mut builder, (id, app_eui, dev_eui)| {
+        builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
     });
 
     query_builder.build().execute(db).await.map(|_| ())?;
@@ -245,84 +247,123 @@ async fn insert_euis(
     Ok(())
 }
 
-pub async fn modify_euis(
-    id: &str,
-    action: proto::RouteEuisActionV1,
-    euis: &[Eui],
+pub async fn update_euis(
+    to_add: &[EuiPair],
+    to_remove: &[EuiPair],
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    update_tx: Arc<Sender<proto::RouteStreamResV1>>,
+    update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<(), RouteStorageError> {
     let mut transaction = db.begin().await?;
 
-    match action {
-        proto::RouteEuisActionV1::AddEuis => {
-            insert_euis(id, euis, &mut transaction).await?;
-        }
-        proto::RouteEuisActionV1::RemoveEuis => {
-            let uuid = Uuid::try_parse(id)?;
-            const EUI_REMOVE_PAIRS_SNIPPET: &str =
-                " delete from route_eui_pairs where (app_eui, dev_eui) in ";
-            const EUI_FILTER_ID_SNIPPET: &str = " and (route_id) = ";
-            let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-                sqlx::QueryBuilder::new(EUI_REMOVE_PAIRS_SNIPPET);
-            query_builder
-                .push_tuples(euis, |mut builder, eui| {
-                    builder
-                        .push_bind(i64::from(eui.app_eui))
-                        .push_bind(i64::from(eui.dev_eui));
-                })
-                .push(EUI_FILTER_ID_SNIPPET)
-                .push_bind(uuid);
-
-            query_builder
-                .build()
-                .execute(&mut transaction)
-                .await
-                .map(|_| ())?;
-        }
-        proto::RouteEuisActionV1::UpdateEuis => {
-            sqlx::query(
-                r#"
-                delete from route_eui_pairs where route_id = $1
-                "#,
-            )
-            .bind(id)
-            .execute(&mut transaction)
-            .await?;
-
-            insert_euis(id, euis, &mut transaction).await?;
-        }
+    if !to_add.is_empty() {
+        insert_euis(to_add, &mut transaction).await?;
     }
 
-    let route = get_route(id, &mut transaction).await?;
+    if !to_remove.is_empty() {
+        remove_euis(to_remove, &mut transaction).await?;
+    }
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
-        action: proto::ActionV1::Update.into(),
-        route: Some(route.clone().into()),
-    });
+    for added in to_add {
+        let update = proto::RouteStreamResV1 {
+            action: proto::ActionV1::Add.into(),
+            data: Some(proto::route_stream_res_v1::Data::EuiPair(added.into())),
+        };
+        if update_tx.send(update).is_err() {
+            break;
+        }
+    }
 
+    for removed in to_remove {
+        let update = proto::RouteStreamResV1 {
+            action: proto::ActionV1::Remove.into(),
+            data: Some(proto::route_stream_res_v1::Data::EuiPair(removed.into())),
+        };
+        if update_tx.send(update).is_err() {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn delete_euis(
+    id: &str,
+    db: impl sqlx::PgExecutor<'_> + Copy,
+    update_tx: Sender<proto::RouteStreamResV1>,
+) -> Result<(), RouteStorageError> {
+    let euis = list_euis_for_route(id, db).await?;
+    let id = Uuid::try_parse(id)?;
+    sqlx::query(" delete from route_eui_pairs where route_id = $1 ")
+        .bind(id)
+        .execute(db)
+        .await?;
+
+    for removed in euis {
+        let update = proto::RouteStreamResV1 {
+            action: proto::ActionV1::Remove.into(),
+            data: Some(proto::route_stream_res_v1::Data::EuiPair(removed.into())),
+        };
+        if update_tx.send(update).is_err() {
+            break;
+        }
+    }
     Ok(())
 }
 
 async fn insert_devaddr_ranges(
-    id: &str,
     ranges: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<(), RouteStorageError> {
-    let id = Uuid::try_parse(id)?;
-    let ranges = ranges.iter().map(|range| (id, range));
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let mut devaddr_values = vec![];
+    for devaddr in ranges {
+        devaddr_values.push((
+            Uuid::try_parse(&devaddr.route_id)?,
+            i32::from(devaddr.start_addr),
+            i32::from(devaddr.end_addr),
+        ));
+    }
 
-    const DEVADDR_RANGE_INSERT_SQL: &str =
-        "insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
+    const DEVADDR_RANGE_INSERT_VALS: &str =
+        " insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
+    const DEVADDR_RANGE_INSERT_ON_CONF: &str =
+        " on conflict (route_id, start_addr, end_addr) do nothing ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_SQL);
-    query_builder.push_values(ranges, |mut builder, (id, range)| {
-        builder
-            .push_bind(id)
-            .push_bind(i64::from(range.start_addr))
-            .push_bind(i64::from(range.end_addr));
+        sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_VALS);
+    query_builder
+        .push_values(devaddr_values, |mut builder, (id, start, end)| {
+            builder.push_bind(id).push_bind(start).push_bind(end);
+        })
+        .push(DEVADDR_RANGE_INSERT_ON_CONF);
+
+    query_builder.build().execute(db).await.map(|_| ())?;
+
+    Ok(())
+}
+
+async fn remove_devaddr_ranges(
+    ranges: &[DevAddrRange],
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), RouteStorageError> {
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let mut devaddr_values = vec![];
+    for devaddr in ranges {
+        devaddr_values.push((
+            Uuid::try_parse(&devaddr.route_id)?,
+            i32::from(devaddr.start_addr),
+            i32::from(devaddr.end_addr),
+        ));
+    }
+
+    const DEVADDR_RANGE_DELETE_SQL: &str =
+        " delete from route_devaddr_ranges where (route_id, start_addr, end_addr) in ";
+    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+        sqlx::QueryBuilder::new(DEVADDR_RANGE_DELETE_SQL);
+
+    query_builder.push_tuples(devaddr_values, |mut builder, (id, start, end)| {
+        builder.push_bind(id).push_bind(start).push_bind(end);
     });
 
     query_builder.build().execute(db).await.map(|_| ())?;
@@ -330,64 +371,72 @@ async fn insert_devaddr_ranges(
     Ok(())
 }
 
-pub async fn modify_devaddr_ranges(
-    id: &str,
-    action: proto::RouteDevaddrsActionV1,
-    devaddr_ranges: &[DevAddrRange],
+pub async fn update_devaddr_ranges(
+    to_add: &[DevAddrRange],
+    to_remove: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    update_tx: Arc<Sender<proto::RouteStreamResV1>>,
+    update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<(), RouteStorageError> {
     let mut transaction = db.begin().await?;
 
-    match action {
-        proto::RouteDevaddrsActionV1::AddDevaddrs => {
-            insert_devaddr_ranges(id, devaddr_ranges, &mut transaction).await?;
-        }
-        proto::RouteDevaddrsActionV1::RemoveDevaddrs => {
-            let uuid = Uuid::try_parse(id)?;
-            const DEVADDR_REMOVE_RANGE_SNIPPET: &str =
-                " delete from route_devaddr_ranges where (start_addr, end_addr) in ";
-            const DEVADDR_FILTER_ID_SNIPPET: &str = " and (route_id) = ";
-            let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-                sqlx::QueryBuilder::new(DEVADDR_REMOVE_RANGE_SNIPPET);
-            query_builder
-                .push_tuples(devaddr_ranges, |mut builder, range| {
-                    builder
-                        .push_bind(i64::from(range.start_addr))
-                        .push_bind(i64::from(range.end_addr));
-                })
-                .push(DEVADDR_FILTER_ID_SNIPPET)
-                .push_bind(uuid);
-
-            query_builder
-                .build()
-                .execute(&mut transaction)
-                .await
-                .map(|_| ())?;
-        }
-        proto::RouteDevaddrsActionV1::UpdateDevaddrs => {
-            sqlx::query(
-                r#"
-                delete from route_devaddr_ranges where route_id = $1
-                "#,
-            )
-            .bind(id)
-            .execute(&mut transaction)
-            .await?;
-
-            insert_devaddr_ranges(id, devaddr_ranges, &mut transaction).await?;
-        }
+    if !to_add.is_empty() {
+        insert_devaddr_ranges(to_add, &mut transaction).await?;
     }
 
-    let route = get_route(id, &mut transaction).await?;
+    if !to_remove.is_empty() {
+        remove_devaddr_ranges(to_remove, &mut transaction).await?;
+    }
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
-        action: proto::ActionV1::Update.into(),
-        route: Some(route.clone().into()),
-    });
+    for added in to_add {
+        let update = proto::RouteStreamResV1 {
+            action: proto::ActionV1::Add.into(),
+            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(added.into())),
+        };
+        if update_tx.send(update).is_err() {
+            break;
+        }
+    }
 
+    for removed in to_remove {
+        let update = proto::RouteStreamResV1 {
+            action: proto::ActionV1::Remove.into(),
+            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
+                removed.into(),
+            )),
+        };
+        if update_tx.send(update).is_err() {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn delete_devaddr_ranges(
+    id: &str,
+    db: impl sqlx::PgExecutor<'_> + Copy,
+    update_tx: Sender<proto::RouteStreamResV1>,
+) -> Result<(), RouteStorageError> {
+    let devaddr_ranges = list_devaddr_ranges_for_route(id, db).await?;
+    let id = Uuid::try_parse(id)?;
+    sqlx::query(" delete from route_devaddr_ranges where route_id = $1 ")
+        .bind(id)
+        .execute(db)
+        .await?;
+
+    for removed in devaddr_ranges {
+        let update = proto::RouteStreamResV1 {
+            action: proto::ActionV1::Remove.into(),
+            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
+                removed.into(),
+            )),
+        };
+        if update_tx.send(update).is_err() {
+            break;
+        }
+    }
     Ok(())
 }
 
@@ -397,12 +446,11 @@ pub async fn list_routes(
 ) -> Result<Vec<Route>, RouteStorageError> {
     Ok(sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts,
-               array(select distinct row(app_eui, dev_eui) from route_eui_pairs e where e.route_id = r.id) as eui_pairs,
-               array(select distinct row(start_addr, end_addr) from route_devaddr_ranges d where d.route_id = r.id) as devaddr_ranges
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
             from routes r
-            where r.oui = $1
-            group by r.id
+            join organizations o on r.oui = o.oui
+            where o.oui = $1
+            group by r.id, o.locked
         "#,
     )
     .bind(oui as i64)
@@ -411,46 +459,77 @@ pub async fn list_routes(
     .and_then(|route| async move { Ok(Route {
             id: route.id.to_string(),
             net_id: route.net_id.into(),
-            devaddr_ranges: route.devaddr_ranges.into_iter().map(|(start, end)| DevAddrRange {start_addr: start.into(), end_addr: end.into()}).collect(),
-            euis: route.eui_pairs
-                      .into_iter()
-                      .map(|(app, dev)| Eui::new(app.into(), dev.into()))
-                      .collect(),
             oui: route.oui as u64,
             server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_value(route.server_protocol_opts)?),
             max_copies: route.max_copies as u32,
+            active: route.active,
+            locked: route.locked,
         })})
     .filter_map(|route| async move { route.ok() })
     .collect::<Vec<Route>>()
     .await)
 }
 
-pub async fn route_stream_by_status<'a>(
-    status: OrgStatus,
+pub async fn list_euis_for_route(
+    id: &str,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<Vec<EuiPair>, RouteStorageError> {
+    let id = Uuid::try_parse(id)?;
+    const EUI_SELECT_SQL: &str = r#"
+    select eui.route_id, eui.app_eui, eui.dev_eui
+        from route_eui_pairs eui
+        where eui.route_id = $1
+    "#;
+    Ok(sqlx::query_as::<_, EuiPair>(EUI_SELECT_SQL)
+        .bind(id)
+        .fetch(db)
+        .map_err(RouteStorageError::from)
+        .filter_map(|eui| async move { eui.ok() })
+        .collect::<Vec<EuiPair>>()
+        .await)
+}
+
+pub async fn list_devaddr_ranges_for_route(
+    id: &str,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<Vec<DevAddrRange>, RouteStorageError> {
+    let id = Uuid::try_parse(id)?;
+    const DEVADDR_RANGE_SELECT_SQL: &str = r#"
+    select devaddr.route_id, devaddr.start_addr, devaddr.end_addr
+        from route_devaddr_ranges devaddr
+        where devaddr.route_id = $1
+    "#;
+    Ok(sqlx::query_as::<_, DevAddrRange>(DEVADDR_RANGE_SELECT_SQL)
+        .bind(id)
+        .fetch(db)
+        .map_err(RouteStorageError::from)
+        .filter_map(|devaddr| async move { devaddr.ok() })
+        .collect::<Vec<DevAddrRange>>()
+        .await)
+}
+
+pub async fn active_route_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a + Copy,
 ) -> impl Stream<Item = Route> + 'a {
     sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts,
-            array(select distinct row(app_eui, dev_eui) from route_eui_pairs e where e.route_id = r.id) as eui_pairs,
-            array(select distinct row(start_addr, end_addr) from route_devaddr_ranges d where d.route_id = r.id) as devaddr_ranges
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
             from routes r
             join organizations o on r.oui = o.oui
-            where o.status = $1
-            group by r.id
+            where o.locked = false and r.active = true
+            group by r.id, o.locked
         "#,
     )
-    .bind(status)
     .fetch(db)
     .map_err(RouteStorageError::from)
     .and_then(|route| async move { Ok(Route {
             id: route.id.to_string(),
             net_id: route.net_id.into(),
-            devaddr_ranges: route.devaddr_ranges.into_iter().map(|(start, end)| DevAddrRange {start_addr: start.into(), end_addr: end.into()}).collect(),
-            euis: route.eui_pairs.into_iter().map(|(app, dev)| Eui::new(app.into(), dev.into())).collect(),
             oui: route.oui as u64,
             server: RouteServer::new(route.server_host, route.server_port as u32, serde_json::from_value(route.server_protocol_opts)?),
             max_copies: route.max_copies as u32,
+            active: route.active,
+            locked: route.locked,
         })})
     .filter_map(|route| async move { route.ok() })
 }
@@ -462,12 +541,11 @@ pub async fn get_route(
     let uuid = Uuid::try_parse(id)?;
     let route_row = sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts,
-            array(select distinct row(app_eui, dev_eui) from route_eui_pairs e where e.route_id = r.id) as eui_pairs,
-            array(select distinct row(start_addr, end_addr) from route_devaddr_ranges d where d.route_id = r.id) as devaddr_ranges
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
             from routes r
+            join organizations o on r.oui = o.oui
             where r.id = $1
-            group by r.id
+            group by r.id, o.locked
         "#,
     )
     .bind(uuid)
@@ -488,32 +566,23 @@ pub async fn get_route(
     Ok(Route {
         id: route.id.to_string(),
         net_id: route.net_id.into(),
-        devaddr_ranges: route
-            .devaddr_ranges
-            .into_iter()
-            .map(|(start, end)| DevAddrRange {
-                start_addr: start.into(),
-                end_addr: end.into(),
-            })
-            .collect(),
-        euis: route
-            .eui_pairs
-            .into_iter()
-            .map(|(app, dev)| Eui::new(app.into(), dev.into()))
-            .collect(),
         oui: route.oui as u64,
         server,
         max_copies: route.max_copies as u32,
+        active: route.active,
+        locked: route.locked,
     })
 }
 
 pub async fn delete_route(
     id: &str,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    update_tx: Arc<Sender<proto::RouteStreamResV1>>,
+    update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<(), RouteStorageError> {
     let uuid = Uuid::try_parse(id)?;
     let mut transaction = db.begin().await?;
+
+    let route = get_route(id, &mut transaction).await?;
 
     sqlx::query(
         r#"
@@ -525,13 +594,13 @@ pub async fn delete_route(
     .execute(&mut transaction)
     .await?;
 
-    let route = get_route(id, &mut transaction).await?;
-
     transaction.commit().await?;
 
     _ = update_tx.send(proto::RouteStreamResV1 {
-        action: proto::ActionV1::Delete.into(),
-        route: Some(route.clone().into()),
+        action: proto::ActionV1::Remove.into(),
+        data: Some(proto::route_stream_res_v1::Data::Route(
+            route.clone().into(),
+        )),
     });
 
     Ok(())
@@ -554,42 +623,31 @@ impl From<proto::RouteV1> for Route {
         Self {
             id: route.id,
             net_id,
-            devaddr_ranges: route
-                .devaddr_ranges
-                .into_iter()
-                .map(|dr| dr.into())
-                .collect(),
-            euis: route.euis.into_iter().map(|e| e.into()).collect(),
             oui: route.oui,
             server: route.server.map_or_else(RouteServer::default, |s| s.into()),
             max_copies: route.max_copies,
+            active: route.active,
+            locked: route.locked,
         }
     }
 }
 
-#[allow(deprecated)]
 impl From<Route> for proto::RouteV1 {
     fn from(route: Route) -> Self {
         Self {
             id: route.id,
             net_id: route.net_id.into(),
-            devaddr_ranges: route
-                .devaddr_ranges
-                .into_iter()
-                .map(|dr| dr.into())
-                .collect(),
-            euis: route.euis.into_iter().map(|e| e.into()).collect(),
             oui: route.oui,
             server: Some(route.server.into()),
             max_copies: route.max_copies,
-            // Deprecated proto field; flagged above to avoid compiler warning
-            nonce: 0,
+            active: route.active,
+            locked: route.locked,
         }
     }
 }
 
 pub type Port = u32;
-pub type GwmpMap = BTreeMap<Region, Port>;
+pub type GwmpMap = BTreeMap<proto::Region, Port>;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RouteServer {
@@ -653,7 +711,7 @@ impl Protocol {
         Protocol::PacketRouter
     }
 
-    pub fn make_gwmp_mapping(region: Region, port: Port) -> GwmpMap {
+    pub fn make_gwmp_mapping(region: proto::Region, port: Port) -> GwmpMap {
         BTreeMap::from([(region, port)])
     }
 
@@ -671,7 +729,7 @@ impl Protocol {
         })
     }
 
-    pub fn make_gwmp(region: Region, port: Port) -> Result<Self, RouteServerError> {
+    pub fn make_gwmp(region: proto::Region, port: Port) -> Result<Self, RouteServerError> {
         let mut gwmp = Self::default_gwmp();
         gwmp.gwmp_add_mapping(Self::make_gwmp_mapping(region, port))?;
         Ok(gwmp)
@@ -807,7 +865,8 @@ impl From<proto::Protocol> for Protocol {
             proto::Protocol::Gwmp(gwmp) => {
                 let mut mapping = BTreeMap::new();
                 for entry in gwmp.mapping {
-                    let region = Region::from_i32(entry.region).unwrap_or(Region::Us915);
+                    let region =
+                        proto::Region::from_i32(entry.region).unwrap_or(proto::Region::Us915);
                     mapping.insert(region, entry.port);
                 }
                 Protocol::Gwmp(Gwmp { mapping })

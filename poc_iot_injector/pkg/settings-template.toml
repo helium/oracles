@@ -1,6 +1,6 @@
 
 # log settings for the application (RUST_LOG format). Default below
-# 
+#
 # log = "poc-iot-injector=debug,poc_store=info"
 
 #file to load keypair from
@@ -10,6 +10,10 @@ keypair = "/path/to/key_pair"
 # Trigger interval in seconds. (Default is 1800; 30 minutes)
 #
 # trigger = 1800
+
+# Submission offset in seconds. (Default is 600; 5 minutes)
+#
+# submission_offset = 600
 
 # Last PoC submission timestamp in seconds since unix epoch. (Default is unix epoch)
 #
@@ -22,6 +26,14 @@ do_submission = true
 # Number of witnesses allowed per receipt
 #
 # max_witnesses_per_receipt = 14
+
+# max lookback age for the injector when loading files from s3 ( in seconds )
+#
+max_lookback_age = 3600
+
+# max txns to submit per minute
+#
+max_txns_per_min = 2000
 
 [database]
 

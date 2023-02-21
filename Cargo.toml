@@ -52,16 +52,19 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-crypto = {version="0.6.3", features=["sqlx-postgres", "multisig"]}
+
+helium-crypto = {version = "0.6.3", features=["sqlx-postgres", "multisig"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+hextree = "*"
 solana-client = "1.14"
 solana-sdk = "1.14"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
+beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "alpha-patches"}
 humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"
 tracing = "0"
-tracing-subscriber = { version = "0", features = ["env-filter"] }
+tracing-subscriber = { version = "0", default-features=false, features = ["env-filter", "registry", "fmt"] }
 rust_decimal = "1"
 rust_decimal_macros = "1"
 base64 = ">=0.21"

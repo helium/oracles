@@ -2,6 +2,7 @@ pub mod gateway_service;
 pub mod lora_field;
 pub mod org;
 pub mod org_service;
+pub mod region_map;
 pub mod route;
 pub mod route_service;
 pub mod session_key_service;
@@ -19,5 +20,6 @@ use tonic::{Response, Status};
 
 pub type GrpcResult<T> = Result<Response<T>, Status>;
 pub type GrpcStreamResult<T> = ReceiverStream<Result<T, Status>>;
+pub type GrpcStreamRequest<T> = tonic::Request<tonic::Streaming<T>>;
 
 pub const HELIUM_NET_ID: NetIdField = LoraField(0xc00053);

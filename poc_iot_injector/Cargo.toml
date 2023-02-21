@@ -33,8 +33,10 @@ metrics = {workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 helium-crypto = { workspace = true }
 helium-proto = { workspace = true }
+once_cell = {workspace = true}
 poc-metrics = { path = "../metrics" }
 file-store = {path = "../file_store"}
 db-store = {path = "../db_store"}
 node-follower = {path = "../node_follower"}
 density-scaler = {path = "../density_scaler"}
+governor = "0.5.1"

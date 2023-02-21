@@ -24,6 +24,8 @@ pub enum Error {
     Channel,
     #[error("no manifest")]
     NoManifest,
+    #[error("db error")]
+    DbError(#[from] sqlx::Error),
 }
 
 #[derive(Error, Debug)]

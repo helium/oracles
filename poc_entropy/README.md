@@ -72,3 +72,9 @@ The following environment variables are used by the server:
 | ENTROPY_STORE           | Absolute path for temporary entropy store | /var/data/entropy |
 | ENTROPY_URL             | URL for entropy request                   |                   |
 | BUCKET                  | Bucket to send entropy values to          |                   |
+
+## S3 Outputs
+
+| File Type | Pattern | |
+| :--- | :-- | :-- |
+| Entropy | entropy.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/entropy.proto#L5) |

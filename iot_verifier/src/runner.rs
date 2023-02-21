@@ -1,11 +1,6 @@
 use crate::{
-    gateway_cache::GatewayCache,
-    last_beacon::LastBeacon,
-    metrics::Metrics,
-    poc::{Poc, VerifyWitnessesResult},
-    poc_report::Report,
-    reward_share::GatewayShare,
-    Settings,
+    gateway_cache::GatewayCache, last_beacon::LastBeacon, metrics::Metrics, poc::Poc,
+    poc_report::Report, reward_share::GatewayShare, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use density_scaler::{HexDensityMap, SCALING_PRECISION};
@@ -59,6 +54,11 @@ pub enum RunnerError {
     NotFound(&'static str),
 }
 
+pub enum FilterStatus {
+    Drop,
+    Exclude,
+    Include,
+}
 impl Runner {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewRunnerError> {
         let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
@@ -216,6 +216,10 @@ impl Runner {
             Some(v) => v,
             None => return Ok(()),
         };
+        let entropy_version = match db_beacon.version {
+            Some(v) => v,
+            None => return Ok(()),
+        };
         let packet_data = &db_beacon.packet_data;
 
         let beacon_buf: &[u8] = &db_beacon.report_data;
@@ -235,7 +239,13 @@ impl Runner {
         }
 
         // create the struct defining this POC
-        let mut poc = Poc::new(beacon_report.clone(), witnesses.clone(), entropy_start_time).await;
+        let mut poc = Poc::new(
+            beacon_report.clone(),
+            witnesses.clone(),
+            entropy_start_time,
+            entropy_version,
+        )
+        .await;
 
         // verify POC beacon
         let beacon_verify_result = poc
@@ -251,7 +261,7 @@ impl Runner {
             VerificationStatus::Valid => {
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
-                    let mut verified_witnesses_result = poc
+                    let verified_witnesses_result = poc
                         .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
                         .await?;
                     // check if there are any failed witnesses
@@ -270,11 +280,49 @@ impl Runner {
                         return Ok(());
                     };
 
-                    let witness_reward_units = poc_challengee_reward_unit(
-                        verified_witnesses_result.verified_witnesses.len() as u32,
-                    )?;
+                    let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
+                    let beacon_id = beacon.report_id(beacon_received_ts);
 
-                    verified_witnesses_result.update_reward_units(witness_reward_units);
+                    // filter out self witnesses
+                    // & partition remaining witnesses into exclude and include sets
+                    // 'drop' items are dropped to the floor, never make it to s3
+                    // 'exclude' items are not permitted in last 14 but
+                    // will make it into the unselected list and thus will goto s3
+                    // 'include' items are from where the last 14 are selected
+                    // any witness with include status which doesnt make it to the last 14
+                    // will join the excluded items in the unselected list and thus will goto s3
+                    let (excluded_witnesses, mut selected_witnesses) =
+                        filter_witnesses(verified_witnesses_result.verified_witnesses);
+
+                    // split our verified witness list up into selected and unselected items
+                    let mut unselected_witnesses = shuffle_and_split_witnesses(
+                        &beacon_id,
+                        &mut selected_witnesses,
+                        max_witnesses_per_poc,
+                    )?;
+                    // concat the unselected witnesses and the previously excluded witnesses
+                    // these will then form the unseleted list on the poc
+                    unselected_witnesses =
+                        [&unselected_witnesses[..], &excluded_witnesses[..]].concat();
+
+                    // get the number of valid witnesses in our selected list
+                    let num_valid_selected_witnesses = selected_witnesses
+                        .iter()
+                        .filter(|witness| witness.status == VerificationStatus::Valid)
+                        .count();
+
+                    // get reward units based on the count of valid selected witnesses
+                    let beaconer_reward_units =
+                        poc_beaconer_reward_unit(num_valid_selected_witnesses as u32)?;
+                    let witness_reward_units =
+                        poc_per_witness_reward_unit(num_valid_selected_witnesses as u32)?;
+                    // update the reward units for those valid witnesses within our selected list
+                    selected_witnesses
+                        .iter_mut()
+                        .for_each(|witness| match witness.status {
+                            VerificationStatus::Valid => witness.reward_unit = witness_reward_units,
+                            VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
+                        });
 
                     let valid_beacon_report = IotValidBeaconReport {
                         received_timestamp: beacon_received_ts,
@@ -283,11 +331,12 @@ impl Runner {
                             .hex_scale
                             .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,
                         report: beacon.clone(),
-                        reward_unit: witness_reward_units,
+                        reward_unit: beaconer_reward_units,
                     };
                     self.handle_valid_poc(
                         valid_beacon_report,
-                        verified_witnesses_result,
+                        selected_witnesses,
+                        unselected_witnesses,
                         iot_poc_sink,
                     )
                     .await?;
@@ -378,7 +427,8 @@ impl Runner {
     async fn handle_valid_poc(
         &self,
         valid_beacon_report: IotValidBeaconReport,
-        witnesses_result: VerifyWitnessesResult,
+        selected_witnesses: Vec<IotVerifiedWitnessReport>,
+        unselected_witnesses: Vec<IotVerifiedWitnessReport>,
         iot_poc_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
@@ -386,18 +436,11 @@ impl Runner {
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
-        let max_witnesses_per_poc = self.settings.max_witnesses_per_poc as usize;
-        let mut selected_witnesses = witnesses_result.verified_witnesses;
-        let unselected_witnesses = shuffle_and_split_witnesses(
-            &beacon_id,
-            &mut selected_witnesses,
-            max_witnesses_per_poc,
-        )?;
         let iot_poc: IotPoc = IotPoc {
             poc_id: beacon_id,
             beacon_report: valid_beacon_report,
-            selected_witnesses,
-            unselected_witnesses,
+            selected_witnesses: selected_witnesses.clone(),
+            unselected_witnesses: unselected_witnesses.clone(),
         };
 
         let mut transaction = self.pool.begin().await?;
@@ -418,6 +461,13 @@ impl Runner {
                 return Ok(());
             }
         }
+        // write out metrics for any witness which failed verification
+        // TODO: work our approach that doesnt require the prior cloning of
+        // the selected and unselected witnesses vecs
+        // tried to do this directly from the now discarded poc_proto
+        // but could nae get it to get a way past the lack of COPY
+        fire_invalid_witness_metric(&selected_witnesses);
+        fire_invalid_witness_metric(&unselected_witnesses);
         // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
         Report::delete_poc(&self.pool, &packet_data).await?;
@@ -426,18 +476,42 @@ impl Runner {
     }
 }
 
-fn poc_challengee_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
+fn poc_beaconer_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
     let reward_units = if num_witnesses == 0 {
         Decimal::ZERO
-    } else if num_witnesses < WITNESS_REDUNDANCY {
-        Decimal::from(WITNESS_REDUNDANCY / num_witnesses)
+    } else if num_witnesses <= WITNESS_REDUNDANCY {
+        if let Some(sub_redundancy_units) =
+            Decimal::from_f32_retain(num_witnesses as f32 / WITNESS_REDUNDANCY as f32)
+        {
+            sub_redundancy_units
+        } else {
+            anyhow::bail!("invalid fractional division: {num_witnesses} / {WITNESS_REDUNDANCY}");
+        }
     } else {
         let exp = num_witnesses - WITNESS_REDUNDANCY;
         if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
             let unnormalized = Decimal::TWO - to_sub;
             std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized)
         } else {
-            anyhow::bail!("invalid exponent: {}", exp);
+            anyhow::bail!("invalid exponent: {exp}");
+        }
+    };
+    Ok(reward_units.round_dp(SCALING_PRECISION))
+}
+
+fn poc_per_witness_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
+    let reward_units = if num_witnesses == 0 {
+        Decimal::ZERO
+    } else if num_witnesses <= WITNESS_REDUNDANCY {
+        Decimal::ONE
+    } else {
+        let exp = num_witnesses - WITNESS_REDUNDANCY;
+        if let Some(to_sub) = POC_REWARD_DECAY_RATE.checked_powu(exp as u64) {
+            let unnormalized = (Decimal::from(WITNESS_REDUNDANCY) - (Decimal::ONE - to_sub))
+                / Decimal::from(num_witnesses);
+            std::cmp::min(HIP15_TX_REWARD_UNIT_CAP, unnormalized)
+        } else {
+            anyhow::bail!("invalid exponent: {exp}");
         }
     };
     Ok(reward_units.round_dp(SCALING_PRECISION))
@@ -464,6 +538,45 @@ fn shuffle_and_split_witnesses(
     Ok(unselected_witnesses)
 }
 
+fn filter_witnesses(
+    witnesses: Vec<IotVerifiedWitnessReport>,
+) -> (Vec<IotVerifiedWitnessReport>, Vec<IotVerifiedWitnessReport>) {
+    let (excluded_witnesses, included_witnesses) = witnesses
+        .into_iter()
+        .filter(|witness| !matches!(filter_witness(witness.invalid_reason), FilterStatus::Drop))
+        .partition(|witness| {
+            matches!(
+                filter_witness(witness.invalid_reason),
+                FilterStatus::Exclude
+            )
+        });
+    (excluded_witnesses, included_witnesses)
+}
+fn filter_witness(invalid_reason: InvalidReason) -> FilterStatus {
+    match invalid_reason {
+        InvalidReason::SelfWitness => FilterStatus::Drop,
+        InvalidReason::ReasonNone => FilterStatus::Include,
+        InvalidReason::BelowMinDistance => FilterStatus::Include,
+        InvalidReason::MaxDistanceExceeded => FilterStatus::Include,
+        InvalidReason::BadRssi => FilterStatus::Include,
+        InvalidReason::InvalidFrequency => FilterStatus::Include,
+        InvalidReason::InvalidRegion => FilterStatus::Include,
+        _ => FilterStatus::Exclude,
+    }
+}
+
+fn fire_invalid_witness_metric(witnesses: &[IotVerifiedWitnessReport]) {
+    witnesses
+        .iter()
+        .filter(|witness| !matches!(witness.invalid_reason, InvalidReason::ReasonNone))
+        .for_each(|witness| {
+            Metrics::increment_invalid_witnesses(&[(
+                "reason",
+                witness.invalid_reason.as_str_name(),
+            )])
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,6 +586,72 @@ mod tests {
     use helium_proto::DataRate;
     use rust_decimal::Decimal;
     use std::str::FromStr;
+
+    #[test]
+    fn witness_filtering() {
+        let key1 =
+            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
+                .unwrap();
+        let report = IotWitnessReport {
+            pub_key: key1,
+            data: vec![],
+            timestamp: Utc::now(),
+            tmst: 1,
+            signal: 100,
+            snr: 10,
+            frequency: 68000,
+            datarate: DataRate::Sf11bw125,
+            signature: vec![],
+        };
+
+        let witness1 = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report: report.clone(),
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::ReasonNone,
+            participant_side: InvalidParticipantSide::SideNone,
+        };
+
+        let witness2 = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report: report.clone(),
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::SelfWitness,
+            participant_side: InvalidParticipantSide::Witness,
+        };
+
+        let witness3 = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report,
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::Stale,
+            participant_side: InvalidParticipantSide::Witness,
+        };
+
+        // vec of 3 witnesses
+        let witnesses = vec![witness1, witness2, witness3];
+        let (excluded_witnesses, included_witnesses) = filter_witnesses(witnesses);
+
+        assert_eq!(1, excluded_witnesses.len());
+        assert_eq!(1, included_witnesses.len());
+        assert_eq!(
+            InvalidReason::Stale,
+            excluded_witnesses.first().unwrap().invalid_reason
+        );
+        assert_eq!(
+            InvalidReason::ReasonNone,
+            included_witnesses.first().unwrap().invalid_reason
+        );
+    }
 
     #[test]
     fn max_witnesses_per_poc_test() {
@@ -523,5 +702,48 @@ mod tests {
                 .unwrap();
         assert_eq!(10, selected_witnesses2.len());
         assert_eq!(0, unselected_witnesses2.len());
+    }
+
+    #[test]
+    // this test is based off the example calculations defined in HIP 15
+    // https://github.com/helium/HIP/blob/main/0015-beaconing-rewards.md#example-reward-distribution
+    // expected values have been adjusted to a 4-decimal precision rounded result rather than the
+    // documented 2-decimal places defined in the HIP
+    fn reward_unit_calculations() {
+        let mut witness_rewards = vec![];
+        let mut beacon_rewards = vec![];
+        for witnesses in 1..=15 {
+            let witness_reward =
+                poc_per_witness_reward_unit(witnesses).expect("failed witness reward calculation");
+            witness_rewards.push(witness_reward);
+            let beacon_reward =
+                poc_beaconer_reward_unit(witnesses).expect("failed beacon reward calculation");
+            beacon_rewards.push(beacon_reward);
+        }
+
+        let expected_witness_rewards: Vec<Decimal> = vec![
+            1.0000, 1.0000, 1.0000, 1.0000, 0.7600, 0.6067, 0.5017, 0.4262, 0.3697, 0.3262, 0.2918,
+            0.2640, 0.2411, 0.2220, 0.2057,
+        ]
+        .into_iter()
+        .map(|float| {
+            Decimal::from_f32_retain(float)
+                .expect("failed float to decimal conversion")
+                .round_dp(SCALING_PRECISION)
+        })
+        .collect();
+        let expected_beacon_rewards: Vec<Decimal> = vec![
+            0.25, 0.50, 0.75, 1.0000, 1.2000, 1.3600, 1.4880, 1.5904, 1.6723, 1.7379, 1.7903,
+            1.8322, 1.8658, 1.8926, 1.9141,
+        ]
+        .into_iter()
+        .map(|float| {
+            Decimal::from_f32_retain(float)
+                .expect("failed float to decimal conversion")
+                .round_dp(SCALING_PRECISION)
+        })
+        .collect();
+        assert_eq!(expected_witness_rewards, witness_rewards);
+        assert_eq!(expected_beacon_rewards, beacon_rewards);
     }
 }

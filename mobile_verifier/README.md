@@ -1,5 +1,21 @@
 # Mobile Verifier 
 
+## S3 Inputs
+
+| File Type | Pattern | |
+| :--- | :-- | :-- |
+| CellHeartbeatIngestReport | heartbeat_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L50) |
+| CellSpeedtestIngestReport | speedtest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L25) |
+
+## S3 Outputs
+
+| File Type | Pattern | |
+| :--- | :-- | :-- |
+| ValidatedHeartbeat | validated_heartbeat.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L80) |
+| SpeedtestAvg | speedtest_avg.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L97) | 
+| RadioRewardShare | radio_reward_share.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L118) |
+| RewardManifest | reward_manifest.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/reward_manifest.proto#L5) |
+
 This crates provides a command line utility and server that validates shares within an S3 bucket. 
 
 Upon completion of a given time range, the mobile verifier will write the following files to the 

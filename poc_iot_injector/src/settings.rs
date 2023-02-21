@@ -1,3 +1,4 @@
+use chrono::Duration as ChronoDuration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::{path::Path, time::Duration};
@@ -26,6 +27,21 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(default = "default_max_witnesses_per_receipt")]
     pub max_witnesses_per_receipt: u64,
+    /// Offset receipt submission to wait for S3 files being written (secs)
+    /// Receipts would be submitted from last_poc_submission_ts to utc::now - submission_offset
+    /// Default = 5 mins
+    #[serde(default = "default_submission_offset")]
+    pub submission_offset: i64,
+    /// max lookback age for the injector when loading files from s3 ( in seconds )
+    #[serde(default = "default_max_lookback_age")]
+    pub max_lookback_age: i64,
+    /// max txns to submit per min (default = 2000)
+    #[serde(default = "default_max_txns_per_min")]
+    pub max_txns_per_min: u32,
+}
+
+pub fn default_max_txns_per_min() -> u32 {
+    2000
 }
 
 pub fn default_log() -> String {
@@ -44,8 +60,17 @@ fn default_trigger_interval() -> u64 {
     1800
 }
 
+fn default_submission_offset() -> i64 {
+    5 * 60
+}
+
 pub fn default_max_witnesses_per_receipt() -> u64 {
     14
+}
+
+// Default: 60 minutes ( in seconds )
+pub fn default_max_lookback_age() -> i64 {
+    60 * 60
 }
 
 impl Settings {
@@ -78,5 +103,13 @@ impl Settings {
 
     pub fn trigger_interval(&self) -> Duration {
         Duration::from_secs(self.trigger)
+    }
+
+    pub fn submission_offset(&self) -> ChronoDuration {
+        ChronoDuration::seconds(self.submission_offset)
+    }
+
+    pub fn max_lookback_age(&self) -> ChronoDuration {
+        ChronoDuration::seconds(self.max_lookback_age)
     }
 }
