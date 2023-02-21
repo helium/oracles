@@ -137,7 +137,9 @@ where
 }
 
 pub fn payload_size_to_dc(payload_size: u64) -> u64 {
-    payload_size.max(24) / 24
+    let payload_size = payload_size.max(24);
+    // perform a div_ciel function:
+    (payload_size + 24 - 1) / 24
 }
 
 #[async_trait]
