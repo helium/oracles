@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, pin::Pin, task::Poll, future::Future};
 
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -58,6 +58,24 @@ pub struct FileInfoPoller<T> {
     p: PhantomData<T>,
 }
 
+pub struct FileInfoPollerJoinHandle(JoinHandle<Result>);
+
+impl Future for FileInfoPollerJoinHandle {
+    type Output = Result; 
+    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let join_handle = Pin::new(&mut self.0);
+        
+        match Future::poll(join_handle, cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => match result {
+                Ok(Ok(())) => Poll::Ready(Ok(())),
+                Ok(Err(err)) => Poll::Ready(Err(err)),
+                Err(err) => Poll::Ready(Err(Error::from(err))),
+            }
+        }
+    }
+}
+
 impl<T> FileInfoPoller<T>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
@@ -65,11 +83,11 @@ where
     pub async fn start(
         self,
         shutdown: triggered::Listener,
-    ) -> Result<(Receiver<FileInfoStream<T>>, JoinHandle<Result>)> {
+    ) -> Result<(Receiver<FileInfoStream<T>>, FileInfoPollerJoinHandle)> {
         let (sender, receiver) = tokio::sync::mpsc::channel(self.queue_size);
         let join_handle = tokio::spawn(async move { self.run(shutdown, sender).await });
 
-        Ok((receiver, join_handle))
+        Ok((receiver, FileInfoPollerJoinHandle(join_handle)))
     }
 
     async fn run(self, shutdown: triggered::Listener, sender: Sender<FileInfoStream<T>>) -> Result {
