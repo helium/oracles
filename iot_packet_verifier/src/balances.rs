@@ -86,7 +86,7 @@ impl Debiter for BalanceCache {
         let mut balance = if !balances.contains_key(payer) {
             let new_balance = payer_balance(self.provider.as_ref(), &self.sub_dao, payer).await?;
             balances.insert(payer.clone(), Balance::new(new_balance));
-            balances.get_mut(&payer).unwrap()
+            balances.get_mut(payer).unwrap()
         } else {
             let mut balance = balances.get_mut(payer).unwrap();
 

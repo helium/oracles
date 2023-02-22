@@ -123,10 +123,10 @@ impl Burner {
 
             let accounts = accounts::BurnDelegatedDataCreditsV0 {
                 sub_dao_epoch_info,
-                dao: self.program_cache.dao.clone(),
-                sub_dao: self.program_cache.sub_dao.clone(),
-                account_payer: self.program_cache.account_payer.clone(),
-                data_credits: self.program_cache.data_credits.clone(),
+                dao: self.program_cache.dao,
+                sub_dao: self.program_cache.sub_dao,
+                account_payer: self.program_cache.account_payer,
+                data_credits: self.program_cache.data_credits,
                 delegated_data_credits: pdas::delegated_data_credits(
                     &self.program_cache.sub_dao,
                     &payer,
@@ -134,10 +134,10 @@ impl Burner {
                 token_program: spl_token::id(),
                 helium_sub_daos_program: helium_sub_daos::id(),
                 system_program: solana_program::system_program::id(),
-                dc_burn_authority: self.program_cache.dc_burn_authority.clone(),
-                dc_mint: self.program_cache.dc_mint.clone(),
+                dc_burn_authority: self.program_cache.dc_burn_authority,
+                dc_mint: self.program_cache.dc_mint,
                 escrow_account,
-                registrar: self.program_cache.registrar.clone(),
+                registrar: self.program_cache.registrar,
             };
             let args = instruction::BurnDelegatedDataCreditsV0 {
                 args: data_credits::BurnDelegatedDataCreditsArgsV0 {

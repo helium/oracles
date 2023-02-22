@@ -18,7 +18,7 @@ use helium_proto::{
 };
 use sqlx::{Postgres, Transaction};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Debug,
     mem,
 };
@@ -205,11 +205,11 @@ impl ConfigServer for CachedOrgClient {
         oui: u64,
         cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, Self::Error> {
-        if !cache.contains_key(&oui) {
+        if let Entry::Vacant(e) = cache.entry(oui) {
             let req = OrgGetReqV1 { oui };
             let pubkey =
                 PublicKeyBinary::from(self.client.get(req).await?.into_inner().org.unwrap().owner);
-            cache.insert(oui, pubkey);
+            e.insert(pubkey);
         }
         Ok(cache.get(&oui).unwrap().clone())
     }
