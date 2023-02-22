@@ -1,14 +1,10 @@
-use std::{marker::PhantomData, pin::Pin, task::Poll, future::Future};
-
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt};
 use retainer::Cache;
-use tokio::{
-    sync::mpsc::{Receiver, Sender},
-    task::JoinHandle,
-};
+use std::marker::PhantomData;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -58,24 +54,6 @@ pub struct FileInfoPoller<T> {
     p: PhantomData<T>,
 }
 
-pub struct FileInfoPollerJoinHandle(JoinHandle<Result>);
-
-impl Future for FileInfoPollerJoinHandle {
-    type Output = Result; 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let join_handle = Pin::new(&mut self.0);
-        
-        match Future::poll(join_handle, cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(result) => match result {
-                Ok(Ok(())) => Poll::Ready(Ok(())),
-                Ok(Err(err)) => Poll::Ready(Err(err)),
-                Err(err) => Poll::Ready(Err(Error::from(err))),
-            }
-        }
-    }
-}
-
 impl<T> FileInfoPoller<T>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
@@ -83,11 +61,20 @@ where
     pub async fn start(
         self,
         shutdown: triggered::Listener,
-    ) -> Result<(Receiver<FileInfoStream<T>>, FileInfoPollerJoinHandle)> {
+    ) -> Result<(
+        Receiver<FileInfoStream<T>>,
+        impl std::future::Future<Output = Result>,
+    )> {
         let (sender, receiver) = tokio::sync::mpsc::channel(self.queue_size);
         let join_handle = tokio::spawn(async move { self.run(shutdown, sender).await });
 
-        Ok((receiver, FileInfoPollerJoinHandle(join_handle)))
+        Ok((receiver, async move {
+            match join_handle.await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(err)) => Err(err),
+                Err(err) => Err(Error::from(err)),
+            }
+        }))
     }
 
     async fn run(self, shutdown: triggered::Listener, sender: Sender<FileInfoStream<T>>) -> Result {
