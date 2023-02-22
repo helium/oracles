@@ -164,7 +164,7 @@ impl Cmd {
                     print_json(&json!({
                         "oui": packet_report.oui,
                         "timestamp": packet_report.gateway_timestamp_ms,
-                        
+
                     }))?;
                 }
                 _ => (),
