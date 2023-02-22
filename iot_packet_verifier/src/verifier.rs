@@ -489,11 +489,8 @@ mod test {
         assert_eq!(invalid_packets, vec![invalid_packet(1, vec![3]),]);
 
         // Verify that only org #0 is disabled:
-        assert_eq!(
-            verifier.config_server.payers.get(&0).unwrap().enabled,
-            false
-        );
-        assert_eq!(verifier.config_server.payers.get(&1).unwrap().enabled, true);
-        assert_eq!(verifier.config_server.payers.get(&2).unwrap().enabled, true);
+        assert!(!verifier.config_server.payers.get(&0).unwrap().enabled);
+        assert!(verifier.config_server.payers.get(&1).unwrap().enabled);
+        assert!(verifier.config_server.payers.get(&2).unwrap().enabled);
     }
 }
