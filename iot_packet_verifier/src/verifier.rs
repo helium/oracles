@@ -296,7 +296,9 @@ impl<T: prost::Message + 'static> PacketWriter<T> for &'_ FileSinkClient {
 #[cfg(test)]
 mod test {
     use super::*;
+    use chrono::{TimeZone, Utc};
     use futures_util::stream;
+    use helium_proto::{DataRate, Region};
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -388,17 +390,17 @@ mod test {
         timestamp: u64,
         payload_size: u32,
         payload_hash: Vec<u8>,
-    ) -> PacketRouterPacketReportV1 {
-        PacketRouterPacketReportV1 {
-            gateway_timestamp_ms: timestamp,
+    ) -> PacketRouterPacketReport {
+        PacketRouterPacketReport {
+            gateway_timestamp: Utc.timestamp_opt(timestamp as i64, 0).unwrap(),
             oui,
             net_id: 0,
             rssi: 0,
             frequency: 0,
             snr: 0.0,
-            datarate: 0,
-            region: 0,
-            gateway: vec![],
+            data_rate: DataRate::Fsk50,
+            region: Region::As9231,
+            gateway: PublicKeyBinary::from(vec![]),
             payload_hash,
             payload_size,
         }

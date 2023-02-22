@@ -131,7 +131,7 @@ mod tests {
 
         assert_eq!(
             speedtest_report.received_timestamp,
-            Utc.timestamp_millis(now)
+            Utc.timestamp_millis_opt(now).unwrap()
         );
         assert_eq!(speedtest_report.report.serial, "serial");
     }
