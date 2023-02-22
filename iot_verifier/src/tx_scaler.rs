@@ -50,7 +50,7 @@ impl Server {
     }
 
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result<(), TxScalerError> {
-        tracing::info!("starting density scaler process");
+        tracing::info!("density_scaler: starting transmit scaler process");
 
         let mut trigger_timer = time::interval(
             self.trigger_interval
@@ -60,7 +60,7 @@ impl Server {
 
         loop {
             if shutdown.is_triggered() {
-                tracing::info!("stopping density scaler");
+                tracing::info!("density_scaler: stopping transmit scaler");
                 return Ok(());
             }
 
@@ -73,7 +73,7 @@ impl Server {
 
     pub async fn refresh_scaling_map(&mut self) -> Result<(), TxScalerError> {
         let refresh_start = Utc::now();
-        tracing::info!("generating hex scaling map : starting {refresh_start:?}");
+        tracing::info!("density_scaler: generating hex scaling map, starting at {refresh_start:?}");
         let mut global_map = GlobalHexMap::new();
         let active_gateways = self
             .gateways_recent_activity(refresh_start)
@@ -92,9 +92,15 @@ impl Server {
         }
         global_map.reduce_global();
         let new_map = compute_hex_density_map(&global_map);
-        tracing::info!("scaling factor map entries: {}", new_map.len());
+        tracing::info!(
+            "density_scaler: scaling factor map entries: {}",
+            new_map.len()
+        );
         self.hex_density_map.swap(new_map).await;
-        tracing::info!("completed hex scaling map : completed {:?}", Utc::now());
+        tracing::info!(
+            "density_scaler: generating hex scaling map, completed at {:?}",
+            Utc::now()
+        );
         Ok(())
     }
 
