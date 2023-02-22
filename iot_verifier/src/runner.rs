@@ -628,24 +628,37 @@ mod tests {
 
         let witness3 = IotVerifiedWitnessReport {
             received_timestamp: Utc::now(),
-            report,
+            report: report.clone(),
             location: Some(631252734740306943),
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
-            status: VerificationStatus::Valid,
+            status: VerificationStatus::Invalid,
             invalid_reason: InvalidReason::Stale,
             participant_side: InvalidParticipantSide::Witness,
         };
 
-        // vec of 3 witnesses
-        let witnesses = vec![witness1, witness2, witness3];
-        let (excluded_witnesses, included_witnesses) = filter_witnesses(witnesses);
+        let witness4 = IotVerifiedWitnessReport {
+            received_timestamp: Utc::now(),
+            report,
+            location: Some(631252734740306943),
+            hex_scale: Decimal::ZERO,
+            reward_unit: Decimal::ZERO,
+            status: VerificationStatus::Invalid,
+            invalid_reason: InvalidReason::Duplicate,
+            participant_side: InvalidParticipantSide::Witness,
+        };
 
-        assert_eq!(1, excluded_witnesses.len());
+        let witnesses = vec![witness1, witness2, witness3, witness4];
+        let (excluded_witnesses, included_witnesses) = filter_witnesses(witnesses);
+        assert_eq!(2, excluded_witnesses.len());
         assert_eq!(1, included_witnesses.len());
         assert_eq!(
             InvalidReason::Stale,
-            excluded_witnesses.first().unwrap().invalid_reason
+            excluded_witnesses.get(0).unwrap().invalid_reason
+        );
+        assert_eq!(
+            InvalidReason::Duplicate,
+            excluded_witnesses.get(1).unwrap().invalid_reason
         );
         assert_eq!(
             InvalidReason::ReasonNone,
