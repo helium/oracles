@@ -8,10 +8,10 @@ use chrono::{DateTime, Duration, Utc};
 use density_scaler::HexDensityMap;
 use file_store::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
-    iot_invalid_poc::IotInvalidWitnessReport,
     iot_valid_poc::IotVerifiedWitnessReport,
     iot_witness_report::IotWitnessIngestReport,
 };
+
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
@@ -53,17 +53,9 @@ pub struct VerifyBeaconResult {
     pub hex_scale: Option<Decimal>,
 }
 
-pub struct VerifyWitnessResult {
-    result: VerificationStatus,
-    invalid_reason: InvalidReason,
-    pub gateway_info: Option<GatewayInfo>,
-    hex_scale: Option<Decimal>,
-    participant_side: InvalidParticipantSide,
-}
-
 pub struct VerifyWitnessesResult {
     pub verified_witnesses: Vec<IotVerifiedWitnessReport>,
-    pub failed_witnesses: Vec<IotInvalidWitnessReport>,
+    pub failed_witnesses: Vec<IotWitnessIngestReport>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -144,45 +136,41 @@ impl Poc {
         gateway_cache: &GatewayCache,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
-        let mut failed_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
+        let mut failed_witnesses: Vec<IotWitnessIngestReport> = Vec::new();
+        let mut existing_gateways: Vec<PublicKeyBinary> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            match self
-                .verify_witness(
-                    &witness_report,
-                    beacon_info,
-                    gateway_cache,
-                    &hex_density_map,
-                )
-                .await
-            {
-                Ok(witness_result) => match witness_result.result {
-                    VerificationStatus::Valid => {
-                        if let Ok(valid_witness) = self
-                            .valid_witness_report(witness_result, witness_report)
-                            .await
-                        {
-                            verified_witnesses.push(valid_witness)
-                        };
+            // have we already processed a witness report from this gateway ?
+            // if not, run verifications
+            // if so, skip verifications and declare the report a dup
+            if !existing_gateways.contains(&witness_report.report.pub_key) {
+                // not a dup, run the verifications
+                match self
+                    .verify_witness(
+                        &witness_report,
+                        beacon_info,
+                        gateway_cache,
+                        &hex_density_map,
+                    )
+                    .await
+                {
+                    Ok(verified_witness) => {
+                        // track which gateways we have saw a witness report from
+                        existing_gateways.push(verified_witness.report.pub_key.clone());
+                        verified_witnesses.push(verified_witness)
                     }
-                    VerificationStatus::Invalid => {
-                        if let Ok(invalid_witness) = self
-                            .invalid_witness_report(witness_result, witness_report)
-                            .await
-                        {
-                            verified_witnesses.push(invalid_witness)
-                        }
-                    }
-                },
-                Err(err) => {
-                    tracing::warn!("Unexpected error verifying witness: {err:?}");
-                    if let Ok(failed_witness) = self
-                        .failed_witness_report(InvalidReason::UnknownError, witness_report)
-                        .await
-                    {
-                        failed_witnesses.push(failed_witness)
-                    }
+                    Err(_) => failed_witnesses.push(witness_report),
                 }
+            } else {
+                // the report is a dup
+                let dup_witness = IotVerifiedWitnessReport::invalid(
+                    InvalidReason::Duplicate,
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    None,
+                    InvalidParticipantSide::Witness,
+                );
+                verified_witnesses.push(dup_witness)
             }
         }
         let resp = VerifyWitnessesResult {
@@ -198,14 +186,20 @@ impl Poc {
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &impl HexDensityMap,
-    ) -> Result<VerifyWitnessResult, VerificationError> {
+    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return Ok(VerifyWitnessResult::gateway_not_found());
+                return Ok(IotVerifiedWitnessReport::invalid(
+                    InvalidReason::GatewayNotFound,
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    None,
+                    InvalidParticipantSide::Witness,
+                ))
             }
         };
         // run the witness verifications
@@ -217,16 +211,39 @@ impl Poc {
                 // to avoid assuming beaconer location is set and to avoid unwrap
                 // we explicity match location here again
                 let Some(beaconer_location) = beaconer_info.location else {
-                    return Ok(VerifyWitnessResult::not_asserted(InvalidParticipantSide::Beaconer))
+                    return Ok(IotVerifiedWitnessReport::invalid(
+                        InvalidReason::NotAsserted,
+                        &witness_report.report,
+                        witness_report.received_timestamp,
+                        None,
+                        InvalidParticipantSide::Beaconer,
+                    ))
                 };
 
                 if let Some(hex_scale) = hex_density_map.get(beaconer_location).await {
-                    Ok(VerifyWitnessResult::valid(witness_info, hex_scale))
+                    Ok(IotVerifiedWitnessReport::valid(
+                        &witness_report.report,
+                        witness_report.received_timestamp,
+                        witness_info.location,
+                        hex_scale,
+                    ))
                 } else {
-                    Ok(VerifyWitnessResult::scaling_factor_not_found(witness_info))
+                    Ok(IotVerifiedWitnessReport::invalid(
+                        InvalidReason::ScalingFactorNotFound,
+                        &witness_report.report,
+                        witness_report.received_timestamp,
+                        None,
+                        InvalidParticipantSide::Beaconer,
+                    ))
                 }
             }
-            Err(invalid_reason) => Ok(VerifyWitnessResult::invalid(invalid_reason, witness_info)),
+            Err(invalid_reason) => Ok(IotVerifiedWitnessReport::invalid(
+                invalid_reason,
+                &witness_report.report,
+                witness_report.received_timestamp,
+                None,
+                InvalidParticipantSide::Witness,
+            )),
         }
     }
 
@@ -310,65 +327,6 @@ impl Poc {
             PublicKeyBinary::from(witness_info.address.clone())
         );
         Ok(())
-    }
-
-    async fn valid_witness_report(
-        &self,
-        witness_result: VerifyWitnessResult,
-        witness_report: IotWitnessIngestReport,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
-        let gw_info = witness_result
-            .gateway_info
-            .ok_or(VerificationError::NotFound(
-                "expected gateway info not found",
-            ))?;
-        let hex_scale = witness_result
-            .hex_scale
-            .ok_or(VerificationError::NotFound("expected hex scale not found"))?;
-        Ok(IotVerifiedWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
-            status: witness_result.result,
-            report: witness_report.report,
-            location: gw_info.location,
-            hex_scale,
-            // default reward units to zero until we've got the full count of
-            // valid, non-failed witnesses for the final validated poc report
-            reward_unit: Decimal::ZERO,
-            invalid_reason: InvalidReason::ReasonNone,
-            participant_side: InvalidParticipantSide::SideNone,
-        })
-    }
-
-    async fn invalid_witness_report(
-        &self,
-        witness_result: VerifyWitnessResult,
-        witness_report: IotWitnessIngestReport,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
-        Ok(IotVerifiedWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
-            status: witness_result.result,
-            report: witness_report.report,
-            location: None,
-            hex_scale: Decimal::ZERO,
-            // default reward units to zero until we've got the full count of
-            // valid, non-failed witnesses for the final validated poc report
-            reward_unit: Decimal::ZERO,
-            invalid_reason: witness_result.invalid_reason,
-            participant_side: witness_result.participant_side,
-        })
-    }
-
-    async fn failed_witness_report(
-        &self,
-        failed_reason: InvalidReason,
-        witness_report: IotWitnessIngestReport,
-    ) -> Result<IotInvalidWitnessReport, VerificationError> {
-        Ok(IotInvalidWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
-            reason: failed_reason,
-            report: witness_report.report,
-            participant_side: InvalidParticipantSide::Witness,
-        })
     }
 }
 
@@ -791,74 +749,6 @@ impl VerifyBeaconResult {
             InvalidReason::ScalingFactorNotFound,
             Some(gateway_info),
             None,
-        )
-    }
-}
-
-impl VerifyWitnessResult {
-    pub fn new(
-        result: VerificationStatus,
-        invalid_reason: InvalidReason,
-        gateway_info: Option<GatewayInfo>,
-        hex_scale: Option<Decimal>,
-        participant_side: InvalidParticipantSide,
-    ) -> Self {
-        VerifyWitnessResult {
-            result,
-            invalid_reason,
-            gateway_info,
-            hex_scale,
-            participant_side,
-        }
-    }
-
-    pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
-        Self::new(
-            VerificationStatus::Valid,
-            InvalidReason::ReasonNone,
-            Some(gateway_info),
-            Some(hex_scale),
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            invalid_reason,
-            Some(gateway_info),
-            None,
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::ScalingFactorNotFound,
-            Some(gateway_info),
-            None,
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn gateway_not_found() -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::GatewayNotFound,
-            None,
-            None,
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn not_asserted(participant_side: InvalidParticipantSide) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::NotAsserted,
-            None,
-            None,
-            participant_side,
         )
     }
 }

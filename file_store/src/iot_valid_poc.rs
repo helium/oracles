@@ -214,3 +214,45 @@ impl From<IotVerifiedWitnessReport> for LoraVerifiedWitnessReportV1 {
         }
     }
 }
+
+impl IotVerifiedWitnessReport {
+    pub fn valid(
+        report: &IotWitnessReport,
+        received_timestamp: DateTime<Utc>,
+        location: Option<u64>,
+        hex_scale: Decimal,
+    ) -> IotVerifiedWitnessReport {
+        Self {
+            received_timestamp,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::ReasonNone,
+            report: report.clone(),
+            location,
+            hex_scale,
+            // default reward units to zero until we've got the full count of
+            // valid, non-failed witnesses for the final validated poc report
+            reward_unit: Decimal::ZERO,
+            participant_side: InvalidParticipantSide::SideNone,
+        }
+    }
+    pub fn invalid(
+        invalid_reason: InvalidReason,
+        report: &IotWitnessReport,
+        received_timestamp: DateTime<Utc>,
+        location: Option<u64>,
+        participant_side: InvalidParticipantSide,
+    ) -> IotVerifiedWitnessReport {
+        Self {
+            received_timestamp,
+            status: VerificationStatus::Invalid,
+            invalid_reason,
+            report: report.clone(),
+            location,
+            hex_scale: Decimal::ZERO,
+            // default reward units to zero until we've got the full count of
+            // valid, non-failed witnesses for the final validated poc report
+            reward_unit: Decimal::ZERO,
+            participant_side,
+        }
+    }
+}
