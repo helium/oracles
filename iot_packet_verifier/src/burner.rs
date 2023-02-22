@@ -48,7 +48,7 @@ pub enum BurnError {
 }
 
 const BURN_THRESHOLD: i64 = 10_000;
-/// Burn every minute: 
+/// Burn every minute:
 const BURN_EVERY: Duration = Duration::from_secs(60);
 
 impl Burner {
