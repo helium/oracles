@@ -48,6 +48,8 @@ pub enum BurnError {
 }
 
 const BURN_THRESHOLD: i64 = 10_000;
+/// Burn every minute: 
+const BURN_EVERY: Duration = Duration::from_secs(60);
 
 impl Burner {
     pub async fn new(
@@ -71,7 +73,7 @@ impl Burner {
         let burn_service = task::spawn(async move {
             loop {
                 self.burn().await?;
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(BURN_EVERY).await;
             }
         });
 
