@@ -85,7 +85,7 @@ impl Server {
         // Reward server
         let mut indexer = Indexer::new(settings).await?;
 
-        let _ = tokio::try_join!(
+        tokio::try_join!(
             indexer.run(shutdown_listener.clone(), receiver),
             source_join_handle.map_err(anyhow::Error::from),
         )?;
