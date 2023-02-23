@@ -40,7 +40,7 @@ impl Cmd {
         // poc_iot_injector server
         let mut poc_iot_injector_server = Server::new(settings).await?;
 
-        let _ = tokio::try_join!(
+        tokio::try_join!(
             poc_iot_injector_server
                 .run(&shutdown_listener, receiver)
                 .map_err(Error::from),
