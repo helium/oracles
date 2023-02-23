@@ -7,8 +7,8 @@ use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, GatewayLoadRegionReqV1, GatewayLoadRegionResV1, GatewayRegionParamsReqV1,
-        GatewayRegionParamsResV1,
+        self, GatewayLoadRegionReqV1, GatewayLoadRegionResV1, GatewayLocationReqV1,
+        GatewayLocationResV1, GatewayRegionParamsReqV1, GatewayRegionParamsResV1,
     },
     Message, Region,
 };
@@ -54,6 +54,13 @@ impl GatewayService {
 
 #[tonic::async_trait]
 impl iot_config::Gateway for GatewayService {
+    async fn location(
+        &self,
+        _request: Request<GatewayLocationReqV1>,
+    ) -> GrpcResult<GatewayLocationResV1> {
+        unimplemented!()
+    }
+
     async fn region_params(
         &self,
         request: Request<GatewayRegionParamsReqV1>,
