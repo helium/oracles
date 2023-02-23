@@ -19,6 +19,7 @@ pub use crate::file_store::FileStore;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};
+pub use iot_valid_poc::SCALING_PRECISION;
 pub use settings::Settings;
 
 use bytes::BytesMut;

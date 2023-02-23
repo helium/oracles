@@ -51,6 +51,19 @@ impl LastBeacon {
         )
     }
 
+    pub async fn get_all_since<'c, E>(
+        deadline: DateTime<Utc>,
+        executor: E,
+    ) -> Result<Vec<Self>, sqlx::Error>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres> + 'c,
+    {
+        sqlx::query_as::<_, Self>(r#" select * from last_beacon where timestamp >= $1; "#)
+            .bind(deadline)
+            .fetch_all(executor)
+            .await
+    }
+
     pub async fn last_timestamp<'c, E>(
         executor: E,
         id: &[u8],

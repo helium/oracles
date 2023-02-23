@@ -5,7 +5,6 @@ RUN rustup toolchain install nightly
 # Copy cargo file and workspace dependency crates to cache build
 COPY Cargo.toml Cargo.lock ./
 COPY db_store ./db_store/
-COPY density_scaler ./density_scaler/
 COPY file_store ./file_store/
 COPY metrics ./metrics/
 COPY node_follower /node_follower/

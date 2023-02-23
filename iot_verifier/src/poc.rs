@@ -1,11 +1,11 @@
 use crate::{
     entropy::ENTROPY_LIFESPAN,
     gateway_cache::GatewayCache,
+    hex_density::HexDensityMap,
     last_beacon::{LastBeacon, LastBeaconError},
 };
 use beacon;
 use chrono::{DateTime, Duration, Utc};
-use density_scaler::HexDensityMap;
 use file_store::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
     iot_valid_poc::IotVerifiedWitnessReport,
@@ -19,6 +19,7 @@ use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
     BlockchainRegionParamV1, GatewayStakingMode, Region as ProtoRegion,
 };
+use lazy_static::lazy_static;
 use node_follower::gateway_resp::GatewayInfo;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -37,6 +38,15 @@ const POC_DISTANCE_LIMIT: u32 = 100;
 const POC_CELL_DISTANCE_MINIMUM: u32 = 8;
 /// the resolution at which parent cell distance is derived
 const POC_CELL_PARENT_RES: u8 = 11;
+
+lazy_static! {
+    /// Scaling factor when inactive gateway is not found in the tx scaling map (20%).
+    /// A default tx scale is required to allow for inactive hotspots to become active
+    /// again when an inactive hotspot's h3 index would otherwise be garbage-collected
+    /// from density scaling calculations and not finding a value on subsequent lookups
+    /// would disqualify the hotspot from validating further beacons
+    static ref DEFAULT_TX_SCALE: Decimal = Decimal::new(2000, 4);
+}
 
 pub struct Poc {
     beacon_report: IotBeaconIngestReport,
@@ -120,11 +130,11 @@ impl Poc {
                     .location
                     .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
 
-                if let Some(scaling_factor) = hex_density_map.get(beaconer_location).await {
-                    Ok(VerifyBeaconResult::valid(beaconer_info, scaling_factor))
-                } else {
-                    Ok(VerifyBeaconResult::scaling_factor_not_found(beaconer_info))
-                }
+                let tx_scale = hex_density_map
+                    .get(beaconer_location)
+                    .await
+                    .unwrap_or(*DEFAULT_TX_SCALE);
+                Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
             }
             Err(invalid_reason) => Ok(VerifyBeaconResult::invalid(invalid_reason, beaconer_info)),
         }
@@ -225,22 +235,16 @@ impl Poc {
                     ))
                 };
 
-                if let Some(hex_scale) = hex_density_map.get(beaconer_location).await {
-                    Ok(IotVerifiedWitnessReport::valid(
-                        &witness_report.report,
-                        witness_report.received_timestamp,
-                        witness_info.location,
-                        hex_scale,
-                    ))
-                } else {
-                    Ok(IotVerifiedWitnessReport::invalid(
-                        InvalidReason::ScalingFactorNotFound,
-                        &witness_report.report,
-                        witness_report.received_timestamp,
-                        None,
-                        InvalidParticipantSide::Beaconer,
-                    ))
-                }
+                let tx_scale = hex_density_map
+                    .get(beaconer_location)
+                    .await
+                    .unwrap_or(*DEFAULT_TX_SCALE);
+                Ok(IotVerifiedWitnessReport::valid(
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    witness_info.location,
+                    tx_scale,
+                ))
             }
             Err(invalid_reason) => Ok(IotVerifiedWitnessReport::invalid(
                 invalid_reason,
@@ -748,15 +752,6 @@ impl VerifyBeaconResult {
             VerificationStatus::Invalid,
             InvalidReason::GatewayNotFound,
             None,
-            None,
-        )
-    }
-
-    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::ScalingFactorNotFound,
-            Some(gateway_info),
             None,
         )
     }

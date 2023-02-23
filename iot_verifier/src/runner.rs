@@ -1,9 +1,8 @@
 use crate::{
-    gateway_cache::GatewayCache, last_beacon::LastBeacon, metrics::Metrics, poc::Poc,
-    poc_report::Report, reward_share::GatewayShare, Settings,
+    gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon,
+    metrics::Metrics, poc::Poc, poc_report::Report, reward_share::GatewayShare, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
-use density_scaler::{HexDensityMap, SCALING_PRECISION};
 use file_store::{
     file_sink,
     file_sink::FileSinkClient,
@@ -13,7 +12,7 @@ use file_store::{
     iot_valid_poc::{IotPoc, IotValidBeaconReport, IotVerifiedWitnessReport},
     iot_witness_report::IotWitnessIngestReport,
     traits::{IngestId, MsgDecode, ReportId},
-    FileType,
+    FileType, SCALING_PRECISION,
 };
 use futures::stream::{self, StreamExt};
 use helium_proto::services::poc_lora::{

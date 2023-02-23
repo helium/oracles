@@ -6,7 +6,6 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use density_scaler::SCALING_PRECISION;
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraPocV1,
     LoraValidBeaconReportV1, LoraVerifiedWitnessReportV1, LoraWitnessReportReqV1,
@@ -18,6 +17,7 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 
 const SCALE_MULTIPLIER: Decimal = dec!(10000);
+pub const SCALING_PRECISION: u32 = 4;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct IotValidBeaconReport {
