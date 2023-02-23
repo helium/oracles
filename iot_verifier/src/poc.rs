@@ -441,9 +441,9 @@ fn verify_beacon_payload(
 
     // compare reports
     if reported_beacon != generated_beacon {
-        tracing::debug!(
-            "beacon verification failed, reason: {:?}",
-            InvalidReason::InvalidPacket,
+        tracing::info!(
+            "beacon construction verification failed, pubkey {:?}",
+            beacon_report.pub_key,
         );
         return Err(InvalidReason::InvalidPacket);
     }
