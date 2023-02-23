@@ -3223,7 +3223,6 @@ dependencies = [
  "helium-sub-daos",
  "http",
  "http-serde",
- "node-follower",
  "poc-metrics",
  "prost",
  "serde",
