@@ -31,6 +31,7 @@ pub struct Burner {
     cluster: String,
     // We store the keypair as bytes since the type does not implement clone (for some reason).
     keypair: [u8; 64],
+    burn_period: Duration,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,8 +49,6 @@ pub enum BurnError {
 }
 
 const BURN_THRESHOLD: i64 = 10_000;
-/// Burn every minute:
-const BURN_EVERY: Duration = Duration::from_secs(60);
 
 impl Burner {
     pub async fn new(
@@ -66,6 +65,7 @@ impl Burner {
             cluster: settings.cluster.clone(),
             provider,
             keypair: keypair.to_bytes(),
+            burn_period: Duration::from_secs(60 * settings.burn_period),
         })
     }
 
@@ -73,7 +73,7 @@ impl Burner {
         let burn_service = task::spawn(async move {
             loop {
                 self.burn().await?;
-                tokio::time::sleep(BURN_EVERY).await;
+                tokio::time::sleep(self.burn_period).await;
             }
         });
 

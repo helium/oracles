@@ -1,0 +1,91 @@
+
+# log settings for the application (RUST_LOG format). Default below
+# 
+# log = "mobile-verifier=debug,poc_store=info"
+
+# Cache location for generated verified reports; Required
+cache = "/var/data/verified-reports"
+
+# Data credit burn period in minutes. (Default is 1)
+# burn_period = 1
+
+# Public key for the Data Credits Mint (devnet mint provided here)
+dc_mint = "dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm"
+# Public key for the DNT Mint (devnet mint provided here)
+dnt_mint = "iotEVVZLEywoTn1QdwNPddxPWszn3zFhEot3MfL9fns"
+# Public key for the HNT Mint (devnet mint provided here)
+hnt_mint = "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux"
+
+# Solana RPC. This may contain a secret 
+solana_rpc = "http://localhost:8899"
+# Path to the keypair used to sign data credit burn solana transactions
+burn_keypair = ""
+# Path to the keypair used to authorize config server rpc calls
+config_keypair = ""
+# Solana cluster to use. "devnet" or "mainnet"
+cluster = "devnet"
+
+[database]
+
+url = "postgresql://postgres:password@localhost:5432/postgres"
+
+# Max connections to the database. Default below
+#
+# max_connections = 10
+
+[org]
+
+# Local grpc url to node follower for rewards tracking and submission
+#[serde(with = "http_serde::uri", default = "default_url")]
+url = "http://127.0.0.1:8080"
+
+# Start block to start streaming followed transactions from.
+# block = 0
+
+# Connect timeout for follower in seconds. Default 5
+# connect = 5
+
+# RPC timeout for follower in seconds. Default 5
+# rpc = 5
+
+# batch size for gateway stream results. Default 100
+# batch = 100
+
+[ingest]
+
+# Input bucket details for ingest data 
+
+# Name of bucket to access ingest data. Required
+#
+bucket = "helium-hpr-alpha"
+
+# Region for bucket. Defaults to below
+#
+region = "us-west-1"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+[output]
+# Output bucket for verified reports
+
+# Name of bucket to write details to. Required
+#
+bucket = "todo"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

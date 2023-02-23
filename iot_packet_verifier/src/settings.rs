@@ -18,6 +18,8 @@ pub struct Settings {
     pub burn_keypair: PathBuf,
     /// Path to the keypair for signing config changes
     pub config_keypair: PathBuf,
+    /// Data credit burn period in minutes. Default is 1.
+    pub burn_period: u64,
     pub cluster: String,
     pub dc_mint: String,
     pub dnt_mint: String,
@@ -28,6 +30,10 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(with = "http_serde::uri", default = "default_url")]
     pub org_url: http::Uri,
+}
+
+pub fn default_burn_period() -> u64 {
+    1
 }
 
 pub fn default_url() -> http::Uri {
