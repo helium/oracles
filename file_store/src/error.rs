@@ -48,6 +48,8 @@ pub enum DecodeError {
     UnsupportedParticipantSide(String, i32),
     #[error("unsupported verification status, type: {0}, value: {1}")]
     UnsupportedStatusReason(String, i32),
+    #[error("unsupported radio access technology, type: {0}, value: {1}")]
+    UnsupportedRadioAccessTechnology(String, i32),
     #[error("invalid unix timestamp {0}")]
     InvalidTimestamp(u64),
 }
@@ -116,6 +118,10 @@ impl DecodeError {
 
     pub fn unsupported_status_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_radio_access_technology<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedRadioAccessTechnology(msg1.to_string(), msg2))
     }
 }
 
