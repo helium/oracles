@@ -1,14 +1,10 @@
-use std::marker::PhantomData;
-
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt};
 use retainer::Cache;
-use tokio::{
-    sync::mpsc::{Receiver, Sender},
-    task::JoinHandle,
-};
+use std::marker::PhantomData;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -65,11 +61,20 @@ where
     pub async fn start(
         self,
         shutdown: triggered::Listener,
-    ) -> Result<(Receiver<FileInfoStream<T>>, JoinHandle<Result>)> {
+    ) -> Result<(
+        Receiver<FileInfoStream<T>>,
+        impl std::future::Future<Output = Result>,
+    )> {
         let (sender, receiver) = tokio::sync::mpsc::channel(self.queue_size);
         let join_handle = tokio::spawn(async move { self.run(shutdown, sender).await });
 
-        Ok((receiver, join_handle))
+        Ok((receiver, async move {
+            match join_handle.await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(err)) => Err(err),
+                Err(err) => Err(Error::from(err)),
+            }
+        }))
     }
 
     async fn run(self, shutdown: triggered::Listener, sender: Sender<FileInfoStream<T>>) -> Result {

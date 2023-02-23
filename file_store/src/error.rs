@@ -26,6 +26,8 @@ pub enum Error {
     NoManifest,
     #[error("db error")]
     DbError(#[from] sqlx::Error),
+    #[error("tokio join error")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 #[derive(Error, Debug)]
