@@ -1,17 +1,17 @@
 use crate::{
     entropy::ENTROPY_LIFESPAN,
     gateway_cache::GatewayCache,
+    hex_density::HexDensityMap,
     last_beacon::{LastBeacon, LastBeaconError},
 };
 use beacon;
 use chrono::{DateTime, Duration, Utc};
-use density_scaler::HexDensityMap;
 use file_store::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
-    iot_invalid_poc::IotInvalidWitnessReport,
     iot_valid_poc::IotVerifiedWitnessReport,
     iot_witness_report::IotWitnessIngestReport,
 };
+
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
@@ -19,6 +19,7 @@ use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
     BlockchainRegionParamV1, GatewayStakingMode, Region as ProtoRegion,
 };
+use lazy_static::lazy_static;
 use node_follower::gateway_resp::GatewayInfo;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -38,6 +39,15 @@ const POC_CELL_DISTANCE_MINIMUM: u32 = 8;
 /// the resolution at which parent cell distance is derived
 const POC_CELL_PARENT_RES: u8 = 11;
 
+lazy_static! {
+    /// Scaling factor when inactive gateway is not found in the tx scaling map (20%).
+    /// A default tx scale is required to allow for inactive hotspots to become active
+    /// again when an inactive hotspot's h3 index would otherwise be garbage-collected
+    /// from density scaling calculations and not finding a value on subsequent lookups
+    /// would disqualify the hotspot from validating further beacons
+    static ref DEFAULT_TX_SCALE: Decimal = Decimal::new(2000, 4);
+}
+
 pub struct Poc {
     beacon_report: IotBeaconIngestReport,
     witness_reports: Vec<IotWitnessIngestReport>,
@@ -53,17 +63,9 @@ pub struct VerifyBeaconResult {
     pub hex_scale: Option<Decimal>,
 }
 
-pub struct VerifyWitnessResult {
-    result: VerificationStatus,
-    invalid_reason: InvalidReason,
-    pub gateway_info: Option<GatewayInfo>,
-    hex_scale: Option<Decimal>,
-    participant_side: InvalidParticipantSide,
-}
-
 pub struct VerifyWitnessesResult {
     pub verified_witnesses: Vec<IotVerifiedWitnessReport>,
-    pub failed_witnesses: Vec<IotInvalidWitnessReport>,
+    pub failed_witnesses: Vec<IotWitnessIngestReport>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -113,25 +115,26 @@ impl Poc {
         };
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
-        match self
-            .do_beacon_verifications(
-                last_beacon,
-                &beaconer_info,
-                beacon_interval,
-                beacon_interval_tolerance,
-            )
-            .await
-        {
+        match do_beacon_verifications(
+            self.entropy_start,
+            self.entropy_end,
+            self.entropy_version,
+            last_beacon,
+            &self.beacon_report,
+            &beaconer_info,
+            beacon_interval,
+            beacon_interval_tolerance,
+        ) {
             Ok(()) => {
                 let beaconer_location = beaconer_info
                     .location
                     .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
 
-                if let Some(scaling_factor) = hex_density_map.get(beaconer_location).await {
-                    Ok(VerifyBeaconResult::valid(beaconer_info, scaling_factor))
-                } else {
-                    Ok(VerifyBeaconResult::scaling_factor_not_found(beaconer_info))
-                }
+                let tx_scale = hex_density_map
+                    .get(beaconer_location)
+                    .await
+                    .unwrap_or(*DEFAULT_TX_SCALE);
+                Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
             }
             Err(invalid_reason) => Ok(VerifyBeaconResult::invalid(invalid_reason, beaconer_info)),
         }
@@ -144,45 +147,41 @@ impl Poc {
         gateway_cache: &GatewayCache,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
-        let mut failed_witnesses: Vec<IotInvalidWitnessReport> = Vec::new();
+        let mut failed_witnesses: Vec<IotWitnessIngestReport> = Vec::new();
+        let mut existing_gateways: Vec<PublicKeyBinary> = Vec::new();
         let witnesses = self.witness_reports.clone();
         for witness_report in witnesses {
-            match self
-                .verify_witness(
-                    &witness_report,
-                    beacon_info,
-                    gateway_cache,
-                    &hex_density_map,
-                )
-                .await
-            {
-                Ok(witness_result) => match witness_result.result {
-                    VerificationStatus::Valid => {
-                        if let Ok(valid_witness) = self
-                            .valid_witness_report(witness_result, witness_report)
-                            .await
-                        {
-                            verified_witnesses.push(valid_witness)
-                        };
+            // have we already processed a witness report from this gateway ?
+            // if not, run verifications
+            // if so, skip verifications and declare the report a dup
+            if !existing_gateways.contains(&witness_report.report.pub_key) {
+                // not a dup, run the verifications
+                match self
+                    .verify_witness(
+                        &witness_report,
+                        beacon_info,
+                        gateway_cache,
+                        &hex_density_map,
+                    )
+                    .await
+                {
+                    Ok(verified_witness) => {
+                        // track which gateways we have saw a witness report from
+                        existing_gateways.push(verified_witness.report.pub_key.clone());
+                        verified_witnesses.push(verified_witness)
                     }
-                    VerificationStatus::Invalid => {
-                        if let Ok(invalid_witness) = self
-                            .invalid_witness_report(witness_result, witness_report)
-                            .await
-                        {
-                            verified_witnesses.push(invalid_witness)
-                        }
-                    }
-                },
-                Err(err) => {
-                    tracing::warn!("Unexpected error verifying witness: {err:?}");
-                    if let Ok(failed_witness) = self
-                        .failed_witness_report(InvalidReason::UnknownError, witness_report)
-                        .await
-                    {
-                        failed_witnesses.push(failed_witness)
-                    }
+                    Err(_) => failed_witnesses.push(witness_report),
                 }
+            } else {
+                // the report is a dup
+                let dup_witness = IotVerifiedWitnessReport::invalid(
+                    InvalidReason::Duplicate,
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    None,
+                    InvalidParticipantSide::Witness,
+                );
+                verified_witnesses.push(dup_witness)
             }
         }
         let resp = VerifyWitnessesResult {
@@ -198,177 +197,152 @@ impl Poc {
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &impl HexDensityMap,
-    ) -> Result<VerifyWitnessResult, VerificationError> {
+    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
             Err(_e) => {
-                return Ok(VerifyWitnessResult::gateway_not_found());
+                return Ok(IotVerifiedWitnessReport::invalid(
+                    InvalidReason::GatewayNotFound,
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    None,
+                    InvalidParticipantSide::Witness,
+                ))
             }
         };
         // run the witness verifications
-        match self
-            .do_witness_verifications(&witness_info, witness_report, beaconer_info)
-            .await
-        {
+        match do_witness_verifications(
+            self.entropy_start,
+            self.entropy_end,
+            witness_report,
+            &witness_info,
+            &self.beacon_report,
+            beaconer_info,
+        ) {
             Ok(()) => {
                 // to avoid assuming beaconer location is set and to avoid unwrap
                 // we explicity match location here again
                 let Some(beaconer_location) = beaconer_info.location else {
-                    return Ok(VerifyWitnessResult::not_asserted(InvalidParticipantSide::Beaconer))
+                    return Ok(IotVerifiedWitnessReport::invalid(
+                        InvalidReason::NotAsserted,
+                        &witness_report.report,
+                        witness_report.received_timestamp,
+                        None,
+                        InvalidParticipantSide::Beaconer,
+                    ))
                 };
 
-                if let Some(hex_scale) = hex_density_map.get(beaconer_location).await {
-                    Ok(VerifyWitnessResult::valid(witness_info, hex_scale))
-                } else {
-                    Ok(VerifyWitnessResult::scaling_factor_not_found(witness_info))
-                }
+                let tx_scale = hex_density_map
+                    .get(beaconer_location)
+                    .await
+                    .unwrap_or(*DEFAULT_TX_SCALE);
+                Ok(IotVerifiedWitnessReport::valid(
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    witness_info.location,
+                    tx_scale,
+                ))
             }
-            Err(invalid_reason) => Ok(VerifyWitnessResult::invalid(invalid_reason, witness_info)),
+            Err(invalid_reason) => Ok(IotVerifiedWitnessReport::invalid(
+                invalid_reason,
+                &witness_report.report,
+                witness_report.received_timestamp,
+                None,
+                InvalidParticipantSide::Witness,
+            )),
         }
     }
+}
 
-    pub async fn do_beacon_verifications(
-        &mut self,
-        last_beacon: Option<LastBeacon>,
-        beaconer_info: &GatewayInfo,
-        beacon_interval: Duration,
-        beacon_interval_tolerance: Duration,
-    ) -> GenericVerifyResult {
-        tracing::debug!(
-            "verifying beacon from beaconer: {:?}",
-            PublicKeyBinary::from(beaconer_info.address.clone())
-        );
-        let beacon_received_ts = self.beacon_report.received_timestamp;
-        verify_entropy(self.entropy_start, self.entropy_end, beacon_received_ts)?;
-        verify_beacon_payload(
-            &self.beacon_report.report,
-            beaconer_info.region,
-            &beaconer_info.region_params,
-            beaconer_info.gain,
-            self.entropy_start,
-            self.entropy_version as u32,
-        )?;
-        verify_beacon_schedule(
-            &last_beacon,
-            beacon_received_ts,
-            beacon_interval,
-            beacon_interval_tolerance,
-        )?;
-        verify_gw_location(beaconer_info.location)?;
-        verify_gw_capability(beaconer_info.staking_mode)?;
-        tracing::debug!(
-            "valid beacon from beaconer: {:?}",
-            PublicKeyBinary::from(beaconer_info.address.clone())
-        );
-        Ok(())
-    }
+#[allow(clippy::too_many_arguments)]
+pub fn do_beacon_verifications(
+    entropy_start: DateTime<Utc>,
+    entropy_end: DateTime<Utc>,
+    entropy_version: i32,
+    last_beacon: Option<LastBeacon>,
+    beacon_report: &IotBeaconIngestReport,
+    beaconer_info: &GatewayInfo,
+    beacon_interval: Duration,
+    beacon_interval_tolerance: Duration,
+) -> GenericVerifyResult {
+    tracing::debug!(
+        "verifying beacon from beaconer: {:?}",
+        PublicKeyBinary::from(beaconer_info.address.clone())
+    );
+    let beacon_received_ts = beacon_report.received_timestamp;
+    verify_entropy(entropy_start, entropy_end, beacon_received_ts)?;
+    verify_gw_location(beaconer_info.location)?;
+    verify_gw_capability(beaconer_info.staking_mode)?;
+    verify_beacon_schedule(
+        &last_beacon,
+        beacon_received_ts,
+        beacon_interval,
+        beacon_interval_tolerance,
+    )?;
+    verify_beacon_payload(
+        &beacon_report.report,
+        beaconer_info.region,
+        &beaconer_info.region_params,
+        beaconer_info.gain,
+        entropy_start,
+        entropy_version as u32,
+    )?;
+    tracing::debug!(
+        "valid beacon from beaconer: {:?}",
+        PublicKeyBinary::from(beaconer_info.address.clone())
+    );
+    Ok(())
+}
 
-    pub async fn do_witness_verifications(
-        &mut self,
-        witness_info: &GatewayInfo,
-        witness_report: &IotWitnessIngestReport,
-        beaconer_info: &GatewayInfo,
-    ) -> GenericVerifyResult {
-        tracing::debug!(
-            "verifying witness from gateway: {:?}",
-            PublicKeyBinary::from(witness_info.address.clone())
-        );
-        let beacon_report = &self.beacon_report;
-        verify_self_witness(
-            &beacon_report.report.pub_key,
-            &witness_report.report.pub_key,
-        )?;
-        verify_entropy(
-            self.entropy_start,
-            self.entropy_end,
-            witness_report.received_timestamp,
-        )?;
-        verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
-        verify_gw_location(witness_info.location)?;
-        verify_witness_freq(
-            beacon_report.report.frequency,
-            witness_report.report.frequency,
-        )?;
-        verify_witness_region(beaconer_info.region, witness_info.region)?;
-        verify_witness_cell_distance(beaconer_info.location, witness_info.location)?;
-        verify_witness_distance(beaconer_info.location, witness_info.location)?;
-        verify_witness_rssi(
-            witness_report.report.signal,
-            witness_report.report.frequency,
-            beacon_report.report.tx_power,
-            beaconer_info.gain,
-            witness_info.gain,
-            beaconer_info.location,
-            witness_info.location,
-        )?;
-        tracing::debug!(
-            "valid witness from gateway: {:?}",
-            PublicKeyBinary::from(witness_info.address.clone())
-        );
-        Ok(())
-    }
-
-    async fn valid_witness_report(
-        &self,
-        witness_result: VerifyWitnessResult,
-        witness_report: IotWitnessIngestReport,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
-        let gw_info = witness_result
-            .gateway_info
-            .ok_or(VerificationError::NotFound(
-                "expected gateway info not found",
-            ))?;
-        let hex_scale = witness_result
-            .hex_scale
-            .ok_or(VerificationError::NotFound("expected hex scale not found"))?;
-        Ok(IotVerifiedWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
-            status: witness_result.result,
-            report: witness_report.report,
-            location: gw_info.location,
-            hex_scale,
-            // default reward units to zero until we've got the full count of
-            // valid, non-failed witnesses for the final validated poc report
-            reward_unit: Decimal::ZERO,
-            invalid_reason: InvalidReason::ReasonNone,
-            participant_side: InvalidParticipantSide::SideNone,
-        })
-    }
-
-    async fn invalid_witness_report(
-        &self,
-        witness_result: VerifyWitnessResult,
-        witness_report: IotWitnessIngestReport,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
-        Ok(IotVerifiedWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
-            status: witness_result.result,
-            report: witness_report.report,
-            location: None,
-            hex_scale: Decimal::ZERO,
-            // default reward units to zero until we've got the full count of
-            // valid, non-failed witnesses for the final validated poc report
-            reward_unit: Decimal::ZERO,
-            invalid_reason: witness_result.invalid_reason,
-            participant_side: witness_result.participant_side,
-        })
-    }
-
-    async fn failed_witness_report(
-        &self,
-        failed_reason: InvalidReason,
-        witness_report: IotWitnessIngestReport,
-    ) -> Result<IotInvalidWitnessReport, VerificationError> {
-        Ok(IotInvalidWitnessReport {
-            received_timestamp: witness_report.received_timestamp,
-            reason: failed_reason,
-            report: witness_report.report,
-            participant_side: InvalidParticipantSide::Witness,
-        })
-    }
+pub fn do_witness_verifications(
+    entropy_start: DateTime<Utc>,
+    entropy_end: DateTime<Utc>,
+    witness_report: &IotWitnessIngestReport,
+    witness_info: &GatewayInfo,
+    beacon_report: &IotBeaconIngestReport,
+    beaconer_info: &GatewayInfo,
+) -> GenericVerifyResult {
+    tracing::debug!(
+        "verifying witness from gateway: {:?}",
+        PublicKeyBinary::from(witness_info.address.clone())
+    );
+    let beacon_report = &beacon_report;
+    verify_self_witness(
+        &beacon_report.report.pub_key,
+        &witness_report.report.pub_key,
+    )?;
+    verify_entropy(
+        entropy_start,
+        entropy_end,
+        witness_report.received_timestamp,
+    )?;
+    verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
+    verify_gw_location(witness_info.location)?;
+    verify_gw_capability(witness_info.staking_mode)?;
+    verify_witness_freq(
+        beacon_report.report.frequency,
+        witness_report.report.frequency,
+    )?;
+    verify_witness_region(beaconer_info.region, witness_info.region)?;
+    verify_witness_cell_distance(beaconer_info.location, witness_info.location)?;
+    verify_witness_distance(beaconer_info.location, witness_info.location)?;
+    verify_witness_rssi(
+        witness_report.report.signal,
+        witness_report.report.frequency,
+        beacon_report.report.tx_power,
+        beaconer_info.gain,
+        witness_info.gain,
+        beaconer_info.location,
+        witness_info.location,
+    )?;
+    tracing::debug!(
+        "valid witness from gateway: {:?}",
+        PublicKeyBinary::from(witness_info.address.clone())
+    );
+    Ok(())
 }
 
 /// verify beaconer is permitted to beacon at this time
@@ -467,11 +441,11 @@ fn verify_beacon_payload(
 
     // compare reports
     if reported_beacon != generated_beacon {
-        tracing::debug!(
-            "beacon verification failed, reason: {:?}",
-            InvalidReason::InvalidPacket,
+        tracing::info!(
+            "beacon construction verification failed, pubkey {:?}",
+            beacon_report.pub_key,
         );
-        return Err(InvalidReason::InvalidPacket);
+        return Ok(());
     }
     Ok(())
 }
@@ -647,8 +621,6 @@ fn verify_witness_rssi(
     Ok(())
 }
 
-//TODO: Plugin Jay's crate here when ready
-/// verify witness reported data matches that of the beaconer
 fn verify_witness_data(beacon_data: &Vec<u8>, witness_data: &Vec<u8>) -> GenericVerifyResult {
     if witness_data != beacon_data {
         tracing::debug!(
@@ -783,83 +755,6 @@ impl VerifyBeaconResult {
             None,
         )
     }
-
-    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::ScalingFactorNotFound,
-            Some(gateway_info),
-            None,
-        )
-    }
-}
-
-impl VerifyWitnessResult {
-    pub fn new(
-        result: VerificationStatus,
-        invalid_reason: InvalidReason,
-        gateway_info: Option<GatewayInfo>,
-        hex_scale: Option<Decimal>,
-        participant_side: InvalidParticipantSide,
-    ) -> Self {
-        VerifyWitnessResult {
-            result,
-            invalid_reason,
-            gateway_info,
-            hex_scale,
-            participant_side,
-        }
-    }
-
-    pub fn valid(gateway_info: GatewayInfo, hex_scale: Decimal) -> Self {
-        Self::new(
-            VerificationStatus::Valid,
-            InvalidReason::ReasonNone,
-            Some(gateway_info),
-            Some(hex_scale),
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            invalid_reason,
-            Some(gateway_info),
-            None,
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn scaling_factor_not_found(gateway_info: GatewayInfo) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::ScalingFactorNotFound,
-            Some(gateway_info),
-            None,
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn gateway_not_found() -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::GatewayNotFound,
-            None,
-            None,
-            InvalidParticipantSide::Witness,
-        )
-    }
-
-    pub fn not_asserted(participant_side: InvalidParticipantSide) -> Self {
-        Self::new(
-            VerificationStatus::Invalid,
-            InvalidReason::NotAsserted,
-            None,
-            None,
-            participant_side,
-        )
-    }
 }
 
 #[cfg(test)]
@@ -867,7 +762,10 @@ mod tests {
     use super::*;
     use crate::last_beacon::LastBeacon;
     use chrono::{Duration, TimeZone};
+    use file_store::iot_beacon_report::IotBeaconReport;
+    use file_store::iot_witness_report::IotWitnessReport;
     use helium_proto::services::poc_lora;
+    use helium_proto::DataRate;
     use std::str::FromStr;
 
     const EU868_PARAMS: &[u8] = &[
@@ -885,6 +783,29 @@ mod tests {
         35, 8, 160, 132, 145, 158, 3, 16, 200, 208, 7, 24, 161, 1, 34, 20, 10, 4, 8, 6, 16, 65, 10,
         5, 8, 3, 16, 129, 1, 10, 5, 8, 2, 16, 238, 1,
     ];
+
+    const BEACONER_GAIN: u64 = 20;
+    const LOC0: u64 = 631615575095659519; // malta
+    const LOC1: u64 = 631615575095699519; // malta but a lil out from LOC0
+    const LOC2: u64 = 631278052025960447; // armenia
+    const LOC3: u64 = 627111975468974079; // 7 cells away from beaconer
+    const LOC4: u64 = 627111975465463807; // 28 cells away from beaconer
+    const WITNESS_GAIN: u64 = 20;
+    const PUBKEY1: &str = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf";
+    const PUBKEY2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
+
+    // hardcode some entropy data taken from a beacon generated on a hotspot
+    const LOCAL_ENTROPY: [u8; 4] = [146, 125, 128, 191];
+    const REMOTE_ENTROPY: [u8; 32] = [
+        59, 101, 132, 246, 103, 96, 20, 49, 41, 0, 76, 145, 23, 162, 176, 129, 149, 241, 112, 208,
+        38, 197, 103, 45, 218, 119, 158, 230, 246, 182, 149, 184,
+    ];
+    const POC_DATA: [u8; 51] = [
+        138, 139, 152, 130, 179, 215, 179, 238, 75, 167, 66, 182, 209, 87, 168, 137, 192, 3, 192,
+        62, 112, 227, 131, 130, 46, 199, 165, 14, 4, 1, 57, 231, 189, 180, 177, 7, 135, 239, 155,
+        1, 149, 101, 91, 73, 2, 108, 165, 138, 10, 4, 104,
+    ];
+    const ENTROPY_VERSION: i32 = 0;
 
     #[test]
     fn test_calc_distance() {
@@ -917,8 +838,6 @@ mod tests {
 
     #[test]
     fn test_calc_expected_rssi() {
-        //TODO: values here were taken from real work success and fail scenarios
-        //      get someone in the know to verify
         let beacon1_tx_power = 12;
         let beacon1_gain = 81;
         let witness1_gain = 83;
@@ -939,12 +858,6 @@ mod tests {
         let pub_key =
             PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
                 .unwrap();
-        // hardcode some entropy data taken from a beacon generated on a hotspot
-        let local_entropy_bytes = [146, 125, 128, 191];
-        let remote_entropy_bytes = [
-            59, 101, 132, 246, 103, 96, 20, 49, 41, 0, 76, 145, 23, 162, 176, 129, 149, 241, 112,
-            208, 38, 197, 103, 45, 218, 119, 158, 230, 246, 182, 149, 184,
-        ];
         // entropy comparisons are performed in secs but create a datetime with millisecs precision
         // confirm the millisecs precision is ignored
         let entropy_start = Utc.timestamp_millis_opt(1676381847900).unwrap();
@@ -967,8 +880,8 @@ mod tests {
             &region_params,
             entropy_start.timestamp(),
             entropy_version,
-            &local_entropy_bytes,
-            &remote_entropy_bytes,
+            &LOCAL_ENTROPY,
+            &REMOTE_ENTROPY,
         )
         .unwrap();
 
@@ -1081,8 +994,7 @@ mod tests {
 
     #[test]
     fn test_verify_location() {
-        let location = 631252734740306943;
-        assert!(verify_gw_location(Some(location)).is_ok());
+        assert!(verify_gw_location(Some(LOC1)).is_ok());
         assert_eq!(Err(InvalidReason::NotAsserted), verify_gw_location(None));
     }
 
@@ -1098,11 +1010,8 @@ mod tests {
 
     #[test]
     fn test_verify_self_witness() {
-        let key1 =
-            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
-                .unwrap();
-        let key2 = PublicKeyBinary::from_str("11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo")
-            .unwrap();
+        let key1 = PublicKeyBinary::from_str(PUBKEY1).unwrap();
+        let key2 = PublicKeyBinary::from_str(PUBKEY2).unwrap();
         assert!(verify_self_witness(&key1, &key2).is_ok());
         assert_eq!(
             Err(InvalidReason::SelfWitness),
@@ -1143,9 +1052,9 @@ mod tests {
 
     #[test]
     fn test_verify_witness_distance() {
-        let beacon_loc = 631615575095659519; // malta
-        let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
-        let witness2_loc = 631278052025960447; // armenia
+        let beacon_loc = LOC0;
+        let witness1_loc = LOC1;
+        let witness2_loc = LOC2;
         assert!(verify_witness_distance(Some(beacon_loc), Some(witness1_loc)).is_ok());
         assert_eq!(
             Err(InvalidReason::MaxDistanceExceeded),
@@ -1155,9 +1064,9 @@ mod tests {
 
     #[test]
     fn test_verify_witness_cell_distance() {
-        let beacon_loc = 631615575095659519; // malta
-        let witness1_loc = 627111975468974079; // 7 cells away from beaconer
-        let witness2_loc = 627111975465463807; // 28 cells away from beaconer
+        let beacon_loc = LOC0;
+        let witness1_loc = LOC3;
+        let witness2_loc = LOC4;
 
         // witness 1 location is 7 cells from the beaconer and thus invalid
         assert_eq!(
@@ -1170,11 +1079,9 @@ mod tests {
 
     #[test]
     fn test_verify_witness_rssi() {
-        //TODO: values here were taken from real work success and fail scenarios
-        //      get someone in the know to verify
-        let beacon_loc = 631615575095659519; // malta
-        let witness1_loc = 631615575095699519; // malta and a lil out from the beaconer
-        let witness2_loc = 631278052025960447; // armenia
+        let beacon_loc = LOC0;
+        let witness1_loc = LOC1;
+        let witness2_loc = LOC2;
 
         let beacon1_tx_power = 27;
         let beacon1_gain = 80;
@@ -1220,5 +1127,412 @@ mod tests {
             Err(InvalidReason::InvalidPacket),
             verify_witness_data(&beacon_data, &witness2_data)
         );
+    }
+
+    #[test]
+    fn test_beacon_verification_list() {
+        // this test sets up a bunch of invalid beacons and for each
+        // calls do_beacon_verifications
+        // in order to assert the presence of each expected verification
+        // by confirming the beacon report is rendered as invalid
+        // asserting the presence of each will guard against
+        // one of more verifications being accidently removed
+        // from `do_beacon_verifications`
+
+        // create default data structs
+        let beaconer_info =
+            beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let entropy_start = Utc.timestamp_millis_opt(1676381847900).unwrap();
+        let entropy_end = entropy_start + Duration::minutes(3);
+        let beacon_interval = Duration::minutes(5);
+        let beacon_interval_tolerance = Duration::seconds(60);
+
+        // test entropy lifepsan verification is active in the beacon validation list
+        let beacon_report1 = valid_beacon_report(entropy_start + Duration::minutes(4));
+        let resp1 = do_beacon_verifications(
+            entropy_start,
+            entropy_end,
+            ENTROPY_VERSION,
+            None,
+            &beacon_report1,
+            &beaconer_info,
+            beacon_interval,
+            beacon_interval_tolerance,
+        );
+        assert_eq!(Err(InvalidReason::EntropyExpired), resp1);
+
+        // test location verification is active in the beacon validation list
+        let beacon_report2 = valid_beacon_report(entropy_start + Duration::minutes(2));
+        let beacon_info2 =
+            beaconer_gateway_info(None, ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let resp2 = do_beacon_verifications(
+            entropy_start,
+            entropy_end,
+            ENTROPY_VERSION,
+            None,
+            &beacon_report2,
+            &beacon_info2,
+            beacon_interval,
+            beacon_interval_tolerance,
+        );
+        assert_eq!(Err(InvalidReason::NotAsserted), resp2);
+
+        // test schedule verification is active in the beacon validation list
+        let beacon_report3 = valid_beacon_report(entropy_start + Duration::minutes(2));
+        let last_beacon3 = LastBeacon {
+            id: vec![],
+            timestamp: Utc::now() - Duration::minutes(5),
+        };
+        let resp3 = do_beacon_verifications(
+            entropy_start,
+            entropy_end,
+            ENTROPY_VERSION,
+            Some(last_beacon3),
+            &beacon_report3,
+            &beaconer_info,
+            beacon_interval,
+            beacon_interval_tolerance,
+        );
+        assert_eq!(Err(InvalidReason::IrregularInterval), resp3);
+
+        // test capability verification is active in the beacon validation list
+        let beacon_report4 = valid_beacon_report(entropy_start + Duration::minutes(2));
+        let beacon_info4 =
+            beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, GatewayStakingMode::Dataonly);
+        let resp4 = do_beacon_verifications(
+            entropy_start,
+            entropy_end,
+            ENTROPY_VERSION,
+            None,
+            &beacon_report4,
+            &beacon_info4,
+            beacon_interval,
+            beacon_interval_tolerance,
+        );
+        assert_eq!(Err(InvalidReason::InvalidCapability), resp4);
+
+        // test beacon construction verification is active in the beacon validation list
+        let beacon_report5 = invalid_beacon_bad_payload(entropy_start + Duration::minutes(2));
+        let resp5 = do_beacon_verifications(
+            entropy_start,
+            entropy_end,
+            ENTROPY_VERSION,
+            None,
+            &beacon_report5,
+            &beaconer_info,
+            beacon_interval,
+            beacon_interval_tolerance,
+        );
+        // assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
+        assert_eq!(Ok(()), resp5);
+
+        // for completeness, confirm our valid beacon report is sane
+        let beacon_report6 = valid_beacon_report(entropy_start + Duration::minutes(2));
+        let resp6 = do_beacon_verifications(
+            entropy_start,
+            entropy_end,
+            ENTROPY_VERSION,
+            None,
+            &beacon_report6,
+            &beaconer_info,
+            beacon_interval,
+            beacon_interval_tolerance,
+        );
+        assert_eq!(Ok(()), resp6);
+    }
+
+    #[test]
+    fn test_witness_verification_list() {
+        // this test sets up a bunch of invalid witnesses and for each
+        // calls do_witness_verifications
+        // in order to assert the presence of each expected verification
+        // by confirming the witness report is rendered as invalid
+        // asserting the presence of each will guard against
+        // one of more verifications being accidently removed
+        // from `do_witness_verifications`
+
+        // create default data structs
+        let beacon_report = valid_beacon_report(Utc::now() - Duration::minutes(2));
+        let beaconer_info =
+            beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let witness_info =
+            witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let entropy_start = Utc.timestamp_millis_opt(1676381847900).unwrap();
+        let entropy_end = entropy_start + Duration::minutes(3);
+
+        // test self witness verification is active in the witness validation list
+        let witness_report1 = invalid_witness_self_witness(entropy_start + Duration::minutes(2));
+        let resp1 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report1,
+            &witness_info,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::SelfWitness), resp1);
+
+        // test entropy lifepsan verification is active in the witness validation list
+        let witness_report2 = valid_witness_report(entropy_start + Duration::minutes(5));
+        let resp2 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report2,
+            &witness_info,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::EntropyExpired), resp2);
+
+        // test witness packet data verification is active in the witness validation list
+        let witness_report3 = invalid_witness_bad_data(entropy_start + Duration::minutes(2));
+        let resp3 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report3,
+            &witness_info,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::InvalidPacket), resp3);
+
+        // test location verification is active in the witness validation list
+        let witness_report4 = valid_witness_report(entropy_start + Duration::minutes(2));
+        let witness_info4 =
+            witness_gateway_info(None, ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let resp4 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report4,
+            &witness_info4,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::NotAsserted), resp4);
+
+        // test witness frequency verification is active in the witness validation list
+        let witness_report5 = invalid_witness_bad_freq(entropy_start + Duration::minutes(2));
+        let resp5 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report5,
+            &witness_info,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::InvalidFrequency), resp5);
+
+        // test witness region verification is active in the witness validation list
+        let witness_report6 = valid_witness_report(entropy_start + Duration::minutes(2));
+        let witness_info6 =
+            witness_gateway_info(Some(LOC1), ProtoRegion::Us915, GatewayStakingMode::Light);
+        let resp6 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report6,
+            &witness_info6,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::InvalidRegion), resp6);
+
+        // test witness min cell distance verification is active in the witness validation list
+        let witness_report7 = valid_witness_report(entropy_start + Duration::minutes(2));
+        let witness_info7 =
+            witness_gateway_info(Some(LOC3), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let resp7 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report7,
+            &witness_info7,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::BelowMinDistance), resp7);
+
+        // test witness max distance verification is active in the witness validation list
+        let witness_report8 = valid_witness_report(entropy_start + Duration::minutes(2));
+        let witness_info8 =
+            witness_gateway_info(Some(LOC2), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let resp8 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report8,
+            &witness_info8,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::MaxDistanceExceeded), resp8);
+
+        // test witness rssi verification is active in the witness validation list
+        let witness_report9 = invalid_witness_bad_rssi(entropy_start + Duration::minutes(2));
+        let resp9 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report9,
+            &witness_info,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::BadRssi), resp9);
+
+        // test witness capability verification is active in the witness validation list
+        let witness_report10 = valid_witness_report(entropy_start + Duration::minutes(2));
+        let witness_info10 =
+            witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, GatewayStakingMode::Dataonly);
+        let resp10 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report10,
+            &witness_info10,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Err(InvalidReason::InvalidCapability), resp10);
+
+        // for completeness, confirm our valid witness report is sane
+        let witness_report11 = valid_witness_report(entropy_start + Duration::minutes(2));
+        let witness_info11 =
+            witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let resp11 = do_witness_verifications(
+            entropy_start,
+            entropy_end,
+            &witness_report11,
+            &witness_info11,
+            &beacon_report,
+            &beaconer_info,
+        );
+        assert_eq!(Ok(()), resp11);
+    }
+
+    fn beaconer_gateway_info(
+        location: Option<u64>,
+        region: ProtoRegion,
+        staking_mode: GatewayStakingMode,
+    ) -> GatewayInfo {
+        let region_params = beacon::RegionParams::from_bytes(
+            ProtoRegion::Eu868.into(),
+            BEACONER_GAIN,
+            EU868_PARAMS,
+        )
+        .unwrap();
+        GatewayInfo {
+            location,
+            address: PUBKEY1.as_bytes().to_vec(),
+            owner: PUBKEY1.as_bytes().to_vec(),
+            staking_mode,
+            gain: 12,
+            region,
+            region_params: region_params.params,
+        }
+    }
+
+    fn witness_gateway_info(
+        location: Option<u64>,
+        region: ProtoRegion,
+        staking_mode: GatewayStakingMode,
+    ) -> GatewayInfo {
+        let region_params =
+            beacon::RegionParams::from_bytes(ProtoRegion::Eu868.into(), WITNESS_GAIN, EU868_PARAMS)
+                .unwrap();
+        GatewayInfo {
+            location,
+            address: PUBKEY2.as_bytes().to_vec(),
+            owner: PUBKEY2.as_bytes().to_vec(),
+            staking_mode,
+            gain: 20,
+            region,
+            region_params: region_params.params,
+        }
+    }
+
+    fn valid_beacon_report(received_timestamp: DateTime<Utc>) -> IotBeaconIngestReport {
+        beacon_report_to_ingest_report(
+            IotBeaconReport {
+                pub_key: PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+                local_entropy: LOCAL_ENTROPY.to_vec(),
+                remote_entropy: REMOTE_ENTROPY.to_vec(),
+                data: POC_DATA.to_vec(),
+                frequency: 867500000,
+                channel: 0,
+                datarate: DataRate::Sf12bw125,
+                tx_power: 14,
+                timestamp: Utc::now(),
+                signature: vec![],
+                tmst: 0,
+            },
+            received_timestamp,
+        )
+    }
+
+    fn invalid_beacon_bad_payload(received_timestamp: DateTime<Utc>) -> IotBeaconIngestReport {
+        let mut report = valid_beacon_report(received_timestamp);
+        report.report.data = [
+            138, 139, 152, 130, 179, 215, 179, 238, 75, 167, 66, 182, 209, 87, 168, 137, 192,
+        ]
+        .to_vec();
+        report
+    }
+
+    fn valid_witness_report(received_timestamp: DateTime<Utc>) -> IotWitnessIngestReport {
+        witness_report_to_ingest_report(
+            IotWitnessReport {
+                pub_key: PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+                data: POC_DATA.to_vec(),
+                timestamp: Utc::now(),
+                tmst: 0,
+                signal: -1130,
+                snr: -215,
+                frequency: 867500000,
+                datarate: DataRate::Sf12bw125,
+                signature: vec![],
+            },
+            received_timestamp,
+        )
+    }
+
+    // each invalid below overrides a field of a valid report which
+    // will render it invalid in the desired way
+    fn invalid_witness_self_witness(received_timestamp: DateTime<Utc>) -> IotWitnessIngestReport {
+        let mut report = valid_witness_report(received_timestamp);
+        report.report.pub_key = PublicKeyBinary::from_str(PUBKEY1).unwrap();
+        report
+    }
+    fn invalid_witness_bad_data(received_timestamp: DateTime<Utc>) -> IotWitnessIngestReport {
+        let mut report = valid_witness_report(received_timestamp);
+        report.report.data = [
+            138, 139, 152, 130, 179, 215, 179, 238, 75, 167, 66, 182, 209, 87, 168, 137, 192,
+        ]
+        .to_vec();
+        report
+    }
+    fn invalid_witness_bad_freq(received_timestamp: DateTime<Utc>) -> IotWitnessIngestReport {
+        let mut report = valid_witness_report(received_timestamp);
+        report.report.frequency = 867100000;
+        report
+    }
+    fn invalid_witness_bad_rssi(received_timestamp: DateTime<Utc>) -> IotWitnessIngestReport {
+        let mut report = valid_witness_report(received_timestamp);
+        report.report.signal = 300;
+        report
+    }
+
+    fn beacon_report_to_ingest_report(
+        report: IotBeaconReport,
+        received_timestamp: DateTime<Utc>,
+    ) -> IotBeaconIngestReport {
+        IotBeaconIngestReport {
+            received_timestamp,
+            report,
+        }
+    }
+    fn witness_report_to_ingest_report(
+        report: IotWitnessReport,
+        received_timestamp: DateTime<Utc>,
+    ) -> IotWitnessIngestReport {
+        IotWitnessIngestReport {
+            received_timestamp,
+            report,
+        }
     }
 }

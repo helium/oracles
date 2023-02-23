@@ -12,7 +12,6 @@ members = [
     "iot_verifier",
     "poc_iot_injector",
     "node_follower",
-    "density_scaler",
     "reward_index",
     "metrics",
     "denylist",
@@ -59,7 +58,7 @@ hextree = "*"
 solana-client = "1.14"
 solana-sdk = "1.14"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
-beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "alpha-patches"}
+beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "main"}
 humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"

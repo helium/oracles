@@ -997,7 +997,7 @@ checksum = "b645a089122eccb6111b4f81cbc1a49f5900ac4666bb93ac027feaecf15607bf"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=alpha-patches#eaf113223be11ed992d58bfbc089a5c494313e66"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#2d41c049967d48faba02efb8d73c19e0af0dfa3b"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1927,31 +1927,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "density-scaler"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "config",
- "futures",
- "h3ron",
- "helium-proto",
- "http",
- "itertools",
- "node-follower",
- "prost",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "triggered",
-]
-
-[[package]]
 name = "denylist"
 version = "0.1.0"
 dependencies = [
@@ -2356,7 +2331,6 @@ dependencies = [
  "clap 3.2.23",
  "config",
  "csv",
- "density-scaler",
  "derive_builder",
  "futures",
  "futures-util",
@@ -2842,7 +2816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#6fe732f2ce26ccafbb5a6b4382ebf37d3078bb69"
+source = "git+https://github.com/helium/proto?branch=master#69826eba6957b02d98113fece32c8f47c74377a0"
 dependencies = [
  "bytes",
  "prost",
@@ -3281,7 +3255,6 @@ dependencies = [
  "cmake",
  "config",
  "db-store",
- "density-scaler",
  "denylist",
  "file-store",
  "futures",
@@ -4438,7 +4411,6 @@ dependencies = [
  "clap 3.2.23",
  "config",
  "db-store",
- "density-scaler",
  "file-store",
  "futures",
  "futures-util",

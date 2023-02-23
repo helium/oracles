@@ -1,3 +1,4 @@
+use file_store::SCALING_PRECISION;
 use h3ron::{FromH3Index, H3Cell, Index};
 use itertools::Itertools;
 use rust_decimal::Decimal;
@@ -27,7 +28,6 @@ const DENSITY_TGT_RES: u8 = 4;
 const MAX_RES: u8 = 11;
 const USED_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES;
 const SCALING_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES + 2;
-pub const SCALING_PRECISION: u32 = 4;
 
 static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
     // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;

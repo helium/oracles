@@ -1,6 +1,7 @@
 pub mod entropy;
 pub mod entropy_loader;
 pub mod gateway_cache;
+mod hex_density;
 pub mod last_beacon;
 pub mod loader;
 pub mod meta;
@@ -13,4 +14,5 @@ pub mod rewarder;
 pub mod runner;
 pub mod scheduler;
 mod settings;
+pub mod tx_scaler;
 pub use settings::Settings;

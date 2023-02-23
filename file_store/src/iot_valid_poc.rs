@@ -6,7 +6,6 @@ use crate::{
     Error, Result,
 };
 use chrono::{DateTime, Utc};
-use density_scaler::SCALING_PRECISION;
 use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraPocV1,
     LoraValidBeaconReportV1, LoraVerifiedWitnessReportV1, LoraWitnessReportReqV1,
@@ -18,6 +17,7 @@ use rust_decimal_macros::dec;
 use serde::Serialize;
 
 const SCALE_MULTIPLIER: Decimal = dec!(10000);
+pub const SCALING_PRECISION: u32 = 4;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct IotValidBeaconReport {
@@ -211,6 +211,48 @@ impl From<IotVerifiedWitnessReport> for LoraVerifiedWitnessReportV1 {
             reward_unit: (v.reward_unit * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             invalid_reason: v.invalid_reason as i32,
             participant_side: v.participant_side as i32,
+        }
+    }
+}
+
+impl IotVerifiedWitnessReport {
+    pub fn valid(
+        report: &IotWitnessReport,
+        received_timestamp: DateTime<Utc>,
+        location: Option<u64>,
+        hex_scale: Decimal,
+    ) -> IotVerifiedWitnessReport {
+        Self {
+            received_timestamp,
+            status: VerificationStatus::Valid,
+            invalid_reason: InvalidReason::ReasonNone,
+            report: report.clone(),
+            location,
+            hex_scale,
+            // default reward units to zero until we've got the full count of
+            // valid, non-failed witnesses for the final validated poc report
+            reward_unit: Decimal::ZERO,
+            participant_side: InvalidParticipantSide::SideNone,
+        }
+    }
+    pub fn invalid(
+        invalid_reason: InvalidReason,
+        report: &IotWitnessReport,
+        received_timestamp: DateTime<Utc>,
+        location: Option<u64>,
+        participant_side: InvalidParticipantSide,
+    ) -> IotVerifiedWitnessReport {
+        Self {
+            received_timestamp,
+            status: VerificationStatus::Invalid,
+            invalid_reason,
+            report: report.clone(),
+            location,
+            hex_scale: Decimal::ZERO,
+            // default reward units to zero until we've got the full count of
+            // valid, non-failed witnesses for the final validated poc report
+            reward_unit: Decimal::ZERO,
+            participant_side,
         }
     }
 }
