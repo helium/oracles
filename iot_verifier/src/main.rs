@@ -82,7 +82,7 @@ impl Server {
         let (gateway_rewards_sink, mut gateway_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::GatewayRewardShare,
             store_base_path,
-            concat!(env!("CARGO_PKG_VERSION"), "_gateway_reward_shares"),
+            concat!(env!("CARGO_PKG_NAME"), "_gateway_reward_shares"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -93,7 +93,7 @@ impl Server {
         let (reward_manifests_sink, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
-            concat!(env!("CARGO_PKG_VERSION"), "_iot_reward_manifest"),
+            concat!(env!("CARGO_PKG_NAME"), "_iot_reward_manifest"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
