@@ -440,12 +440,12 @@ fn verify_beacon_payload(
     tracing::debug!("reported beacon {:?}", reported_beacon);
 
     // compare reports
-    if reported_beacon != generated_beacon {
-        tracing::info!(
+    if !generated_beacon.verify(&reported_beacon) {
+        tracing::debug!(
             "beacon construction verification failed, pubkey {:?}",
             beacon_report.pub_key,
         );
-        return Ok(());
+        return Err(InvalidReason::InvalidPacket);
     }
     Ok(())
 }
@@ -764,7 +764,6 @@ mod tests {
     use chrono::{Duration, TimeZone};
     use file_store::iot_beacon_report::IotBeaconReport;
     use file_store::iot_witness_report::IotWitnessReport;
-    use helium_proto::services::poc_lora;
     use helium_proto::DataRate;
     use std::str::FromStr;
 
@@ -794,18 +793,19 @@ mod tests {
     const PUBKEY1: &str = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf";
     const PUBKEY2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
 
-    // hardcode some entropy data taken from a beacon generated on a hotspot
-    const LOCAL_ENTROPY: [u8; 4] = [146, 125, 128, 191];
+    // hardcode beacon & entropy data taken from a beacon generated on a hotspot
+    const LOCAL_ENTROPY: [u8; 4] = [233, 70, 25, 176];
     const REMOTE_ENTROPY: [u8; 32] = [
-        59, 101, 132, 246, 103, 96, 20, 49, 41, 0, 76, 145, 23, 162, 176, 129, 149, 241, 112, 208,
-        38, 197, 103, 45, 218, 119, 158, 230, 246, 182, 149, 184,
+        182, 170, 63, 128, 217, 53, 95, 19, 157, 153, 134, 38, 184, 209, 255, 23, 118, 205, 163,
+        106, 225, 26, 16, 0, 106, 141, 81, 101, 70, 39, 107, 9,
     ];
     const POC_DATA: [u8; 51] = [
-        138, 139, 152, 130, 179, 215, 179, 238, 75, 167, 66, 182, 209, 87, 168, 137, 192, 3, 192,
-        62, 112, 227, 131, 130, 46, 199, 165, 14, 4, 1, 57, 231, 189, 180, 177, 7, 135, 239, 155,
-        1, 149, 101, 91, 73, 2, 108, 165, 138, 10, 4, 104,
+        28, 153, 18, 65, 96, 232, 59, 146, 134, 125, 99, 12, 175, 76, 158, 210, 28, 253, 146, 59,
+        187, 203, 122, 146, 49, 241, 156, 148, 74, 246, 68, 17, 8, 212, 48, 6, 152, 58, 221, 158,
+        186, 101, 37, 59, 135, 126, 18, 72, 244, 65, 174,
     ];
     const ENTROPY_VERSION: i32 = 0;
+    const ENTROPY_TIMESTAMP: i64 = 1677163710000;
 
     #[test]
     fn test_calc_distance() {
@@ -855,22 +855,12 @@ mod tests {
 
     #[test]
     fn test_verify_beacon_payload() {
-        let pub_key =
-            PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
-                .unwrap();
         // entropy comparisons are performed in secs but create a datetime with millisecs precision
         // confirm the millisecs precision is ignored
-        let entropy_start = Utc.timestamp_millis_opt(1676381847900).unwrap();
-        let entropy_version = 1;
-        let gain: i32 = 12;
+        let entropy_start = Utc.timestamp_millis_opt(ENTROPY_TIMESTAMP).unwrap();
+        let received_ts = entropy_start + Duration::minutes(1);
+        let gain: i32 = 60;
         let region: ProtoRegion = ProtoRegion::Eu868;
-
-        // this is the data payload we expect to be generated from the above entropy
-        let expected_generated_data = [
-            138, 139, 152, 130, 179, 215, 179, 238, 75, 167, 66, 182, 209, 87, 168, 137, 192, 3,
-            192, 62, 112, 227, 131, 130, 46, 199, 165, 14, 4, 1, 57, 231, 189, 180, 177, 7, 135,
-            239, 155, 1, 149, 101, 91, 73, 2, 108, 165, 138, 10, 4, 104,
-        ];
 
         let region_params =
             beacon::RegionParams::from_bytes(region.into(), gain as u64, EU868_PARAMS)
@@ -879,38 +869,45 @@ mod tests {
         let generated_beacon = generate_beacon(
             &region_params,
             entropy_start.timestamp(),
-            entropy_version,
+            ENTROPY_VERSION as u32,
             &LOCAL_ENTROPY,
             &REMOTE_ENTROPY,
         )
         .unwrap();
 
         // confirm our generated beacon returns the expected data payload
-        assert_eq!(expected_generated_data.to_vec(), generated_beacon.data);
+        assert_eq!(POC_DATA.to_vec(), generated_beacon.data);
 
-        // cast the beacon in to a beacon report
-        let mut lora_beacon_report =
-            poc_lora::LoraBeaconReportReqV1::try_from(generated_beacon).unwrap();
-        lora_beacon_report.pub_key = pub_key.try_into().unwrap();
-        let iot_beacon_ingest_report: IotBeaconIngestReport =
-            lora_beacon_report.try_into().unwrap();
+        // get a valid a beacon report in the form of an ingested beacon report
+        let mut ingest_beacon_report = valid_beacon_report(received_ts);
 
-        // assert the beacon created from the iot report is sane
-        // the region params here should really come from gateway info
-        // which is where they will be derived in the real world
-        // but the test has no access to real gateway info
-        // and so we just use the same region params we generated above
-        // bit of a circular test but at least it verifies
-        // the beacon -> report -> beacon flows
+        // assert the generated beacon report from the ingest report
+        // matches our received report
         assert!(verify_beacon_payload(
-            &iot_beacon_ingest_report.report,
+            &ingest_beacon_report.report,
             region,
             &region_params.params,
             gain,
             entropy_start,
-            entropy_version
+            ENTROPY_VERSION as u32
         )
-        .is_ok())
+        .is_ok());
+
+        // modify the generated beacon to have a tx power > that that defined in
+        // region params
+        // this will be rendered invalid
+        ingest_beacon_report.report.tx_power = 20;
+        assert_eq!(
+            Err(InvalidReason::InvalidPacket),
+            verify_beacon_payload(
+                &ingest_beacon_report.report,
+                region,
+                &region_params.params,
+                gain,
+                entropy_start,
+                ENTROPY_VERSION as u32
+            )
+        );
     }
 
     #[test]
@@ -1142,7 +1139,7 @@ mod tests {
         // create default data structs
         let beaconer_info =
             beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, GatewayStakingMode::Light);
-        let entropy_start = Utc.timestamp_millis_opt(1676381847900).unwrap();
+        let entropy_start = Utc.timestamp_millis_opt(ENTROPY_TIMESTAMP).unwrap();
         let entropy_end = entropy_start + Duration::minutes(3);
         let beacon_interval = Duration::minutes(5);
         let beacon_interval_tolerance = Duration::seconds(60);
@@ -1223,8 +1220,7 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        // assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
-        assert_eq!(Ok(()), resp5);
+        assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
 
         // for completeness, confirm our valid beacon report is sane
         let beacon_report6 = valid_beacon_report(entropy_start + Duration::minutes(2));
@@ -1453,10 +1449,10 @@ mod tests {
                 local_entropy: LOCAL_ENTROPY.to_vec(),
                 remote_entropy: REMOTE_ENTROPY.to_vec(),
                 data: POC_DATA.to_vec(),
-                frequency: 867500000,
+                frequency: 867900000,
                 channel: 0,
                 datarate: DataRate::Sf12bw125,
-                tx_power: 14,
+                tx_power: 8,
                 timestamp: Utc::now(),
                 signature: vec![],
                 tmst: 0,
@@ -1481,9 +1477,9 @@ mod tests {
                 data: POC_DATA.to_vec(),
                 timestamp: Utc::now(),
                 tmst: 0,
-                signal: -1130,
-                snr: -215,
-                frequency: 867500000,
+                signal: -1080,
+                snr: 35,
+                frequency: 867900032,
                 datarate: DataRate::Sf12bw125,
                 signature: vec![],
             },
