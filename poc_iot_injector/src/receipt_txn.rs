@@ -8,16 +8,14 @@ use helium_proto::{
     blockchain_txn::Txn, BlockchainPocPathElementV1, BlockchainPocReceiptV1,
     BlockchainPocWitnessV1, BlockchainTxn, BlockchainTxnPocReceiptsV2, Message,
 };
-use once_cell::sync::Lazy;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
-use rust_decimal_macros::dec;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
-/// REWARD_SHARE_MULTIPLIER is set to 10000 to ensure that hotspots with very low hex_scale values
-/// are still getting some rewards.
-static REWARD_SHARE_MULTIPLIER: Lazy<Decimal> = Lazy::new(|| dec!(10000));
+/// HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER is set to 100 to ensure that hotspots with very low hex_scale values
+/// are still getting some rewards. This is applied to hex_scale and reward_unit both.
+static HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER: Decimal = Decimal::ONE_HUNDRED;
 
 const SIGNAL_MULTIPLIER: i32 = 10;
 const SNR_MULTIPLIER: f32 = 10.0;
@@ -175,11 +173,9 @@ fn construct_poc_witnesses(
     let mut poc_witnesses: Vec<BlockchainPocWitnessV1> = Vec::with_capacity(witness_reports.len());
     for witness_report in witness_reports {
         let witness_invalid_reason = witness_report.invalid_reason as i32;
-        let hex_scale = witness_report.hex_scale;
-        let reward_unit = witness_report.reward_unit;
-        let reward_shares = ((hex_scale * reward_unit) * *REWARD_SHARE_MULTIPLIER)
-            .to_u32()
-            .unwrap_or_default();
+        let hex_scale = witness_report.hex_scale * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+        let reward_unit = witness_report.reward_unit * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+        let reward_shares = (hex_scale * reward_unit).to_u32().unwrap_or_default();
 
         if reward_shares == 0 && witness_invalid_reason == 0 {
             tracing::warn!(
@@ -220,11 +216,9 @@ fn hz_to_mhz(freq_hz: u64) -> f32 {
 }
 
 fn construct_poc_receipt(beacon_report: IotValidBeaconReport) -> (BlockchainPocReceiptV1, i64) {
-    let hex_scale = beacon_report.hex_scale;
-    let reward_unit = beacon_report.reward_unit;
-    let reward_shares = ((hex_scale * reward_unit) * *REWARD_SHARE_MULTIPLIER)
-        .to_u32()
-        .unwrap_or_default();
+    let hex_scale = beacon_report.hex_scale * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+    let reward_unit = beacon_report.reward_unit * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+    let reward_shares = (hex_scale * reward_unit).to_u32().unwrap_or_default();
 
     // NOTE: This timestamp will also be used as the top-level txn timestamp
     let beacon_received_ts = beacon_report.received_timestamp.timestamp_millis();
@@ -414,58 +408,33 @@ mod tests {
     #[test]
     fn reward_share_test() {
         // hex_scale: 0.9, reward_unit: 0.09, reward_shares: 810
-        let hex_scale = dec!(0.9);
-        let reward_unit = dec!(0.09);
+        let hex_scale = dec!(0.9) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+        let reward_unit = dec!(0.09) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
         let dec_rs = hex_scale * reward_unit;
-        assert_eq!(
-            (dec_rs * *REWARD_SHARE_MULTIPLIER)
-                .to_u32()
-                .unwrap_or_default(),
-            810
-        );
+        assert_eq!(dec_rs.to_u32().unwrap_or_default(), 810);
 
         // hex_scale: 0.09, reward_unit: 0.09, reward_shares: 81
-        let hex_scale = dec!(0.09);
-        let reward_unit = dec!(0.09);
+        let hex_scale = dec!(0.09) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+        let reward_unit = dec!(0.09) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
         let dec_rs = hex_scale * reward_unit;
-        assert_eq!(
-            (dec_rs * *REWARD_SHARE_MULTIPLIER)
-                .to_u32()
-                .unwrap_or_default(),
-            81
-        );
+        assert_eq!(dec_rs.to_u32().unwrap_or_default(), 81);
 
         // hex_scale: 0.009, reward_unit: 0.09, reward_shares: 8
-        let hex_scale = dec!(0.009);
-        let reward_unit = dec!(0.09);
+        let hex_scale = dec!(0.009) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+        let reward_unit = dec!(0.09) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
         let dec_rs = hex_scale * reward_unit;
-        assert_eq!(
-            (dec_rs * *REWARD_SHARE_MULTIPLIER)
-                .to_u32()
-                .unwrap_or_default(),
-            8
-        );
+        assert_eq!(dec_rs.to_u32().unwrap_or_default(), 8);
 
         // hex_scale: 0.0009, reward_unit: 0.09, reward_shares: 0
-        let hex_scale = dec!(0.0009);
-        let reward_unit = dec!(0.09);
+        let hex_scale = dec!(0.0009) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+        let reward_unit = dec!(0.09) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
         let dec_rs = hex_scale * reward_unit;
-        assert_eq!(
-            (dec_rs * *REWARD_SHARE_MULTIPLIER)
-                .to_u32()
-                .unwrap_or_default(),
-            0
-        );
+        assert_eq!(dec_rs.to_u32().unwrap_or_default(), 0);
 
         // hex_scale: 0.1945, reward_unit: 0.0000, reward_shares: 0
-        let hex_scale = dec!(0.1945);
-        let reward_unit = dec!(0.0000);
+        let hex_scale = dec!(0.1945) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
+        let reward_unit = dec!(0.0000) * HEX_SCALE_AND_REWARD_UNIT_MULTIPLIER;
         let dec_rs = hex_scale * reward_unit;
-        assert_eq!(
-            (dec_rs * *REWARD_SHARE_MULTIPLIER)
-                .to_u32()
-                .unwrap_or_default(),
-            0
-        );
+        assert_eq!(dec_rs.to_u32().unwrap_or_default(), 0);
     }
 }
