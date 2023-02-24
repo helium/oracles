@@ -61,7 +61,10 @@ pub enum ValidGatewayResult {
 impl Loader {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier loader");
-        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let pool = settings
+            .database
+            .simple_connect(LOADER_DB_POOL_SIZE)
+            .await?;
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let deny_list = DenyList::new()?;
         Ok(Self {

@@ -51,8 +51,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new(settings: &Settings) -> Result<Self> {
-        let pool = settings.database.connect(10).await?;
+    pub async fn new(settings: &Settings, pool: Pool<Postgres>) -> Result<Self> {
         let keypair = settings.keypair()?;
         let start_reward_block = settings
             .follower

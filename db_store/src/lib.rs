@@ -1,5 +1,6 @@
 use std::str::FromStr;
 mod error;
+mod iam_auth_pool;
 mod settings;
 
 pub use error::{Error, Result};

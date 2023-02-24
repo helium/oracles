@@ -30,7 +30,10 @@ pub enum NewLoaderError {
 impl EntropyLoader {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier entropy loader");
-        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
+        let pool = settings
+            .database
+            .simple_connect(LOADER_DB_POOL_SIZE)
+            .await?;
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         Ok(Self {
             pool,

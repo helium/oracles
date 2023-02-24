@@ -20,8 +20,7 @@ pub struct Indexer {
 }
 
 impl Indexer {
-    pub async fn new(settings: &Settings) -> Result<Self> {
-        let pool = settings.database.connect(10).await?;
+    pub async fn new(settings: &Settings, pool: Pool<Postgres>) -> Result<Self> {
         Ok(Self {
             mode: settings.mode,
             verifier_store: FileStore::from_settings(&settings.verifier).await?,

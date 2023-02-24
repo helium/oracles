@@ -55,7 +55,10 @@ pub struct NewPurgerError(#[from] db_store::Error);
 
 impl Purger {
     pub async fn from_settings(settings: &Settings) -> Result<Self, NewPurgerError> {
-        let pool = settings.database.connect(PURGER_DB_POOL_SIZE).await?;
+        let pool = settings
+            .database
+            .simple_connect(PURGER_DB_POOL_SIZE)
+            .await?;
         let settings = settings.clone();
         let base_stale_period = settings.base_stale_period;
         Ok(Self {

@@ -32,7 +32,8 @@ impl Cmd {
             .expect("Couldn't get expected rewards");
 
         let mut follower = settings.follower.connect_follower();
-        let pool = settings.database.connect(10).await?;
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let (pool, _join_handle) = settings.database.connect(10, shutdown_listener).await?;
 
         let heartbeats = Heartbeats::validated(&pool).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
@@ -69,6 +70,8 @@ impl Cmd {
                 "expected_rewards": expected_rewards,
             }))?
         );
+
+        shutdown_trigger.trigger();
 
         Ok(())
     }

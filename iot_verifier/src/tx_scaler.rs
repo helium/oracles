@@ -36,7 +36,7 @@ impl Server {
         let mut server = Self {
             follower: FollowerService::from_settings(&settings.follower),
             hex_density_map: SharedHexDensityMap::new(),
-            pool: settings.database.connect(2).await?,
+            pool: settings.database.simple_connect(2).await?,
             trigger_interval: Duration::seconds(settings.transmit_scale_interval),
         };
 
