@@ -142,9 +142,9 @@ impl EntropyLoader {
     async fn handle_report(&self, file_type: FileType, buf: &[u8]) -> anyhow::Result<()> {
         match file_type {
             FileType::EntropyReport => {
+                let id = hash(buf).as_bytes().to_vec();
                 let event = EntropyReportV1::decode(buf)?;
                 tracing::debug!("entropy report: {:?}", event);
-                let id = hash(&event.data).as_bytes().to_vec();
                 Entropy::insert_into(
                     &self.pool,
                     &id,
