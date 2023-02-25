@@ -85,11 +85,12 @@ impl Poc {
         entropy_start: DateTime<Utc>,
         entropy_version: i32,
     ) -> Self {
+        let entropy_start_updated = entropy_start - Duration::seconds(ENTROPY_LIFESPAN);
         let entropy_end = entropy_start + Duration::seconds(ENTROPY_LIFESPAN);
         Self {
             beacon_report,
             witness_reports,
-            entropy_start,
+            entropy_start: entropy_start_updated,
             entropy_end,
             entropy_version,
         }

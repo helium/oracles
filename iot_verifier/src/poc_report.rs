@@ -208,11 +208,12 @@ impl Report {
                 entropy.timestamp,
                 entropy.version
             from poc_report
-            left join entropy on entropy.id = (select ie.id 
-                from entropy as ie 
-                where poc_report.remote_entropy = ie.data and 
-                    poc_report.report_timestamp >= ie.timestamp and 
+            left join entropy on entropy.id = (select ie.id
+                from entropy as ie
+                where poc_report.remote_entropy = ie.data and
+                    poc_report.report_timestamp >= ie.timestamp and
                     poc_report.report_timestamp <= ie.timestamp + interval '3 minutes'
+                    order by ie.timestamp desc
                     limit 1)
             where poc_report.report_type = 'beacon' and status = 'ready'
             and poc_report.attempts < $1
