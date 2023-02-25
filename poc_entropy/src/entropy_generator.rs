@@ -151,18 +151,25 @@ impl EntropyGenerator {
         &mut self,
         file_sink: &file_sink::FileSinkClient,
     ) -> anyhow::Result<()> {
-        match Self::get_entropy(&self.client).await {
-            Ok(data) => self.sender.send_modify(|entry| {
-                entry.timestamp = Utc::now().timestamp();
-                entry.data = data;
-                entry.version = ENTROPY_VERSION;
-            }),
+        let source_data = match Self::get_entropy(&self.client).await {
+            Ok(data) => data,
             Err(err) => {
                 tracing::warn!("failed to get entropy: {err:?}");
-                self.sender
-                    .send_modify(|entry| entry.timestamp = Utc::now().timestamp());
+                (*self.receiver.borrow().data).to_vec()
             }
-        }
+        };
+        let timestamp = Utc::now().timestamp();
+
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&timestamp.to_le_bytes());
+        hasher.update(&source_data);
+        let data = hasher.finalize().as_bytes().to_vec();
+
+        self.sender.send_modify(|entry| {
+            entry.timestamp = timestamp;
+            entry.data = data;
+        });
+
         let entropy = &*self.receiver.borrow();
         tracing::info!(
             "using entropy: {} at: {}",
