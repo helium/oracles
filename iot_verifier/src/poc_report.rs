@@ -213,6 +213,7 @@ impl Report {
                 where poc_report.remote_entropy = ie.data and 
                     poc_report.report_timestamp >= ie.timestamp and 
                     poc_report.report_timestamp <= ie.timestamp + interval '3 minutes'
+                    order by ie.timestamp asc
                     limit 1)
             where poc_report.report_type = 'beacon' and status = 'ready'
             and poc_report.attempts < $1
