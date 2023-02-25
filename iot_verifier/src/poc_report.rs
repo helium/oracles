@@ -1,4 +1,3 @@
-use crate::entropy::ENTROPY_LIFESPAN;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
