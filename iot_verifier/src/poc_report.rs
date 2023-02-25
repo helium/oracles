@@ -194,7 +194,6 @@ impl Report {
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
-        let entropy_min_time = Utc::now() - Duration::seconds(ENTROPY_LIFESPAN);
         Ok(sqlx::query_as::<_, Self>(
             r#"
             select poc_report.id,
@@ -210,15 +209,18 @@ impl Report {
                 entropy.timestamp,
                 entropy.version
             from poc_report
-            inner join entropy on poc_report.remote_entropy=entropy.data
+            left join entropy on entropy.id = (select ie.id 
+                from entropy as ie 
+                where poc_report.remote_entropy = ie.data and 
+                    poc_report.report_timestamp >= ie.timestamp and 
+                    poc_report.report_timestamp <= ie.timestamp + interval '3 minutes'
+                    limit 1)
             where poc_report.report_type = 'beacon' and status = 'ready'
-            and entropy.id = (select ie.id from entropy as ie where poc_report.remote_entropy = ie.data and ie.timestamp < $1 order by ie.timestamp DESC LIMIT 1)
-            and poc_report.attempts < $2
+            and poc_report.attempts < $1
             order by poc_report.created_at asc
             limit 25000
             "#,
         )
-        .bind(entropy_min_time)
         .bind(BEACON_MAX_RETRY_ATTEMPTS)
         .fetch_all(executor)
         .await?)
