@@ -212,7 +212,7 @@ impl Report {
             from poc_report
             inner join entropy on poc_report.remote_entropy=entropy.data
             where poc_report.report_type = 'beacon' and status = 'ready'
-            and entropy.timestamp < $1
+            and entropy.id = (select ie.id from entropy as ie where poc_report.remote_entropy = ie.data and ie.timestamp < $1 order by ie.timestamp DESC LIMIT 1)
             and poc_report.attempts < $2
             order by poc_report.created_at asc
             limit 25000
