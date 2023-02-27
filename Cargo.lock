@@ -4415,7 +4415,7 @@ dependencies = [
  "axum 0.6.3",
  "base64 0.21.0",
  "blake3",
- "bs58 0.4.0",
+ "bs58",
  "chrono",
  "clap 3.2.23",
  "config",
