@@ -14,8 +14,10 @@ use tokio::sync::Mutex;
 pub struct BalanceCache {
     sub_dao: Pubkey,
     provider: Arc<RpcClient>,
-    balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
+    balances: BalanceStore,
 }
+
+pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DebitError {
@@ -65,7 +67,7 @@ impl BalanceCache {
         })
     }
 
-    pub fn balances(&self) -> Arc<Mutex<HashMap<PublicKeyBinary, Balance>>> {
+    pub fn balances(&self) -> BalanceStore {
         self.balances.clone()
     }
 }

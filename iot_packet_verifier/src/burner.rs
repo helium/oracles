@@ -1,5 +1,5 @@
 use crate::{
-    balances::{Balance, BalanceCache},
+    balances::{BalanceCache, BalanceStore},
     pdas,
     settings::Settings,
 };
@@ -19,13 +19,12 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use sqlx::{FromRow, Pool, Postgres};
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::Mutex;
+use std::{sync::Arc, time::Duration};
 use tokio::task;
 
 pub struct Burner {
     pool: Pool<Postgres>,
-    balances: Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>,
+    balances: BalanceStore,
     provider: Arc<RpcClient>,
     program_cache: BurnProgramCache,
     cluster: String,

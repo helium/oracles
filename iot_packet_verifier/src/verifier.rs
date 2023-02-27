@@ -57,13 +57,13 @@ where
     /// Verify a stream of packet reports. Writes out `valid_packets` and `invalid_packets`.
     pub async fn verify<B, R, VP, IP>(
         &mut self,
-        mut burner: B,
+        mut pending_burns: B,
         reports: R,
         mut valid_packets: VP,
         mut invalid_packets: IP,
     ) -> Result<(), VerificationError<D::Error, C::Error, B::Error, VP::Error, IP::Error>>
     where
-        B: Burner,
+        B: PendingBurns,
         R: Stream<Item = PacketRouterPacketReport>,
         VP: PacketWriter<ValidPacket>,
         IP: PacketWriter<InvalidPacket>,
@@ -99,8 +99,8 @@ where
                 .await
                 .map_err(VerificationError::DebitError)?
             {
-                burner
-                    .burn(&payer, debit_amount)
+                pending_burns
+                    .add_burn(&payer, debit_amount)
                     .await
                     .map_err(VerificationError::BurnError)?;
                 valid_packets
@@ -244,17 +244,17 @@ impl ConfigServer for CachedOrgClient {
 }
 
 #[async_trait]
-pub trait Burner {
+pub trait PendingBurns {
     type Error;
 
-    async fn burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), Self::Error>;
+    async fn add_burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), Self::Error>;
 }
 
 #[async_trait]
-impl Burner for &'_ mut Transaction<'_, Postgres> {
+impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
     type Error = sqlx::Error;
 
-    async fn burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), Self::Error> {
+    async fn add_burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), Self::Error> {
         // Add the amount burned into the pending burns table
         sqlx::query(
             r#"
@@ -319,10 +319,10 @@ mod test {
     }
 
     #[async_trait]
-    impl Burner for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         type Error = ();
 
-        async fn burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), ()> {
+        async fn add_burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), ()> {
             let mut map = self.lock().await;
             let balance = map.get_mut(payer).unwrap();
             *balance -= amount;
