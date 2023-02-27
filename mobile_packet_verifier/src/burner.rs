@@ -187,9 +187,7 @@ impl Burner {
                     registrar: self.program_cache.registrar,
                 };
                 let args = instruction::BurnDelegatedDataCreditsV0 {
-                    args: data_credits::BurnDelegatedDataCreditsArgsV0 {
-                        amount
-                    },
+                    args: data_credits::BurnDelegatedDataCreditsArgsV0 { amount },
                 };
 
                 // As far as I can tell, the instructions function does not actually have any
