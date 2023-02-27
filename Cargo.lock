@@ -507,6 +507,15 @@ dependencies = [
 
 [[package]]
 name = "autocfg"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dde43e75fd43e8a1bf86103336bc699aa8d17ad1be60c76c0bdfd4828e19b78"
+dependencies = [
+ "autocfg 1.1.0",
+]
+
+[[package]]
+name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
@@ -1332,7 +1341,7 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1395,8 +1404,9 @@ dependencies = [
 
 [[package]]
 name = "clockwork-cron"
-version = "2.0.0-beta"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#7c88ec56ef9f0591bb30ccdd53aa97097de69ef0"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec00fac13ba4c45201f7bcbfd44df23b659521ef765de9d31d14a1194d028cce"
 dependencies = [
  "chrono",
  "nom",
@@ -1404,31 +1414,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "clockwork-macros"
-version = "2.0.0-beta"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#7c88ec56ef9f0591bb30ccdd53aa97097de69ef0"
-dependencies = [
- "anchor-syn",
- "proc-macro2 1.0.47",
- "quote 1.0.21",
- "syn 1.0.104",
-]
-
-[[package]]
 name = "clockwork-network-program"
-version = "2.0.0-beta"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#7c88ec56ef9f0591bb30ccdd53aa97097de69ef0"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "358aa1fb9a328d355cababfabb5ca69134a8bc703d355fe2979442441e30d6b7"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "clockwork-macros",
  "clockwork-utils",
 ]
 
 [[package]]
 name = "clockwork-sdk"
-version = "2.0.0-beta"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#7c88ec56ef9f0591bb30ccdd53aa97097de69ef0"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7179555c8031a72efc4018a5120280076e4bbe640b9d063615353c3393f6787f"
 dependencies = [
  "anchor-lang",
  "chrono",
@@ -1439,13 +1439,13 @@ dependencies = [
 
 [[package]]
 name = "clockwork-thread-program"
-version = "2.0.0-beta"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#7c88ec56ef9f0591bb30ccdd53aa97097de69ef0"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00d8201d1680a1540e157a0a9f3cb84d9cc9a25ad66fcb9328c6f94b2fe14175"
 dependencies = [
  "anchor-lang",
  "chrono",
  "clockwork-cron",
- "clockwork-macros",
  "clockwork-network-program",
  "clockwork-utils",
  "static-pubkey",
@@ -1454,12 +1454,22 @@ dependencies = [
 
 [[package]]
 name = "clockwork-utils"
-version = "2.0.0-beta"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#7c88ec56ef9f0591bb30ccdd53aa97097de69ef0"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26a6168b2af3007a81363951be00237defe4152e77e407d96f365f5de1a6dd37"
 dependencies = [
  "anchor-lang",
  "base64 0.13.1",
  "static-pubkey",
+]
+
+[[package]]
+name = "cloudabi"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddfc5b9aa5d4507acaf872de71051dfd0e309860e88966e1051e462a077aac4f"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
@@ -1664,7 +1674,7 @@ version = "0.9.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01a9af1f4c2ef74bb8aa1f7e19706bc72d03598c8a570bb5de72243c7a9d9d5a"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "cfg-if",
  "crossbeam-utils",
  "memoffset 0.7.1",
@@ -1884,7 +1894,7 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -2389,6 +2399,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuchsia-cprng"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
+
+[[package]]
 name = "futures"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2803,7 +2819,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#69826eba6957b02d98113fece32c8f47c74377a0"
+source = "git+https://github.com/helium/proto?branch=master#78b41c371970e4b0fa61769a1b72d2762a10ab99"
 dependencies = [
  "bytes",
  "prost",
@@ -2817,7 +2833,7 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -3091,7 +3107,7 @@ version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1885e79c1fc4b10f0e172c475f458b7f7b93061064d98c3293e98c5ba0c8b399"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "hashbrown 0.12.3",
 ]
 
@@ -3190,44 +3206,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iot-packet-verifier"
-version = "0.1.0"
-dependencies = [
- "anchor-client",
- "anchor-lang",
- "anyhow",
- "async-trait",
- "chrono",
- "clap 3.2.23",
- "config",
- "data-credits",
- "db-store",
- "file-store",
- "futures",
- "futures-util",
- "helium-crypto",
- "helium-proto",
- "helium-sub-daos",
- "http",
- "http-serde",
- "poc-metrics",
- "prost",
- "serde",
- "sha2 0.10.6",
- "solana-client",
- "solana-program",
- "solana-sdk",
- "spl-token",
- "sqlx",
- "thiserror",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "triggered",
-]
-
-[[package]]
 name = "iot-verifier"
 version = "0.1.0"
 dependencies = [
@@ -3259,7 +3237,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.6.5",
  "retainer",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3429,7 +3407,7 @@ dependencies = [
 [[package]]
 name = "lazy-transactions"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -3554,7 +3532,7 @@ version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "435011366fe56583b16cf956f9df0095b405b82d76425bc8981c0e22e60ec4df"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "scopeguard",
 ]
 
@@ -3627,7 +3605,7 @@ version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
 ]
 
 [[package]]
@@ -3636,7 +3614,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
 ]
 
 [[package]]
@@ -3752,6 +3730,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-packet-verifier"
+version = "0.1.0"
+dependencies = [
+ "anchor-client",
+ "anchor-lang",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "clap 3.2.23",
+ "config",
+ "data-credits",
+ "db-store",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "helium-sub-daos",
+ "http",
+ "http-serde",
+ "poc-metrics",
+ "prost",
+ "serde",
+ "sha2 0.9.9",
+ "solana-client",
+ "solana-program",
+ "solana-sdk",
+ "spl-token",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "mobile-rewards"
 version = "0.1.0"
 dependencies = [
@@ -3775,7 +3791,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.6.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3815,7 +3831,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.6.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3851,13 +3867,13 @@ dependencies = [
 [[package]]
 name = "mpl-token-metadata"
 version = "1.8.3"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "arrayref",
  "borsh",
  "mpl-token-auth-rules",
- "mpl-token-metadata-context-derive 0.2.1 (git+https://github.com/helium/helium-program-library.git)",
- "mpl-utils 0.1.0 (git+https://github.com/helium/helium-program-library.git)",
+ "mpl-token-metadata-context-derive 0.2.1 (git+https://github.com/helium/helium-program-library.git?tag=v0.0.31)",
+ "mpl-utils 0.1.0 (git+https://github.com/helium/helium-program-library.git?tag=v0.0.31)",
  "num-derive",
  "num-traits",
  "shank",
@@ -3900,7 +3916,7 @@ dependencies = [
 [[package]]
 name = "mpl-token-metadata-context-derive"
 version = "0.2.1"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "quote 1.0.21",
  "syn 1.0.104",
@@ -3921,7 +3937,7 @@ dependencies = [
 [[package]]
 name = "mpl-utils"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "arrayref",
  "borsh",
@@ -4010,7 +4026,7 @@ dependencies = [
  "helium-proto",
  "http",
  "http-serde",
- "rand 0.8.5",
+ "rand 0.6.5",
  "retainer",
  "serde",
  "thiserror",
@@ -4053,7 +4069,7 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "090c7f9998ee0ff65aa5b723e4009f7b217707f1fb5ea551329cc4d6231fb304"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "num-integer",
  "num-traits",
 ]
@@ -4064,7 +4080,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f93ab6289c7b344a8a9f60f88d80aa20032336fe78da341afc91c8a2341fc75f"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "num-integer",
  "num-traits",
 ]
@@ -4075,7 +4091,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6b19411a9719e753aff12e5187b74d60d3dc449ec3f4dc21e3989c3f554bc95"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "num-traits",
 ]
 
@@ -4096,7 +4112,7 @@ version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "225d3389fb3509a24c93f5c29eb6bde2586b98d9f016636dff58d7c6f7569cd9"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "num-traits",
 ]
 
@@ -4106,7 +4122,7 @@ version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d03e6c028c5dc5cac6e2dec0efda81fc887605bb3d884578bb6d6bf7514e252"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "num-integer",
  "num-traits",
 ]
@@ -4117,7 +4133,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c000134b5dbf44adc5cb772486d335293351644b801551abe8f75c84cfa4aef"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "num-bigint 0.2.6",
  "num-integer",
  "num-traits",
@@ -4129,7 +4145,7 @@ version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "578ede34cf02f8924ab9447f50c28075b4d3e5b269972345e7e0372b38c6cdcd"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "libm",
 ]
 
@@ -4398,6 +4414,7 @@ dependencies = [
  "anyhow",
  "axum 0.6.3",
  "base64 0.21.0",
+ "blake3",
  "bs58 0.4.0",
  "chrono",
  "clap 3.2.23",
@@ -4416,7 +4433,6 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",
@@ -4449,7 +4465,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.6.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -4783,6 +4799,25 @@ dependencies = [
 
 [[package]]
 name = "rand"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d71dacdc3c88c1fde3885a3be3fbab9f35724e6ce99467f7d9c5026132184ca"
+dependencies = [
+ "autocfg 0.1.8",
+ "libc",
+ "rand_chacha 0.1.1",
+ "rand_core 0.4.2",
+ "rand_hc 0.1.0",
+ "rand_isaac",
+ "rand_jitter",
+ "rand_os",
+ "rand_pcg",
+ "rand_xorshift",
+ "winapi",
+]
+
+[[package]]
+name = "rand"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
@@ -4791,7 +4826,7 @@ dependencies = [
  "libc",
  "rand_chacha 0.2.2",
  "rand_core 0.5.1",
- "rand_hc",
+ "rand_hc 0.2.0",
 ]
 
 [[package]]
@@ -4803,6 +4838,16 @@ dependencies = [
  "libc",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "556d3a1ca6600bfcbab7c7c91ccb085ac7fbbcd70e008a98742e7847f4f7bcef"
+dependencies = [
+ "autocfg 0.1.8",
+ "rand_core 0.3.1",
 ]
 
 [[package]]
@@ -4827,6 +4872,21 @@ dependencies = [
 
 [[package]]
 name = "rand_core"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a6fdeb83b075e8266dcc8762c22776f6877a63111121f5f8c7411e5be7eed4b"
+dependencies = [
+ "rand_core 0.4.2",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
+
+[[package]]
+name = "rand_core"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
@@ -4845,11 +4905,73 @@ dependencies = [
 
 [[package]]
 name = "rand_hc"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b40677c7be09ae76218dc623efbf7b18e34bced3f38883af07bb75630a21bc4"
+dependencies = [
+ "rand_core 0.3.1",
+]
+
+[[package]]
+name = "rand_hc"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
  "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_isaac"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ded997c9d5f13925be2a6fd7e66bf1872597f759fd9dd93513dd7e92e5a5ee08"
+dependencies = [
+ "rand_core 0.3.1",
+]
+
+[[package]]
+name = "rand_jitter"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1166d5c91dc97b88d1decc3285bb0a99ed84b05cfd0bc2341bdf2d43fc41e39b"
+dependencies = [
+ "libc",
+ "rand_core 0.4.2",
+ "winapi",
+]
+
+[[package]]
+name = "rand_os"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b75f676a1e053fc562eafbb47838d67c84801e38fc1ba459e8f180deabd5071"
+dependencies = [
+ "cloudabi",
+ "fuchsia-cprng",
+ "libc",
+ "rand_core 0.4.2",
+ "rdrand",
+ "winapi",
+]
+
+[[package]]
+name = "rand_pcg"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abf9b09b01790cfe0364f52bf32995ea3c39f4d2dd011eac241d2914146d0b44"
+dependencies = [
+ "autocfg 0.1.8",
+ "rand_core 0.4.2",
+]
+
+[[package]]
+name = "rand_xorshift"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbf7e9e623549b0e21f6e97cf8ecf247c1a8fd2e8a992ae265314300b2455d5c"
+dependencies = [
+ "rand_core 0.3.1",
 ]
 
 [[package]]
@@ -4902,6 +5024,15 @@ dependencies = [
  "ring",
  "time 0.3.17",
  "yasna",
+]
+
+[[package]]
+name = "rdrand"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
+dependencies = [
+ "rand_core 0.3.1",
 ]
 
 [[package]]
@@ -5035,7 +5166,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.8.5",
+ "rand 0.6.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -5578,7 +5709,7 @@ dependencies = [
 [[package]]
 name = "shared-utils"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -5634,7 +5765,7 @@ version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4614a76b2a8be0058caa9dbbaf66d988527d86d003c11a94fbd335d7661edcef"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
 ]
 
 [[package]]
@@ -6833,7 +6964,7 @@ version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d76ce4a75fb488c605c54bf610f221cea8b0dafb53333c1a67e8ee199dcd2ae3"
 dependencies = [
- "autocfg",
+ "autocfg 1.1.0",
  "bytes",
  "libc",
  "memchr",
@@ -7086,7 +7217,7 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -7311,7 +7442,7 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#ed3f1e71a5fcad6897bfba01538b755130d6f893"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",

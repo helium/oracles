@@ -1,7 +1,7 @@
 [package]
-name = "iot-packet-verifier"
+name = "mobile-packet-verifier"
 version = "0.1.0"
-description = "Packet verification for IOT"
+description = "Packet verification for Mobile"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -38,5 +38,5 @@ http = {workspace = true}
 http-serde = {workspace = true}
 sha2 = {workspace = true}
 
-data-credits = {git = "https://github.com/helium/helium-program-library.git"}
-helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git"}
+data-credits = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.0.31"}
+helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.0.31"}

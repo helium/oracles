@@ -1,12 +1,13 @@
-use anyhow::{Error, Result};
+use anyhow::{bail, Error, Result};
 use clap::Parser;
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
-    iot_packet::PacketRouterPacketReport, mobile_session::DataTransferSessionIngestReport,
-    FileSinkBuilder, FileStore, FileType,
+    file_source, file_upload, mobile_session::DataTransferSessionIngestReport, FileSinkBuilder,
+    FileStore, FileType,
 };
-use iot_mobile_verifier::{burner::Burner, settings::Settings, verifier::Verifier};
+use futures_util::TryFutureExt;
+use mobile_packet_verifier::{burner::Burner, settings::Settings, verifier::Verifier};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::signature::read_keypair_file;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -33,13 +34,13 @@ impl Cli {
 
         // Set up the psotgres pool:
         let pool = settings.database.connect(10).await?;
-        sqlx::migrat!().run(&pool).await?;
+        sqlx::migrate!().run(&pool).await?;
 
         // Set up the database lock:
         let db_lock = Arc::new(Mutex::new(()));
 
         // Set up the solana RpcClient:
-        let rpc_client = Arc::new(RpcClient::new(settings.solana_rpc.clone()));
+        let rpc_client = RpcClient::new(settings.solana_rpc.clone());
 
         // Set up the balance burner:
         let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
@@ -99,6 +100,7 @@ impl Cli {
             valid_sessions_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
+            file_upload.run(&shutdown_listener).map_err(Error::from),
         )?;
 
         Ok(())

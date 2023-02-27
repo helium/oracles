@@ -121,7 +121,10 @@ impl DecodeError {
     }
 
     pub fn unsupported_radio_access_technology<E: ToString>(msg1: E, msg2: i32) -> Error {
-        Error::Decode(Self::UnsupportedRadioAccessTechnology(msg1.to_string(), msg2))
+        Error::Decode(Self::UnsupportedRadioAccessTechnology(
+            msg1.to_string(),
+            msg2,
+        ))
     }
 }
 

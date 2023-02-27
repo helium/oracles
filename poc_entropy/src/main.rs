@@ -78,7 +78,7 @@ impl Server {
         let (entropy_sink, mut entropy_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::EntropyReport,
             store_base_path,
-            concat!(env!("CARGO_PKG_VERSION"), "_report_submission"),
+            concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))

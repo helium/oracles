@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, mobile_session::DataTransferSessionIngestReport,
 };
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use sqlx::{Pool, Postgres, Transaction};
 use std::sync::Arc;
 use tokio::sync::{mpsc::Receiver, Mutex};
@@ -18,13 +18,13 @@ pub enum VerificationError {
 }
 
 pub async fn verify(
-    conn: &mut Transaction<Postgres>,
+    conn: &mut Transaction<'_, Postgres>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
 ) -> Result<(), VerificationError> {
     tokio::pin!(reports);
 
-    while let Some(DataTransferSessionIngestReport { report, .. }) = reorts.next().await {
+    while let Some(DataTransferSessionIngestReport { report, .. }) = reports.next().await {
         sqlx::query(
             r#"
             INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, first_timestamp, last_timestamp)
@@ -37,8 +37,8 @@ pub async fn verify(
         )
             .bind(report.pub_key)
             .bind(report.payer)
-            .bind(report.uploaded_bytes)
-            .bind(report.download_bytes)
+            .bind(report.upload_bytes as i64)
+            .bind(report.download_bytes as i64)
             .bind(curr_file_ts)
             .execute(&mut *conn)
             .await?;
@@ -66,15 +66,15 @@ impl Verifier {
         }
     }
 
-    pub async fn run(self, shutdown: &triggered::Listener) -> Result<(), VerificationError> {
+    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), VerificationError> {
         loop {
             tokio::select! {
-                _ = shutdown.clone() => break,
+                _ = shutdown.clone() => return Ok(()),
                 file = self.reports.recv() => {
                     if let Some(file) = file {
                         let _db_lock = self.db_lock.lock().await;
                         tracing::info!("Verifying file: {}", file.file_info);
-                        let ts = file.file_info.timestamp.clone();,
+                        let ts = file.file_info.timestamp;
                         let mut transaction = self.pool.begin().await?;
                         let reports = file.into_stream(&mut transaction).await?;
                         verify(&mut transaction, ts, reports).await?;

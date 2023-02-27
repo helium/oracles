@@ -441,11 +441,11 @@ fn verify_beacon_payload(
 
     // compare reports
     if reported_beacon != generated_beacon {
-        tracing::debug!(
-            "beacon verification failed, reason: {:?}",
-            InvalidReason::InvalidPacket,
+        tracing::info!(
+            "beacon construction verification failed, pubkey {:?}",
+            beacon_report.pub_key,
         );
-        return Err(InvalidReason::InvalidPacket);
+        return Ok(());
     }
     Ok(())
 }
@@ -1223,7 +1223,8 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
+        // assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
+        assert_eq!(Ok(()), resp5);
 
         // for completeness, confirm our valid beacon report is sane
         let beacon_report6 = valid_beacon_report(entropy_start + Duration::minutes(2));

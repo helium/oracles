@@ -1,25 +1,30 @@
+use crate::settings::Settings;
+use anchor_client::{RequestBuilder, RequestNamespace};
+use anchor_lang::AccountDeserialize;
 use chrono::{DateTime, Utc};
+use data_credits::{accounts, instruction, DelegatedDataCreditsV0};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
+use helium_sub_daos::{DaoV0, SubDaoV0};
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::{ParsePubkeyError, Pubkey},
     signature::Keypair,
     signer::Signer,
-    transaction::Transaction,
+    transaction::Transaction as SolanaTransaction,
 };
-use sqlx::{FromRow, Postgres, Transaction};
-use std::{sync::Arc, time::Duration};
+use sqlx::{FromRow, Pool, Postgres};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
-    uploaded_bytes: u64,
-    downloaded_bytes: u64,
+    upload_bytes: i64,
+    download_bytes: i64,
     first_timestamp: DateTime<Utc>,
     last_timestamp: DateTime<Utc>,
 }
@@ -29,14 +34,15 @@ impl From<DataTransferSession> for ValidDataTransferSession {
         Self {
             pub_key: ds.pub_key.into(),
             payer: ds.payer.into(),
-            uploaded_bytes: ds.uploaded_bytes,
-            downloaded_bytes: ds.downloaded_bytes,
+            upload_bytes: ds.upload_bytes as u64,
+            download_bytes: ds.download_bytes as u64,
             first_timestamp: ds.first_timestamp.encode_timestamp_millis(),
             last_timestamp: ds.last_timestamp.encode_timestamp_millis(),
         }
     }
 }
 
+#[derive(Default)]
 pub struct PayerTotals {
     total_bytes: u64,
     sessions: Vec<DataTransferSession>,
@@ -44,28 +50,20 @@ pub struct PayerTotals {
 
 impl PayerTotals {
     fn push_sess(&mut self, sess: DataTransferSession) {
-        self.total_bytes += sess.downloaded_bytes + sess.uploaded_bytes;
+        self.total_bytes += sess.download_bytes as u64 + sess.upload_bytes as u64;
         self.sessions.push(sess);
     }
 }
 
-impl Default for Payer {
-    fn default() -> Self {
-        Self {
-            total_bytes: 0,
-            sessions: Vec::new(),
-        }
-    }
-}
-
 pub struct Burner {
-    pool: Postgres<Pool>,
+    pool: Pool<Postgres>,
     valid_sessions: FileSinkClient,
     provider: RpcClient,
     program_cache: BurnProgramCache,
     keypair: [u8; 64],
     db_lock: Arc<Mutex<()>>,
     burn_period: Duration,
+    cluster: String,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -76,6 +74,10 @@ pub enum BurnError {
     AnchorError(#[from] anchor_lang::error::Error),
     #[error("sql error: {0}")]
     SqlError(#[from] sqlx::Error),
+    #[error("Parse pubkey error: {0}")]
+    ParsePubkeyError(#[from] ParsePubkeyError),
+    #[error("file store error: {0}")]
+    FileStoreError(#[from] file_store::Error),
 }
 
 impl Burner {
@@ -89,21 +91,21 @@ impl Burner {
     ) -> Result<Self, BurnError> {
         Ok(Self {
             pool,
-            db_lock,
-            burn_period: Duration::from_secs(60 * 60 * settings.burn_period),
+            burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
             program_cache: BurnProgramCache::new(settings, &provider).await?,
             provider,
             valid_sessions,
             db_lock,
             keypair: keypair.to_bytes(),
+            cluster: settings.cluster.clone(),
         })
     }
-    
-    async fn run(self, shutdown: &tiggered::Listener) -> Result<(), BurnError> {
+
+    pub async fn run(self, shutdown: &triggered::Listener) -> Result<(), BurnError> {
         loop {
             tokio::select! {
                 _ = shutdown.clone() => return Ok(()),
-                _ = tokio::sleep(self.burn_period) => self.burn().await?,
+                _ = tokio::time::sleep(self.burn_period) => self.burn().await?,
             }
         }
     }
@@ -114,10 +116,12 @@ impl Burner {
 
         // Fetch all of the sessions
         let sessions: Vec<DataTransferSession> =
-            sqlx::query_as("SELECT * FROM data_transfer_sessions").fetch_all(&mut transaction);
+            sqlx::query_as("SELECT * FROM data_transfer_sessions")
+                .fetch_all(&self.pool)
+                .await?;
 
         // Fetch all of the sessions and group by the payer
-        let mut payers = HashMap::<PublicKeyBinary, PayerTotals>::new();
+        let mut payer_totals = HashMap::<PublicKeyBinary, PayerTotals>::new();
         for session in sessions.into_iter() {
             payer_totals
                 .entry(session.payer.clone())
@@ -131,12 +135,23 @@ impl Burner {
                 total_bytes,
                 sessions,
             },
-        ) in payers.into_iter()
+        ) in payer_totals.into_iter()
         {
+            // Fetch the sub dao epoch info:
+            let epoch = self.provider.get_epoch_info().await?.epoch;
+            let (sub_dao_epoch_info, _) = Pubkey::find_program_address(
+                &[
+                    "sub_dao_epoch_info".as_bytes(),
+                    self.program_cache.sub_dao.as_ref(),
+                    &epoch.to_le_bytes(),
+                ],
+                &helium_sub_daos::ID,
+            );
+
             let amount = bytes_to_dc(total_bytes);
 
-            // Burn the DC for the payer 
-            let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, &payer);
+            // Burn the DC for the payer
+            let ddc_key = crate::pdas::delegated_data_credits(&self.program_cache.sub_dao, &payer);
             let account_data = self.provider.get_account_data(&ddc_key).await?;
             let mut account_data = account_data.as_ref();
             let escrow_account =
@@ -159,7 +174,7 @@ impl Burner {
                     sub_dao: self.program_cache.sub_dao,
                     account_payer: self.program_cache.account_payer,
                     data_credits: self.program_cache.data_credits,
-                    delegated_data_credits: pdas::delegated_data_credits(
+                    delegated_data_credits: crate::pdas::delegated_data_credits(
                         &self.program_cache.sub_dao,
                         &payer,
                     ),
@@ -173,7 +188,7 @@ impl Burner {
                 };
                 let args = instruction::BurnDelegatedDataCreditsV0 {
                     args: data_credits::BurnDelegatedDataCreditsArgsV0 {
-                        amount: amount as u64,
+                        amount
                     },
                 };
 
@@ -189,7 +204,7 @@ impl Burner {
             let blockhash = self.provider.get_latest_blockhash().await?;
             let signer = Keypair::from_bytes(&self.keypair).unwrap();
 
-            let tx = Transaction::new_signed_with_payer(
+            let tx = SolanaTransaction::new_signed_with_payer(
                 &instructions,
                 Some(&signer.pubkey()),
                 &[&signer],
@@ -210,7 +225,9 @@ impl Burner {
                 .await?;
 
             for session in sessions {
-                self.valid_sessions.write(session.into(), &[]);
+                self.valid_sessions
+                    .write(ValidDataTransferSession::from(session), &[])
+                    .await?;
             }
         }
 
