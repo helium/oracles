@@ -1,6 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon,
-    metrics::Metrics, poc::Poc, poc_report::Report, reward_share::GatewayShare, Settings,
+    metrics::Metrics, poc::Poc, poc_report::Report, region_cache::RegionCache,
+    reward_share::GatewayShare, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use file_store::{
@@ -75,6 +76,7 @@ impl Runner {
         &mut self,
         file_upload_tx: FileUploadSender,
         gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         hex_density_map: impl HexDensityMap,
         shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
@@ -137,7 +139,8 @@ impl Runner {
                                                 &iot_invalid_beacon_sink,
                                                 &iot_invalid_witness_sink,
                                                 &iot_poc_sink,
-                                                gateway_cache, hex_density_map.clone()).await {
+                                                gateway_cache, region_cache,
+                                                hex_density_map.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal db runner error: {err:?}");
@@ -149,6 +152,7 @@ impl Runner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_db_tick(
         &self,
         _shutdown: triggered::Listener,
@@ -156,6 +160,7 @@ impl Runner {
         iot_invalid_witness_sink: &FileSinkClient,
         iot_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
@@ -176,15 +181,19 @@ impl Runner {
         stream::iter(db_beacon_reports)
             .for_each_concurrent(BEACON_WORKERS, |db_beacon| {
                 let hdm = hex_density_map.clone();
+                let tx1 = iot_invalid_beacon_sink;
+                let tx2 = iot_invalid_witness_sink;
+                let tx3 = iot_poc_sink;
                 async move {
                     let beacon_id = db_beacon.id.clone();
                     match self
                         .handle_beacon_report(
                             db_beacon,
-                            iot_invalid_beacon_sink,
-                            iot_invalid_witness_sink,
-                            iot_poc_sink,
+                            tx1,
+                            tx2,
+                            tx3,
                             gateway_cache,
+                            region_cache,
                             hdm,
                         )
                         .await
@@ -202,6 +211,7 @@ impl Runner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_beacon_report(
         &self,
         db_beacon: Report,
@@ -209,6 +219,7 @@ impl Runner {
         iot_invalid_witness_sink: &FileSinkClient,
         iot_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
         let entropy_start_time = match db_beacon.timestamp {
@@ -251,6 +262,7 @@ impl Runner {
             .verify_beacon(
                 hex_density_map.clone(),
                 gateway_cache,
+                region_cache,
                 &self.pool,
                 self.beacon_interval,
                 self.beacon_interval_tolerance,
@@ -261,7 +273,12 @@ impl Runner {
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
                     let verified_witnesses_result = poc
-                        .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
+                        .verify_witnesses(
+                            &beacon_info,
+                            hex_density_map,
+                            gateway_cache,
+                            region_cache,
+                        )
                         .await?;
                     // check if there are any failed witnesses
                     // if so update the DB attempts count

@@ -1,6 +1,7 @@
 pub mod entropy;
 pub mod entropy_loader;
 pub mod gateway_cache;
+pub mod helius;
 mod hex_density;
 pub mod last_beacon;
 pub mod loader;
@@ -9,6 +10,7 @@ pub mod metrics;
 pub mod poc;
 pub mod poc_report;
 pub mod purger;
+pub mod region_cache;
 pub mod reward_share;
 pub mod rewarder;
 pub mod runner;

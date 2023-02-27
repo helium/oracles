@@ -1,11 +1,11 @@
 use crate::{
+    helius::GatewayInfo,
     hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap, SharedHexDensityMap},
     last_beacon::LastBeacon,
     Settings,
 };
 use chrono::{DateTime, Duration, Utc};
-use futures::stream::StreamExt;
-use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
+use futures::stream::TryStreamExt;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use tokio::time;
@@ -13,11 +13,12 @@ use tokio::time;
 // The number in minutes within which the gateway has registered a beacon
 // to the oracle for inclusion in transmit scaling density calculations
 const HIP_17_INTERACTIVITY_LIMIT: i64 = 3600;
+const HELIUS_DB_POOL_SIZE: usize = 100;
 
 pub struct Server {
-    follower: FollowerService,
     hex_density_map: SharedHexDensityMap,
     pool: PgPool,
+    helius_pool: PgPool,
     trigger_interval: Duration,
 }
 
@@ -34,9 +35,9 @@ pub enum TxScalerError {
 impl Server {
     pub async fn from_settings(settings: &Settings) -> Result<Self, TxScalerError> {
         let mut server = Self {
-            follower: FollowerService::from_settings(&settings.follower),
             hex_density_map: SharedHexDensityMap::new(),
             pool: settings.database.connect(2).await?,
+            helius_pool: settings.helius.connect(HELIUS_DB_POOL_SIZE).await?,
             trigger_interval: Duration::seconds(settings.transmit_scale_interval),
         };
 
@@ -73,19 +74,21 @@ impl Server {
 
     pub async fn refresh_scaling_map(&mut self) -> Result<(), TxScalerError> {
         let refresh_start = Utc::now();
+        let sql = r#"SELECT address, location, elevation, gain, is_full_hotspot FROM gateways when location IS NOT NULL"#;
         tracing::info!("density_scaler: generating hex scaling map, starting at {refresh_start:?}");
         let mut global_map = GlobalHexMap::new();
         let active_gateways = self
             .gateways_recent_activity(refresh_start)
             .await
             .map_err(sqlx::Error::from)?;
-        let mut gw_stream = self.follower.active_gateways().await?;
-        while let Some(GatewayInfo {
+        let mut rows = sqlx::query_as::<_, GatewayInfo>(sql).fetch(&self.helius_pool);
+        while let Ok(Some(GatewayInfo {
             location, address, ..
-        }) = gw_stream.next().await
+        })) = rows.try_next().await
         {
             if let Some(h3index) = location {
-                if active_gateways.contains_key(&address) {
+                let addr_vec: Vec<u8> = address.into();
+                if active_gateways.contains_key(&addr_vec) {
                     global_map.increment_unclipped(h3index)
                 }
             }

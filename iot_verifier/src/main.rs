@@ -4,7 +4,8 @@ use file_store::{file_sink, file_upload, FileType};
 use futures::TryFutureExt;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, poc_report::Report,
-    purger, rewarder::Rewarder, runner, tx_scaler::Server as DensityScaler, Settings,
+    purger, region_cache::RegionCache, rewarder::Rewarder, runner,
+    tx_scaler::Server as DensityScaler, Settings,
 };
 use std::path;
 use tokio::signal;
@@ -71,7 +72,9 @@ impl Server {
             shutdown_trigger.trigger()
         });
 
-        let gateway_cache = GatewayCache::from_settings(settings);
+        let gateway_cache = GatewayCache::from_settings(settings).await?;
+        gateway_cache.prewarm().await?;
+        let region_cache = RegionCache::from_settings(settings).await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
@@ -120,6 +123,7 @@ impl Server {
             runner.run(
                 file_upload_tx.clone(),
                 &gateway_cache,
+                &region_cache,
                 density_scaler.hex_density_map(),
                 &shutdown
             ),

@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
 use file_store::traits::TimestampDecode;
-use serde::{Deserialize, Serialize};
+use futures::stream::TryStreamExt;
+use helium_crypto::PublicKeyBinary;
+use std::collections::HashMap;
 
-#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
+#[derive(sqlx::FromRow, Debug)]
 #[sqlx(type_name = "last_beacon")]
 pub struct LastBeacon {
     pub id: Vec<u8>,
@@ -15,6 +17,11 @@ pub enum LastBeaconError {
     DatabaseError(#[from] sqlx::Error),
     #[error("file store error: {0}")]
     FileStoreError(#[from] file_store::Error),
+}
+
+#[derive(Default)]
+pub struct LastBeacons {
+    pub beacon_map: HashMap<PublicKeyBinary, DateTime<Utc>>,
 }
 
 impl LastBeacon {
@@ -109,5 +116,22 @@ impl LastBeacon {
         .execute(executor)
         .await?;
         Ok(())
+    }
+
+    pub async fn get_all<'c, E>(executor: E) -> Result<LastBeacons, LastBeaconError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let mut beacon_map: HashMap<PublicKeyBinary, DateTime<Utc>> = HashMap::new();
+        let mut rows = sqlx::query_as::<_, Self>(
+            r#"
+            select * from last_beacon
+            "#,
+        )
+        .fetch(executor);
+        while let Some(last_beacon) = rows.try_next().await? {
+            beacon_map.insert(PublicKeyBinary::from(last_beacon.id), last_beacon.timestamp);
+        }
+        Ok(LastBeacons { beacon_map })
     }
 }
