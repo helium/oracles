@@ -1,14 +1,13 @@
 use crate::{
-    admin::{self, KeyType},
+    admin::{AuthCache, KeyType},
     lora_field::{DevAddrRange, EuiPair},
-    org::{self, get_org_pubkeys, get_org_pubkeys_by_route},
+    org::{get_org_pubkeys, get_org_pubkeys_by_route},
     route::{self, Route},
-    GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
+    GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use futures::stream::StreamExt;
-use helium_crypto::PublicKey;
 use helium_proto::services::iot_config::{
     self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
     RouteDeleteDevaddrRangesReqV1, RouteDeleteEuisReqV1, RouteDeleteReqV1, RouteDevaddrRangesResV1,
@@ -24,22 +23,28 @@ use tokio::{
 use tonic::{Request, Response, Status};
 
 pub struct RouteService {
-    admin_pubkey: PublicKey,
+    auth_cache: AuthCache,
     pool: Pool<Postgres>,
     update_channel: Sender<RouteStreamResV1>,
     shutdown: triggered::Listener,
 }
 
+#[derive(Clone, Debug)]
+enum OrgId<'a> {
+    Oui(u64),
+    RouteId(&'a str),
+}
+
 impl RouteService {
-    pub async fn new(settings: &Settings, shutdown: triggered::Listener) -> Result<Self> {
+    pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
         let (update_tx, _) = tokio::sync::broadcast::channel(128);
 
-        Ok(Self {
-            admin_pubkey: settings.admin_pubkey()?,
-            pool: settings.database.connect(10).await?,
+        Self {
+            auth_cache,
+            pool,
             update_channel: update_tx,
             shutdown,
-        })
+        }
     }
 
     fn subscribe_to_routes(&self) -> Receiver<RouteStreamResV1> {
@@ -50,26 +55,62 @@ impl RouteService {
         self.update_channel.clone()
     }
 
-    fn verify_authorized_signature<R>(
+    async fn verify_request_signature<'a, R>(
         &self,
         request: &R,
-        signatures: Vec<PublicKey>,
+        id: OrgId<'a>,
     ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
-        if request.verify(&self.admin_pubkey).is_ok() {
+        if self
+            .auth_cache
+            .verify_signature(KeyType::Administrator, request)
+            .await
+            .is_ok()
+        {
             tracing::debug!("request authorized by admin");
             return Ok(());
         }
 
-        for pubkey in signatures.iter() {
+        let org_keys = match id {
+            OrgId::Oui(oui) => get_org_pubkeys(oui, &self.pool).await,
+            OrgId::RouteId(route_id) => get_org_pubkeys_by_route(route_id, &self.pool).await,
+        }
+        .map_err(|_| Status::internal("auth verification error"))?;
+
+        for pubkey in org_keys.iter() {
             if request.verify(pubkey).is_ok() {
                 tracing::debug!("request authorized by delegate {pubkey}");
                 return Ok(());
             }
         }
         Err(Status::permission_denied("unauthorized request signature"))
+    }
+
+    async fn verify_stream_request_signature<R>(&self, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        if self
+            .auth_cache
+            .verify_signature(KeyType::PacketRouter, request)
+            .await
+            .is_ok()
+        {
+            tracing::debug!("request authorized for registered packet router");
+            Ok(())
+        } else if self
+            .auth_cache
+            .verify_signature(KeyType::Administrator, request)
+            .await
+            .is_ok()
+        {
+            tracing::debug!("request authorized by admin");
+            Ok(())
+        } else {
+            Err(Status::permission_denied("unauthorized request signature"))
+        }
     }
 }
 
@@ -78,10 +119,8 @@ impl iot_config::Route for RouteService {
     async fn list(&self, request: Request<RouteListReqV1>) -> GrpcResult<RouteListResV1> {
         let request = request.into_inner();
 
-        let org_keys = get_org_pubkeys(request.oui, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::Oui(request.oui))
+            .await?;
 
         let proto_routes: Vec<RouteV1> = route::list_routes(request.oui, &self.pool)
             .await
@@ -98,10 +137,8 @@ impl iot_config::Route for RouteService {
     async fn get(&self, request: Request<RouteGetReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
 
-        let org_keys = get_org_pubkeys_by_route(&request.id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::RouteId(&request.id))
+            .await?;
 
         let route = route::get_route(&request.id, &self.pool)
             .await
@@ -113,10 +150,8 @@ impl iot_config::Route for RouteService {
     async fn create(&self, request: Request<RouteCreateReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
 
-        let org_keys = get_org_pubkeys(request.oui, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::Oui(request.oui))
+            .await?;
 
         let route: Route = request
             .route
@@ -150,10 +185,8 @@ impl iot_config::Route for RouteService {
             .map_err(Status::invalid_argument)?
             .into();
 
-        let org_keys = get_org_pubkeys(route.oui, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::Oui(route.oui))
+            .await?;
 
         let updated_route = route::update_route(route, &self.pool, self.clone_update_channel())
             .await
@@ -165,10 +198,8 @@ impl iot_config::Route for RouteService {
     async fn delete(&self, request: Request<RouteDeleteReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
 
-        let org_keys = get_org_pubkeys_by_route(&request.id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::RouteId(&request.id))
+            .await?;
 
         let route = route::get_route(&request.id, &self.pool)
             .await
@@ -184,10 +215,8 @@ impl iot_config::Route for RouteService {
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
-        let hpr_keys = admin::get_admin_keys(KeyType::PacketRouter, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, hpr_keys)?;
+
+        self.verify_stream_request_signature(&request).await?;
 
         tracing::info!("client subscribed to route stream");
         let pool = self.pool.clone();
@@ -261,10 +290,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<Self::get_euisStream> {
         let request = request.into_inner();
 
-        let org_keys = get_org_pubkeys_by_route(&request.route_id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
+            .await?;
 
         let euis = route::list_euis_for_route(&request.route_id, &self.pool)
             .await
@@ -293,10 +320,8 @@ impl iot_config::Route for RouteService {
 
         if let Ok(Some(first_update)) = request.message().await {
             if let Some(eui_pair) = &first_update.eui_pair {
-                let org_keys = org::get_org_pubkeys_by_route(&eui_pair.route_id, &self.pool)
-                    .await
-                    .map_err(|_| Status::internal("authorization error"))?;
-                self.verify_authorized_signature(&first_update, org_keys)?;
+                self.verify_request_signature(&first_update, OrgId::RouteId(&eui_pair.route_id))
+                    .await?;
                 match first_update.action() {
                     ActionV1::Add => to_add.push(eui_pair.into()),
                     ActionV1::Remove => to_remove.push(eui_pair.into()),
@@ -335,10 +360,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<RouteEuisResV1> {
         let request = request.into_inner();
 
-        let org_keys = org::get_org_pubkeys_by_route(&request.route_id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
+            .await?;
 
         route::delete_euis(&request.route_id, &self.pool, self.update_channel.clone())
             .await
@@ -353,10 +376,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<Self::get_devaddr_rangesStream> {
         let request = request.into_inner();
 
-        let org_keys = org::get_org_pubkeys_by_route(&request.route_id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
+            .await?;
 
         let devaddrs = route::list_devaddr_ranges_for_route(&request.route_id, &self.pool)
             .await
@@ -385,10 +406,8 @@ impl iot_config::Route for RouteService {
 
         if let Ok(Some(first_update)) = request.message().await {
             if let Some(devaddr) = &first_update.devaddr_range {
-                let org_keys = org::get_org_pubkeys_by_route(&devaddr.route_id, &self.pool)
-                    .await
-                    .map_err(|_| Status::internal("authorization error"))?;
-                self.verify_authorized_signature(&first_update, org_keys)?;
+                self.verify_request_signature(&first_update, OrgId::RouteId(&devaddr.route_id))
+                    .await?;
                 match first_update.action() {
                     ActionV1::Add => to_add.push(devaddr.into()),
                     ActionV1::Remove => to_remove.push(devaddr.into()),
@@ -427,10 +446,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<RouteDevaddrRangesResV1> {
         let request = request.into_inner();
 
-        let org_keys = org::get_org_pubkeys_by_route(&request.route_id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("authorization error"))?;
-        self.verify_authorized_signature(&request, org_keys)?;
+        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
+            .await?;
 
         route::delete_devaddr_ranges(&request.route_id, &self.pool, self.update_channel.clone())
             .await

@@ -1,6 +1,7 @@
 use crate::{region_map::RegionMap, GrpcResult, Settings};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
+use futures::future::TryFutureExt;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
@@ -36,9 +37,24 @@ impl GatewayService {
 impl iot_config::Gateway for GatewayService {
     async fn location(
         &self,
-        _request: Request<GatewayLocationReqV1>,
+        request: Request<GatewayLocationReqV1>,
     ) -> GrpcResult<GatewayLocationResV1> {
-        unimplemented!()
+        let request = request.into_inner();
+
+        let location = self
+            .follower_service
+            .clone()
+            .resolve_gateway_info(&request.gateway.into())
+            .and_then(|info| async move {
+                info.location.ok_or(node_follower::Error::GatewayNotFound(
+                    "unasserted".to_string(),
+                ))
+            })
+            .await
+            .map_err(|_| Status::internal("gateway lookup error"))?
+            .to_string();
+
+        Ok(Response::new(GatewayLocationResV1 { location }))
     }
 
     async fn region_params(
