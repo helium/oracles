@@ -1,6 +1,6 @@
 use crate::{Error, Result, Settings};
 use sqlx::{
-    postgres::{PgConnectOptions, PgPoolOptions, Postgres},
+    postgres::{PgConnectOptions, Postgres},
     Pool,
 };
 
@@ -15,19 +15,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub async fn connect(
     settings: &Settings,
-    default_max_connections: usize,
     shutdown: triggered::Listener,
 ) -> Result<(Pool<Postgres>, futures::future::BoxFuture<'static, Result>)> {
     let aws_config = aws_config::load_from_env().await;
     let client = aws_sdk_sts::Client::new(&aws_config);
     let connect_options = connect_options(&client, settings).await?;
 
-    let pool = PgPoolOptions::new()
-        .max_connections(
-            settings
-                .max_connections
-                .unwrap_or(default_max_connections as u32),
-        )
+    let pool = settings
+        .pool_options()
         .connect_with(connect_options)
         .await?;
 

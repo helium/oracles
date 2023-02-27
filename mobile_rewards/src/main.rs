@@ -62,10 +62,7 @@ impl Server {
         });
 
         // Create database pool and migrate
-        let (pool, db_join_handle) = settings
-            .database
-            .connect(10, shutdown_listener.clone())
-            .await?;
+        let (pool, db_join_handle) = settings.database.connect(shutdown_listener.clone()).await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Reward server

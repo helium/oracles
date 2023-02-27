@@ -14,9 +14,7 @@ pub enum AuthType {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
-    /// Max open connections to the database. If absent a default is calculated
-    /// by application code
-    pub max_connections: Option<u32>,
+    pub max_connections: u32,
 
     pub host: String,
     pub port: u16,
@@ -41,19 +39,18 @@ fn default_auth_type() -> AuthType {
 impl Settings {
     pub async fn connect(
         &self,
-        default_max_connections: usize,
         shutdown: triggered::Listener,
     ) -> Result<(Pool<Postgres>, futures::future::BoxFuture<'static, Result>)> {
         match self.auth_type {
-            AuthType::Postgres => match self.simple_connect(default_max_connections).await {
+            AuthType::Postgres => match self.simple_connect().await {
                 Ok(pool) => Ok((pool, Box::pin(async move { Ok(()) }))),
                 Err(err) => Err(err),
             },
-            AuthType::Iam => iam_auth_pool::connect(self, default_max_connections, shutdown).await,
+            AuthType::Iam => iam_auth_pool::connect(self, shutdown).await,
         }
     }
 
-    pub async fn simple_connect(&self, default_max_connections: usize) -> Result<Pool<Postgres>> {
+    async fn simple_connect(&self) -> Result<Pool<Postgres>> {
         let connect_options = PgConnectOptions::new()
             .host(&self.host)
             .port(self.port)
@@ -63,14 +60,11 @@ impl Settings {
                 Error::InvalidConfiguration("postgres_password is required".to_string())
             })?);
 
-        let pool = PgPoolOptions::new()
-            .max_connections(
-                self.max_connections
-                    .unwrap_or(default_max_connections as u32),
-            )
-            .connect_with(connect_options)
-            .await?;
-
+        let pool = self.pool_options().connect_with(connect_options).await?;
         Ok(pool)
+    }
+
+    pub fn pool_options(&self) -> PgPoolOptions {
+        PgPoolOptions::new().max_connections(self.max_connections)
     }
 }

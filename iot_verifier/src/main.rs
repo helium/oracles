@@ -65,7 +65,7 @@ impl Server {
         });
 
         // Create database pool and run migrations
-        let (pool, db_join_handle) = settings.database.connect(2, shutdown.clone()).await?;
+        let (pool, db_join_handle) = settings.database.connect(shutdown.clone()).await?;
         sqlx::migrate!().run(&pool).await?;
 
         let count_all_beacons = Report::count_all_beacons(&pool).await?;
@@ -101,18 +101,19 @@ impl Server {
         .await?;
 
         let rewarder = Rewarder {
-            pool,
+            pool: pool.clone(),
             gateway_rewards_sink,
             reward_manifests_sink,
             reward_period_hours: settings.rewards,
             reward_offset: settings.reward_offset_duration(),
         };
 
-        let mut loader = loader::Loader::from_settings(settings).await?;
-        let mut entropy_loader = entropy_loader::EntropyLoader::from_settings(settings).await?;
-        let mut runner = runner::Runner::from_settings(settings).await?;
-        let purger = purger::Purger::from_settings(settings).await?;
-        let mut density_scaler = DensityScaler::from_settings(settings).await?;
+        let mut loader = loader::Loader::from_settings(settings, pool.clone()).await?;
+        let mut entropy_loader =
+            entropy_loader::EntropyLoader::from_settings(settings, pool.clone()).await?;
+        let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
+        let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
+        let mut density_scaler = DensityScaler::from_settings(settings, pool).await?;
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
             gateway_rewards_server.run(&shutdown).map_err(Error::from),
