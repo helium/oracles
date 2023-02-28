@@ -678,7 +678,7 @@ checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#2d41c049967d48faba02efb8d73c19e0af0dfa3b"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#4b73b88bd2f3e58cf6b0cd9343263d76425db66c"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -689,7 +689,7 @@ dependencies = [
  "rand_chacha",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -1332,7 +1332,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "structopt",
  "thiserror",
  "tracing",
@@ -1559,7 +1559,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "strum",
  "strum_macros",
@@ -1982,7 +1982,7 @@ dependencies = [
  "p256",
  "rand_core",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "signature",
  "sqlx",
  "thiserror",
@@ -1991,7 +1991,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#69826eba6957b02d98113fece32c8f47c74377a0"
+source = "git+https://github.com/helium/proto?branch=master#78b41c371970e4b0fa61769a1b72d2762a10ab99"
 dependencies = [
  "bytes",
  "prost",
@@ -2240,7 +2240,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",
@@ -2330,7 +2330,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2716,7 +2716,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -2756,7 +2756,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3121,7 +3121,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3517,7 +3517,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
