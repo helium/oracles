@@ -40,6 +40,7 @@ impl Indexer {
             tokio::select! {
             _ = shutdown.clone() => (),
             msg = receiver.recv() => if let Some(file_info_stream) = msg {
+                    tracing::info!("Processing reward file {}", file_info_stream.file_info.key);
                     let mut txn = self.pool.begin().await?;
                     let mut stream = file_info_stream.into_stream(&mut txn).await?;
 

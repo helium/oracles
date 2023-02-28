@@ -6,6 +6,6 @@ create table files_processed (
 );
 
 insert into files_processed (file_name, file_type, file_timestamp, processed_at)
-select 'migration', 'reward_manifest', to_timestamp(value::bigint / 1000) + interval '30 minutes', NOW()
+select 'migration', 'reward_manifest', to_timestamp(value::bigint / 1000) + interval '1799 seconds', NOW()
 from meta
 where key = 'last_reward_manifest';
