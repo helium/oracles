@@ -293,13 +293,19 @@ impl iot_config::Route for RouteService {
         self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
             .await?;
 
-        let euis = route::list_euis_for_route(&request.route_id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("get euis failed"))?;
-
+        let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+
         tokio::spawn(async move {
-            for eui in euis {
+            let euis = match route::list_euis_for_route(&request.route_id, &pool)
+                .map_err(|_| Status::internal("failed retrieving eui pairs"))
+            {
+                Ok(euis) => euis,
+                Err(_) => return,
+            };
+            pin!(euis);
+
+            while let Some(eui) = euis.next().await {
                 if tx.send(Ok(eui.into())).await.is_err() {
                     break;
                 }
@@ -379,13 +385,19 @@ impl iot_config::Route for RouteService {
         self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
             .await?;
 
-        let devaddrs = route::list_devaddr_ranges_for_route(&request.route_id, &self.pool)
-            .await
-            .map_err(|_| Status::internal("get devaddr ranges failed"))?;
-
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let pool = self.pool.clone();
+
         tokio::spawn(async move {
-            for devaddr in devaddrs {
+            let devaddrs = match route::list_devaddr_ranges_for_route(&request.route_id, &pool)
+                .map_err(|_| Status::internal("failed retrieving devaddr ranges"))
+            {
+                Ok(devaddrs) => devaddrs,
+                Err(_) => return,
+            };
+            pin!(devaddrs);
+
+            while let Some(devaddr) = devaddrs.next().await {
                 if tx.send(Ok(devaddr.into())).await.is_err() {
                     break;
                 }
@@ -462,7 +474,9 @@ impl iot_config::Route for RouteService {
         self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
             .await?;
 
-        route::delete_devaddr_ranges(&request.route_id, &self.pool, self.update_channel.clone())
+        let pool = self.pool.clone();
+
+        route::delete_devaddr_ranges(&request.route_id, &pool, self.update_channel.clone())
             .await
             .map_err(|_| Status::internal("devaddr range delete failed"))?;
         Ok(Response::new(RouteDevaddrRangesResV1 {}))

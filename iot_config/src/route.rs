@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{types::Uuid, Row};
 use std::collections::BTreeMap;
-use tokio::sync::broadcast::{self, Sender};
+use tokio::{
+    pin,
+    sync::broadcast::{self, Sender},
+};
 
 pub mod proto {
     pub use helium_proto::{
@@ -78,7 +81,7 @@ pub enum RouteStorageError {
     #[error("protocol error: {0}")]
     ServerProtocol(String),
     #[error("stream update error: {0}")]
-    StreamUpdate(#[from] broadcast::error::SendError<proto::RouteStreamResV1>),
+    StreamUpdate(#[from] Box<broadcast::error::SendError<proto::RouteStreamResV1>>),
 }
 
 pub async fn create_route(
@@ -288,19 +291,15 @@ pub async fn update_euis(
     Ok(())
 }
 
-pub async fn delete_euis(
+pub async fn delete_euis<'a>(
     id: &str,
-    db: impl sqlx::PgExecutor<'_> + Copy,
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
     update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<(), RouteStorageError> {
-    let euis = list_euis_for_route(id, db).await?;
-    let id = Uuid::try_parse(id)?;
-    sqlx::query(" delete from route_eui_pairs where route_id = $1 ")
-        .bind(id)
-        .execute(db)
-        .await?;
+    let euis = list_euis_for_route(id, db)?;
+    pin!(euis);
 
-    for removed in euis {
+    while let Some(removed) = euis.next().await {
         let update = proto::RouteStreamResV1 {
             action: proto::ActionV1::Remove.into(),
             data: Some(proto::route_stream_res_v1::Data::EuiPair(removed.into())),
@@ -309,6 +308,13 @@ pub async fn delete_euis(
             break;
         }
     }
+
+    let id = Uuid::try_parse(id)?;
+    sqlx::query(" delete from route_eui_pairs where route_id = $1 ")
+        .bind(id)
+        .execute(db)
+        .await?;
+
     Ok(())
 }
 
@@ -414,19 +420,15 @@ pub async fn update_devaddr_ranges(
     Ok(())
 }
 
-pub async fn delete_devaddr_ranges(
+pub async fn delete_devaddr_ranges<'a>(
     id: &str,
-    db: impl sqlx::PgExecutor<'_> + Copy,
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
     update_tx: Sender<proto::RouteStreamResV1>,
 ) -> Result<(), RouteStorageError> {
-    let devaddr_ranges = list_devaddr_ranges_for_route(id, db).await?;
-    let id = Uuid::try_parse(id)?;
-    sqlx::query(" delete from route_devaddr_ranges where route_id = $1 ")
-        .bind(id)
-        .execute(db)
-        .await?;
+    let devaddr_ranges = list_devaddr_ranges_for_route(id, db)?;
+    pin!(devaddr_ranges);
 
-    for removed in devaddr_ranges {
+    while let Some(removed) = devaddr_ranges.next().await {
         let update = proto::RouteStreamResV1 {
             action: proto::ActionV1::Remove.into(),
             data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
@@ -437,6 +439,13 @@ pub async fn delete_devaddr_ranges(
             break;
         }
     }
+
+    let id = Uuid::try_parse(id)?;
+    sqlx::query(" delete from route_devaddr_ranges where route_id = $1 ")
+        .bind(id)
+        .execute(db)
+        .await?;
+
     Ok(())
 }
 
@@ -470,46 +479,46 @@ pub async fn list_routes(
     .await)
 }
 
-pub async fn list_euis_for_route(
+pub fn list_euis_for_route<'a>(
     id: &str,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<EuiPair>, RouteStorageError> {
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> Result<impl Stream<Item = EuiPair> + 'a, RouteStorageError> {
     let id = Uuid::try_parse(id)?;
     const EUI_SELECT_SQL: &str = r#"
     select eui.route_id, eui.app_eui, eui.dev_eui
         from route_eui_pairs eui
         where eui.route_id = $1
     "#;
+
     Ok(sqlx::query_as::<_, EuiPair>(EUI_SELECT_SQL)
         .bind(id)
         .fetch(db)
         .map_err(RouteStorageError::from)
         .filter_map(|eui| async move { eui.ok() })
-        .collect::<Vec<EuiPair>>()
-        .await)
+        .boxed())
 }
 
-pub async fn list_devaddr_ranges_for_route(
+pub fn list_devaddr_ranges_for_route<'a>(
     id: &str,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<DevAddrRange>, RouteStorageError> {
+    db: impl sqlx::PgExecutor<'a> + 'a,
+) -> Result<impl Stream<Item = DevAddrRange> + 'a, RouteStorageError> {
     let id = Uuid::try_parse(id)?;
     const DEVADDR_RANGE_SELECT_SQL: &str = r#"
     select devaddr.route_id, devaddr.start_addr, devaddr.end_addr
         from route_devaddr_ranges devaddr
         where devaddr.route_id = $1
     "#;
+
     Ok(sqlx::query_as::<_, DevAddrRange>(DEVADDR_RANGE_SELECT_SQL)
         .bind(id)
         .fetch(db)
         .map_err(RouteStorageError::from)
         .filter_map(|devaddr| async move { devaddr.ok() })
-        .collect::<Vec<DevAddrRange>>()
-        .await)
+        .boxed())
 }
 
 pub async fn active_route_stream<'a>(
-    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+    db: impl sqlx::PgExecutor<'a> + 'a,
 ) -> impl Stream<Item = Route> + 'a {
     sqlx::query_as::<_, StorageRoute>(
         r#"
