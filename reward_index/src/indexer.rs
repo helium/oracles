@@ -38,7 +38,10 @@ impl Indexer {
 
         loop {
             tokio::select! {
-            _ = shutdown.clone() => (),
+            _ = shutdown.clone() => {
+                    tracing::info!("Indexer shutting down");
+                    return Ok(());
+            }
             msg = receiver.recv() => if let Some(file_info_stream) = msg {
                     tracing::info!("Processing reward file {}", file_info_stream.file_info.key);
                     let mut txn = self.pool.begin().await?;
