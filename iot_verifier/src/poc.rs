@@ -423,7 +423,11 @@ fn verify_beacon_payload(
         &beacon_report.remote_entropy,
     )
     .map_err(|e| {
-        tracing::warn!("failed to cast report to beacon, reason: {:?}", e);
+        tracing::warn!(
+            "failed to cast report to beacon, reason: {:?}, pub_key: {:?}",
+            e,
+            beacon_report.pub_key
+        );
         InvalidReason::InvalidPacket
     })?;
     tracing::debug!("generated beacon {:?}", generated_beacon);
@@ -433,7 +437,11 @@ fn verify_beacon_payload(
         match beacon_report.to_beacon(entropy_start, entropy_version) {
             Ok(res) => res,
             Err(e) => {
-                tracing::warn!("failed to cast report to beacon, reason: {:?}", e);
+                tracing::warn!(
+                    "failed to cast report to beacon, reason: {:?}, pub_key: {:?}",
+                    e,
+                    beacon_report.pub_key
+                );
                 return Err(InvalidReason::InvalidPacket);
             }
         };
