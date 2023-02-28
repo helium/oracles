@@ -1,7 +1,7 @@
 use crate::{
     admin::{AuthCache, KeyType},
-    lora_field::{DevAddrRange, EuiPair},
-    org::{get_org_pubkeys, get_org_pubkeys_by_route},
+    lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
+    org::{self, get_org_pubkeys, get_org_pubkeys_by_route},
     route::{self, Route},
     GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
@@ -401,6 +401,7 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<RouteDevaddrRangesResV1> {
         let mut request = request.into_inner();
 
+        let mut constraint_bounds = vec![];
         let mut to_add: Vec<DevAddrRange> = vec![];
         let mut to_remove: Vec<DevAddrRange> = vec![];
 
@@ -408,18 +409,30 @@ impl iot_config::Route for RouteService {
             if let Some(devaddr) = &first_update.devaddr_range {
                 self.verify_request_signature(&first_update, OrgId::RouteId(&devaddr.route_id))
                     .await?;
+                let mut constraints = org::get_constraints_by_route(&devaddr.route_id, &self.pool)
+                    .await
+                    .map_err(|_| Status::internal("no devaddr constraints for org"))?;
                 match first_update.action() {
-                    ActionV1::Add => to_add.push(devaddr.into()),
+                    ActionV1::Add => {
+                        let add_range = devaddr.into();
+                        verify_range_in_bounds(&constraints, &add_range)
+                            .map(|_| to_add.push(add_range))?
+                    }
                     ActionV1::Remove => to_remove.push(devaddr.into()),
-                }
+                };
+                constraint_bounds.append(&mut constraints)
             }
         } else {
             return Err(Status::invalid_argument("no devaddr range provided"));
-        }
+        };
 
         while let Ok(Some(update)) = request.message().await {
             match (update.action(), update.devaddr_range) {
-                (ActionV1::Add, Some(devaddr)) => to_add.push(devaddr.into()),
+                (ActionV1::Add, Some(devaddr)) => {
+                    let add_range = devaddr.into();
+                    verify_range_in_bounds(&constraint_bounds, &add_range)
+                        .map(|_| to_add.push(add_range))?
+                }
                 (ActionV1::Remove, Some(devaddr)) => to_remove.push(devaddr.into()),
                 _ => return Err(Status::invalid_argument("no devaddr range provided")),
             }
@@ -454,4 +467,18 @@ impl iot_config::Route for RouteService {
             .map_err(|_| Status::internal("devaddr range delete failed"))?;
         Ok(Response::new(RouteDevaddrRangesResV1 {}))
     }
+}
+
+fn verify_range_in_bounds(
+    constraints: &[DevAddrConstraint],
+    range: &DevAddrRange,
+) -> Result<(), Status> {
+    for constraint in constraints {
+        if constraint.contains(range) {
+            return Ok(());
+        }
+    }
+    Err(Status::invalid_argument(
+        "devaddr range outside of org constraints",
+    ))
 }

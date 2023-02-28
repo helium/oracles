@@ -87,14 +87,24 @@ impl iot_config::Org for OrgService {
             .map_err(|_| Status::internal("org get failed"))?;
         let net_id = org
             .constraints
-            .start_addr
-            .to_net_id()
-            .map_err(|_| Status::internal("net id error"))?;
+            .first()
+            .ok_or("not found")
+            .and_then(|constraint| {
+                constraint
+                    .start_addr
+                    .to_net_id()
+                    .map_err(|_| "invalid net id")
+            })
+            .map_err(|err| Status::internal(format!("net id error: {err}")))?;
 
         Ok(Response::new(OrgResV1 {
             org: Some(org.org.into()),
             net_id: net_id.into(),
-            devaddr_constraints: vec![org.constraints.into()],
+            devaddr_constraints: org
+                .constraints
+                .into_iter()
+                .map(|constraint| constraint.into())
+                .collect(),
         }))
     }
 

@@ -39,6 +39,9 @@ impl iot_config::Gateway for GatewayService {
         &self,
         request: Request<GatewayLocationReqV1>,
     ) -> GrpcResult<GatewayLocationResV1> {
+        // Should this rpc be admin-authorized only or should a requesting pubkey
+        // field be added to the request to do basic signature verification, allowing
+        // open access but discourage endpoint abuse?
         let request = request.into_inner();
 
         let location = self

@@ -70,7 +70,7 @@ impl DevAddrConstraint {
         Ok(devaddr(end + 1))
     }
 
-    pub fn contains(&self, range: &Self) -> bool {
+    pub fn contains(&self, range: &DevAddrRange) -> bool {
         self.start_addr <= range.start_addr && self.end_addr >= range.end_addr
     }
 }
