@@ -56,7 +56,7 @@ impl Cli {
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
         )
         .deposits(Some(file_upload_tx.clone()))
-        .auto_commit(false)
+        .auto_commit(true)
         .create()
         .await?;
 
