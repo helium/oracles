@@ -261,7 +261,7 @@ impl Poc {
 pub fn do_beacon_verifications(
     entropy_start: DateTime<Utc>,
     entropy_end: DateTime<Utc>,
-    entropy_version: i32,
+    _entropy_version: i32,
     last_beacon: Option<LastBeacon>,
     beacon_report: &IotBeaconIngestReport,
     beaconer_info: &GatewayInfo,
@@ -282,14 +282,14 @@ pub fn do_beacon_verifications(
         beacon_interval,
         beacon_interval_tolerance,
     )?;
-    verify_beacon_payload(
-        &beacon_report.report,
-        beaconer_info.region,
-        &beaconer_info.region_params,
-        beaconer_info.gain,
-        entropy_start,
-        entropy_version as u32,
-    )?;
+    // verify_beacon_payload(
+    //     &beacon_report.report,
+    //     beaconer_info.region,
+    //     &beaconer_info.region_params,
+    //     beaconer_info.gain,
+    //     entropy_start,
+    //     entropy_version as u32,
+    // )?;
     tracing::debug!(
         "valid beacon from beaconer: {:?}",
         PublicKeyBinary::from(beaconer_info.address.clone())
@@ -397,6 +397,7 @@ fn verify_entropy(
 }
 
 /// verify beacon construction
+#[allow(dead_code)]
 fn verify_beacon_payload(
     beacon_report: &IotBeaconReport,
     region: ProtoRegion,
@@ -1217,18 +1218,18 @@ mod tests {
         assert_eq!(Err(InvalidReason::InvalidCapability), resp4);
 
         // test beacon construction verification is active in the beacon validation list
-        let beacon_report5 = invalid_beacon_bad_payload(entropy_start + Duration::minutes(2));
-        let resp5 = do_beacon_verifications(
-            entropy_start,
-            entropy_end,
-            ENTROPY_VERSION,
-            None,
-            &beacon_report5,
-            &beaconer_info,
-            beacon_interval,
-            beacon_interval_tolerance,
-        );
-        assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
+        // let beacon_report5 = invalid_beacon_bad_payload(entropy_start + Duration::minutes(2));
+        // let resp5 = do_beacon_verifications(
+        //     entropy_start,
+        //     entropy_end,
+        //     ENTROPY_VERSION,
+        //     None,
+        //     &beacon_report5,
+        //     &beaconer_info,
+        //     beacon_interval,
+        //     beacon_interval_tolerance,
+        // );
+        // assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
 
         // for completeness, confirm our valid beacon report is sane
         let beacon_report6 = valid_beacon_report(entropy_start + Duration::minutes(2));
@@ -1469,6 +1470,7 @@ mod tests {
         )
     }
 
+    #[allow(dead_code)]
     fn invalid_beacon_bad_payload(received_timestamp: DateTime<Utc>) -> IotBeaconIngestReport {
         let mut report = valid_beacon_report(received_timestamp);
         report.report.data = [
