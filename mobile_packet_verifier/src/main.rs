@@ -5,11 +5,10 @@ use file_store::{
     FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_packet_verifier::{burner::Burner, settings::Settings, verifier::Verifier};
+use mobile_packet_verifier::{burner::Burner, daemon::Daemon, settings::Settings};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::read_keypair_file;
-use std::{path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
+use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(clap::Parser)]
@@ -36,9 +35,6 @@ impl Cli {
         let pool = settings.database.connect(10).await?;
         sqlx::migrate!().run(&pool).await?;
 
-        // Set up the database lock:
-        let db_lock = Arc::new(Mutex::new(()));
-
         // Set up the solana RpcClient:
         let rpc_client = RpcClient::new(settings.solana_rpc.clone());
 
@@ -64,15 +60,7 @@ impl Cli {
         .create()
         .await?;
 
-        let burner = Burner::new(
-            &settings,
-            pool.clone(),
-            valid_sessions,
-            db_lock.clone(),
-            rpc_client,
-            burn_keypair,
-        )
-        .await?;
+        let burner = Burner::new(&settings, valid_sessions, rpc_client, burn_keypair).await?;
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
@@ -91,16 +79,15 @@ impl Cli {
                 .start(shutdown_listener.clone())
                 .await?;
 
-        let verifier = Verifier::new(pool, reports, db_lock);
+        let daemon = Daemon::new(&settings, pool, reports, burner);
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),
-            verifier.run(&shutdown_listener).map_err(Error::from),
-            burner.run(&shutdown_listener).map_err(Error::from),
             valid_sessions_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
+            daemon.run(&shutdown_listener).map_err(Error::from),
         )?;
 
         Ok(())

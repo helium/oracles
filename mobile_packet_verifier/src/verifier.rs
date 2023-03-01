@@ -1,11 +1,7 @@
 use chrono::{DateTime, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream, mobile_session::DataTransferSessionIngestReport,
-};
+use file_store::mobile_session::DataTransferSessionIngestReport;
 use futures::{Stream, StreamExt};
-use sqlx::{Pool, Postgres, Transaction};
-use std::sync::Arc;
-use tokio::sync::{mpsc::Receiver, Mutex};
+use sqlx::{Postgres, Transaction};
 
 #[derive(thiserror::Error, Debug)]
 pub enum VerificationError {
@@ -45,45 +41,4 @@ pub async fn verify(
     }
 
     Ok(())
-}
-
-pub struct Verifier {
-    pool: Pool<Postgres>,
-    reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-    db_lock: Arc<Mutex<()>>,
-}
-
-impl Verifier {
-    pub fn new(
-        pool: Pool<Postgres>,
-        reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-        db_lock: Arc<Mutex<()>>,
-    ) -> Self {
-        Self {
-            pool,
-            reports,
-            db_lock,
-        }
-    }
-
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), VerificationError> {
-        loop {
-            tokio::select! {
-                _ = shutdown.clone() => return Ok(()),
-                file = self.reports.recv() => {
-                    if let Some(file) = file {
-                        let _db_lock = self.db_lock.lock().await;
-                        tracing::info!("Verifying file: {}", file.file_info);
-                        let ts = file.file_info.timestamp;
-                        let mut transaction = self.pool.begin().await?;
-                        let reports = file.into_stream(&mut transaction).await?;
-                        verify(&mut transaction, ts, reports).await?;
-                        transaction.commit().await?;
-                    } else {
-                        return Err(VerificationError::ReportsStreamDropped);
-                    }
-                }
-            }
-        }
-    }
 }

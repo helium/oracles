@@ -16,8 +16,7 @@ use solana_sdk::{
     transaction::Transaction as SolanaTransaction,
 };
 use sqlx::{FromRow, Pool, Postgres};
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::Mutex;
+use std::collections::HashMap;
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
@@ -56,13 +55,10 @@ impl PayerTotals {
 }
 
 pub struct Burner {
-    pool: Pool<Postgres>,
     valid_sessions: FileSinkClient,
     provider: RpcClient,
     program_cache: BurnProgramCache,
     keypair: [u8; 64],
-    db_lock: Arc<Mutex<()>>,
-    burn_period: Duration,
     cluster: String,
 }
 
@@ -83,41 +79,24 @@ pub enum BurnError {
 impl Burner {
     pub async fn new(
         settings: &Settings,
-        pool: Pool<Postgres>,
         valid_sessions: FileSinkClient,
-        db_lock: Arc<Mutex<()>>,
         provider: RpcClient,
         keypair: Keypair,
     ) -> Result<Self, BurnError> {
         Ok(Self {
-            pool,
-            burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
             program_cache: BurnProgramCache::new(settings, &provider).await?,
             provider,
             valid_sessions,
-            db_lock,
             keypair: keypair.to_bytes(),
             cluster: settings.cluster.clone(),
         })
     }
 
-    pub async fn run(self, shutdown: &triggered::Listener) -> Result<(), BurnError> {
-        loop {
-            tokio::select! {
-                _ = shutdown.clone() => return Ok(()),
-                _ = tokio::time::sleep(self.burn_period) => self.burn().await?,
-            }
-        }
-    }
-
-    async fn burn(&self) -> Result<(), BurnError> {
-        // Prevent any use of the database by the verifier until after we've finished
-        let _db_lock = self.db_lock.lock().await;
-
+    pub async fn burn(&self, pool: &Pool<Postgres>) -> Result<(), BurnError> {
         // Fetch all of the sessions
         let sessions: Vec<DataTransferSession> =
             sqlx::query_as("SELECT * FROM data_transfer_sessions")
-                .fetch_all(&self.pool)
+                .fetch_all(pool)
                 .await?;
 
         // Fetch all of the sessions and group by the payer
@@ -219,7 +198,7 @@ impl Burner {
 
             sqlx::query("DELETE FROM data_tranfer_sessions WHERE payer = $1")
                 .bind(payer)
-                .execute(&self.pool)
+                .execute(pool)
                 .await?;
 
             for session in sessions {
