@@ -1,5 +1,11 @@
 use anyhow::Result;
+use chrono::{TimeZone, Utc};
 use clap::Parser;
+use file_store::{
+    file_info_poller::LookbackBehavior, file_source, reward_manifest::RewardManifest, FileStore,
+    FileType,
+};
+use futures_util::TryFutureExt;
 use reward_index::{settings::Settings, Indexer};
 use std::path::PathBuf;
 use tokio::signal;
@@ -63,9 +69,27 @@ impl Server {
             shutdown_trigger.trigger()
         });
 
+        let file_store = FileStore::from_settings(&settings.verifier).await?;
+
+        let (receiver, source_join_handle) = file_source::continuous_source::<RewardManifest>()
+            .db(pool)
+            .store(file_store)
+            .file_type(FileType::RewardManifest)
+            .lookback(LookbackBehavior::StartAfter(Utc.timestamp(0, 0)))
+            .poll_duration(settings.interval())
+            .offset(settings.interval() * 2)
+            .build()?
+            .start(shutdown_listener.clone())
+            .await?;
+
         // Reward server
         let mut indexer = Indexer::new(settings).await?;
-        indexer.run(shutdown_listener.clone()).await?;
+
+        tokio::try_join!(
+            indexer.run(shutdown_listener.clone(), receiver),
+            source_join_handle.map_err(anyhow::Error::from),
+        )?;
+
         Ok(())
     }
 }

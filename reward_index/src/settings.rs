@@ -1,6 +1,7 @@
+use chrono::Duration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
-use std::{fmt, path::Path, time};
+use std::{fmt, path::Path};
 
 /// Mode to start the indexer in. Each mode uses different files from
 /// the verifier
@@ -28,7 +29,7 @@ pub struct Settings {
     pub log: String,
     /// Check interval in seconds. (Default is 900; 15 minutes)
     #[serde(default = "default_interval")]
-    pub interval: u64,
+    pub interval: i64,
     /// Mode to run the server in (iot or mobile). Required
     pub mode: Mode,
     pub database: db_store::Settings,
@@ -63,11 +64,11 @@ impl Settings {
             .and_then(|config| config.try_deserialize())
     }
 
-    pub fn interval(&self) -> time::Duration {
-        time::Duration::from_secs(self.interval)
+    pub fn interval(&self) -> Duration {
+        Duration::seconds(self.interval)
     }
 }
 
-fn default_interval() -> u64 {
+fn default_interval() -> i64 {
     900
 }
