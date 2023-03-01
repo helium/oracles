@@ -15,7 +15,7 @@ pub struct Settings {
     pub solana_rpc: String,
     /// Path to the keypair for signing burn transactions
     pub burn_keypair: PathBuf,
-    /// Burn period in hours. (Default is 11)
+    /// Burn period in hours. (Default is 1)
     #[serde(default = "default_burn_period")]
     pub burn_period: i64,
     pub cluster: String,
@@ -37,7 +37,7 @@ pub fn default_log() -> String {
 }
 
 pub fn default_burn_period() -> i64 {
-    11
+    1
 }
 
 impl Settings {
