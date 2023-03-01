@@ -11,6 +11,7 @@ pub mod iot_beacon_report;
 pub mod iot_invalid_poc;
 pub mod iot_valid_poc;
 pub mod iot_witness_report;
+pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
 pub mod traits;
