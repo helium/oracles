@@ -2,7 +2,7 @@ use crate::{
     admin::{AuthCache, KeyType},
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
     org::{self, get_org_pubkeys, get_org_pubkeys_by_route},
-    route::{self, Route},
+    route::{self, Route, RouteStorageError},
     GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
 use anyhow::Result;
@@ -10,16 +10,13 @@ use file_store::traits::MsgVerify;
 use futures::stream::StreamExt;
 use helium_proto::services::iot_config::{
     self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
-    RouteDeleteDevaddrRangesReqV1, RouteDeleteEuisReqV1, RouteDeleteReqV1, RouteDevaddrRangesResV1,
-    RouteEuisResV1, RouteGetDevaddrRangesReqV1, RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1,
-    RouteListResV1, RouteStreamReqV1, RouteStreamResV1, RouteUpdateDevaddrRangesReqV1,
-    RouteUpdateEuisReqV1, RouteUpdateReqV1, RouteV1,
+    RouteDeleteReqV1, RouteDevaddrRangesResV1, RouteEuisResV1, RouteGetDevaddrRangesReqV1,
+    RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1, RouteListResV1, RouteStreamReqV1,
+    RouteStreamResV1, RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1, RouteUpdateReqV1,
+    RouteV1,
 };
 use sqlx::{Pool, Postgres};
-use tokio::{
-    pin,
-    sync::broadcast::{Receiver, Sender},
-};
+use tokio::sync::broadcast::{Receiver, Sender};
 use tonic::{Request, Response, Status};
 
 pub struct RouteService {
@@ -226,8 +223,7 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            let active_routes = route::active_route_stream(&pool).await;
-            pin!(active_routes);
+            let mut active_routes = route::active_route_stream(&pool);
 
             while let Some(active_route) = active_routes.next().await {
                 if (tx.send(Ok(RouteStreamResV1 {
@@ -241,8 +237,7 @@ impl iot_config::Route for RouteService {
                 }
             }
 
-            let eui_pairs = route::eui_stream(&pool).await;
-            pin!(eui_pairs);
+            let mut eui_pairs = route::eui_stream(&pool);
 
             while let Some(eui_pair) = eui_pairs.next().await {
                 if (tx.send(Ok(RouteStreamResV1 {
@@ -256,8 +251,7 @@ impl iot_config::Route for RouteService {
                 }
             }
 
-            let devaddr_ranges = route::devaddr_range_stream(&pool).await;
-            pin!(devaddr_ranges);
+            let mut devaddr_ranges = route::devaddr_range_stream(&pool);
 
             while let Some(devaddr_range) = devaddr_ranges.next().await {
                 if (tx.send(Ok(RouteStreamResV1 {
@@ -297,16 +291,31 @@ impl iot_config::Route for RouteService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            let euis = match route::list_euis_for_route(&request.route_id, &pool)
-                .map_err(|_| Status::internal("failed retrieving eui pairs"))
-            {
+            let mut eui_stream = match route::list_euis_for_route(&request.route_id, &pool) {
                 Ok(euis) => euis,
-                Err(_) => return,
+                Err(RouteStorageError::UuidParse(err)) => {
+                    _ = tx
+                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .await;
+                    return;
+                }
+                Err(_) => {
+                    _ = tx
+                        .send(Err(Status::internal(format!(
+                            "failed retrieving eui pairs for route {}",
+                            &request.route_id
+                        ))))
+                        .await;
+                    return;
+                }
             };
-            pin!(euis);
 
-            while let Some(eui) = euis.next().await {
-                if tx.send(Ok(eui.into())).await.is_err() {
+            while let Some(eui) = eui_stream.next().await {
+                let message = match eui {
+                    Ok(eui) => Ok(eui.into()),
+                    Err(bad_eui) => Err(Status::internal(format!("invalid eui: {:?}", bad_eui))),
+                };
+                if tx.send(message).await.is_err() {
                     break;
                 }
             }
@@ -360,21 +369,6 @@ impl iot_config::Route for RouteService {
         Ok(Response::new(RouteEuisResV1 {}))
     }
 
-    async fn delete_euis(
-        &self,
-        request: Request<RouteDeleteEuisReqV1>,
-    ) -> GrpcResult<RouteEuisResV1> {
-        let request = request.into_inner();
-
-        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
-            .await?;
-
-        route::delete_euis(&request.route_id, &self.pool, self.update_channel.clone())
-            .await
-            .map_err(|_| Status::internal("eui delete failed"))?;
-        Ok(Response::new(RouteEuisResV1 {}))
-    }
-
     type get_devaddr_rangesStream = GrpcStreamResult<DevaddrRangeV1>;
     async fn get_devaddr_ranges(
         &self,
@@ -389,16 +383,32 @@ impl iot_config::Route for RouteService {
         let pool = self.pool.clone();
 
         tokio::spawn(async move {
-            let devaddrs = match route::list_devaddr_ranges_for_route(&request.route_id, &pool)
-                .map_err(|_| Status::internal("failed retrieving devaddr ranges"))
+            let mut devaddrs = match route::list_devaddr_ranges_for_route(&request.route_id, &pool)
             {
                 Ok(devaddrs) => devaddrs,
-                Err(_) => return,
+                Err(RouteStorageError::UuidParse(err)) => {
+                    _ = tx
+                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .await;
+                    return;
+                }
+                Err(_) => {
+                    _ = tx
+                        .send(Err(Status::internal("failed retrieving devaddr ranges")))
+                        .await;
+                    return;
+                }
             };
-            pin!(devaddrs);
 
             while let Some(devaddr) = devaddrs.next().await {
-                if tx.send(Ok(devaddr.into())).await.is_err() {
+                let message = match devaddr {
+                    Ok(devaddr) => Ok(devaddr.into()),
+                    Err(bad_devaddr) => Err(Status::internal(format!(
+                        "invalid devaddr: {:?}",
+                        bad_devaddr
+                    ))),
+                };
+                if tx.send(message).await.is_err() {
                     break;
                 }
             }
@@ -455,30 +465,12 @@ impl iot_config::Route for RouteService {
             "updating devaddr ranges"
         );
 
-        // TODO: check devaddr ranges against org constraints.
         route::update_devaddr_ranges(&to_add, &to_remove, &self.pool, self.update_channel.clone())
             .await
             .map_err(|err| {
                 tracing::error!("devaddr range update failed: {err:?}");
                 Status::internal("devaddr range update failed")
             })?;
-        Ok(Response::new(RouteDevaddrRangesResV1 {}))
-    }
-
-    async fn delete_devaddr_ranges(
-        &self,
-        request: Request<RouteDeleteDevaddrRangesReqV1>,
-    ) -> GrpcResult<RouteDevaddrRangesResV1> {
-        let request = request.into_inner();
-
-        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
-            .await?;
-
-        let pool = self.pool.clone();
-
-        route::delete_devaddr_ranges(&request.route_id, &pool, self.update_channel.clone())
-            .await
-            .map_err(|_| Status::internal("devaddr range delete failed"))?;
         Ok(Response::new(RouteDevaddrRangesResV1 {}))
     }
 }

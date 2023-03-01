@@ -246,7 +246,7 @@ impl iot_config::Org for OrgService {
                 if self
                     .route_update_tx
                     .send(RouteStreamResV1 {
-                        action: ActionV1::Remove.into(),
+                        action: ActionV1::Add.into(),
                         data: Some(route_stream_res_v1::Data::Route(route.into())),
                     })
                     .is_err()
