@@ -105,7 +105,9 @@ async fn fetch_rewarded_timestamp(
     timestamp_key: &str,
     db: impl PgExecutor<'_>,
 ) -> db_store::Result<DateTime<Utc>> {
-    Ok(Utc.timestamp(meta::fetch(db, timestamp_key).await?, 0))
+    Utc.timestamp_opt(meta::fetch(db, timestamp_key).await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
 }
 
 async fn save_rewarded_timestamp(

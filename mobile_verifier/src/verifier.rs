@@ -214,7 +214,9 @@ pub struct VerifiedEpoch<H, S> {
 }
 
 async fn last_verified_end_time(exec: impl PgExecutor<'_>) -> db_store::Result<DateTime<Utc>> {
-    Ok(Utc.timestamp(meta::fetch(exec, "last_verified_end_time").await?, 0))
+    Utc.timestamp_opt(meta::fetch(exec, "last_verified_end_time").await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
 }
 
 async fn save_last_verified_end_time(
@@ -225,7 +227,9 @@ async fn save_last_verified_end_time(
 }
 
 async fn last_rewarded_end_time(exec: impl PgExecutor<'_>) -> db_store::Result<DateTime<Utc>> {
-    Ok(Utc.timestamp(meta::fetch(exec, "last_rewarded_end_time").await?, 0))
+    Utc.timestamp_opt(meta::fetch(exec, "last_rewarded_end_time").await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
 }
 
 async fn save_last_rewarded_end_time(
@@ -236,7 +240,9 @@ async fn save_last_rewarded_end_time(
 }
 
 async fn next_rewarded_end_time(exec: impl PgExecutor<'_>) -> db_store::Result<DateTime<Utc>> {
-    Ok(Utc.timestamp(meta::fetch(exec, "next_rewarded_end_time").await?, 0))
+    Utc.timestamp_opt(meta::fetch(exec, "next_rewarded_end_time").await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
 }
 
 async fn save_next_rewarded_end_time(

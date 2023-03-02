@@ -40,6 +40,8 @@ pub enum DecodeError {
     Uri(#[from] http::uri::InvalidUri),
     #[error("integer conversion error")]
     FromInt(#[from] std::num::TryFromIntError),
+    #[error("unsupported region, type: {0}, value: {1}")]
+    UnsupportedRegion(String, i32),
     #[error("unsupported datarate, type: {0}, value: {1}")]
     UnsupportedDataRate(String, i32),
     #[error("unsupported invalid_reason, type: {0}, value: {1}")]
@@ -96,6 +98,10 @@ impl Error {
 impl DecodeError {
     pub fn file_info<E: ToString>(msg: E) -> Error {
         Error::Decode(Self::FileInfo(msg.to_string()))
+    }
+
+    pub fn unsupported_region<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedRegion(msg1.to_string(), msg2))
     }
 
     pub fn unsupported_datarate<E: ToString>(msg1: E, msg2: i32) -> Error {
