@@ -19,8 +19,10 @@ pub struct Settings {
     #[serde(default = "default_base_stale_period")]
     pub base_stale_period: i64,
     pub database: db_store::Settings,
-    pub follower: node_follower::Settings,
+    pub iot_config_client: iot_config_client::Settings,
     pub ingest: file_store::Settings,
+    pub packet_ingest: file_store::Settings,
+
     pub entropy: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
@@ -62,6 +64,10 @@ pub struct Settings {
     /// File store poll interval for incoming entropy reports, in seconds
     #[serde(default = "default_entropy_interval")]
     pub entropy_interval: i64,
+    /// File store poll interval for incoming packets, in seconds. (Default is 900; 15 minutes)
+    #[serde(default = "default_packet_interval")]
+    pub packet_interval: i64,
+
 }
 
 // Default: 60 minutes
@@ -131,6 +137,10 @@ pub fn default_max_witnesses_per_poc() -> u64 {
     14
 }
 
+fn default_packet_interval() -> i64 {
+    900
+}
+
 impl Settings {
     /// Load Settings from a given path. Settings are loaded from a given
     /// optional path and can be overriden with environment variables.
@@ -188,5 +198,8 @@ impl Settings {
 
     pub fn entropy_interval(&self) -> Duration {
         Duration::seconds(self.entropy_interval)
+    }
+    pub fn packet_interval(&self) -> Duration {
+        Duration::seconds(self.packet_interval)
     }
 }

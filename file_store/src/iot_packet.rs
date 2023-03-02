@@ -5,6 +5,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
+use helium_proto::services::packet_verifier::ValidPacket;
 use helium_proto::{services::router::PacketRouterPacketReportV1, DataRate, Region};
 use serde::Serialize;
 
@@ -23,6 +24,12 @@ pub struct PacketRouterPacketReport {
     pub payload_hash: Vec<u8>,
     pub payload_size: u32,
 }
+#[derive(Serialize, Clone)]
+pub struct IotValidPacket {
+    pub payload_size: u32,
+    pub gateway: PublicKeyBinary,
+    pub payload_hash: Vec<u8>,
+}
 
 impl MsgTimestamp<u64> for PacketRouterPacketReport {
     fn timestamp(&self) -> u64 {
@@ -38,6 +45,10 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for PacketRouterPacketReportV1 {
 
 impl MsgDecode for PacketRouterPacketReport {
     type Msg = PacketRouterPacketReportV1;
+}
+
+impl MsgDecode for IotValidPacket {
+    type Msg = ValidPacket;
 }
 
 impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
@@ -60,6 +71,17 @@ impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
             snr: v.snr,
             data_rate,
             region,
+            gateway: v.gateway.into(),
+            payload_hash: v.payload_hash,
+            payload_size: v.payload_size,
+        })
+    }
+}
+
+impl TryFrom<ValidPacket> for IotValidPacket {
+    type Error = Error;
+    fn try_from(v: ValidPacket) -> Result<Self> {
+        Ok(Self {
             gateway: v.gateway.into(),
             payload_hash: v.payload_hash,
             payload_size: v.payload_size,

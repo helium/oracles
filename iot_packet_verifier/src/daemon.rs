@@ -112,7 +112,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
 
     // Verified packets:
     let (valid_packets, mut valid_packets_server) = FileSinkBuilder::new(
-        FileType::ValidPacket,
+        FileType::IotValidPacket,
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
     )

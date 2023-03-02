@@ -1152,14 +1152,14 @@ dependencies = [
 
 [[package]]
 name = "base64ct"
-version = "1.5.3"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b645a089122eccb6111b4f81cbc1a49f5900ac4666bb93ac027feaecf15607bf"
+checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#c9c23de5be80ed1712cfd4a8c71e87c5cf692c41"
+source = "git+https://github.com/helium/gateway-rs.git?branch=andymck/tmp-proto-bump#bb4b2d3c3bc44491e69fa5ea9e101767070825f2"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1391,9 +1391,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.12.3"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaa3a8d9a1ca92e282c96a32d6511b695d7d994d1d102ba85d279f9b2756947f"
+checksum = "17febce684fd15d89027105661fec94afb475cb995fbc59d2865198446ba2eea"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -1494,7 +1494,7 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1567,6 +1567,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "clockwork-cron"
+version = "2.0.2"
+source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
+dependencies = [
+ "chrono",
+ "nom",
+ "once_cell",
+]
+
+[[package]]
 name = "clockwork-network-program"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1574,18 +1584,27 @@ checksum = "358aa1fb9a328d355cababfabb5ca69134a8bc703d355fe2979442441e30d6b7"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "clockwork-utils",
+ "clockwork-utils 1.4.2",
+]
+
+[[package]]
+name = "clockwork-network-program"
+version = "2.0.2"
+source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "clockwork-utils 2.0.2",
 ]
 
 [[package]]
 name = "clockwork-sdk"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7179555c8031a72efc4018a5120280076e4bbe640b9d063615353c3393f6787f"
+version = "2.0.2"
+source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
 dependencies = [
  "anchor-lang",
  "chrono",
- "clockwork-thread-program",
+ "clockwork-thread-program 2.0.2",
  "nom",
  "once_cell",
 ]
@@ -1598,9 +1617,24 @@ checksum = "00d8201d1680a1540e157a0a9f3cb84d9cc9a25ad66fcb9328c6f94b2fe14175"
 dependencies = [
  "anchor-lang",
  "chrono",
- "clockwork-cron",
- "clockwork-network-program",
- "clockwork-utils",
+ "clockwork-cron 1.4.2",
+ "clockwork-network-program 1.4.2",
+ "clockwork-utils 1.4.2",
+ "static-pubkey",
+ "version",
+]
+
+[[package]]
+name = "clockwork-thread-program"
+version = "2.0.2"
+source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
+dependencies = [
+ "anchor-lang",
+ "chrono",
+ "clockwork-cron 2.0.2",
+ "clockwork-network-program 2.0.2",
+ "clockwork-thread-program 1.4.2",
+ "clockwork-utils 2.0.2",
  "static-pubkey",
  "version",
 ]
@@ -1610,6 +1644,16 @@ name = "clockwork-utils"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26a6168b2af3007a81363951be00237defe4152e77e407d96f365f5de1a6dd37"
+dependencies = [
+ "anchor-lang",
+ "base64 0.13.1",
+ "static-pubkey",
+]
+
+[[package]]
+name = "clockwork-utils"
+version = "2.0.2"
+source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
 dependencies = [
  "anchor-lang",
  "base64 0.13.1",
@@ -1683,9 +1727,9 @@ dependencies = [
 
 [[package]]
 name = "console_log"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "501a375961cef1a0d44767200e66e4a559283097e91d0730b1d75dfb2f8a1494"
+checksum = "878ad067d4089144a36ee412d665916c665430eb84c0057b9987f424a5d15c03"
 dependencies = [
  "log",
  "web-sys",
@@ -1802,9 +1846,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2dd04ddaf88237dc3b8d8f9a3c1004b506b54b3313403944054d23c0870c521"
+checksum = "cf2b3e8478797446514c91ef04bafcb59faba183e621ad488df88983cc14128c"
 dependencies = [
  "cfg-if",
  "crossbeam-utils",
@@ -1812,9 +1856,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-deque"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "715e8152b692bba2d374b53d4875445368fdf21a94751410af607a5ac677d1fc"
+checksum = "ce6fd6f855243022dcecf8702fef0c297d4338e226845fe067f6341ad9fa0cef"
 dependencies = [
  "cfg-if",
  "crossbeam-epoch",
@@ -2047,7 +2091,7 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -2282,9 +2326,9 @@ checksum = "03d8c417d7a8cb362e0c37e5d815f5eb7c37f79ff93707329d5a194e42e54ca0"
 
 [[package]]
 name = "dyn-clone"
-version = "1.0.10"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9b0705efd4599c15a38151f4721f7bc388306f61084d3bfd50bd07fbca5cb60"
+checksum = "68b0cf012f1230e43cd00ebb729c6bb58707ecfa8ad08b52ef3a4ccd2697fc30"
 
 [[package]]
 name = "eager"
@@ -2983,7 +3027,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#a275197cdb0e78ebcae93d42e6cd608b43016842"
+source = "git+https://github.com/helium/proto?branch=andymck/replace-node-follower-with-iot-config#919066101549cc8495837afba215dbc275701903"
 dependencies = [
  "bytes",
  "prost",
@@ -2997,13 +3041,13 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
  "circuit-breaker",
  "clockwork-sdk",
- "mpl-token-metadata 1.6.4",
+ "mpl-token-metadata 1.8.3",
  "shared-utils",
  "spl-governance-tools",
  "switchboard-v2",
@@ -3342,6 +3386,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.21.0",
+ "chrono",
  "clap 3.2.23",
  "config",
  "db-store",
@@ -3367,6 +3412,25 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+]
+
+[[package]]
+name = "iot-config-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "beacon",
+ "futures",
+ "helium-crypto",
+ "helium-proto",
+ "http",
+ "http-serde",
+ "rand 0.6.5",
+ "retainer",
+ "serde",
+ "thiserror",
+ "tonic",
 ]
 
 [[package]]
@@ -3432,10 +3496,10 @@ dependencies = [
  "helium-proto",
  "http-serde",
  "humantime",
+ "iot-config-client",
  "itertools",
  "lazy_static",
  "metrics",
- "node-follower",
  "once_cell",
  "poc-metrics",
  "prost",
@@ -3486,9 +3550,9 @@ checksum = "4217ad341ebadf8d8e724e264f13e593e0648f5b3e94b3896a5df283be015ecc"
 
 [[package]]
 name = "jobserver"
-version = "0.1.25"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "068b1ee6743e4d11fb9c6a1e6064b3693a1b600e7f5f5988047d98b3dc9fb90b"
+checksum = "936cfd212a0155903bcbc060e316fb6cc7cbf2e1907329391ebadc1fe0ce77c2"
 dependencies = [
  "libc",
 ]
@@ -3609,10 +3673,12 @@ dependencies = [
 [[package]]
 name = "lazy-transactions"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "bytemuck",
+ "spl-concurrent-merkle-tree 0.1.3",
 ]
 
 [[package]]
@@ -4053,7 +4119,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24dcb2b0ec0e9246f6f035e0336ba3359c21f6928dfd90281999e2c8e8ab53eb"
 dependencies = [
  "borsh",
- "mpl-token-metadata-context-derive",
+ "mpl-token-metadata-context-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-derive",
  "num-traits",
  "rmp-serde",
@@ -4066,13 +4132,14 @@ dependencies = [
 
 [[package]]
 name = "mpl-token-metadata"
-version = "1.6.4"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+version = "1.8.3"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "arrayref",
  "borsh",
- "mpl-token-vault",
- "mpl-utils 0.0.5",
+ "mpl-token-auth-rules",
+ "mpl-token-metadata-context-derive 0.2.1 (git+https://github.com/helium/helium-program-library.git)",
+ "mpl-utils 0.1.0 (git+https://github.com/helium/helium-program-library.git)",
  "num-derive",
  "num-traits",
  "shank",
@@ -4091,8 +4158,8 @@ dependencies = [
  "arrayref",
  "borsh",
  "mpl-token-auth-rules",
- "mpl-token-metadata-context-derive",
- "mpl-utils 0.1.0",
+ "mpl-token-metadata-context-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mpl-utils 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-derive",
  "num-traits",
  "shank",
@@ -4113,24 +4180,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpl-token-vault"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ade4ef15bc06a6033076c4ff28cba9b42521df5ec61211d6f419415ace2746a"
+name = "mpl-token-metadata-context-derive"
+version = "0.2.1"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
- "borsh",
- "num-derive",
- "num-traits",
- "solana-program",
- "spl-token",
- "thiserror",
+ "quote 1.0.21",
+ "syn 1.0.104",
 ]
 
 [[package]]
 name = "mpl-utils"
-version = "0.0.5"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330468b3ea93d306ed5ae5e389b0b64cfbc43fcd29a4eeae74e20f13c979e7a5"
+checksum = "7fc48e64c50dba956acb46eec86d6968ef0401ef37031426da479f1f2b592066"
 dependencies = [
  "arrayref",
  "borsh",
@@ -4141,8 +4203,7 @@ dependencies = [
 [[package]]
 name = "mpl-utils"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fc48e64c50dba956acb46eec86d6968ef0401ef37031426da479f1f2b592066"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "arrayref",
  "borsh",
@@ -5233,9 +5294,9 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db3a213adf02b3bcfd2d3846bb41cb22857d131789e01df434fb7e7bc0759b7"
+checksum = "1d2df5196e37bcc87abebc0053e20787d73847bb33134a69841207dd0a47f03b"
 dependencies = [
  "either",
  "rayon-core",
@@ -5243,9 +5304,9 @@ dependencies = [
 
 [[package]]
 name = "rayon-core"
-version = "1.10.2"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "356a0625f1954f730c0201cdab48611198dc6ce21f4acff55089b5a78e6e835b"
+checksum = "4b8f95bd6966f5c87776639160a66bd8ab9895d9d4ab01ddba9fc60661aebe8d"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",
@@ -5650,9 +5711,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "0.8.11"
+version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a5fb6c61f29e723026dc8e923d94c694313212abbecbbe5f55a7748eec5b307"
+checksum = "02c613288622e5f0c3fdc5dbd4db1c5fbe752746b1d1a56a0630b78fd00de44f"
 dependencies = [
  "dyn-clone",
  "schemars_derive",
@@ -5662,9 +5723,9 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "0.8.11"
+version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f188d036977451159430f3b8dc82ec76364a42b7e289c2b18a9a18f4470058e9"
+checksum = "109da1e6b197438deb6db99952990c7f959572794b80ff93707d55a232545e7c"
 dependencies = [
  "proc-macro2 1.0.47",
  "quote 1.0.21",
@@ -5948,11 +6009,11 @@ dependencies = [
 [[package]]
 name = "shared-utils"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "mpl-token-metadata 1.6.4",
+ "mpl-token-metadata 1.8.3",
  "spl-account-compression",
  "uint",
 ]
@@ -6652,7 +6713,7 @@ source = "git+https://github.com/ChewingGlass/solana-program-library?branch=feat
 dependencies = [
  "anchor-lang",
  "bytemuck",
- "spl-concurrent-merkle-tree",
+ "spl-concurrent-merkle-tree 0.1.2",
  "spl-noop",
 ]
 
@@ -6676,6 +6737,17 @@ dependencies = [
 name = "spl-concurrent-merkle-tree"
 version = "0.1.2"
 source = "git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26#e6db7bcf6da7b41c3ab250a0c8489ea50d511a90"
+dependencies = [
+ "bytemuck",
+ "solana-program",
+ "thiserror",
+]
+
+[[package]]
+name = "spl-concurrent-merkle-tree"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26dd605d33bdc8d2522a9f55207c3eac06737b2e8310f602e252b510e3db1210"
 dependencies = [
  "bytemuck",
  "solana-program",
@@ -7441,7 +7513,7 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -7666,13 +7738,13 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
+source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
  "bytemuck",
  "itertools",
- "mpl-token-metadata 1.6.4",
+ "mpl-token-metadata 1.8.3",
  "shared-utils",
  "solana-program",
  "spl-governance",

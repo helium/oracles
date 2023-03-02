@@ -1,6 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon,
-    metrics::Metrics, poc::Poc, poc_report::Report, reward_share::GatewayShare, Settings,
+    metrics::Metrics, poc::Poc, poc_report::Report, region_cache::RegionCache,
+    reward_share::GatewayShare, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use file_store::{
@@ -55,7 +56,6 @@ pub enum RunnerError {
 
 pub enum FilterStatus {
     Drop,
-    Exclude,
     Include,
 }
 impl Runner {
@@ -77,6 +77,7 @@ impl Runner {
         &mut self,
         file_upload_tx: FileUploadSender,
         gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         hex_density_map: impl HexDensityMap,
         shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
@@ -139,7 +140,9 @@ impl Runner {
                                                 &iot_invalid_beacon_sink,
                                                 &iot_invalid_witness_sink,
                                                 &iot_poc_sink,
-                                                gateway_cache, hex_density_map.clone()).await {
+                                                gateway_cache,
+                                                region_cache,
+                                                hex_density_map.clone()).await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal db runner error: {err:?}");
@@ -151,6 +154,7 @@ impl Runner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_db_tick(
         &self,
         _shutdown: triggered::Listener,
@@ -158,6 +162,7 @@ impl Runner {
         iot_invalid_witness_sink: &FileSinkClient,
         iot_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
@@ -187,6 +192,7 @@ impl Runner {
                             iot_invalid_witness_sink,
                             iot_poc_sink,
                             gateway_cache,
+                            region_cache,
                             hdm,
                         )
                         .await
@@ -204,6 +210,7 @@ impl Runner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_beacon_report(
         &self,
         db_beacon: Report,
@@ -211,6 +218,7 @@ impl Runner {
         iot_invalid_witness_sink: &FileSinkClient,
         iot_poc_sink: &FileSinkClient,
         gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
         let entropy_start_time = match db_beacon.timestamp {
@@ -253,6 +261,7 @@ impl Runner {
             .verify_beacon(
                 hex_density_map.clone(),
                 gateway_cache,
+                region_cache,
                 &self.pool,
                 self.beacon_interval,
                 self.beacon_interval_tolerance,
@@ -284,33 +293,32 @@ impl Runner {
                     let max_witnesses_per_poc = self.max_witnesses_per_poc as usize;
                     let beacon_id = beacon.report_id(beacon_received_ts);
 
-                    // filter out self witnesses
-                    // & partition remaining witnesses into exclude and include sets
-                    // 'drop' items are dropped to the floor, never make it to s3
-                    // 'exclude' items are not permitted in last 14 but
-                    // will make it into the unselected list and thus will goto s3
-                    // 'include' items are from where the last 14 are selected
-                    // any witness with include status which doesnt make it to the last 14
-                    // will join the excluded items in the unselected list and thus will goto s3
-                    let (excluded_witnesses, mut selected_witnesses) =
+                    // filter witnesses into selected and unselected lists
+                    // the selected list will contain only valid witnesses
+                    // up to a max count equal to `max_witnesses_per_poc`
+                    // these witnesses will be rewarded
+                    // the unselected list will contain potentially a mix of
+                    // valid and invalid witnesses
+                    // none of which will be rewarded
+                    // we exclude self witnesses from the unselected lists
+                    // these are dropped to the floor, never make it to s3
+                    let (mut selected_witnesses, invalid_witnesses) =
                         filter_witnesses(verified_witnesses_result.verified_witnesses);
 
-                    // split our verified witness list up into selected and unselected items
+                    // keep a subset of our selected and valid witnesses
                     let mut unselected_witnesses = shuffle_and_split_witnesses(
                         &beacon_id,
                         &mut selected_witnesses,
                         max_witnesses_per_poc,
                     )?;
-                    // concat the unselected witnesses and the previously excluded witnesses
+
+                    // concat the unselected valid witnesses and the invalid witnesses
                     // these will then form the unseleted list on the poc
                     unselected_witnesses =
-                        [&unselected_witnesses[..], &excluded_witnesses[..]].concat();
+                        [&unselected_witnesses[..], &invalid_witnesses[..]].concat();
 
                     // get the number of valid witnesses in our selected list
-                    let num_valid_selected_witnesses = selected_witnesses
-                        .iter()
-                        .filter(|witness| witness.status == VerificationStatus::Valid)
-                        .count();
+                    let num_valid_selected_witnesses = selected_witnesses.len();
 
                     // get reward units based on the count of valid selected witnesses
                     let beaconer_reward_units =
@@ -542,27 +550,22 @@ fn shuffle_and_split_witnesses(
 fn filter_witnesses(
     witnesses: Vec<IotVerifiedWitnessReport>,
 ) -> (Vec<IotVerifiedWitnessReport>, Vec<IotVerifiedWitnessReport>) {
-    let (excluded_witnesses, included_witnesses) = witnesses
+    let (valid_witnesses, invalid_witnesses) = witnesses
         .into_iter()
-        .filter(|witness| !matches!(filter_witness(witness.invalid_reason), FilterStatus::Drop))
-        .partition(|witness| {
+        .filter(|witness| {
             matches!(
                 filter_witness(witness.invalid_reason),
-                FilterStatus::Exclude
+                FilterStatus::Include
             )
-        });
-    (excluded_witnesses, included_witnesses)
+        })
+        .partition(|witness| witness.status == VerificationStatus::Valid);
+    (valid_witnesses, invalid_witnesses)
 }
+
 fn filter_witness(invalid_reason: InvalidReason) -> FilterStatus {
     match invalid_reason {
         InvalidReason::SelfWitness => FilterStatus::Drop,
-        InvalidReason::ReasonNone => FilterStatus::Include,
-        InvalidReason::BelowMinDistance => FilterStatus::Include,
-        InvalidReason::MaxDistanceExceeded => FilterStatus::Include,
-        InvalidReason::BadRssi => FilterStatus::Include,
-        InvalidReason::InvalidFrequency => FilterStatus::Include,
-        InvalidReason::InvalidRegion => FilterStatus::Include,
-        _ => FilterStatus::Exclude,
+        _ => FilterStatus::Include,
     }
 }
 
@@ -573,7 +576,7 @@ fn fire_invalid_witness_metric(witnesses: &[IotVerifiedWitnessReport]) {
         .for_each(|witness| {
             Metrics::increment_invalid_witnesses(&[(
                 "reason",
-                witness.invalid_reason.as_str_name(),
+                witness.invalid_reason.clone().as_str_name(),
             )])
         });
 }
@@ -622,7 +625,7 @@ mod tests {
             location: Some(631252734740306943),
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
-            status: VerificationStatus::Valid,
+            status: VerificationStatus::Invalid,
             invalid_reason: InvalidReason::SelfWitness,
             participant_side: InvalidParticipantSide::Witness,
         };
@@ -650,7 +653,7 @@ mod tests {
         };
 
         let witnesses = vec![witness1, witness2, witness3, witness4];
-        let (excluded_witnesses, included_witnesses) = filter_witnesses(witnesses);
+        let (included_witnesses, excluded_witnesses) = filter_witnesses(witnesses);
         assert_eq!(2, excluded_witnesses.len());
         assert_eq!(1, included_witnesses.len());
         assert_eq!(

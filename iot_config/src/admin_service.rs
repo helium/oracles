@@ -7,9 +7,9 @@ use anyhow::Result;
 use file_store::traits::MsgVerify;
 use futures::future::TryFutureExt;
 use helium_crypto::{Network, PublicKey, PublicKeyBinary};
-use helium_proto::services::iot_config::{
+use helium_proto::{services::iot_config::{
     self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
-    AdminRemoveKeyReqV1,
+    AdminRemoveKeyReqV1, RegionParamsReqV1, RegionParamsResV1}, Region
 };
 use sqlx::{Pool, Postgres};
 use tonic::{Request, Response, Status};
@@ -154,5 +154,17 @@ impl iot_config::Admin for AdminService {
         }
 
         Ok(Response::new(AdminLoadRegionResV1 {}))
+    }
+
+    // placeholder implementation
+    async fn region_params(
+        &self,
+        _request: Request<RegionParamsReqV1>,
+    ) -> GrpcResult<RegionParamsResV1> {
+        Ok(Response::new(RegionParamsResV1 {
+            params: None,
+            signature: vec![],
+            region: Region::Us915.into(),
+        }))
     }
 }
