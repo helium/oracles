@@ -1,14 +1,12 @@
-use crate::{
-    region_map::{self, RegionMap},
-    GrpcResult, Settings,
-};
+use crate::{region_map::RegionMap, GrpcResult, Settings};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
+use futures::future::TryFutureExt;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, GatewayLoadRegionReqV1, GatewayLoadRegionResV1, GatewayLocationReqV1,
-        GatewayLocationResV1, GatewayRegionParamsReqV1, GatewayRegionParamsResV1,
+        self, GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
+        GatewayRegionParamsResV1,
     },
     Message, Region,
 };
@@ -17,38 +15,21 @@ use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
-use sqlx::{Pool, Postgres};
 use tonic::{Request, Response, Status};
 
 pub struct GatewayService {
-    admin_pubkey: PublicKey,
     follower_service: FollowerService,
-    pool: Pool<Postgres>,
     region_map: RegionMap,
     signing_key: Keypair,
 }
 
 impl GatewayService {
-    pub async fn new(settings: &Settings) -> Result<Self> {
-        let pool = settings.database.connect(10).await?;
-        let region_map = RegionMap::new(&pool).await?;
+    pub fn new(settings: &Settings, region_map: RegionMap) -> Result<Self> {
         Ok(Self {
-            admin_pubkey: settings.admin_pubkey()?,
             follower_service: FollowerService::from_settings(&settings.follower),
-            pool,
             region_map,
             signing_key: settings.signing_keypair()?,
         })
-    }
-
-    fn verify_admin_signature<R>(&self, request: R) -> Result<R, Status>
-    where
-        R: MsgVerify,
-    {
-        request
-            .verify(&self.admin_pubkey)
-            .map_err(|_| Status::permission_denied("invalid admin signature"))?;
-        Ok(request)
     }
 }
 
@@ -56,9 +37,27 @@ impl GatewayService {
 impl iot_config::Gateway for GatewayService {
     async fn location(
         &self,
-        _request: Request<GatewayLocationReqV1>,
+        request: Request<GatewayLocationReqV1>,
     ) -> GrpcResult<GatewayLocationResV1> {
-        unimplemented!()
+        // Should this rpc be admin-authorized only or should a requesting pubkey
+        // field be added to the request to do basic signature verification, allowing
+        // open access but discourage endpoint abuse?
+        let request = request.into_inner();
+
+        let location = self
+            .follower_service
+            .clone()
+            .resolve_gateway_info(&request.gateway.into())
+            .and_then(|info| async move {
+                info.location.ok_or(node_follower::Error::GatewayNotFound(
+                    "unasserted".to_string(),
+                ))
+            })
+            .await
+            .map_err(|_| Status::internal("gateway lookup error"))?
+            .to_string();
+
+        Ok(Response::new(GatewayLocationResV1 { location }))
     }
 
     async fn region_params(
@@ -107,39 +106,5 @@ impl iot_config::Gateway for GatewayService {
             .sign(&resp.encode_to_vec())
             .map_err(|_| Status::internal("resp signing error"))?;
         Ok(Response::new(resp))
-    }
-
-    async fn load_region(
-        &self,
-        request: Request<GatewayLoadRegionReqV1>,
-    ) -> GrpcResult<GatewayLoadRegionResV1> {
-        let request = request.into_inner();
-        let req = self.verify_admin_signature(request)?;
-
-        let region = Region::from_i32(req.region)
-            .ok_or_else(|| Status::invalid_argument("invalid region"))?;
-
-        let params = match req.params {
-            Some(params) => params,
-            None => return Err(Status::invalid_argument("missing region")),
-        };
-
-        let idz = if !req.hex_indexes.is_empty() {
-            Some(req.hex_indexes.as_ref())
-        } else {
-            None
-        };
-
-        let updated_region = region_map::update_region(region, &params, idz, &self.pool)
-            .await
-            .map_err(|_| Status::internal("region update failed"))?;
-
-        self.region_map.insert_params(region, params).await;
-        if let Some(region_tree) = updated_region {
-            tracing::debug!("New compacted region map with {} cells", region_tree.len());
-            self.region_map.replace_tree(region_tree).await;
-        }
-
-        Ok(Response::new(GatewayLoadRegionResV1 {}))
     }
 }

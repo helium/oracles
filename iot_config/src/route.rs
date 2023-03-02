@@ -78,7 +78,7 @@ pub enum RouteStorageError {
     #[error("protocol error: {0}")]
     ServerProtocol(String),
     #[error("stream update error: {0}")]
-    StreamUpdate(#[from] broadcast::error::SendError<proto::RouteStreamResV1>),
+    StreamUpdate(#[from] Box<broadcast::error::SendError<proto::RouteStreamResV1>>),
 }
 
 pub async fn create_route(
@@ -147,11 +147,6 @@ pub async fn update_route(
 
     let mut transaction = db.begin().await?;
 
-    let was_active = sqlx::query_scalar::<_, bool>(r#"select active from routes where id = $1"#)
-        .bind(uuid)
-        .fetch_one(&mut transaction)
-        .await?;
-
     sqlx::query(
         r#"
         update routes
@@ -172,21 +167,12 @@ pub async fn update_route(
 
     transaction.commit().await?;
 
-    // if the route is not locked at the org level and it was or is now active, update downstream HPRs
-    if !updated_route.locked && (was_active || updated_route.active) {
-        let action = if updated_route.active {
-            proto::ActionV1::Add.into()
-        } else {
-            proto::ActionV1::Remove.into()
-        };
-
-        _ = update_tx.send(proto::RouteStreamResV1 {
-            action,
-            data: Some(proto::route_stream_res_v1::Data::Route(
-                updated_route.clone().into(),
-            )),
-        });
-    };
+    _ = update_tx.send(proto::RouteStreamResV1 {
+        action: proto::ActionV1::Add.into(),
+        data: Some(proto::route_stream_res_v1::Data::Route(
+            updated_route.clone().into(),
+        )),
+    });
 
     Ok(updated_route)
 }
@@ -285,30 +271,6 @@ pub async fn update_euis(
         }
     }
 
-    Ok(())
-}
-
-pub async fn delete_euis(
-    id: &str,
-    db: impl sqlx::PgExecutor<'_> + Copy,
-    update_tx: Sender<proto::RouteStreamResV1>,
-) -> Result<(), RouteStorageError> {
-    let euis = list_euis_for_route(id, db).await?;
-    let id = Uuid::try_parse(id)?;
-    sqlx::query(" delete from route_eui_pairs where route_id = $1 ")
-        .bind(id)
-        .execute(db)
-        .await?;
-
-    for removed in euis {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Remove.into(),
-            data: Some(proto::route_stream_res_v1::Data::EuiPair(removed.into())),
-        };
-        if update_tx.send(update).is_err() {
-            break;
-        }
-    }
     Ok(())
 }
 
@@ -414,32 +376,6 @@ pub async fn update_devaddr_ranges(
     Ok(())
 }
 
-pub async fn delete_devaddr_ranges(
-    id: &str,
-    db: impl sqlx::PgExecutor<'_> + Copy,
-    update_tx: Sender<proto::RouteStreamResV1>,
-) -> Result<(), RouteStorageError> {
-    let devaddr_ranges = list_devaddr_ranges_for_route(id, db).await?;
-    let id = Uuid::try_parse(id)?;
-    sqlx::query(" delete from route_devaddr_ranges where route_id = $1 ")
-        .bind(id)
-        .execute(db)
-        .await?;
-
-    for removed in devaddr_ranges {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Remove.into(),
-            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
-                removed.into(),
-            )),
-        };
-        if update_tx.send(update).is_err() {
-            break;
-        }
-    }
-    Ok(())
-}
-
 pub async fn list_routes(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
@@ -470,46 +406,42 @@ pub async fn list_routes(
     .await)
 }
 
-pub async fn list_euis_for_route(
+pub fn list_euis_for_route<'a>(
     id: &str,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<EuiPair>, RouteStorageError> {
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> Result<impl Stream<Item = Result<EuiPair, sqlx::Error>> + 'a, RouteStorageError> {
     let id = Uuid::try_parse(id)?;
     const EUI_SELECT_SQL: &str = r#"
     select eui.route_id, eui.app_eui, eui.dev_eui
         from route_eui_pairs eui
         where eui.route_id = $1
     "#;
+
     Ok(sqlx::query_as::<_, EuiPair>(EUI_SELECT_SQL)
         .bind(id)
         .fetch(db)
-        .map_err(RouteStorageError::from)
-        .filter_map(|eui| async move { eui.ok() })
-        .collect::<Vec<EuiPair>>()
-        .await)
+        .boxed())
 }
 
-pub async fn list_devaddr_ranges_for_route(
+pub fn list_devaddr_ranges_for_route<'a>(
     id: &str,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<DevAddrRange>, RouteStorageError> {
+    db: impl sqlx::PgExecutor<'a> + 'a,
+) -> Result<impl Stream<Item = Result<DevAddrRange, sqlx::Error>> + 'a, RouteStorageError> {
     let id = Uuid::try_parse(id)?;
     const DEVADDR_RANGE_SELECT_SQL: &str = r#"
     select devaddr.route_id, devaddr.start_addr, devaddr.end_addr
         from route_devaddr_ranges devaddr
         where devaddr.route_id = $1
     "#;
+
     Ok(sqlx::query_as::<_, DevAddrRange>(DEVADDR_RANGE_SELECT_SQL)
         .bind(id)
         .fetch(db)
-        .map_err(RouteStorageError::from)
-        .filter_map(|devaddr| async move { devaddr.ok() })
-        .collect::<Vec<DevAddrRange>>()
-        .await)
+        .boxed())
 }
 
-pub async fn active_route_stream<'a>(
-    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+pub fn active_route_stream<'a>(
+    db: impl sqlx::PgExecutor<'a> + 'a,
 ) -> impl Stream<Item = Route> + 'a {
     sqlx::query_as::<_, StorageRoute>(
         r#"
@@ -532,6 +464,37 @@ pub async fn active_route_stream<'a>(
             locked: route.locked,
         })})
     .filter_map(|route| async move { route.ok() })
+    .boxed()
+}
+
+pub fn eui_stream<'a>(
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> impl Stream<Item = EuiPair> + 'a {
+    sqlx::query_as::<_, EuiPair>(
+        r#"
+        select eui.route_id, eui.app_eui, eui.dev_eui
+        from route_eui_pairs eui
+        "#,
+    )
+    .fetch(db)
+    .map_err(sqlx::Error::from)
+    .filter_map(|eui| async move { eui.ok() })
+    .boxed()
+}
+
+pub fn devaddr_range_stream<'a>(
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> impl Stream<Item = DevAddrRange> + 'a {
+    sqlx::query_as::<_, DevAddrRange>(
+        r#"
+        select devaddr.route_id, devaddr.start_addr, devaddr.end_addr
+        from route_devaddr_ranges devaddr
+        "#,
+    )
+    .fetch(db)
+    .map_err(sqlx::Error::from)
+    .filter_map(|devaddr| async move { devaddr.ok() })
+    .boxed()
 }
 
 pub async fn get_route(

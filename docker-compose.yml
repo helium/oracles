@@ -8,18 +8,28 @@ services:
       dockerfile: iot_config.Dockerfile
     depends_on:
       - postgres
+      - node
     ports:
       - "8080:8080"
     environment:
       CFG_DATABASE_URL: postgres://postgres:postgres@postgres:5432/config_db
       CFG_LISTEN: 0.0.0.0:8080
       CFG_METRICS_ENDPOINT: 0.0.0.0:19000
+      CFG_FOLLOWER_URL: "http://node:8090"
       CFG_NETWORK: mainnet
       CFG_ADMIN: ${CONFIG_ADMIN_PUBKEY}
       CFG_KEYPAIR: /config-signing-key.bin
       CFG_LOG: info
     volumes:
       - ${CONFIG_SIGNING_KEY}:/config-signing-key.bin:ro
+
+  node:
+    image: jeffgrunewald/helium-mock-follower:latest
+    environment:
+      FLW_GATEWAYS: /demo_gateways.csv
+      FLW_LISTEN: 0.0.0.0:8090
+    ports:
+      - "8090:8090"
 
   postgres:
     image: postgres:latest

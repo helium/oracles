@@ -997,7 +997,7 @@ checksum = "b645a089122eccb6111b4f81cbc1a49f5900ac4666bb93ac027feaecf15607bf"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#2d41c049967d48faba02efb8d73c19e0af0dfa3b"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#a8987fe422af9416b7419fb68151f79c087c5dac"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -2816,7 +2816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#69826eba6957b02d98113fece32c8f47c74377a0"
+source = "git+https://github.com/helium/proto?branch=master#e1f810224509ce1c141ae78c8589ab3740231ee1"
 dependencies = [
  "bytes",
  "prost",
@@ -4372,7 +4372,8 @@ dependencies = [
  "anyhow",
  "axum 0.6.3",
  "base64 0.21.0",
- "bs58 0.4.0",
+ "blake3",
+ "bs58",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -4390,7 +4391,6 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",

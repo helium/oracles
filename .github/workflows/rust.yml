@@ -7,6 +7,13 @@ on:
     branches: [main]
     tags: ["*"]
 
+env:
+  CARGO_INCREMENTAL: 0 # this setting is automatically applied by rust-cache but documented here for explicitness
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTFLAGS: "-D warnings"
+  RUSTUP_MAX_RETRIES: 10
+
 jobs:
   build:
     runs-on: ubuntu-20.04
@@ -19,6 +26,9 @@ jobs:
 
       - name: Install protoc
         run: sudo apt-get install -y protobuf-compiler
+
+      - name: Setup cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.11.0

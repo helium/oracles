@@ -107,13 +107,11 @@ fn construct_signed_txn(
     timestamp: i64,
     keypair: &Keypair,
 ) -> Result<(BlockchainTxnPocReceiptsV2, Vec<u8>, String), TxnConstructionError> {
-    let strip_path = strip_path(path.clone());
-
     let mut txn = BlockchainTxnPocReceiptsV2 {
         challenger: keypair.public_key().to_vec(),
         secret: vec![],
         onion_key_hash: vec![],
-        path: strip_path,
+        path,
         fee: 0,
         signature: vec![],
         block_hash: vec![],
@@ -122,39 +120,8 @@ fn construct_signed_txn(
 
     txn.signature = sign_txn(&txn, keypair)?;
 
-    // Re-attach the original (unstripped) path back to the txn after signing
-    txn.path = path;
-
     let (txn_hash, txn_hash_b64url) = hash_txn(&txn);
     Ok((txn, txn_hash, txn_hash_b64url))
-}
-
-/// Before signing the txn we strip the path of hex_scale and reward_unit contained in the
-/// individual receipt and witnesses
-fn strip_path(path: PocPath) -> PocPath {
-    let mut strip_path: PocPath = Vec::with_capacity(1);
-    for element in path {
-        let challengee = element.challengee;
-        let mut new_element = BlockchainPocPathElementV1 {
-            challengee,
-            witnesses: vec![],
-            receipt: None,
-        };
-        let mut witnesses = vec![];
-        for mut witness in element.witnesses {
-            witness.reward_unit = 0;
-            witness.hex_scale = 0;
-            witnesses.push(witness)
-        }
-        new_element.witnesses = witnesses;
-        if let Some(mut receipt) = element.receipt {
-            receipt.hex_scale = 0;
-            receipt.reward_unit = 0;
-            new_element.receipt = Some(receipt)
-        }
-        strip_path.push(new_element)
-    }
-    strip_path
 }
 
 fn construct_path_element(
@@ -204,8 +171,6 @@ fn construct_poc_witnesses(
             datarate: witness_report.report.datarate.to_string(),
             channel: witness_invalid_reason,
             reward_shares,
-            reward_unit: reward_unit.to_u32().unwrap_or(0),
-            hex_scale: hex_scale.to_u32().unwrap_or(0),
         };
 
         poc_witnesses.push(poc_witness)
@@ -244,8 +209,6 @@ fn construct_poc_receipt(beacon_report: IotValidBeaconReport) -> (BlockchainPocR
         tx_power: beacon_report.report.tx_power,
         addr_hash: vec![],
         reward_shares,
-        reward_unit: reward_unit.to_u32().unwrap_or(0),
-        hex_scale: hex_scale.to_u32().unwrap_or(0),
     };
 
     (poc_receipt, beacon_received_ts)
@@ -254,10 +217,11 @@ fn construct_poc_receipt(beacon_report: IotValidBeaconReport) -> (BlockchainPocR
 fn hash_txn(txn: &BlockchainTxnPocReceiptsV2) -> (Vec<u8>, String) {
     let mut txn = txn.clone();
     txn.signature = vec![];
-    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
+    let txn: &Vec<u8> = &txn.encode_to_vec();
+    let digest = Sha256::digest(txn).to_vec();
     (
         digest.clone(),
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&digest),
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest),
     )
 }
 
@@ -300,8 +264,6 @@ mod tests {
             datarate: "dr".to_string(),
             channel: 0,
             reward_shares: 0,
-            reward_unit: 2,
-            hex_scale: 3,
         };
         let poc_receipt = BlockchainPocReceiptV1 {
             gateway: vec![],
@@ -317,8 +279,6 @@ mod tests {
             tx_power: -1,
             addr_hash: vec![],
             reward_shares: 0,
-            reward_unit: 1,
-            hex_scale: 4,
         };
         let poc_path_element = BlockchainPocPathElementV1 {
             challengee: vec![],
@@ -342,9 +302,8 @@ mod tests {
         txn0.signature = signature0.clone();
         let (_txn_hash, txn0_hash_b64_url) = hash_txn(&txn0);
 
-        // txn1 signature will be stripped of the reward_unit and hex_scale
-        let (txn1, _, txn1_hash_b64_url) = construct_signed_txn(path.clone(), 456, &keypair)
-            .expect("unable to construct signed txn");
+        let (_txn1, _, txn1_hash_b64_url) =
+            construct_signed_txn(path, 456, &keypair).expect("unable to construct signed txn");
 
         // The txn hashes should be equal
         assert_eq!(txn0_hash_b64_url, txn1_hash_b64_url);
@@ -353,17 +312,6 @@ mod tests {
         txn0.signature = vec![];
         // This txn0 should be verifiable as is
         assert!(pubkey.verify(&txn0.encode_to_vec(), &signature0).is_ok());
-
-        let signature1 = txn1.clone().signature;
-
-        // The two signatures should be different
-        assert_ne!(signature0, signature1);
-
-        let mut txn1 = txn1;
-        txn1.signature = vec![];
-        // For txn1, we strip the path before verifying
-        txn1.path = strip_path(path);
-        assert!(pubkey.verify(&txn1.encode_to_vec(), &signature1).is_ok());
     }
 
     #[test]
@@ -379,8 +327,6 @@ mod tests {
             datarate: "dr".to_string(),
             channel: 0,
             reward_shares: 0,
-            reward_unit: 0,
-            hex_scale: 0,
         };
         let poc_id: Vec<u8> = vec![0];
         let max_witnesses_per_receipt = 14;

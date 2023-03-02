@@ -90,7 +90,10 @@ where
             let shutdown = shutdown.clone();
 
             tokio::select! {
-                _ = shutdown => break,
+                _ = shutdown => {
+                    tracing::info!("FileInfoPoller shutting down");
+                    break;
+                }
                 _ = cleanup_trigger.tick() => self.clean(&cache).await?,
                 _ = poll_trigger.tick() => {
                     let files = self.store.list_all(self.file_type, after, before).await?;

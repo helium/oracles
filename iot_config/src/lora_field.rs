@@ -38,8 +38,8 @@ impl FromRow<'_, PgRow> for DevAddrRange {
             route_id: row
                 .try_get::<sqlx::types::Uuid, &str>("route_id")?
                 .to_string(),
-            start_addr: row.try_get::<i64, &str>("start_addr")?.into(),
-            end_addr: row.try_get::<i64, &str>("end_addr")?.into(),
+            start_addr: row.try_get::<i32, &str>("start_addr")?.into(),
+            end_addr: row.try_get::<i32, &str>("end_addr")?.into(),
         })
     }
 }
@@ -70,7 +70,7 @@ impl DevAddrConstraint {
         Ok(devaddr(end + 1))
     }
 
-    pub fn contains(&self, range: &Self) -> bool {
+    pub fn contains(&self, range: &DevAddrRange) -> bool {
         self.start_addr <= range.start_addr && self.end_addr >= range.end_addr
     }
 }
@@ -463,6 +463,16 @@ impl From<proto::DevaddrRangeV1> for DevAddrRange {
     fn from(range: proto::DevaddrRangeV1) -> Self {
         Self {
             route_id: range.route_id,
+            start_addr: range.start_addr.into(),
+            end_addr: range.end_addr.into(),
+        }
+    }
+}
+
+impl From<&proto::DevaddrRangeV1> for DevAddrRange {
+    fn from(range: &proto::DevaddrRangeV1) -> Self {
+        Self {
+            route_id: range.route_id.clone(),
             start_addr: range.start_addr.into(),
             end_addr: range.end_addr.into(),
         }
