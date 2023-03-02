@@ -262,6 +262,7 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
             VALUES ($1, $2, $3)
             ON CONFLICT (payer) DO UPDATE SET
             amount = pending_burns.amount + $2
+            RETURNING *
             "#,
         )
         .bind(payer)

@@ -5,9 +5,13 @@ use crate::{
     verifier::{CachedOrgClient, Verifier},
 };
 use anyhow::{bail, Error, Result};
+use chrono::{TimeZone, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient, file_source, file_upload,
-    iot_packet::PacketRouterPacketReport, FileSinkBuilder, FileStore, FileType,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::FileSinkClient,
+    file_source, file_upload,
+    iot_packet::PacketRouterPacketReport,
+    FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -132,6 +136,9 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
         file_source::continuous_source::<PacketRouterPacketReport>()
             .db(pool.clone())
             .store(file_store)
+            .lookback(LookbackBehavior::StartAfter(
+                Utc.timestamp_millis_opt(0).unwrap(),
+            ))
             .file_type(FileType::IotPacketReport)
             .build()?
             .start(shutdown_listener.clone())
