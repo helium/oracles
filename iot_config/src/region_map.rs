@@ -5,6 +5,7 @@ use libflate::gzip::Decoder;
 use std::{collections::HashMap, io::Read, str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 
+#[derive(Clone, Debug)]
 pub struct RegionMap {
     region_hextree: Arc<RwLock<HexTreeMap<Region, EqCompactor>>>,
     params_hashmap: Arc<RwLock<HashMap<Region, BlockchainRegionParamsV1>>>,

@@ -2,11 +2,12 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use futures_util::TryFutureExt;
 use helium_proto::services::iot_config::{
-    GatewayServer, OrgServer, RouteServer, SessionKeyFilterServer,
+    AdminServer, GatewayServer, OrgServer, RouteServer, SessionKeyFilterServer,
 };
 use iot_config::{
-    gateway_service::GatewayService, org_service::OrgService, route_service::RouteService,
-    session_key_service::SessionKeyFilterService, settings::Settings,
+    admin::AuthCache, gateway_service::GatewayService, org_service::OrgService,
+    region_map::RegionMap, route_service::RouteService,
+    session_key_service::SessionKeyFilterService, settings::Settings, AdminService,
 };
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;
@@ -61,7 +62,7 @@ impl Daemon {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool
-        let pool = settings.database.connect(10).await?;
+        let pool = settings.database.connect(50).await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Configure shutdown trigger
@@ -73,9 +74,24 @@ impl Daemon {
 
         let listen_addr = settings.listen_addr()?;
 
-        let gateway_svc = GatewayService::new(settings).await?;
-        let route_svc = RouteService::new(settings).await?;
-        let org_svc = OrgService::new(settings, route_svc.clone_update_channel()).await?;
+        let auth_cache = AuthCache::new(settings, &pool).await?;
+        let region_map = RegionMap::new(&pool).await?;
+
+        let gateway_svc = GatewayService::new(settings, region_map.clone())?;
+        let route_svc =
+            RouteService::new(auth_cache.clone(), pool.clone(), shutdown_listener.clone());
+        let org_svc = OrgService::new(
+            auth_cache.clone(),
+            pool.clone(),
+            settings.network,
+            route_svc.clone_update_channel(),
+        );
+        let admin_svc = AdminService::new(
+            auth_cache.clone(),
+            pool.clone(),
+            region_map.clone(),
+            settings.network,
+        );
         let session_key_filter_svc = SessionKeyFilterService {};
 
         transport::Server::builder()
@@ -84,6 +100,7 @@ impl Daemon {
             .add_service(GatewayServer::new(gateway_svc))
             .add_service(OrgServer::new(org_svc))
             .add_service(RouteServer::new(route_svc))
+            .add_service(AdminServer::new(admin_svc))
             .add_service(SessionKeyFilterServer::new(session_key_filter_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from)

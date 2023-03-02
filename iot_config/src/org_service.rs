@@ -1,4 +1,9 @@
-use crate::{lora_field, org, route::list_routes, GrpcResult, Settings, HELIUM_NET_ID};
+use crate::{
+    admin::{AuthCache, KeyType},
+    lora_field, org,
+    route::list_routes,
+    GrpcResult, HELIUM_NET_ID,
+};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Network, PublicKey};
@@ -12,23 +17,25 @@ use tokio::sync::broadcast::Sender;
 use tonic::{Request, Response, Status};
 
 pub struct OrgService {
-    admin_pubkey: PublicKey,
+    auth_cache: AuthCache,
     pool: Pool<Postgres>,
     required_network: Network,
     route_update_tx: Sender<RouteStreamResV1>,
 }
 
 impl OrgService {
-    pub async fn new(
-        settings: &Settings,
+    pub fn new(
+        auth_cache: AuthCache,
+        pool: Pool<Postgres>,
+        required_network: Network,
         route_update_tx: Sender<RouteStreamResV1>,
-    ) -> Result<Self> {
-        Ok(Self {
-            admin_pubkey: settings.admin_pubkey()?,
-            pool: settings.database.connect(10).await?,
-            required_network: settings.network,
+    ) -> Self {
+        Self {
+            auth_cache,
+            pool,
+            required_network,
             route_update_tx,
-        })
+        }
     }
 
     fn verify_network(&self, public_key: PublicKey) -> Result<PublicKey, Status> {
@@ -47,14 +54,15 @@ impl OrgService {
             .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
     }
 
-    fn verify_admin_signature<R>(&self, request: R) -> Result<R, Status>
+    async fn verify_request_signature<R>(&self, request: &R) -> Result<(), Status>
     where
         R: MsgVerify,
     {
-        request
-            .verify(&self.admin_pubkey)
+        self.auth_cache
+            .verify_signature(KeyType::Administrator, request)
+            .await
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
-        Ok(request)
+        Ok(())
     }
 }
 
@@ -79,25 +87,38 @@ impl iot_config::Org for OrgService {
             .map_err(|_| Status::internal("org get failed"))?;
         let net_id = org
             .constraints
-            .start_addr
-            .to_net_id()
-            .map_err(|_| Status::internal("net id error"))?;
+            .first()
+            .ok_or("not found")
+            .and_then(|constraint| {
+                constraint
+                    .start_addr
+                    .to_net_id()
+                    .map_err(|_| "invalid net id")
+            })
+            .map_err(|err| Status::internal(format!("net id error: {err}")))?;
 
         Ok(Response::new(OrgResV1 {
             org: Some(org.org.into()),
             net_id: net_id.into(),
-            devaddr_constraints: vec![org.constraints.into()],
+            devaddr_constraints: org
+                .constraints
+                .into_iter()
+                .map(|constraint| constraint.into())
+                .collect(),
         }))
     }
 
     async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        let req = self.verify_admin_signature(request)?;
+        self.verify_request_signature(&request).await?;
 
-        let mut verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
-        let mut verify_delegates: Vec<&[u8]> =
-            req.delegate_keys.iter().map(|key| key.as_slice()).collect();
+        let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
+        let mut verify_delegates: Vec<&[u8]> = request
+            .delegate_keys
+            .iter()
+            .map(|key| key.as_slice())
+            .collect();
         verify_keys.append(&mut verify_delegates);
         _ = verify_keys
             .iter()
@@ -110,16 +131,17 @@ impl iot_config::Org for OrgService {
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
-        let requested_addrs = req.devaddrs;
+        let requested_addrs = request.devaddrs;
         let devaddr_constraint = org::next_helium_devaddr(&self.pool)
             .await
             .map_err(|_| Status::failed_precondition("helium address unavailable"))?
             .to_range(requested_addrs);
 
         let org = org::create_org(
-            req.owner.into(),
-            req.payer.into(),
-            req.delegate_keys
+            request.owner.into(),
+            request.payer.into(),
+            request
+                .delegate_keys
                 .into_iter()
                 .map(|key| key.into())
                 .collect(),
@@ -148,11 +170,14 @@ impl iot_config::Org for OrgService {
     async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        let req = self.verify_admin_signature(request)?;
+        self.verify_request_signature(&request).await?;
 
-        let mut verify_keys: Vec<&[u8]> = vec![req.owner.as_ref(), req.payer.as_ref()];
-        let mut verify_delegates: Vec<&[u8]> =
-            req.delegate_keys.iter().map(|key| key.as_slice()).collect();
+        let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
+        let mut verify_delegates: Vec<&[u8]> = request
+            .delegate_keys
+            .iter()
+            .map(|key| key.as_slice())
+            .collect();
         verify_keys.append(&mut verify_delegates);
         _ = verify_keys
             .iter()
@@ -165,15 +190,16 @@ impl iot_config::Org for OrgService {
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
-        let net_id = lora_field::net_id(req.net_id);
+        let net_id = lora_field::net_id(request.net_id);
         let devaddr_range = net_id
             .full_range()
             .map_err(|_| Status::invalid_argument("invalid net_id"))?;
 
         let org = org::create_org(
-            req.owner.into(),
-            req.payer.into(),
-            req.delegate_keys
+            request.owner.into(),
+            request.payer.into(),
+            request
+                .delegate_keys
                 .into_iter()
                 .map(|key| key.into())
                 .collect(),
@@ -196,20 +222,22 @@ impl iot_config::Org for OrgService {
     async fn disable(&self, request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {
         let request = request.into_inner();
 
-        let req = self.verify_admin_signature(request)?;
+        self.verify_request_signature(&request).await?;
 
-        if !org::is_locked(req.oui, &self.pool)
+        if !org::is_locked(request.oui, &self.pool)
             .await
             .map_err(|_| Status::internal("error retrieving current status"))?
         {
-            org::toggle_locked(req.oui, &self.pool)
+            org::toggle_locked(request.oui, &self.pool)
                 .await
-                .map_err(|_| Status::internal(format!("org disable failed for: {}", req.oui)))?;
+                .map_err(|_| {
+                    Status::internal(format!("org disable failed for: {}", request.oui))
+                })?;
 
-            let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
+            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|_| {
                 Status::internal(format!(
                     "error retrieving routes for disabled org: {}",
-                    req.oui
+                    request.oui
                 ))
             })?;
 
@@ -218,7 +246,7 @@ impl iot_config::Org for OrgService {
                 if self
                     .route_update_tx
                     .send(RouteStreamResV1 {
-                        action: ActionV1::Remove.into(),
+                        action: ActionV1::Add.into(),
                         data: Some(route_stream_res_v1::Data::Route(route.into())),
                     })
                     .is_err()
@@ -232,26 +260,26 @@ impl iot_config::Org for OrgService {
             }
         }
 
-        Ok(Response::new(OrgDisableResV1 { oui: req.oui }))
+        Ok(Response::new(OrgDisableResV1 { oui: request.oui }))
     }
 
     async fn enable(&self, request: Request<OrgEnableReqV1>) -> GrpcResult<OrgEnableResV1> {
         let request = request.into_inner();
 
-        let req = self.verify_admin_signature(request)?;
+        self.verify_request_signature(&request).await?;
 
-        if org::is_locked(req.oui, &self.pool)
+        if org::is_locked(request.oui, &self.pool)
             .await
             .map_err(|_| Status::internal("error retrieving current status"))?
         {
-            org::toggle_locked(req.oui, &self.pool)
+            org::toggle_locked(request.oui, &self.pool)
                 .await
-                .map_err(|_| Status::internal(format!("org enable failed for: {}", req.oui)))?;
+                .map_err(|_| Status::internal(format!("org enable failed for: {}", request.oui)))?;
 
-            let org_routes = list_routes(req.oui, &self.pool).await.map_err(|_| {
+            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|_| {
                 Status::internal(format!(
                     "error retrieving routes for enabled org: {}",
-                    req.oui
+                    request.oui
                 ))
             })?;
 
@@ -274,6 +302,6 @@ impl iot_config::Org for OrgService {
             }
         }
 
-        Ok(Response::new(OrgEnableResV1 { oui: req.oui }))
+        Ok(Response::new(OrgEnableResV1 { oui: request.oui }))
     }
 }
