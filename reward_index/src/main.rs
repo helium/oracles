@@ -75,7 +75,9 @@ impl Server {
             .db(pool)
             .store(file_store)
             .file_type(FileType::RewardManifest)
-            .lookback(LookbackBehavior::StartAfter(Utc.timestamp(0, 0)))
+            .lookback(LookbackBehavior::StartAfter(
+                Utc.timestamp_opt(0, 0).single().unwrap(),
+            ))
             .poll_duration(settings.interval())
             .offset(settings.interval() * 2)
             .build()?
