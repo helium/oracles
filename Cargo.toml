@@ -16,7 +16,8 @@ members = [
     "metrics",
     "denylist",
     "iot_packet_verifier",
-    "iot_config"
+    "iot_config",
+    "price",
 ]
 
 [workspace.package]
@@ -53,12 +54,12 @@ sqlx = {version = "0", features = [
 ]}
 
 helium-crypto = {version = "0.6.8", features=["sqlx-postgres", "multisig"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "rg/price-oracle-grpc", features = ["services"]}
 hextree = "*"
 solana-client = "1.14"
 solana-sdk = "1.14"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
-beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "main"}
+beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "rg/proto-test-branch"}
 humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"

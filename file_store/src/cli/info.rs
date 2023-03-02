@@ -7,8 +7,9 @@ use crate::{
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use helium_proto::services::poc_lora::{
-    LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
+use helium_proto::services::{
+    poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
+    price_oracle::PriceOracleReportV1,
 };
 use helium_proto::{
     services::poc_mobile::{
@@ -72,6 +73,12 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for EntropyReportV1 {
     }
 }
 
+impl MsgTimestamp<Result<DateTime<Utc>>> for PriceOracleReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp()
+    }
+}
+
 fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
     let result = match file_type {
         FileType::CellHeartbeat => CellHeartbeatReqV1::decode(buf)
@@ -115,6 +122,9 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
                 })
             })
             .and_then(|beacon_report| beacon_report.timestamp())?,
+        FileType::PriceReport => PriceOracleReportV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(|entry| entry.timestamp())?,
 
         _ => Utc::now(),
     };
