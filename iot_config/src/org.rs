@@ -147,7 +147,7 @@ pub async fn get_constraints_by_route(
     let constraints = sqlx::query(
         r#"
         select consts.start_addr, consts.end_addr from organization_devaddr_constraints consts
-        join routes.oui on consts.oui
+        join routes on routes.oui = consts.oui
         where routes.id = $1
         "#,
     )

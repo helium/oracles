@@ -10,61 +10,58 @@ use tokio::sync::broadcast::Sender;
 pub struct SessionKeyFilter {
     pub oui: u64,
     pub devaddr: DevAddrField,
-    pub session_key: String,
+    pub session_key: Vec<u8>,
 }
 
 impl FromRow<'_, PgRow> for SessionKeyFilter {
     fn from_row(row: &PgRow) -> sqlx::Result<Self> {
         Ok(Self {
-            oui: row.try_get::<i64, &str>("oui")? as u64,
-            devaddr: row.try_get::<i64, &str>("devaddr")?.into(),
-            session_key: row.try_get::<String, &str>("session_key")?,
+            oui: row.get::<i64, &str>("oui") as u64,
+            devaddr: row.get::<i32, &str>("devaddr").into(),
+            session_key: row.get::<Vec<u8>, &str>("session_key"),
         })
     }
 }
 
-pub async fn list_stream<'a>(
+pub fn list_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a,
 ) -> impl Stream<Item = SessionKeyFilter> + 'a {
-    sqlx::query_as::<_, SessionKeyFilter>("select * from session_key_filters")
+    sqlx::query_as::<_, SessionKeyFilter>(r#" select * from session_key_filters "#)
         .fetch(db)
         .filter_map(|filter| async move { filter.ok() })
+        .boxed()
 }
 
-pub async fn list_for_oui(
+pub fn list_for_oui<'a>(
     oui: u64,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<SessionKeyFilter>, sqlx::Error> {
-    Ok(sqlx::query_as::<_, SessionKeyFilter>(
+    db: impl sqlx::PgExecutor<'a> + 'a,
+) -> impl Stream<Item = Result<SessionKeyFilter, sqlx::Error>> + 'a {
+    sqlx::query_as::<_, SessionKeyFilter>(
         r#"
-	select * from session_key_filters
+	    select * from session_key_filters
 		where oui = $1
-	"#,
+	    "#,
     )
     .bind(oui as i64)
     .fetch(db)
-    .filter_map(|sk| async move { sk.ok() })
-    .collect()
-    .await)
+    .boxed()
 }
 
-pub async fn list_for_oui_and_devaddr(
+pub fn list_for_oui_and_devaddr<'a>(
     oui: u64,
     devaddr: DevAddrField,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<SessionKeyFilter>, sqlx::Error> {
-    Ok(sqlx::query_as::<_, SessionKeyFilter>(
+    db: impl sqlx::PgExecutor<'a> + 'a,
+) -> impl Stream<Item = Result<SessionKeyFilter, sqlx::Error>> + 'a {
+    sqlx::query_as::<_, SessionKeyFilter>(
         r#"
 		select * from session_key_filters
-			where oui = $1 and devaddr = $2
+		where oui = $1 and devaddr = $2
 		"#,
     )
     .bind(oui as i64)
-    .bind(i64::from(devaddr))
+    .bind(i32::from(devaddr))
     .fetch(db)
-    .filter_map(|sk| async move { sk.ok() })
-    .collect()
-    .await)
+    .boxed()
 }
 
 pub async fn update_session_keys(
@@ -72,7 +69,7 @@ pub async fn update_session_keys(
     to_remove: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
     update_tx: Sender<SessionKeyFilterStreamResV1>,
-) -> sqlx::Result<()> {
+) -> Result<(), sqlx::Error> {
     let mut transaction = db.begin().await?;
 
     if !to_add.is_empty() {
@@ -112,20 +109,21 @@ async fn insert_session_key_filters(
     session_key_filters: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_>,
 ) -> sqlx::Result<()> {
-    const SESSION_KEY_FILTER_INSERT_SQL: &str =
+    const SESSION_KEY_FILTER_INSERT_VALS: &str =
         " insert into session_key_filters (oui, devaddr, session_key) ";
-    const SESSION_KEY_FILTER_CONFLICT_SQL: &str =
+    const SESSION_KEY_FILTER_INSERT_CONFLICT: &str =
         " on conflict (oui, devaddr, session_key) do nothing ";
 
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(SESSION_KEY_FILTER_INSERT_SQL);
-    query_builder.push_values(session_key_filters, |mut builder, session_key_filter| {
-        builder
-            .push_bind(session_key_filter.oui as i64)
-            .push_bind(i64::from(session_key_filter.devaddr))
-            .push_bind(session_key_filter.session_key.clone());
-    });
-    query_builder.push(SESSION_KEY_FILTER_CONFLICT_SQL);
+        sqlx::QueryBuilder::new(SESSION_KEY_FILTER_INSERT_VALS);
+    query_builder
+        .push_values(session_key_filters, |mut builder, session_key_filter| {
+            builder
+                .push_bind(session_key_filter.oui as i64)
+                .push_bind(i32::from(session_key_filter.devaddr))
+                .push_bind(session_key_filter.session_key.clone());
+        })
+        .push(SESSION_KEY_FILTER_INSERT_CONFLICT);
 
     query_builder.build().execute(db).await.map(|_| ())?;
 
@@ -135,7 +133,7 @@ async fn insert_session_key_filters(
 async fn remove_session_key_filters(
     session_key_filters: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_>,
-) -> sqlx::Result<()> {
+) -> Result<(), sqlx::Error> {
     const SESSION_KEY_FILTER_DELETE_SQL: &str =
         " delete from session_key_filters where (oui, devaddr, session_key) in ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
@@ -144,7 +142,7 @@ async fn remove_session_key_filters(
     query_builder.push_tuples(session_key_filters, |mut builder, session_key_filter| {
         builder
             .push_bind(session_key_filter.oui as i64)
-            .push_bind(i64::from(session_key_filter.devaddr))
+            .push_bind(i32::from(session_key_filter.devaddr))
             .push_bind(session_key_filter.session_key.clone());
     });
 
@@ -158,7 +156,17 @@ impl From<SessionKeyFilterV1> for SessionKeyFilter {
         Self {
             oui: value.oui,
             devaddr: value.devaddr.into(),
-            session_key: String::from_utf8(value.session_key).expect("utf8 session key"),
+            session_key: value.session_key,
+        }
+    }
+}
+
+impl From<&SessionKeyFilterV1> for SessionKeyFilter {
+    fn from(value: &SessionKeyFilterV1) -> Self {
+        Self {
+            oui: value.oui,
+            devaddr: value.devaddr.into(),
+            session_key: value.session_key.to_owned(),
         }
     }
 }
@@ -168,7 +176,7 @@ impl From<SessionKeyFilter> for SessionKeyFilterV1 {
         Self {
             oui: value.oui,
             devaddr: value.devaddr.into(),
-            session_key: value.session_key.into(),
+            session_key: value.session_key,
         }
     }
 }
@@ -178,7 +186,7 @@ impl From<&SessionKeyFilter> for SessionKeyFilterV1 {
         Self {
             oui: value.oui,
             devaddr: value.devaddr.into(),
-            session_key: value.session_key.to_owned().into(),
+            session_key: value.session_key.to_owned(),
         }
     }
 }

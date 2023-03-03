@@ -1,37 +1,37 @@
 use crate::{
+    admin::{AuthCache, KeyType},
+    org::get_org_pubkeys,
     session_key::{self, SessionKeyFilter},
-    GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
+    GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use futures::stream::StreamExt;
-use helium_crypto::PublicKey;
 use helium_proto::services::iot_config::{
     self, ActionV1, SessionKeyFilterGetReqV1, SessionKeyFilterListReqV1,
     SessionKeyFilterStreamReqV1, SessionKeyFilterStreamResV1, SessionKeyFilterUpdateReqV1,
     SessionKeyFilterUpdateResV1, SessionKeyFilterV1,
 };
 use sqlx::{Pool, Postgres};
-use tokio::{
-    pin,
-    sync::broadcast::{Receiver, Sender},
-};
+use tokio::sync::broadcast::{Receiver, Sender};
 use tonic::{Request, Response, Status};
 
 pub struct SessionKeyFilterService {
-    admin_pubkey: PublicKey,
+    auth_cache: AuthCache,
     pool: Pool<Postgres>,
     update_channel: Sender<SessionKeyFilterStreamResV1>,
+    shutdown: triggered::Listener,
 }
 
 impl SessionKeyFilterService {
-    pub async fn new(settings: &Settings) -> Result<Self> {
+    pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
         let (update_tx, _) = tokio::sync::broadcast::channel(128);
-        Ok(Self {
-            admin_pubkey: settings.admin_pubkey()?,
-            pool: settings.database.connect(10).await?,
+        Self {
+            auth_cache,
+            pool,
             update_channel: update_tx,
-        })
+            shutdown,
+        }
     }
 
     fn subscribe_to_session_keys(&self) -> Receiver<SessionKeyFilterStreamResV1> {
@@ -42,14 +42,56 @@ impl SessionKeyFilterService {
         self.update_channel.clone()
     }
 
-    fn verify_admin_signature<R>(&self, request: R) -> Result<R, Status>
+    async fn verify_request_signature<'a, R>(&self, request: &R, id: u64) -> Result<(), Status>
     where
         R: MsgVerify,
     {
-        request
-            .verify(&self.admin_pubkey)
-            .map_err(|_| Status::permission_denied("invalid admin signature"))?;
-        Ok(request)
+        if self
+            .auth_cache
+            .verify_signature(KeyType::Administrator, request)
+            .await
+            .is_ok()
+        {
+            tracing::debug!("request authorized by admin");
+            return Ok(());
+        }
+
+        let org_keys = get_org_pubkeys(id, &self.pool)
+            .await
+            .map_err(|_| Status::internal("auth verification error"))?;
+
+        for pubkey in org_keys.iter() {
+            if request.verify(pubkey).is_ok() {
+                tracing::debug!("request authorized by delegate {pubkey}");
+                return Ok(());
+            }
+        }
+        Err(Status::permission_denied("unauthorized request signature"))
+    }
+
+    async fn verify_stream_request_signature<R>(&self, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        if self
+            .auth_cache
+            .verify_signature(KeyType::PacketRouter, request)
+            .await
+            .is_ok()
+        {
+            tracing::debug!("request authorized for registered packet router");
+            Ok(())
+        } else if self
+            .auth_cache
+            .verify_signature(KeyType::Administrator, request)
+            .await
+            .is_ok()
+        {
+            tracing::debug!("request authorized by admin");
+            Ok(())
+        } else {
+            Err(Status::permission_denied("unauthorized request signature"))
+        }
     }
 }
 
@@ -62,14 +104,23 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     ) -> GrpcResult<Self::listStream> {
         let request = request.into_inner();
 
-        let filters = session_key::list_for_oui(request.oui, &self.pool)
-            .await
-            .map_err(|_| Status::internal("list session key filters failed"))?;
+        self.verify_request_signature(&request, request.oui).await?;
 
+        let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+
         tokio::spawn(async move {
-            for filter in filters {
-                if tx.send(Ok(filter.into())).await.is_err() {
+            let mut filters = session_key::list_for_oui(request.oui, &pool);
+
+            while let Some(filter) = filters.next().await {
+                let message = match filter {
+                    Ok(filter) => Ok(filter.into()),
+                    Err(bad_filter) => Err(Status::internal(format!(
+                        "invalid session key filter {:?}",
+                        bad_filter
+                    ))),
+                };
+                if tx.send(message).await.is_err() {
                     break;
                 }
             }
@@ -82,15 +133,24 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     async fn get(&self, request: Request<SessionKeyFilterGetReqV1>) -> GrpcResult<Self::getStream> {
         let request = request.into_inner();
 
-        let session_key_filters =
-            session_key::list_for_oui_and_devaddr(request.oui, request.devaddr.into(), &self.pool)
-                .await
-                .map_err(|_| Status::internal("get session key filters failed"))?;
+        self.verify_request_signature(&request, request.oui).await?;
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let pool = self.pool.clone();
+
         tokio::spawn(async move {
-            for session_key_filter in session_key_filters {
-                if tx.send(Ok(session_key_filter.into())).await.is_err() {
+            let mut filters =
+                session_key::list_for_oui_and_devaddr(request.oui, request.devaddr.into(), &pool);
+
+            while let Some(filter) = filters.next().await {
+                let message = match filter {
+                    Ok(filter) => Ok(filter.into()),
+                    Err(bad_filter) => Err(Status::internal(format!(
+                        "invalid session key filter {:?}",
+                        bad_filter
+                    ))),
+                };
+                if tx.send(message).await.is_err() {
                     break;
                 }
             }
@@ -107,6 +167,19 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
 
         let mut to_add: Vec<SessionKeyFilter> = vec![];
         let mut to_remove: Vec<SessionKeyFilter> = vec![];
+
+        if let Ok(Some(first_update)) = request.message().await {
+            if let Some(filter) = &first_update.filter {
+                self.verify_request_signature(&first_update, filter.oui)
+                    .await?;
+                match first_update.action() {
+                    ActionV1::Add => to_add.push(filter.into()),
+                    ActionV1::Remove => to_remove.push(filter.into()),
+                }
+            }
+        } else {
+            return Err(Status::invalid_argument("no session key filter provided"));
+        }
 
         while let Ok(Some(update)) = request.message().await {
             match (update.action(), update.filter) {
@@ -142,17 +215,19 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
         request: Request<SessionKeyFilterStreamReqV1>,
     ) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
-        self.verify_admin_signature(request)?;
+
+        self.verify_stream_request_signature(&request).await?;
 
         tracing::info!("client subscribed to session key stream");
+
         let pool = self.pool.clone();
+        let shutdown_listener = self.shutdown.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         let mut session_key_updates = self.subscribe_to_session_keys();
 
         tokio::spawn(async move {
-            let session_key_filters = session_key::list_stream(&pool).await;
-            pin!(session_key_filters);
+            let mut session_key_filters = session_key::list_stream(&pool);
 
             while let Some(session_key_filter) = session_key_filters.next().await {
                 let update = SessionKeyFilterStreamResV1 {
@@ -164,7 +239,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 }
             }
             while let Ok(update) = session_key_updates.recv().await {
-                if tx.send(Ok(update)).await.is_err() {
+                if shutdown_listener.is_triggered() || tx.send(Ok(update)).await.is_err() {
                     break;
                 }
             }
