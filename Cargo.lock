@@ -4507,7 +4507,6 @@ dependencies = [
  "solana-program",
  "thiserror",
  "tokio",
- "tonic",
  "tracing",
  "tracing-subscriber",
  "triggered",

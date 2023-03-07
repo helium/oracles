@@ -7,10 +7,7 @@ use pyth_sdk_solana::load_price_feed_from_account;
 use serde::Serialize;
 use solana_client::rpc_client::RpcClient;
 use solana_program::pubkey::Pubkey as SolPubkey;
-use tokio::{sync::watch, time};
-
-pub type MessageSender = watch::Sender<Price>;
-pub type MessageReceiver = watch::Receiver<Price>;
+use tokio::time;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Price {
@@ -32,8 +29,7 @@ impl Price {
 pub struct PriceGenerator {
     settings: Settings,
     client: RpcClient,
-    pub receiver: MessageReceiver,
-    pub sender: MessageSender,
+    price: Price,
 }
 
 impl From<Price> for PriceOracleReportV1 {
@@ -67,17 +63,11 @@ impl PriceGenerator {
             None => Price::new(0, 0, token_type),
             Some(price_key) => get_price(&client, &price_key, settings.age, token_type).await?,
         };
-        let (sender, receiver) = watch::channel(price);
         Ok(Self {
             settings: settings.clone(),
             client,
-            receiver,
-            sender,
+            price,
         })
-    }
-
-    pub fn receiver(&self) -> MessageReceiver {
-        self.receiver.clone()
     }
 
     pub async fn run(
@@ -105,7 +95,7 @@ impl PriceGenerator {
                 }
             }
         }
-        tracing::info!("stopping price generator");
+        tracing::info!("stopping price generator for {:?}", token_type);
         Ok(())
     }
 
@@ -115,31 +105,30 @@ impl PriceGenerator {
         token_type: BlockchainTokenTypeV1,
     ) -> anyhow::Result<()> {
         if let Some(price_key) = &self.settings.price_key(token_type) {
-            let new_price =
+            // Try to get a new price if we can, otherwise reuse the old price we already have.
+            let mut new_price =
                 match get_price(&self.client, price_key, self.settings.age, token_type).await {
-                    Ok(price) => price.price,
+                    Ok(price) => price,
                     Err(err) => {
-                        tracing::warn!("failed to get price: {err:?}");
-                        self.receiver.borrow().price
+                        let old_price = self.price.clone();
+                        tracing::warn!("rpc failure: {err:?}, reusing old price {:?}", old_price);
+                        old_price
                     }
                 };
+
+            // Just set the timestamp to latest for the "new" price
             let timestamp = Utc::now().timestamp();
+            new_price.timestamp = timestamp;
 
-            self.sender.send_modify(|price| {
-                price.price = new_price;
-                price.timestamp = timestamp;
-            });
-
-            let price = &*self.receiver.borrow();
             tracing::info!(
-                "updating price: {} for {:?}, at: {}",
-                price.price.to_string(),
+                "updating price {} for {:?} at {:?}",
+                new_price.price.to_string(),
                 token_type,
-                price.timestamp
+                timestamp
             );
 
-            let price_report = PriceOracleReportV1::from(price.clone());
-            tracing::info!("price_report: {:?}", price_report);
+            let price_report = PriceOracleReportV1::from(new_price.clone());
+            tracing::debug!("price_report: {:?}", price_report);
 
             file_sink.write(price_report, []).await?;
 
@@ -169,10 +158,16 @@ pub async fn get_price(
             tracing::error!("unable to fetch price at {:?}", current_time);
             Err(PriceError::UnableToFetch.into())
         }
-        Some(p) => {
-            tracing::info!("got price {:?} at {:?}", p, current_time);
+        Some(feed_price) => {
+            let value = feed_price.price;
+            tracing::info!(
+                "got price {:?} via rpc for {:?} at {:?}",
+                value,
+                token_type,
+                current_time
+            );
             Ok(Price {
-                price: p.price as u64,
+                price: value as u64,
                 timestamp: current_time,
                 token_type,
             })

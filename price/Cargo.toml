@@ -13,7 +13,6 @@ clap = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
-tonic = {workspace = true}
 futures = {workspace = true}
 futures-util = {workspace = true}
 prost = {workspace = true}

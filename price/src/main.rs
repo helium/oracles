@@ -2,11 +2,10 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
-use helium_proto::{services::price_oracle::Server as PriceServer, BlockchainTokenTypeV1};
-use price::{price_service::PriceService, PriceGenerator, Settings};
+use helium_proto::BlockchainTokenTypeV1;
+use price::{PriceGenerator, Settings};
 use std::path;
 use tokio::{self, signal};
-use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
@@ -80,24 +79,6 @@ impl Server {
         let mut hst_price_generator =
             PriceGenerator::new(settings, BlockchainTokenTypeV1::Hst).await?;
 
-        // price watchers
-        let hnt_watch = hnt_price_generator.receiver();
-        let mobile_watch = mobile_price_generator.receiver();
-        let iot_watch = iot_price_generator.receiver();
-        let hst_watch = hst_price_generator.receiver();
-
-        // price service
-        let hnt_svc = PriceService::new(hnt_watch)?;
-        let mobile_svc = PriceService::new(mobile_watch)?;
-        let iot_svc = PriceService::new(iot_watch)?;
-        let hst_svc = PriceService::new(hst_watch)?;
-
-        // price servers
-        let hnt_server = PriceServer::new(hnt_svc);
-        let mobile_server = PriceServer::new(mobile_svc);
-        let iot_server = PriceServer::new(iot_svc);
-        let hst_server = PriceServer::new(hst_svc);
-
         let (price_sink, mut price_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::PriceReport,
             store_base_path,
@@ -108,28 +89,7 @@ impl Server {
         .create()
         .await?;
 
-        let hnt_tonic_server = transport::Server::builder()
-            .add_service(hnt_server)
-            .serve_with_shutdown(settings.hnt_listen_addr()?, shutdown.clone())
-            .map_err(Error::from);
-        let mobile_tonic_server = transport::Server::builder()
-            .add_service(mobile_server)
-            .serve_with_shutdown(settings.mobile_listen_addr()?, shutdown.clone())
-            .map_err(Error::from);
-        let iot_tonic_server = transport::Server::builder()
-            .add_service(iot_server)
-            .serve_with_shutdown(settings.iot_listen_addr()?, shutdown.clone())
-            .map_err(Error::from);
-        let hst_tonic_server = transport::Server::builder()
-            .add_service(hst_server)
-            .serve_with_shutdown(settings.hst_listen_addr()?, shutdown.clone())
-            .map_err(Error::from);
-
         tokio::try_join!(
-            hnt_tonic_server,
-            mobile_tonic_server,
-            iot_tonic_server,
-            hst_tonic_server,
             hnt_price_generator
                 .run(price_sink.clone(), &shutdown, BlockchainTokenTypeV1::Hnt)
                 .map_err(Error::from),
