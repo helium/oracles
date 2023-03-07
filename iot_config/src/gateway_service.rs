@@ -1,8 +1,7 @@
 use crate::{region_map::RegionMap, GrpcResult, Settings};
 use anyhow::Result;
 use file_store::traits::MsgVerify;
-use futures::future::TryFutureExt;
-use helium_crypto::{Keypair, PublicKey, Sign};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
         self, GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
@@ -44,17 +43,25 @@ impl iot_config::Gateway for GatewayService {
         // open access but discourage endpoint abuse?
         let request = request.into_inner();
 
+        let gateway_address: &PublicKeyBinary = &request.gateway.into();
+
         let location = self
             .follower_service
             .clone()
-            .resolve_gateway_info(&request.gateway.into())
-            .and_then(|info| async move {
-                info.location.ok_or(node_follower::Error::GatewayNotFound(
-                    "unasserted".to_string(),
-                ))
-            })
+            .resolve_gateway_info(gateway_address)
             .await
-            .map_err(|_| Status::internal("gateway lookup error"))?
+            .map_err(|_| Status::internal(format!("error retrieving gateway {gateway_address}")))
+            .and_then(|info| {
+                info.location
+                    .ok_or(Status::not_found(format!("{gateway_address} not asserted")))
+            })?;
+
+        let location = Cell::from_raw(location)
+            .map_err(|_| {
+                Status::internal(format!(
+                    "invalid h3 index location {location} for {gateway_address}"
+                ))
+            })?
             .to_string();
 
         Ok(Response::new(GatewayLocationResV1 { location }))
@@ -72,25 +79,45 @@ impl iot_config::Gateway for GatewayService {
             .verify(&pubkey)
             .map_err(|_| Status::permission_denied("invalid request signature"))?;
 
-        let GatewayInfo { location, gain, .. } = self
+        let pubkey: &PublicKeyBinary = &pubkey.into();
+        tracing::debug!("fetching region params for {pubkey}");
+
+        let default_region = Region::from_i32(request.region)
+            .ok_or_else(|| Status::invalid_argument("invalid default region"))?;
+
+        let (region, gain) = match self
             .follower_service
             .clone()
-            .resolve_gateway_info(&pubkey.into())
+            .resolve_gateway_info(pubkey)
             .await
-            .map_err(|_| Status::internal("gateway lookup error"))?;
-
-        let region = match location {
-            Some(location) => {
-                let h3_location = Cell::from_raw(location).map_err(|_| {
-                    Status::internal("gateway asserted location is not a valid h3 index")
-                })?;
-                self.region_map
-                    .get_region(h3_location)
-                    .await
-                    .ok_or_else(|| Status::internal("region lookup failed for assert location"))?
+        {
+            Err(_) => {
+                tracing::debug!("error retrieving gateway {pubkey} from chain; returning default {default_region}");
+                (default_region, 0)
             }
-            None => Region::from_i32(request.region)
-                .ok_or_else(|| Status::invalid_argument("invalid default region"))?,
+            Ok(GatewayInfo { location, gain, .. }) => {
+                let region = match location {
+                        None => {
+                            tracing::debug!("gateway {pubkey} has no asserted location");
+                            default_region
+                        }
+                        Some(location) => {
+                            match Cell::from_raw(location) {
+                                Ok(h3_location) => {
+                                    self.region_map.get_region(h3_location).await.unwrap_or_else(|| {
+                                        tracing::debug!("gateway {pubkey} region lookup failed for assert location {location}");
+                                        default_region
+                                    })
+                                }
+                                Err(_) => {
+                                    tracing::debug!("gateway {pubkey} asserted location {location} is invalid h3 index");
+                                    default_region
+                                }
+                            }
+                        }
+                    };
+                (region, gain)
+            }
         };
 
         let params = self.region_map.get_params(&region).await;
@@ -105,6 +132,7 @@ impl iot_config::Gateway for GatewayService {
             .signing_key
             .sign(&resp.encode_to_vec())
             .map_err(|_| Status::internal("resp signing error"))?;
+        tracing::debug!("returning region params gateway: {pubkey}, region: {region}");
         Ok(Response::new(resp))
     }
 }
