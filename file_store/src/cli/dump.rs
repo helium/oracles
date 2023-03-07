@@ -15,10 +15,10 @@ use helium_proto::{
             CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, RadioRewardShare,
             SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
         },
-        price_oracle::PriceOracleReportV1,
         router::PacketRouterPacketReportV1,
     },
-    BlockchainTokenTypeV1, BlockchainTxn, Message, RewardManifest, SubnetworkRewards,
+    BlockchainTokenTypeV1, BlockchainTxn, Message, PriceReportV1, RewardManifest,
+    SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -167,7 +167,7 @@ impl Cmd {
                         "timestamp": packet_report.gateway_timestamp_ms}))?;
                 }
                 FileType::PriceReport => {
-                    let manifest = PriceOracleReportV1::decode(msg)?;
+                    let manifest = PriceReportV1::decode(msg)?;
                     print_json(&json!({
                         "price": manifest.price,
                         "timestamp": manifest.timestamp,

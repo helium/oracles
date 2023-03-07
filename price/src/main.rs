@@ -1,4 +1,5 @@
 use anyhow::{Error, Result};
+use chrono::Duration;
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
@@ -7,6 +8,8 @@ use price::{PriceGenerator, Settings};
 use std::path;
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+const PRICE_SINK_ROLL_MINS: i64 = 3;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
@@ -85,7 +88,7 @@ impl Server {
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
         )
         .deposits(Some(file_upload_tx.clone()))
-        .roll_time(settings.sink_roll_time())
+        .roll_time(Duration::minutes(PRICE_SINK_ROLL_MINS))
         .create()
         .await?;
 

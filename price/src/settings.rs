@@ -4,11 +4,7 @@ use config::{Config, Environment, File};
 use helium_proto::BlockchainTokenTypeV1;
 use serde::Deserialize;
 use solana_program::pubkey::Pubkey as SolPubkey;
-use std::{
-    net::{AddrParseError, SocketAddr},
-    path::Path,
-    str::FromStr,
-};
+use std::{path::Path, str::FromStr};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ClusterConfig {
@@ -19,24 +15,27 @@ pub struct ClusterConfig {
     pub hst_price_key: Option<String>,
 }
 
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            name: "devnet".to_string(),
+            hnt_price_key: Some("6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6".to_string()),
+            mobile_price_key: None,
+            iot_price_key: None,
+            hst_price_key: None,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Default to
     /// "price=debug"
     #[serde(default = "default_log")]
     pub log: String,
-    /// Listen address for http requests for price. Default "0.0.0.0:8080"
-    #[serde(default = "default_hnt_listen_addr")]
-    pub hnt_listen: String,
-    #[serde(default = "default_mobile_listen_addr")]
-    pub mobile_listen: String,
-    #[serde(default = "default_iot_listen_addr")]
-    pub iot_listen: String,
-    #[serde(default = "default_hst_listen_addr")]
-    pub hst_listen: String,
     /// Source URL for price data. Required
-    #[serde(default = "default_rpc_endpoint")]
-    pub rpc_endpoint: String,
+    #[serde(default = "default_source")]
+    pub source: String,
     /// Target output bucket details
     pub output: file_store::Settings,
     /// Folder for local cache of ingest data
@@ -44,21 +43,19 @@ pub struct Settings {
     pub cache: String,
     /// Metrics settings
     pub metrics: poc_metrics::Settings,
-    /// Sink roll time (mins). Default = 3 mins.
-    #[serde(default = "default_sink_roll_mins")]
-    pub sink_roll_mins: i64,
     /// Tick interval (secs). Default = 60s.
-    #[serde(default = "default_tick_interval")]
-    pub tick_interval: i64,
+    #[serde(default = "default_interval")]
+    pub interval: i64,
     /// Price age (get price as long as it was updated within `age` seconds of current time) (in secs).
     /// Default = 60s.
     #[serde(default = "default_age")]
     pub age: u64,
     /// Cluster Configuration
+    #[serde(default = "default_cluster")]
     pub cluster: ClusterConfig,
 }
 
-pub fn default_rpc_endpoint() -> String {
+pub fn default_source() -> String {
     "https://api.devnet.solana.com".to_string()
 }
 
@@ -66,11 +63,7 @@ pub fn default_log() -> String {
     "price=debug".to_string()
 }
 
-pub fn default_sink_roll_mins() -> i64 {
-    3
-}
-
-pub fn default_tick_interval() -> i64 {
+pub fn default_interval() -> i64 {
     60
 }
 
@@ -78,24 +71,12 @@ pub fn default_age() -> u64 {
     60
 }
 
+pub fn default_cluster() -> ClusterConfig {
+    ClusterConfig::default()
+}
+
 pub fn default_cache() -> String {
     "/var/data/price".to_string()
-}
-
-pub fn default_hnt_listen_addr() -> String {
-    "0.0.0.0:8080".to_string()
-}
-
-pub fn default_mobile_listen_addr() -> String {
-    "0.0.0.0:8081".to_string()
-}
-
-pub fn default_iot_listen_addr() -> String {
-    "0.0.0.0:8082".to_string()
-}
-
-pub fn default_hst_listen_addr() -> String {
-    "0.0.0.0:8083".to_string()
 }
 
 impl Settings {
@@ -121,28 +102,8 @@ impl Settings {
             .and_then(|config| config.try_deserialize())
     }
 
-    pub fn hnt_listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
-        SocketAddr::from_str(&self.hnt_listen)
-    }
-
-    pub fn mobile_listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
-        SocketAddr::from_str(&self.mobile_listen)
-    }
-
-    pub fn iot_listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
-        SocketAddr::from_str(&self.iot_listen)
-    }
-
-    pub fn hst_listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
-        SocketAddr::from_str(&self.hst_listen)
-    }
-
-    pub fn sink_roll_time(&self) -> Duration {
-        Duration::minutes(self.sink_roll_mins)
-    }
-
-    pub fn tick_interval(&self) -> Duration {
-        Duration::seconds(self.tick_interval)
+    pub fn interval(&self) -> Duration {
+        Duration::seconds(self.interval)
     }
 
     pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Option<SolPubkey> {

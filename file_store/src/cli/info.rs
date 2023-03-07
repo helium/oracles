@@ -7,15 +7,14 @@ use crate::{
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use helium_proto::services::{
-    poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
-    price_oracle::PriceOracleReportV1,
+use helium_proto::services::poc_lora::{
+    LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1,
 };
 use helium_proto::{
     services::poc_mobile::{
         CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1, SpeedtestReqV1,
     },
-    EntropyReportV1, Message,
+    EntropyReportV1, Message, PriceReportV1,
 };
 use serde_json::json;
 use std::path::PathBuf;
@@ -73,7 +72,7 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for EntropyReportV1 {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for PriceOracleReportV1 {
+impl MsgTimestamp<Result<DateTime<Utc>>> for PriceReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp()
     }
@@ -122,7 +121,7 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
                 })
             })
             .and_then(|beacon_report| beacon_report.timestamp())?,
-        FileType::PriceReport => PriceOracleReportV1::decode(buf)
+        FileType::PriceReport => PriceReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
 

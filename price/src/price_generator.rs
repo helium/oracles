@@ -2,7 +2,7 @@ use crate::{PriceError, Settings};
 use anyhow::Result;
 use chrono::Utc;
 use file_store::file_sink;
-use helium_proto::{services::price_oracle::PriceOracleReportV1, BlockchainTokenTypeV1};
+use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use pyth_sdk_solana::load_price_feed_from_account;
 use serde::Serialize;
 use solana_client::rpc_client::RpcClient;
@@ -32,7 +32,7 @@ pub struct PriceGenerator {
     price: Price,
 }
 
-impl From<Price> for PriceOracleReportV1 {
+impl From<Price> for PriceReportV1 {
     fn from(value: Price) -> Self {
         Self {
             timestamp: value.timestamp as u64,
@@ -42,10 +42,10 @@ impl From<Price> for PriceOracleReportV1 {
     }
 }
 
-impl TryFrom<PriceOracleReportV1> for Price {
+impl TryFrom<PriceReportV1> for Price {
     type Error = PriceError;
 
-    fn try_from(value: PriceOracleReportV1) -> Result<Self, Self::Error> {
+    fn try_from(value: PriceReportV1) -> Result<Self, Self::Error> {
         let tt: BlockchainTokenTypeV1 = BlockchainTokenTypeV1::from_i32(value.token_type)
             .ok_or(PriceError::UnsupportedTokenType(value.token_type))?;
         Ok(Self {
@@ -58,7 +58,7 @@ impl TryFrom<PriceOracleReportV1> for Price {
 
 impl PriceGenerator {
     pub async fn new(settings: &Settings, token_type: BlockchainTokenTypeV1) -> Result<Self> {
-        let client = RpcClient::new(&settings.rpc_endpoint);
+        let client = RpcClient::new(&settings.source);
         let price = match settings.price_key(token_type) {
             None => Price::new(0, 0, token_type),
             Some(price_key) => get_price(&client, &price_key, settings.age, token_type).await?,
@@ -77,7 +77,7 @@ impl PriceGenerator {
         token_type: BlockchainTokenTypeV1,
     ) -> anyhow::Result<()> {
         tracing::info!("started price generator for: {:?}", token_type);
-        let mut price_timer = time::interval(self.settings.tick_interval().to_std()?);
+        let mut price_timer = time::interval(self.settings.interval().to_std()?);
         price_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
@@ -127,7 +127,7 @@ impl PriceGenerator {
                 timestamp
             );
 
-            let price_report = PriceOracleReportV1::from(new_price.clone());
+            let price_report = PriceReportV1::from(new_price.clone());
             tracing::debug!("price_report: {:?}", price_report);
 
             file_sink.write(price_report, []).await?;
