@@ -166,11 +166,7 @@ pub async fn get_price(
                 token_type,
                 current_time
             );
-            Ok(Price {
-                price: value as u64,
-                timestamp: current_time,
-                token_type,
-            })
+            Ok(Price::new(current_time, value as u64, token_type))
         }
     }
 }

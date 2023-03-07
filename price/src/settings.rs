@@ -108,26 +108,18 @@ impl Settings {
 
     pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Option<SolPubkey> {
         match token_type {
-            BlockchainTokenTypeV1::Hnt => self
-                .cluster
-                .hnt_price_key
-                .as_ref()
-                .map(|key| SolPubkey::from_str(key).expect("unable to parse")),
-            BlockchainTokenTypeV1::Hst => self
-                .cluster
-                .hst_price_key
-                .as_ref()
-                .map(|key| SolPubkey::from_str(key).expect("unable to parse")),
-            BlockchainTokenTypeV1::Mobile => self
-                .cluster
-                .mobile_price_key
-                .as_ref()
-                .map(|key| SolPubkey::from_str(key).expect("unable to parse")),
-            BlockchainTokenTypeV1::Iot => self
-                .cluster
-                .iot_price_key
-                .as_ref()
-                .map(|key| SolPubkey::from_str(key).expect("unable to parse")),
+            BlockchainTokenTypeV1::Hnt => self.cluster.hnt_price_key.as_ref().map(|key| {
+                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
+            }),
+            BlockchainTokenTypeV1::Hst => self.cluster.hst_price_key.as_ref().map(|key| {
+                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
+            }),
+            BlockchainTokenTypeV1::Mobile => self.cluster.mobile_price_key.as_ref().map(|key| {
+                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
+            }),
+            BlockchainTokenTypeV1::Iot => self.cluster.iot_price_key.as_ref().map(|key| {
+                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
+            }),
         }
     }
 }

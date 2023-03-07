@@ -16,4 +16,4 @@ The price oracle server:
 - Requests price for HNT token at a regular interval (60s) from pyth via solana
   RpcClient. In case of failure it uses the previously fetched price and stores
   the same with an updated timestamp.
-- Stores and uploads [price_report](TODO) to an S3 bucket.
+- Stores and uploads [price_report](https://github.com/helium/proto/blob/master/src/price_report.proto) to an S3 bucket.

@@ -17,8 +17,7 @@ use helium_proto::{
         },
         router::PacketRouterPacketReportV1,
     },
-    BlockchainTokenTypeV1, BlockchainTxn, Message, PriceReportV1, RewardManifest,
-    SubnetworkRewards,
+    BlockchainTxn, Message, PriceReportV1, RewardManifest, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -171,7 +170,7 @@ impl Cmd {
                     print_json(&json!({
                         "price": manifest.price,
                         "timestamp": manifest.timestamp,
-                        "token_type": BlockchainTokenTypeV1::from_i32(manifest.token_type),
+                        "token_type": manifest.token_type(),
                     }))?;
                 }
                 _ => (),
