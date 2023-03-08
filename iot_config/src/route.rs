@@ -515,16 +515,14 @@ pub async fn get_route(
     .fetch_one(db)
     .await;
 
-    tracing::info!("Result Route Row: {route_row:?}");
+    tracing::debug!("Result Route Row: {route_row:?}");
     let route = route_row?;
-    tracing::info!("The Server Protocol Json: {:?}", route.server_protocol_opts);
 
     let server = RouteServer::new(
         route.server_host,
         route.server_port as u32,
         serde_json::from_value(route.server_protocol_opts)?,
     );
-    tracing::info!("Successfully created new RouteServer");
 
     Ok(Route {
         id: route.id.to_string(),

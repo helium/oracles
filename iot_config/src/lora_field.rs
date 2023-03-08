@@ -207,13 +207,13 @@ impl From<u32> for LoraField<8> {
 
 impl From<i32> for LoraField<6> {
     fn from(val: i32) -> Self {
-        LoraField::<6>(val as u64)
+        LoraField::<6>((val as u32) as u64)
     }
 }
 
 impl From<i32> for LoraField<8> {
     fn from(val: i32) -> Self {
-        LoraField::<8>(val as u64)
+        LoraField::<8>((val as u32) as u64)
     }
 }
 

@@ -139,7 +139,10 @@ impl iot_config::Route for RouteService {
 
         let route = route::get_route(&request.id, &self.pool)
             .await
-            .map_err(|_| Status::internal("fetch route failed"))?;
+            .map_err(|err| {
+                tracing::warn!("fetch route failed: {err:?}");
+                Status::internal("fetch route failed")
+            })?;
 
         Ok(Response::new(route.into()))
     }
@@ -155,8 +158,14 @@ impl iot_config::Route for RouteService {
             .ok_or("missing route")
             .map_err(Status::invalid_argument)?
             .into();
+        tracing::debug!("route creation requested: {route:?}");
 
         if route.oui != request.oui {
+            tracing::info!(
+                "route oui {} does not match requestor oui {}",
+                route.oui,
+                request.oui
+            );
             return Err(Status::invalid_argument(
                 "request oui does not match route oui",
             ));
@@ -181,13 +190,17 @@ impl iot_config::Route for RouteService {
             .ok_or("missing route")
             .map_err(Status::invalid_argument)?
             .into();
+        tracing::debug!("route update requested: {route:?}");
 
         self.verify_request_signature(&request, OrgId::Oui(route.oui))
             .await?;
 
         let updated_route = route::update_route(route, &self.pool, self.clone_update_channel())
             .await
-            .map_err(|_| Status::internal("update route failed"))?;
+            .map_err(|err| {
+                tracing::error!("route update failed {err:?}");
+                Status::internal("update route failed")
+            })?;
 
         Ok(Response::new(updated_route.into()))
     }
@@ -204,7 +217,10 @@ impl iot_config::Route for RouteService {
 
         route::delete_route(&request.id, &self.pool, self.clone_update_channel())
             .await
-            .map_err(|_| Status::internal("delete route failed"))?;
+            .map_err(|err| {
+                tracing::error!("route delete failed {err:?}");
+                Status::internal("delete route failed")
+            })?;
 
         Ok(Response::new(route.into()))
     }
@@ -267,6 +283,7 @@ impl iot_config::Route for RouteService {
                 }
             }
 
+            tracing::info!("completed streaming existing routes; streaming updates as available");
             while let Ok(update) = route_updates.recv().await {
                 if shutdown_listener.is_triggered() || (tx.send(Ok(update)).await).is_err() {
                     break;

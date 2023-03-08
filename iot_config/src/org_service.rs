@@ -84,7 +84,10 @@ impl iot_config::Org for OrgService {
 
         let org = org::get_with_constraints(request.oui, &self.pool)
             .await
-            .map_err(|_| Status::internal("org get failed"))?;
+            .map_err(|err| {
+                tracing::error!("get org failed {err:?}");
+                Status::internal("org get failed")
+            })?;
         let net_id = org
             .constraints
             .first()
@@ -134,7 +137,10 @@ impl iot_config::Org for OrgService {
         let requested_addrs = request.devaddrs;
         let devaddr_constraint = org::next_helium_devaddr(&self.pool)
             .await
-            .map_err(|_| Status::failed_precondition("helium address unavailable"))?
+            .map_err(|err| {
+                tracing::error!("failed to check next available helium network devaddr {err:?}");
+                Status::failed_precondition("helium address unavailable")
+            })?
             .to_range(requested_addrs);
 
         let org = org::create_org(
@@ -206,11 +212,17 @@ impl iot_config::Org for OrgService {
             &self.pool,
         )
         .await
-        .map_err(|_| Status::internal("org save failed"))?;
+        .map_err(|err| {
+            tracing::error!("failed to create org {err:?}");
+            Status::internal("org save failed")
+        })?;
 
         org::insert_constraints(org.oui, net_id, &devaddr_range, &self.pool)
             .await
-            .map_err(|_| Status::internal("org constraints save failed"))?;
+            .map_err(|err| {
+                tracing::error!("failed to save org constraints {err:?}");
+                Status::internal("org constraints save failed")
+            })?;
 
         Ok(Response::new(OrgResV1 {
             org: Some(org.into()),
@@ -230,11 +242,16 @@ impl iot_config::Org for OrgService {
         {
             org::toggle_locked(request.oui, &self.pool)
                 .await
-                .map_err(|_| {
+                .map_err(|err| {
+                    tracing::error!("failed to disable org {} with reason {err:?}", request.oui);
                     Status::internal(format!("org disable failed for: {}", request.oui))
                 })?;
 
-            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|_| {
+            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|err| {
+                tracing::error!(
+                    "failed to list org {} routes for streaming disable update {err:?}",
+                    request.oui
+                );
                 Status::internal(format!(
                     "error retrieving routes for disabled org: {}",
                     request.oui
@@ -274,9 +291,16 @@ impl iot_config::Org for OrgService {
         {
             org::toggle_locked(request.oui, &self.pool)
                 .await
-                .map_err(|_| Status::internal(format!("org enable failed for: {}", request.oui)))?;
+                .map_err(|err| {
+                    tracing::error!("failed to enable org {} with reason {err:?}", request.oui);
+                    Status::internal(format!("org enable failed for: {}", request.oui))
+                })?;
 
-            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|_| {
+            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|err| {
+                tracing::error!(
+                    "failed to list org {} routes for streaming enable update {err:?}",
+                    request.oui
+                );
                 Status::internal(format!(
                     "error retrieving routes for enabled org: {}",
                     request.oui
