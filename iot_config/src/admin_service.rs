@@ -6,13 +6,10 @@ use crate::{
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use futures::future::TryFutureExt;
-use helium_crypto::{Network, PublicKey};
-use helium_proto::{
-    services::iot_config::{
-        self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
-        AdminRemoveKeyReqV1,
-    },
-    Region,
+use helium_crypto::{Network, PublicKey, PublicKeyBinary};
+use helium_proto::services::iot_config::{
+    self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
+    AdminRemoveKeyReqV1,
 };
 use sqlx::{Pool, Postgres};
 use tonic::{Request, Response, Status};
@@ -74,8 +71,7 @@ impl iot_config::Admin for AdminService {
 
         self.verify_request_signature(&request).await?;
 
-        let key_type = KeyType::from_i32(request.key_type)
-            .map_err(|_| Status::invalid_argument("invalid key type supplied"))?;
+        let key_type = request.key_type().into();
         let pubkey = self
             .verify_public_key(request.pubkey.as_ref())
             .and_then(|pubkey| self.verify_network(pubkey))
@@ -87,7 +83,9 @@ impl iot_config::Admin for AdminService {
                 Ok(())
             })
             .map_err(|_| {
-                Status::internal(format!("error saving requested key: {:?}", request.pubkey))
+                let pubkey: PublicKeyBinary = request.pubkey.into();
+                tracing::error!(pubkey = pubkey.to_string(), "pubkey add failed");
+                Status::internal(format!("error saving requested key: {pubkey}"))
             })
             .await?;
 
@@ -110,7 +108,9 @@ impl iot_config::Admin for AdminService {
                 }
             })
             .map_err(|_| {
-                Status::internal(format!("error removing request key: {:?}", request.pubkey))
+                let pubkey: PublicKeyBinary = request.pubkey.into();
+                tracing::error!(pubkey = pubkey.to_string(), "pubkey remove failed");
+                Status::internal(format!("error removing request key: {pubkey}"))
             })
             .await?;
 
@@ -124,8 +124,7 @@ impl iot_config::Admin for AdminService {
         let request = request.into_inner();
         self.verify_request_signature(&request).await?;
 
-        let region = Region::from_i32(request.region)
-            .ok_or_else(|| Status::invalid_argument("invalid region"))?;
+        let region = request.region();
 
         let params = match request.params {
             Some(params) => params,
@@ -140,11 +139,17 @@ impl iot_config::Admin for AdminService {
 
         let updated_region = region_map::update_region(region, &params, idz, &self.pool)
             .await
-            .map_err(|_| Status::internal("region update failed"))?;
+            .map_err(|err| {
+                tracing::error!(
+                    region = region.to_string(),
+                    "failed to update region: {err:?}"
+                );
+                Status::internal("region update failed")
+            })?;
 
         self.region_map.insert_params(region, params).await;
         if let Some(region_tree) = updated_region {
-            tracing::debug!("New compacted region map with {} cells", region_tree.len());
+            tracing::debug!(region_cells = region_tree.len(), "new compacted region map");
             self.region_map.replace_tree(region_tree).await;
         }
 

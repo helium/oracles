@@ -7,7 +7,7 @@ use helium_proto::{
         self, GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
         GatewayRegionParamsResV1,
     },
-    Message, Region,
+    Message,
 };
 use hextree::Cell;
 use node_follower::{
@@ -80,10 +80,9 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::permission_denied("invalid request signature"))?;
 
         let pubkey: &PublicKeyBinary = &pubkey.into();
-        tracing::debug!("fetching region params for {pubkey}");
+        tracing::debug!(pubkey = pubkey.to_string(), "fetching region params");
 
-        let default_region = Region::from_i32(request.region)
-            .ok_or_else(|| Status::invalid_argument("invalid default region"))?;
+        let default_region = request.region();
 
         let (region, gain) = match self
             .follower_service
@@ -92,30 +91,46 @@ impl iot_config::Gateway for GatewayService {
             .await
         {
             Err(_) => {
-                tracing::debug!("error retrieving gateway {pubkey} from chain; returning default {default_region}");
+                tracing::debug!(
+                    pubkey = pubkey.to_string(),
+                    default_region = default_region.to_string(),
+                    "error retrieving gateway from chain"
+                );
                 (default_region, 0)
             }
             Ok(GatewayInfo { location, gain, .. }) => {
                 let region = match location {
-                        None => {
-                            tracing::debug!("gateway {pubkey} has no asserted location");
+                    None => {
+                        tracing::debug!(
+                            pubkey = pubkey.to_string(),
+                            default_region = default_region.to_string(),
+                            "no asserted location"
+                        );
+                        default_region
+                    }
+                    Some(location) => match Cell::from_raw(location) {
+                        Ok(h3_location) => self
+                            .region_map
+                            .get_region(h3_location)
+                            .await
+                            .unwrap_or_else(|| {
+                                tracing::debug!(
+                                    pubkey = pubkey.to_string(),
+                                    location = location,
+                                    "gateway region lookup failed for assert location"
+                                );
+                                default_region
+                            }),
+                        Err(_) => {
+                            tracing::debug!(
+                                pubkey = pubkey.to_string(),
+                                location = location,
+                                "gateway asserted location is invalid h3 index"
+                            );
                             default_region
                         }
-                        Some(location) => {
-                            match Cell::from_raw(location) {
-                                Ok(h3_location) => {
-                                    self.region_map.get_region(h3_location).await.unwrap_or_else(|| {
-                                        tracing::debug!("gateway {pubkey} region lookup failed for assert location {location}");
-                                        default_region
-                                    })
-                                }
-                                Err(_) => {
-                                    tracing::debug!("gateway {pubkey} asserted location {location} is invalid h3 index");
-                                    default_region
-                                }
-                            }
-                        }
-                    };
+                    },
+                };
                 (region, gain)
             }
         };
@@ -132,7 +147,11 @@ impl iot_config::Gateway for GatewayService {
             .signing_key
             .sign(&resp.encode_to_vec())
             .map_err(|_| Status::internal("resp signing error"))?;
-        tracing::debug!("returning region params gateway: {pubkey}, region: {region}");
+        tracing::debug!(
+            pubkey = pubkey.to_string(),
+            region = region.to_string(),
+            "returning region params"
+        );
         Ok(Response::new(resp))
     }
 }

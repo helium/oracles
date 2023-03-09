@@ -238,9 +238,17 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                     break;
                 }
             }
-            while let Ok(update) = session_key_updates.recv().await {
-                if shutdown_listener.is_triggered() || tx.send(Ok(update)).await.is_err() {
-                    break;
+
+            loop {
+                let shutdown = shutdown_listener.clone();
+
+                tokio::select! {
+                    _ = shutdown => break,
+                    msg = session_key_updates.recv() => if let Ok(update) = msg {
+                        if tx.send(Ok(update)).await.is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         });

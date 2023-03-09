@@ -85,7 +85,7 @@ impl iot_config::Org for OrgService {
         let org = org::get_with_constraints(request.oui, &self.pool)
             .await
             .map_err(|err| {
-                tracing::error!("get org failed {err:?}");
+                tracing::error!("get org {} request failed {err:?}", request.oui);
                 Status::internal("org get failed")
             })?;
         let net_id = org
@@ -129,16 +129,19 @@ impl iot_config::Org for OrgService {
                 self.verify_public_key(key)
                     .and_then(|pub_key| self.verify_network(pub_key))
                     .map_err(|err| {
+                        tracing::error!("failed pubkey validation: {err}");
                         Status::invalid_argument(format!("failed pubkey validation: {err}"))
                     })
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
+        tracing::debug!("create helium org request: {request:?}");
+
         let requested_addrs = request.devaddrs;
         let devaddr_constraint = org::next_helium_devaddr(&self.pool)
             .await
             .map_err(|err| {
-                tracing::error!("failed to check next available helium network devaddr {err:?}");
+                tracing::error!("failed to retrieve next helium network devaddr {err:?}");
                 Status::failed_precondition("helium address unavailable")
             })?
             .to_range(requested_addrs);
@@ -196,6 +199,8 @@ impl iot_config::Org for OrgService {
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
+        tracing::debug!("create roamer org request: {request:?}");
+
         let net_id = lora_field::net_id(request.net_id);
         let devaddr_range = net_id
             .full_range()
@@ -243,14 +248,17 @@ impl iot_config::Org for OrgService {
             org::toggle_locked(request.oui, &self.pool)
                 .await
                 .map_err(|err| {
-                    tracing::error!("failed to disable org {} with reason {err:?}", request.oui);
+                    tracing::error!(
+                        org = request.oui,
+                        "failed to disable org with reason {err:?}"
+                    );
                     Status::internal(format!("org disable failed for: {}", request.oui))
                 })?;
 
             let org_routes = list_routes(request.oui, &self.pool).await.map_err(|err| {
                 tracing::error!(
-                    "failed to list org {} routes for streaming disable update {err:?}",
-                    request.oui
+                    org = request.oui,
+                    "failed to list org routes for streaming disable update {err:?}"
                 );
                 Status::internal(format!(
                     "error retrieving routes for disabled org: {}",
@@ -269,11 +277,12 @@ impl iot_config::Org for OrgService {
                     .is_err()
                 {
                     tracing::info!(
-                        "all subscribers disconnected; route disable failed at route {route_id}"
+                        route_id = route_id,
+                        "all subscribers disconnected; route disable incomplete"
                     );
                     break;
                 };
-                tracing::debug!("updated packet routers with removed route: {route_id}");
+                tracing::debug!(route_id = route_id, "route disabled");
             }
         }
 
@@ -292,14 +301,17 @@ impl iot_config::Org for OrgService {
             org::toggle_locked(request.oui, &self.pool)
                 .await
                 .map_err(|err| {
-                    tracing::error!("failed to enable org {} with reason {err:?}", request.oui);
+                    tracing::error!(
+                        org = request.oui,
+                        "failed to enable org with reason {err:?}"
+                    );
                     Status::internal(format!("org enable failed for: {}", request.oui))
                 })?;
 
             let org_routes = list_routes(request.oui, &self.pool).await.map_err(|err| {
                 tracing::error!(
-                    "failed to list org {} routes for streaming enable update {err:?}",
-                    request.oui
+                    org = request.oui,
+                    "failed to list routes for streaming enable update {err:?}"
                 );
                 Status::internal(format!(
                     "error retrieving routes for enabled org: {}",
@@ -318,11 +330,12 @@ impl iot_config::Org for OrgService {
                     .is_err()
                 {
                     tracing::info!(
-                        "all subscribers disconnected; route enable failed at route {route_id}"
+                        route_id = route_id,
+                        "all subscribers disconnected; route enable incomplete"
                     );
                     break;
                 };
-                tracing::debug!("updated packet routers with recreated route: {route_id}");
+                tracing::debug!(route_id = route_id, "route enabled");
             }
         }
 

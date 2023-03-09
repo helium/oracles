@@ -119,6 +119,8 @@ impl iot_config::Route for RouteService {
         self.verify_request_signature(&request, OrgId::Oui(request.oui))
             .await?;
 
+        tracing::debug!(org = request.oui, "list routes");
+
         let proto_routes: Vec<RouteV1> = route::list_routes(request.oui, &self.pool)
             .await
             .map_err(|_| Status::internal("route list failed"))?
@@ -136,6 +138,8 @@ impl iot_config::Route for RouteService {
 
         self.verify_request_signature(&request, OrgId::RouteId(&request.id))
             .await?;
+
+        tracing::debug!(route_id = request.id, "get route");
 
         let route = route::get_route(&request.id, &self.pool)
             .await
@@ -158,13 +162,13 @@ impl iot_config::Route for RouteService {
             .ok_or("missing route")
             .map_err(Status::invalid_argument)?
             .into();
-        tracing::debug!("route creation requested: {route:?}");
+        tracing::debug!(org = request.oui, "route create {route:?}");
 
         if route.oui != request.oui {
-            tracing::info!(
-                "route oui {} does not match requestor oui {}",
-                route.oui,
-                request.oui
+            tracing::warn!(
+                route_org = route.oui,
+                requestor_org = request.oui,
+                "route org does not match requestor",
             );
             return Err(Status::invalid_argument(
                 "request oui does not match route oui",
@@ -190,7 +194,11 @@ impl iot_config::Route for RouteService {
             .ok_or("missing route")
             .map_err(Status::invalid_argument)?
             .into();
-        tracing::debug!("route update requested: {route:?}");
+        tracing::debug!(
+            org = route.oui,
+            route_id = route.id,
+            "route update {route:?}"
+        );
 
         self.verify_request_signature(&request, OrgId::Oui(route.oui))
             .await?;
@@ -210,6 +218,8 @@ impl iot_config::Route for RouteService {
 
         self.verify_request_signature(&request, OrgId::RouteId(&request.id))
             .await?;
+
+        tracing::debug!(route_id = request.id, "route delete");
 
         let route = route::get_route(&request.id, &self.pool)
             .await
@@ -283,10 +293,17 @@ impl iot_config::Route for RouteService {
                 }
             }
 
-            tracing::info!("completed streaming existing routes; streaming updates as available");
-            while let Ok(update) = route_updates.recv().await {
-                if shutdown_listener.is_triggered() || (tx.send(Ok(update)).await).is_err() {
-                    break;
+            tracing::info!("existing routes sent; streaming updates as available");
+            loop {
+                let shutdown = shutdown_listener.clone();
+
+                tokio::select! {
+                    _ = shutdown => break,
+                    msg = route_updates.recv() => if let Ok(update) = msg {
+                        if tx.send(Ok(update)).await.is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         });
@@ -306,6 +323,8 @@ impl iot_config::Route for RouteService {
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+
+        tracing::debug!(route_id = request.route_id, "listing eui pairs");
 
         tokio::spawn(async move {
             let mut eui_stream = match route::list_euis_for_route(&request.route_id, &pool) {
@@ -398,6 +417,8 @@ impl iot_config::Route for RouteService {
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
         let pool = self.pool.clone();
+
+        tracing::debug!(route_id = request.route_id, "listing devaddr ranges");
 
         tokio::spawn(async move {
             let mut devaddrs = match route::list_devaddr_ranges_for_route(&request.route_id, &pool)
@@ -501,6 +522,7 @@ fn verify_range_in_bounds(
             return Ok(());
         }
     }
+    tracing::error!("range {range:?} does not fall within constraints {constraints:?}");
     Err(Status::invalid_argument(
         "devaddr range outside of org constraints",
     ))

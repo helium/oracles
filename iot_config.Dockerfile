@@ -1,5 +1,6 @@
-FROM rust:1.65 AS builder
+FROM rust:1.67 AS builder
 
+RUN apt-get update && apt-get install -y protobuf-compiler
 RUN rustup toolchain install nightly
 
 # Copy cargo file and workspace dependency crates to cache build
@@ -14,9 +15,9 @@ RUN mkdir ./iot_config/src \
  # Create a dummy project file to build deps around
  && echo "fn main() {}" > ./iot_config/src/main.rs \
  # Remove unused members of the workspace to avoid compile error on missing members
- && sed -i -e '/ingest/d'    -e '/mobile_rewards/d' -e '/mobile_verifier/d' \
-           -e '/poc_entropy/d'   -e '/iot_verifier/d'   -e '/poc_iot_injector/d' \
-           -e '/reward_index/d'   -e '/denylist/d' \
+ && sed -i -e '/ingest/d'       -e '/mobile_rewards/d' -e '/mobile_verifier/d' \
+           -e '/poc_entropy/d'  -e '/iot_verifier/d'   -e '/poc_iot_injector/d' \
+           -e '/reward_index/d' -e '/denylist/d'       -e '/iot_packet_verifier/d' \
            Cargo.toml \
  # Build on nightly cargo to use sparse-registry to avoid crates indexing infinite loop
  && cargo +nightly build --package iot-config --release -Z sparse-registry
