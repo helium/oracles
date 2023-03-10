@@ -1,4 +1,4 @@
-use crate::{PriceError, Settings};
+use crate::{metrics::Metrics, PriceError, Settings};
 use anyhow::Result;
 use chrono::Utc;
 use file_store::file_sink;
@@ -108,9 +108,21 @@ impl PriceGenerator {
             // Try to get a new price if we can, otherwise reuse the old price we already have.
             let mut new_price =
                 match get_price(&self.client, price_key, self.settings.age, token_type).await {
-                    Ok(price) => price,
+                    Ok(price) => {
+                        Metrics::update(
+                            "price_update_counter".to_string(),
+                            token_type,
+                            price.price as f64,
+                        );
+                        price
+                    }
                     Err(err) => {
                         let old_price = self.price.clone();
+                        Metrics::update(
+                            "price_stale_counter".to_string(),
+                            token_type,
+                            old_price.price as f64,
+                        );
                         tracing::warn!("rpc failure: {err:?}, reusing old price {:?}", old_price);
                         old_price
                     }
