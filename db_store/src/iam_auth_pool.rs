@@ -5,9 +5,7 @@ use sqlx::{
 };
 
 use aws_credential_types::Credentials;
-use aws_sig_auth::signer::{
-    self, HttpSignatureType, OperationSigningConfig, RequestConfig,
-};
+use aws_sig_auth::signer::{self, HttpSignatureType, OperationSigningConfig, RequestConfig};
 use aws_smithy_http::body::SdkBody;
 use aws_types::region::{Region, SigningRegion};
 use aws_types::SigningService;
@@ -185,5 +183,5 @@ fn generate_rds_iam_token(
         Err(Error::InvalidAuthToken())
     } else {
         Ok(uri.split_off("http://".len()))
-    } 
+    }
 }
