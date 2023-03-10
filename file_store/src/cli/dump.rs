@@ -17,7 +17,7 @@ use helium_proto::{
         },
         router::PacketRouterPacketReportV1,
     },
-    BlockchainTxn, Message, RewardManifest, SubnetworkRewards,
+    BlockchainTxn, Message, PriceReportV1, RewardManifest, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -163,8 +163,14 @@ impl Cmd {
                     let packet_report = PacketRouterPacketReportV1::decode(msg)?;
                     print_json(&json!({
                         "oui": packet_report.oui,
-                        "timestamp": packet_report.gateway_timestamp_ms,
-
+                        "timestamp": packet_report.gateway_timestamp_ms}))?;
+                }
+                FileType::PriceReport => {
+                    let manifest = PriceReportV1::decode(msg)?;
+                    print_json(&json!({
+                        "price": manifest.price,
+                        "timestamp": manifest.timestamp,
+                        "token_type": manifest.token_type(),
                     }))?;
                 }
                 _ => (),

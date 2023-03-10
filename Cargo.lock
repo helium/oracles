@@ -997,7 +997,7 @@ checksum = "b645a089122eccb6111b4f81cbc1a49f5900ac4666bb93ac027feaecf15607bf"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#a8987fe422af9416b7419fb68151f79c087c5dac"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#4e838655c7087a10cb4725f002bb5c572542a247"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -2816,7 +2816,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#743a110960c04c9acee212eca3ebb779a82db1c6"
+source = "git+https://github.com/helium/proto?branch=master#ef1c152fe33993c6da598af9c1a6100d952f4f03"
 dependencies = [
  "bytes",
  "prost",
@@ -4373,7 +4373,7 @@ dependencies = [
  "axum 0.6.3",
  "base64 0.21.0",
  "blake3",
- "bs58 0.3.1",
+ "bs58 0.4.0",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -4482,6 +4482,34 @@ checksum = "c142c0e46b57171fe0c528bee8c5b7569e80f0c17e377cd0e30ea57dbc11bb51"
 dependencies = [
  "proc-macro2 1.0.47",
  "syn 1.0.104",
+]
+
+[[package]]
+name = "price"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap 3.2.23",
+ "config",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-proto",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "poc-metrics",
+ "prost",
+ "pyth-sdk-solana",
+ "serde",
+ "serde_json",
+ "solana-client",
+ "solana-program",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
 ]
 
 [[package]]
@@ -4648,9 +4676,9 @@ dependencies = [
 
 [[package]]
 name = "pyth-sdk-solana"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c637b4d8e9558e596a13cd5a11e406431c80eed4fbed01e4b1ff474257b04db9"
+checksum = "4bc0e0ab39d0543220dcba7c248161aab70e25916b2c1585057abc0856ff4e0c"
 dependencies = [
  "borsh",
  "borsh-derive",

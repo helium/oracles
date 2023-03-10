@@ -111,6 +111,7 @@ pub const VALID_PACKET: &str = "valid_packet";
 pub const INVALID_PACKET: &str = "invalid_packet";
 pub const GATEWAY_REWARD_SHARE: &str = "gateway_reward_share";
 pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
+pub const PRICE_REPORT: &str = "price_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -137,6 +138,7 @@ pub enum FileType {
     InvalidPacket,
     GatewayRewardShare,
     DataTransferSessionIngestReport,
+    PriceReport,
 }
 
 impl fmt::Display for FileType {
@@ -164,6 +166,7 @@ impl fmt::Display for FileType {
             Self::InvalidPacket => INVALID_PACKET,
             Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
+            Self::PriceReport => PRICE_REPORT,
         };
         f.write_str(s)
     }
@@ -194,6 +197,7 @@ impl FileType {
             Self::InvalidPacket => INVALID_PACKET,
             Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
+            Self::PriceReport => PRICE_REPORT,
         }
     }
 }
@@ -224,6 +228,7 @@ impl FromStr for FileType {
             INVALID_PACKET => Self::InvalidPacket,
             GATEWAY_REWARD_SHARE => Self::GatewayRewardShare,
             DATA_TRANSFER_SESSION_INGEST_REPORT => Self::DataTransferSessionIngestReport,
+            PRICE_REPORT => Self::PriceReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

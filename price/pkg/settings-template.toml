@@ -1,0 +1,46 @@
+# log settings for the application (RUST_LOG format). Default below
+# 
+# log = "price=debug"
+
+# RPC Endpoint for price oracles. Required.
+source = "https://api.devnet.solana.com"
+
+# Price tick interval (secs). Default = 60s. Optional.
+interval = 60
+
+# Price age (get price as long as it was updated within `age` seconds of current time) (in secs). Optional.
+age = 60
+
+[cluster]
+name = "devnet"
+hnt_price_key = "6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6"
+# mobile_price_key =
+# hst_price_key =
+# iot_price_key =
+
+# Cache folder to use. Default blow
+#
+# cache = "/var/data/price"
+
+[output]
+# Output bucket for price
+
+# Name of bucket to write details to. Required
+#
+bucket = "price"
+
+# Region for bucket. Defaults to below
+#
+# region = "us-west-2"
+
+# Optional URL for AWS api endpoint. Inferred from aws config settings or aws
+# IAM context by default
+#
+# endpoint = "https://aws-s3-bucket.aws.com"
+
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

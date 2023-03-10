@@ -16,7 +16,8 @@ members = [
     "metrics",
     "denylist",
     "iot_packet_verifier",
-    "iot_config"
+    "iot_config",
+    "price",
 ]
 
 [workspace.package]
