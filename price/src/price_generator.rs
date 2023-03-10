@@ -1,4 +1,4 @@
-use crate::{PriceError, Settings};
+use crate::{metrics::Metrics, PriceError, Settings};
 use anyhow::Result;
 use chrono::Utc;
 use file_store::file_sink;
@@ -115,6 +115,7 @@ impl PriceGenerator {
                         old_price
                     }
                 };
+            Metrics::update(token_type, new_price.price as f64);
 
             // Just set the timestamp to latest for the "new" price
             let timestamp = Utc::now().timestamp();

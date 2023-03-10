@@ -1,4 +1,5 @@
 pub mod error;
+pub mod metrics;
 pub mod price_generator;
 pub mod settings;
 
