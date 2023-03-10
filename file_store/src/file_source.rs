@@ -65,7 +65,7 @@ mod test {
         // 2022-08-05 15:35:55     240363 cell_heartbeat.1658832527866.gz
         // 2022-08-05 15:36:08    6525274 cell_heartbeat.1658834120042.gz
         //
-        let file_store = FileStore::new(None, "us-east-1", "devnet-poc5g-rewards")
+        let file_store = FileStore::new(None, "us-east-1", "devnet-poc5g-rewards", None, None)
             .await
             .expect("file store");
         let stream = file_store.source(infos(&[

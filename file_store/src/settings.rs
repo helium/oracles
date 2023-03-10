@@ -12,6 +12,10 @@ pub struct Settings {
     /// Optional region for the endpoint. Default: us-west-2
     #[serde(default = "default_region")]
     pub region: String,
+
+    /// Should only be used for local testing
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
 }
 
 fn default_region() -> String {

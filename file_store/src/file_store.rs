@@ -31,13 +31,22 @@ impl FileStore {
             _ => None,
         };
         let region = Region::new(settings.region.clone());
-        Self::new(endpoint, region, &settings.bucket).await
+        Self::new(
+            endpoint,
+            region,
+            &settings.bucket,
+            settings.access_key_id.clone(),
+            settings.secret_access_key.clone(),
+        )
+        .await
     }
 
     pub async fn new(
         endpoint: Option<Endpoint>,
         region: impl ProvideRegion + 'static,
         bucket: impl Into<String>,
+        #[allow(unused_variables)] access_key_id: Option<String>,
+        #[allow(unused_variables)] secret_access_key: Option<String>,
     ) -> Result<Self> {
         let region_provider = RegionProviderChain::first_try(region).or_default_provider();
 
@@ -45,6 +54,17 @@ impl FileStore {
         if let Some(endpoint) = endpoint {
             config = config.endpoint_resolver(endpoint);
         }
+
+        #[cfg(feature = "local")]
+        if access_key_id.is_some() && secret_access_key.is_some() {
+            let creds = aws_types::credentials::Credentials::from_keys(
+                access_key_id.unwrap(),
+                secret_access_key.unwrap(),
+                None,
+            );
+            config = config.credentials_provider(creds);
+        }
+
         let config = config.load().await;
 
         let client = Client::new(&config);
