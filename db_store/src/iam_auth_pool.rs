@@ -6,7 +6,7 @@ use sqlx::{
 
 use aws_credential_types::Credentials;
 use aws_sig_auth::signer::{
-    self, HttpSignatureType, OperationSigningConfig, RequestConfig, SigningError,
+    self, HttpSignatureType, OperationSigningConfig, RequestConfig,
 };
 use aws_smithy_http::body::SdkBody;
 use aws_types::region::{Region, SigningRegion};
@@ -92,7 +92,6 @@ async fn auth_token(client: &aws_sdk_sts::Client, settings: &Settings) -> Result
         &credentials,
         std::time::SystemTime::now(),
     )
-    .map_err(Error::from)
 }
 
 async fn credentials(client: &aws_sdk_sts::Client, settings: &Settings) -> Result<Credentials> {
@@ -154,7 +153,7 @@ fn generate_rds_iam_token(
     db_username: &str,
     credentials: &Credentials,
     timestamp: SystemTime,
-) -> std::result::Result<String, SigningError> {
+) -> Result<String> {
     let signer = signer::SigV4Signer::new();
     let mut operation_config = OperationSigningConfig::default_config();
     operation_config.signature_type = HttpSignatureType::HttpRequestQueryParams;
@@ -180,8 +179,11 @@ fn generate_rds_iam_token(
         credentials,
         &mut request,
     )?;
+
     let mut uri = request.uri().to_string();
-    assert!(uri.starts_with("http://"));
-    let uri = uri.split_off("http://".len());
-    Ok(uri)
+    if uri.starts_with("http://") {
+        Err(Error::InvalidAuthToken())
+    } else {
+        Ok(uri.split_off("http://".len()))
+    } 
 }

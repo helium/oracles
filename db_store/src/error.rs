@@ -20,4 +20,6 @@ pub enum Error {
     SigningError(#[from] aws_sig_auth::signer::SigningError),
     #[error("tokio join error")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("invalid auth token, does not start with http")]
+    InvalidAuthToken(),
 }
