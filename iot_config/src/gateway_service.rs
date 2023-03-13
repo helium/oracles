@@ -53,7 +53,7 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::internal(format!("error retrieving gateway {gateway_address}")))
             .and_then(|info| {
                 info.location
-                    .ok_or(Status::not_found(format!("{gateway_address} not asserted")))
+                    .ok_or_else(|| Status::not_found(format!("{gateway_address} not asserted")))
             })?;
 
         let location = Cell::from_raw(location)
