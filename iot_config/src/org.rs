@@ -184,7 +184,7 @@ pub async fn get_route_ids_by_route(
     .fetch_all(db)
     .await?
     .into_iter()
-    .map(|row| row.get::<String, &str>("id"))
+    .map(|row| row.get::<Uuid, &str>("id").to_string())
     .collect();
 
     Ok(route_ids)
