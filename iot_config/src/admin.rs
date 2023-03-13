@@ -138,6 +138,17 @@ impl AuthCache {
         .await
         .remove(key);
     }
+
+    pub async fn get_keys(&self, key_type: KeyType) -> Vec<PublicKey> {
+        match key_type {
+            KeyType::Administrator => self.admin_keys.read(),
+            KeyType::PacketRouter => self.router_keys.read(),
+        }
+        .await
+        .iter()
+        .cloned()
+        .collect::<Vec<PublicKey>>()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, sqlx::Type)]
@@ -152,7 +163,7 @@ pub enum AdminAuthError {
     #[error("unauthorized admin request signature")]
     UnauthorizedRequest,
     #[error("error deserializing pubkey: {0}")]
-    ConfigKey(#[from] helium_crypto::Error),
+    DecodeKey(#[from] helium_crypto::Error),
     #[error("error retrieving saved admin keys: {0}")]
     DbStore(#[from] sqlx::Error),
 }

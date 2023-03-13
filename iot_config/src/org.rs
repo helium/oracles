@@ -164,6 +164,32 @@ pub async fn get_constraints_by_route(
     Ok(constraints)
 }
 
+pub async fn get_route_ids_by_route(
+    route_id: &str,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<Vec<String>, DbOrgError> {
+    let uuid = Uuid::try_parse(route_id)?;
+
+    let route_ids = sqlx::query(
+        r#"
+        select routes.id from routes
+        where oui = (
+            select organizations.oui from organizations
+            join routes on organizations.oui = routes.oui
+            where routes.id = $1
+        )
+        "#,
+    )
+    .bind(uuid)
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .map(|row| row.get::<String, &str>("id"))
+    .collect();
+
+    Ok(route_ids)
+}
+
 pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         r#"
@@ -193,9 +219,9 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
 #[derive(thiserror::Error, Debug)]
 pub enum DbOrgError {
     #[error("error retrieving saved org row: {0}")]
-    Fetch(#[from] sqlx::Error),
+    DbStore(#[from] sqlx::Error),
     #[error("unable to deserialize pubkey: {0}")]
-    Decode(#[from] helium_crypto::Error),
+    DecodeKey(#[from] helium_crypto::Error),
     #[error("Route Id parse error: {0}")]
     RouteIdParse(#[from] sqlx::types::uuid::Error),
 }

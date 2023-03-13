@@ -18,6 +18,7 @@ RUN mkdir ./iot_config/src \
  && sed -i -e '/ingest/d'       -e '/mobile_rewards/d' -e '/mobile_verifier/d' \
            -e '/poc_entropy/d'  -e '/iot_verifier/d'   -e '/poc_iot_injector/d' \
            -e '/reward_index/d' -e '/denylist/d'       -e '/iot_packet_verifier/d' \
+           -e '/price/d'
            Cargo.toml \
  # Build on nightly cargo to use sparse-registry to avoid crates indexing infinite loop
  && cargo +nightly build --package iot-config --release -Z sparse-registry
