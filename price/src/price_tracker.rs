@@ -20,7 +20,7 @@ impl PriceTracker {
     ) -> Result<(Self, impl std::future::Future<Output = Result<()>>)> {
         let file_store = FileStore::from_settings(settings).await?;
         let (sender, receiver) = watch::channel(Prices::new());
-        let initial_timestamp = get_initial_prices(&file_store, &sender).await?;
+        let initial_timestamp = calculate_initial_prices(&file_store, &sender).await?;
 
         let handle =
             tokio::spawn(async move { run(file_store, sender, initial_timestamp, shutdown).await });
@@ -69,7 +69,7 @@ async fn run(
     Ok(())
 }
 
-async fn get_initial_prices(
+async fn calculate_initial_prices(
     file_store: &FileStore,
     sender: &watch::Sender<Prices>,
 ) -> Result<DateTime<Utc>> {
