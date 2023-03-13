@@ -74,9 +74,7 @@ async fn calculate_initial_prices(
     sender: &watch::Sender<Prices>,
 ) -> Result<DateTime<Utc>> {
     tracing::debug!("PriceTracker: Updating initial prices");
-    let durations = vec![Duration::minutes(10), Duration::hours(4)];
-
-    for duration in durations {
+    for duration in [Duration::minutes(10), Duration::hours(4)] {
         let timestamp = process_files(file_store, sender, Utc::now() - duration).await?;
 
         if timestamp.is_some() {
