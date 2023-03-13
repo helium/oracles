@@ -1,7 +1,7 @@
 use crate::{
     error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings,
 };
-use aws_config::meta::region::{ProvideRegion, RegionProviderChain};
+use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
@@ -31,26 +31,29 @@ impl FileStore {
             _ => None,
         };
         let region = Region::new(settings.region.clone());
-        Self::new(endpoint, region, &settings.bucket).await
-    }
-
-    pub async fn new(
-        endpoint: Option<Endpoint>,
-        region: impl ProvideRegion + 'static,
-        bucket: impl Into<String>,
-    ) -> Result<Self> {
         let region_provider = RegionProviderChain::first_try(region).or_default_provider();
 
         let mut config = aws_config::from_env().region(region_provider);
         if let Some(endpoint) = endpoint {
             config = config.endpoint_resolver(endpoint);
         }
+
+        #[cfg(feature = "local")]
+        if access_key_id.is_some() && secret_access_key.is_some() {
+            let creds = aws_types::credentials::Credentials::from_keys(
+                access_key_id.unwrap(),
+                secret_access_key.unwrap(),
+                None,
+            );
+            config = config.credentials_provider(creds);
+        }
+
         let config = config.load().await;
 
         let client = Client::new(&config);
         Ok(Self {
             client,
-            bucket: bucket.into(),
+            bucket: settings.bucket.clone(),
         })
     }
 

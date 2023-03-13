@@ -2323,6 +2323,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-s3",
+ "aws-types",
  "base64 0.21.0",
  "beacon",
  "blake3",
