@@ -10,7 +10,10 @@ use data_credits::DelegatedDataCreditsV0;
 use data_credits::{accounts, instruction};
 use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_client::{
+    client_error::ClientError, nonblocking::rpc_client::RpcClient,
+    rpc_config::RpcSendTransactionConfig,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::{ParsePubkeyError, Pubkey},
@@ -19,7 +22,10 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use sqlx::{FromRow, Pool, Postgres};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, SystemTimeError},
+};
 use tokio::task;
 
 pub struct Burner {
@@ -45,6 +51,12 @@ pub enum BurnError {
     AnchorError(#[from] anchor_lang::error::Error),
     #[error("Parse pubkey error: {0}")]
     ParsePubkeyError(#[from] ParsePubkeyError),
+    #[error("Burn transaction {0} failed")]
+    TransactionFailed(solana_sdk::signature::Signature),
+    #[error("DC burn authority does not match keypair")]
+    InvalidKeypair,
+    #[error("System time error: {0}")]
+    SystemTimeError(#[from] SystemTimeError),
 }
 
 const BURN_THRESHOLD: i64 = 10_000;
@@ -57,10 +69,14 @@ impl Burner {
         provider: Arc<RpcClient>,
         keypair: Keypair,
     ) -> Result<Self, BurnError> {
+        let program_cache = BurnProgramCache::new(settings, provider.as_ref()).await?;
+        if program_cache.dc_burn_authority != keypair.pubkey() {
+            return Err(BurnError::InvalidKeypair);
+        }
         Ok(Self {
             pool: pool.clone(),
             balances: balances.balances(),
-            program_cache: BurnProgramCache::new(settings, provider.as_ref()).await?,
+            program_cache,
             cluster: settings.cluster.clone(),
             provider,
             keypair: keypair.to_bytes(),
@@ -86,7 +102,11 @@ impl Burner {
         // Create burn transaction and execute it:
 
         // Fetch the sub dao epoch info:
-        let epoch = self.provider.get_epoch_info().await?.epoch;
+        const EPOCH_LENGTH: u64 = 60 * 60 * 24;
+        let epoch = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs()
+            / EPOCH_LENGTH;
         let (sub_dao_epoch_info, _) = Pubkey::find_program_address(
             &[
                 "sub_dao_epoch_info".as_bytes(),
@@ -165,7 +185,21 @@ impl Burner {
             blockhash,
         );
 
-        let signature = self.provider.send_and_confirm_transaction(&tx).await?;
+        // Preflight can be flakey, so we skip it for now
+        let config = RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        };
+        let signature = self
+            .provider
+            .send_transaction_with_config(&tx, config)
+            .await?;
+        let result = self.provider.confirm_transaction(&signature).await?;
+
+        if !result {
+            return Err(BurnError::TransactionFailed(signature));
+        }
+
         tracing::info!(
             "Successfully burned data credits. Transaction: {}",
             signature
