@@ -7,8 +7,10 @@ use sqlx::{
 use aws_credential_types::Credentials;
 use aws_sig_auth::signer::{self, HttpSignatureType, OperationSigningConfig, RequestConfig};
 use aws_smithy_http::body::SdkBody;
-use aws_types::region::{Region, SigningRegion};
-use aws_types::SigningService;
+use aws_types::{
+    region::{Region, SigningRegion},
+    SigningService,
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub async fn connect(
