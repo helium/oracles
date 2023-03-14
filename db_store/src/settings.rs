@@ -1,9 +1,6 @@
 use crate::{iam_auth_pool, Error, Result};
 use serde::Deserialize;
-use sqlx::{
-    postgres::{PgConnectOptions, PgPoolOptions},
-    Pool, Postgres,
-};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -16,15 +13,18 @@ pub enum AuthType {
 pub struct Settings {
     pub max_connections: u32,
 
-    pub host: String,
-    pub port: u16,
-    pub database: String,
-    pub username: String,
+    /// URL to access the postgres database, only used when
+    /// the auth_type is Postgres
+    pub url: Option<String>,
 
     #[serde(default = "default_auth_type")]
     auth_type: AuthType,
 
-    postgres_password: Option<String>,
+    /// Db connection information only used when auth_type is Iam
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub database: Option<String>,
+    pub username: Option<String>,
 
     pub iam_role_arn: Option<String>,
     pub iam_role_session_name: Option<String>,
@@ -51,14 +51,11 @@ impl Settings {
     }
 
     async fn simple_connect(&self) -> Result<Pool<Postgres>> {
-        let connect_options = PgConnectOptions::new()
-            .host(&self.host)
-            .port(self.port)
-            .database(&self.database)
-            .username(&self.username)
-            .password(self.postgres_password.as_ref().ok_or_else(|| {
-                Error::InvalidConfiguration("postgres_password is required".to_string())
-            })?);
+        let connect_options = self
+            .url
+            .as_ref()
+            .ok_or_else(|| Error::InvalidConfiguration("url is required".to_string()))?
+            .parse()?;
 
         let pool = self.pool_options().connect_with(connect_options).await?;
         Ok(pool)

@@ -19,11 +19,7 @@ cache = "/var/data/verfied-reports"
 [database]
 
 # Postgres Connection Information
-host = "127.0.0.1"
-port = 5432
-username = "postgres"
-database = "mobile_verifier"
-postgres_password = "postgres"
+url = "postgres://postgres:postgres@127.0.0.1:5432/mobile_verifier"
 
 # Max connections to the database.
 max_connections = 50

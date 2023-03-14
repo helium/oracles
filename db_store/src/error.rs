@@ -23,3 +23,7 @@ pub enum Error {
     #[error("invalid auth token, does not start with http")]
     InvalidAuthToken(),
 }
+
+pub fn invalid_configuration(str: impl Into<String>) -> Error {
+    Error::InvalidConfiguration(str.into())
+}

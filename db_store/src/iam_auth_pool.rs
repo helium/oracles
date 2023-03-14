@@ -1,4 +1,4 @@
-use crate::{Error, Result, Settings};
+use crate::{error::invalid_configuration, Error, Result, Settings};
 use sqlx::{
     postgres::{PgConnectOptions, Postgres},
     Pool,
@@ -17,17 +17,17 @@ pub async fn connect(
 ) -> Result<(Pool<Postgres>, futures::future::BoxFuture<'static, Result>)> {
     let aws_config = aws_config::load_from_env().await;
     let client = aws_sdk_sts::Client::new(&aws_config);
-    let connect_options = connect_options(&client, settings).await?;
+    let connect_parameters = ConnectParameters::try_from(settings)?;
+    let connect_options = connect_parameters.connect_options(&client).await?;
 
     let pool = settings
         .pool_options()
         .connect_with(connect_options)
         .await?;
 
-    let cloned_settings = settings.clone();
     let cloned_pool = pool.clone();
     let join_handle =
-        tokio::spawn(async move { run(client, cloned_settings, cloned_pool, shutdown).await });
+        tokio::spawn(async move { run(client, connect_parameters, cloned_pool, shutdown).await });
 
     Ok((
         pool,
@@ -43,11 +43,11 @@ pub async fn connect(
 
 async fn run(
     client: aws_sdk_sts::Client,
-    settings: Settings,
+    connect_parameters: ConnectParameters,
     pool: Pool<Postgres>,
     shutdown: triggered::Listener,
 ) -> Result {
-    let duration = std::time::Duration::from_secs(settings.iam_duration_seconds.unwrap() as u64)
+    let duration = std::time::Duration::from_secs(connect_parameters.iam_duration_seconds as u64)
         - Duration::from_secs(120);
 
     loop {
@@ -56,7 +56,7 @@ async fn run(
         tokio::select! {
             _ = shutdown => break,
             _ = tokio::time::sleep(duration) => {
-                let connect_options = connect_options(&client, &settings).await?;
+                let connect_options = connect_parameters.connect_options(&client).await?;
                 pool.set_connect_options(connect_options);
             }
         }
@@ -65,53 +65,115 @@ async fn run(
     Ok(())
 }
 
-async fn connect_options(
-    client: &aws_sdk_sts::Client,
-    settings: &Settings,
-) -> Result<PgConnectOptions> {
-    let auth_token = auth_token(client, settings).await?;
-
-    Ok(PgConnectOptions::new()
-        .host(&settings.host)
-        .port(settings.port)
-        .database(&settings.database)
-        .username(&settings.username)
-        .password(&auth_token))
+struct ConnectParameters {
+    host: String,
+    port: u16,
+    database: String,
+    username: String,
+    iam_role_arn: String,
+    iam_role_session_name: String,
+    iam_duration_seconds: i32,
+    iam_region: Region,
 }
 
-async fn auth_token(client: &aws_sdk_sts::Client, settings: &Settings) -> Result<String> {
-    let credentials = credentials(client, settings).await?;
+impl TryFrom<&Settings> for ConnectParameters {
+    type Error = Error;
 
-    generate_rds_iam_token(
-        &settings.host,
-        region(settings)?,
-        settings.port,
-        &settings.username,
-        &credentials,
-        std::time::SystemTime::now(),
-    )
-}
-
-async fn credentials(client: &aws_sdk_sts::Client, settings: &Settings) -> Result<Credentials> {
-    assume_role(client, settings)
-        .await?
-        .credentials()
-        .ok_or_else(|| Error::InvalidAssumedCredentials("No Credientials available".to_string()))
-        .and_then(|creds| {
-            Ok(Credentials::new(
-                creds.access_key_id().ok_or_else(|| {
-                    Error::InvalidAssumedCredentials("no access_key_id".to_string())
-                })?,
-                creds.secret_access_key().ok_or_else(|| {
-                    Error::InvalidAssumedCredentials("no secret_access_key".to_string())
-                })?,
-                creds.session_token().map(|s| s.to_string()),
-                creds
-                    .expiration()
-                    .map(|e| UNIX_EPOCH + Duration::from_secs(e.secs() as u64)),
-                "Helium Foundation",
-            ))
+    fn try_from(settings: &Settings) -> Result<Self> {
+        Ok(Self {
+            host: settings
+                .host
+                .clone()
+                .ok_or_else(|| invalid_configuration("host is required"))?,
+            port: settings
+                .port
+                .ok_or_else(|| invalid_configuration("port is required"))?,
+            database: settings
+                .database
+                .clone()
+                .ok_or_else(|| invalid_configuration("database is required"))?,
+            username: settings
+                .username
+                .clone()
+                .ok_or_else(|| invalid_configuration("username is required"))?,
+            iam_role_arn: settings
+                .iam_role_arn
+                .clone()
+                .ok_or_else(|| invalid_configuration("iam_role_arn is required"))?,
+            iam_role_session_name: settings
+                .iam_role_session_name
+                .clone()
+                .ok_or_else(|| invalid_configuration("iam_role_session_name is required"))?,
+            iam_duration_seconds: settings
+                .iam_duration_seconds
+                .ok_or_else(|| invalid_configuration("iam_duration_seconds is required"))?,
+            iam_region: region(settings)?,
         })
+    }
+}
+
+impl ConnectParameters {
+    async fn connect_options(&self, client: &aws_sdk_sts::Client) -> Result<PgConnectOptions> {
+        let auth_token = self.auth_token(client).await?;
+
+        Ok(PgConnectOptions::new()
+            .host(&self.host)
+            .port(self.port)
+            .database(&self.database)
+            .username(&self.username)
+            .password(&auth_token))
+    }
+
+    async fn auth_token(&self, client: &aws_sdk_sts::Client) -> Result<String> {
+        let credentials = self.credentials(client).await?;
+
+        generate_rds_iam_token(
+            &self.host,
+            self.iam_region.clone(),
+            self.port,
+            &self.username,
+            &credentials,
+            std::time::SystemTime::now(),
+        )
+    }
+
+    async fn credentials(&self, client: &aws_sdk_sts::Client) -> Result<Credentials> {
+        self.assume_role(client)
+            .await?
+            .credentials()
+            .ok_or_else(|| {
+                Error::InvalidAssumedCredentials("No Credientials available".to_string())
+            })
+            .and_then(|creds| {
+                Ok(Credentials::new(
+                    creds.access_key_id().ok_or_else(|| {
+                        Error::InvalidAssumedCredentials("no access_key_id".to_string())
+                    })?,
+                    creds.secret_access_key().ok_or_else(|| {
+                        Error::InvalidAssumedCredentials("no secret_access_key".to_string())
+                    })?,
+                    creds.session_token().map(|s| s.to_string()),
+                    creds
+                        .expiration()
+                        .map(|e| UNIX_EPOCH + Duration::from_secs(e.secs() as u64)),
+                    "Helium Foundation",
+                ))
+            })
+    }
+
+    async fn assume_role(
+        &self,
+        client: &aws_sdk_sts::Client,
+    ) -> Result<aws_sdk_sts::output::AssumeRoleOutput> {
+        client
+            .assume_role()
+            .role_arn(self.iam_role_arn.clone())
+            .role_session_name(self.iam_role_session_name.clone())
+            .duration_seconds(self.iam_duration_seconds)
+            .send()
+            .await
+            .map_err(Error::from)
+    }
 }
 
 fn region(settings: &Settings) -> Result<Region> {
@@ -119,29 +181,7 @@ fn region(settings: &Settings) -> Result<Region> {
         .iam_region
         .as_ref()
         .map(|r| Region::new(r.clone()))
-        .ok_or_else(|| Error::InvalidConfiguration("iam_region is required".to_string()))
-}
-
-async fn assume_role(
-    client: &aws_sdk_sts::Client,
-    settings: &Settings,
-) -> Result<aws_sdk_sts::output::AssumeRoleOutput> {
-    client
-        .assume_role()
-        .role_arn(
-            settings.iam_role_arn.as_ref().ok_or_else(|| {
-                Error::InvalidConfiguration("iam_role_arn is required".to_string())
-            })?,
-        )
-        .role_session_name(settings.iam_role_session_name.as_ref().ok_or_else(|| {
-            Error::InvalidConfiguration("iam_role_session_name is required".to_string())
-        })?)
-        .duration_seconds(settings.iam_duration_seconds.ok_or_else(|| {
-            Error::InvalidConfiguration("iam_duration_seconds is required".to_string())
-        })?)
-        .send()
-        .await
-        .map_err(Error::from)
+        .ok_or_else(|| invalid_configuration("iam_region is required"))
 }
 
 fn generate_rds_iam_token(

@@ -20,11 +20,7 @@ beacon_interval_tolerance = 600
 [database]
 
 # Postgres Connection Information
-host = "127.0.0.1"
-port = 5432
-username = "postgres"
-database = "iot_verifier"
-postgres_password = "postgres"
+url = "postgres://postgres:postgres@127.0.0.1:5432/iot_verifier"
 
 # Max connections to the database.
 max_connections = 400

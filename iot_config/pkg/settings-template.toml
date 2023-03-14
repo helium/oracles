@@ -12,15 +12,11 @@ network = "mainnet"
 [database]
 
 # Postgres Connection Information
-host = "127.0.0.1"
-port = 5432
-username = "postgres"
-database = "config_db"
-postgres_password = "postgres"
+url = "postgres://postgres:postgres@127.0.0.1:5432/config_db"
 
 max_connections = 20
 
-[helius]
+[metadata]
 
 # Url for the solana on-chain data such as hotspot asserted hexes
 host = "helius.aws"

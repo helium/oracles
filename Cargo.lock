@@ -2485,7 +2485,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-s3",
- "aws-types",
+ "aws-types 0.51.0",
  "base64 0.21.0",
  "beacon",
  "blake3",
