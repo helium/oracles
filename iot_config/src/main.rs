@@ -61,16 +61,16 @@ impl Daemon {
         // Install prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        // Create database pool
-        let pool = settings.database.connect(50).await?;
-        sqlx::migrate!().run(&pool).await?;
-
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
             let _ = signal::ctrl_c().await;
             shutdown_trigger.trigger()
         });
+
+        // Create database pool
+        let (pool, db_join_handle) = settings.database.connect(shutdown_listener.clone()).await?;
+        sqlx::migrate!().run(&pool).await?;
 
         let listen_addr = settings.listen_addr()?;
 
@@ -98,7 +98,7 @@ impl Daemon {
             shutdown_listener.clone(),
         );
 
-        transport::Server::builder()
+        let server = transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(GatewayServer::new(gateway_svc))
@@ -107,8 +107,9 @@ impl Daemon {
             .add_service(AdminServer::new(admin_svc))
             .add_service(SessionKeyFilterServer::new(session_key_filter_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
-            .map_err(Error::from)
-            .await?;
+            .map_err(Error::from);
+
+        tokio::try_join!(db_join_handle.map_err(Error::from), server)?;
 
         Ok(())
     }

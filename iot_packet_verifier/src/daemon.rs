@@ -73,8 +73,14 @@ impl Daemon {
 pub async fn run_daemon(settings: &Settings) -> Result<()> {
     poc_metrics::install_metrics();
 
+    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        shutdown_trigger.trigger()
+    });
+
     // Set up the postgres pool:
-    let pool = settings.database.connect(10).await?;
+    let (pool, db_handle) = settings.database.connect(shutdown_listener.clone()).await?;
     sqlx::migrate!().run(&pool).await?;
 
     // Set up the solana RpcClient:
@@ -126,12 +132,6 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
 
     let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-    tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
-        shutdown_trigger.trigger()
-    });
-
     let (report_files, source_join_handle) =
         file_source::continuous_source::<PacketRouterPacketReport>()
             .db(pool.clone())
@@ -158,6 +158,7 @@ pub async fn run_daemon(settings: &Settings) -> Result<()> {
 
     // Run the services:
     tokio::try_join!(
+        db_handle.map_err(Error::from),
         burner.run(&shutdown_listener).map_err(Error::from),
         file_upload.run(&shutdown_listener).map_err(Error::from),
         verifier_daemon.run(&shutdown_listener).map_err(Error::from),

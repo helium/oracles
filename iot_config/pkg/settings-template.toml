@@ -11,15 +11,29 @@ network = "mainnet"
 
 [database]
 
-# Url for the main service database
+# Postgres Connection Information
 url = "postgres://postgres:postgres@127.0.0.1:5432/config_db"
 
-# Url for the solana on-chain data such as hotspot asserted hexes
-chain = "postgres://postgres:postgres@127.0.0.1:5432/chain_db"
+max_connections = 20
 
-# Max connections to the database. Default below
-#
-# max_connections = 10
+[metadata]
+
+# Url for the solana on-chain data such as hotspot asserted hexes
+host = "helius.aws"
+port = 5432
+username = "helius"
+database = "db"
+
+auth_type = "iam"
+# IAM Role to assume to generate db auth token
+
+iam_role_arn = "arn::iam"
+iam_role_session_name = "role-session-name"
+iam_duration_seconds = 900
+iam_region = "us-west-2"
+
+# Max connections to database
+max_connections = 20
 
 [metrics]
 

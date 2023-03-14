@@ -57,11 +57,7 @@ impl Server {
 
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
-
-        // Create database pool
-        let pool = settings.database.connect(10).await?;
-        sqlx::migrate!().run(&pool).await?;
-
+        //
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
@@ -69,10 +65,14 @@ impl Server {
             shutdown_trigger.trigger()
         });
 
+        // Create database pool
+        let (pool, db_join_handle) = settings.database.connect(shutdown_listener.clone()).await?;
+        sqlx::migrate!().run(&pool).await?;
+
         let file_store = FileStore::from_settings(&settings.verifier).await?;
 
         let (receiver, source_join_handle) = file_source::continuous_source::<RewardManifest>()
-            .db(pool)
+            .db(pool.clone())
             .store(file_store)
             .file_type(FileType::RewardManifest)
             .lookback(LookbackBehavior::StartAfter(
@@ -85,11 +85,12 @@ impl Server {
             .await?;
 
         // Reward server
-        let mut indexer = Indexer::new(settings).await?;
+        let mut indexer = Indexer::new(settings, pool).await?;
 
         tokio::try_join!(
-            indexer.run(shutdown_listener.clone(), receiver),
+            db_join_handle.map_err(anyhow::Error::from),
             source_join_handle.map_err(anyhow::Error::from),
+            indexer.run(shutdown_listener, receiver),
         )?;
 
         Ok(())

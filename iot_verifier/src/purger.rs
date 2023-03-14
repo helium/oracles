@@ -23,7 +23,6 @@ use tokio::{
 
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(60 * 35);
 const PURGER_WORKERS: usize = 50;
-const PURGER_DB_POOL_SIZE: usize = PURGER_WORKERS * 4;
 
 /// the period in seconds after when a beacon report in the DB will be deemed stale
 // this period needs to be sufficiently long that we can be sure the beacon has had the
@@ -54,8 +53,7 @@ pub struct Purger {
 pub struct NewPurgerError(#[from] db_store::Error);
 
 impl Purger {
-    pub async fn from_settings(settings: &Settings) -> Result<Self, NewPurgerError> {
-        let pool = settings.database.connect(PURGER_DB_POOL_SIZE).await?;
+    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, NewPurgerError> {
         let settings = settings.clone();
         let base_stale_period = settings.base_stale_period;
         Ok(Self {

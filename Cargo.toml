@@ -91,3 +91,6 @@ blake3 = "*"
 retainer = "*"
 rand = "*"
 itertools = "*"
+
+[patch.crates-io]
+sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }

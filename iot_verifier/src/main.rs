@@ -57,19 +57,19 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        // Create database pool and run migrations
-        let pool = settings.database.connect(2).await?;
-        sqlx::migrate!().run(&pool).await?;
-
-        let count_all_beacons = Report::count_all_beacons(&pool).await?;
-        Metrics::num_beacons(count_all_beacons);
-
         // configure shutdown trigger
         let (shutdown_trigger, shutdown) = triggered::trigger();
         tokio::spawn(async move {
             let _ = signal::ctrl_c().await;
             shutdown_trigger.trigger()
         });
+
+        // Create database pool and run migrations
+        let (pool, db_join_handle) = settings.database.connect(shutdown.clone()).await?;
+        sqlx::migrate!().run(&pool).await?;
+
+        let count_all_beacons = Report::count_all_beacons(&pool).await?;
+        Metrics::num_beacons(count_all_beacons);
 
         let gateway_cache = GatewayCache::from_settings(settings);
 
@@ -101,19 +101,21 @@ impl Server {
         .await?;
 
         let rewarder = Rewarder {
-            pool,
+            pool: pool.clone(),
             gateway_rewards_sink,
             reward_manifests_sink,
             reward_period_hours: settings.rewards,
             reward_offset: settings.reward_offset_duration(),
         };
 
-        let mut loader = loader::Loader::from_settings(settings).await?;
-        let mut entropy_loader = entropy_loader::EntropyLoader::from_settings(settings).await?;
-        let mut runner = runner::Runner::from_settings(settings).await?;
-        let purger = purger::Purger::from_settings(settings).await?;
-        let mut density_scaler = DensityScaler::from_settings(settings).await?;
+        let mut loader = loader::Loader::from_settings(settings, pool.clone()).await?;
+        let mut entropy_loader =
+            entropy_loader::EntropyLoader::from_settings(settings, pool.clone()).await?;
+        let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
+        let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
+        let mut density_scaler = DensityScaler::from_settings(settings, pool).await?;
         tokio::try_join!(
+            db_join_handle.map_err(Error::from),
             gateway_rewards_server.run(&shutdown).map_err(Error::from),
             reward_manifests_server.run(&shutdown).map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),

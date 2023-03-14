@@ -45,8 +45,7 @@ pub enum SubmissionError {
 }
 
 impl Server {
-    pub async fn new(settings: &Settings) -> Result<Self, NewServerError> {
-        let pool = settings.database.connect(10).await?;
+    pub async fn new(settings: &Settings, pool: Pool<Postgres>) -> Result<Self, NewServerError> {
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
         let submission_offset = settings.submission_offset();
@@ -59,7 +58,7 @@ impl Server {
             .await?;
 
         let result = Self {
-            pool: pool.clone(),
+            pool,
             settings: settings.clone(),
             keypair: Arc::new(keypair),
             tick_time,

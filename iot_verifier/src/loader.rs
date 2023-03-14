@@ -29,11 +29,6 @@ const REPORTS_META_NAME: &str = "report";
 /// cadence for how often to look for  reports from s3 buckets in minutes
 const REPORTS_POLL_TIME: i64 = 5;
 
-const STORE_WORKERS: usize = 100;
-// DB pool size if the store worker count multiplied by the number of file types
-// since they're processed concurrently
-const LOADER_DB_POOL_SIZE: usize = STORE_WORKERS * 4;
-
 pub struct Loader {
     ingest_store: FileStore,
     pool: PgPool,
@@ -59,9 +54,8 @@ pub enum ValidGatewayResult {
 }
 
 impl Loader {
-    pub async fn from_settings(settings: &Settings) -> Result<Self, NewLoaderError> {
+    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier loader");
-        let pool = settings.database.connect(LOADER_DB_POOL_SIZE).await?;
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let deny_list = DenyList::new()?;
         Ok(Self {
