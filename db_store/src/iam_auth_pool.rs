@@ -182,7 +182,8 @@ fn region(settings: &Settings) -> Result<Region> {
     settings
         .iam_region
         .as_ref()
-        .map(|r| Region::new(r.clone()))
+        .cloned()
+        .map(Region::new)
         .ok_or_else(|| invalid_configuration("iam_region is required"))
 }
 
