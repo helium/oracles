@@ -185,8 +185,11 @@ impl Burner {
             blockhash,
         );
 
-        let mut config = RpcSendTransactionConfig::default();
-        config.skip_preflight = true; // Preflight can be flakey
+        // Preflight can be flakey, so we skip it for now
+        let config = RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        };
         let signature = self
             .provider
             .send_transaction_with_config(&tx, config)
