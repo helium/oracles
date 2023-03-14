@@ -126,8 +126,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 let message = match filter {
                     Ok(filter) => Ok(filter.into()),
                     Err(bad_filter) => Err(Status::internal(format!(
-                        "invalid session key filter {:?}",
-                        bad_filter
+                        "invalid session key filter {bad_filter:?}"
                     ))),
                 };
                 if tx.send(message).await.is_err() {
@@ -156,8 +155,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 let message = match filter {
                     Ok(filter) => Ok(filter.into()),
                     Err(bad_filter) => Err(Status::internal(format!(
-                        "invalid session key filter {:?}",
-                        bad_filter
+                        "invalid session key filter {bad_filter:?}"
                     ))),
                 };
                 if tx.send(message).await.is_err() {
