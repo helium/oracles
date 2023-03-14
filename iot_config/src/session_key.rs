@@ -10,7 +10,7 @@ use tokio::sync::broadcast::Sender;
 pub struct SessionKeyFilter {
     pub oui: u64,
     pub devaddr: DevAddrField,
-    pub session_key: Vec<u8>,
+    pub session_key: String,
 }
 
 impl FromRow<'_, PgRow> for SessionKeyFilter {
@@ -18,7 +18,7 @@ impl FromRow<'_, PgRow> for SessionKeyFilter {
         Ok(Self {
             oui: row.get::<i64, &str>("oui") as u64,
             devaddr: row.get::<i32, &str>("devaddr").into(),
-            session_key: row.get::<Vec<u8>, &str>("session_key"),
+            session_key: row.get::<String, &str>("session_key"),
         })
     }
 }
