@@ -223,8 +223,8 @@ fn generate_rds_iam_token(
 
     let mut uri = request.uri().to_string();
     if uri.starts_with("http://") {
-        Err(Error::InvalidAuthToken())
-    } else {
         Ok(uri.split_off("http://".len()))
+    } else {
+        Err(Error::InvalidAuthToken())
     }
 }

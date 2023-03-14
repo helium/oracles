@@ -1,5 +1,5 @@
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt};
 use retainer::Cache;
@@ -202,7 +202,7 @@ mod db {
         db: impl sqlx::PgExecutor<'_>,
         file_type: FileType,
     ) -> Result<Option<DateTime<Utc>>> {
-        let default = DateTime::<Utc>::MIN_UTC;
+        let default = Utc.timestamp_opt(0, 0).single().unwrap();
 
         let result = sqlx::query_scalar::<_, DateTime<Utc>>(
             r#"
