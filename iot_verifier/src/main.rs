@@ -65,7 +65,10 @@ impl Server {
         });
 
         // Create database pool and run migrations
-        let (pool, db_join_handle) = settings.database.connect(shutdown.clone()).await?;
+        let (pool, db_join_handle) = settings
+            .database
+            .connect(env!("CARGO_PKG_NAME"), shutdown.clone())
+            .await?;
         sqlx::migrate!().run(&pool).await?;
 
         let count_all_beacons = Report::count_all_beacons(&pool).await?;

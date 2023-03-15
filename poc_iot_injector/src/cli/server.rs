@@ -20,7 +20,10 @@ impl Cmd {
         });
 
         // Create database pool
-        let (pool, db_join_handle) = settings.database.connect(shutdown_listener.clone()).await?;
+        let (pool, db_join_handle) = settings
+            .database
+            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
+            .await?;
         sqlx::migrate!().run(&pool).await?;
 
         // poc_iot_injector server
