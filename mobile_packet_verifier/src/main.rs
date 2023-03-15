@@ -38,7 +38,10 @@ impl Cli {
         });
 
         // Set up the postgres pool:
-        let (pool, conn_handler)  = settings.database.connect("mobile-packet-verifier", shutdown_listener.clone()).await?;
+        let (pool, conn_handler) = settings
+            .database
+            .connect("mobile-packet-verifier", shutdown_listener.clone())
+            .await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Set up the solana RpcClient:
