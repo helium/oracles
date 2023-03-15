@@ -59,7 +59,7 @@ mod tests {
     use super::*;
 
     fn dt(y: i32, m: u32, d: u32, h: u32, min: u32, s: u32) -> DateTime<Utc> {
-        Utc.ymd(y, m, d).and_hms(h, min, s)
+        Utc.with_ymd_and_hms(y, m, d, h, min, s).unwrap()
     }
 
     fn reward_period_length() -> Duration {

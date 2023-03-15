@@ -30,7 +30,6 @@ use tokio::time::{self, MissedTickBehavior};
 /// the cadence in seconds at which the DB is polled for ready POCs
 const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
 const BEACON_WORKERS: usize = 100;
-const RUNNER_DB_POOL_SIZE: usize = BEACON_WORKERS * 4;
 
 const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
@@ -59,8 +58,7 @@ pub enum FilterStatus {
     Include,
 }
 impl Runner {
-    pub async fn from_settings(settings: &Settings) -> Result<Self, NewRunnerError> {
-        let pool = settings.database.connect(RUNNER_DB_POOL_SIZE).await?;
+    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, NewRunnerError> {
         let beacon_interval = settings.beacon_interval();
         let beacon_interval_tolerance = settings.beacon_interval_tolerance();
         Ok(Self {

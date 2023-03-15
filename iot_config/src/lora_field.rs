@@ -38,8 +38,8 @@ impl FromRow<'_, PgRow> for DevAddrRange {
             route_id: row
                 .try_get::<sqlx::types::Uuid, &str>("route_id")?
                 .to_string(),
-            start_addr: row.try_get::<i64, &str>("start_addr")?.into(),
-            end_addr: row.try_get::<i64, &str>("end_addr")?.into(),
+            start_addr: row.try_get::<i32, &str>("start_addr")?.into(),
+            end_addr: row.try_get::<i32, &str>("end_addr")?.into(),
         })
     }
 }
@@ -70,8 +70,12 @@ impl DevAddrConstraint {
         Ok(devaddr(end + 1))
     }
 
-    pub fn contains(&self, range: &Self) -> bool {
+    pub fn contains_range(&self, range: &DevAddrRange) -> bool {
         self.start_addr <= range.start_addr && self.end_addr >= range.end_addr
+    }
+
+    pub fn contains_addr(&self, addr: DevAddrField) -> bool {
+        self.start_addr <= addr && self.end_addr >= addr
     }
 }
 
@@ -207,13 +211,13 @@ impl From<u32> for LoraField<8> {
 
 impl From<i32> for LoraField<6> {
     fn from(val: i32) -> Self {
-        LoraField::<6>(val as u64)
+        LoraField::<6>((val as u32) as u64)
     }
 }
 
 impl From<i32> for LoraField<8> {
     fn from(val: i32) -> Self {
-        LoraField::<8>(val as u64)
+        LoraField::<8>((val as u32) as u64)
     }
 }
 
@@ -416,14 +420,14 @@ impl DevAddrField {
     pub fn to_net_id(self) -> Result<NetIdField, InvalidNetId> {
         let addr = self.0 as u32;
         let id = match addr.leading_ones() {
-            0 => (addr & 0b01111110000000000000000000000000) >> 25,
-            1 => (addr & 0b00111111000000000000000000000000) >> 24,
-            2 => (addr & 0b00011111111100000000000000000000) >> 20,
-            3 => (addr & 0b00001111111111100000000000000000) >> 17,
-            4 => (addr & 0b00000111111111111000000000000000) >> 15,
-            5 => (addr & 0b00000011111111111110000000000000) >> 13,
-            6 => (addr & 0b00000001111111111111110000000000) >> 10,
-            7 => (addr & 0b00000000111111111111111110000000) >> 7,
+            0 => (addr & 0b01111110000000000000000000000000) >> 25, // 0b000000000000000000000000,
+            1 => ((addr & 0b00111111000000000000000000000000) >> 24) | 0b001000000000000000000000,
+            2 => ((addr & 0b00011111111100000000000000000000) >> 20) | 0b010000000000000000000000,
+            3 => ((addr & 0b00001111111111100000000000000000) >> 17) | 0b011000000000000000000000,
+            4 => ((addr & 0b00000111111111111000000000000000) >> 15) | 0b100000000000000000000000,
+            5 => ((addr & 0b00000011111111111110000000000000) >> 13) | 0b101000000000000000000000,
+            6 => ((addr & 0b00000001111111111111110000000000) >> 10) | 0b110000000000000000000000,
+            7 => ((addr & 0b00000000111111111111111110000000) >> 7) | 0b111000000000000000000000,
             other => return Err(InvalidNetId(other)),
         };
         Ok(id.into())
@@ -463,6 +467,16 @@ impl From<proto::DevaddrRangeV1> for DevAddrRange {
     fn from(range: proto::DevaddrRangeV1) -> Self {
         Self {
             route_id: range.route_id,
+            start_addr: range.start_addr.into(),
+            end_addr: range.end_addr.into(),
+        }
+    }
+}
+
+impl From<&proto::DevaddrRangeV1> for DevAddrRange {
+    fn from(range: &proto::DevaddrRangeV1) -> Self {
+        Self {
+            route_id: range.route_id.clone(),
             start_addr: range.start_addr.into(),
             end_addr: range.end_addr.into(),
         }
@@ -573,7 +587,7 @@ mod tests {
                 devaddr(test.start_addr)
                     .to_net_id()
                     .expect("invalid devaddr"),
-                test.nwk_id.into()
+                test.net_id.into()
             );
         }
     }

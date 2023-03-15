@@ -120,7 +120,8 @@ impl OwnerShares {
 const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
 
 lazy_static! {
-    static ref GENESIS_START: DateTime<Utc> = Utc.ymd(2022, 7, 11).and_hms(0, 0, 0);
+    static ref GENESIS_START: DateTime<Utc> =
+        Utc.with_ymd_and_hms(2022, 7, 11, 0, 0, 0).single().unwrap();
 }
 
 #[derive(thiserror::Error, Debug)]

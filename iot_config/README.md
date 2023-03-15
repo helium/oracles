@@ -29,4 +29,11 @@ data associated with usage of the network
 ## `gateway`
 
 configuration data provided to LoRaWAN gateways serving the network, including
-the current region parameters for the region in which the gateway is asserted
+the current region parameters for the region in which the gateway is asserted and
+metadata info about gateways primarily stored on-chain but fed through the config service
+to other oracles
+
+## `admin`
+
+administrative apis for managing auth keys, region params binaries, and other service-wide
+settings

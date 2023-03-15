@@ -2,7 +2,7 @@ use crate::{
     receipt_txn::{handle_report_msg, TxnDetails},
     Settings, LOADER_WORKERS,
 };
-use chrono::{DateTime, Duration as ChronoDuration, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, TimeZone, Utc};
 use db_store::MetaValue;
 use file_store::{FileStore, FileType};
 use futures::stream::{self, StreamExt};
@@ -45,8 +45,7 @@ pub enum SubmissionError {
 }
 
 impl Server {
-    pub async fn new(settings: &Settings) -> Result<Self, NewServerError> {
-        let pool = settings.database.connect(10).await?;
+    pub async fn new(settings: &Settings, pool: Pool<Postgres>) -> Result<Self, NewServerError> {
         let keypair = settings.keypair()?;
         let tick_time = settings.trigger_interval();
         let submission_offset = settings.submission_offset();
@@ -59,7 +58,7 @@ impl Server {
             .await?;
 
         let result = Self {
-            pool: pool.clone(),
+            pool,
             settings: settings.clone(),
             keypair: Arc::new(keypair),
             tick_time,
@@ -101,12 +100,14 @@ impl Server {
     async fn handle_poc_tick(&mut self) -> anyhow::Result<()> {
         let now = Utc::now();
         let max_lookback_time = now.checked_sub_signed(self.max_lookback_age).unwrap_or(now);
-        let after_utc = Utc
-            .from_utc_datetime(&NaiveDateTime::from_timestamp(
+        let Some(after_utc) = Utc
+            .timestamp_opt(
                 *self.last_poc_submission_ts.value(),
                 0,
-            ))
-            .max(max_lookback_time);
+            ).single() else {
+                anyhow::bail!("Invalid value for last_poc_submission_ts");
+            };
+        let after_utc = after_utc.max(max_lookback_time);
 
         let before_utc = now
             .checked_sub_signed(self.submission_offset)

@@ -529,13 +529,13 @@ dependencies = [
  "aws-http",
  "aws-sdk-sso",
  "aws-sdk-sts",
- "aws-smithy-async",
- "aws-smithy-client",
- "aws-smithy-http",
- "aws-smithy-http-tower",
+ "aws-smithy-async 0.51.0",
+ "aws-smithy-client 0.51.0",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-http-tower 0.51.0",
  "aws-smithy-json",
- "aws-smithy-types",
- "aws-types",
+ "aws-smithy-types 0.51.0",
+ "aws-types 0.51.0",
  "bytes",
  "hex",
  "http",
@@ -549,14 +549,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-credential-types"
+version = "0.54.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb0696a0523a39a19087747e4dafda0362dc867531e3d72a3f195564c84e5e08"
+dependencies = [
+ "aws-smithy-async 0.54.4",
+ "aws-smithy-types 0.54.4",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "aws-endpoint"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ca8f374874f6459aaa88dc861d7f5d834ca1ff97668eae190e97266b5f6c3fb"
 dependencies = [
- "aws-smithy-http",
- "aws-smithy-types",
- "aws-types",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-types 0.51.0",
+ "aws-types 0.51.0",
  "http",
  "regex",
  "tracing",
@@ -568,9 +581,9 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78d41e19e779b73463f5f0c21b3aacc995f4ba783ab13a7ae9f5dfb159a551b4"
 dependencies = [
- "aws-smithy-http",
- "aws-smithy-types",
- "aws-types",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-types 0.51.0",
+ "aws-types 0.51.0",
  "bytes",
  "http",
  "http-body",
@@ -588,17 +601,17 @@ checksum = "a9f08665c8e03aca8cb092ef01e617436ebfa977fddc1240e1b062488ab5d48a"
 dependencies = [
  "aws-endpoint",
  "aws-http",
- "aws-sig-auth",
- "aws-sigv4",
- "aws-smithy-async",
+ "aws-sig-auth 0.51.0",
+ "aws-sigv4 0.51.0",
+ "aws-smithy-async 0.51.0",
  "aws-smithy-checksums",
- "aws-smithy-client",
+ "aws-smithy-client 0.51.0",
  "aws-smithy-eventstream",
- "aws-smithy-http",
- "aws-smithy-http-tower",
- "aws-smithy-types",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-http-tower 0.51.0",
+ "aws-smithy-types 0.51.0",
  "aws-smithy-xml",
- "aws-types",
+ "aws-types 0.51.0",
  "bytes",
  "bytes-utils",
  "http",
@@ -616,14 +629,14 @@ checksum = "86dcb1cb71aa8763b327542ead410424515cff0cde5b753eedd2917e09c63734"
 dependencies = [
  "aws-endpoint",
  "aws-http",
- "aws-sig-auth",
- "aws-smithy-async",
- "aws-smithy-client",
- "aws-smithy-http",
- "aws-smithy-http-tower",
+ "aws-sig-auth 0.51.0",
+ "aws-smithy-async 0.51.0",
+ "aws-smithy-client 0.51.0",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-http-tower 0.51.0",
  "aws-smithy-json",
- "aws-smithy-types",
- "aws-types",
+ "aws-smithy-types 0.51.0",
+ "aws-types 0.51.0",
  "bytes",
  "http",
  "tokio-stream",
@@ -638,15 +651,15 @@ checksum = "fdfcf584297c666f6b472d5368a78de3bc714b6e0a53d7fbf76c3e347c292ab1"
 dependencies = [
  "aws-endpoint",
  "aws-http",
- "aws-sig-auth",
- "aws-smithy-async",
- "aws-smithy-client",
- "aws-smithy-http",
- "aws-smithy-http-tower",
+ "aws-sig-auth 0.51.0",
+ "aws-smithy-async 0.51.0",
+ "aws-smithy-client 0.51.0",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-http-tower 0.51.0",
  "aws-smithy-query",
- "aws-smithy-types",
+ "aws-smithy-types 0.51.0",
  "aws-smithy-xml",
- "aws-types",
+ "aws-types 0.51.0",
  "bytes",
  "http",
  "tower",
@@ -658,10 +671,24 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12cbe7b2be9e185c1fbce27fc9c41c66b195b32d89aa099f98768d9544221308"
 dependencies = [
- "aws-sigv4",
+ "aws-sigv4 0.51.0",
  "aws-smithy-eventstream",
- "aws-smithy-http",
- "aws-types",
+ "aws-smithy-http 0.51.0",
+ "aws-types 0.51.0",
+ "http",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sig-auth"
+version = "0.54.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "660a02a98ab1af83bd8d714afbab2d502ba9b18c49e7e4cddd6bf8837ff778cb"
+dependencies = [
+ "aws-credential-types",
+ "aws-sigv4 0.54.1",
+ "aws-smithy-http 0.54.4",
+ "aws-types 0.54.1",
  "http",
  "tracing",
 ]
@@ -673,7 +700,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03ff4cff8c4a101962d593ba94e72cd83891aecd423f0c6e3146bff6fb92c9e3"
 dependencies = [
  "aws-smithy-eventstream",
- "aws-smithy-http",
+ "aws-smithy-http 0.51.0",
  "bytes",
  "form_urlencoded",
  "hex",
@@ -682,6 +709,25 @@ dependencies = [
  "percent-encoding",
  "regex",
  "ring",
+ "time 0.3.17",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sigv4"
+version = "0.54.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdaf11005b7444e6cd66f600d09861a3aeb6eb89a0f003c7c9820dbab2d15297"
+dependencies = [
+ "aws-smithy-http 0.54.4",
+ "form_urlencoded",
+ "hex",
+ "hmac 0.12.1",
+ "http",
+ "once_cell",
+ "percent-encoding",
+ "regex",
+ "sha2 0.10.6",
  "time 0.3.17",
  "tracing",
 ]
@@ -699,13 +745,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-smithy-async"
+version = "0.54.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63c712a28a4f2f2139759235c08bf98aca99d4fdf1b13c78c5f95613df0a5db9"
+dependencies = [
+ "futures-util",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "aws-smithy-checksums"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc227e36e346f45298288359f37123e1a92628d1cec6b11b5eb335553278bd9e"
 dependencies = [
- "aws-smithy-http",
- "aws-smithy-types",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-types 0.51.0",
  "bytes",
  "crc32c",
  "crc32fast",
@@ -725,10 +783,10 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff28d553714f8f54cd921227934fc13a536a1c03f106e56b362fd57e16d450ad"
 dependencies = [
- "aws-smithy-async",
- "aws-smithy-http",
- "aws-smithy-http-tower",
- "aws-smithy-types",
+ "aws-smithy-async 0.51.0",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-http-tower 0.51.0",
+ "aws-smithy-types 0.51.0",
  "bytes",
  "fastrand",
  "http",
@@ -743,12 +801,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-smithy-client"
+version = "0.54.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "104ca17f56cde00a10207169697dfe9c6810db339d52fb352707e64875b30a44"
+dependencies = [
+ "aws-smithy-async 0.54.4",
+ "aws-smithy-http 0.54.4",
+ "aws-smithy-http-tower 0.54.4",
+ "aws-smithy-types 0.54.4",
+ "bytes",
+ "fastrand",
+ "http",
+ "http-body",
+ "pin-project-lite",
+ "tokio",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "aws-smithy-eventstream"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7ea0df7161ce65b5c8ca6eb709a1a907376fa18226976e41c748ce02ccccf24"
 dependencies = [
- "aws-smithy-types",
+ "aws-smithy-types 0.51.0",
  "bytes",
  "crc32fast",
 ]
@@ -760,7 +838,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf58ed4fefa61dbf038e5421a521cbc2c448ef69deff0ab1d915d8a10eda5664"
 dependencies = [
  "aws-smithy-eventstream",
- "aws-smithy-types",
+ "aws-smithy-types 0.51.0",
  "bytes",
  "bytes-utils",
  "futures-core",
@@ -777,12 +855,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-smithy-http"
+version = "0.54.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "873f316f1833add0d3aa54ed1b0cd252ddd88c792a0cf839886400099971e844"
+dependencies = [
+ "aws-smithy-types 0.54.4",
+ "bytes",
+ "bytes-utils",
+ "futures-core",
+ "http",
+ "http-body",
+ "hyper",
+ "once_cell",
+ "percent-encoding",
+ "pin-project-lite",
+ "pin-utils",
+ "tracing",
+]
+
+[[package]]
 name = "aws-smithy-http-tower"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20c96d7bd35e7cf96aca1134b2f81b1b59ffe493f7c6539c051791cbbf7a42d3"
 dependencies = [
- "aws-smithy-http",
+ "aws-smithy-http 0.51.0",
+ "bytes",
+ "http",
+ "http-body",
+ "pin-project-lite",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "aws-smithy-http-tower"
+version = "0.54.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f38231d3f5dac9ac7976f44e12803add1385119ffca9e5f050d8e980733d164"
+dependencies = [
+ "aws-smithy-http 0.54.4",
+ "aws-smithy-types 0.54.4",
  "bytes",
  "http",
  "http-body",
@@ -797,7 +911,7 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8324ba98c8a94187723cc16c37aefa09504646ee65c3d2c3af495bab5ea701b"
 dependencies = [
- "aws-smithy-types",
+ "aws-smithy-types 0.51.0",
 ]
 
 [[package]]
@@ -806,7 +920,7 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83834ed2ff69ea6f6657baf205267dc2c0abe940703503a3e5d60ce23be3d306"
 dependencies = [
- "aws-smithy-types",
+ "aws-smithy-types 0.51.0",
  "urlencoding",
 ]
 
@@ -816,6 +930,19 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b02e06ea63498c43bc0217ea4d16605d4e58d85c12fc23f6572ff6d0a840c61"
 dependencies = [
+ "itoa 1.0.4",
+ "num-integer",
+ "ryu",
+ "time 0.3.17",
+]
+
+[[package]]
+name = "aws-smithy-types"
+version = "0.54.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8161232eda10290f5136610a1eb9de56aceaccd70c963a26a260af20ac24794f"
+dependencies = [
+ "base64-simd",
  "itoa 1.0.4",
  "num-integer",
  "ryu",
@@ -837,14 +964,30 @@ version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05701d32da168b44f7ee63147781aed8723e792cc131cb9b18363b5393f17f70"
 dependencies = [
- "aws-smithy-async",
- "aws-smithy-client",
- "aws-smithy-http",
- "aws-smithy-types",
+ "aws-smithy-async 0.51.0",
+ "aws-smithy-client 0.51.0",
+ "aws-smithy-http 0.51.0",
+ "aws-smithy-types 0.51.0",
  "http",
  "rustc_version 0.4.0",
  "tracing",
  "zeroize",
+]
+
+[[package]]
+name = "aws-types"
+version = "0.54.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8f15b34253b68cde08e39b0627cc6101bcca64351229484b4743392c035d057"
+dependencies = [
+ "aws-credential-types",
+ "aws-smithy-async 0.54.4",
+ "aws-smithy-client 0.54.4",
+ "aws-smithy-http 0.54.4",
+ "aws-smithy-types 0.54.4",
+ "http",
+ "rustc_version 0.4.0",
+ "tracing",
 ]
 
 [[package]]
@@ -998,6 +1141,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
 
 [[package]]
+name = "base64-simd"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "339abbe78e73178762e23bea9dfd08e697eb3f3301cd4be981c0f78ba5859195"
+dependencies = [
+ "outref",
+ "vsimd",
+]
+
+[[package]]
 name = "base64ct"
 version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1006,7 +1159,7 @@ checksum = "b645a089122eccb6111b4f81cbc1a49f5900ac4666bb93ac027feaecf15607bf"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#a8987fe422af9416b7419fb68151f79c087c5dac"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#c9c23de5be80ed1712cfd4a8c71e87c5cf692c41"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1237,10 +1390,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "bytecheck"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8834bb1d8ee5dc048ee3124f2c7c1afcc6bc9aed03f11e9dfd8c69470a5db340"
+dependencies = [
+ "feature-probe",
+ "serde",
+]
+
+[[package]]
 name = "bytemuck"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c041d3eab048880cb0b86b256447da3f18859a163c3b8d8893f4e6368abe6393"
+dependencies = [
+ "proc-macro2 1.0.47",
+ "quote 1.0.21",
+ "syn 1.0.104",
+]
+
+[[package]]
+name = "bytemuck"
+version = "1.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaa3a8d9a1ca92e282c96a32d6511b695d7d994d1d102ba85d279f9b2756947f"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -1305,9 +1479,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chrono"
-version = "0.4.22"
+version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfd4d1b31faaa3a89d7934dbded3111da0d2ef28e3ebccdb4f0179f5929d1ef1"
+checksum = "16b0a3d9ed01224b22057780a37bb8c5dbfe1be8ba48678e7bf57ec4b385411f"
 dependencies = [
  "iana-time-zone",
  "js-sys",
@@ -1341,7 +1515,7 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1894,7 +2068,7 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1914,6 +2088,13 @@ checksum = "23d8666cb01533c39dde32bcbab8e227b4ed6679b2c925eba05feabea39508fb"
 name = "db-store"
 version = "0.1.0"
 dependencies = [
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-sts",
+ "aws-sig-auth 0.54.1",
+ "aws-smithy-http 0.54.4",
+ "aws-types 0.54.1",
+ "futures",
  "http",
  "http-serde",
  "metrics",
@@ -1921,6 +2102,9 @@ dependencies = [
  "serde",
  "sqlx",
  "thiserror",
+ "tokio",
+ "tracing",
+ "triggered",
 ]
 
 [[package]]
@@ -2320,6 +2504,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-s3",
+ "aws-types 0.51.0",
  "base64 0.21.0",
  "beacon",
  "blake3",
@@ -2819,7 +3004,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#e19a45c84a3dae2e1ea42b50515317a0e935903b"
+source = "git+https://github.com/helium/proto?branch=master#4afcaaea25bde4e333f1e57fc32f163910e8ca0a"
 dependencies = [
  "bytes",
  "prost",
@@ -2833,7 +3018,7 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -3206,6 +3391,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "iot-packet-verifier"
+version = "0.1.0"
+dependencies = [
+ "anchor-client",
+ "anchor-lang",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "clap 3.2.23",
+ "config",
+ "data-credits",
+ "db-store",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "helium-sub-daos",
+ "http",
+ "http-serde",
+ "poc-metrics",
+ "prost",
+ "serde",
+ "sha2 0.10.6",
+ "solana-client",
+ "solana-program",
+ "solana-sdk",
+ "spl-token",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "iot-verifier"
 version = "0.1.0"
 dependencies = [
@@ -3237,7 +3460,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.6.5",
+ "rand 0.8.5",
  "retainer",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3407,12 +3630,10 @@ dependencies = [
 [[package]]
 name = "lazy-transactions"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "bytemuck",
- "spl-concurrent-merkle-tree 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -3605,7 +3826,7 @@ version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
 dependencies = [
- "autocfg 1.1.0",
+ "autocfg",
 ]
 
 [[package]]
@@ -3615,6 +3836,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
 dependencies = [
  "autocfg 1.1.0",
+]
+
+[[package]]
+name = "merlin"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58c38e2799fc0978b65dfff8023ec7843e2330bb462f19198840b34b6582397d"
+dependencies = [
+ "byteorder",
+ "keccak",
+ "rand_core 0.6.4",
+ "zeroize",
 ]
 
 [[package]]
@@ -3791,7 +4024,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.6.5",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3831,7 +4064,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.6.5",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3847,33 +4080,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpl-token-auth-rules"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a69803fbfbc4bb0327de86f49d2639692c7c60276cb87d6cced84bb8189f2000"
-dependencies = [
- "borsh",
- "mpl-token-metadata-context-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "num-derive",
- "num-traits",
- "rmp-serde",
- "serde",
- "shank",
- "solana-program",
- "solana-zk-token-sdk",
- "thiserror",
-]
-
-[[package]]
 name = "mpl-token-metadata"
-version = "1.8.3"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+version = "1.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e719d7e0b5a9d97c7fd4d6f52ebfc32f1e3942e068173e47355f8c275656488a"
 dependencies = [
  "arrayref",
  "borsh",
- "mpl-token-auth-rules",
- "mpl-token-metadata-context-derive 0.2.1 (git+https://github.com/helium/helium-program-library.git?tag=v0.0.31)",
- "mpl-utils 0.1.0 (git+https://github.com/helium/helium-program-library.git?tag=v0.0.31)",
+ "mpl-token-vault",
+>>>>>>> origin/main
  "num-derive",
  "num-traits",
  "shank",
@@ -3904,22 +4119,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpl-token-metadata-context-derive"
-version = "0.2.1"
+name = "mpl-token-vault"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12989bc45715b0ee91944855130131479f9c772e198a910c3eb0ea327d5bffc3"
+checksum = "7ade4ef15bc06a6033076c4ff28cba9b42521df5ec61211d6f419415ace2746a"
 dependencies = [
- "quote 1.0.21",
- "syn 1.0.104",
-]
-
-[[package]]
-name = "mpl-token-metadata-context-derive"
-version = "0.2.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
-dependencies = [
- "quote 1.0.21",
- "syn 1.0.104",
+ "borsh",
+ "num-derive",
+ "num-traits",
+ "solana-program",
+ "spl-token",
+ "thiserror",
 ]
 
 [[package]]
@@ -4026,7 +4236,7 @@ dependencies = [
  "helium-proto",
  "http",
  "http-serde",
- "rand 0.6.5",
+ "rand 0.8.5",
  "retainer",
  "serde",
  "thiserror",
@@ -4069,7 +4279,7 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "090c7f9998ee0ff65aa5b723e4009f7b217707f1fb5ea551329cc4d6231fb304"
 dependencies = [
- "autocfg 1.1.0",
+ "autocfg",
  "num-integer",
  "num-traits",
 ]
@@ -4091,7 +4301,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6b19411a9719e753aff12e5187b74d60d3dc449ec3f4dc21e3989c3f554bc95"
 dependencies = [
- "autocfg 1.1.0",
+ "autocfg",
  "num-traits",
 ]
 
@@ -4134,6 +4344,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c000134b5dbf44adc5cb772486d335293351644b801551abe8f75c84cfa4aef"
 dependencies = [
  "autocfg 1.1.0",
+ "num-bigint 0.2.6",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "num-iter"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d03e6c028c5dc5cac6e2dec0efda81fc887605bb3d884578bb6d6bf7514e252"
+dependencies = [
+ "autocfg",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "num-rational"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c000134b5dbf44adc5cb772486d335293351644b801551abe8f75c84cfa4aef"
+dependencies = [
+ "autocfg",
  "num-bigint 0.2.6",
  "num-integer",
  "num-traits",
@@ -4227,6 +4460,12 @@ name = "os_str_bytes"
 version = "6.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b7820b9daea5457c9f21c69448905d723fbd21136ccf521748f23fd49e723ee"
+
+[[package]]
+name = "outref"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4030760ffd992bef45b0ae3f10ce1aba99e33464c90d14dd7c039884963ddc7a"
 
 [[package]]
 name = "p256"
@@ -4415,7 +4654,7 @@ dependencies = [
  "axum 0.6.3",
  "base64 0.21.0",
  "blake3",
- "bs58 0.3.1",
+ "bs58 0.4.0",
  "chrono",
  "clap 3.2.23",
  "config",
@@ -4465,7 +4704,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.6.5",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -4524,6 +4763,34 @@ checksum = "c142c0e46b57171fe0c528bee8c5b7569e80f0c17e377cd0e30ea57dbc11bb51"
 dependencies = [
  "proc-macro2 1.0.47",
  "syn 1.0.104",
+]
+
+[[package]]
+name = "price"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap 3.2.23",
+ "config",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-proto",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "poc-metrics",
+ "prost",
+ "pyth-sdk-solana",
+ "serde",
+ "serde_json",
+ "solana-client",
+ "solana-program",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
 ]
 
 [[package]]
@@ -4674,6 +4941,30 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bc0e0ab39d0543220dcba7c248161aab70e25916b2c1585057abc0856ff4e0c"
 dependencies = [
+ "proc-macro2 1.0.47",
+ "quote 1.0.21",
+ "syn 1.0.104",
+]
+
+[[package]]
+name = "pyth-sdk"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00bf2540203ca3c7a5712fdb8b5897534b7f6a0b6e7b0923ff00466c5f9efcb3"
+dependencies = [
+ "borsh",
+ "borsh-derive",
+ "hex",
+ "schemars",
+ "serde",
+]
+
+[[package]]
+name = "pyth-sdk-solana"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bc0e0ab39d0543220dcba7c248161aab70e25916b2c1585057abc0856ff4e0c"
+dependencies = [
  "borsh",
  "borsh-derive",
  "bytemuck",
@@ -4799,25 +5090,6 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d71dacdc3c88c1fde3885a3be3fbab9f35724e6ce99467f7d9c5026132184ca"
-dependencies = [
- "autocfg 0.1.8",
- "libc",
- "rand_chacha 0.1.1",
- "rand_core 0.4.2",
- "rand_hc 0.1.0",
- "rand_isaac",
- "rand_jitter",
- "rand_os",
- "rand_pcg",
- "rand_xorshift",
- "winapi",
-]
-
-[[package]]
-name = "rand"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
@@ -4826,7 +5098,7 @@ dependencies = [
  "libc",
  "rand_chacha 0.2.2",
  "rand_core 0.5.1",
- "rand_hc 0.2.0",
+ "rand_hc",
 ]
 
 [[package]]
@@ -4838,16 +5110,6 @@ dependencies = [
  "libc",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
-]
-
-[[package]]
-name = "rand_chacha"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556d3a1ca6600bfcbab7c7c91ccb085ac7fbbcd70e008a98742e7847f4f7bcef"
-dependencies = [
- "autocfg 0.1.8",
- "rand_core 0.3.1",
 ]
 
 [[package]]
@@ -4872,21 +5134,6 @@ dependencies = [
 
 [[package]]
 name = "rand_core"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a6fdeb83b075e8266dcc8762c22776f6877a63111121f5f8c7411e5be7eed4b"
-dependencies = [
- "rand_core 0.4.2",
-]
-
-[[package]]
-name = "rand_core"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
-
-[[package]]
-name = "rand_core"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
@@ -4905,73 +5152,11 @@ dependencies = [
 
 [[package]]
 name = "rand_hc"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b40677c7be09ae76218dc623efbf7b18e34bced3f38883af07bb75630a21bc4"
-dependencies = [
- "rand_core 0.3.1",
-]
-
-[[package]]
-name = "rand_hc"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
  "rand_core 0.5.1",
-]
-
-[[package]]
-name = "rand_isaac"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ded997c9d5f13925be2a6fd7e66bf1872597f759fd9dd93513dd7e92e5a5ee08"
-dependencies = [
- "rand_core 0.3.1",
-]
-
-[[package]]
-name = "rand_jitter"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1166d5c91dc97b88d1decc3285bb0a99ed84b05cfd0bc2341bdf2d43fc41e39b"
-dependencies = [
- "libc",
- "rand_core 0.4.2",
- "winapi",
-]
-
-[[package]]
-name = "rand_os"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b75f676a1e053fc562eafbb47838d67c84801e38fc1ba459e8f180deabd5071"
-dependencies = [
- "cloudabi",
- "fuchsia-cprng",
- "libc",
- "rand_core 0.4.2",
- "rdrand",
- "winapi",
-]
-
-[[package]]
-name = "rand_pcg"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abf9b09b01790cfe0364f52bf32995ea3c39f4d2dd011eac241d2914146d0b44"
-dependencies = [
- "autocfg 0.1.8",
- "rand_core 0.4.2",
-]
-
-[[package]]
-name = "rand_xorshift"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbf7e9e623549b0e21f6e97cf8ecf247c1a8fd2e8a992ae265314300b2455d5c"
-dependencies = [
- "rand_core 0.3.1",
 ]
 
 [[package]]
@@ -5024,15 +5209,6 @@ dependencies = [
  "ring",
  "time 0.3.17",
  "yasna",
-]
-
-[[package]]
-name = "rdrand"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
-dependencies = [
- "rand_core 0.3.1",
 ]
 
 [[package]]
@@ -5166,7 +5342,7 @@ dependencies = [
  "once_cell",
  "poc-metrics",
  "prost",
- "rand 0.6.5",
+ "rand 0.8.5",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -5226,6 +5402,31 @@ checksum = "88aa938cda42a0cf62a20cfe8d139ff1af20c2e681212b5b34adb5a58333f222"
 dependencies = [
  "lazy_static",
  "regex",
+]
+
+[[package]]
+name = "rkyv"
+version = "0.7.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cec2b3485b07d96ddfd3134767b8a447b45ea4eb91448d0a35180ec0ffd5ed15"
+dependencies = [
+ "bytecheck",
+ "hashbrown 0.12.3",
+ "ptr_meta",
+ "rend",
+ "rkyv_derive",
+ "seahash",
+]
+
+[[package]]
+name = "rkyv_derive"
+version = "0.7.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6eaedadc88b53e36dd32d940ed21ae4d850d5916f2581526921f553a72ac34c4"
+dependencies = [
+ "proc-macro2 1.0.47",
+ "quote 1.0.21",
+ "syn 1.0.104",
 ]
 
 [[package]]
@@ -5293,6 +5494,8 @@ checksum = "ee9164faf726e4f3ece4978b25ca877ddc6802fa77f38cdccb32c7f805ecd70c"
 dependencies = [
  "arrayvec",
  "num-traits",
+ "rand 0.8.5",
+ "rkyv",
  "serde",
 ]
 
@@ -5526,15 +5729,6 @@ version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "416bda436f9aab92e02c8e10d49a15ddd339cea90b6e340fe51ed97abb548294"
 dependencies = [
- "serde",
-]
-
-[[package]]
-name = "serde_derive"
-version = "1.0.152"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af487d118eecd09402d70a5d72551860e788df87b464af30e5ea6a38c75c541e"
-dependencies = [
  "proc-macro2 1.0.47",
  "quote 1.0.21",
  "syn 1.0.104",
@@ -5709,11 +5903,11 @@ dependencies = [
 [[package]]
 name = "shared-utils"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "mpl-token-metadata 1.8.3",
+ "mpl-token-metadata 1.6.4",
  "spl-account-compression",
  "uint",
 ]
@@ -6413,7 +6607,7 @@ source = "git+https://github.com/ChewingGlass/solana-program-library?branch=feat
 dependencies = [
  "anchor-lang",
  "bytemuck",
- "spl-concurrent-merkle-tree 0.1.2 (git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26)",
+ "spl-concurrent-merkle-tree",
  "spl-noop",
 ]
 
@@ -6430,17 +6624,6 @@ dependencies = [
  "solana-program",
  "spl-token",
  "spl-token-2022",
- "thiserror",
-]
-
-[[package]]
-name = "spl-concurrent-merkle-tree"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b8518df14b19ada73c6bd15ee344de8ab720580fb2df0029342f9a772e2392d"
-dependencies = [
- "bytemuck",
- "solana-program",
  "thiserror",
 ]
 
@@ -6567,8 +6750,7 @@ dependencies = [
 [[package]]
 name = "sqlx"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9249290c05928352f71c077cc44a464d880c63f26f7534728cca008e135c0428"
+source = "git+https://github.com/helium/sqlx.git?rev=92a2268f02e0cac6fccb34d3e926347071dbb88d#92a2268f02e0cac6fccb34d3e926347071dbb88d"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -6577,8 +6759,7 @@ dependencies = [
 [[package]]
 name = "sqlx-core"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcbc16ddba161afc99e14d1713a453747a2b07fc097d2009f4c300ec99286105"
+source = "git+https://github.com/helium/sqlx.git?rev=92a2268f02e0cac6fccb34d3e926347071dbb88d#92a2268f02e0cac6fccb34d3e926347071dbb88d"
 dependencies = [
  "ahash 0.7.6",
  "atoi",
@@ -6634,8 +6815,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b850fa514dc11f2ee85be9d055c512aa866746adfacd1cb42d867d68e6a5b0d9"
+source = "git+https://github.com/helium/sqlx.git?rev=92a2268f02e0cac6fccb34d3e926347071dbb88d#92a2268f02e0cac6fccb34d3e926347071dbb88d"
 dependencies = [
  "dotenvy",
  "either",
@@ -6653,8 +6833,7 @@ dependencies = [
 [[package]]
 name = "sqlx-rt"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24c5b2d25fa654cc5f841750b8e1cdedbe21189bf9a9382ee90bfa9dd3562396"
+source = "git+https://github.com/helium/sqlx.git?rev=92a2268f02e0cac6fccb34d3e926347071dbb88d#92a2268f02e0cac6fccb34d3e926347071dbb88d"
 dependencies = [
  "once_cell",
  "tokio",
@@ -7217,7 +7396,7 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -7442,13 +7621,13 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.0.31#47999852972a20d9095860384d2c8b6ee4cad7dd"
+source = "git+https://github.com/helium/helium-program-library.git#e356b94bdc6072cf108769fecaa3b01f54fb3f57"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
  "bytemuck",
  "itertools",
- "mpl-token-metadata 1.8.3",
+ "mpl-token-metadata 1.6.4",
  "shared-utils",
  "solana-program",
  "spl-governance",
@@ -7456,6 +7635,12 @@ dependencies = [
  "spl-governance-tools",
  "static_assertions",
 ]
+
+[[package]]
+name = "vsimd"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "waker-fn"

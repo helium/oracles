@@ -14,7 +14,7 @@ use helium_proto::{
     services::poc_mobile::{
         CellHeartbeatIngestReportV1, CellHeartbeatReqV1, SpeedtestIngestReportV1, SpeedtestReqV1,
     },
-    EntropyReportV1, Message,
+    EntropyReportV1, Message, PriceReportV1,
 };
 use serde_json::json;
 use std::path::PathBuf;
@@ -72,6 +72,12 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for EntropyReportV1 {
     }
 }
 
+impl MsgTimestamp<Result<DateTime<Utc>>> for PriceReportV1 {
+    fn timestamp(&self) -> Result<DateTime<Utc>> {
+        self.timestamp.to_timestamp()
+    }
+}
+
 fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
     let result = match file_type {
         FileType::CellHeartbeat => CellHeartbeatReqV1::decode(buf)
@@ -115,6 +121,9 @@ fn get_timestamp(file_type: &FileType, buf: &[u8]) -> Result<DateTime<Utc>> {
                 })
             })
             .and_then(|beacon_report| beacon_report.timestamp())?,
+        FileType::PriceReport => PriceReportV1::decode(buf)
+            .map_err(Error::from)
+            .and_then(|entry| entry.timestamp())?,
 
         _ => Utc::now(),
     };

@@ -202,7 +202,7 @@ mod db {
         db: impl sqlx::PgExecutor<'_>,
         file_type: FileType,
     ) -> Result<Option<DateTime<Utc>>> {
-        let default = Utc.timestamp_millis(0);
+        let default = Utc.timestamp_opt(0, 0).single().unwrap();
 
         let result = sqlx::query_scalar::<_, DateTime<Utc>>(
             r#"

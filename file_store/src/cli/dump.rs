@@ -15,8 +15,9 @@ use helium_proto::{
             CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, RadioRewardShare,
             SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
         },
+        router::PacketRouterPacketReportV1,
     },
-    BlockchainTxn, Message, RewardManifest, SubnetworkRewards,
+    BlockchainTxn, Message, PriceReportV1, RewardManifest, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -157,6 +158,20 @@ impl Cmd {
                     // This is to make ingesting the output of these transactions simpler on chain.
                     let wrapped_txn = BlockchainTxn::decode(msg)?;
                     println!("{:?}", wrapped_txn.encode_to_vec());
+                }
+                FileType::IotPacketReport => {
+                    let packet_report = PacketRouterPacketReportV1::decode(msg)?;
+                    print_json(&json!({
+                        "oui": packet_report.oui,
+                        "timestamp": packet_report.gateway_timestamp_ms}))?;
+                }
+                FileType::PriceReport => {
+                    let manifest = PriceReportV1::decode(msg)?;
+                    print_json(&json!({
+                        "price": manifest.price,
+                        "timestamp": manifest.timestamp,
+                        "token_type": manifest.token_type(),
+                    }))?;
                 }
                 _ => (),
             }

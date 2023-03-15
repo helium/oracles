@@ -15,8 +15,10 @@ members = [
     "reward_index",
     "metrics",
     "denylist",
-    "iot_config",
     "mobile_packet_verifier",
+    "iot_packet_verifier",
+    "iot_config",
+    "price",
 ]
 
 [workspace.package]
@@ -88,5 +90,8 @@ geo-types = "*"
 geo = "*"
 blake3 = "*"
 retainer = "*"
-rand = "0.6"
+rand = "*"
 itertools = "*"
+
+[patch.crates-io]
+sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }

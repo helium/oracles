@@ -32,11 +32,11 @@ pub enum TxScalerError {
 }
 
 impl Server {
-    pub async fn from_settings(settings: &Settings) -> Result<Self, TxScalerError> {
+    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, TxScalerError> {
         let mut server = Self {
             follower: FollowerService::from_settings(&settings.follower),
             hex_density_map: SharedHexDensityMap::new(),
-            pool: settings.database.connect(2).await?,
+            pool,
             trigger_interval: Duration::seconds(settings.transmit_scale_interval),
         };
 

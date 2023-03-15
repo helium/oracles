@@ -1,4 +1,4 @@
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use serde::Serialize;
 use sqlx::{types::Uuid, Row};
@@ -32,7 +32,7 @@ pub struct OrgList {
 #[derive(Debug)]
 pub struct OrgWithConstraints {
     pub org: Org,
-    pub constraints: DevAddrConstraint,
+    pub constraints: Vec<DevAddrConstraint>,
 }
 
 pub async fn create_org(
@@ -45,7 +45,6 @@ pub async fn create_org(
         r#"
         insert into organizations (owner_pubkey, payer_pubkey, delegate_keys)
         values ($1, $2, $3)
-        on conflict (owner_pubkey) do nothing
         returning *
         "#,
     )
@@ -108,17 +107,24 @@ pub async fn get_with_constraints(
 ) -> Result<OrgWithConstraints, sqlx::Error> {
     let row = sqlx::query(
         r#"
-        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.locked, org_const.start_addr, org_const.end_addr
-        from organizations org join organization_devaddr_constraints org_const
-        on org.oui = org_const.oui
+        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.locked,
+            array(select (start_addr, end_addr) from organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints
+        from organizations org
+        where org.oui = $1
         "#,
     )
     .bind(oui as i64)
     .fetch_one(db)
     .await?;
 
-    let start_addr = row.get::<i32, &str>("start_addr");
-    let end_addr = row.get::<i32, &str>("end_addr");
+    let constraints = row
+        .get::<Vec<(i32, i32)>, &str>("constraints")
+        .into_iter()
+        .map(|(start, end)| DevAddrConstraint {
+            start_addr: start.into(),
+            end_addr: end.into(),
+        })
+        .collect();
 
     Ok(OrgWithConstraints {
         org: Org {
@@ -128,11 +134,60 @@ pub async fn get_with_constraints(
             delegate_keys: row.get("delegate_keys"),
             locked: row.get("locked"),
         },
-        constraints: DevAddrConstraint {
-            start_addr: start_addr.into(),
-            end_addr: end_addr.into(),
-        },
+        constraints,
     })
+}
+
+pub async fn get_constraints_by_route(
+    route_id: &str,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<Vec<DevAddrConstraint>, DbOrgError> {
+    let uuid = Uuid::try_parse(route_id)?;
+
+    let constraints = sqlx::query(
+        r#"
+        select consts.start_addr, consts.end_addr from organization_devaddr_constraints consts
+        join routes on routes.oui = consts.oui
+        where routes.id = $1
+        "#,
+    )
+    .bind(uuid)
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .map(|row| DevAddrConstraint {
+        start_addr: row.get::<i32, &str>("start_addr").into(),
+        end_addr: row.get::<i32, &str>("end_addr").into(),
+    })
+    .collect();
+
+    Ok(constraints)
+}
+
+pub async fn get_route_ids_by_route(
+    route_id: &str,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<Vec<String>, DbOrgError> {
+    let uuid = Uuid::try_parse(route_id)?;
+
+    let route_ids = sqlx::query(
+        r#"
+        select routes.id from routes
+        where oui = (
+            select organizations.oui from organizations
+            join routes on organizations.oui = routes.oui
+            where routes.id = $1
+        )
+        "#,
+    )
+    .bind(uuid)
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .map(|row| row.get::<Uuid, &str>("id").to_string())
+    .collect();
+
+    Ok(route_ids)
 }
 
 pub async fn is_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
@@ -162,11 +217,11 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum DbPubkeysError {
-    #[error("error retrieving saved org keys: {0}")]
-    DbError(#[from] sqlx::Error),
+pub enum DbOrgError {
+    #[error("error retrieving saved org row: {0}")]
+    DbStore(#[from] sqlx::Error),
     #[error("unable to deserialize pubkey: {0}")]
-    DecodeError(#[from] helium_crypto::Error),
+    DecodeKey(#[from] helium_crypto::Error),
     #[error("Route Id parse error: {0}")]
     RouteIdParse(#[from] sqlx::types::uuid::Error),
 }
@@ -174,7 +229,7 @@ pub enum DbPubkeysError {
 pub async fn get_org_pubkeys(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, DbPubkeysError> {
+) -> Result<Vec<PublicKey>, DbOrgError> {
     let org = get(oui, db).await?;
 
     let mut pubkeys: Vec<PublicKey> = vec![PublicKey::try_from(org.owner)?];
@@ -193,7 +248,7 @@ pub async fn get_org_pubkeys(
 pub async fn get_org_pubkeys_by_route(
     route_id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, DbPubkeysError> {
+) -> Result<Vec<PublicKey>, DbOrgError> {
     let uuid = Uuid::try_parse(route_id)?;
 
     let org = sqlx::query_as::<_, Org>(
@@ -218,18 +273,6 @@ pub async fn get_org_pubkeys_by_route(
     pubkeys.append(&mut delegate_keys);
 
     Ok(pubkeys)
-}
-
-pub async fn hpr_keys(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<PublicKey>, DbPubkeysError> {
-    let mut keys = vec![];
-
-    let mut rows = sqlx::query(r#" select pubkey from hpr_keys "#).fetch(db);
-    while let Some(key_row) = rows.try_next().await? {
-        keys.push(PublicKey::try_from(
-            key_row.get::<PublicKeyBinary, &str>("pubkey"),
-        )?)
-    }
-    Ok(keys)
 }
 
 #[derive(thiserror::Error, Debug)]

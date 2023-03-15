@@ -1,4 +1,4 @@
-use crate::{traits::MsgDecode, Error};
+use crate::{error::DecodeError, traits::MsgDecode, Error};
 use chrono::{DateTime, TimeZone, Utc};
 use helium_proto as proto;
 
@@ -19,8 +19,18 @@ impl TryFrom<proto::RewardManifest> for RewardManifest {
     fn try_from(value: proto::RewardManifest) -> Result<Self, Self::Error> {
         Ok(RewardManifest {
             written_files: value.written_files,
-            start_timestamp: Utc.timestamp(value.start_timestamp as i64, 0),
-            end_timestamp: Utc.timestamp(value.end_timestamp as i64, 0),
+            start_timestamp: Utc
+                .timestamp_opt(value.start_timestamp as i64, 0)
+                .single()
+                .ok_or(Error::Decode(DecodeError::InvalidTimestamp(
+                    value.start_timestamp,
+                )))?,
+            end_timestamp: Utc
+                .timestamp_opt(value.end_timestamp as i64, 0)
+                .single()
+                .ok_or(Error::Decode(DecodeError::InvalidTimestamp(
+                    value.end_timestamp,
+                )))?,
         })
     }
 }

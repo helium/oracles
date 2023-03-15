@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use futures_util::TryFutureExt;
 use mobile_rewards::{server_metrics, Server as MobileServer, Settings};
 use std::path;
 use tokio::signal;
@@ -53,10 +54,6 @@ impl Server {
         poc_metrics::start_metrics(&settings.metrics)?;
         server_metrics::register_metrics();
 
-        // Create database pool and migrate
-        let pool = settings.database.connect(2).await?;
-        sqlx::migrate!().run(&pool).await?;
-
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
@@ -64,10 +61,21 @@ impl Server {
             shutdown_trigger.trigger()
         });
 
-        // Reward server
-        let mut reward_server = MobileServer::new(settings).await?;
+        // Create database pool and migrate
+        let (pool, db_join_handle) = settings
+            .database
+            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
+            .await?;
+        sqlx::migrate!().run(&pool).await?;
 
-        reward_server.run(shutdown_listener.clone()).await?;
+        // Reward server
+        let mut reward_server = MobileServer::new(settings, pool).await?;
+
+        tokio::try_join!(
+            db_join_handle.map_err(anyhow::Error::from),
+            reward_server.run(shutdown_listener.clone()),
+        )?;
+
         Ok(())
     }
 }

@@ -112,7 +112,7 @@ mod tests {
 
         assert_eq!(
             cellheartbeatreport.received_timestamp,
-            Utc.timestamp_millis(now)
+            Utc.timestamp_millis_opt(now).unwrap()
         );
         assert_eq!(
             report.timestamp().expect("timestamp"),

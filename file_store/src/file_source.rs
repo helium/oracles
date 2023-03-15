@@ -46,7 +46,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{FileInfo, FileInfoStream, FileStore};
+    use crate::{FileInfo, FileInfoStream, FileStore, Settings};
     use std::str::FromStr;
 
     fn infos(names: &'static [&str]) -> FileInfoStream {
@@ -65,7 +65,16 @@ mod test {
         // 2022-08-05 15:35:55     240363 cell_heartbeat.1658832527866.gz
         // 2022-08-05 15:36:08    6525274 cell_heartbeat.1658834120042.gz
         //
-        let file_store = FileStore::new(None, "us-east-1", "devnet-poc5g-rewards")
+
+        let settings = Settings {
+            bucket: "devnet-poc5g-rewards".to_string(),
+            endpoint: None,
+            region: "us-east-1".to_string(),
+            access_key_id: None,
+            secret_access_key: None,
+        };
+
+        let file_store = FileStore::from_settings(&settings)
             .await
             .expect("file store");
         let stream = file_store.source(infos(&[

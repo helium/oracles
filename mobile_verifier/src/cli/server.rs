@@ -20,7 +20,10 @@ impl Cmd {
             shutdown_trigger.trigger()
         });
 
-        let pool = settings.database.connect(10).await?;
+        let (pool, db_join_handle) = settings
+            .database
+            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
+            .await?;
         sqlx::migrate!().run(&pool).await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
@@ -94,6 +97,7 @@ impl Cmd {
         };
 
         tokio::try_join!(
+            db_join_handle.map_err(Error::from),
             heartbeats_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
