@@ -18,6 +18,16 @@ hnt_price_key = "6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6"
 # hst_price_key =
 # iot_price_key =
 
+# Set default prices for testing as needed
+
+# HNT price has 8 exponent. i.e. $1 = 100000000. Defaulting it to $1 for testing.
+hnt_price = 100000000
+# MOBILE has 6 exponent, i.e. $1 = 1000000. Defaulting it to $2 for testing.
+mobile_price = 2000000
+# IOT has 6 exponent, i.e. $1 = 1000000. Defaulting it to $3 for testing.
+iot_price = 3000000
+# hst_price = 4000000
+
 # Cache folder to use. Default blow
 #
 # cache = "/var/data/price"

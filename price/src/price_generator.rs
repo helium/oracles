@@ -60,7 +60,18 @@ impl PriceGenerator {
     pub async fn new(settings: &Settings, token_type: BlockchainTokenTypeV1) -> Result<Self> {
         let client = RpcClient::new(&settings.source);
         let price = match settings.price_key(token_type) {
-            None => Price::new(0, 0, token_type),
+            None => {
+                // There is no price key, we will set a default price from settings
+                let timestamp = Utc::now().timestamp();
+                let default_price = settings.default_price(token_type).unwrap_or(0);
+                tracing::info!(
+                    "no price key for {:?}, using default_price: {:?} from settings at {:?}",
+                    token_type,
+                    default_price,
+                    timestamp,
+                );
+                Price::new(timestamp, default_price, token_type)
+            }
             Some(price_key) => get_price(&client, &price_key, settings.age, token_type).await?,
         };
         Ok(Self {
