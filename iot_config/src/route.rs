@@ -180,7 +180,7 @@ pub async fn update_route(
 async fn insert_euis(
     euis: &[EuiPair],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
+) -> Result<Vec<EuiPair>, RouteStorageError> {
     // We don't want to take any actions if a route_id cannot be parsed.
     let mut eui_values = vec![];
     for eui in euis.iter() {
@@ -192,7 +192,8 @@ async fn insert_euis(
     }
 
     const EUI_INSERT_VALS: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
-    const EUI_INSERT_ON_CONF: &str = " on conflict (route_id, app_eui, dev_eui) do nothing ";
+    const EUI_INSERT_ON_CONF: &str =
+        " on conflict (route_id, app_eui, dev_eui) do nothing returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(EUI_INSERT_VALS);
     query_builder
@@ -201,15 +202,16 @@ async fn insert_euis(
         })
         .push(EUI_INSERT_ON_CONF);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<EuiPair>()
+        .fetch_all(db)
+        .await?)
 }
 
 async fn remove_euis(
     euis: &[EuiPair],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
+) -> Result<Vec<EuiPair>, RouteStorageError> {
     // We don't want to take any actions if a route_id cannot be parsed.
     let mut eui_values = vec![];
     for eui in euis.iter() {
@@ -220,17 +222,21 @@ async fn remove_euis(
         ));
     }
 
-    const EUI_DELETE_SQL: &str =
+    const EUI_DELETE_VALS: &str =
         " delete from route_eui_pairs where (route_id, app_eui, dev_eui) in ";
+    const EUI_DELETE_RETURNING: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(EUI_DELETE_SQL);
-    query_builder.push_tuples(eui_values, |mut builder, (id, app_eui, dev_eui)| {
-        builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
-    });
+        sqlx::QueryBuilder::new(EUI_DELETE_VALS);
+    query_builder
+        .push_tuples(eui_values, |mut builder, (id, app_eui, dev_eui)| {
+            builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
+        })
+        .push(EUI_DELETE_RETURNING);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<EuiPair>()
+        .fetch_all(db)
+        .await?)
 }
 
 pub async fn update_euis(
@@ -241,35 +247,41 @@ pub async fn update_euis(
 ) -> Result<(), RouteStorageError> {
     let mut transaction = db.begin().await?;
 
-    if !to_add.is_empty() {
-        insert_euis(to_add, &mut transaction).await?;
-    }
+    let added_euis = if !to_add.is_empty() {
+        insert_euis(to_add, &mut transaction).await?
+    } else {
+        vec![]
+    };
 
-    if !to_remove.is_empty() {
-        remove_euis(to_remove, &mut transaction).await?;
-    }
+    let removed_euis = if !to_remove.is_empty() {
+        remove_euis(to_remove, &mut transaction).await?
+    } else {
+        vec![]
+    };
 
     transaction.commit().await?;
 
-    for added in to_add {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Add.into(),
-            data: Some(proto::route_stream_res_v1::Data::EuiPair(added.into())),
-        };
-        if update_tx.send(update).is_err() {
-            break;
+    tokio::spawn(async move {
+        for added in added_euis {
+            let update = proto::RouteStreamResV1 {
+                action: proto::ActionV1::Add.into(),
+                data: Some(proto::route_stream_res_v1::Data::EuiPair(added.into())),
+            };
+            if update_tx.send(update).is_err() {
+                break;
+            }
         }
-    }
 
-    for removed in to_remove {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Remove.into(),
-            data: Some(proto::route_stream_res_v1::Data::EuiPair(removed.into())),
-        };
-        if update_tx.send(update).is_err() {
-            break;
+        for removed in removed_euis {
+            let update = proto::RouteStreamResV1 {
+                action: proto::ActionV1::Remove.into(),
+                data: Some(proto::route_stream_res_v1::Data::EuiPair(removed.into())),
+            };
+            if update_tx.send(update).is_err() {
+                break;
+            }
         }
-    }
+    });
 
     Ok(())
 }
@@ -277,7 +289,7 @@ pub async fn update_euis(
 async fn insert_devaddr_ranges(
     ranges: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
+) -> Result<Vec<DevAddrRange>, RouteStorageError> {
     // We don't want to take any actions if a route_id cannot be parsed.
     let mut devaddr_values = vec![];
     for devaddr in ranges {
@@ -291,7 +303,7 @@ async fn insert_devaddr_ranges(
     const DEVADDR_RANGE_INSERT_VALS: &str =
         " insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
     const DEVADDR_RANGE_INSERT_ON_CONF: &str =
-        " on conflict (route_id, start_addr, end_addr) do nothing ";
+        " on conflict (route_id, start_addr, end_addr) do nothing returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_VALS);
     query_builder
@@ -300,15 +312,16 @@ async fn insert_devaddr_ranges(
         })
         .push(DEVADDR_RANGE_INSERT_ON_CONF);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<DevAddrRange>()
+        .fetch_all(db)
+        .await?)
 }
 
 async fn remove_devaddr_ranges(
     ranges: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
+) -> Result<Vec<DevAddrRange>, RouteStorageError> {
     // We don't want to take any actions if a route_id cannot be parsed.
     let mut devaddr_values = vec![];
     for devaddr in ranges {
@@ -319,18 +332,22 @@ async fn remove_devaddr_ranges(
         ));
     }
 
-    const DEVADDR_RANGE_DELETE_SQL: &str =
+    const DEVADDR_RANGE_DELETE_VALS: &str =
         " delete from route_devaddr_ranges where (route_id, start_addr, end_addr) in ";
+    const DEVADDR_RANGE_DELETE_RETURNING: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(DEVADDR_RANGE_DELETE_SQL);
+        sqlx::QueryBuilder::new(DEVADDR_RANGE_DELETE_VALS);
 
-    query_builder.push_tuples(devaddr_values, |mut builder, (id, start, end)| {
-        builder.push_bind(id).push_bind(start).push_bind(end);
-    });
+    query_builder
+        .push_tuples(devaddr_values, |mut builder, (id, start, end)| {
+            builder.push_bind(id).push_bind(start).push_bind(end);
+        })
+        .push(DEVADDR_RANGE_DELETE_RETURNING);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<DevAddrRange>()
+        .fetch_all(db)
+        .await?)
 }
 
 pub async fn update_devaddr_ranges(
@@ -341,37 +358,43 @@ pub async fn update_devaddr_ranges(
 ) -> Result<(), RouteStorageError> {
     let mut transaction = db.begin().await?;
 
-    if !to_add.is_empty() {
-        insert_devaddr_ranges(to_add, &mut transaction).await?;
-    }
+    let added_devaddrs = if !to_add.is_empty() {
+        insert_devaddr_ranges(to_add, &mut transaction).await?
+    } else {
+        vec![]
+    };
 
-    if !to_remove.is_empty() {
-        remove_devaddr_ranges(to_remove, &mut transaction).await?;
-    }
+    let removed_devaddrs = if !to_remove.is_empty() {
+        remove_devaddr_ranges(to_remove, &mut transaction).await?
+    } else {
+        vec![]
+    };
 
     transaction.commit().await?;
 
-    for added in to_add {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Add.into(),
-            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(added.into())),
-        };
-        if update_tx.send(update).is_err() {
-            break;
+    tokio::spawn(async move {
+        for added in added_devaddrs {
+            let update = proto::RouteStreamResV1 {
+                action: proto::ActionV1::Add.into(),
+                data: Some(proto::route_stream_res_v1::Data::DevaddrRange(added.into())),
+            };
+            if update_tx.send(update).is_err() {
+                break;
+            }
         }
-    }
 
-    for removed in to_remove {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Remove.into(),
-            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
-                removed.into(),
-            )),
-        };
-        if update_tx.send(update).is_err() {
-            break;
+        for removed in removed_devaddrs {
+            let update = proto::RouteStreamResV1 {
+                action: proto::ActionV1::Remove.into(),
+                data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
+                    removed.into(),
+                )),
+            };
+            if update_tx.send(update).is_err() {
+                break;
+            }
         }
-    }
+    });
 
     Ok(())
 }

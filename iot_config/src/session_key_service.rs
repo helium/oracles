@@ -282,6 +282,9 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 }
             }
 
+            drop(session_key_filters);
+
+            tracing::info!("existing session keys sent; streaming updates as available");
             loop {
                 let shutdown = shutdown_listener.clone();
 

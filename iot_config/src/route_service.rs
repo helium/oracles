@@ -309,6 +309,10 @@ impl iot_config::Route for RouteService {
                 }
             }
 
+            drop(active_routes);
+            drop(eui_pairs);
+            drop(devaddr_ranges);
+
             tracing::info!("existing routes sent; streaming updates as available");
             loop {
                 let shutdown = shutdown_listener.clone();

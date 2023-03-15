@@ -72,35 +72,41 @@ pub async fn update_session_keys(
 ) -> Result<(), sqlx::Error> {
     let mut transaction = db.begin().await?;
 
-    if !to_add.is_empty() {
-        insert_session_key_filters(to_add, &mut transaction).await?;
-    }
+    let added_updates = if !to_add.is_empty() {
+        insert_session_key_filters(to_add, &mut transaction).await?
+    } else {
+        vec![]
+    };
 
-    if !to_remove.is_empty() {
-        remove_session_key_filters(to_remove, &mut transaction).await?;
-    }
+    let removed_updates = if !to_remove.is_empty() {
+        remove_session_key_filters(to_remove, &mut transaction).await?
+    } else {
+        vec![]
+    };
 
     transaction.commit().await?;
 
-    for added in to_add {
-        let update = SessionKeyFilterStreamResV1 {
-            action: ActionV1::Add.into(),
-            filter: Some(added.into()),
-        };
-        if update_tx.send(update).is_err() {
-            break;
+    tokio::spawn(async move {
+        for added in added_updates {
+            let update = SessionKeyFilterStreamResV1 {
+                action: ActionV1::Add.into(),
+                filter: Some(added.into()),
+            };
+            if update_tx.send(update).is_err() {
+                break;
+            }
         }
-    }
 
-    for removed in to_remove {
-        let update = SessionKeyFilterStreamResV1 {
-            action: ActionV1::Remove.into(),
-            filter: Some(removed.into()),
-        };
-        if update_tx.send(update).is_err() {
-            break;
+        for removed in removed_updates {
+            let update = SessionKeyFilterStreamResV1 {
+                action: ActionV1::Remove.into(),
+                filter: Some(removed.into()),
+            };
+            if update_tx.send(update).is_err() {
+                break;
+            }
         }
-    }
+    });
 
     Ok(())
 }
@@ -108,11 +114,11 @@ pub async fn update_session_keys(
 async fn insert_session_key_filters(
     session_key_filters: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_>,
-) -> sqlx::Result<()> {
+) -> Result<Vec<SessionKeyFilter>, sqlx::Error> {
     const SESSION_KEY_FILTER_INSERT_VALS: &str =
         " insert into session_key_filters (oui, devaddr, session_key) ";
     const SESSION_KEY_FILTER_INSERT_CONFLICT: &str =
-        " on conflict (oui, devaddr, session_key) do nothing ";
+        " on conflict (oui, devaddr, session_key) do nothing returning * ";
 
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SESSION_KEY_FILTER_INSERT_VALS);
@@ -125,30 +131,34 @@ async fn insert_session_key_filters(
         })
         .push(SESSION_KEY_FILTER_INSERT_CONFLICT);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    query_builder
+        .build_query_as::<SessionKeyFilter>()
+        .fetch_all(db)
+        .await
 }
 
 async fn remove_session_key_filters(
     session_key_filters: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), sqlx::Error> {
-    const SESSION_KEY_FILTER_DELETE_SQL: &str =
+) -> Result<Vec<SessionKeyFilter>, sqlx::Error> {
+    const SESSION_KEY_FILTER_DELETE_VALS: &str =
         " delete from session_key_filters where (oui, devaddr, session_key) in ";
+    const SESSION_KEY_FILTER_DELETE_RETURN: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(SESSION_KEY_FILTER_DELETE_SQL);
+        sqlx::QueryBuilder::new(SESSION_KEY_FILTER_DELETE_VALS);
+    query_builder
+        .push_tuples(session_key_filters, |mut builder, session_key_filter| {
+            builder
+                .push_bind(session_key_filter.oui as i64)
+                .push_bind(i32::from(session_key_filter.devaddr))
+                .push_bind(session_key_filter.session_key.clone());
+        })
+        .push(SESSION_KEY_FILTER_DELETE_RETURN);
 
-    query_builder.push_tuples(session_key_filters, |mut builder, session_key_filter| {
-        builder
-            .push_bind(session_key_filter.oui as i64)
-            .push_bind(i32::from(session_key_filter.devaddr))
-            .push_bind(session_key_filter.session_key.clone());
-    });
-
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    query_builder
+        .build_query_as::<SessionKeyFilter>()
+        .fetch_all(db)
+        .await
 }
 
 impl From<SessionKeyFilterV1> for SessionKeyFilter {
