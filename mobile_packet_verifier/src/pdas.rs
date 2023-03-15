@@ -8,7 +8,7 @@ use solana_sdk::pubkey::Pubkey;
 /// Returns the PDA for the Delegated Data Credits of the given `payer`.
 pub fn delegated_data_credits(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubkey {
     let mut hasher = Sha256::new();
-    hasher.update(&payer.as_ref()[1..]);
+    hasher.update(payer.to_string());
     let sha_digest = hasher.finalize();
     let (ddc_key, _) = Pubkey::find_program_address(
         &[

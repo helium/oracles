@@ -31,8 +31,14 @@ impl Cli {
             .init();
         poc_metrics::install_metrics();
 
-        // Set up the psotgres pool:
-        let pool = settings.database.connect(10).await?;
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        tokio::spawn(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            shutdown_trigger.trigger()
+        });
+
+        // Set up the postgres pool:
+        let (pool, conn_handler)  = settings.database.connect("mobile-packet-verifier", shutdown_listener.clone()).await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Set up the solana RpcClient:
@@ -64,12 +70,6 @@ impl Cli {
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            shutdown_trigger.trigger()
-        });
-
         let (reports, source_join_handle) =
             file_source::continuous_source::<DataTransferSessionIngestReport>()
                 .db(pool.clone())
@@ -88,6 +88,7 @@ impl Cli {
                 .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
+            conn_handler.map_err(Error::from),
         )?;
 
         Ok(())
