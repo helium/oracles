@@ -1,16 +1,59 @@
 use anyhow::{anyhow, Error, Result};
-use chrono::{DateTime, Duration, Utc};
-use file_store::{FileInfo, FileStore, FileType, Settings};
+use chrono::{DateTime, Duration, TimeZone, Utc};
+use config::{Config, File};
+use file_store::{FileInfo, FileStore, FileType};
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
-use std::collections::HashMap;
-use tokio::sync::watch;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, path::Path};
+use tokio::sync::{mpsc, watch};
 
-type Prices = HashMap<BlockchainTokenTypeV1, u64>;
+struct Price {
+    price: u64,
+    timestamp: DateTime<Utc>,
+}
+
+impl TryFrom<&PriceReportV1> for Price {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &PriceReportV1) -> Result<Self, Self::Error> {
+        Ok(Self {
+            price: value.price,
+            timestamp: Utc
+                .timestamp_opt(value.timestamp as i64, 0)
+                .single()
+                .ok_or_else(|| anyhow!("Invalid timestamp: {}", value.timestamp))?,
+        })
+    }
+}
+
+type Prices = HashMap<BlockchainTokenTypeV1, Price>;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Settings {
+    price_duration_minutes: u64,
+    file_store: file_store::Settings,
+}
+
+impl Settings {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Config::builder()
+            .add_source(File::with_name(&path.as_ref().to_string_lossy()))
+            .build()
+            .and_then(|config| config.try_deserialize())
+            .map_err(Error::from)
+    }
+
+    fn price_duration(&self) -> Duration {
+        Duration::minutes(self.price_duration_minutes as i64)
+    }
+}
 
 #[derive(Clone)]
 pub struct PriceTracker {
-    receiver: watch::Receiver<Prices>,
+    price_duration: Duration,
+    task_killer: mpsc::Sender<String>,
+    price_receiver: watch::Receiver<Prices>,
 }
 
 impl PriceTracker {
@@ -18,14 +61,31 @@ impl PriceTracker {
         settings: &Settings,
         shutdown: triggered::Listener,
     ) -> Result<(Self, impl std::future::Future<Output = Result<()>>)> {
-        let file_store = FileStore::from_settings(settings).await?;
-        let (sender, receiver) = watch::channel(Prices::new());
-        let initial_timestamp = calculate_initial_prices(&file_store, &sender).await?;
+        let file_store = FileStore::from_settings(&settings.file_store).await?;
+        let (price_sender, price_receiver) = watch::channel(Prices::new());
+        let (task_kill_sender, task_kill_receiver) = mpsc::channel(1);
+        let initial_timestamp =
+            calculate_initial_prices(&file_store, settings.price_duration(), &price_sender).await?;
 
-        let handle =
-            tokio::spawn(async move { run(file_store, sender, initial_timestamp, shutdown).await });
+        let shutdown_clone = shutdown.clone();
+        let handle = tokio::spawn(async move {
+            run(
+                file_store,
+                task_kill_receiver,
+                price_sender,
+                initial_timestamp,
+                shutdown_clone,
+            )
+            .await
+        });
 
-        Ok((PriceTracker { receiver }, async move {
+        let tracker = Self {
+            price_duration: settings.price_duration(),
+            task_killer: task_kill_sender,
+            price_receiver,
+        };
+
+        Ok((tracker, async move {
             match handle.await {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(err)) => Err(err),
@@ -35,17 +95,29 @@ impl PriceTracker {
     }
 
     pub async fn price(&self, token_type: &BlockchainTokenTypeV1) -> Result<u64> {
-        self.receiver
-            .borrow()
-            .get(token_type)
-            .cloned()
-            .ok_or_else(|| anyhow!("price not available"))
+        match self.price_receiver.borrow().get(token_type) {
+            Some(price) => {
+                if price.timestamp > Utc::now() - self.price_duration {
+                    Ok(price.price)
+                } else {
+                    let error = anyhow!("price too old, price timestamp: {:?}", price.timestamp);
+                    self.task_killer.send(error.to_string()).await?;
+                    Err(error)
+                }
+            }
+            None => {
+                let error = anyhow!("price not available");
+                self.task_killer.send(error.to_string()).await?;
+                Err(error)
+            }
+        }
     }
 }
 
 async fn run(
     file_store: FileStore,
-    sender: watch::Sender<Prices>,
+    mut task_killer: mpsc::Receiver<String>,
+    price_sender: watch::Sender<Prices>,
     mut after: DateTime<Utc>,
     shutdown: triggered::Listener,
 ) -> Result<()> {
@@ -60,8 +132,11 @@ async fn run(
                 break;
             }
             _ = trigger.tick() => {
-                let timestamp = process_files(&file_store, &sender, after).await?;
+                let timestamp = process_files(&file_store, &price_sender, after).await?;
                 after = timestamp.unwrap_or(after);
+            }
+            msg = task_killer.recv() => if let Some(string) = msg {
+                    return Err(anyhow!(string));
             }
         }
     }
@@ -71,18 +146,13 @@ async fn run(
 
 async fn calculate_initial_prices(
     file_store: &FileStore,
+    price_duration: Duration,
     sender: &watch::Sender<Prices>,
 ) -> Result<DateTime<Utc>> {
     tracing::debug!("PriceTracker: Updating initial prices");
-    for duration in [Duration::minutes(10), Duration::hours(4)] {
-        let timestamp = process_files(file_store, sender, Utc::now() - duration).await?;
-
-        if timestamp.is_some() {
-            return Ok(timestamp.unwrap());
-        }
-    }
-
-    Err(anyhow!("price not available"))
+    process_files(file_store, sender, Utc::now() - price_duration)
+        .await?
+        .ok_or_else(|| anyhow!("price not available"))
 }
 
 async fn process_files(
@@ -111,21 +181,18 @@ async fn process_file(
         .await?
         .map_err(Error::from)
         .and_then(|buf| async { PriceReportV1::decode(buf).map_err(Error::from) })
+        .and_then(|report| async move {
+            Price::try_from(&report).map(|price| (report.token_type(), price))
+        })
         .map_err(|err| {
             tracing::warn!("PriceTracker: skipping price report due to error {err:?}");
             err
         })
         .filter_map(|result| async { result.ok() })
-        .for_each(|report| async move {
-            sender.send_if_modified(
-                |prices: &mut Prices| match prices.get(&report.token_type()) {
-                    Some(price) if price == &report.price => false,
-                    _ => {
-                        prices.insert(report.token_type(), report.price);
-                        true
-                    }
-                },
-            );
+        .for_each(|(token_type, price)| async move {
+            sender.send_modify(|prices| {
+                prices.insert(token_type, price);
+            });
         })
         .await;
 
