@@ -69,7 +69,7 @@ impl Server {
         let app_name = format!("{}_{}", settings.mode, env!("CARGO_PKG_NAME"));
         let (pool, db_join_handle) = settings
             .database
-            .connect(app_name, shutdown_listener.clone())
+            .connect(&app_name, shutdown_listener.clone())
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
