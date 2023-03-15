@@ -1,6 +1,7 @@
 use std::str::FromStr;
 mod error;
 mod iam_auth_pool;
+mod metric_tracker;
 mod settings;
 
 pub use error::{Error, Result};

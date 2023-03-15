@@ -2085,6 +2085,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "tracing",
  "triggered",
 ]
 

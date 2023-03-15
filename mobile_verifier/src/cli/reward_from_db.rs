@@ -33,7 +33,10 @@ impl Cmd {
 
         let mut follower = settings.follower.connect_follower();
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let (pool, _join_handle) = settings.database.connect(shutdown_listener).await?;
+        let (pool, _join_handle) = settings
+            .database
+            .connect(env!("CARGO_PKG_NAME"), shutdown_listener)
+            .await?;
 
         let heartbeats = Heartbeats::validated(&pool).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;

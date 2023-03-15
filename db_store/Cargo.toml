@@ -15,6 +15,7 @@ serde = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
 tokio = {workspace = true}
+tracing = {workspace = true}
 triggered = {workspace = true}
 futures = {workspace = true}
 

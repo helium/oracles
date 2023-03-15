@@ -66,7 +66,11 @@ impl Server {
         });
 
         // Create database pool
-        let (pool, db_join_handle) = settings.database.connect(shutdown_listener.clone()).await?;
+        let app_name = format!("{}_{}", settings.mode, env!("CARGO_PKG_NAME"));
+        let (pool, db_join_handle) = settings
+            .database
+            .connect(&app_name, shutdown_listener.clone())
+            .await?;
         sqlx::migrate!().run(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;

@@ -1,4 +1,4 @@
-use crate::{iam_auth_pool, Error, Result};
+use crate::{iam_auth_pool, metric_tracker, Error, Result};
 use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
@@ -39,14 +39,36 @@ fn default_auth_type() -> AuthType {
 impl Settings {
     pub async fn connect(
         &self,
+        app_name: &str,
         shutdown: triggered::Listener,
     ) -> Result<(Pool<Postgres>, futures::future::BoxFuture<'static, Result>)> {
         match self.auth_type {
             AuthType::Postgres => match self.simple_connect().await {
-                Ok(pool) => Ok((pool, Box::pin(async move { Ok(()) }))),
+                Ok(pool) => Ok((
+                    pool.clone(),
+                    metric_tracker::start(app_name, pool, shutdown).await?,
+                )),
                 Err(err) => Err(err),
             },
-            AuthType::Iam => iam_auth_pool::connect(self, shutdown).await,
+            AuthType::Iam => {
+                let (pool, iam_auth_handle) =
+                    iam_auth_pool::connect(self, shutdown.clone()).await?;
+                let metric_handle = metric_tracker::start(app_name, pool.clone(), shutdown).await?;
+
+                let handle =
+                    tokio::spawn(async move { tokio::try_join!(iam_auth_handle, metric_handle) });
+
+                Ok((
+                    pool,
+                    Box::pin(async move {
+                        match handle.await {
+                            Ok(Err(err)) => Err(err),
+                            Err(err) => Err(Error::from(err)),
+                            Ok(_) => Ok(()),
+                        }
+                    }),
+                ))
+            }
         }
     }
 
