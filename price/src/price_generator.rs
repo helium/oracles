@@ -153,6 +153,9 @@ impl PriceGenerator {
             let price_report = PriceReportV1::from(new_price.clone());
             tracing::debug!("price_report: {:?}", price_report);
 
+            // Set this as the last price for generator
+            self.price = new_price;
+
             file_sink.write(price_report, []).await?;
 
             Ok(())
