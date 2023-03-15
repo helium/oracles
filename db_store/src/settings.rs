@@ -39,22 +39,21 @@ fn default_auth_type() -> AuthType {
 impl Settings {
     pub async fn connect(
         &self,
-        app_name: impl Into<String>,
+        app_name: &str,
         shutdown: triggered::Listener,
     ) -> Result<(Pool<Postgres>, futures::future::BoxFuture<'static, Result>)> {
         match self.auth_type {
             AuthType::Postgres => match self.simple_connect().await {
                 Ok(pool) => Ok((
                     pool.clone(),
-                    Box::pin(metric_tracker::start(app_name.into(), pool, shutdown).await?),
+                    metric_tracker::start(app_name, pool, shutdown).await?,
                 )),
                 Err(err) => Err(err),
             },
             AuthType::Iam => {
                 let (pool, iam_auth_handle) =
                     iam_auth_pool::connect(self, shutdown.clone()).await?;
-                let metric_handle =
-                    metric_tracker::start(app_name.into(), pool.clone(), shutdown).await?;
+                let metric_handle = metric_tracker::start(app_name, pool.clone(), shutdown).await?;
 
                 let handle =
                     tokio::spawn(async move { tokio::try_join!(iam_auth_handle, metric_handle) });

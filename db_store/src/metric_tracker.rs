@@ -5,11 +5,14 @@ use crate::{Error, Result};
 const DURATION: Duration = Duration::from_secs(300);
 
 pub async fn start(
-    app_name: String,
+    app_name: &str,
     pool: sqlx::Pool<sqlx::Postgres>,
     shutdown: triggered::Listener,
 ) -> Result<futures::future::BoxFuture<'static, Result>> {
-    let join_handle = tokio::spawn(async move { run(app_name, pool, shutdown).await });
+    let pool_size_name = format!("{app_name}_db_pool_size");
+    let pool_idle_name = format!("{app_name}_db_pool_idle");
+    let join_handle =
+        tokio::spawn(async move { run(pool_size_name, pool_idle_name, pool, shutdown).await });
 
     Ok(Box::pin(async move {
         match join_handle.await {
@@ -19,10 +22,13 @@ pub async fn start(
     }))
 }
 
-async fn run(app_name: String, pool: sqlx::Pool<sqlx::Postgres>, shutdown: triggered::Listener) {
+async fn run(
+    size_name: String,
+    idle_name: String,
+    pool: sqlx::Pool<sqlx::Postgres>,
+    shutdown: triggered::Listener,
+) {
     let mut trigger = tokio::time::interval(DURATION);
-    let pool_size_name = format!("{app_name}_db_pool_size");
-    let pool_idle_name = format!("{app_name}_db_pool_idle");
 
     loop {
         let shutdown = shutdown.clone();
@@ -33,8 +39,8 @@ async fn run(app_name: String, pool: sqlx::Pool<sqlx::Postgres>, shutdown: trigg
                 break;
             }
             _ = trigger.tick() => {
-               metrics::gauge!(pool_size_name.clone(), pool.size() as f64);
-               metrics::gauge!(pool_idle_name.clone(), pool.num_idle() as f64);
+               metrics::gauge!(size_name.clone(), pool.size() as f64);
+               metrics::gauge!(idle_name.clone(), pool.num_idle() as f64);
             }
         }
     }
