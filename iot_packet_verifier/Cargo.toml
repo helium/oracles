@@ -37,8 +37,8 @@ triggered = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
 sha2 = {workspace = true}
+data-credits = {workspace = true}
+helium-sub-daos = {workspace = true}
 
-data-credits = {git = "https://github.com/helium/helium-program-library.git"}
-helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git"}
 
 

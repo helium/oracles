@@ -1,5 +1,4 @@
 use crate::{
-    error::DecodeError,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode},
     Error, Result,
 };
@@ -46,9 +45,8 @@ pub struct DataTransferSessionReq {
     pub upload_bytes: u64,
     pub download_bytes: u64,
     pub radio_access_technology: DataTransferRadioAccessTechnology,
-    pub session_id: String,
+    pub event_id: String,
     pub payer: PublicKeyBinary,
-    pub imsi_hash: Vec<u8>,
     pub timestamp: DateTime<Utc>,
     pub signature: Vec<u8>,
 }
@@ -64,23 +62,14 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
 
     fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
         let timestamp = v.timestamp()?;
-        let radio_access_technology = DataTransferRadioAccessTechnology::from_i32(
-            v.radio_access_technology,
-        )
-        .ok_or_else(|| {
-            DecodeError::unsupported_radio_access_technology(
-                "data_transfer_session_req_v1",
-                v.radio_access_technology,
-            )
-        })?;
+        let radio_access_technology = v.radio_access_technology();
         Ok(Self {
             pub_key: v.pub_key.into(),
             upload_bytes: v.upload_bytes,
             download_bytes: v.download_bytes,
             radio_access_technology,
-            session_id: v.session_id,
+            event_id: v.event_id,
             payer: v.payer.into(),
-            imsi_hash: v.imsi_hash,
             timestamp,
             signature: v.signature,
         })
