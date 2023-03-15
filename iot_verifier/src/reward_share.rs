@@ -1,46 +1,84 @@
 use crate::poc_report::ReportType;
 use chrono::{DateTime, Duration, Utc};
-use file_store::{iot_valid_poc::IotPoc, traits::TimestampEncode};
+use file_store::{iot_packet::IotValidPacket, iot_valid_poc::IotPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora as proto;
+
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use sqlx::{Postgres, Transaction};
 use std::{collections::HashMap, ops::Range};
 
-const REWARDS_PER_SHARE_PREC: u32 = 9;
+const DEFAULT_PREC: u32 = 15;
 
-// rewards in IoT Bones per 24 hours based on emission curve year 1
+// rewards in IoT Bones ( iot @ 10^6 ) per 24 hours based on emission curve year 1
 // TODO: expand to cover the full multi-year emission curve
 lazy_static! {
-    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(60_000_000_000_u64) / Decimal::from(365)) * Decimal::from(100_000_000); // 16_438_356_164_383_560
     // TODO: year 1 emissions allocate 30% of total to PoC with 6% to beacons and 24% to witnesses but subsequent years back
     // total PoC percentage off 1.5% each year; determine how beacons and witnesses will split the subsequent years' allocations
-    static ref BEACON_REWARDS_PER_DAY: Decimal = *REWARDS_PER_DAY * Decimal::new(600, 4);
-    static ref WITNESS_REWARDS_PER_DAY: Decimal = *REWARDS_PER_DAY * Decimal::new(2400, 4);
+    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(60_000_000_000_u64) / Decimal::from(365)) * Decimal::from(1_000_000); // 16_438_356_164_383_560
+    static ref BEACON_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.06);
+    static ref WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
+    // Data transfer is allocated 50% of daily rewards
+    static ref DATA_TRANSFER_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.50);
+    // dc remainer distributed at ration of 4:1 in favour of witnesses
+    // ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
+    static ref WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.75);
+    static ref BEACON_DC_REMAINER_PERCENT: Decimal = dec!(0.25);
+    static ref DC_USD_PRICE: Decimal =  dec!(0.00001);
+
 }
 
 fn get_tokens_by_duration(tokens: Decimal, duration: Duration) -> Decimal {
-    (tokens / Decimal::from(Duration::hours(24).num_seconds()))
-        * Decimal::from(duration.num_seconds())
+    ((tokens / Decimal::from(Duration::hours(24).num_seconds()))
+        * Decimal::from(duration.num_seconds()))
+    .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
 }
 
-fn get_scheduled_tokens(duration: Duration) -> (Decimal, Decimal) {
+fn get_scheduled_poc_tokens(
+    duration: Duration,
+    dc_transfer_remainder: Decimal,
+) -> (Decimal, Decimal) {
     (
-        get_tokens_by_duration(*BEACON_REWARDS_PER_DAY, duration),
-        get_tokens_by_duration(*WITNESS_REWARDS_PER_DAY, duration),
+        get_tokens_by_duration(
+            (*REWARDS_PER_DAY * *BEACON_REWARDS_PER_DAY_PERCENT)
+                + (dc_transfer_remainder * *BEACON_DC_REMAINER_PERCENT),
+            duration,
+        ),
+        get_tokens_by_duration(
+            (*REWARDS_PER_DAY * *WITNESS_REWARDS_PER_DAY_PERCENT)
+                + (dc_transfer_remainder * *WITNESS_DC_REMAINER_PERCENT),
+            duration,
+        ),
+    )
+}
+
+fn get_scheduled_dc_tokens(duration: Duration) -> Decimal {
+    get_tokens_by_duration(
+        *REWARDS_PER_DAY * *DATA_TRANSFER_REWARDS_PER_DAY_PERCENT,
+        duration,
     )
 }
 
 #[derive(sqlx::FromRow)]
-pub struct GatewayShare {
+pub struct GatewayPocShare {
     pub hotspot_key: PublicKeyBinary,
     pub reward_type: ReportType,
     pub reward_timestamp: DateTime<Utc>,
     pub hex_scale: Decimal,
     pub reward_unit: Decimal,
     pub poc_id: Vec<u8>,
+}
+
+#[derive(sqlx::FromRow)]
+pub struct GatewayDCShare {
+    pub hotspot_key: PublicKeyBinary,
+    pub reward_type: ReportType,
+    pub reward_timestamp: DateTime<Utc>,
+    pub num_dcs: Decimal,
+    pub id: Vec<u8>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -52,7 +90,7 @@ struct GatewayShareSaveResult {
 #[error(transparent)]
 pub struct SaveGatewayShareError(#[from] sqlx::Error);
 
-impl GatewayShare {
+impl GatewayPocShare {
     pub async fn save(
         self,
         db: &mut Transaction<'_, Postgres>,
@@ -61,8 +99,11 @@ impl GatewayShare {
             r#"
             insert into gateway_shares (hotspot_key, reward_type, reward_timestamp, hex_scale, reward_unit, poc_id)
             values ($1, $2, $3, $4, $5, $6)
-            on conflict (hotspot_key, poc_id) do update set
-            reward_type = EXCLUDED.reward_type, reward_timestamp = EXCLUDED.reward_timestamp, hex_scale = EXCLUDED.hex_scale, reward_unit = EXCLUDED.reward_unit
+            on conflict (id) do update set
+                reward_type = EXCLUDED.reward_type,
+                reward_timestamp = EXCLUDED.reward_timestamp,
+                hex_scale = EXCLUDED.hex_scale,
+                reward_unit = EXCLUDED.reward_unit,
             returning (xmax = 0) as inserted;
             "#,
         )
@@ -79,17 +120,17 @@ impl GatewayShare {
 
     pub fn shares_from_poc(report: &IotPoc) -> impl Iterator<Item = Self> {
         let mut shares: Vec<Self> = Vec::new();
-        let poc_id = report.poc_id.clone();
         let beacon_scaling_factor = report.beacon_report.hex_scale;
         let beacon_reward_unit = report.beacon_report.reward_unit;
+        let ts = Utc::now();
         if beacon_scaling_factor > Decimal::ZERO && beacon_reward_unit > Decimal::ZERO {
             shares.push(Self {
                 hotspot_key: report.beacon_report.report.pub_key.clone(),
                 reward_type: ReportType::Beacon,
-                reward_timestamp: report.beacon_report.received_timestamp,
+                reward_timestamp: ts,
                 hex_scale: beacon_scaling_factor,
                 reward_unit: beacon_reward_unit,
-                poc_id: poc_id.clone(),
+                poc_id: report.poc_id.clone(),
             })
         };
         for witness in &report.selected_witnesses {
@@ -102,10 +143,10 @@ impl GatewayShare {
                 shares.push(Self {
                     hotspot_key: witness.report.pub_key.clone(),
                     reward_type: ReportType::Witness,
-                    reward_timestamp: witness.received_timestamp,
+                    reward_timestamp: ts,
                     hex_scale: witness_hex_scale,
                     reward_unit: witness_reward_unit,
-                    poc_id: poc_id.clone(),
+                    poc_id: report.poc_id.clone(),
                 })
             }
         }
@@ -113,19 +154,66 @@ impl GatewayShare {
     }
 }
 
+impl GatewayDCShare {
+    pub async fn save(
+        self,
+        db: &mut Transaction<'_, Postgres>,
+    ) -> Result<bool, SaveGatewayShareError> {
+        Ok(sqlx::query_as::<_, GatewayShareSaveResult>(
+            r#"
+            insert into gateway_dc_shares (hotspot_key, reward_type, reward_timestamp, num_dcs, id)
+            values ($1, $2, $3, $4, $5)
+            on conflict (id) do update set
+                reward_type = EXCLUDED.reward_type,
+                reward_timestamp = EXCLUDED.reward_timestamp,
+                num_dcs = EXCLUDED.num_dcs
+            returning (xmax = 0) as inserted;
+            "#,
+        )
+        .bind(self.hotspot_key)
+        .bind(self.reward_type)
+        .bind(self.reward_timestamp)
+        .bind(self.num_dcs)
+        .bind(self.id)
+        .fetch_one(&mut *db)
+        .await?
+        .inserted)
+    }
+
+    pub fn share_from_packet(packet: &IotValidPacket) -> Self {
+        Self {
+            hotspot_key: packet.gateway.clone(),
+            reward_type: ReportType::Packet,
+            reward_timestamp: Utc::now(),
+            num_dcs: Decimal::new(packet.num_dcs as i64, 0),
+            id: packet.packet_id(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct RewardShares {
     pub beacon_shares: Decimal,
     pub witness_shares: Decimal,
+    pub dc_shares: Decimal,
 }
 
 impl RewardShares {
-    pub fn add_reward(&mut self, share: &GatewayShare) {
-        let rewards = share.hex_scale * share.reward_unit;
+    pub fn add_poc_reward(&mut self, share: &GatewayPocShare) {
         match share.reward_type {
-            ReportType::Beacon => self.beacon_shares += rewards,
-            ReportType::Witness => self.witness_shares += rewards,
+            ReportType::Beacon => {
+                let rewards = share.hex_scale * share.reward_unit;
+                self.beacon_shares += rewards
+            }
+            ReportType::Witness => {
+                let rewards = share.hex_scale * share.reward_unit;
+                self.witness_shares += rewards
+            }
+            _ => (),
         }
+    }
+    pub fn add_dc_reward(&mut self, share: &GatewayDCShare) {
+        self.dc_shares += share.num_dcs
     }
 }
 
@@ -140,22 +228,9 @@ impl GatewayShares {
         reward_period: &Range<DateTime<Utc>>,
     ) -> Result<Self, sqlx::Error> {
         let mut shares = Self::default();
-
-        let mut rows = sqlx::query_as::<_, GatewayShare>(
-            "select * from gateway_shares where reward_timestamp > $1 and reward_timestamp <= $2",
-        )
-        .bind(reward_period.start)
-        .bind(reward_period.end)
-        .fetch(db);
-
-        while let Some(gateway_share) = rows.try_next().await? {
-            shares
-                .shares
-                .entry(gateway_share.hotspot_key.clone())
-                .or_default()
-                .add_reward(&gateway_share)
-        }
-
+        // get all the shares, poc and dc
+        shares.aggregate_poc_shares(db, reward_period).await?;
+        shares.aggregate_dc_shares(db, reward_period).await?;
         Ok(shares)
     }
 
@@ -163,35 +238,106 @@ impl GatewayShares {
         db: impl sqlx::PgExecutor<'_>,
         period_end: DateTime<Utc>,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("delete from gateway_shares where reward_timestamp <= $1")
-            .bind(period_end)
-            .execute(db)
-            .await
-            .map(|_| ())
+        sqlx::query(
+            "delete from gateway_shares where reward_timestamp <= $1;
+                  delete from gateway_dc_shares where reward_timestamp <= $1",
+        )
+        .bind(period_end)
+        .execute(db)
+        .await
+        .map(|_| ())
     }
 
-    pub fn total_shares(&self) -> (Decimal, Decimal) {
+    pub fn total_shares(&self) -> (Decimal, Decimal, Decimal) {
         self.shares.iter().fold(
-            (Decimal::ZERO, Decimal::ZERO),
-            |(beacon_sum, witness_sum), (_, reward_shares)| {
+            (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
+            |(beacon_sum, witness_sum, dc_sum), (_, reward_shares)| {
                 (
                     beacon_sum + reward_shares.beacon_shares,
                     witness_sum + reward_shares.witness_shares,
+                    dc_sum + reward_shares.dc_shares,
                 )
             },
         )
     }
 
+    async fn aggregate_poc_shares(
+        &mut self,
+        db: impl sqlx::PgExecutor<'_> + Copy,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> Result<(), sqlx::Error> {
+        let mut rows = sqlx::query_as::<_, GatewayPocShare>(
+            "select * from gateway_shares where reward_timestamp > $1 and reward_timestamp <= $2",
+        )
+        .bind(reward_period.start)
+        .bind(reward_period.end)
+        .fetch(db);
+        while let Some(gateway_share) = rows.try_next().await? {
+            self.shares
+                .entry(gateway_share.hotspot_key.clone())
+                .or_default()
+                .add_poc_reward(&gateway_share)
+        }
+        Ok(())
+    }
+
+    async fn aggregate_dc_shares(
+        &mut self,
+        db: impl sqlx::PgExecutor<'_> + Copy,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> Result<(), sqlx::Error> {
+        let mut rows = sqlx::query_as::<_, GatewayDCShare>(
+            "select * from gateway_dc_shares where reward_timestamp > $1 and reward_timestamp <= $2",
+        )
+        .bind(reward_period.start)
+        .bind(reward_period.end)
+        .fetch(db);
+        while let Some(gateway_share) = rows.try_next().await? {
+            self.shares
+                .entry(gateway_share.hotspot_key.clone())
+                .or_default()
+                .add_dc_reward(&gateway_share)
+        }
+        Ok(())
+    }
+
     pub fn into_gateway_reward_shares(
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
+        iot_price: Decimal,
     ) -> impl Iterator<Item = proto::GatewayRewardShare> + '_ {
-        let (total_beacon_shares, total_witness_shares) = self.total_shares();
-        let (total_beacon_rewards, total_witness_rewards) =
-            get_scheduled_tokens(reward_period.end - reward_period.start);
+        // the total number of shares for beacons, witnesses and data transfer
+        // dc shares here is the sum of all spent data transfer DC this epoch
+        let (total_beacon_shares, total_witness_shares, total_dc_shares) = self.total_shares();
+        // the total number of iot rewards for dc transfer this epoch
+        let total_dc_transfer_rewards =
+            get_scheduled_dc_tokens(reward_period.end - reward_period.start);
+
+        // convert the total spent data transfer DC to it equiv iot bone value
+        // the rewards distributed to gateways will be equal to this
+        // up to a max cap of total_dc_transfer_rewards
+        // if the dc transfer rewards is less than total_dc_transfer_rewards
+        // then the remainer will be added to the POC rewards allocation
+        let total_dc_transfer_rewards_used = dc_to_iot_bones(total_dc_shares, iot_price);
+        let (dc_transfer_rewards_unused, total_dc_transfer_rewards_capped) =
+            normalize_dc_transfer_rewards(
+                total_dc_transfer_rewards_used,
+                total_dc_transfer_rewards,
+            );
+        // the total amounts of iot rewards this epoch for beacons, witnesses
+        // taking into account any remaining dc transfer rewards
+        let (total_beacon_rewards, total_witness_rewards) = get_scheduled_poc_tokens(
+            reward_period.end - reward_period.start,
+            dc_transfer_rewards_unused,
+        );
+
+        // work out the rewards per share for beacons, witnesses and dc transfer
         let beacon_rewards_per_share = rewards_per_share(total_beacon_rewards, total_beacon_shares);
         let witness_rewards_per_share =
             rewards_per_share(total_witness_rewards, total_witness_shares);
+        let dc_transfer_rewards_per_share =
+            rewards_per_share(total_dc_transfer_rewards_capped, total_dc_shares);
+        // compute the awards per hotspot
         self.shares
             .into_iter()
             .map(
@@ -205,20 +351,57 @@ impl GatewayShares {
                         witness_rewards_per_share,
                         reward_shares.witness_shares,
                     ),
+                    dc_transfer_amount: compute_rewards(
+                        dc_transfer_rewards_per_share,
+                        reward_shares.dc_shares,
+                    ),
                     start_period: reward_period.start.encode_timestamp(),
                     end_period: reward_period.end.encode_timestamp(),
                 },
             )
             .filter(|reward_share| {
-                reward_share.beacon_amount > 0 || reward_share.witness_amount > 0
+                reward_share.beacon_amount > 0
+                    || reward_share.witness_amount > 0
+                    || reward_share.dc_transfer_amount > 0
             })
+    }
+}
+
+/// returns the equiv iot bones value for a specified dc amount
+pub fn dc_to_iot_bones(dc_amount: Decimal, iot_price: Decimal) -> Decimal {
+    // iot prices are supplied in 10^6
+    // need to do same for dc usd value
+    let dc_in_usd = dc_amount * (*DC_USD_PRICE);
+    (dc_in_usd * dec!(1_000_000) / iot_price)
+        .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
+}
+
+/// returns the equiv dc value for a specified iot bones amount
+pub fn iot_bones_to_dc(iot_amount: Decimal, iot_price: Decimal) -> Decimal {
+    // iot is in bones ( 10^6)
+    // account for that when determining dc amount
+    let iot_value = iot_amount * iot_price;
+    (iot_value / (*DC_USD_PRICE) / dec!(1_000_000))
+        .round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
+}
+
+pub fn normalize_dc_transfer_rewards(
+    total_dc_transfer_rewards_used: Decimal,
+    total_dc_transfer_rewards: Decimal,
+) -> (Decimal, Decimal) {
+    match total_dc_transfer_rewards_used < total_dc_transfer_rewards {
+        true => (
+            total_dc_transfer_rewards - total_dc_transfer_rewards_used,
+            total_dc_transfer_rewards_used,
+        ),
+        false => (Decimal::ZERO, total_dc_transfer_rewards),
     }
 }
 
 fn rewards_per_share(total_rewards: Decimal, total_shares: Decimal) -> Decimal {
     if total_shares > Decimal::ZERO {
         (total_rewards / total_shares)
-            .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity)
+            .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
     } else {
         Decimal::ZERO
     }
@@ -226,7 +409,7 @@ fn rewards_per_share(total_rewards: Decimal, total_shares: Decimal) -> Decimal {
 
 fn compute_rewards(rewards_per_share: Decimal, shares: Decimal) -> u64 {
     (rewards_per_share * shares)
-        .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0)
 }
@@ -235,15 +418,29 @@ fn compute_rewards(rewards_per_share: Decimal, shares: Decimal) -> u64 {
 mod test {
     use super::*;
 
-    fn reward_shares_in_dec(beacon_shares: i64, witness_shares: i64) -> RewardShares {
+    fn reward_shares_in_dec(
+        beacon_shares: Decimal,
+        witness_shares: Decimal,
+        dc_shares: Decimal,
+    ) -> RewardShares {
         RewardShares {
-            beacon_shares: Decimal::new(beacon_shares, 4),
-            witness_shares: Decimal::new(witness_shares, 4),
+            beacon_shares,
+            witness_shares,
+            // the test allocate shares to gateways via percentages, and so we end up with fractional values
+            // in order to ensure precision we keep those
+            // in the real world dc shares will be whole numbers, as we never spend fractional DC
+            dc_shares: dc_shares
+                .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven),
         }
     }
 
     #[test]
-    fn test_reward_share_calculation() {
+    // test reward distribution where there is a fixed dc spend per gateway
+    // with the total dc spend across all gateways being significantly lower than the
+    // total epoch dc rewards amount
+    // this results in a significant redistribution of dc rewards to POC
+    fn test_reward_share_calculation_fixed_dc_spend_with_transfer_distribution() {
+        let iot_price = dec!(359);
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
@@ -263,20 +460,59 @@ mod test {
             .parse()
             .expect("failed gw6 parse");
 
-        let mut shares = HashMap::new();
-        shares.insert(gw1.clone(), reward_shares_in_dec(10, 300)); // 0.0010, 0.0300
-        shares.insert(gw2.clone(), reward_shares_in_dec(200, 550)); // 0.0200, 0.0550
-        shares.insert(gw3.clone(), reward_shares_in_dec(75, 400)); // 0.0075, 0.0400
-        shares.insert(gw4.clone(), reward_shares_in_dec(0, 0)); // 0.0000, 0.0000
-        shares.insert(gw5.clone(), reward_shares_in_dec(20, 700)); // 0.0020, 0.0700
-        shares.insert(gw6.clone(), reward_shares_in_dec(150, 350)); // 0.0150, 0.0350
-        let gw_shares = GatewayShares { shares };
-
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
+        let total_dc_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        println!("total dc scheduled tokens: {total_dc_transfer_tokens_for_period}");
+
+        let gw1_dc_spend = dec!(5000);
+        let gw2_dc_spend = dec!(5000);
+        let gw3_dc_spend = dec!(5000);
+        // gw4 gets zero dc transfer shares and zero poc shares
+        // will get no rewards
+        let gw4_dc_spend = dec!(0);
+        // gw5 gets zero dc transfer shares but does get poc shares below
+        // will get poc rewards only
+        let gw5_dc_spend = dec!(0);
+        let gw6_dc_spend = dec!(50000);
+        let total_dc_spend =
+            gw1_dc_spend + gw2_dc_spend + gw3_dc_spend + gw4_dc_spend + gw5_dc_spend + gw6_dc_spend;
+        println!("total dc spend: {total_dc_spend}");
+        let total_dc_rewards = dc_to_iot_bones(total_dc_spend, iot_price);
+        println!("total dc rewards for dc spent: {total_dc_rewards}");
+
+        let total_dc_remainer = total_dc_transfer_tokens_for_period - total_dc_rewards;
+
+        // generate the rewards map
+        let mut shares = HashMap::new();
+        shares.insert(
+            gw1.clone(),
+            reward_shares_in_dec(dec!(10), dec!(300), gw1_dc_spend),
+        ); // 0.0010, 0.0300
+        shares.insert(
+            gw2.clone(),
+            reward_shares_in_dec(dec!(200), dec!(550), gw2_dc_spend),
+        ); // 0.0200, 0.0550
+        shares.insert(
+            gw3.clone(),
+            reward_shares_in_dec(dec!(75), dec!(400), gw3_dc_spend),
+        ); // 0.0075, 0.0400
+        shares.insert(
+            gw4.clone(),
+            reward_shares_in_dec(dec!(0), dec!(0), gw4_dc_spend),
+        ); // 0.0000, 0.0000
+        shares.insert(
+            gw5.clone(),
+            reward_shares_in_dec(dec!(20), dec!(700), gw5_dc_spend),
+        ); // 0.0020, 0.0700
+        shares.insert(
+            gw6.clone(),
+            reward_shares_in_dec(dec!(150), dec!(350), gw6_dc_spend),
+        ); // 0.0150, 0.0350
+        let gw_shares = GatewayShares { shares };
 
         let rewards: HashMap<PublicKeyBinary, proto::GatewayRewardShare> = gw_shares
-            .into_gateway_reward_shares(&reward_period)
+            .into_gateway_reward_shares(&reward_period, iot_price)
             .map(|reward| {
                 (
                     reward
@@ -310,17 +546,428 @@ mod test {
             .expect("failed to fetch gw5 rewards")
             .clone();
 
-        assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
+        // confirm we did not distribute more than the daily max dc rewards allocation
+        let sum_dc_amounts = gw1_rewards.dc_transfer_amount
+            + gw2_rewards.dc_transfer_amount
+            + gw3_rewards.dc_transfer_amount
+            + gw5_rewards.dc_transfer_amount
+            + gw6_rewards.dc_transfer_amount;
+        println!("max dc transfer rewards for spent dc: {total_dc_rewards}");
+        println!("total actual dc transfer rewards distributed: {sum_dc_amounts}");
+        let dc_diff = total_dc_rewards.to_i64().unwrap() - sum_dc_amounts as i64;
+        // the sum of rewards distributed should not exceed total allocation
+        // but due to rounding whilst going to u64 in compute_rewards,
+        // is permitted to be a few bones less
+        // tolerance here is 1
+        assert_eq!(dc_diff, 1);
 
-        assert_eq!(gw1_rewards.beacon_amount, 150_534_397_110);
-        assert_eq!(gw1_rewards.witness_amount, 3_573_555_687_909);
-        assert_eq!(gw2_rewards.beacon_amount, 3_010_687_942_195);
-        assert_eq!(gw2_rewards.witness_amount, 6_551_518_761_167);
-        assert_eq!(gw3_rewards.beacon_amount, 1_129_007_978_323);
-        assert_eq!(gw3_rewards.witness_amount, 4_764_740_917_213);
-        assert_eq!(gw5_rewards.beacon_amount, 301_068_794_219);
-        assert_eq!(gw5_rewards.witness_amount, 8_338_296_605_122);
-        assert_eq!(gw6_rewards.beacon_amount, 2_258_015_956_646);
-        assert_eq!(gw6_rewards.witness_amount, 4_169_148_302_561);
+        // assert the expected data transfer rewards amounts per gateway
+        // using the dc_to_iot_bones helper function
+        let gw1_expected_dc_rewards = dc_to_iot_bones(gw1_dc_spend, iot_price).to_u64().unwrap();
+        assert_eq!(gw1_expected_dc_rewards.to_u64().unwrap(), 139);
+        let gw2_expected_dc_rewards = dc_to_iot_bones(gw2_dc_spend, iot_price).to_u64().unwrap();
+        assert_eq!(gw2_expected_dc_rewards.to_u64().unwrap(), 139);
+        let gw3_expected_dc_rewards = dc_to_iot_bones(gw3_dc_spend, iot_price).to_u64().unwrap();
+        assert_eq!(gw3_expected_dc_rewards.to_u64().unwrap(), 139);
+        let gw5_expected_dc_rewards = dc_to_iot_bones(gw5_dc_spend, iot_price).to_u64().unwrap();
+        assert_eq!(gw5_expected_dc_rewards.to_u64().unwrap(), 0);
+        let gw6_expected_dc_rewards = dc_to_iot_bones(gw6_dc_spend, iot_price).to_u64().unwrap();
+        assert_eq!(gw6_expected_dc_rewards.to_u64().unwrap(), 1392);
+        assert_eq!(gw1_rewards.dc_transfer_amount, gw1_expected_dc_rewards);
+        assert_eq!(gw2_rewards.dc_transfer_amount, gw2_expected_dc_rewards);
+        assert_eq!(gw3_rewards.dc_transfer_amount, gw3_expected_dc_rewards);
+        assert_eq!(gw5_rewards.dc_transfer_amount, gw5_expected_dc_rewards);
+        assert_eq!(gw6_rewards.dc_transfer_amount, gw6_expected_dc_rewards);
+
+        // assert the beacon and witness amount, these will now have an allocation
+        // of any unused data transfer rewards
+        // two values are listed per assertion:
+        // the first is the expected beacon or witness poc reward
+        // the second is the additional reward from unallocated dc transfer rewards
+        assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
+        assert_eq!(gw1_rewards.beacon_amount, 1_505_343_971 + 21_778_703);
+        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879 + 387_755_607);
+        assert_eq!(gw2_rewards.beacon_amount, 30_106_879_421 + 435_574_065);
+        assert_eq!(gw2_rewards.witness_amount, 65_515_187_611 + 710_885_280);
+        assert_eq!(gw3_rewards.beacon_amount, 11_290_079_783 + 163_340_274);
+        assert_eq!(gw3_rewards.witness_amount, 47_647_409_172 + 517_007_476);
+        assert_eq!(gw5_rewards.beacon_amount, 3_010_687_942 + 43_557_406);
+        assert_eq!(gw5_rewards.witness_amount, 83_382_966_051 + 904_763_083);
+        assert_eq!(gw6_rewards.beacon_amount, 22_580_159_566 + 326_680_548);
+        assert_eq!(gw6_rewards.witness_amount, 41_691_483_025 + 452_381_542);
+
+        // assert the total POC rewards allocated equals TOTAL_POC_REWARDS_FOR_PERIOD
+        // plus the remainder of the total dc transfer rewards for the period
+        let sum_poc_amounts = gw1_rewards.beacon_amount
+            + gw1_rewards.witness_amount
+            + gw2_rewards.beacon_amount
+            + gw2_rewards.witness_amount
+            + gw3_rewards.beacon_amount
+            + gw3_rewards.witness_amount
+            + gw5_rewards.beacon_amount
+            + gw5_rewards.witness_amount
+            + gw6_rewards.beacon_amount
+            + gw6_rewards.witness_amount;
+
+        let (exp_total_beacon_tokens, exp_total_witness_tokens) =
+            get_scheduled_poc_tokens(Duration::minutes(10), total_dc_remainer);
+        let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
+        println!("max poc rewards: {exp_sum_poc_tokens}");
+        println!("total actual poc rewards distributed: {sum_poc_amounts}");
+        let poc_diff = exp_sum_poc_tokens.to_i64().unwrap() - sum_poc_amounts as i64;
+        // the sum of rewards distributed should not exceed the epoch amount
+        // but due to rounding whilst going to u64 in compute_rewards,
+        // is permitted to be a few bones less
+        // tolerance here is 4
+        assert_eq!(poc_diff, 5);
+    }
+
+    #[test]
+    // test reward distribution where there is zero transfer of dc rewards to poc
+    fn test_reward_share_calculation_without_dc_transfer_distribution() {
+        let iot_price = dec!(359);
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        let gw3: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
+            .parse()
+            .expect("failed gw3 parse");
+        let gw4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
+            .parse()
+            .expect("failed gw4 parse");
+        let gw5: PublicKeyBinary = "112j1iw1sV2B2Tz2DxPSeum9Cmc5kMKNdDTDg1zDRsdwuvZueq3B"
+            .parse()
+            .expect("failed gw5 parse");
+        let gw6: PublicKeyBinary = "11fCasUk9XvU15ktsMMH64J9E7XuqQ2L5FJPv8HZMCDG6kdZ3SC"
+            .parse()
+            .expect("failed gw6 parse");
+
+        let now = Utc::now();
+        let reward_period = (now - Duration::minutes(10))..now;
+        let total_dc_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        println!("total dc scheduled tokens: {total_dc_transfer_tokens_for_period}");
+
+        // get the expected total amount of dc we need to spend
+        // in order to use up all the dc rewards for this period
+        // distribute this amount of dc across the gateways
+        // this results in zero unallocated dc rewards being
+        // available to distributed to POC
+        let total_dc_to_spend = iot_bones_to_dc(total_dc_transfer_tokens_for_period, iot_price);
+        println!("total dc value of scheduled dc tokens: {total_dc_to_spend}");
+
+        // generate the rewards map
+        // distribute *ALL* the dc shares across gateways
+        // gateways 1,2,3 & 5 get 10% each of the total shares
+        // gateway 6 gets 80% of the total shares
+        // this means we spent DC with a value > than the max DC rewards value
+        // in this scenario the DC rewards will be capped at daily max
+        // each gateway should get a share of this cap proportational to
+        // their relative spend value
+        let mut shares = HashMap::new();
+        shares.insert(
+            gw1.clone(),
+            reward_shares_in_dec(dec!(10), dec!(300), total_dc_to_spend * dec!(0.1)),
+        ); // 0.0010, 0.0300
+        shares.insert(
+            gw2.clone(),
+            reward_shares_in_dec(dec!(200), dec!(550), total_dc_to_spend * dec!(0.1)),
+        ); // 0.0200, 0.0550
+        shares.insert(
+            gw3.clone(),
+            reward_shares_in_dec(dec!(75), dec!(400), total_dc_to_spend * dec!(0.1)),
+        ); // 0.0075, 0.0400
+        shares.insert(gw4.clone(), reward_shares_in_dec(dec!(0), dec!(0), dec!(0))); // 0.0000, 0.0000, 0.7000
+        shares.insert(
+            gw5.clone(),
+            reward_shares_in_dec(dec!(20), dec!(700), total_dc_to_spend * dec!(0.1)),
+        ); // 0.0020, 0.0700
+        shares.insert(
+            gw6.clone(),
+            reward_shares_in_dec(dec!(150), dec!(350), total_dc_to_spend * dec!(0.8)),
+        ); // 0.0150, 0.0350
+        let gw_shares = GatewayShares { shares };
+
+        let rewards: HashMap<PublicKeyBinary, proto::GatewayRewardShare> = gw_shares
+            .into_gateway_reward_shares(&reward_period, iot_price)
+            .map(|reward| {
+                (
+                    reward
+                        .hotspot_key
+                        .clone()
+                        .try_into()
+                        .expect("failed to decode hotspot_key"),
+                    reward,
+                )
+            })
+            .collect();
+
+        let gw1_rewards = rewards
+            .get(&gw1)
+            .expect("failed to fetch gw1 rewards")
+            .clone();
+        let gw2_rewards = rewards
+            .get(&gw2)
+            .expect("failed to fetch gw2 rewards")
+            .clone();
+        let gw3_rewards = rewards
+            .get(&gw3)
+            .expect("failed to fetch gw3 rewards")
+            .clone();
+        let gw5_rewards = rewards
+            .get(&gw5)
+            .expect("failed to fetch gw4 rewards")
+            .clone();
+        let gw6_rewards = rewards
+            .get(&gw6)
+            .expect("failed to fetch gw5 rewards")
+            .clone();
+
+        // confirm we did not distribute more than the daily max dc rewards allocation
+        // even tho the value of the dc shares distributed across the gateways
+        // amounted to > 100% max rewards value
+        // confirm the max allocation was capped at the reward period value
+        let sum_dc_amounts: u64 = gw1_rewards.dc_transfer_amount
+            + gw2_rewards.dc_transfer_amount
+            + gw3_rewards.dc_transfer_amount
+            + gw5_rewards.dc_transfer_amount
+            + gw6_rewards.dc_transfer_amount;
+        println!("max dc transder rewards: {total_dc_transfer_tokens_for_period}");
+        println!("total actual dc transder rewards distributed: {sum_dc_amounts}");
+        let dc_diff = total_dc_transfer_tokens_for_period.to_i64().unwrap() - sum_dc_amounts as i64;
+        // the sum of rewards distributed should not exceed the epoch amount
+        // but due to rounding whilst going to u64 in compute_rewards,
+        // is permitted to be a few bones less
+        // tolerance here is 2
+        assert_eq!(dc_diff, 2);
+
+        // assert the expected data transfer rewards amounts per gateway
+        assert_eq!(gw1_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
+        assert_eq!(gw2_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
+        assert_eq!(gw3_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
+        assert_eq!(gw5_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
+        assert_eq!(gw6_rewards.dc_transfer_amount, 380_517_503_805); // ~66.64% of total rewards, or 8x each of the other gateways
+
+        // assert the beacon and witness amount
+        // these will be rewards solely from POC as there are zero unallocated
+        // dc transfer rewards
+        assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
+        assert_eq!(gw1_rewards.beacon_amount, 1_505_343_971);
+        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879);
+        assert_eq!(gw2_rewards.beacon_amount, 30_106_879_421);
+        assert_eq!(gw2_rewards.witness_amount, 65_515_187_611);
+        assert_eq!(gw3_rewards.beacon_amount, 11_290_079_783);
+        assert_eq!(gw3_rewards.witness_amount, 47_647_409_172);
+        assert_eq!(gw5_rewards.beacon_amount, 3_010_687_942);
+        assert_eq!(gw5_rewards.witness_amount, 83_382_966_051);
+        assert_eq!(gw6_rewards.beacon_amount, 22_580_159_566);
+        assert_eq!(gw6_rewards.witness_amount, 41_691_483_025);
+
+        // assert the total rewards allocated equals TOTAL_POC_REWARDS_FOR_PERIOD
+        // plus 0% of the total dc transfer rewards for the period
+        let sum_poc_amounts = gw1_rewards.beacon_amount
+            + gw1_rewards.witness_amount
+            + gw2_rewards.beacon_amount
+            + gw2_rewards.witness_amount
+            + gw3_rewards.beacon_amount
+            + gw3_rewards.witness_amount
+            + gw5_rewards.beacon_amount
+            + gw5_rewards.witness_amount
+            + gw6_rewards.beacon_amount
+            + gw6_rewards.witness_amount;
+        let (exp_total_beacon_tokens, exp_total_witness_tokens) =
+            get_scheduled_poc_tokens(Duration::minutes(10), Decimal::ZERO);
+        let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
+        println!("max poc rewards: {exp_sum_poc_tokens}");
+        println!("total actual poc rewards distributed: {sum_poc_amounts}");
+        let poc_diff = exp_sum_poc_tokens.to_i64().unwrap() - sum_poc_amounts as i64;
+        // the sum of rewards distributed should not exceed the epoch amount
+        // but due to rounding whilst going to u64 in compute_rewards,
+        // is permitted to be a few bones less
+        // tolerance here is 3
+        assert_eq!(poc_diff, 3);
+    }
+
+    #[test]
+    // test reward distribution where there is transfer of dc rewards to poc
+    fn test_reward_share_calculation_with_dc_transfer_distribution() {
+        let iot_price = dec!(359);
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        let gw3: PublicKeyBinary = "112DJZiXvZ8FduiWrEi8siE3wJX6hpRjjtwbavyXUDkgutEUSLAE"
+            .parse()
+            .expect("failed gw3 parse");
+        let gw4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
+            .parse()
+            .expect("failed gw4 parse");
+        let gw5: PublicKeyBinary = "112j1iw1sV2B2Tz2DxPSeum9Cmc5kMKNdDTDg1zDRsdwuvZueq3B"
+            .parse()
+            .expect("failed gw5 parse");
+        let gw6: PublicKeyBinary = "11fCasUk9XvU15ktsMMH64J9E7XuqQ2L5FJPv8HZMCDG6kdZ3SC"
+            .parse()
+            .expect("failed gw6 parse");
+
+        let now = Utc::now();
+        let reward_period = (now - Duration::minutes(10))..now;
+        let total_dc_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        println!("total_dc_transfer_tokens_for_period: {total_dc_transfer_tokens_for_period}");
+
+        // get the expected total amount of dc we need to spend
+        // spread *some* of this across the gateways and then confirm
+        // the unallocated rewards go to poc
+        let total_dc_to_spend = iot_bones_to_dc(total_dc_transfer_tokens_for_period, iot_price);
+        println!("total_dc_to_spend: {total_dc_to_spend}");
+
+        // generate the rewards map
+        // distribute 55% of the dc shares across gateways
+        let mut shares = HashMap::new();
+        shares.insert(
+            gw1.clone(),
+            reward_shares_in_dec(dec!(10), dec!(300), total_dc_to_spend * dec!(0.1)),
+        ); // 0.0010, 0.0300
+        shares.insert(
+            gw2.clone(),
+            reward_shares_in_dec(dec!(200), dec!(550), dec!(0)),
+        ); // 0.0200, 0.0550
+        shares.insert(
+            gw3.clone(),
+            reward_shares_in_dec(dec!(75), dec!(400), total_dc_to_spend * dec!(0.2)),
+        ); // 0.0075, 0.0400
+        shares.insert(gw4.clone(), reward_shares_in_dec(dec!(0), dec!(0), dec!(0))); // 0.0000, 0.0000, 0.7000
+        shares.insert(
+            gw5.clone(),
+            reward_shares_in_dec(dec!(20), dec!(700), total_dc_to_spend * dec!(0.05)),
+        ); // 0.0020, 0.0700
+        shares.insert(
+            gw6.clone(),
+            reward_shares_in_dec(dec!(150), dec!(350), total_dc_to_spend * dec!(0.2)),
+        ); // 0.0150, 0.0350
+        let gw_shares = GatewayShares { shares };
+
+        let rewards: HashMap<PublicKeyBinary, proto::GatewayRewardShare> = gw_shares
+            .into_gateway_reward_shares(&reward_period, iot_price)
+            .map(|reward| {
+                (
+                    reward
+                        .hotspot_key
+                        .clone()
+                        .try_into()
+                        .expect("failed to decode hotspot_key"),
+                    reward,
+                )
+            })
+            .collect();
+
+        let gw1_rewards = rewards
+            .get(&gw1)
+            .expect("failed to fetch gw1 rewards")
+            .clone();
+        let gw2_rewards = rewards
+            .get(&gw2)
+            .expect("failed to fetch gw2 rewards")
+            .clone();
+        let gw3_rewards = rewards
+            .get(&gw3)
+            .expect("failed to fetch gw3 rewards")
+            .clone();
+        let gw5_rewards = rewards
+            .get(&gw5)
+            .expect("failed to fetch gw4 rewards")
+            .clone();
+        let gw6_rewards = rewards
+            .get(&gw6)
+            .expect("failed to fetch gw5 rewards")
+            .clone();
+
+        // assert the sum of data transfer amounts matches what we expect
+        // which is 55% of the total available data transfer rewards
+        let sum_dc_amounts = gw1_rewards.dc_transfer_amount
+            + gw2_rewards.dc_transfer_amount
+            + gw3_rewards.dc_transfer_amount
+            + gw5_rewards.dc_transfer_amount
+            + gw6_rewards.dc_transfer_amount;
+        println!("max dc transfer rewards: {total_dc_transfer_tokens_for_period}");
+        println!("total actual dc transder rewards distributed: {sum_dc_amounts}");
+        let dc_diff = (total_dc_transfer_tokens_for_period * dec!(0.55))
+            .to_i64()
+            .unwrap()
+            - sum_dc_amounts as i64;
+        // the sum of rewards distributed should not exceed the epoch amount
+        // but due to rounding whilst going to u64 in compute_rewards,
+        // is permitted to be a few bones less
+        // tolerance here is 2
+        assert_eq!(dc_diff, 2);
+
+        // assert the expected dc amounts per gateway
+        assert_eq!(gw1_rewards.dc_transfer_amount, 57_077_625_570); // 10% of total
+        assert_eq!(gw2_rewards.dc_transfer_amount, 0); // 0% of total
+        assert_eq!(gw3_rewards.dc_transfer_amount, 114_155_251_141); // 20% of total
+        assert_eq!(gw5_rewards.dc_transfer_amount, 28_538_812_785); // 5% of total
+        assert_eq!(gw6_rewards.dc_transfer_amount, 114_155_251_141); // 20% of total
+
+        // assert the beacon and witness amount, these will now have an allocation
+        // of any unused data transfer rewards
+        // two values are listed here:
+        // the first is the expected beacon/witness poc reward
+        // the second is the additional reward from unallocated dc transfer rewards
+        assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
+        assert_eq!(gw1_rewards.beacon_amount, 1_505_343_971 + 9_800_416);
+        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879 + 174_490_023);
+        assert_eq!(gw2_rewards.beacon_amount, 30_106_879_421 + 196_008_330);
+        assert_eq!(gw2_rewards.witness_amount, 65_515_187_611 + 319_898_377);
+        assert_eq!(gw3_rewards.beacon_amount, 11_290_079_783 + 73_503_123);
+        assert_eq!(gw3_rewards.witness_amount, 47_647_409_172 + 232_653_365);
+        assert_eq!(gw5_rewards.beacon_amount, 3_010_687_942 + 19_600_833);
+        assert_eq!(gw5_rewards.witness_amount, 83_382_966_051 + 407_143_389);
+        assert_eq!(gw6_rewards.beacon_amount, 22_580_159_566 + 147_006_247);
+        assert_eq!(gw6_rewards.witness_amount, 41_691_483_025 + 203_571_695);
+
+        // assert the total POC rewards allocated equal TOTAL_POC_REWARDS_FOR_PERIOD
+        // plus 45% of the total dc transfer rewards for the period
+        let sum_poc_amounts = gw1_rewards.beacon_amount
+            + gw1_rewards.witness_amount
+            + gw2_rewards.beacon_amount
+            + gw2_rewards.witness_amount
+            + gw3_rewards.beacon_amount
+            + gw3_rewards.witness_amount
+            + gw5_rewards.beacon_amount
+            + gw5_rewards.witness_amount
+            + gw6_rewards.beacon_amount
+            + gw6_rewards.witness_amount;
+        let expected_dc_transfer_tokens_for_poc = total_dc_transfer_tokens_for_period * dec!(0.45);
+        println!("expected_dc_transfer_tokens_for_poc: {expected_dc_transfer_tokens_for_poc}");
+        let (exp_total_beacon_tokens, exp_total_witness_tokens) =
+            get_scheduled_poc_tokens(Duration::minutes(10), expected_dc_transfer_tokens_for_poc);
+        let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
+        println!("max poc rewards: {exp_sum_poc_tokens}");
+        println!("total actual poc rewards distributed: {sum_poc_amounts}");
+        let poc_diff = exp_sum_poc_tokens.to_i64().unwrap() - sum_poc_amounts as i64;
+        // the sum of rewards distributed should not exceed the epoch amount
+        // but due to rounding whilst going to u64 in compute_rewards,
+        // is permitted to be a few bones less
+        // tolerance here is 4
+        assert_eq!(poc_diff, 4);
+    }
+
+    #[test]
+    fn test_dc_iot_conversion() {
+        let iot_price = dec!(359); //iot price @ 0.000359 @ 10^6 = 359
+        let dc_amount = dec!(1000000);
+        // convert the dc amount to iot and assert
+        let dc_iot_amt = dc_to_iot_bones(dc_amount, iot_price);
+        println!("dc_iot_amt: {dc_iot_amt}");
+        assert_eq!(dc_iot_amt, dec!(27855.153203342618385));
+
+        // convert the returned iot amount back to dc and assert
+        // it matches our original dc amount
+        let iot_dc_amt = iot_bones_to_dc(dc_iot_amt, iot_price);
+        println!("iot_dc_amt: {iot_dc_amt}");
+        assert_eq!(iot_dc_amt, dc_amount);
     }
 }

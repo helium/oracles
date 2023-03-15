@@ -91,7 +91,7 @@ geo-types = "*"
 geo = "*"
 blake3 = "*"
 retainer = "*"
-rand = "0.6"
+rand = "0.8"
 itertools = "*"
 data-credits = {git = "https://github.com/helium/helium-program-library.git"}
 helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git"}

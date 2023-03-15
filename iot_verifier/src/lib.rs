@@ -6,7 +6,6 @@ pub mod last_beacon;
 pub mod loader;
 pub mod meta;
 pub mod metrics;
-pub mod packet;
 pub mod packet_loader;
 pub mod poc;
 pub mod poc_report;

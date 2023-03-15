@@ -1,4 +1,3 @@
-use crate::Settings;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::Region as ProtoRegion;
 use iot_config_client::{
@@ -26,8 +25,7 @@ pub enum RegionCacheError {
 }
 
 impl RegionCache {
-    pub fn from_settings(settings: &Settings) -> Result<Self, RegionCacheError> {
-        let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
+    pub fn from_settings(iot_config_client: IotConfigClient) -> Result<Self, RegionCacheError> {
         let cache = Cache::<ProtoRegion, RegionParamsInfo>::new();
         Ok(Self {
             iot_config_client,

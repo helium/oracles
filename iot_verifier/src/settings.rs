@@ -27,6 +27,7 @@ pub struct Settings {
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub denylist: denylist::Settings,
+    pub price_tracker: price::price_tracker::Settings,
     /// Reward period in hours. (Default to 24)
     #[serde(default = "default_reward_period")]
     pub rewards: i64,

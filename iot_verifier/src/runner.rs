@@ -1,7 +1,7 @@
 use crate::{
     gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon,
     metrics::Metrics, poc::Poc, poc_report::Report, region_cache::RegionCache,
-    reward_share::GatewayShare, Settings,
+    reward_share::GatewayPocShare, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use file_store::{
@@ -453,7 +453,7 @@ impl Runner {
         };
 
         let mut transaction = self.pool.begin().await?;
-        for reward_share in GatewayShare::shares_from_poc(&iot_poc) {
+        for reward_share in GatewayPocShare::shares_from_poc(&iot_poc) {
             reward_share.save(&mut transaction).await?;
         }
         // TODO: expand this transaction to cover all of the database access below?

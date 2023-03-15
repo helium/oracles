@@ -278,7 +278,7 @@ pub fn do_beacon_verifications(
     last_beacon: Option<LastBeacon>,
     beacon_report: &IotBeaconIngestReport,
     beaconer_info: &GatewayInfo,
-    beaconer_region_params: &Vec<BlockchainRegionParamV1>,
+    beaconer_region_params: &[BlockchainRegionParamV1],
     beacon_interval: Duration,
     beacon_interval_tolerance: Duration,
 ) -> GenericVerifyResult {
@@ -414,7 +414,7 @@ fn verify_entropy(
 fn verify_beacon_payload(
     beacon_report: &IotBeaconReport,
     region: ProtoRegion,
-    region_params: &Vec<BlockchainRegionParamV1>,
+    region_params: &[BlockchainRegionParamV1],
     gain: i32,
     entropy_start: DateTime<Utc>,
     entropy_version: u32,

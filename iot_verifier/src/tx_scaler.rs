@@ -33,9 +33,13 @@ pub enum TxScalerError {
 }
 
 impl Server {
-    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, TxScalerError> {
+    pub async fn from_settings(
+        settings: &Settings,
+        pool: PgPool,
+        iot_config_client: IotConfigClient,
+    ) -> Result<Self, TxScalerError> {
         let mut server = Self {
-            iot_config_client: IotConfigClient::from_settings(&settings.iot_config_client)?,
+            iot_config_client,
             hex_density_map: SharedHexDensityMap::new(),
             pool,
             trigger_interval: Duration::seconds(settings.transmit_scale_interval),
@@ -76,14 +80,14 @@ impl Server {
         let refresh_start = Utc::now();
         tracing::info!("density_scaler: generating hex scaling map, starting at {refresh_start:?}");
         let mut global_map = GlobalHexMap::new();
-        let gateways = self
+        let active_gateways = self
             .gateways_recent_activity(refresh_start)
             .await
             .map_err(sqlx::Error::from)?;
         let mut gw_stream = self.iot_config_client.gateway_stream().await?;
         while let Some(gateway_info) = gw_stream.next().await {
             if let Some(h3index) = gateway_info.location {
-                if gateways.contains_key(&gateway_info.address.as_ref().to_vec()) {
+                if active_gateways.contains_key(&gateway_info.address.as_ref().to_vec()) {
                     global_map.increment_unclipped(h3index)
                 }
             }

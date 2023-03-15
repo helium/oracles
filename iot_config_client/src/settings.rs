@@ -6,22 +6,18 @@ use std::time::Duration;
 pub struct Settings {
     /// signing key used to sign requests to iot config service
     pub keypair: String,
-    /// grpc to iot config service
-    #[serde(with = "http_serde::uri", default = "default_url")]
+    /// uri to iot config service
+    #[serde(with = "http_serde::uri")]
     pub url: http::Uri,
-    /// Connect timeout for follower in seconds. Default 5
+    /// Connect timeout  in seconds. Default 5
     #[serde(default = "default_connect_timeout")]
     pub connect: u64,
-    /// RPC timeout for follower in seconds. Default 5
+    /// RPC timeout in seconds. Default 5
     #[serde(default = "default_rpc_timeout")]
     pub rpc: u64,
     /// batch size for gateway stream results. Default 100
     #[serde(default = "default_batch_size")]
     pub batch: u32,
-}
-
-pub fn default_url() -> http::Uri {
-    http::Uri::from_static("http://127.0.0.1:8080")
 }
 
 pub fn default_connect_timeout() -> u64 {

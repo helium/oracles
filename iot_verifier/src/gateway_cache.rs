@@ -1,4 +1,3 @@
-use crate::Settings;
 use futures::stream::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use iot_config_client::{
@@ -29,8 +28,7 @@ pub enum GatewayCacheError {
 }
 
 impl GatewayCache {
-    pub fn from_settings(settings: &Settings) -> Result<Self, GatewayCacheError> {
-        let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
+    pub fn from_settings(iot_config_client: IotConfigClient) -> Result<Self, GatewayCacheError> {
         let cache = Arc::new(Cache::<PublicKeyBinary, GatewayInfo>::new());
         let clone = cache.clone();
         // monitor cache to handle evictions

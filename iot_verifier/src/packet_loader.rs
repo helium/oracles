@@ -1,19 +1,11 @@
-use crate::{packet, Settings};
-
-use chrono::{Duration, TimeZone, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream, file_info_poller::LookbackBehavior, file_source,
-    iot_packet::IotValidPacket, FileStore, FileType,
-};
-use futures::StreamExt;
+use crate::reward_share::GatewayDCShare;
+use file_store::{file_info_poller::FileInfoStream, iot_packet::IotValidPacket};
+use futures::{StreamExt, TryStreamExt};
 use sqlx::PgPool;
+use tokio::sync::mpsc::Receiver;
 
-const DB_POOL_SIZE: usize = 100;
-
-pub struct Loader {
-    packet_store: FileStore,
-    packet_interval: Duration,
-    pool: PgPool,
+pub struct PacketLoader {
+    pub pool: PgPool,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -24,39 +16,13 @@ pub enum NewLoaderError {
     DbStoreError(#[from] db_store::Error),
 }
 
-pub enum ValidPacketResult {
-    Valid,
-    Denied,
-    Unknown,
-}
-
-impl Loader {
-    pub async fn from_settings(settings: &Settings) -> Result<Self, NewLoaderError> {
-        let pool = settings.database.connect(DB_POOL_SIZE).await?;
-        let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
-        let packet_interval = settings.packet_interval();
-        Ok(Self {
-            pool,
-            packet_store,
-            packet_interval,
-        })
-    }
-
-    pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+impl PacketLoader {
+    pub async fn run(
+        &mut self,
+        mut receiver: Receiver<FileInfoStream<IotValidPacket>>,
+        shutdown: &triggered::Listener,
+    ) -> anyhow::Result<()> {
         tracing::info!("starting verifier iot packet loader");
-        let (mut receiver, _source_join_handle) =
-            file_source::continuous_source::<IotValidPacket>()
-                .db(self.pool.clone()) // TODO: fix this cloning!!!
-                .store(self.packet_store.clone())
-                .file_type(FileType::IotValidPacket)
-                .lookback(LookbackBehavior::StartAfter(
-                    Utc.timestamp_opt(0, 0).single().unwrap(),
-                ))
-                .poll_duration(self.packet_interval)
-                .offset(self.packet_interval * 2)
-                .build()?
-                .start(shutdown.clone())
-                .await?;
         loop {
             if shutdown.is_triggered() {
                 break;
@@ -77,17 +43,18 @@ impl Loader {
         file_info_stream: FileInfoStream<IotValidPacket>,
     ) -> anyhow::Result<()> {
         let mut transaction = self.pool.begin().await?;
-        let mut stream = file_info_stream.into_stream(&mut transaction).await?;
-        while let Some(valid_packet) = stream.next().await {
-            packet::insert(
-                &mut transaction,
-                valid_packet.payload_size as i32,
-                valid_packet.gateway.into(),
-                valid_packet.payload_hash,
-            )
+        file_info_stream
+            .into_stream(&mut transaction)
+            .await?
+            .map(|valid_packet| GatewayDCShare::share_from_packet(&valid_packet))
+            .map(anyhow::Ok)
+            .try_fold(transaction, |mut transaction, reward_share| async move {
+                reward_share.save(&mut transaction).await?;
+                Ok(transaction)
+            })
+            .await?
+            .commit()
             .await?;
-        }
-        transaction.commit().await?;
         Ok(())
     }
 }
