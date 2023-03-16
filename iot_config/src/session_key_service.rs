@@ -5,9 +5,9 @@ use crate::{
     session_key::{self, SessionKeyFilter},
     GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 use file_store::traits::MsgVerify;
-use futures::stream::StreamExt;
+use futures::stream::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::iot_config::{
     self, ActionV1, SessionKeyFilterGetReqV1, SessionKeyFilterListReqV1,
@@ -297,18 +297,16 @@ async fn stream_existing_skfs(
     pool: &Pool<Postgres>,
     tx: tokio::sync::mpsc::Sender<Result<SessionKeyFilterStreamResV1, Status>>,
 ) -> Result<()> {
-    let mut session_key_filters = session_key::list_stream(pool);
-
-    while let Some(session_key_filter) = session_key_filters.next().await {
-        let update = SessionKeyFilterStreamResV1 {
-            action: ActionV1::Add.into(),
-            filter: Some(session_key_filter.into()),
-        };
-        if tx.send(Ok(update)).await.is_err() {
-            bail!("receiver closed connection")
-        }
-    }
-    Ok(())
+    session_key::list_stream(pool)
+        .then(|session_key_filter| {
+            tx.send(Ok(SessionKeyFilterStreamResV1 {
+                action: ActionV1::Add.into(),
+                filter: Some(session_key_filter.into()),
+            }))
+        })
+        .map_err(|err| anyhow!(err))
+        .try_fold((), |acc, _| async move { Ok(acc) })
+        .await
 }
 
 struct SkfValidator {
