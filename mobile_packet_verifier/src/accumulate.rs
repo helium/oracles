@@ -21,6 +21,10 @@ pub async fn accumulate_sessions(
     tokio::pin!(reports);
 
     while let Some(DataTransferSessionIngestReport { report, .. }) = reports.next().await {
+        if report.reward_cancelled {
+            continue;
+        }
+        let event = report.data_transfer_usage;
         sqlx::query(
             r#"
             INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, first_timestamp, last_timestamp)
@@ -31,10 +35,10 @@ pub async fn accumulate_sessions(
             last_timestamp = MAX(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
         )
-            .bind(report.pub_key)
-            .bind(report.payer)
-            .bind(report.upload_bytes as i64)
-            .bind(report.download_bytes as i64)
+            .bind(event.pub_key)
+            .bind(event.payer)
+            .bind(event.upload_bytes as i64)
+            .bind(event.download_bytes as i64)
             .bind(curr_file_ts)
             .execute(&mut *conn)
             .await?;
