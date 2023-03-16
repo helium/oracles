@@ -5,7 +5,7 @@ use crate::{
     session_key::{self, SessionKeyFilter},
     GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
-use anyhow::Result;
+use anyhow::{bail, Result};
 use file_store::traits::MsgVerify;
 use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
@@ -270,29 +270,19 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
         let mut session_key_updates = self.subscribe_to_session_keys();
 
         tokio::spawn(async move {
-            let mut session_key_filters = session_key::list_stream(&pool);
-
-            while let Some(session_key_filter) = session_key_filters.next().await {
-                let update = SessionKeyFilterStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    filter: Some(session_key_filter.into()),
-                };
-                if tx.send(Ok(update)).await.is_err() {
-                    break;
-                }
+            if stream_existing_skfs(&pool, tx.clone()).await.is_err() {
+                return;
             }
-
-            drop(session_key_filters);
 
             tracing::info!("existing session keys sent; streaming updates as available");
             loop {
                 let shutdown = shutdown_listener.clone();
 
                 tokio::select! {
-                    _ = shutdown => break,
+                    _ = shutdown => return,
                     msg = session_key_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
-                            break;
+                            return;
                         }
                     }
                 }
@@ -301,6 +291,24 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
+}
+
+async fn stream_existing_skfs(
+    pool: &Pool<Postgres>,
+    tx: tokio::sync::mpsc::Sender<Result<SessionKeyFilterStreamResV1, Status>>,
+) -> Result<()> {
+    let mut session_key_filters = session_key::list_stream(pool);
+
+    while let Some(session_key_filter) = session_key_filters.next().await {
+        let update = SessionKeyFilterStreamResV1 {
+            action: ActionV1::Add.into(),
+            filter: Some(session_key_filter.into()),
+        };
+        if tx.send(Ok(update)).await.is_err() {
+            bail!("receiver closed connection")
+        }
+    }
+    Ok(())
 }
 
 struct SkfValidator {

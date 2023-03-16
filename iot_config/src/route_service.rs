@@ -5,9 +5,9 @@ use crate::{
     route::{self, Route, RouteStorageError},
     GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
-use anyhow::Result;
+use anyhow::{bail, Result};
 use file_store::traits::MsgVerify;
-use futures::stream::StreamExt;
+use futures::{future::TryFutureExt, stream::StreamExt};
 use helium_crypto::PublicKey;
 use helium_proto::services::iot_config::{
     self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
@@ -265,63 +265,24 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            let mut active_routes = route::active_route_stream(&pool);
-
-            while let Some(active_route) = active_routes.next().await {
-                if (tx.send(Ok(RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::Route(active_route.into())),
-                })))
+            if stream_existing_routes(&pool, tx.clone())
+                .and_then(|_| stream_existing_euis(&pool, tx.clone()))
+                .and_then(|_| stream_existing_devaddrs(&pool, tx.clone()))
                 .await
                 .is_err()
-                {
-                    break;
-                }
+            {
+                return;
             }
-
-            let mut eui_pairs = route::eui_stream(&pool);
-
-            while let Some(eui_pair) = eui_pairs.next().await {
-                if (tx.send(Ok(RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::EuiPair(eui_pair.into())),
-                })))
-                .await
-                .is_err()
-                {
-                    break;
-                }
-            }
-
-            let mut devaddr_ranges = route::devaddr_range_stream(&pool);
-
-            while let Some(devaddr_range) = devaddr_ranges.next().await {
-                if (tx.send(Ok(RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::DevaddrRange(
-                        devaddr_range.into(),
-                    )),
-                })))
-                .await
-                .is_err()
-                {
-                    break;
-                }
-            }
-
-            drop(active_routes);
-            drop(eui_pairs);
-            drop(devaddr_ranges);
 
             tracing::info!("existing routes sent; streaming updates as available");
             loop {
                 let shutdown = shutdown_listener.clone();
 
                 tokio::select! {
-                    _ = shutdown => break,
+                    _ = shutdown => return,
                     msg = route_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
-                            break;
+                            return;
                         }
                     }
                 }
@@ -743,4 +704,66 @@ where
     Err(DevAddrEuiValidationError::UnauthorizedSignature(format!(
         "{request:?}"
     )))
+}
+
+async fn stream_existing_routes(
+    pool: &Pool<Postgres>,
+    tx: tokio::sync::mpsc::Sender<Result<RouteStreamResV1, Status>>,
+) -> Result<()> {
+    let mut active_routes = route::active_route_stream(pool);
+
+    while let Some(route) = active_routes.next().await {
+        if (tx.send(Ok(RouteStreamResV1 {
+            action: ActionV1::Add.into(),
+            data: Some(route_stream_res_v1::Data::Route(route.into())),
+        })))
+        .await
+        .is_err()
+        {
+            bail!("receiver closed connection");
+        }
+    }
+    Ok(())
+}
+
+async fn stream_existing_euis(
+    pool: &Pool<Postgres>,
+    tx: tokio::sync::mpsc::Sender<Result<RouteStreamResV1, Status>>,
+) -> Result<()> {
+    let mut eui_pairs = route::eui_stream(pool);
+
+    while let Some(eui_pair) = eui_pairs.next().await {
+        if (tx.send(Ok(RouteStreamResV1 {
+            action: ActionV1::Add.into(),
+            data: Some(route_stream_res_v1::Data::EuiPair(eui_pair.into())),
+        })))
+        .await
+        .is_err()
+        {
+            bail!("receiver closed connection");
+        }
+    }
+    Ok(())
+}
+
+async fn stream_existing_devaddrs(
+    pool: &Pool<Postgres>,
+    tx: tokio::sync::mpsc::Sender<Result<RouteStreamResV1, Status>>,
+) -> Result<()> {
+    let mut devaddr_ranges = route::devaddr_range_stream(pool);
+
+    while let Some(devaddr_range) = devaddr_ranges.next().await {
+        if (tx.send(Ok(RouteStreamResV1 {
+            action: ActionV1::Add.into(),
+            data: Some(route_stream_res_v1::Data::DevaddrRange(
+                devaddr_range.into(),
+            )),
+        })))
+        .await
+        .is_err()
+        {
+            bail!("receiver closed connection")
+        }
+    }
+    Ok(())
 }
