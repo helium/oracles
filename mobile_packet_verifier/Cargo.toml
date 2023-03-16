@@ -1,7 +1,7 @@
 [package]
-name = "iot-packet-verifier"
+name = "mobile-packet-verifier"
 version = "0.1.0"
-description = "Packet verification for IOT"
+description = "Packet verification for Mobile"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -39,6 +39,3 @@ http-serde = {workspace = true}
 sha2 = {workspace = true}
 data-credits = {workspace = true}
 helium-sub-daos = {workspace = true}
-
-
-
