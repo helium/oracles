@@ -173,10 +173,7 @@ impl Burner {
                     sub_dao: self.program_cache.sub_dao,
                     account_payer: self.program_cache.account_payer,
                     data_credits: self.program_cache.data_credits,
-                    delegated_data_credits: crate::pdas::delegated_data_credits(
-                        &self.program_cache.sub_dao,
-                        &payer,
-                    ),
+                    delegated_data_credits: ddc_key,
                     token_program: spl_token::id(),
                     helium_sub_daos_program: helium_sub_daos::id(),
                     system_program: solana_program::system_program::id(),

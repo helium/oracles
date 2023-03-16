@@ -4,7 +4,7 @@ use futures::{Stream, StreamExt};
 use sqlx::{Postgres, Transaction};
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError {
+pub enum AccumulationError {
     #[error("file store error: {0}")]
     FileStoreError(#[from] file_store::Error),
     #[error("sqlx error: {0}")]
@@ -13,11 +13,11 @@ pub enum VerificationError {
     ReportsStreamDropped,
 }
 
-pub async fn verify(
+pub async fn accumulate_sessions(
     conn: &mut Transaction<'_, Postgres>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-) -> Result<(), VerificationError> {
+) -> Result<(), AccumulationError> {
     tokio::pin!(reports);
 
     while let Some(DataTransferSessionIngestReport { report, .. }) = reports.next().await {
@@ -28,7 +28,7 @@ pub async fn verify(
             ON CONFLICT (pub_key, payer) DO UPDATE SET
             uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
             downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            last_timestamp = EXCLUDED.last_timestamp
+            last_timestamp = MAX(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
         )
             .bind(report.pub_key)

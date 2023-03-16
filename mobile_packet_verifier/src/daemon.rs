@@ -42,7 +42,7 @@ impl Daemon {
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::verifier::verify(&mut transaction, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&mut transaction, ts, reports).await?;
                     transaction.commit().await?;
                 },
                 _ = sleep_until(burn_time) => {
