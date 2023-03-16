@@ -12,7 +12,6 @@ pub mod iot_invalid_poc;
 pub mod iot_packet;
 pub mod iot_valid_poc;
 pub mod iot_witness_report;
-pub mod mobile_session;
 pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
