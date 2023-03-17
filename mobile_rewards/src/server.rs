@@ -427,8 +427,7 @@ pub fn construct_txn(
 fn hash_txn_b64_url(txn: &BlockchainTxnSubnetworkRewardsV1) -> String {
     let mut txn = txn.clone();
     txn.reward_server_signature = vec![];
-    let txn: &Vec<u8> = &txn.encode_to_vec();
-    let digest = Sha256::digest(txn).to_vec();
+    let digest = Sha256::digest(txn.encode_to_vec()).to_vec();
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
 }
 
