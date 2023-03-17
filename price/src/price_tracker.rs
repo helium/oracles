@@ -1,11 +1,10 @@
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use config::{Config, File};
 use file_store::{FileInfo, FileStore, FileType};
 use futures::stream::{StreamExt, TryStreamExt};
 use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 use tokio::sync::{mpsc, watch};
 
 #[derive(Clone)]
