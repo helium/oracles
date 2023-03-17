@@ -37,14 +37,6 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Config::builder()
-            .add_source(File::with_name(&path.as_ref().to_string_lossy()))
-            .build()
-            .and_then(|config| config.try_deserialize())
-            .map_err(Error::from)
-    }
-
     fn price_duration(&self) -> Duration {
         Duration::minutes(self.price_duration_minutes as i64)
     }
