@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 use tokio::sync::{mpsc, watch};
 
+#[derive(Clone)]
 struct Price {
     price: u64,
     timestamp: DateTime<Utc>,
@@ -95,22 +96,27 @@ impl PriceTracker {
     }
 
     pub async fn price(&self, token_type: &BlockchainTokenTypeV1) -> Result<u64> {
-        match self.price_receiver.borrow().get(token_type) {
-            Some(price) => {
+        let result = self
+            .price_receiver
+            .borrow()
+            .get(token_type)
+            .ok_or_else(|| anyhow!("price not available"))
+            .and_then(|price| {
                 if price.timestamp > Utc::now() - self.price_duration {
                     Ok(price.price)
                 } else {
-                    let error = anyhow!("price too old, price timestamp: {:?}", price.timestamp);
-                    self.task_killer.send(error.to_string()).await?;
-                    Err(error)
+                    Err(anyhow!(
+                        "price too old, price timestamp: {}",
+                        price.timestamp
+                    ))
                 }
-            }
-            None => {
-                let error = anyhow!("price not available");
-                self.task_killer.send(error.to_string()).await?;
-                Err(error)
-            }
+            });
+
+        if let Err(error) = &result {
+            self.task_killer.send(error.to_string()).await?;
         }
+
+        result
     }
 }
 

@@ -39,10 +39,10 @@ impl FileStore {
         }
 
         #[cfg(feature = "local")]
-        if access_key_id.is_some() && secret_access_key.is_some() {
+        if settings.access_key_id.is_some() && settings.secret_access_key.is_some() {
             let creds = aws_types::credentials::Credentials::from_keys(
-                access_key_id.unwrap(),
-                secret_access_key.unwrap(),
+                settings.access_key_id.as_ref().unwrap(),
+                settings.secret_access_key.as_ref().unwrap(),
                 None,
             );
             config = config.credentials_provider(creds);
