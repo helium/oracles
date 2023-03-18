@@ -29,7 +29,7 @@ pub struct SessionKeyFilterService {
 
 impl SessionKeyFilterService {
     pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
-        let (update_tx, _) = tokio::sync::broadcast::channel(128);
+        let (update_tx, _) = tokio::sync::broadcast::channel(1024);
         Self {
             auth_cache,
             pool,

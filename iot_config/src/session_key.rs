@@ -6,7 +6,7 @@ use helium_proto::services::iot_config::{
 use sqlx::{postgres::PgRow, FromRow, Row};
 use tokio::sync::broadcast::Sender;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SessionKeyFilter {
     pub oui: u64,
     pub devaddr: DevAddrField,
@@ -72,40 +72,34 @@ pub async fn update_session_keys(
 ) -> Result<(), sqlx::Error> {
     let mut transaction = db.begin().await?;
 
-    let added_updates = if !to_add.is_empty() {
-        insert_session_key_filters(to_add, &mut transaction).await?
-    } else {
-        vec![]
-    };
+    let added_updates: Vec<(SessionKeyFilter, ActionV1)> =
+        insert_session_key_filters(to_add, &mut transaction)
+            .await?
+            .into_iter()
+            .map(|added_skf| (added_skf, ActionV1::Add))
+            .collect();
 
-    let removed_updates = if !to_remove.is_empty() {
-        remove_session_key_filters(to_remove, &mut transaction).await?
-    } else {
-        vec![]
-    };
+    let removed_updates: Vec<(SessionKeyFilter, ActionV1)> =
+        remove_session_key_filters(to_remove, &mut transaction)
+            .await?
+            .into_iter()
+            .map(|removed_skf| (removed_skf, ActionV1::Remove))
+            .collect();
 
     transaction.commit().await?;
 
     tokio::spawn(async move {
-        for added in added_updates {
-            let update = SessionKeyFilterStreamResV1 {
-                action: ActionV1::Add.into(),
-                filter: Some(added.into()),
-            };
-            if update_tx.send(update).is_err() {
-                break;
-            }
-        }
-
-        for removed in removed_updates {
-            let update = SessionKeyFilterStreamResV1 {
-                action: ActionV1::Remove.into(),
-                filter: Some(removed.into()),
-            };
-            if update_tx.send(update).is_err() {
-                break;
-            }
-        }
+        [added_updates, removed_updates]
+            .concat()
+            .iter()
+            .try_for_each(|(update, action)| {
+                update_tx
+                    .send(SessionKeyFilterStreamResV1 {
+                        action: i32::from(*action),
+                        filter: Some(update.into()),
+                    })
+                    .map(|_| ())
+            })
     });
 
     Ok(())
@@ -115,6 +109,10 @@ async fn insert_session_key_filters(
     session_key_filters: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<Vec<SessionKeyFilter>, sqlx::Error> {
+    if session_key_filters.is_empty() {
+        return Ok(vec![]);
+    }
+
     const SESSION_KEY_FILTER_INSERT_VALS: &str =
         " insert into session_key_filters (oui, devaddr, session_key) ";
     const SESSION_KEY_FILTER_INSERT_CONFLICT: &str =
@@ -141,6 +139,10 @@ async fn remove_session_key_filters(
     session_key_filters: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<Vec<SessionKeyFilter>, sqlx::Error> {
+    if session_key_filters.is_empty() {
+        return Ok(vec![]);
+    }
+
     const SESSION_KEY_FILTER_DELETE_VALS: &str =
         " delete from session_key_filters where (oui, devaddr, session_key) in ";
     const SESSION_KEY_FILTER_DELETE_RETURN: &str = " returning * ";
