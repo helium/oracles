@@ -19,6 +19,7 @@ pub use route_service::RouteService;
 pub use session_key_service::SessionKeyFilterService;
 pub use settings::Settings;
 
+use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 
@@ -27,3 +28,20 @@ pub type GrpcStreamResult<T> = ReceiverStream<Result<T, Status>>;
 pub type GrpcStreamRequest<T> = tonic::Request<tonic::Streaming<T>>;
 
 pub const HELIUM_NET_ID: NetIdField = LoraField(0x000024);
+pub const BROADCAST_CHANNEL_QUEUE: usize = 1024;
+
+pub fn enqueue_broadcast(queue_size: usize) -> bool {
+    // enqueue the message for broadcast if
+    // the current queue is <= 80% full
+    (queue_size * 100) / BROADCAST_CHANNEL_QUEUE <= 80
+}
+
+pub async fn broadcast<T>(
+    message: T,
+    sender: broadcast::Sender<T>,
+) -> Result<(), broadcast::error::SendError<T>> {
+    while !enqueue_broadcast(sender.len()) {
+        tokio::time::sleep(tokio::time::Duration::from_millis(25)).await
+    }
+    sender.send(message).map(|_| ())
+}

@@ -1,10 +1,13 @@
-use crate::lora_field::{DevAddrRange, EuiPair, NetIdField};
-use futures::stream::{Stream, StreamExt, TryStreamExt};
+use crate::{
+    broadcast,
+    lora_field::{DevAddrRange, EuiPair, NetIdField},
+};
+use futures::stream::{self, Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{types::Uuid, Row};
 use std::collections::BTreeMap;
-use tokio::sync::broadcast::{self, Sender};
+use tokio::sync::broadcast::{error::SendError, Sender};
 
 pub mod proto {
     pub use helium_proto::{
@@ -78,7 +81,7 @@ pub enum RouteStorageError {
     #[error("protocol error: {0}")]
     ServerProtocol(String),
     #[error("stream update error: {0}")]
-    StreamUpdate(#[from] Box<broadcast::error::SendError<proto::RouteStreamResV1>>),
+    StreamUpdate(#[from] Box<SendError<proto::RouteStreamResV1>>),
 }
 
 pub async fn create_route(
@@ -276,17 +279,18 @@ pub async fn update_euis(
     transaction.commit().await?;
 
     tokio::spawn(async move {
-        [added_euis, removed_euis]
-            .concat()
-            .iter()
+        stream::iter([added_euis, removed_euis].concat())
+            .map(Ok)
             .try_for_each(|(update, action)| {
-                update_tx
-                    .send(proto::RouteStreamResV1 {
-                        action: i32::from(*action),
+                broadcast::<proto::RouteStreamResV1>(
+                    proto::RouteStreamResV1 {
+                        action: i32::from(action),
                         data: Some(proto::route_stream_res_v1::Data::EuiPair(update.into())),
-                    })
-                    .map(|_| ())
+                    },
+                    update_tx.clone(),
+                )
             })
+            .await
     });
 
     Ok(())
@@ -385,19 +389,20 @@ pub async fn update_devaddr_ranges(
     transaction.commit().await?;
 
     tokio::spawn(async move {
-        [added_devaddrs, removed_devaddrs]
-            .concat()
-            .iter()
+        stream::iter([added_devaddrs, removed_devaddrs].concat())
+            .map(Ok)
             .try_for_each(|(update, action)| {
-                update_tx
-                    .send(proto::RouteStreamResV1 {
-                        action: i32::from(*action),
+                broadcast::<proto::RouteStreamResV1>(
+                    proto::RouteStreamResV1 {
+                        action: i32::from(action),
                         data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
                             update.into(),
                         )),
-                    })
-                    .map(|_| ())
+                    },
+                    update_tx.clone(),
+                )
             })
+            .await
     });
 
     Ok(())

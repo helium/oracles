@@ -13,6 +13,7 @@ services:
       - "8080:8080"
     environment:
       CFG_DATABASE_URL: postgres://postgres:postgres@postgres:5432/config_db
+      CFG_DATABASE_CONNECTIONS: 50
       CFG_LISTEN: 0.0.0.0:8080
       CFG_METRICS_ENDPOINT: 0.0.0.0:19000
       CFG_FOLLOWER_URL: "http://node:8090"

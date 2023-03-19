@@ -1,5 +1,5 @@
-use crate::lora_field::DevAddrField;
-use futures::stream::{Stream, StreamExt};
+use crate::{broadcast, lora_field::DevAddrField};
+use futures::stream::{self, Stream, StreamExt, TryStreamExt};
 use helium_proto::services::iot_config::{
     ActionV1, SessionKeyFilterStreamResV1, SessionKeyFilterV1,
 };
@@ -89,17 +89,18 @@ pub async fn update_session_keys(
     transaction.commit().await?;
 
     tokio::spawn(async move {
-        [added_updates, removed_updates]
-            .concat()
-            .iter()
+        stream::iter([added_updates, removed_updates].concat())
+            .map(Ok)
             .try_for_each(|(update, action)| {
-                update_tx
-                    .send(SessionKeyFilterStreamResV1 {
-                        action: i32::from(*action),
+                broadcast::<SessionKeyFilterStreamResV1>(
+                    SessionKeyFilterStreamResV1 {
+                        action: i32::from(action),
                         filter: Some(update.into()),
-                    })
-                    .map(|_| ())
+                    },
+                    update_tx.clone(),
+                )
             })
+            .await
     });
 
     Ok(())

@@ -3,7 +3,7 @@ use crate::{
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
     org::{self, DbOrgError},
     route::{self, Route, RouteStorageError},
-    GrpcResult, GrpcStreamRequest, GrpcStreamResult,
+    GrpcResult, GrpcStreamRequest, GrpcStreamResult, BROADCAST_CHANNEL_QUEUE,
 };
 use anyhow::{anyhow, Result};
 use file_store::traits::MsgVerify;
@@ -40,7 +40,7 @@ enum OrgId<'a> {
 
 impl RouteService {
     pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
-        let (update_tx, _) = tokio::sync::broadcast::channel(1024);
+        let (update_tx, _) = tokio::sync::broadcast::channel(BROADCAST_CHANNEL_QUEUE);
 
         Self {
             auth_cache,

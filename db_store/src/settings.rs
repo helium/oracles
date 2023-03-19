@@ -11,7 +11,7 @@ pub enum AuthType {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
-    pub max_connections: u32,
+    pub connections: u32,
 
     /// URL to access the postgres database, only used when
     /// the auth_type is Postgres
@@ -84,6 +84,6 @@ impl Settings {
     }
 
     pub fn pool_options(&self) -> PgPoolOptions {
-        PgPoolOptions::new().max_connections(self.max_connections)
+        PgPoolOptions::new().max_connections(self.connections)
     }
 }
