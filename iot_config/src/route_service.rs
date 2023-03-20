@@ -3,11 +3,14 @@ use crate::{
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
     org::{self, DbOrgError},
     route::{self, Route, RouteStorageError},
-    GrpcResult, GrpcStreamRequest, GrpcStreamResult,
+    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use file_store::traits::MsgVerify;
-use futures::stream::StreamExt;
+use futures::{
+    future::TryFutureExt,
+    stream::{StreamExt, TryStreamExt},
+};
 use helium_crypto::PublicKey;
 use helium_proto::services::iot_config::{
     self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
@@ -17,7 +20,7 @@ use helium_proto::services::iot_config::{
     RouteV1,
 };
 use sqlx::{Pool, Postgres};
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
 
 const UPDATE_BATCH_LIMIT: usize = 5_000;
@@ -25,7 +28,7 @@ const UPDATE_BATCH_LIMIT: usize = 5_000;
 pub struct RouteService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
-    update_channel: Sender<RouteStreamResV1>,
+    update_channel: broadcast::Sender<RouteStreamResV1>,
     shutdown: triggered::Listener,
 }
 
@@ -37,21 +40,19 @@ enum OrgId<'a> {
 
 impl RouteService {
     pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
-        let (update_tx, _) = tokio::sync::broadcast::channel(128);
-
         Self {
             auth_cache,
             pool,
-            update_channel: update_tx,
+            update_channel: update_channel(),
             shutdown,
         }
     }
 
-    fn subscribe_to_routes(&self) -> Receiver<RouteStreamResV1> {
+    fn subscribe_to_routes(&self) -> broadcast::Receiver<RouteStreamResV1> {
         self.update_channel.subscribe()
     }
 
-    pub fn clone_update_channel(&self) -> Sender<RouteStreamResV1> {
+    pub fn clone_update_channel(&self) -> broadcast::Sender<RouteStreamResV1> {
         self.update_channel.clone()
     }
 
@@ -265,48 +266,13 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            let mut active_routes = route::active_route_stream(&pool);
-
-            while let Some(active_route) = active_routes.next().await {
-                if (tx.send(Ok(RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::Route(active_route.into())),
-                })))
+            if stream_existing_routes(&pool, tx.clone())
+                .and_then(|_| stream_existing_euis(&pool, tx.clone()))
+                .and_then(|_| stream_existing_devaddrs(&pool, tx.clone()))
                 .await
                 .is_err()
-                {
-                    break;
-                }
-            }
-
-            let mut eui_pairs = route::eui_stream(&pool);
-
-            while let Some(eui_pair) = eui_pairs.next().await {
-                if (tx.send(Ok(RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::EuiPair(eui_pair.into())),
-                })))
-                .await
-                .is_err()
-                {
-                    break;
-                }
-            }
-
-            let mut devaddr_ranges = route::devaddr_range_stream(&pool);
-
-            while let Some(devaddr_range) = devaddr_ranges.next().await {
-                if (tx.send(Ok(RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::DevaddrRange(
-                        devaddr_range.into(),
-                    )),
-                })))
-                .await
-                .is_err()
-                {
-                    break;
-                }
+            {
+                return;
             }
 
             tracing::info!("existing routes sent; streaming updates as available");
@@ -314,10 +280,10 @@ impl iot_config::Route for RouteService {
                 let shutdown = shutdown_listener.clone();
 
                 tokio::select! {
-                    _ = shutdown => break,
+                    _ = shutdown => return,
                     msg = route_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
-                            break;
+                            return;
                         }
                     }
                 }
@@ -739,4 +705,54 @@ where
     Err(DevAddrEuiValidationError::UnauthorizedSignature(format!(
         "{request:?}"
     )))
+}
+
+async fn stream_existing_routes(
+    pool: &Pool<Postgres>,
+    tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+) -> Result<()> {
+    route::active_route_stream(pool)
+        .then(|route| {
+            tx.send(Ok(RouteStreamResV1 {
+                action: ActionV1::Add.into(),
+                data: Some(route_stream_res_v1::Data::Route(route.into())),
+            }))
+        })
+        .map_err(|err| anyhow!(err))
+        .try_fold((), |acc, _| async move { Ok(acc) })
+        .await
+}
+
+async fn stream_existing_euis(
+    pool: &Pool<Postgres>,
+    tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+) -> Result<()> {
+    route::eui_stream(pool)
+        .then(|eui_pair| {
+            tx.send(Ok(RouteStreamResV1 {
+                action: ActionV1::Add.into(),
+                data: Some(route_stream_res_v1::Data::EuiPair(eui_pair.into())),
+            }))
+        })
+        .map_err(|err| anyhow!(err))
+        .try_fold((), |acc, _| async move { Ok(acc) })
+        .await
+}
+
+async fn stream_existing_devaddrs(
+    pool: &Pool<Postgres>,
+    tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+) -> Result<()> {
+    route::devaddr_range_stream(pool)
+        .then(|devaddr_range| {
+            tx.send(Ok(RouteStreamResV1 {
+                action: ActionV1::Add.into(),
+                data: Some(route_stream_res_v1::Data::DevaddrRange(
+                    devaddr_range.into(),
+                )),
+            }))
+        })
+        .map_err(|err| anyhow!(err))
+        .try_fold((), |acc, _| async move { Ok(acc) })
+        .await
 }

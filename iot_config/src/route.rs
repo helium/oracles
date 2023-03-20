@@ -1,10 +1,13 @@
-use crate::lora_field::{DevAddrRange, EuiPair, NetIdField};
-use futures::stream::{Stream, StreamExt, TryStreamExt};
+use crate::{
+    broadcast_update,
+    lora_field::{DevAddrRange, EuiPair, NetIdField},
+};
+use futures::stream::{self, Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{types::Uuid, Row};
 use std::collections::BTreeMap;
-use tokio::sync::broadcast::{self, Sender};
+use tokio::sync::broadcast::{error::SendError, Sender};
 
 pub mod proto {
     pub use helium_proto::{
@@ -78,7 +81,7 @@ pub enum RouteStorageError {
     #[error("protocol error: {0}")]
     ServerProtocol(String),
     #[error("stream update error: {0}")]
-    StreamUpdate(#[from] Box<broadcast::error::SendError<proto::RouteStreamResV1>>),
+    StreamUpdate(#[from] Box<SendError<proto::RouteStreamResV1>>),
 }
 
 pub async fn create_route(
@@ -180,19 +183,19 @@ pub async fn update_route(
 async fn insert_euis(
     euis: &[EuiPair],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
-    // We don't want to take any actions if a route_id cannot be parsed.
-    let mut eui_values = vec![];
-    for eui in euis.iter() {
-        eui_values.push((
-            Uuid::try_parse(&eui.route_id)?,
-            i64::from(eui.app_eui),
-            i64::from(eui.dev_eui),
-        ));
+) -> Result<Vec<EuiPair>, RouteStorageError> {
+    if euis.is_empty() {
+        return Ok(vec![]);
     }
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let eui_values = euis
+        .iter()
+        .map(|eui_pair| eui_pair.try_into())
+        .collect::<Result<Vec<(Uuid, i64, i64)>, _>>()?;
 
     const EUI_INSERT_VALS: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
-    const EUI_INSERT_ON_CONF: &str = " on conflict (route_id, app_eui, dev_eui) do nothing ";
+    const EUI_INSERT_ON_CONF: &str =
+        " on conflict (route_id, app_eui, dev_eui) do nothing returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(EUI_INSERT_VALS);
     query_builder
@@ -201,36 +204,40 @@ async fn insert_euis(
         })
         .push(EUI_INSERT_ON_CONF);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<EuiPair>()
+        .fetch_all(db)
+        .await?)
 }
 
 async fn remove_euis(
     euis: &[EuiPair],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
-    // We don't want to take any actions if a route_id cannot be parsed.
-    let mut eui_values = vec![];
-    for eui in euis.iter() {
-        eui_values.push((
-            Uuid::try_parse(&eui.route_id)?,
-            i64::from(eui.app_eui),
-            i64::from(eui.dev_eui),
-        ));
+) -> Result<Vec<EuiPair>, RouteStorageError> {
+    if euis.is_empty() {
+        return Ok(vec![]);
     }
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let eui_values = euis
+        .iter()
+        .map(|eui_pair| eui_pair.try_into())
+        .collect::<Result<Vec<(Uuid, i64, i64)>, _>>()?;
 
-    const EUI_DELETE_SQL: &str =
+    const EUI_DELETE_VALS: &str =
         " delete from route_eui_pairs where (route_id, app_eui, dev_eui) in ";
+    const EUI_DELETE_RETURNING: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(EUI_DELETE_SQL);
-    query_builder.push_tuples(eui_values, |mut builder, (id, app_eui, dev_eui)| {
-        builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
-    });
+        sqlx::QueryBuilder::new(EUI_DELETE_VALS);
+    query_builder
+        .push_tuples(eui_values, |mut builder, (id, app_eui, dev_eui)| {
+            builder.push_bind(id).push_bind(app_eui).push_bind(dev_eui);
+        })
+        .push(EUI_DELETE_RETURNING);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<EuiPair>()
+        .fetch_all(db)
+        .await?)
 }
 
 pub async fn update_euis(
@@ -241,35 +248,34 @@ pub async fn update_euis(
 ) -> Result<(), RouteStorageError> {
     let mut transaction = db.begin().await?;
 
-    if !to_add.is_empty() {
-        insert_euis(to_add, &mut transaction).await?;
-    }
+    let added_euis: Vec<(EuiPair, proto::ActionV1)> = insert_euis(to_add, &mut transaction)
+        .await?
+        .into_iter()
+        .map(|added_eui| (added_eui, proto::ActionV1::Add))
+        .collect();
 
-    if !to_remove.is_empty() {
-        remove_euis(to_remove, &mut transaction).await?;
-    }
+    let removed_euis: Vec<(EuiPair, proto::ActionV1)> = remove_euis(to_remove, &mut transaction)
+        .await?
+        .into_iter()
+        .map(|removed_eui| (removed_eui, proto::ActionV1::Remove))
+        .collect();
 
     transaction.commit().await?;
 
-    for added in to_add {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Add.into(),
-            data: Some(proto::route_stream_res_v1::Data::EuiPair(added.into())),
-        };
-        if update_tx.send(update).is_err() {
-            break;
-        }
-    }
-
-    for removed in to_remove {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Remove.into(),
-            data: Some(proto::route_stream_res_v1::Data::EuiPair(removed.into())),
-        };
-        if update_tx.send(update).is_err() {
-            break;
-        }
-    }
+    tokio::spawn(async move {
+        stream::iter([added_euis, removed_euis].concat())
+            .map(Ok)
+            .try_for_each(|(update, action)| {
+                broadcast_update::<proto::RouteStreamResV1>(
+                    proto::RouteStreamResV1 {
+                        action: i32::from(action),
+                        data: Some(proto::route_stream_res_v1::Data::EuiPair(update.into())),
+                    },
+                    update_tx.clone(),
+                )
+            })
+            .await
+    });
 
     Ok(())
 }
@@ -277,21 +283,20 @@ pub async fn update_euis(
 async fn insert_devaddr_ranges(
     ranges: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
-    // We don't want to take any actions if a route_id cannot be parsed.
-    let mut devaddr_values = vec![];
-    for devaddr in ranges {
-        devaddr_values.push((
-            Uuid::try_parse(&devaddr.route_id)?,
-            i32::from(devaddr.start_addr),
-            i32::from(devaddr.end_addr),
-        ));
+) -> Result<Vec<DevAddrRange>, RouteStorageError> {
+    if ranges.is_empty() {
+        return Ok(vec![]);
     }
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let devaddr_values = ranges
+        .iter()
+        .map(|range| range.try_into())
+        .collect::<Result<Vec<(Uuid, i32, i32)>, _>>()?;
 
     const DEVADDR_RANGE_INSERT_VALS: &str =
         " insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
     const DEVADDR_RANGE_INSERT_ON_CONF: &str =
-        " on conflict (route_id, start_addr, end_addr) do nothing ";
+        " on conflict (route_id, start_addr, end_addr) do nothing returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_VALS);
     query_builder
@@ -300,37 +305,41 @@ async fn insert_devaddr_ranges(
         })
         .push(DEVADDR_RANGE_INSERT_ON_CONF);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<DevAddrRange>()
+        .fetch_all(db)
+        .await?)
 }
 
 async fn remove_devaddr_ranges(
     ranges: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<(), RouteStorageError> {
-    // We don't want to take any actions if a route_id cannot be parsed.
-    let mut devaddr_values = vec![];
-    for devaddr in ranges {
-        devaddr_values.push((
-            Uuid::try_parse(&devaddr.route_id)?,
-            i32::from(devaddr.start_addr),
-            i32::from(devaddr.end_addr),
-        ));
+) -> Result<Vec<DevAddrRange>, RouteStorageError> {
+    if ranges.is_empty() {
+        return Ok(vec![]);
     }
+    // We don't want to take any actions if a route_id cannot be parsed.
+    let devaddr_values = ranges
+        .iter()
+        .map(|range| range.try_into())
+        .collect::<Result<Vec<(Uuid, i32, i32)>, _>>()?;
 
-    const DEVADDR_RANGE_DELETE_SQL: &str =
+    const DEVADDR_RANGE_DELETE_VALS: &str =
         " delete from route_devaddr_ranges where (route_id, start_addr, end_addr) in ";
+    const DEVADDR_RANGE_DELETE_RETURNING: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new(DEVADDR_RANGE_DELETE_SQL);
+        sqlx::QueryBuilder::new(DEVADDR_RANGE_DELETE_VALS);
 
-    query_builder.push_tuples(devaddr_values, |mut builder, (id, start, end)| {
-        builder.push_bind(id).push_bind(start).push_bind(end);
-    });
+    query_builder
+        .push_tuples(devaddr_values, |mut builder, (id, start, end)| {
+            builder.push_bind(id).push_bind(start).push_bind(end);
+        })
+        .push(DEVADDR_RANGE_DELETE_RETURNING);
 
-    query_builder.build().execute(db).await.map(|_| ())?;
-
-    Ok(())
+    Ok(query_builder
+        .build_query_as::<DevAddrRange>()
+        .fetch_all(db)
+        .await?)
 }
 
 pub async fn update_devaddr_ranges(
@@ -341,37 +350,38 @@ pub async fn update_devaddr_ranges(
 ) -> Result<(), RouteStorageError> {
     let mut transaction = db.begin().await?;
 
-    if !to_add.is_empty() {
-        insert_devaddr_ranges(to_add, &mut transaction).await?;
-    }
+    let added_devaddrs: Vec<(DevAddrRange, proto::ActionV1)> =
+        insert_devaddr_ranges(to_add, &mut transaction)
+            .await?
+            .into_iter()
+            .map(|added_range| (added_range, proto::ActionV1::Add))
+            .collect();
 
-    if !to_remove.is_empty() {
-        remove_devaddr_ranges(to_remove, &mut transaction).await?;
-    }
+    let removed_devaddrs: Vec<(DevAddrRange, proto::ActionV1)> =
+        remove_devaddr_ranges(to_remove, &mut transaction)
+            .await?
+            .into_iter()
+            .map(|removed_range| (removed_range, proto::ActionV1::Remove))
+            .collect();
 
     transaction.commit().await?;
 
-    for added in to_add {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Add.into(),
-            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(added.into())),
-        };
-        if update_tx.send(update).is_err() {
-            break;
-        }
-    }
-
-    for removed in to_remove {
-        let update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Remove.into(),
-            data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
-                removed.into(),
-            )),
-        };
-        if update_tx.send(update).is_err() {
-            break;
-        }
-    }
+    tokio::spawn(async move {
+        stream::iter([added_devaddrs, removed_devaddrs].concat())
+            .map(Ok)
+            .try_for_each(|(update, action)| {
+                broadcast_update::<proto::RouteStreamResV1>(
+                    proto::RouteStreamResV1 {
+                        action: i32::from(action),
+                        data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
+                            update.into(),
+                        )),
+                    },
+                    update_tx.clone(),
+                )
+            })
+            .await
+    });
 
     Ok(())
 }
@@ -604,6 +614,28 @@ impl From<Route> for proto::RouteV1 {
             active: route.active,
             locked: route.locked,
         }
+    }
+}
+
+impl TryFrom<&EuiPair> for (Uuid, i64, i64) {
+    type Error = sqlx::types::uuid::Error;
+
+    fn try_from(eui: &EuiPair) -> Result<(Uuid, i64, i64), Self::Error> {
+        let uuid = Uuid::try_parse(&eui.route_id)?;
+        Ok((uuid, i64::from(eui.app_eui), i64::from(eui.dev_eui)))
+    }
+}
+
+impl TryFrom<&DevAddrRange> for (Uuid, i32, i32) {
+    type Error = sqlx::types::uuid::Error;
+
+    fn try_from(devaddr: &DevAddrRange) -> Result<(Uuid, i32, i32), Self::Error> {
+        let uuid = Uuid::try_parse(&devaddr.route_id)?;
+        Ok((
+            uuid,
+            i32::from(devaddr.start_addr),
+            i32::from(devaddr.end_addr),
+        ))
     }
 }
 
