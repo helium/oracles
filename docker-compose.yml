@@ -12,14 +12,15 @@ services:
     ports:
       - "8080:8080"
     environment:
-      CFG_DATABASE_URL: postgres://postgres:postgres@postgres:5432/config_db
-      CFG_LISTEN: 0.0.0.0:8080
-      CFG_METRICS_ENDPOINT: 0.0.0.0:19000
-      CFG_FOLLOWER_URL: "http://node:8090"
-      CFG_NETWORK: mainnet
-      CFG_ADMIN: ${CONFIG_ADMIN_PUBKEY}
-      CFG_KEYPAIR: /config-signing-key.bin
-      CFG_LOG: info
+      CFG__DATABASE__URL: postgres://postgres:postgres@postgres:5432/config_db
+      CFG__DATABASE__MAX_CONNECTIONS: 50
+      CFG__LISTEN: 0.0.0.0:8080
+      CFG__METRICS__ENDPOINT: 0.0.0.0:19000
+      CFG__FOLLOWER__URL: "http://node:8090"
+      CFG__NETWORK: mainnet
+      CFG__ADMIN: ${CONFIG_ADMIN_PUBKEY}
+      CFG__KEYPAIR: /config-signing-key.bin
+      CFG__LOG: info
     volumes:
       - ${CONFIG_SIGNING_KEY}:/config-signing-key.bin:ro
 

@@ -9,4 +9,6 @@ create table session_key_filters (
     primary key (oui, devaddr, session_key)
 );
 
+create index skf_devaddr_idx on session_key_filters (devaddr);
+
 select trigger_updated_at('session_key_filters');
