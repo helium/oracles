@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
-    owner_shares::{OwnerShares, ResolveError},
+    owner_shares::{OwnerShares, ResolveError, TransferRewards},
     scheduler::Scheduler,
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
 };
@@ -13,8 +13,9 @@ use helium_proto::{
     services::{follower, Channel},
     RewardManifest,
 };
+use price::PriceTracker;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 use tokio::pin;
 use tokio::time::sleep;
 
@@ -28,6 +29,7 @@ pub struct VerifierDaemon {
     pub verifications_per_period: i32,
     pub verification_offset: Duration,
     pub verifier: Verifier,
+    pub price_tracker: PriceTracker,
 }
 
 impl VerifierDaemon {
@@ -109,15 +111,23 @@ impl VerifierDaemon {
         let speedtests =
             SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
 
-        let rewards = self.verifier.reward_epoch(heartbeats, speedtests).await?;
+        let poc_rewards = self.verifier.reward_epoch(heartbeats, speedtests).await?;
+        let transfer_rewards = TransferRewards::from_transfer_sessions(
+            self.price_tracker
+                .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
+                .await?,
+            ingest::ingest_valid_data_transfers(
+                &self.verifier.file_store,
+                &scheduler.reward_period,
+            )
+            .await,
+            &scheduler.reward_period,
+        )
+        .await?;
 
-        let mut owner_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
-
-        for reward_share in rewards.into_radio_shares(&scheduler.reward_period)? {
-            *owner_rewards
-                .entry(reward_share.owner_key.clone())
-                .or_default() += reward_share.amount;
-
+        for reward_share in
+            poc_rewards.into_radio_shares(&transfer_rewards, &scheduler.reward_period)?
+        {
             self.radio_rewards
                 .write(reward_share, [])
                 .await?
@@ -182,13 +192,13 @@ impl Verifier {
         >,
     > {
         let heartbeats = Heartbeat::validate_heartbeats(
-            ingest::ingest_heartbeats(&self.file_store, epoch).await?,
+            ingest::ingest_heartbeats(&self.file_store, epoch).await,
             epoch,
         )
         .await;
 
         let speedtests = SpeedtestRollingAverage::validate_speedtests(
-            ingest::ingest_speedtests(&self.file_store, epoch).await?,
+            ingest::ingest_speedtests(&self.file_store, epoch).await,
             pool,
         )
         .await;

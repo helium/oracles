@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use file_store::{
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
-    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     mobile_transfer::ValidDataTransferSession,
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
     FileStore, FileType,
 };
@@ -61,6 +61,34 @@ pub async fn ingest_speedtests(
                     None
                 },
                 |report| Some(report.report),
+            )
+        })
+}
+
+pub async fn ingest_valid_data_transfers(
+    file_store: &FileStore,
+    epoch: &Range<DateTime<Utc>>,
+) -> impl Stream<Item = ValidDataTransferSession> {
+    file_store
+        .source(
+            file_store
+                .list(FileType::ValidDataTransferSession, epoch.start, epoch.end)
+                .boxed(),
+        )
+        .filter_map(|msg| async move {
+            msg.map_err(|err| {
+                tracing::error!("Error fetching speedtest ingest report: {:?}", err);
+                err
+            })
+            .ok()
+        })
+        .filter_map(|msg| async move {
+            ValidDataTransferSession::decode(msg).map_or_else(
+                |err| {
+                    tracing::error!("Could not decode valid data transfer session: {:?}", err);
+                    None
+                },
+                |session| Some(session),
             )
         })
 }

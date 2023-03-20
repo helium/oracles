@@ -6,6 +6,7 @@ use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
+use price::PriceTracker;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -82,6 +83,9 @@ impl Cmd {
         let verifications_per_period = settings.verifications;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
+        let (price_tracker, tracker_process) =
+            PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
+
         let verifier = Verifier::new(file_store, follower);
 
         let verifier_daemon = VerifierDaemon {
@@ -94,6 +98,7 @@ impl Cmd {
             reward_period_hours,
             verifications_per_period,
             verifier,
+            price_tracker,
         };
 
         tokio::try_join!(
@@ -112,6 +117,7 @@ impl Cmd {
                 .run(&shutdown_listener)
                 .map_err(Error::from),
             verifier_daemon.run(&shutdown_listener),
+            tracker_process,
         )?;
 
         tracing::info!("Shutting down verifier server");

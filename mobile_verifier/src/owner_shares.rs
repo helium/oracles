@@ -3,7 +3,8 @@ use crate::{
     speedtests::{Average, SpeedtestAverages},
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use file_store::traits::TimestampEncode;
+use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
+use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
@@ -13,6 +14,80 @@ use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use std::collections::HashMap;
 use std::ops::Range;
+
+pub struct TransferRewards {
+    scale: Decimal,
+    rewards: HashMap<PublicKeyBinary, Decimal>,
+    pub remaining_rewards: Decimal,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TransferRewardsError {
+    #[error("Clock error: {0}")]
+    ClockError(#[from] ClockError),
+    #[error("Decimal error: {0}")]
+    DecimalError(#[from] rust_decimal::Error),
+}
+
+impl TransferRewards {
+    pub fn empty(epoch: &Range<DateTime<Utc>>) -> Self {
+        Self {
+            scale: Decimal::ONE,
+            rewards: HashMap::new(),
+            remaining_rewards: get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap(),
+        }
+    }
+
+    pub fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
+        self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.scale
+    }
+
+    pub async fn from_transfer_sessions(
+        dollars_per_mobile: u64,
+        transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> Result<Self, TransferRewardsError> {
+        tokio::pin!(transfer_sessions);
+
+        let mut bytes = HashMap::<PublicKeyBinary, Decimal>::new();
+        while let Some(ValidDataTransferSession {
+            pub_key,
+            upload_bytes,
+            download_bytes,
+            ..
+        }) = transfer_sessions.next().await
+        {
+            *bytes.entry(pub_key).or_default() += Decimal::from(upload_bytes + download_bytes);
+        }
+
+        let mut reward_sum = Decimal::ZERO;
+        let dollars_per_mobile = Decimal::from(dollars_per_mobile);
+        let rewards: HashMap<_, _> = bytes
+            .into_iter()
+            .map(|(pub_key, bytes)| {
+                let mobiles = bytes / Decimal::from(100_000_000) * dollars_per_mobile;
+                reward_sum += mobiles;
+                (pub_key, mobiles)
+            })
+            .collect();
+
+        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?;
+
+        let (scale, remaining_rewards) =
+            if (total_rewards - reward_sum) / total_rewards < Decimal::from_str_exact("0.2")? {
+                let scale = Decimal::from_str_exact("0.8")? * total_rewards / reward_sum;
+                (scale, total_rewards * Decimal::from_str_exact("0.2")?)
+            } else {
+                (Decimal::ONE, total_rewards - reward_sum)
+            };
+
+        Ok(Self {
+            scale,
+            rewards,
+            remaining_rewards,
+        })
+    }
+}
 
 pub struct RadioShare {
     hotspot_key: PublicKeyBinary,
@@ -84,12 +159,13 @@ impl OwnerShares {
             })
     }
 
-    pub fn into_radio_shares(
+    pub fn into_radio_shares<'a>(
         self,
-        epoch: &'_ Range<DateTime<Utc>>,
-    ) -> Result<impl Iterator<Item = proto::RadioRewardShare> + '_, ClockError> {
+        transfer_rewards: &'a TransferRewards,
+        epoch: &'a Range<DateTime<Utc>>,
+    ) -> Result<impl Iterator<Item = proto::RadioRewardShare> + 'a, ClockError> {
         let total_shares = self.total_shares();
-        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?;
+        let total_rewards = transfer_rewards.remaining_rewards;
         let rewards_per_share = (total_rewards / total_shares)
             .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity);
         Ok(self
@@ -100,16 +176,17 @@ impl OwnerShares {
                     .into_iter()
                     .map(move |radio_share| proto::RadioRewardShare {
                         owner_key: owner_key.clone().into(),
-                        hotspot_key: radio_share.hotspot_key.into(),
                         cbsd_id: radio_share.cbsd_id,
                         amount: {
-                            let rewards = rewards_per_share * radio_share.amount;
+                            let rewards = rewards_per_share * radio_share.amount
+                                + transfer_rewards.reward(&radio_share.hotspot_key);
                             let rewards = (rewards * Decimal::from(MOBILE_SCALE))
                                 .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
                             rewards.to_u64().unwrap_or(0)
                         },
                         start_epoch: epoch.start.encode_timestamp(),
                         end_epoch: epoch.end.encode_timestamp(),
+                        hotspot_key: radio_share.hotspot_key.into(),
                     })
                     .filter(|radio_share| radio_share.amount > 0)
             }))

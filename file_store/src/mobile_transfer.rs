@@ -9,12 +9,12 @@ use serde::Serialize;
 
 #[derive(Serialize, Clone)]
 pub struct ValidDataTransferSession {
-    pub_key: PublicKeyBinary,
-    payer: PublicKeyBinary,
-    upload_bytes: u64,
-    download_bytes: u64,
-    first_timestamp: DateTime<Utc>,
-    last_timestamp: DateTime<Utc>,
+    pub pub_key: PublicKeyBinary,
+    pub payer: PublicKeyBinary,
+    pub upload_bytes: u64,
+    pub download_bytes: u64,
+    pub first_timestamp: DateTime<Utc>,
+    pub last_timestamp: DateTime<Utc>,
 }
 
 impl MsgDecode for ValidDataTransferSession {
