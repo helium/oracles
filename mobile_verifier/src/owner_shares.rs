@@ -642,10 +642,12 @@ mod test {
 
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+        let epoch = (now - Duration::hours(1))..now;
+        let transfer_rewards = TransferRewards::empty(&epoch);
         for radio_share in OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards")
-            .into_radio_shares(&((now - Duration::hours(1))..now))
+            .into_radio_shares(&transfer_rewards, &epoch)
             .expect("Clock is out of sync")
         {
             *owner_rewards
@@ -657,19 +659,19 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            99_715_099_715_100
+            997_150_997_151
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            299_145_299_145_301
+            2_991_452_991_452
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            17_806_267_806_268
+            178_062_678_063
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
@@ -678,7 +680,7 @@ mod test {
             total += *val
         }
 
-        assert_eq!(total, 416_666_666_666_669); // total emissions for 1 hour
+        assert_eq!(total, 4_166_666_666_666); // total emissions for 1 hour
     }
 
     #[tokio::test]
@@ -737,8 +739,10 @@ mod test {
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
         let owner_shares = OwnerShares { shares };
+        let epoch = now - Duration::hours(1)..now;
+        let transfer_rewards = TransferRewards::empty(&epoch);
         for reward in owner_shares
-            .into_radio_shares(&(now - Duration::hours(1)..now))
+            .into_radio_shares(&transfer_rewards, &epoch)
             .expect("Could not convert to radio shares")
         {
             let actual_owner = PublicKeyBinary::from(reward.owner_key);
