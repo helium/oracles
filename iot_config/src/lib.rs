@@ -30,18 +30,23 @@ pub type GrpcStreamRequest<T> = tonic::Request<tonic::Streaming<T>>;
 pub const HELIUM_NET_ID: NetIdField = LoraField(0x000024);
 pub const BROADCAST_CHANNEL_QUEUE: usize = 1024;
 
-pub fn enqueue_broadcast(queue_size: usize) -> bool {
-    // enqueue the message for broadcast if
-    // the current queue is <= 80% full
-    (queue_size * 100) / BROADCAST_CHANNEL_QUEUE <= 80
+pub fn update_channel<T: Clone>() -> broadcast::Sender<T> {
+    let (update_tx, _) = broadcast::channel(BROADCAST_CHANNEL_QUEUE);
+    update_tx
 }
 
-pub async fn broadcast<T>(
+pub async fn broadcast_update<T>(
     message: T,
     sender: broadcast::Sender<T>,
 ) -> Result<(), broadcast::error::SendError<T>> {
-    while !enqueue_broadcast(sender.len()) {
+    while !enqueue_update(sender.len()) {
         tokio::time::sleep(tokio::time::Duration::from_millis(25)).await
     }
     sender.send(message).map(|_| ())
+}
+
+fn enqueue_update(queue_size: usize) -> bool {
+    // enqueue the message for broadcast if
+    // the current queue is <= 80% full
+    (queue_size * 100) / BROADCAST_CHANNEL_QUEUE <= 80
 }

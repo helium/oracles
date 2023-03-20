@@ -55,7 +55,7 @@ impl Settings {
         // Add in settings from the environment (with prefix of APP)
         // E.g. `CFG_DEBUG=1 .target/app` would set the `debug` key
         builder
-            .add_source(Environment::with_prefix("CFG").separator("_"))
+            .add_source(Environment::with_prefix("CFG").separator("__"))
             .build()
             .and_then(|config| config.try_deserialize())
     }

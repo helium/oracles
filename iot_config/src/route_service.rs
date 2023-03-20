@@ -3,7 +3,7 @@ use crate::{
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
     org::{self, DbOrgError},
     route::{self, Route, RouteStorageError},
-    GrpcResult, GrpcStreamRequest, GrpcStreamResult, BROADCAST_CHANNEL_QUEUE,
+    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
 use anyhow::{anyhow, Result};
 use file_store::traits::MsgVerify;
@@ -20,7 +20,7 @@ use helium_proto::services::iot_config::{
     RouteV1,
 };
 use sqlx::{Pool, Postgres};
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
 
 const UPDATE_BATCH_LIMIT: usize = 5_000;
@@ -28,7 +28,7 @@ const UPDATE_BATCH_LIMIT: usize = 5_000;
 pub struct RouteService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
-    update_channel: Sender<RouteStreamResV1>,
+    update_channel: broadcast::Sender<RouteStreamResV1>,
     shutdown: triggered::Listener,
 }
 
@@ -40,21 +40,19 @@ enum OrgId<'a> {
 
 impl RouteService {
     pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
-        let (update_tx, _) = tokio::sync::broadcast::channel(BROADCAST_CHANNEL_QUEUE);
-
         Self {
             auth_cache,
             pool,
-            update_channel: update_tx,
+            update_channel: update_channel(),
             shutdown,
         }
     }
 
-    fn subscribe_to_routes(&self) -> Receiver<RouteStreamResV1> {
+    fn subscribe_to_routes(&self) -> broadcast::Receiver<RouteStreamResV1> {
         self.update_channel.subscribe()
     }
 
-    pub fn clone_update_channel(&self) -> Sender<RouteStreamResV1> {
+    pub fn clone_update_channel(&self) -> broadcast::Sender<RouteStreamResV1> {
         self.update_channel.clone()
     }
 
@@ -711,7 +709,7 @@ where
 
 async fn stream_existing_routes(
     pool: &Pool<Postgres>,
-    tx: tokio::sync::mpsc::Sender<Result<RouteStreamResV1, Status>>,
+    tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     route::active_route_stream(pool)
         .then(|route| {
@@ -727,7 +725,7 @@ async fn stream_existing_routes(
 
 async fn stream_existing_euis(
     pool: &Pool<Postgres>,
-    tx: tokio::sync::mpsc::Sender<Result<RouteStreamResV1, Status>>,
+    tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     route::eui_stream(pool)
         .then(|eui_pair| {
@@ -743,7 +741,7 @@ async fn stream_existing_euis(
 
 async fn stream_existing_devaddrs(
     pool: &Pool<Postgres>,
-    tx: tokio::sync::mpsc::Sender<Result<RouteStreamResV1, Status>>,
+    tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     route::devaddr_range_stream(pool)
         .then(|devaddr_range| {

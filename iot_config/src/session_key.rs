@@ -1,4 +1,4 @@
-use crate::{broadcast, lora_field::DevAddrField};
+use crate::{broadcast_update, lora_field::DevAddrField};
 use futures::stream::{self, Stream, StreamExt, TryStreamExt};
 use helium_proto::services::iot_config::{
     ActionV1, SessionKeyFilterStreamResV1, SessionKeyFilterV1,
@@ -92,7 +92,7 @@ pub async fn update_session_keys(
         stream::iter([added_updates, removed_updates].concat())
             .map(Ok)
             .try_for_each(|(update, action)| {
-                broadcast::<SessionKeyFilterStreamResV1>(
+                broadcast_update::<SessionKeyFilterStreamResV1>(
                     SessionKeyFilterStreamResV1 {
                         action: i32::from(action),
                         filter: Some(update.into()),

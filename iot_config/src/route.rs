@@ -1,5 +1,5 @@
 use crate::{
-    broadcast,
+    broadcast_update,
     lora_field::{DevAddrRange, EuiPair, NetIdField},
 };
 use futures::stream::{self, Stream, StreamExt, TryStreamExt};
@@ -190,15 +190,7 @@ async fn insert_euis(
     // We don't want to take any actions if a route_id cannot be parsed.
     let eui_values = euis
         .iter()
-        .map(|eui_pair| {
-            Uuid::try_parse(&eui_pair.route_id).map(|uuid| {
-                (
-                    uuid,
-                    i64::from(eui_pair.app_eui),
-                    i64::from(eui_pair.dev_eui),
-                )
-            })
-        })
+        .map(|eui_pair| eui_pair.try_into())
         .collect::<Result<Vec<(Uuid, i64, i64)>, _>>()?;
 
     const EUI_INSERT_VALS: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
@@ -228,15 +220,7 @@ async fn remove_euis(
     // We don't want to take any actions if a route_id cannot be parsed.
     let eui_values = euis
         .iter()
-        .map(|eui_pair| {
-            Uuid::try_parse(&eui_pair.route_id).map(|uuid| {
-                (
-                    uuid,
-                    i64::from(eui_pair.app_eui),
-                    i64::from(eui_pair.dev_eui),
-                )
-            })
-        })
+        .map(|eui_pair| eui_pair.try_into())
         .collect::<Result<Vec<(Uuid, i64, i64)>, _>>()?;
 
     const EUI_DELETE_VALS: &str =
@@ -282,7 +266,7 @@ pub async fn update_euis(
         stream::iter([added_euis, removed_euis].concat())
             .map(Ok)
             .try_for_each(|(update, action)| {
-                broadcast::<proto::RouteStreamResV1>(
+                broadcast_update::<proto::RouteStreamResV1>(
                     proto::RouteStreamResV1 {
                         action: i32::from(action),
                         data: Some(proto::route_stream_res_v1::Data::EuiPair(update.into())),
@@ -306,10 +290,7 @@ async fn insert_devaddr_ranges(
     // We don't want to take any actions if a route_id cannot be parsed.
     let devaddr_values = ranges
         .iter()
-        .map(|range| {
-            Uuid::try_parse(&range.route_id)
-                .map(|uuid| (uuid, i32::from(range.start_addr), i32::from(range.end_addr)))
-        })
+        .map(|range| range.try_into())
         .collect::<Result<Vec<(Uuid, i32, i32)>, _>>()?;
 
     const DEVADDR_RANGE_INSERT_VALS: &str =
@@ -340,10 +321,7 @@ async fn remove_devaddr_ranges(
     // We don't want to take any actions if a route_id cannot be parsed.
     let devaddr_values = ranges
         .iter()
-        .map(|range| {
-            Uuid::try_parse(&range.route_id)
-                .map(|uuid| (uuid, i32::from(range.start_addr), i32::from(range.end_addr)))
-        })
+        .map(|range| range.try_into())
         .collect::<Result<Vec<(Uuid, i32, i32)>, _>>()?;
 
     const DEVADDR_RANGE_DELETE_VALS: &str =
@@ -392,7 +370,7 @@ pub async fn update_devaddr_ranges(
         stream::iter([added_devaddrs, removed_devaddrs].concat())
             .map(Ok)
             .try_for_each(|(update, action)| {
-                broadcast::<proto::RouteStreamResV1>(
+                broadcast_update::<proto::RouteStreamResV1>(
                     proto::RouteStreamResV1 {
                         action: i32::from(action),
                         data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
@@ -636,6 +614,28 @@ impl From<Route> for proto::RouteV1 {
             active: route.active,
             locked: route.locked,
         }
+    }
+}
+
+impl TryFrom<&EuiPair> for (Uuid, i64, i64) {
+    type Error = sqlx::types::uuid::Error;
+
+    fn try_from(eui: &EuiPair) -> Result<(Uuid, i64, i64), Self::Error> {
+        let uuid = Uuid::try_parse(&eui.route_id)?;
+        Ok((uuid, i64::from(eui.app_eui), i64::from(eui.dev_eui)))
+    }
+}
+
+impl TryFrom<&DevAddrRange> for (Uuid, i32, i32) {
+    type Error = sqlx::types::uuid::Error;
+
+    fn try_from(devaddr: &DevAddrRange) -> Result<(Uuid, i32, i32), Self::Error> {
+        let uuid = Uuid::try_parse(&devaddr.route_id)?;
+        Ok((
+            uuid,
+            i32::from(devaddr.start_addr),
+            i32::from(devaddr.end_addr),
+        ))
     }
 }
 

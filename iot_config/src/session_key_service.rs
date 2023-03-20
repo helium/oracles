@@ -3,7 +3,7 @@ use crate::{
     lora_field::DevAddrConstraint,
     org::{self, DbOrgError},
     session_key::{self, SessionKeyFilter},
-    GrpcResult, GrpcStreamRequest, GrpcStreamResult, BROADCAST_CHANNEL_QUEUE,
+    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
 use anyhow::{anyhow, Result};
 use file_store::traits::MsgVerify;
@@ -15,7 +15,7 @@ use helium_proto::services::iot_config::{
     SessionKeyFilterUpdateResV1, SessionKeyFilterV1,
 };
 use sqlx::{Pool, Postgres};
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
 
 const UPDATE_BATCH_LIMIT: usize = 5_000;
@@ -23,26 +23,25 @@ const UPDATE_BATCH_LIMIT: usize = 5_000;
 pub struct SessionKeyFilterService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
-    update_channel: Sender<SessionKeyFilterStreamResV1>,
+    update_channel: broadcast::Sender<SessionKeyFilterStreamResV1>,
     shutdown: triggered::Listener,
 }
 
 impl SessionKeyFilterService {
     pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
-        let (update_tx, _) = tokio::sync::broadcast::channel(BROADCAST_CHANNEL_QUEUE);
         Self {
             auth_cache,
             pool,
-            update_channel: update_tx,
+            update_channel: update_channel(),
             shutdown,
         }
     }
 
-    fn subscribe_to_session_keys(&self) -> Receiver<SessionKeyFilterStreamResV1> {
+    fn subscribe_to_session_keys(&self) -> broadcast::Receiver<SessionKeyFilterStreamResV1> {
         self.update_channel.subscribe()
     }
 
-    fn clone_update_channel(&self) -> Sender<SessionKeyFilterStreamResV1> {
+    fn clone_update_channel(&self) -> broadcast::Sender<SessionKeyFilterStreamResV1> {
         self.update_channel.clone()
     }
 
@@ -295,7 +294,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
 
 async fn stream_existing_skfs(
     pool: &Pool<Postgres>,
-    tx: tokio::sync::mpsc::Sender<Result<SessionKeyFilterStreamResV1, Status>>,
+    tx: mpsc::Sender<Result<SessionKeyFilterStreamResV1, Status>>,
 ) -> Result<()> {
     session_key::list_stream(pool)
         .then(|session_key_filter| {
