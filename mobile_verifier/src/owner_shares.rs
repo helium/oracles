@@ -122,7 +122,7 @@ pub struct OwnerShares {
 }
 
 const REWARDS_PER_SHARE_PREC: u32 = 9;
-const MOBILE_SCALE: u32 = 100_000_000;
+const MOBILE_SCALE: u32 = 1_000_000;
 
 impl OwnerShares {
     pub async fn aggregate(
