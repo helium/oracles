@@ -88,7 +88,7 @@ pub async fn ingest_valid_data_transfers(
                     tracing::error!("Could not decode valid data transfer session: {:?}", err);
                     None
                 },
-                |session| Some(session),
+                Some,
             )
         })
 }
