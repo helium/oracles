@@ -1,7 +1,7 @@
 pub mod error;
 pub mod metrics;
 pub mod price_generator;
-mod price_tracker;
+pub mod price_tracker;
 pub mod settings;
 
 pub use error::PriceError;
