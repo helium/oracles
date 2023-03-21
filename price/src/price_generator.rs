@@ -172,7 +172,7 @@ impl PriceGenerator {
             }
             Err(err) => {
                 tracing::error!(
-                    "error is retrieving new price for {:?}: {err:?}",
+                    "error in retrieving new price for {:?}: {err:?}",
                     self.token_type
                 );
 
