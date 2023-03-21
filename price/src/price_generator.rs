@@ -29,7 +29,7 @@ impl Price {
 pub struct PriceGenerator {
     settings: Settings,
     client: RpcClient,
-    price: Price,
+    price: Option<Price>,
 }
 
 impl From<Price> for PriceReportV1 {
@@ -60,8 +60,23 @@ impl PriceGenerator {
     pub async fn new(settings: &Settings, token_type: BlockchainTokenTypeV1) -> Result<Self> {
         let client = RpcClient::new(&settings.source);
         let price = match settings.price_key(token_type) {
-            None => Price::new(0, 0, token_type),
-            Some(price_key) => get_price(&client, &price_key, settings.age, token_type).await?,
+            None => {
+                let timestamp = Utc::now().timestamp();
+                match settings.default_price(token_type) {
+                    None => {
+                        tracing::warn!(
+                            "no price_key and no default_price in settings for {:?}",
+                            token_type
+                        );
+                        None
+                    }
+                    Some(p) => Some(Price::new(timestamp, p, token_type)),
+                }
+            }
+            Some(price_key) => {
+                let rpc_price = get_price(&client, &price_key, settings.age, token_type).await?;
+                Some(rpc_price)
+            }
         };
         Ok(Self {
             settings: settings.clone(),
@@ -104,50 +119,87 @@ impl PriceGenerator {
         file_sink: &file_sink::FileSinkClient,
         token_type: BlockchainTokenTypeV1,
     ) -> anyhow::Result<()> {
+        let timestamp = Utc::now().timestamp();
         if let Some(price_key) = &self.settings.price_key(token_type) {
-            // Try to get a new price if we can, otherwise reuse the old price we already have.
-            let mut new_price =
-                match get_price(&self.client, price_key, self.settings.age, token_type).await {
-                    Ok(price) => {
-                        Metrics::update(
-                            "price_update_counter".to_string(),
-                            token_type,
-                            price.price as f64,
-                        );
-                        price
-                    }
-                    Err(err) => {
-                        let old_price = self.price.clone();
-                        Metrics::update(
-                            "price_stale_counter".to_string(),
-                            token_type,
-                            old_price.price as f64,
-                        );
-                        tracing::warn!("rpc failure: {err:?}, reusing old price {:?}", old_price);
-                        old_price
-                    }
-                };
+            let new_price = self.maybe_new_price(price_key, token_type).await;
 
-            // Just set the timestamp to latest for the "new" price
-            let timestamp = Utc::now().timestamp();
-            new_price.timestamp = timestamp;
+            match new_price {
+                None => Ok(()),
+                Some(mut new_price) => {
+                    // Just set the timestamp to latest for the "new" price
+                    new_price.timestamp = timestamp;
 
-            tracing::info!(
-                "updating price {} for {:?} at {:?}",
-                new_price.price.to_string(),
-                token_type,
-                timestamp
-            );
+                    tracing::info!(
+                        "updating price {} for {:?} at {:?}",
+                        new_price.price.to_string(),
+                        token_type,
+                        timestamp
+                    );
 
-            let price_report = PriceReportV1::from(new_price.clone());
-            tracing::debug!("price_report: {:?}", price_report);
+                    let price_report = PriceReportV1::from(new_price.clone());
+                    tracing::debug!("price_report: {:?}", price_report);
 
-            file_sink.write(price_report, []).await?;
+                    // Set this as the last price for generator
+                    self.price = Some(new_price);
+                    tracing::debug!("setting new price for generator: {:?}", self.price);
 
-            Ok(())
+                    file_sink.write(price_report, []).await?;
+
+                    Ok(())
+                }
+            }
         } else {
-            tracing::warn!("no price key for {:?}", token_type);
-            Ok(())
+            // The following is mostly to accomodate testing when we don't have a price_key but
+            // have a default price value set in settings
+            match &self.settings.default_price(token_type) {
+                None => {
+                    // nothing to do
+                    tracing::info!("no price_key and no default_price for {:?}", token_type);
+                    Ok(())
+                }
+                Some(p) => {
+                    // We have a default price in settings
+                    tracing::info!("no price_key for {:?}, default_price: {:?}", token_type, p);
+                    let price = Price::new(timestamp, *p, token_type);
+                    let price_report = PriceReportV1::from(price.clone());
+                    self.price = Some(price);
+                    file_sink.write(price_report, []).await?;
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    /// Try to get a new price if we can via RPC, otherwise return old price
+    pub async fn maybe_new_price(
+        &self,
+        price_key: &SolPubkey,
+        token_type: BlockchainTokenTypeV1,
+    ) -> Option<Price> {
+        match get_price(&self.client, price_key, self.settings.age, token_type).await {
+            Ok(price) => {
+                Metrics::update(
+                    "price_update_counter".to_string(),
+                    token_type,
+                    price.price as f64,
+                );
+                Some(price)
+            }
+            Err(err) => match self.price.clone() {
+                None => {
+                    tracing::warn!("no known price for {:?}", token_type);
+                    None
+                }
+                Some(old_price) => {
+                    Metrics::update(
+                        "price_stale_counter".to_string(),
+                        token_type,
+                        old_price.price as f64,
+                    );
+                    tracing::warn!("rpc failure: {err:?}, reusing old price {:?}", old_price);
+                    Some(old_price)
+                }
+            },
         }
     }
 }
