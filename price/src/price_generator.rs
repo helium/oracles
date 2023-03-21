@@ -11,13 +11,13 @@ use tokio::time;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Price {
-    pub timestamp: DateTime<Utc>,
-    pub price: u64,
-    pub token_type: BlockchainTokenTypeV1,
+    timestamp: DateTime<Utc>,
+    price: u64,
+    token_type: BlockchainTokenTypeV1,
 }
 
 impl Price {
-    pub fn new(timestamp: DateTime<Utc>, price: u64, token_type: BlockchainTokenTypeV1) -> Self {
+    fn new(timestamp: DateTime<Utc>, price: u64, token_type: BlockchainTokenTypeV1) -> Self {
         Self {
             timestamp,
             price,
