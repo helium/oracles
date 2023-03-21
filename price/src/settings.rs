@@ -141,12 +141,12 @@ impl Settings {
         }
     }
 
-    fn key(&self, token_type: BlockchainTokenTypeV1) -> Option<String> {
+    fn key(&self, token_type: BlockchainTokenTypeV1) -> &Option<String> {
         match token_type {
-            BlockchainTokenTypeV1::Hnt => self.cluster.hnt_price_key.clone(),
-            BlockchainTokenTypeV1::Hst => self.cluster.hst_price_key.clone(),
-            BlockchainTokenTypeV1::Mobile => self.cluster.mobile_price_key.clone(),
-            BlockchainTokenTypeV1::Iot => self.cluster.iot_price_key.clone(),
+            BlockchainTokenTypeV1::Hnt => &self.cluster.hnt_price_key,
+            BlockchainTokenTypeV1::Hst => &self.cluster.hst_price_key,
+            BlockchainTokenTypeV1::Mobile => &self.cluster.mobile_price_key,
+            BlockchainTokenTypeV1::Iot => &self.cluster.iot_price_key,
         }
     }
 }
