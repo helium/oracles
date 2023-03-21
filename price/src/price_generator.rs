@@ -177,16 +177,20 @@ impl PriceGenerator {
                 );
 
                 match &self.last_price_opt {
-                    Some(price) if self.is_valid(price) => {
+                    Some(old_price) if self.is_valid(old_price) => {
                         Metrics::update(
                             "price_stale_counter".to_string(),
                             self.token_type,
-                            price.price as f64,
+                            old_price.price as f64,
                         );
 
-                        Some(Price::new(Utc::now(), price.price, price.token_type))
+                        Some(Price::new(
+                            Utc::now(),
+                            old_price.price,
+                            old_price.token_type,
+                        ))
                     }
-                    Some(_price) => {
+                    Some(_old_price) => {
                         tracing::warn!(
                             "stale price for {:?} is too old, discarding",
                             self.token_type
