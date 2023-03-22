@@ -49,21 +49,21 @@ impl TransferRewards {
     ) -> Result<Self, TransferRewardsError> {
         tokio::pin!(transfer_sessions);
 
-        let mut bytes = HashMap::<PublicKeyBinary, Decimal>::new();
-        while let Some(ValidDataTransferSession {
-            pub_key,
-            upload_bytes,
-            download_bytes,
-            ..
-        }) = transfer_sessions.next().await
-        {
-            *bytes.entry(pub_key).or_default() += Decimal::from(upload_bytes + download_bytes);
-        }
-
         let mut reward_sum = Decimal::ZERO;
         let dollars_per_mobile = Decimal::from(dollars_per_mobile);
-        let rewards: HashMap<_, _> = bytes
+        let rewards = transfer_sessions
+            // Accumulate bytes per hotspot
+            .fold(
+                HashMap::<PublicKeyBinary, Decimal>::new(),
+                |mut entries, session| async move {
+                    *entries.entry(session.pub_key).or_default() +=
+                        Decimal::from(session.upload_bytes + session.download_bytes);
+                    entries
+                },
+            )
+            .await
             .into_iter()
+            // Calculate rewards per hotspot
             .map(|(pub_key, bytes)| {
                 let mobiles = bytes / Decimal::from(100_000_000) * dollars_per_mobile;
                 reward_sum += mobiles;
