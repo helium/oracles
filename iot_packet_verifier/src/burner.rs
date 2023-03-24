@@ -37,6 +37,7 @@ pub struct Burner {
     // We store the keypair as bytes since the type does not implement clone (for some reason).
     keypair: [u8; 64],
     burn_period: Duration,
+    enable_dc_burn: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -81,6 +82,7 @@ impl Burner {
             provider,
             keypair: keypair.to_bytes(),
             burn_period: Duration::from_secs(60 * settings.burn_period),
+            enable_dc_burn: settings.enable_dc_burn,
         })
     }
 
@@ -124,86 +126,88 @@ impl Burner {
                 return Ok(());
             };
 
-        // Fetch escrow account
-        let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, &payer);
-        let account_data = self.provider.get_account_data(&ddc_key).await?;
-        let mut account_data = account_data.as_ref();
-        let escrow_account =
-            DelegatedDataCreditsV0::try_deserialize(&mut account_data)?.escrow_account;
+        if self.enable_dc_burn {
+            tracing::info!("Burning {} DC from {}", amount, payer);
 
-        tracing::info!("Burning {} DC from {}", amount, payer);
+            // Fetch escrow account
+            let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, &payer);
+            let account_data = self.provider.get_account_data(&ddc_key).await?;
+            let mut account_data = account_data.as_ref();
+            let escrow_account =
+                DelegatedDataCreditsV0::try_deserialize(&mut account_data)?.escrow_account;
 
-        let instructions = {
-            let request = RequestBuilder::from(
-                data_credits::id(),
-                &self.cluster,
-                std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
-                Some(CommitmentConfig::confirmed()),
-                RequestNamespace::Global,
+            let instructions = {
+                let request = RequestBuilder::from(
+                    data_credits::id(),
+                    &self.cluster,
+                    std::rc::Rc::new(Keypair::from_bytes(&self.keypair).unwrap()),
+                    Some(CommitmentConfig::confirmed()),
+                    RequestNamespace::Global,
+                );
+
+                let accounts = accounts::BurnDelegatedDataCreditsV0 {
+                    sub_dao_epoch_info,
+                    dao: self.program_cache.dao,
+                    sub_dao: self.program_cache.sub_dao,
+                    account_payer: self.program_cache.account_payer,
+                    data_credits: self.program_cache.data_credits,
+                    delegated_data_credits: pdas::delegated_data_credits(
+                        &self.program_cache.sub_dao,
+                        &payer,
+                    ),
+                    token_program: spl_token::id(),
+                    helium_sub_daos_program: helium_sub_daos::id(),
+                    system_program: solana_program::system_program::id(),
+                    dc_burn_authority: self.program_cache.dc_burn_authority,
+                    dc_mint: self.program_cache.dc_mint,
+                    escrow_account,
+                    registrar: self.program_cache.registrar,
+                };
+                let args = instruction::BurnDelegatedDataCreditsV0 {
+                    args: data_credits::BurnDelegatedDataCreditsArgsV0 {
+                        amount: amount as u64,
+                    },
+                };
+
+                // As far as I can tell, the instructions function does not actually have any
+                // error paths.
+                request
+                    .accounts(accounts)
+                    .args(args)
+                    .instructions()
+                    .unwrap()
+            };
+
+            let blockhash = self.provider.get_latest_blockhash().await?;
+            let signer = Keypair::from_bytes(&self.keypair).unwrap();
+
+            let tx = Transaction::new_signed_with_payer(
+                &instructions,
+                Some(&signer.pubkey()),
+                &[&signer],
+                blockhash,
             );
 
-            let accounts = accounts::BurnDelegatedDataCreditsV0 {
-                sub_dao_epoch_info,
-                dao: self.program_cache.dao,
-                sub_dao: self.program_cache.sub_dao,
-                account_payer: self.program_cache.account_payer,
-                data_credits: self.program_cache.data_credits,
-                delegated_data_credits: pdas::delegated_data_credits(
-                    &self.program_cache.sub_dao,
-                    &payer,
-                ),
-                token_program: spl_token::id(),
-                helium_sub_daos_program: helium_sub_daos::id(),
-                system_program: solana_program::system_program::id(),
-                dc_burn_authority: self.program_cache.dc_burn_authority,
-                dc_mint: self.program_cache.dc_mint,
-                escrow_account,
-                registrar: self.program_cache.registrar,
+            // Preflight can be flakey, so we skip it for now
+            let config = RpcSendTransactionConfig {
+                skip_preflight: true,
+                ..Default::default()
             };
-            let args = instruction::BurnDelegatedDataCreditsV0 {
-                args: data_credits::BurnDelegatedDataCreditsArgsV0 {
-                    amount: amount as u64,
-                },
-            };
+            let signature = self
+                .provider
+                .send_transaction_with_config(&tx, config)
+                .await?;
+            let result = self.provider.confirm_transaction(&signature).await?;
 
-            // As far as I can tell, the instructions function does not actually have any
-            // error paths.
-            request
-                .accounts(accounts)
-                .args(args)
-                .instructions()
-                .unwrap()
-        };
+            if !result {
+                return Err(BurnError::TransactionFailed(signature));
+            }
 
-        let blockhash = self.provider.get_latest_blockhash().await?;
-        let signer = Keypair::from_bytes(&self.keypair).unwrap();
-
-        let tx = Transaction::new_signed_with_payer(
-            &instructions,
-            Some(&signer.pubkey()),
-            &[&signer],
-            blockhash,
-        );
-
-        // Preflight can be flakey, so we skip it for now
-        let config = RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..Default::default()
-        };
-        let signature = self
-            .provider
-            .send_transaction_with_config(&tx, config)
-            .await?;
-        let result = self.provider.confirm_transaction(&signature).await?;
-
-        if !result {
-            return Err(BurnError::TransactionFailed(signature));
+            tracing::info!(
+                "Successfully burned data credits. Transaction: {}",
+                signature
+            );
         }
-
-        tracing::info!(
-            "Successfully burned data credits. Transaction: {}",
-            signature
-        );
 
         // Now that we have successfully executed the burn and are no long in
         // sync land, we can remove the amount burned.

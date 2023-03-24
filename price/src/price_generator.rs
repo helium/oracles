@@ -52,7 +52,7 @@ impl TryFrom<PriceReportV1> for Price {
 
     fn try_from(value: PriceReportV1) -> Result<Self, Self::Error> {
         let tt: BlockchainTokenTypeV1 = BlockchainTokenTypeV1::from_i32(value.token_type)
-            .ok_or(anyhow!("unsupported token type: {:?}", value.token_type))?;
+            .ok_or_else(|| anyhow!("unsupported token type: {:?}", value.token_type))?;
         Ok(Self {
             timestamp: Utc
                 .timestamp_opt(value.timestamp as i64, 0)
