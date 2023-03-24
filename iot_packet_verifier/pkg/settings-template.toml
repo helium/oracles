@@ -25,6 +25,9 @@ config_keypair = ""
 # Solana cluster to use. "devnet" or "mainnet"
 cluster = "devnet"
 
+# Whether or not we should burn data credits on the Solana network. Defaults to false
+enable_dc_burn = false
+
 [database]
 
 url = "postgresql://postgres:password@localhost:5432/postgres"
