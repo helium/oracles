@@ -30,6 +30,7 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(with = "http_serde::uri", default = "default_url")]
     pub org_url: http::Uri,
+    #[serde(default)]
     pub enable_dc_burn: bool,
 }
 
