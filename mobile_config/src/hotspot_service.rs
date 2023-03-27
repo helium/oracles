@@ -165,14 +165,15 @@ async fn stream_all_hotspots_metadata(
             };
             Ok(result)
         })
-        .or_else(|err| async move {
-            Err(Status::internal(format!(
-                "metadata batch failed with reason: {err:?}"
-            )))
-        })
+        .map_err(|err| Status::internal(format!("metadata batch failed with reason: {err:?}")))
         .try_for_each(|res| {
             tx.send(Ok(res))
                 .map_err(|err| Status::internal(format!("metadata batch send failed {err:?}")))
         })
+        .or_else(|err|
+            tx.send(Err(Status::internal(format!(
+                "metadata batch failed with reason: {err:?}"
+            ))))
+        )
         .await?)
 }

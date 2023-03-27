@@ -8,7 +8,7 @@ create table registered_keys (
     pubkey text not null unique,
     key_type key_type not null,
 
-    inserted_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
 

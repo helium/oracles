@@ -199,51 +199,73 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
         &self,
         request: GrpcStreamRequest<SessionKeyFilterUpdateReqV1>,
     ) -> GrpcResult<SessionKeyFilterUpdateResV1> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
 
-        let mut to_add: Vec<SessionKeyFilter> = vec![];
-        let mut to_remove: Vec<SessionKeyFilter> = vec![];
-        let mut pending_updates: usize = 0;
+        let mut incoming_stream = request.peekable();
+        let mut validator: SkfValidator = Pin::new(&mut incoming_stream)
+            .peek()
+            .await
+            .ok_or(Status::invalid_argument("no session key filter provided"))?
+            .clone()
+            .map(|first_update| {
+                first_update
+                    .filter
+                    .ok_or(Status::invalid_argument("no session key filter provided"))
+            })?
+            .map(|filter| self.update_validator(filter.oui))?
+            .await
+            .map_err(|_| Status::internal("unable to verify updates"))?;
 
-        let mut validator: SkfValidator = if let Ok(Some(first_update)) = request.message().await {
-            if let Some(filter) = &first_update.filter {
-                let mut validator = self
-                    .update_validator(filter.oui)
-                    .await
-                    .map_err(|_| Status::internal("unable to verify updates"))?;
-                validator.validate_update(&first_update)?;
-                match first_update.action() {
-                    ActionV1::Add => to_add.push(filter.into()),
-                    ActionV1::Remove => to_remove.push(filter.into()),
-                };
-                pending_updates += 1;
-                validator
-            } else {
-                return Err(Status::invalid_argument(
-                    "no valid session key filter for update",
-                ));
-            }
-        } else {
-            return Err(Status::invalid_argument("no session key filter provided"));
-        };
-
-        while let Ok(Some(update)) = request.message().await {
-            validator.validate_update(&update)?;
-            match (update.action(), update.filter) {
-                (ActionV1::Add, Some(filter)) => to_add.push(filter.into()),
-                (ActionV1::Remove, Some(filter)) => to_remove.push(filter.into()),
-                _ => return Err(Status::invalid_argument("no filter provided")),
-            };
-            pending_updates += 1;
-            if pending_updates >= UPDATE_BATCH_LIMIT {
+        incoming_stream
+            .into_inner()
+            .map_ok(|update| match validator.validate_update(&update) {
+                Ok(()) => Ok(update),
+                Err(reason) => Err(Status::invalid_argument(format!(
+                    "invalid update request: {reason:?}"
+                ))),
+            })
+            .try_chunks(UPDATE_BATCH_LIMIT)
+            .map_err(|err| Status::internal(format!("session key update failed to batch {err:?}")))
+            .and_then(|batch| async move {
+                batch
+                    .into_iter()
+                    .collect::<Result<Vec<SessionKeyFilterUpdateReqV1>, Status>>()
+            })
+            .and_then(|batch| async move {
+                batch
+                    .into_iter()
+                    .map(|update: SessionKeyFilterUpdateReqV1| {
+                        match (update.action(), update.filter) {
+                            (ActionV1::Add, Some(filter)) => Ok((ActionV1::Add, filter)),
+                            (ActionV1::Remove, Some(filter)) => Ok((ActionV1::Remove, filter)),
+                            _ => Err(Status::invalid_argument("invalid filter update request")),
+                        }
+                    })
+                    .collect::<Result<Vec<(ActionV1, SessionKeyFilterV1)>, Status>>()
+            })
+            .try_for_each(|batch: Vec<(ActionV1, SessionKeyFilterV1)>| async move {
+                let (to_add, to_remove): (
+                    Vec<(ActionV1, SessionKeyFilterV1)>,
+                    Vec<(ActionV1, SessionKeyFilterV1)>,
+                ) = batch
+                    .into_iter()
+                    .partition(|(action, _update)| action == &ActionV1::Add);
                 tracing::debug!(
                     adding = to_add.len(),
                     removing = to_remove.len(),
-                    "update session key filters",
+                    "updating session key filters"
                 );
+                let adds_update = to_add
+                    .into_iter()
+                    .map(|(_, add)| add.into())
+                    .collect::<Vec<SessionKeyFilter>>();
+                let removes_update = to_remove
+                    .into_iter()
+                    .map(|(_, remove)| remove.into())
+                    .collect::<Vec<SessionKeyFilter>>();
                 session_key::update_session_keys(
-                    &to_add,
-                    &to_remove,
+                    &adds_update,
+                    &removes_update,
                     &self.pool,
                     self.signing_key.clone(),
                     self.clone_update_channel(),
@@ -251,43 +273,12 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 .await
                 .map_err(|err| {
                     tracing::error!("session key update failed: {err:?}");
-                    Status::internal("session key update failed")
-                })?;
-                to_add = vec![];
-                to_remove = vec![];
-                pending_updates = 0;
-            }
-        }
+                    Status::internal(format!("session key update failed {err:?}"))
+                })
+            })
+            .await?;
 
-        if pending_updates > 0 {
-            tracing::debug!(
-                adding = to_add.len(),
-                removing = to_remove.len(),
-                "updating session key filters",
-            );
-
-            session_key::update_session_keys(
-                &to_add,
-                &to_remove,
-                &self.pool,
-                self.signing_key.clone(),
-                self.clone_update_channel(),
-            )
-            .await
-            .map_err(|err| {
-                tracing::error!("session key update failed: {err:?}");
-                Status::internal("session key update failed")
-            })?;
-        }
-
-        let mut resp = SessionKeyFilterUpdateResV1 {
-            timestamp: Utc::now().encode_timestamp(),
-            signer: self.signing_key.public_key().into(),
-            signature: vec![],
-        };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
-
-        Ok(Response::new(resp))
+        Ok(Response::new(SessionKeyFilterUpdateResV1 {}))
     }
 
     type streamStream = GrpcStreamResult<SessionKeyFilterStreamResV1>;
