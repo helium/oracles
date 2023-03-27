@@ -119,7 +119,7 @@ impl PriceTracker {
             .price_receiver
             .borrow()
             .get(token_type)
-            .ok_or_else(|| PriceTrackerError::PriceNotAvailable)
+            .ok_or(PriceTrackerError::PriceNotAvailable)
             .and_then(|price| {
                 if price.timestamp > Utc::now() - self.price_duration {
                     Ok(price.price)
@@ -174,7 +174,7 @@ async fn calculate_initial_prices(
     tracing::debug!("PriceTracker: Updating initial prices");
     process_files(file_store, sender, Utc::now() - price_duration)
         .await?
-        .ok_or_else(|| PriceTrackerError::PriceNotAvailable)
+        .ok_or(PriceTrackerError::PriceNotAvailable)
 }
 
 async fn process_files(
