@@ -4,7 +4,7 @@ use file_store::traits::MsgVerify;
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use helium_proto::services::mobile_config::admin_add_key_req_v1::KeyTypeV1 as ProtoKeyType;
 use serde::Serialize;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres};
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -26,7 +26,7 @@ impl KeyCache {
         let mut router_keys = HashSet::<PublicKey>::new();
         let mut oracle_keys = HashSet::<PublicKey>::new();
 
-        fetch_stored_keys(&pool.clone())
+        db::fetch_stored_keys(&pool.clone())
             .await?
             .into_iter()
             .for_each(|(key_type, pubkey)| {
@@ -68,7 +68,7 @@ impl KeyCache {
     }
 
     pub async fn insert_key(&self, key_type: KeyType, key: PublicKey) -> anyhow::Result<()> {
-        insert_key(key.clone().into(), key_type, &self.pool).await?;
+        db::insert_key(key.clone().into(), key_type, &self.pool).await?;
 
         match key_type {
             KeyType::Administrator => self.admin_keys.write(),
@@ -82,7 +82,7 @@ impl KeyCache {
     }
 
     pub async fn remove_key(&self, key: &PublicKey) -> anyhow::Result<()> {
-        if let Some((pubkey, key_type)) = remove_key(key.clone().into(), &self.pool).await? {
+        if let Some((pubkey, key_type)) = db::remove_key(key.clone().into(), &self.pool).await? {
             match key_type {
                 KeyType::Administrator => self.admin_keys.write(),
                 KeyType::Oracle => self.oracle_keys.write(),
@@ -124,56 +124,6 @@ pub enum KeyType {
     Administrator,
     Oracle,
     PacketRouter,
-}
-
-async fn fetch_stored_keys(
-    db: impl sqlx::PgExecutor<'_>,
-) -> anyhow::Result<Vec<(KeyType, PublicKey)>> {
-    Ok(
-        sqlx::query(r#" select pubkey, key_type from registered_keys "#)
-            .fetch_all(db)
-            .await?
-            .into_iter()
-            .map(|row| (row.get("key_type"), row.get::<PublicKey, &str>("pubkey")))
-            .collect(),
-    )
-}
-
-async fn insert_key(
-    pubkey: PublicKeyBinary,
-    key_type: KeyType,
-    db: impl sqlx::PgExecutor<'_>,
-) -> anyhow::Result<()> {
-    Ok(
-        sqlx::query(r#" insert into registered_keys (pubkey, key_type) values ($1, $2) "#)
-            .bind(pubkey)
-            .bind(key_type)
-            .execute(db)
-            .await
-            .map(|_| ())?,
-    )
-}
-
-async fn remove_key(
-    pubkey: PublicKeyBinary,
-    db: impl sqlx::PgExecutor<'_>,
-) -> anyhow::Result<Option<(PublicKey, KeyType)>> {
-    Ok(sqlx::query(
-        r#"
-        delete from registered_keys
-        where pubkey = $1
-        returning (pubkey, key_type)
-        "#,
-    )
-    .bind(pubkey)
-    .fetch_optional(db)
-    .await?
-    .map(|row| {
-        (
-            row.get::<PublicKey, &str>("pubkey"),
-            row.get::<KeyType, &str>("key_type"),
-        )
-    }))
 }
 
 impl KeyType {
@@ -218,5 +168,60 @@ impl std::fmt::Display for KeyType {
             Self::PacketRouter => "packet_router",
         };
         f.write_str(s)
+    }
+}
+
+pub(super) mod db {
+    use super::{KeyType, PublicKey, PublicKeyBinary};
+    use sqlx::Row;
+
+    pub(super) async fn fetch_stored_keys(
+        db: impl sqlx::PgExecutor<'_>,
+    ) -> anyhow::Result<Vec<(KeyType, PublicKey)>> {
+        Ok(
+            sqlx::query(r#" select pubkey, key_type from registered_keys "#)
+                .fetch_all(db)
+                .await?
+                .into_iter()
+                .map(|row| (row.get("key_type"), row.get::<PublicKey, &str>("pubkey")))
+                .collect(),
+        )
+    }
+
+    pub(super) async fn insert_key(
+        pubkey: PublicKeyBinary,
+        key_type: KeyType,
+        db: impl sqlx::PgExecutor<'_>,
+    ) -> anyhow::Result<()> {
+        Ok(
+            sqlx::query(r#" insert into registered_keys (pubkey, key_type) values ($1, $2) "#)
+                .bind(pubkey)
+                .bind(key_type)
+                .execute(db)
+                .await
+                .map(|_| ())?,
+        )
+    }
+
+    pub(super) async fn remove_key(
+        pubkey: PublicKeyBinary,
+        db: impl sqlx::PgExecutor<'_>,
+    ) -> anyhow::Result<Option<(PublicKey, KeyType)>> {
+        Ok(sqlx::query(
+            r#"
+            delete from registered_keys
+            where pubkey = $1
+            returning (pubkey, key_type)
+            "#,
+        )
+        .bind(pubkey)
+        .fetch_optional(db)
+        .await?
+        .map(|row| {
+            (
+                row.get::<PublicKey, &str>("pubkey"),
+                row.get::<KeyType, &str>("key_type"),
+            )
+        }))
     }
 }
