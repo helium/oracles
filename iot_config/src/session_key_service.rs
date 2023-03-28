@@ -10,7 +10,7 @@ use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     future::TryFutureExt,
-    stream::{StreamExt, TryStreamExt},
+    stream::{self, StreamExt, TryStreamExt},
 };
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
@@ -201,8 +201,8 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     ) -> GrpcResult<SessionKeyFilterUpdateResV1> {
         let request = request.into_inner();
 
-        let mut incoming_stream = request.peekable();
-        let mut validator: SkfValidator = Pin::new(&mut incoming_stream)
+        let mut peekable_stream = request.peekable();
+        let validator: SkfValidator = Pin::new(&mut peekable_stream)
             .peek()
             .await
             .ok_or(Status::invalid_argument("no session key filter provided"))?
@@ -215,6 +215,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
             .map(|filter| self.update_validator(filter.oui))?
             .await
             .map_err(|_| Status::internal("unable to verify updates"))?;
+        let mut request_stream = peekable_stream.into_inner();
 
         incoming_stream
             .into_inner()
@@ -357,6 +358,7 @@ async fn stream_existing_skfs(
         .await
 }
 
+#[derive(Clone, Debug)]
 struct SkfValidator {
     oui: u64,
     constraints: Vec<DevAddrConstraint>,
