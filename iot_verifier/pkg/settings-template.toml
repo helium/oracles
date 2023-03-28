@@ -34,7 +34,7 @@ poc_loader_poll_time = 300
 
 # max window age for the entropy and poc report loader ( in seconds )
 # the starting point of the window will never be older than NOW - max_age
-poc_loader_window_max_lookback_age = 3600
+loader_window_max_lookback_age = 3600
 
 # the lifespan of a piece of entropy ( in seconds )
 poc_entropy_lifespan = 180

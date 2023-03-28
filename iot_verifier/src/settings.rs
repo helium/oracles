@@ -57,8 +57,8 @@ pub struct Settings {
     pub poc_entropy_lifespan: i64,
     /// max window age for the poc report loader ( in seconds )
     /// the starting point of the window will never be older than now - max age
-    #[serde(default = "default_poc_loader_window_max_lookback_age")]
-    pub poc_loader_window_max_lookback_age: i64,
+    #[serde(default = "default_loader_window_max_lookback_age")]
+    pub loader_window_max_lookback_age: i64,
     /// File store poll interval for incoming entropy reports, in seconds
     #[serde(default = "default_entropy_interval")]
     pub entropy_interval: i64,
@@ -66,7 +66,7 @@ pub struct Settings {
 
 // Default: 60 minutes
 // this should be at least poc_loader_window_width * 2
-pub fn default_poc_loader_window_max_lookback_age() -> i64 {
+pub fn default_loader_window_max_lookback_age() -> i64 {
     60 * 60
 }
 
@@ -174,8 +174,8 @@ impl Settings {
         time::Duration::from_secs(self.poc_loader_poll_time)
     }
 
-    pub fn poc_loader_window_max_lookback_age(&self) -> Duration {
-        Duration::seconds(self.poc_loader_window_max_lookback_age)
+    pub fn loader_window_max_lookback_age(&self) -> Duration {
+        Duration::seconds(self.loader_window_max_lookback_age)
     }
 
     pub fn poc_entropy_lifespan(&self) -> Duration {

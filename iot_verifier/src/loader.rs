@@ -60,7 +60,7 @@ impl Loader {
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let poll_time = settings.poc_loader_poll_time();
         let window_width = settings.poc_loader_window_width();
-        let max_lookback_age = settings.poc_loader_window_max_lookback_age();
+        let max_lookback_age = settings.loader_window_max_lookback_age();
         let deny_list = DenyList::new()?;
         Ok(Self {
             pool,

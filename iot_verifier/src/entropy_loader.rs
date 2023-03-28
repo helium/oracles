@@ -23,7 +23,6 @@ impl EntropyLoader {
         mut receiver: Receiver<FileInfoStream<EntropyReport>>,
         shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
-        tracing::info!("started verifier entropy loader");
         loop {
             if shutdown.is_triggered() {
                 break;

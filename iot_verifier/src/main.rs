@@ -1,6 +1,5 @@
 use crate::entropy_loader::EntropyLoader;
 use anyhow::{Error, Result};
-use chrono::{TimeZone, Utc};
 use clap::Parser;
 use file_store::{
     entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_sink, file_source,
@@ -117,6 +116,7 @@ impl Server {
         };
 
         // setup the entropy loader continious source
+        let max_lookback_age = settings.loader_window_max_lookback_age();
         let mut entropy_loader = EntropyLoader { pool: pool.clone() };
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let entropy_interval = settings.entropy_interval();
@@ -125,9 +125,7 @@ impl Server {
                 .db(pool.clone())
                 .store(entropy_store.clone())
                 .file_type(FileType::EntropyReport)
-                .lookback(LookbackBehavior::StartAfter(
-                    Utc.timestamp_opt(0, 0).single().unwrap(),
-                ))
+                .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(entropy_interval)
                 .offset(entropy_interval * 2)
                 .build()?
