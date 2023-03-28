@@ -1,11 +1,9 @@
 create table gateway_dc_shares (
     hotspot_key text not null,
-    reward_type reporttype not null,
     reward_timestamp timestamptz not null,
-    num_dcs integer default 0,
+    num_dcs bigint default 0,
     -- id of the associated valid poc report
-    id bytea not null,
-    primary key(id)
+    id bytea primary key not null
 );
 
 create index idx_hotspot_key on gateway_dc_shares (hotspot_key);

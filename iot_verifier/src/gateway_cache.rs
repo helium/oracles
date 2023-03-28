@@ -28,17 +28,17 @@ pub enum GatewayCacheError {
 }
 
 impl GatewayCache {
-    pub fn from_settings(iot_config_client: IotConfigClient) -> Result<Self, GatewayCacheError> {
+    pub fn from_settings(iot_config_client: IotConfigClient) -> Self {
         let cache = Arc::new(Cache::<PublicKeyBinary, GatewayInfo>::new());
         let clone = cache.clone();
         // monitor cache to handle evictions
         let cache_monitor =
             tokio::spawn(async move { clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY).await });
-        Ok(Self {
+        Self {
             iot_config_client,
             cache,
             cache_monitor,
-        })
+        }
     }
 
     pub async fn prewarm(&self) -> anyhow::Result<()> {

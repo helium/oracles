@@ -1150,7 +1150,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=andymck/tmp-proto-bump#bb4b2d3c3bc44491e69fa5ea9e101767070825f2"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#37abbf2033562ee932b690b123d7319f49e49948"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -3003,7 +3003,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/replace-node-follower-with-iot-config#919066101549cc8495837afba215dbc275701903"
+source = "git+https://github.com/helium/proto?branch=master#67a0dfe91e15b415b496e3bf5f2a119a888a4064"
 dependencies = [
  "bytes",
  "prost",
@@ -3996,7 +3996,7 @@ dependencies = [
  "poc-metrics",
  "prost",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "solana-client",
  "solana-program",
  "solana-sdk",

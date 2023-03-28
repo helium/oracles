@@ -1,4 +1,4 @@
-use crate::poc_report::ReportType;
+use crate::poc_report::ReportType as PocReportType;
 use chrono::{DateTime, Duration, Utc};
 use file_store::{iot_packet::IotValidPacket, iot_valid_poc::IotPoc, traits::TimestampEncode};
 use futures::stream::TryStreamExt;
@@ -65,7 +65,7 @@ fn get_scheduled_dc_tokens(duration: Duration) -> Decimal {
 #[derive(sqlx::FromRow)]
 pub struct GatewayPocShare {
     pub hotspot_key: PublicKeyBinary,
-    pub reward_type: ReportType,
+    pub reward_type: PocReportType,
     pub reward_timestamp: DateTime<Utc>,
     pub hex_scale: Decimal,
     pub reward_unit: Decimal,
@@ -75,7 +75,6 @@ pub struct GatewayPocShare {
 #[derive(sqlx::FromRow)]
 pub struct GatewayDCShare {
     pub hotspot_key: PublicKeyBinary,
-    pub reward_type: ReportType,
     pub reward_timestamp: DateTime<Utc>,
     pub num_dcs: Decimal,
     pub id: Vec<u8>,
@@ -99,11 +98,11 @@ impl GatewayPocShare {
             r#"
             insert into gateway_shares (hotspot_key, reward_type, reward_timestamp, hex_scale, reward_unit, poc_id)
             values ($1, $2, $3, $4, $5, $6)
-            on conflict (id) do update set
+            on conflict (hotspot_key, poc_id) do update set
                 reward_type = EXCLUDED.reward_type,
                 reward_timestamp = EXCLUDED.reward_timestamp,
                 hex_scale = EXCLUDED.hex_scale,
-                reward_unit = EXCLUDED.reward_unit,
+                reward_unit = EXCLUDED.reward_unit
             returning (xmax = 0) as inserted;
             "#,
         )
@@ -126,7 +125,7 @@ impl GatewayPocShare {
         if beacon_scaling_factor > Decimal::ZERO && beacon_reward_unit > Decimal::ZERO {
             shares.push(Self {
                 hotspot_key: report.beacon_report.report.pub_key.clone(),
-                reward_type: ReportType::Beacon,
+                reward_type: PocReportType::Beacon,
                 reward_timestamp: ts,
                 hex_scale: beacon_scaling_factor,
                 reward_unit: beacon_reward_unit,
@@ -142,7 +141,7 @@ impl GatewayPocShare {
             {
                 shares.push(Self {
                     hotspot_key: witness.report.pub_key.clone(),
-                    reward_type: ReportType::Witness,
+                    reward_type: PocReportType::Witness,
                     reward_timestamp: ts,
                     hex_scale: witness_hex_scale,
                     reward_unit: witness_reward_unit,
@@ -161,17 +160,15 @@ impl GatewayDCShare {
     ) -> Result<bool, SaveGatewayShareError> {
         Ok(sqlx::query_as::<_, GatewayShareSaveResult>(
             r#"
-            insert into gateway_dc_shares (hotspot_key, reward_type, reward_timestamp, num_dcs, id)
-            values ($1, $2, $3, $4, $5)
+            insert into gateway_dc_shares (hotspot_key, reward_timestamp, num_dcs, id)
+            values ($1, $2, $3, $4)
             on conflict (id) do update set
-                reward_type = EXCLUDED.reward_type,
                 reward_timestamp = EXCLUDED.reward_timestamp,
                 num_dcs = EXCLUDED.num_dcs
             returning (xmax = 0) as inserted;
             "#,
         )
         .bind(self.hotspot_key)
-        .bind(self.reward_type)
         .bind(self.reward_timestamp)
         .bind(self.num_dcs)
         .bind(self.id)
@@ -183,7 +180,6 @@ impl GatewayDCShare {
     pub fn share_from_packet(packet: &IotValidPacket) -> Self {
         Self {
             hotspot_key: packet.gateway.clone(),
-            reward_type: ReportType::Packet,
             reward_timestamp: Utc::now(),
             num_dcs: Decimal::new(packet.num_dcs as i64, 0),
             id: packet.packet_id(),
@@ -200,16 +196,10 @@ pub struct RewardShares {
 
 impl RewardShares {
     pub fn add_poc_reward(&mut self, share: &GatewayPocShare) {
+        let rewards = share.hex_scale * share.reward_unit;
         match share.reward_type {
-            ReportType::Beacon => {
-                let rewards = share.hex_scale * share.reward_unit;
-                self.beacon_shares += rewards
-            }
-            ReportType::Witness => {
-                let rewards = share.hex_scale * share.reward_unit;
-                self.witness_shares += rewards
-            }
-            _ => (),
+            PocReportType::Beacon => self.beacon_shares += rewards,
+            PocReportType::Witness => self.witness_shares += rewards,
         }
     }
     pub fn add_dc_reward(&mut self, share: &GatewayDCShare) {
@@ -389,7 +379,7 @@ pub fn normalize_dc_transfer_rewards(
     total_dc_transfer_rewards_used: Decimal,
     total_dc_transfer_rewards: Decimal,
 ) -> (Decimal, Decimal) {
-    match total_dc_transfer_rewards_used < total_dc_transfer_rewards {
+    match total_dc_transfer_rewards_used <= total_dc_transfer_rewards {
         true => (
             total_dc_transfer_rewards - total_dc_transfer_rewards_used,
             total_dc_transfer_rewards_used,

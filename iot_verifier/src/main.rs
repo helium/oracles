@@ -84,7 +84,7 @@ impl Server {
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
 
-        let gateway_cache = GatewayCache::from_settings(iot_config_client.clone())?;
+        let gateway_cache = GatewayCache::from_settings(iot_config_client.clone());
         _ = gateway_cache.prewarm().await;
         let region_cache = RegionCache::from_settings(iot_config_client.clone())?;
 
@@ -187,8 +187,8 @@ impl Server {
             purger.run(&shutdown),
             rewarder.run(price_tracker, &shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
+            price_receiver.map_err(Error::from),
             entropy_loader_source_join_handle.map_err(anyhow::Error::from),
-            price_receiver,
             pk_loader_source_join_handle.map_err(anyhow::Error::from),
         )
         .map(|_| ())

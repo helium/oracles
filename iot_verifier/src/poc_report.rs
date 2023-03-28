@@ -22,7 +22,6 @@ const REPORT_INSERT_SQL: &str = "insert into poc_report (
 pub enum ReportType {
     Witness,
     Beacon,
-    Packet,
 }
 
 #[derive(sqlx::Type, Serialize, Deserialize, Debug)]
