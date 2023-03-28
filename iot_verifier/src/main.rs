@@ -1,6 +1,11 @@
+use crate::entropy_loader::EntropyLoader;
 use anyhow::{Error, Result};
+use chrono::{TimeZone, Utc};
 use clap::Parser;
-use file_store::{file_sink, file_upload, FileType};
+use file_store::{
+    entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_sink, file_source,
+    file_upload, FileStore, FileType,
+};
 use futures::TryFutureExt;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, poc_report::Report,
@@ -111,9 +116,25 @@ impl Server {
             reward_offset: settings.reward_offset_duration(),
         };
 
+        // setup the entropy loader continious source
+        let mut entropy_loader = EntropyLoader { pool: pool.clone() };
+        let entropy_store = FileStore::from_settings(&settings.entropy).await?;
+        let entropy_interval = settings.entropy_interval();
+        let (entropy_loader_receiver, entropy_loader_source_join_handle) =
+            file_source::continuous_source::<EntropyReport>()
+                .db(pool.clone())
+                .store(entropy_store.clone())
+                .file_type(FileType::EntropyReport)
+                .lookback(LookbackBehavior::StartAfter(
+                    Utc.timestamp_opt(0, 0).single().unwrap(),
+                ))
+                .poll_duration(entropy_interval)
+                .offset(entropy_interval * 2)
+                .build()?
+                .start(shutdown.clone())
+                .await?;
+
         let mut loader = loader::Loader::from_settings(settings, pool.clone()).await?;
-        let mut entropy_loader =
-            entropy_loader::EntropyLoader::from_settings(settings, pool.clone()).await?;
         let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
         let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
         let mut density_scaler = DensityScaler::from_settings(settings, pool).await?;
@@ -128,11 +149,12 @@ impl Server {
                 density_scaler.hex_density_map(),
                 &shutdown
             ),
-            entropy_loader.run(&shutdown),
+            entropy_loader.run(entropy_loader_receiver, &shutdown),
             loader.run(&shutdown, &gateway_cache),
             purger.run(&shutdown),
             rewarder.run(&shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
+            entropy_loader_source_join_handle.map_err(anyhow::Error::from),
         )
         .map(|_| ())
     }

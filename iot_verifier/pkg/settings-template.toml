@@ -32,24 +32,15 @@ poc_loader_window_width = 300
 # if in doubt, keep this same value as poc_loader_window_width
 poc_loader_poll_time = 300
 
-# window width for the entropy report loader ( in seconds )
-poc_loader_entropy_window_width = 300
+# max window age for the entropy and poc report loader ( in seconds )
+# the starting point of the window will never be older than NOW - max_age
+poc_loader_window_max_lookback_age = 3600
 
 # the lifespan of a piece of entropy ( in seconds )
 poc_entropy_lifespan = 180
 
-# cadence for how often to look for entropy reports from s3 buckets ( in seconds )
-# in normal operational mode the poll time should be set same as that of the entropy window width
-# however, if for example we are loading historic data, ie looking back 24hours, we will want
-# the loader to be catching up as quickly as possible and so we will want to poll more often
-# in order to iterate quickly over the historic data
-# the average time it takes to load the data available within with window width needs to be
-# considered here
-poc_loader_entropy_poll_time = 300
-
-# max window age for the entropy and poc report loader ( in seconds )
-# the starting point of the window will never be older than NOW - max_age
-poc_loader_window_max_lookback_age = 3600
+# File store poll interval for incoming entropy reports, in seconds
+entropy_interval = 300
 
 [database]
 

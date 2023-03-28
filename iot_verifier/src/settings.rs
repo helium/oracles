@@ -52,20 +52,16 @@ pub struct Settings {
     /// cadence for how often to look for poc reports from s3 buckets
     #[serde(default = "default_poc_loader_poll_time")]
     pub poc_loader_poll_time: u64,
-    /// cadence for how often to look for entropy reports from s3 buckets
-    #[serde(default = "default_poc_loader_entropy_poll_time")]
-    pub poc_loader_entropy_poll_time: u64,
-    /// window width for the entropy report loader ( in seconds )
-    /// each poll the loader will load reports from start time to start time + window width
-    #[serde(default = "default_poc_loader_entropy_window_width")]
-    pub poc_loader_entropy_window_width: i64,
     /// the lifespan of a piece of entropy
     #[serde(default = "default_poc_entropy_lifespan ")]
     pub poc_entropy_lifespan: i64,
-    /// max window age for the entropy and poc report loader ( in seconds )
+    /// max window age for the poc report loader ( in seconds )
     /// the starting point of the window will never be older than now - max age
     #[serde(default = "default_poc_loader_window_max_lookback_age")]
     pub poc_loader_window_max_lookback_age: i64,
+    /// File store poll interval for incoming entropy reports, in seconds
+    #[serde(default = "default_entropy_interval")]
+    pub entropy_interval: i64,
 }
 
 // Default: 60 minutes
@@ -74,23 +70,13 @@ pub fn default_poc_loader_window_max_lookback_age() -> i64 {
     60 * 60
 }
 
-// Default: 3 minutes
-pub fn default_poc_entropy_lifespan() -> i64 {
-    3 * 60
+// Default: 5 minutes
+fn default_entropy_interval() -> i64 {
+    5 * 60
 }
 
 // Default: 5 minutes
-pub fn default_poc_loader_entropy_window_width() -> i64 {
-    5 * 60
-}
-// Default: 5 minutes
-// in normal operational mode the poll time should be set same as that of the window width
-// however, if for example we are loading historic data, ie looking back 24hours, we will want
-// the loader to be catching up as quickly as possible and so we will want to poll more often
-// in order to iterate quickly over the historic data
-// the average time it takes to load the data available within with window width needs to be
-// considered here
-pub fn default_poc_loader_entropy_poll_time() -> u64 {
+pub fn default_poc_entropy_lifespan() -> i64 {
     5 * 60
 }
 
@@ -196,15 +182,11 @@ impl Settings {
         Duration::seconds(self.poc_entropy_lifespan)
     }
 
-    pub fn poc_loader_entropy_window_width(&self) -> Duration {
-        Duration::seconds(self.poc_loader_entropy_window_width)
-    }
-
-    pub fn poc_loader_entropy_poll_time(&self) -> time::Duration {
-        time::Duration::from_secs(self.poc_loader_entropy_poll_time)
-    }
-
     pub fn base_stale_period(&self) -> Duration {
         Duration::seconds(self.base_stale_period)
+    }
+
+    pub fn entropy_interval(&self) -> Duration {
+        Duration::seconds(self.entropy_interval)
     }
 }
