@@ -22,7 +22,7 @@ use helium_proto::{
     Message,
 };
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
 
@@ -205,19 +205,23 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
         let mut validator: SkfValidator = Pin::new(&mut incoming_stream)
             .peek()
             .await
+            .map(|first_update| async move {
+                match first_update {
+                    Ok(ref update) => match update.filter {
+                        Some(ref filter) => {
+                            self.update_validator(filter.oui).await.map_err(|err| {
+                                Status::internal(format!("unable to verify updates {err:?}"))
+                            })
+                        }
+                        None => Err(Status::invalid_argument("no session key filter provided")),
+                    },
+                    Err(_) => Err(Status::invalid_argument("no session key filter provided")),
+                }
+            })
             .ok_or(Status::invalid_argument("no session key filter provided"))?
-            .clone()
-            .map(|first_update| {
-                first_update
-                    .filter
-                    .ok_or(Status::invalid_argument("no session key filter provided"))
-            })?
-            .map(|filter| self.update_validator(filter.oui))?
-            .await
-            .map_err(|_| Status::internal("unable to verify updates"))?;
+            .await?;
 
         incoming_stream
-            .into_inner()
             .map_ok(|update| match validator.validate_update(&update) {
                 Ok(()) => Ok(update),
                 Err(reason) => Err(Status::invalid_argument(format!(
@@ -278,7 +282,13 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
             })
             .await?;
 
-        Ok(Response::new(SessionKeyFilterUpdateResV1 {}))
+        let mut resp = SessionKeyFilterUpdateResV1 {
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        Ok(Response::new(resp))
     }
 
     type streamStream = GrpcStreamResult<SessionKeyFilterStreamResV1>;
