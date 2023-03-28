@@ -462,8 +462,8 @@ mod test {
 
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
-        let total_dc_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
-        println!("total dc scheduled tokens: {total_dc_transfer_tokens_for_period}");
+        let total_data_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
 
         let gw1_dc_spend = dec!(5000);
         let gw2_dc_spend = dec!(5000);
@@ -478,10 +478,10 @@ mod test {
         let total_dc_spend =
             gw1_dc_spend + gw2_dc_spend + gw3_dc_spend + gw4_dc_spend + gw5_dc_spend + gw6_dc_spend;
         println!("total dc spend: {total_dc_spend}");
-        let total_dc_rewards = dc_to_iot_bones(total_dc_spend, iot_price);
-        println!("total dc rewards for dc spent: {total_dc_rewards}");
-
-        let total_dc_remainer = total_dc_transfer_tokens_for_period - total_dc_rewards;
+        let total_used_data_transfer_tokens = dc_to_iot_bones(total_dc_spend, iot_price);
+        println!("total data transfer rewards for dc spent: {total_used_data_transfer_tokens}");
+        let total_unused_data_transfer_tokens =
+            total_data_transfer_tokens_for_period - total_used_data_transfer_tokens;
 
         // generate the rewards map
         let mut shares = HashMap::new();
@@ -552,14 +552,15 @@ mod test {
             + gw3_rewards.dc_transfer_amount
             + gw5_rewards.dc_transfer_amount
             + gw6_rewards.dc_transfer_amount;
-        println!("max dc transfer rewards for spent dc: {total_dc_rewards}");
-        println!("total actual dc transfer rewards distributed: {sum_dc_amounts}");
-        let dc_diff = total_dc_rewards.to_i64().unwrap() - sum_dc_amounts as i64;
+        println!("max data transfer rewards for spent dc: {total_used_data_transfer_tokens}");
+        println!("total actual data transfer rewards distributed: {sum_dc_amounts}");
+        let data_transfer_diff =
+            total_used_data_transfer_tokens.to_i64().unwrap() - sum_dc_amounts as i64;
         // the sum of rewards distributed should not exceed total allocation
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 1
-        assert_eq!(dc_diff, 1);
+        assert_eq!(data_transfer_diff, 1);
 
         // assert the expected data transfer rewards amounts per gateway
         // using the dc_to_iot_bones helper function
@@ -610,7 +611,7 @@ mod test {
             + gw6_rewards.witness_amount;
 
         let (exp_total_beacon_tokens, exp_total_witness_tokens) =
-            get_scheduled_poc_tokens(Duration::minutes(10), total_dc_remainer);
+            get_scheduled_poc_tokens(Duration::minutes(10), total_unused_data_transfer_tokens);
         let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
         println!("max poc rewards: {exp_sum_poc_tokens}");
         println!("total actual poc rewards distributed: {sum_poc_amounts}");
@@ -624,7 +625,7 @@ mod test {
 
     #[test]
     // test reward distribution where there is zero transfer of dc rewards to poc
-    fn test_reward_share_calculation_without_dc_transfer_distribution() {
+    fn test_reward_share_calculation_without_data_transfer_distribution() {
         let iot_price = dec!(359);
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -647,16 +648,16 @@ mod test {
 
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
-        let total_dc_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
-        println!("total dc scheduled tokens: {total_dc_transfer_tokens_for_period}");
+        let total_data_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
 
         // get the expected total amount of dc we need to spend
         // in order to use up all the dc rewards for this period
         // distribute this amount of dc across the gateways
         // this results in zero unallocated dc rewards being
         // available to distributed to POC
-        let total_dc_to_spend = iot_bones_to_dc(total_dc_transfer_tokens_for_period, iot_price);
-        println!("total dc value of scheduled dc tokens: {total_dc_to_spend}");
+        let total_dc_to_spend = iot_bones_to_dc(total_data_transfer_tokens_for_period, iot_price);
+        println!("total dc value of scheduled data transfer tokens: {total_dc_to_spend}");
 
         // generate the rewards map
         // distribute *ALL* the dc shares across gateways
@@ -729,19 +730,20 @@ mod test {
         // even tho the value of the dc shares distributed across the gateways
         // amounted to > 100% max rewards value
         // confirm the max allocation was capped at the reward period value
-        let sum_dc_amounts: u64 = gw1_rewards.dc_transfer_amount
+        let sum_data_transfer_amounts: u64 = gw1_rewards.dc_transfer_amount
             + gw2_rewards.dc_transfer_amount
             + gw3_rewards.dc_transfer_amount
             + gw5_rewards.dc_transfer_amount
             + gw6_rewards.dc_transfer_amount;
-        println!("max dc transder rewards: {total_dc_transfer_tokens_for_period}");
-        println!("total actual dc transder rewards distributed: {sum_dc_amounts}");
-        let dc_diff = total_dc_transfer_tokens_for_period.to_i64().unwrap() - sum_dc_amounts as i64;
+        println!("max data transfer rewards: {total_data_transfer_tokens_for_period}");
+        println!("total actual data transfer rewards distributed: {sum_data_transfer_amounts}");
+        let data_transfer_diff = total_data_transfer_tokens_for_period.to_i64().unwrap()
+            - sum_data_transfer_amounts as i64;
         // the sum of rewards distributed should not exceed the epoch amount
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 2
-        assert_eq!(dc_diff, 2);
+        assert_eq!(data_transfer_diff, 2);
 
         // assert the expected data transfer rewards amounts per gateway
         assert_eq!(gw1_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
@@ -792,7 +794,7 @@ mod test {
 
     #[test]
     // test reward distribution where there is transfer of dc rewards to poc
-    fn test_reward_share_calculation_with_dc_transfer_distribution() {
+    fn test_reward_share_calculation_with_data_transfer_distribution() {
         let iot_price = dec!(359);
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -815,13 +817,13 @@ mod test {
 
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
-        let total_dc_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
-        println!("total_dc_transfer_tokens_for_period: {total_dc_transfer_tokens_for_period}");
+        let total_data_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        println!("total_data_transfer_tokens_for_period: {total_data_transfer_tokens_for_period}");
 
         // get the expected total amount of dc we need to spend
         // spread *some* of this across the gateways and then confirm
         // the unallocated rewards go to poc
-        let total_dc_to_spend = iot_bones_to_dc(total_dc_transfer_tokens_for_period, iot_price);
+        let total_dc_to_spend = iot_bones_to_dc(total_data_transfer_tokens_for_period, iot_price);
         println!("total_dc_to_spend: {total_dc_to_spend}");
 
         // generate the rewards map
@@ -887,22 +889,22 @@ mod test {
 
         // assert the sum of data transfer amounts matches what we expect
         // which is 55% of the total available data transfer rewards
-        let sum_dc_amounts = gw1_rewards.dc_transfer_amount
+        let sum_data_transfer_amounts = gw1_rewards.dc_transfer_amount
             + gw2_rewards.dc_transfer_amount
             + gw3_rewards.dc_transfer_amount
             + gw5_rewards.dc_transfer_amount
             + gw6_rewards.dc_transfer_amount;
-        println!("max dc transfer rewards: {total_dc_transfer_tokens_for_period}");
-        println!("total actual dc transder rewards distributed: {sum_dc_amounts}");
-        let dc_diff = (total_dc_transfer_tokens_for_period * dec!(0.55))
+        println!("max data transfer rewards: {total_data_transfer_tokens_for_period}");
+        println!("total actual data transfer rewards distributed: {sum_data_transfer_amounts}");
+        let data_transfer_diff = (total_data_transfer_tokens_for_period * dec!(0.55))
             .to_i64()
             .unwrap()
-            - sum_dc_amounts as i64;
+            - sum_data_transfer_amounts as i64;
         // the sum of rewards distributed should not exceed the epoch amount
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 2
-        assert_eq!(dc_diff, 2);
+        assert_eq!(data_transfer_diff, 2);
 
         // assert the expected dc amounts per gateway
         assert_eq!(gw1_rewards.dc_transfer_amount, 57_077_625_570); // 10% of total
@@ -940,10 +942,11 @@ mod test {
             + gw5_rewards.witness_amount
             + gw6_rewards.beacon_amount
             + gw6_rewards.witness_amount;
-        let expected_dc_transfer_tokens_for_poc = total_dc_transfer_tokens_for_period * dec!(0.45);
-        println!("expected_dc_transfer_tokens_for_poc: {expected_dc_transfer_tokens_for_poc}");
+        let expected_data_transfer_tokens_for_poc =
+            total_data_transfer_tokens_for_period * dec!(0.45);
+        println!("expected_data_transfer_tokens_for_poc: {expected_data_transfer_tokens_for_poc}");
         let (exp_total_beacon_tokens, exp_total_witness_tokens) =
-            get_scheduled_poc_tokens(Duration::minutes(10), expected_dc_transfer_tokens_for_poc);
+            get_scheduled_poc_tokens(Duration::minutes(10), expected_data_transfer_tokens_for_poc);
         let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
         println!("max poc rewards: {exp_sum_poc_tokens}");
         println!("total actual poc rewards distributed: {sum_poc_amounts}");
