@@ -41,6 +41,7 @@ impl From<DataTransferSession> for ValidDataTransferSession {
             payer: ds.payer.into(),
             upload_bytes: ds.upload_bytes as u64,
             download_bytes: ds.download_bytes as u64,
+            num_dcs: bytes_to_dc(ds.download_bytes as u64 + ds.download_bytes as u64),
             first_timestamp: ds.first_timestamp.encode_timestamp_millis(),
             last_timestamp: ds.last_timestamp.encode_timestamp_millis(),
         }

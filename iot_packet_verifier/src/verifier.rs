@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use file_store::{
-    file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport, traits::MsgTimestamp,
-};
+use file_store::{file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport};
 use futures::{Stream, StreamExt};
 use helium_crypto::{Keypair, PublicKeyBinary, Sign};
 use helium_proto::services::{
@@ -18,7 +16,7 @@ use helium_proto::{
 };
 use sqlx::{Postgres, Transaction};
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     mem,
 };
@@ -26,13 +24,6 @@ use std::{
 pub struct Verifier<D, C> {
     pub debiter: D,
     pub config_server: C,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct PacketId {
-    ts: u64,
-    oui: u64,
-    hash: Vec<u8>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -69,24 +60,11 @@ where
         IP: PacketWriter<InvalidPacket>,
     {
         let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
-        // This may need to be in the database so that we can set last_verified_report
-        // after this function.
-        let mut packets_seen = HashSet::<PacketId>::new();
 
         tokio::pin!(reports);
 
         while let Some(report) = reports.next().await {
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
-
-            let packet_id = PacketId {
-                ts: report.timestamp(),
-                oui: report.oui,
-                hash: report.payload_hash.clone(),
-            };
-            if packets_seen.contains(&packet_id) {
-                continue;
-            }
-            packets_seen.insert(packet_id);
 
             let payer = self
                 .config_server
@@ -434,10 +412,8 @@ mod test {
             // Packets for second OUI
             packet_report(1, 0, 24, vec![4]),
             packet_report(1, 1, 48, vec![5]),
-            packet_report(1, 1, 48, vec![5]),
             packet_report(1, 2, 1, vec![6]),
             // Packets for third OUI
-            packet_report(2, 0, 24, vec![7]),
             packet_report(2, 0, 24, vec![7]),
         ];
         // Set up orgs:
