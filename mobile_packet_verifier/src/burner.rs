@@ -32,6 +32,7 @@ pub struct DataTransferSession {
     download_bytes: i64,
     first_timestamp: DateTime<Utc>,
     last_timestamp: DateTime<Utc>,
+    num_dcs: i64,
 }
 
 impl From<DataTransferSession> for ValidDataTransferSession {
@@ -43,6 +44,7 @@ impl From<DataTransferSession> for ValidDataTransferSession {
             download_bytes: ds.download_bytes as u64,
             first_timestamp: ds.first_timestamp.encode_timestamp_millis(),
             last_timestamp: ds.last_timestamp.encode_timestamp_millis(),
+            num_dcs: ds.num_dcs as u64,
         }
     }
 }

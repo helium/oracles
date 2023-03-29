@@ -35,3 +35,4 @@ tonic = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
+chrono = { workspace = true }
