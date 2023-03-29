@@ -1,15 +1,18 @@
-use crate::entropy_loader::EntropyLoader;
+use crate::{entropy_loader::EntropyLoader, packet_loader::PacketLoader};
 use anyhow::{Error, Result};
 use clap::Parser;
 use file_store::{
     entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_sink, file_source,
-    file_upload, FileStore, FileType,
+    file_upload, iot_packet::IotValidPacket, FileStore, FileType,
 };
 use futures::TryFutureExt;
+use iot_config_client::iot_config_client::IotConfigClient;
 use iot_verifier::{
-    entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, poc_report::Report,
-    purger, rewarder::Rewarder, runner, tx_scaler::Server as DensityScaler, Settings,
+    entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, packet_loader,
+    poc_report::Report, purger, region_cache::RegionCache, rewarder::Rewarder, runner,
+    tx_scaler::Server as DensityScaler, Settings,
 };
+use price::PriceTracker;
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -78,7 +81,11 @@ impl Server {
         let count_all_beacons = Report::count_all_beacons(&pool).await?;
         Metrics::num_beacons(count_all_beacons);
 
-        let gateway_cache = GatewayCache::from_settings(settings);
+        let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
+
+        let gateway_cache = GatewayCache::from_settings(iot_config_client.clone());
+        _ = gateway_cache.prewarm().await;
+        let region_cache = RegionCache::from_settings(iot_config_client.clone())?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
@@ -132,10 +139,31 @@ impl Server {
                 .start(shutdown.clone())
                 .await?;
 
+        // setup the packet loader continious source
+        let mut packet_loader = PacketLoader { pool: pool.clone() };
+        let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
+        let packet_interval = settings.packet_interval();
+        let (pk_loader_receiver, pk_loader_source_join_handle) =
+            file_source::continuous_source::<IotValidPacket>()
+                .db(pool.clone())
+                .store(packet_store.clone())
+                .file_type(FileType::IotValidPacket)
+                .lookback(LookbackBehavior::Max(max_lookback_age))
+                .poll_duration(packet_interval)
+                .offset(packet_interval * 2)
+                .build()?
+                .start(shutdown.clone())
+                .await?;
+
+        // init da processes
         let mut loader = loader::Loader::from_settings(settings, pool.clone()).await?;
         let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
         let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
-        let mut density_scaler = DensityScaler::from_settings(settings, pool).await?;
+        let mut density_scaler =
+            DensityScaler::from_settings(settings, pool, iot_config_client).await?;
+        let (price_tracker, price_receiver) =
+            PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
+
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
             gateway_rewards_server.run(&shutdown).map_err(Error::from),
@@ -144,15 +172,19 @@ impl Server {
             runner.run(
                 file_upload_tx.clone(),
                 &gateway_cache,
+                &region_cache,
                 density_scaler.hex_density_map(),
                 &shutdown
             ),
             entropy_loader.run(entropy_loader_receiver, &shutdown),
             loader.run(&shutdown, &gateway_cache),
+            packet_loader.run(pk_loader_receiver, &shutdown),
             purger.run(&shutdown),
-            rewarder.run(&shutdown),
+            rewarder.run(price_tracker, &shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
+            price_receiver.map_err(Error::from),
             entropy_loader_source_join_handle.map_err(anyhow::Error::from),
+            pk_loader_source_join_handle.map_err(anyhow::Error::from),
         )
         .map(|_| ())
     }

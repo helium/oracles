@@ -32,6 +32,7 @@ pub struct DataTransferSession {
     download_bytes: i64,
     first_timestamp: DateTime<Utc>,
     last_timestamp: DateTime<Utc>,
+    num_dcs: i64,
 }
 
 #[derive(Default)]

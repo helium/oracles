@@ -5,7 +5,8 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
-use node_follower::{follower_service::FollowerService, gateway_resp::GatewayInfo};
+use iot_config_client::iot_config_client::{IotConfigClient, IotConfigClientError};
+
 use sqlx::PgPool;
 use std::collections::HashMap;
 use tokio::time;
@@ -15,7 +16,7 @@ use tokio::time;
 const HIP_17_INTERACTIVITY_LIMIT: i64 = 3600;
 
 pub struct Server {
-    follower: FollowerService,
+    iot_config_client: IotConfigClient,
     hex_density_map: SharedHexDensityMap,
     pool: PgPool,
     trigger_interval: Duration,
@@ -23,8 +24,8 @@ pub struct Server {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TxScalerError {
-    #[error("error querying blockchain node")]
-    NodeFollower(#[from] node_follower::Error),
+    #[error("error querying iot config service")]
+    IotConfigClient(#[from] IotConfigClientError),
     #[error("tx scaler db connect error")]
     DbConnect(#[from] db_store::Error),
     #[error("txn scaler error retrieving recent activity")]
@@ -32,9 +33,13 @@ pub enum TxScalerError {
 }
 
 impl Server {
-    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, TxScalerError> {
+    pub async fn from_settings(
+        settings: &Settings,
+        pool: PgPool,
+        iot_config_client: IotConfigClient,
+    ) -> Result<Self, TxScalerError> {
         let mut server = Self {
-            follower: FollowerService::from_settings(&settings.follower),
+            iot_config_client,
             hex_density_map: SharedHexDensityMap::new(),
             pool,
             trigger_interval: Duration::seconds(settings.transmit_scale_interval),
@@ -79,13 +84,10 @@ impl Server {
             .gateways_recent_activity(refresh_start)
             .await
             .map_err(sqlx::Error::from)?;
-        let mut gw_stream = self.follower.active_gateways().await?;
-        while let Some(GatewayInfo {
-            location, address, ..
-        }) = gw_stream.next().await
-        {
-            if let Some(h3index) = location {
-                if active_gateways.contains_key(&address) {
+        let mut gw_stream = self.iot_config_client.gateway_stream().await?;
+        while let Some(gateway_info) = gw_stream.next().await {
+            if let Some(h3index) = gateway_info.location {
+                if active_gateways.contains_key(&gateway_info.address.as_ref().to_vec()) {
                     global_map.increment_unclipped(h3index)
                 }
             }

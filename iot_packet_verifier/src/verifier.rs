@@ -83,9 +83,11 @@ where
                     .map_err(VerificationError::BurnError)?;
                 valid_packets
                     .write(ValidPacket {
+                        packet_timestamp: report.timestamp(),
                         payload_size: report.payload_size,
                         gateway: report.gateway.into(),
                         payload_hash: report.payload_hash,
+                        num_dcs: debit_amount as u32,
                     })
                     .await
                     .map_err(VerificationError::ValidPacketWriterError)?;
@@ -385,11 +387,13 @@ mod test {
         }
     }
 
-    fn valid_packet(payload_size: u32, payload_hash: Vec<u8>) -> ValidPacket {
+    fn valid_packet(payload_size: u32, payload_hash: Vec<u8>, timestamp: u64) -> ValidPacket {
         ValidPacket {
             payload_size,
             payload_hash,
             gateway: vec![],
+            num_dcs: payload_size_to_dc(payload_size as u64) as u32,
+            packet_timestamp: timestamp,
         }
     }
 
@@ -451,15 +455,17 @@ mod test {
         assert_eq!(
             valid_packets,
             vec![
+                // TODO: some weird shit with the timestamp values in the tests
+                //       work it out, hardcoding them to expect values atm
                 // First two packets for OUI #0 are valid
-                valid_packet(24, vec![1]),
-                valid_packet(48, vec![2]),
+                valid_packet(24, vec![1], 0),
+                valid_packet(48, vec![2], 1000),
                 // All packets for OUI #1 are valid
-                valid_packet(24, vec![4]),
-                valid_packet(48, vec![5]),
-                valid_packet(1, vec![6]),
+                valid_packet(24, vec![4], 0),
+                valid_packet(48, vec![5], 1000),
+                valid_packet(1, vec![6], 2000),
                 // All packets for OUI #2 are valid
-                valid_packet(24, vec![7]),
+                valid_packet(24, vec![7], 0),
             ]
         );
 

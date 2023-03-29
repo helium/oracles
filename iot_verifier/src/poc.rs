@@ -3,6 +3,7 @@ use crate::{
     gateway_cache::GatewayCache,
     hex_density::HexDensityMap,
     last_beacon::{LastBeacon, LastBeaconError},
+    region_cache::RegionCache,
 };
 use beacon;
 use chrono::{DateTime, Duration, Utc};
@@ -17,10 +18,10 @@ use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
-    BlockchainRegionParamV1, GatewayStakingMode, Region as ProtoRegion,
+    BlockchainRegionParamV1, Region as ProtoRegion,
 };
+use iot_config_client::gateway_resolver::GatewayInfo;
 use lazy_static::lazy_static;
-use node_follower::gateway_resp::GatewayInfo;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::f64::consts::PI;
@@ -99,6 +100,7 @@ impl Poc {
         &mut self,
         hex_density_map: impl HexDensityMap,
         gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         pool: &PgPool,
         beacon_interval: Duration,
         beacon_interval_tolerance: Duration,
@@ -113,6 +115,16 @@ impl Poc {
                 return Ok(VerifyBeaconResult::gateway_not_found());
             }
         };
+        let beaconer_region_info =
+            match region_cache.resolve_region_info(beaconer_info.region).await {
+                Ok(res) => res,
+                Err(_e) => {
+                    return Ok(VerifyBeaconResult::invalid(
+                        InvalidReason::InvalidRegion,
+                        beaconer_info,
+                    ));
+                }
+            };
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
         match do_beacon_verifications(
@@ -122,6 +134,7 @@ impl Poc {
             last_beacon,
             &self.beacon_report,
             &beaconer_info,
+            &beaconer_region_info.region_params,
             beacon_interval,
             beacon_interval_tolerance,
         ) {
@@ -265,17 +278,18 @@ pub fn do_beacon_verifications(
     last_beacon: Option<LastBeacon>,
     beacon_report: &IotBeaconIngestReport,
     beaconer_info: &GatewayInfo,
+    beaconer_region_params: &[BlockchainRegionParamV1],
     beacon_interval: Duration,
     beacon_interval_tolerance: Duration,
 ) -> GenericVerifyResult {
     tracing::debug!(
         "verifying beacon from beaconer: {:?}",
-        PublicKeyBinary::from(beaconer_info.address.clone())
+        beaconer_info.address.clone()
     );
     let beacon_received_ts = beacon_report.received_timestamp;
     verify_entropy(entropy_start, entropy_end, beacon_received_ts)?;
     verify_gw_location(beaconer_info.location)?;
-    verify_gw_capability(beaconer_info.staking_mode)?;
+    verify_gw_capability(beaconer_info.is_full_hotspot)?;
     verify_beacon_schedule(
         &last_beacon,
         beacon_received_ts,
@@ -285,14 +299,14 @@ pub fn do_beacon_verifications(
     verify_beacon_payload(
         &beacon_report.report,
         beaconer_info.region,
-        &beaconer_info.region_params,
+        beaconer_region_params,
         beaconer_info.gain,
         entropy_start,
         entropy_version as u32,
     )?;
     tracing::debug!(
         "valid beacon from beaconer: {:?}",
-        PublicKeyBinary::from(beaconer_info.address.clone())
+        beaconer_info.address.clone()
     );
     Ok(())
 }
@@ -307,7 +321,7 @@ pub fn do_witness_verifications(
 ) -> GenericVerifyResult {
     tracing::debug!(
         "verifying witness from gateway: {:?}",
-        PublicKeyBinary::from(witness_info.address.clone())
+        witness_info.address.clone()
     );
     let beacon_report = &beacon_report;
     verify_self_witness(
@@ -321,7 +335,7 @@ pub fn do_witness_verifications(
     )?;
     verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
     verify_gw_location(witness_info.location)?;
-    verify_gw_capability(witness_info.staking_mode)?;
+    verify_gw_capability(witness_info.is_full_hotspot)?;
     verify_witness_freq(
         beacon_report.report.frequency,
         witness_report.report.frequency,
@@ -340,7 +354,7 @@ pub fn do_witness_verifications(
     )?;
     tracing::debug!(
         "valid witness from gateway: {:?}",
-        PublicKeyBinary::from(witness_info.address.clone())
+        witness_info.address.clone()
     );
     Ok(())
 }
@@ -474,19 +488,15 @@ fn verify_gw_location(gateway_loc: Option<u64>) -> GenericVerifyResult {
 }
 
 /// verify gateway is permitted to participate in POC
-fn verify_gw_capability(staking_mode: GatewayStakingMode) -> GenericVerifyResult {
-    match staking_mode {
-        GatewayStakingMode::Dataonly => {
-            tracing::debug!(
-                "witness verification failed, reason: {:?}. gateway staking mode: {:?}",
-                InvalidReason::InvalidCapability,
-                staking_mode
-            );
-            return Err(InvalidReason::InvalidCapability);
-        }
-        GatewayStakingMode::Full => (),
-        GatewayStakingMode::Light => (),
-    }
+fn verify_gw_capability(is_full_hotspot: bool) -> GenericVerifyResult {
+    if !is_full_hotspot {
+        tracing::debug!(
+            "witness verification failed, reason: {:?}. is_full_hotspot: {:?}",
+            InvalidReason::InvalidCapability,
+            is_full_hotspot
+        );
+        return Err(InvalidReason::InvalidCapability);
+    };
     Ok(())
 }
 
@@ -797,7 +807,7 @@ mod tests {
     const LOC2: u64 = 631278052025960447; // armenia
     const LOC3: u64 = 627111975468974079; // 7 cells away from beaconer
     const LOC4: u64 = 627111975465463807; // 28 cells away from beaconer
-    const WITNESS_GAIN: u64 = 20;
+
     const PUBKEY1: &str = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf";
     const PUBKEY2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
 
@@ -1006,11 +1016,10 @@ mod tests {
 
     #[test]
     fn test_verify_capability() {
-        assert!(verify_gw_capability(GatewayStakingMode::Full).is_ok());
-        assert!(verify_gw_capability(GatewayStakingMode::Light).is_ok());
+        assert!(verify_gw_capability(true).is_ok());
         assert_eq!(
             Err(InvalidReason::InvalidCapability),
-            verify_gw_capability(GatewayStakingMode::Dataonly)
+            verify_gw_capability(false)
         );
     }
 
@@ -1146,8 +1155,7 @@ mod tests {
         // from `do_beacon_verifications`
 
         // create default data structs
-        let beaconer_info =
-            beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let beaconer_info = beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, true);
         let entropy_start = Utc.timestamp_millis_opt(ENTROPY_TIMESTAMP).unwrap();
         let entropy_end = entropy_start + Duration::minutes(3);
         let beacon_interval = Duration::minutes(5);
@@ -1162,6 +1170,7 @@ mod tests {
             None,
             &beacon_report1,
             &beaconer_info,
+            &default_region_params(),
             beacon_interval,
             beacon_interval_tolerance,
         );
@@ -1169,8 +1178,7 @@ mod tests {
 
         // test location verification is active in the beacon validation list
         let beacon_report2 = valid_beacon_report(entropy_start + Duration::minutes(2));
-        let beacon_info2 =
-            beaconer_gateway_info(None, ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let beacon_info2 = beaconer_gateway_info(None, ProtoRegion::Eu868, true);
         let resp2 = do_beacon_verifications(
             entropy_start,
             entropy_end,
@@ -1178,6 +1186,7 @@ mod tests {
             None,
             &beacon_report2,
             &beacon_info2,
+            &default_region_params(),
             beacon_interval,
             beacon_interval_tolerance,
         );
@@ -1196,6 +1205,7 @@ mod tests {
             Some(last_beacon3),
             &beacon_report3,
             &beaconer_info,
+            &default_region_params(),
             beacon_interval,
             beacon_interval_tolerance,
         );
@@ -1203,8 +1213,7 @@ mod tests {
 
         // test capability verification is active in the beacon validation list
         let beacon_report4 = valid_beacon_report(entropy_start + Duration::minutes(2));
-        let beacon_info4 =
-            beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, GatewayStakingMode::Dataonly);
+        let beacon_info4 = beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, false);
         let resp4 = do_beacon_verifications(
             entropy_start,
             entropy_end,
@@ -1212,6 +1221,7 @@ mod tests {
             None,
             &beacon_report4,
             &beacon_info4,
+            &default_region_params(),
             beacon_interval,
             beacon_interval_tolerance,
         );
@@ -1226,6 +1236,7 @@ mod tests {
             None,
             &beacon_report5,
             &beaconer_info,
+            &default_region_params(),
             beacon_interval,
             beacon_interval_tolerance,
         );
@@ -1240,6 +1251,7 @@ mod tests {
             None,
             &beacon_report6,
             &beaconer_info,
+            &default_region_params(),
             beacon_interval,
             beacon_interval_tolerance,
         );
@@ -1258,10 +1270,8 @@ mod tests {
 
         // create default data structs
         let beacon_report = valid_beacon_report(Utc::now() - Duration::minutes(2));
-        let beaconer_info =
-            beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, GatewayStakingMode::Light);
-        let witness_info =
-            witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let beaconer_info = beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, true);
+        let witness_info = witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, true);
         let entropy_start = Utc.timestamp_millis_opt(1676381847900).unwrap();
         let entropy_end = entropy_start + Duration::minutes(3);
 
@@ -1303,8 +1313,7 @@ mod tests {
 
         // test location verification is active in the witness validation list
         let witness_report4 = valid_witness_report(entropy_start + Duration::minutes(2));
-        let witness_info4 =
-            witness_gateway_info(None, ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let witness_info4 = witness_gateway_info(None, ProtoRegion::Eu868, true);
         let resp4 = do_witness_verifications(
             entropy_start,
             entropy_end,
@@ -1329,8 +1338,7 @@ mod tests {
 
         // test witness region verification is active in the witness validation list
         let witness_report6 = valid_witness_report(entropy_start + Duration::minutes(2));
-        let witness_info6 =
-            witness_gateway_info(Some(LOC1), ProtoRegion::Us915, GatewayStakingMode::Light);
+        let witness_info6 = witness_gateway_info(Some(LOC1), ProtoRegion::Us915, true);
         let resp6 = do_witness_verifications(
             entropy_start,
             entropy_end,
@@ -1343,8 +1351,7 @@ mod tests {
 
         // test witness min cell distance verification is active in the witness validation list
         let witness_report7 = valid_witness_report(entropy_start + Duration::minutes(2));
-        let witness_info7 =
-            witness_gateway_info(Some(LOC3), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let witness_info7 = witness_gateway_info(Some(LOC3), ProtoRegion::Eu868, true);
         let resp7 = do_witness_verifications(
             entropy_start,
             entropy_end,
@@ -1357,8 +1364,7 @@ mod tests {
 
         // test witness max distance verification is active in the witness validation list
         let witness_report8 = valid_witness_report(entropy_start + Duration::minutes(2));
-        let witness_info8 =
-            witness_gateway_info(Some(LOC2), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let witness_info8 = witness_gateway_info(Some(LOC2), ProtoRegion::Eu868, true);
         let resp8 = do_witness_verifications(
             entropy_start,
             entropy_end,
@@ -1383,8 +1389,7 @@ mod tests {
 
         // test witness capability verification is active in the witness validation list
         let witness_report10 = valid_witness_report(entropy_start + Duration::minutes(2));
-        let witness_info10 =
-            witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, GatewayStakingMode::Dataonly);
+        let witness_info10 = witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, false);
         let resp10 = do_witness_verifications(
             entropy_start,
             entropy_end,
@@ -1397,8 +1402,7 @@ mod tests {
 
         // for completeness, confirm our valid witness report is sane
         let witness_report11 = valid_witness_report(entropy_start + Duration::minutes(2));
-        let witness_info11 =
-            witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, GatewayStakingMode::Light);
+        let witness_info11 = witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, true);
         let resp11 = do_witness_verifications(
             entropy_start,
             entropy_end,
@@ -1413,42 +1417,41 @@ mod tests {
     fn beaconer_gateway_info(
         location: Option<u64>,
         region: ProtoRegion,
-        staking_mode: GatewayStakingMode,
+        is_full_hotspot: bool,
     ) -> GatewayInfo {
-        let region_params = beacon::RegionParams::from_bytes(
-            ProtoRegion::Eu868.into(),
-            BEACONER_GAIN,
-            EU868_PARAMS,
-        )
-        .unwrap();
         GatewayInfo {
             location,
-            address: PUBKEY1.as_bytes().to_vec(),
-            owner: PUBKEY1.as_bytes().to_vec(),
-            staking_mode,
+            address: PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+            is_full_hotspot,
             gain: 12,
+            elevation: Some(100),
             region,
-            region_params: region_params.params,
         }
     }
 
     fn witness_gateway_info(
         location: Option<u64>,
         region: ProtoRegion,
-        staking_mode: GatewayStakingMode,
+        is_full_hotspot: bool,
     ) -> GatewayInfo {
-        let region_params =
-            beacon::RegionParams::from_bytes(ProtoRegion::Eu868.into(), WITNESS_GAIN, EU868_PARAMS)
-                .unwrap();
         GatewayInfo {
             location,
-            address: PUBKEY2.as_bytes().to_vec(),
-            owner: PUBKEY2.as_bytes().to_vec(),
-            staking_mode,
+            address: PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+            is_full_hotspot,
             gain: 20,
+            elevation: Some(100),
             region,
-            region_params: region_params.params,
         }
+    }
+
+    fn default_region_params() -> Vec<BlockchainRegionParamV1> {
+        let region_params = beacon::RegionParams::from_bytes(
+            ProtoRegion::Eu868.into(),
+            BEACONER_GAIN,
+            EU868_PARAMS,
+        )
+        .unwrap();
+        region_params.params
     }
 
     fn valid_beacon_report(received_timestamp: DateTime<Utc>) -> IotBeaconIngestReport {
