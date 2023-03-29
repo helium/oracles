@@ -1,10 +1,9 @@
 use crate::{entropy_loader::EntropyLoader, packet_loader::PacketLoader};
 use anyhow::{Error, Result};
-use chrono::{TimeZone, Utc};
 use clap::Parser;
 use file_store::{
-    entropy_report::EntropyReport, iot_packet::IotValidPacket, file_info_poller::LookbackBehavior, file_sink, file_source,
-    file_upload, FileStore, FileType,
+    entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_sink, file_source,
+    file_upload, iot_packet::IotValidPacket, FileStore, FileType,
 };
 use futures::TryFutureExt;
 use iot_config_client::iot_config_client::IotConfigClient;
@@ -149,9 +148,7 @@ impl Server {
                 .db(pool.clone())
                 .store(packet_store.clone())
                 .file_type(FileType::IotValidPacket)
-                .lookback(LookbackBehavior::StartAfter(
-                    Utc.timestamp_opt(0, 0).single().unwrap(),
-                ))
+                .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(packet_interval)
                 .offset(packet_interval * 2)
                 .build()?
@@ -160,8 +157,6 @@ impl Server {
 
         // init da processes
         let mut loader = loader::Loader::from_settings(settings, pool.clone()).await?;
-        let mut entropy_loader =
-            entropy_loader::EntropyLoader::from_settings(settings, pool.clone()).await?;
         let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
         let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
         let mut density_scaler =

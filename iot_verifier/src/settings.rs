@@ -68,7 +68,6 @@ pub struct Settings {
     /// File store poll interval for incoming packets, in seconds. (Default is 900; 15 minutes)
     #[serde(default = "default_packet_interval")]
     pub packet_interval: i64,
-
 }
 
 // Default: 60 minutes
