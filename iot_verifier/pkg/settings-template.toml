@@ -37,7 +37,7 @@ poc_loader_poll_time = 300
 loader_window_max_lookback_age = 3600
 
 # the lifespan of a piece of entropy ( in seconds )
-poc_entropy_lifespan = 180
+entropy_lifespan = 180
 
 # File store poll interval for incoming entropy reports, in seconds
 entropy_interval = 300
