@@ -75,11 +75,11 @@ impl Entropy {
         .await?)
     }
 
-    pub async fn purge<'c, 'q, E>(executor: E, stale_period: i64) -> Result<(), EntropyError>
+    pub async fn purge<'c, 'q, E>(executor: E, stale_period: Duration) -> Result<(), EntropyError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres> + Clone,
     {
-        let stale_time = Utc::now() - Duration::seconds(stale_period);
+        let stale_time = Utc::now() - stale_period;
         sqlx::query(
             r#"
             delete from entropy
