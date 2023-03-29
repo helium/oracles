@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use file_store::{file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport};
+use file_store::{
+    file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport, traits::MsgTimestamp,
+};
 use futures::{Stream, StreamExt};
 use helium_crypto::{Keypair, PublicKeyBinary, Sign};
 use helium_proto::services::{
