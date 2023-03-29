@@ -1,7 +1,7 @@
 create type key_type as enum (
     'administrator',
-    'packet_router'
-    'oracle',
+    'packet_router',
+    'oracle'
 );
 
 create table registered_keys (
