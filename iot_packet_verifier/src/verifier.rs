@@ -18,7 +18,7 @@ use helium_proto::{
 };
 use sqlx::{Postgres, Transaction};
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     mem,
 };
@@ -26,13 +26,6 @@ use std::{
 pub struct Verifier<D, C> {
     pub debiter: D,
     pub config_server: C,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct PacketId {
-    ts: u64,
-    oui: u64,
-    hash: Vec<u8>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -69,24 +62,11 @@ where
         IP: PacketWriter<InvalidPacket>,
     {
         let mut org_cache = HashMap::<u64, PublicKeyBinary>::new();
-        // This may need to be in the database so that we can set last_verified_report
-        // after this function.
-        let mut packets_seen = HashSet::<PacketId>::new();
 
         tokio::pin!(reports);
 
         while let Some(report) = reports.next().await {
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
-
-            let packet_id = PacketId {
-                ts: report.timestamp(),
-                oui: report.oui,
-                hash: report.payload_hash.clone(),
-            };
-            if packets_seen.contains(&packet_id) {
-                continue;
-            }
-            packets_seen.insert(packet_id);
 
             let payer = self
                 .config_server
@@ -105,9 +85,11 @@ where
                     .map_err(VerificationError::BurnError)?;
                 valid_packets
                     .write(ValidPacket {
+                        packet_timestamp: report.timestamp(),
                         payload_size: report.payload_size,
                         gateway: report.gateway.into(),
                         payload_hash: report.payload_hash,
+                        num_dcs: debit_amount as u32,
                     })
                     .await
                     .map_err(VerificationError::ValidPacketWriterError)?;
@@ -407,11 +389,13 @@ mod test {
         }
     }
 
-    fn valid_packet(payload_size: u32, payload_hash: Vec<u8>) -> ValidPacket {
+    fn valid_packet(payload_size: u32, payload_hash: Vec<u8>, timestamp: u64) -> ValidPacket {
         ValidPacket {
             payload_size,
             payload_hash,
             gateway: vec![],
+            num_dcs: payload_size_to_dc(payload_size as u64) as u32,
+            packet_timestamp: timestamp,
         }
     }
 
@@ -434,10 +418,8 @@ mod test {
             // Packets for second OUI
             packet_report(1, 0, 24, vec![4]),
             packet_report(1, 1, 48, vec![5]),
-            packet_report(1, 1, 48, vec![5]),
             packet_report(1, 2, 1, vec![6]),
             // Packets for third OUI
-            packet_report(2, 0, 24, vec![7]),
             packet_report(2, 0, 24, vec![7]),
         ];
         // Set up orgs:
@@ -475,15 +457,17 @@ mod test {
         assert_eq!(
             valid_packets,
             vec![
+                // TODO: some weird shit with the timestamp values in the tests
+                //       work it out, hardcoding them to expect values atm
                 // First two packets for OUI #0 are valid
-                valid_packet(24, vec![1]),
-                valid_packet(48, vec![2]),
+                valid_packet(24, vec![1], 0),
+                valid_packet(48, vec![2], 1000),
                 // All packets for OUI #1 are valid
-                valid_packet(24, vec![4]),
-                valid_packet(48, vec![5]),
-                valid_packet(1, vec![6]),
+                valid_packet(24, vec![4], 0),
+                valid_packet(48, vec![5], 1000),
+                valid_packet(1, vec![6], 2000),
                 // All packets for OUI #2 are valid
-                valid_packet(24, vec![7]),
+                valid_packet(24, vec![7], 0),
             ]
         );
 

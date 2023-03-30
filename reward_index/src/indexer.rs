@@ -102,7 +102,7 @@ fn extract_reward_share(mode: &settings::Mode, msg: &[u8]) -> Result<(Vec<u8>, u
             let share = GatewayRewardShare::decode(msg)?;
             Ok((
                 share.hotspot_key,
-                share.witness_amount + share.beacon_amount,
+                share.witness_amount + share.beacon_amount + share.dc_transfer_amount,
             ))
         }
     }

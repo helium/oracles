@@ -11,16 +11,24 @@ interval = 60
 # Price age (get price as long as it was updated within `age` seconds of current time) (in secs). Optional.
 age = 60
 
+# Cache folder to use. Default blow
+#
+# cache = "/var/data/price"
+
 [cluster]
 name = "devnet"
 hnt_price_key = "6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6"
 # mobile_price_key =
 # hst_price_key =
 # iot_price_key =
-
-# Cache folder to use. Default blow
-#
-# cache = "/var/data/price"
+# HNT price has 8 exponent. i.e. $1 = 100000000. Set it to some number for testing. Optional.
+# hnt_price =
+# MOBILE price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
+# mobile_price =
+# IOT price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
+# iot_price =
+# HST price has 6 exponent. i.e. $1 = 1000000. Set it to some number for testing. Optional.
+# hst_price =
 
 [output]
 # Output bucket for price

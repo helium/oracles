@@ -34,19 +34,6 @@ pub struct DataTransferSession {
     last_timestamp: DateTime<Utc>,
 }
 
-impl From<DataTransferSession> for ValidDataTransferSession {
-    fn from(ds: DataTransferSession) -> Self {
-        Self {
-            pub_key: ds.pub_key.into(),
-            payer: ds.payer.into(),
-            upload_bytes: ds.upload_bytes as u64,
-            download_bytes: ds.download_bytes as u64,
-            first_timestamp: ds.first_timestamp.encode_timestamp_millis(),
-            last_timestamp: ds.last_timestamp.encode_timestamp_millis(),
-        }
-    }
-}
-
 #[derive(Default)]
 pub struct PayerTotals {
     total_bytes: u64,
@@ -234,7 +221,18 @@ impl Burner {
 
             for session in sessions {
                 self.valid_sessions
-                    .write(ValidDataTransferSession::from(session), &[])
+                    .write(
+                        ValidDataTransferSession {
+                            pub_key: session.pub_key.into(),
+                            payer: session.payer.into(),
+                            upload_bytes: session.upload_bytes as u64,
+                            download_bytes: session.download_bytes as u64,
+                            num_dcs: amount,
+                            first_timestamp: session.first_timestamp.encode_timestamp_millis(),
+                            last_timestamp: session.last_timestamp.encode_timestamp_millis(),
+                        },
+                        &[],
+                    )
                     .await?;
             }
         }

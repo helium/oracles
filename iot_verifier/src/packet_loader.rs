@@ -1,11 +1,10 @@
-use crate::entropy::Entropy;
-use blake3::hash;
-use file_store::{entropy_report::EntropyReport, file_info_poller::FileInfoStream};
+use crate::reward_share::GatewayDCShare;
+use file_store::{file_info_poller::FileInfoStream, iot_packet::IotValidPacket};
 use futures::{StreamExt, TryStreamExt};
 use sqlx::PgPool;
 use tokio::sync::mpsc::Receiver;
 
-pub struct EntropyLoader {
+pub struct PacketLoader {
     pub pool: PgPool,
 }
 
@@ -17,12 +16,13 @@ pub enum NewLoaderError {
     DbStoreError(#[from] db_store::Error),
 }
 
-impl EntropyLoader {
+impl PacketLoader {
     pub async fn run(
         &mut self,
-        mut receiver: Receiver<FileInfoStream<EntropyReport>>,
+        mut receiver: Receiver<FileInfoStream<IotValidPacket>>,
         shutdown: &triggered::Listener,
     ) -> anyhow::Result<()> {
+        tracing::info!("starting verifier iot packet loader");
         loop {
             if shutdown.is_triggered() {
                 break;
@@ -30,34 +30,26 @@ impl EntropyLoader {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 msg = receiver.recv() => if let Some(stream) =  msg {
-                    self.handle_report(stream).await?;
+                    self.handle_packet(stream).await?;
                 }
             }
         }
-        tracing::info!("stopping verifier entropy_loader");
+        tracing::info!("stopping verifier iot packet loader");
         Ok(())
     }
 
-    async fn handle_report(
+    async fn handle_packet(
         &self,
-        file_info_stream: FileInfoStream<EntropyReport>,
+        file_info_stream: FileInfoStream<IotValidPacket>,
     ) -> anyhow::Result<()> {
         let mut transaction = self.pool.begin().await?;
         file_info_stream
             .into_stream(&mut transaction)
             .await?
+            .map(|valid_packet| GatewayDCShare::share_from_packet(&valid_packet))
             .map(anyhow::Ok)
-            .try_fold(transaction, |mut transaction, report| async move {
-                let id = hash(&report.data).as_bytes().to_vec();
-                Entropy::insert_into(
-                    &mut transaction,
-                    &id,
-                    &report.data,
-                    &report.timestamp,
-                    report.version as i32,
-                )
-                .await?;
-                metrics::increment_counter!("oracles_iot_verifier_loader_entropy");
+            .try_fold(transaction, |mut transaction, reward_share| async move {
+                reward_share.save(&mut transaction).await?;
                 Ok(transaction)
             })
             .await?

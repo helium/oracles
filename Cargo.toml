@@ -19,6 +19,7 @@ members = [
     "iot_packet_verifier",
     "iot_config",
     "price",
+    "iot_config_client"
 ]
 
 [workspace.package]
@@ -54,7 +55,7 @@ sqlx = {version = "0", features = [
   "runtime-tokio-rustls"
 ]}
 
-helium-crypto = {version = "0.6.8", features=["sqlx-postgres", "multisig"]}
+helium-crypto = {version = "0.6.3", features=["sqlx-postgres", "multisig"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 hextree = "*"
 solana-client = "1.14"
@@ -90,7 +91,7 @@ geo-types = "*"
 geo = "*"
 blake3 = "*"
 retainer = "*"
-rand = "0.6"
+rand = "0.8"
 itertools = "*"
 data-credits = {git = "https://github.com/helium/helium-program-library.git"}
 helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git"}

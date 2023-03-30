@@ -3,6 +3,8 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use helium_proto::RewardManifest;
+use price::PriceTracker;
+use rust_decimal::prelude::*;
 use sqlx::{PgExecutor, Pool, Postgres};
 use tokio::time::sleep;
 
@@ -15,7 +17,11 @@ pub struct Rewarder {
 }
 
 impl Rewarder {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(
+        mut self,
+        price_tracker: PriceTracker,
+        shutdown: &triggered::Listener,
+    ) -> anyhow::Result<()> {
         tracing::info!("Starting iot verifier rewarder");
 
         let reward_period_length = Duration::hours(self.reward_period_hours);
@@ -31,8 +37,14 @@ impl Rewarder {
             );
 
             if scheduler.should_reward(now) {
-                tracing::info!("Rewarding for period: {:?}", scheduler.reward_period);
-                self.reward(&scheduler).await?
+                let iot_price = price_tracker
+                    .price(&helium_proto::BlockchainTokenTypeV1::Iot)
+                    .await?;
+                tracing::info!(
+                    "Rewarding for period: {:?} with iot_price: {iot_price}",
+                    scheduler.reward_period
+                );
+                self.reward(&scheduler, Decimal::from(iot_price)).await?
             }
 
             let sleep_duration = scheduler.sleep_duration(Utc::now())?;
@@ -50,9 +62,15 @@ impl Rewarder {
         }
     }
 
-    pub async fn reward(&mut self, scheduler: &Scheduler) -> anyhow::Result<()> {
+    pub async fn reward(
+        &mut self,
+        scheduler: &Scheduler,
+        iot_price: Decimal,
+    ) -> anyhow::Result<()> {
         let reward_shares = GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
-        for reward_share in reward_shares.into_gateway_reward_shares(&scheduler.reward_period) {
+        for reward_share in
+            reward_shares.into_gateway_reward_shares(&scheduler.reward_period, iot_price)
+        {
             self.gateway_rewards_sink
                 .write(reward_share, [])
                 .await?

@@ -66,12 +66,6 @@ impl Cmd {
     }
 }
 
-impl MsgTimestamp<Result<DateTime<Utc>>> for EntropyReportV1 {
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.timestamp.to_timestamp()
-    }
-}
-
 impl MsgTimestamp<Result<DateTime<Utc>>> for PriceReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.timestamp.to_timestamp()

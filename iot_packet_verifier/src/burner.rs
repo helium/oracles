@@ -37,6 +37,7 @@ pub struct Burner {
     // We store the keypair as bytes since the type does not implement clone (for some reason).
     keypair: [u8; 64],
     burn_period: Duration,
+    enable_dc_burn: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -81,6 +82,7 @@ impl Burner {
             provider,
             keypair: keypair.to_bytes(),
             burn_period: Duration::from_secs(60 * settings.burn_period),
+            enable_dc_burn: settings.enable_dc_burn,
         })
     }
 
@@ -101,6 +103,50 @@ impl Burner {
     pub async fn burn(&mut self) -> Result<(), BurnError> {
         // Create burn transaction and execute it:
 
+        let Some(Burn { payer, amount, id }): Option<Burn> =
+            sqlx::query_as("SELECT * FROM pending_burns WHERE amount >= $1 ORDER BY last_burn ASC")
+                .bind(BURN_THRESHOLD)
+                .fetch_optional(&self.pool)
+            .await? else {
+                return Ok(());
+            };
+
+        if self.enable_dc_burn {
+            self.burn_data_credits(&payer, amount).await?;
+        }
+
+        // Now that we have successfully executed the burn and are no long in
+        // sync land, we can remove the amount burned.
+        sqlx::query(
+            r#"
+            UPDATE pending_burns SET
+              amount = amount - $1,
+              last_burn = $2
+            WHERE id = $3
+            "#,
+        )
+        .bind(amount)
+        .bind(Utc::now().naive_utc())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        let mut balance_lock = self.balances.lock().await;
+        let balances = balance_lock.get_mut(&payer).unwrap();
+        balances.burned -= amount as u64;
+        // Zero the balance in order to force a reset:
+        balances.balance = 0;
+
+        Ok(())
+    }
+
+    async fn burn_data_credits(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: i64,
+    ) -> Result<(), BurnError> {
+        tracing::info!("Burning {} DC from {}", amount, payer);
+
         // Fetch the sub dao epoch info:
         const EPOCH_LENGTH: u64 = 60 * 60 * 24;
         let epoch = SystemTime::now()
@@ -116,22 +162,12 @@ impl Burner {
             &helium_sub_daos::ID,
         );
 
-        let Some(Burn { payer, amount, id }): Option<Burn> =
-            sqlx::query_as("SELECT * FROM pending_burns WHERE amount >= $1 ORDER BY last_burn ASC")
-                .bind(BURN_THRESHOLD)
-                .fetch_optional(&self.pool)
-            .await? else {
-                return Ok(());
-            };
-
         // Fetch escrow account
-        let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, &payer);
+        let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, payer);
         let account_data = self.provider.get_account_data(&ddc_key).await?;
         let mut account_data = account_data.as_ref();
         let escrow_account =
             DelegatedDataCreditsV0::try_deserialize(&mut account_data)?.escrow_account;
-
-        tracing::info!("Burning {} DC from {}", amount, payer);
 
         let instructions = {
             let request = RequestBuilder::from(
@@ -150,7 +186,7 @@ impl Burner {
                 data_credits: self.program_cache.data_credits,
                 delegated_data_credits: pdas::delegated_data_credits(
                     &self.program_cache.sub_dao,
-                    &payer,
+                    payer,
                 ),
                 token_program: spl_token::id(),
                 helium_sub_daos_program: helium_sub_daos::id(),
@@ -204,28 +240,6 @@ impl Burner {
             "Successfully burned data credits. Transaction: {}",
             signature
         );
-
-        // Now that we have successfully executed the burn and are no long in
-        // sync land, we can remove the amount burned.
-        sqlx::query(
-            r#"
-            UPDATE pending_burns SET
-              amount = amount - $1,
-              last_burn = $2
-            WHERE id = $3
-            "#,
-        )
-        .bind(amount)
-        .bind(Utc::now().naive_utc())
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-
-        let mut balance_lock = self.balances.lock().await;
-        let balances = balance_lock.get_mut(&payer).unwrap();
-        balances.burned -= amount as u64;
-        // Zero the balance in order to force a reset:
-        balances.balance = 0;
 
         Ok(())
     }

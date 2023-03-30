@@ -94,16 +94,16 @@ impl Server {
 
         tokio::try_join!(
             hnt_price_generator
-                .run(price_sink.clone(), &shutdown, BlockchainTokenTypeV1::Hnt)
+                .run(price_sink.clone(), &shutdown)
                 .map_err(Error::from),
             mobile_price_generator
-                .run(price_sink.clone(), &shutdown, BlockchainTokenTypeV1::Mobile)
+                .run(price_sink.clone(), &shutdown)
                 .map_err(Error::from),
             iot_price_generator
-                .run(price_sink.clone(), &shutdown, BlockchainTokenTypeV1::Iot)
+                .run(price_sink.clone(), &shutdown)
                 .map_err(Error::from),
             hst_price_generator
-                .run(price_sink, &shutdown, BlockchainTokenTypeV1::Hst)
+                .run(price_sink, &shutdown)
                 .map_err(Error::from),
             price_sink_server.run(&shutdown).map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),

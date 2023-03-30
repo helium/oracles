@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::Duration;
 use config::{Config, Environment, File};
 use helium_proto::BlockchainTokenTypeV1;
@@ -10,9 +10,13 @@ use std::{path::Path, str::FromStr};
 pub struct ClusterConfig {
     pub name: String,
     pub hnt_price_key: Option<String>,
+    pub hnt_price: Option<u64>,
     pub mobile_price_key: Option<String>,
+    pub mobile_price: Option<u64>,
     pub iot_price_key: Option<String>,
+    pub iot_price: Option<u64>,
     pub hst_price_key: Option<String>,
+    pub hst_price: Option<u64>,
 }
 
 impl Default for ClusterConfig {
@@ -20,9 +24,13 @@ impl Default for ClusterConfig {
         Self {
             name: "devnet".to_string(),
             hnt_price_key: Some("6Eg8YdfFJQF2HHonzPUBSCCmyUEhrStg9VBLK957sBe6".to_string()),
+            hnt_price: None,
             mobile_price_key: None,
+            mobile_price: None,
             iot_price_key: None,
+            iot_price: None,
             hst_price_key: None,
+            hst_price: None,
         }
     }
 }
@@ -53,6 +61,9 @@ pub struct Settings {
     /// Cluster Configuration
     #[serde(default = "default_cluster")]
     pub cluster: ClusterConfig,
+    /// How long to use a stale price in minutes
+    #[serde(default = "default_stale_price_minutes")]
+    pub stale_price_minutes: u64,
 }
 
 pub fn default_source() -> String {
@@ -69,6 +80,10 @@ pub fn default_interval() -> i64 {
 
 pub fn default_age() -> u64 {
     60
+}
+
+pub fn default_stale_price_minutes() -> u64 {
+    12 * 60
 }
 
 pub fn default_cluster() -> ClusterConfig {
@@ -106,20 +121,32 @@ impl Settings {
         Duration::seconds(self.interval)
     }
 
-    pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Option<SolPubkey> {
+    pub fn stale_price_duration(&self) -> Duration {
+        Duration::minutes(self.stale_price_minutes as i64)
+    }
+
+    pub fn price_key(&self, token_type: BlockchainTokenTypeV1) -> Result<Option<SolPubkey>> {
+        self.key(token_type)
+            .as_ref()
+            .map(|key| SolPubkey::from_str(key).map_err(|_| anyhow!("unable to parse {}", key)))
+            .transpose()
+    }
+
+    pub fn default_price(&self, token_type: BlockchainTokenTypeV1) -> Option<u64> {
         match token_type {
-            BlockchainTokenTypeV1::Hnt => self.cluster.hnt_price_key.as_ref().map(|key| {
-                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
-            }),
-            BlockchainTokenTypeV1::Hst => self.cluster.hst_price_key.as_ref().map(|key| {
-                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
-            }),
-            BlockchainTokenTypeV1::Mobile => self.cluster.mobile_price_key.as_ref().map(|key| {
-                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
-            }),
-            BlockchainTokenTypeV1::Iot => self.cluster.iot_price_key.as_ref().map(|key| {
-                SolPubkey::from_str(key).unwrap_or_else(|_| panic!("unable to parse {}", key))
-            }),
+            BlockchainTokenTypeV1::Hnt => self.cluster.hnt_price,
+            BlockchainTokenTypeV1::Iot => self.cluster.iot_price,
+            BlockchainTokenTypeV1::Mobile => self.cluster.mobile_price,
+            BlockchainTokenTypeV1::Hst => self.cluster.hst_price,
+        }
+    }
+
+    fn key(&self, token_type: BlockchainTokenTypeV1) -> &Option<String> {
+        match token_type {
+            BlockchainTokenTypeV1::Hnt => &self.cluster.hnt_price_key,
+            BlockchainTokenTypeV1::Hst => &self.cluster.hst_price_key,
+            BlockchainTokenTypeV1::Mobile => &self.cluster.mobile_price_key,
+            BlockchainTokenTypeV1::Iot => &self.cluster.iot_price_key,
         }
     }
 }

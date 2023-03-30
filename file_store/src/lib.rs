@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod entropy_report;
 mod error;
 mod file_info;
 pub mod file_info_poller;
