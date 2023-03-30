@@ -14,6 +14,8 @@ use helium_proto::{
     RewardManifest,
 };
 use price::PriceTracker;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
 use tokio::pin;
@@ -112,10 +114,14 @@ impl VerifierDaemon {
             SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
 
         let poc_rewards = self.verifier.reward_epoch(heartbeats, speedtests).await?;
+        let mobile_price = self
+            .price_tracker
+            .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
+            .await?;
+        // Mobile prices are supplied in 10^6, so we must convert them to Decimal
+        let mobile_price = Decimal::from(mobile_price) / dec!(1_000_000);
         let transfer_rewards = TransferRewards::from_transfer_sessions(
-            self.price_tracker
-                .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
-                .await?,
+            mobile_price,
             ingest::ingest_valid_data_transfers(
                 &self.verifier.file_store,
                 &scheduler.reward_period,

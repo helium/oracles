@@ -117,7 +117,7 @@ impl Cmd {
                 .run(&shutdown_listener)
                 .map_err(Error::from),
             verifier_daemon.run(&shutdown_listener),
-            tracker_process,
+            tracker_process.map_err(Error::from),
         )?;
 
         tracing::info!("Shutting down verifier server");

@@ -12,6 +12,7 @@ use helium_proto::services::{
 };
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -43,30 +44,29 @@ impl TransferRewards {
     }
 
     pub async fn from_transfer_sessions(
-        dollars_per_mobile: u64,
+        mobile_price: Decimal,
         transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
         epoch: &Range<DateTime<Utc>>,
-    ) -> Result<Self, TransferRewardsError> {
+    ) -> Result<Self, ClockError> {
         tokio::pin!(transfer_sessions);
 
-        let mut reward_sum = Decimal::ZERO;
-        let dollars_per_mobile = Decimal::from(dollars_per_mobile);
+        let mut data_transfer_reward_sum = Decimal::ZERO;
         let rewards = transfer_sessions
             // Accumulate bytes per hotspot
             .fold(
                 HashMap::<PublicKeyBinary, Decimal>::new(),
                 |mut entries, session| async move {
                     *entries.entry(session.pub_key).or_default() +=
-                        Decimal::from(session.upload_bytes + session.download_bytes);
+                        Decimal::from(bytes_to_dc(session.download_bytes + session.upload_bytes));
                     entries
                 },
             )
             .await
             .into_iter()
             // Calculate rewards per hotspot
-            .map(|(pub_key, bytes)| {
-                let mobiles = bytes / Decimal::from(100_000_000) * dollars_per_mobile;
-                reward_sum += mobiles;
+            .map(|(pub_key, dc_amount)| {
+                let mobiles = dc_to_mobile_bones(dc_amount, mobile_price);
+                data_transfer_reward_sum += mobiles;
                 (pub_key, mobiles)
             })
             .collect();
@@ -74,11 +74,11 @@ impl TransferRewards {
         let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?;
 
         let (scale, remaining_rewards) =
-            if (total_rewards - reward_sum) / total_rewards < Decimal::from_str_exact("0.2")? {
-                let scale = Decimal::from_str_exact("0.8")? * total_rewards / reward_sum;
-                (scale, total_rewards * Decimal::from_str_exact("0.2")?)
+            if data_transfer_reward_sum / total_rewards > *MAX_DATA_TRANSFER_REWARDS_PERCENT {
+                let scale = *MIN_POC_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum;
+                (scale, total_rewards * *MAX_DATA_TRANSFER_REWARDS_PERCENT)
             } else {
-                (Decimal::ONE, total_rewards - reward_sum)
+                (Decimal::ONE, total_rewards - data_transfer_reward_sum)
             };
 
         Ok(Self {
@@ -87,6 +87,28 @@ impl TransferRewards {
             remaining_rewards,
         })
     }
+}
+
+const BYTES_PER_DC: u64 = 66;
+
+fn bytes_to_dc(bytes: u64) -> u64 {
+    let bytes = bytes.max(BYTES_PER_DC);
+    (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
+}
+
+lazy_static! {
+    static ref MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.2);
+    static ref MIN_POC_REWARDS_PERCENT: Decimal = dec!(0.8);
+    static ref DC_USD_PRICE: Decimal = dec!(0.00001);
+}
+
+const DEFAULT_PREC: u32 = 15;
+
+/// Returns the equivalent amount of Mobile bones for a specified amount of Data Credits
+pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_price: Decimal) -> Decimal {
+    let dc_in_usd = dc_amount * *DC_USD_PRICE;
+    (dc_in_usd / mobile_price)
+        .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
 pub struct RadioShare {
