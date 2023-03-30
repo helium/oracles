@@ -22,14 +22,6 @@ pub struct TransferRewards {
     pub remaining_rewards: Decimal,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum TransferRewardsError {
-    #[error("Clock error: {0}")]
-    ClockError(#[from] ClockError),
-    #[error("Decimal error: {0}")]
-    DecimalError(#[from] rust_decimal::Error),
-}
-
 impl TransferRewards {
     pub fn empty(epoch: &Range<DateTime<Utc>>) -> Self {
         Self {
