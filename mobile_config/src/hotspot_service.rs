@@ -83,7 +83,7 @@ impl mobile_config::Hotspot for HotspotService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching hotspot metadata");
 
-        hotspot_metadata::get_metadata(&self.metadata_pool, &pubkey)
+        hotspot_metadata::db::get_metadata(&self.metadata_pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching hotspot metadata"))?
             .map_or_else(
@@ -134,7 +134,7 @@ async fn stream_all_hotspots_metadata(
     signing_key: Arc<Keypair>,
     batch_size: u32,
 ) -> anyhow::Result<()> {
-    Ok(hotspot_metadata::all_metadata_stream(pool)
+    Ok(hotspot_metadata::db::all_metadata_stream(pool)
         .map(Ok::<HotspotMetadata, sqlx::Error>)
         .try_filter_map(|metadata| async move {
             let result: Option<mobile_config::HotspotMetadata> = match metadata.try_into() {
