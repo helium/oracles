@@ -26,6 +26,8 @@ pub struct Settings {
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
+    #[serde(default)]
+    pub enable_dc_burn: bool,
 }
 
 pub fn default_url() -> http::Uri {
