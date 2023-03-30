@@ -178,7 +178,7 @@ impl Burner {
         );
 
         // Burn the DC for the payer
-        let ddc_key = crate::pdas::delegated_data_credits(&self.program_cache.sub_dao, &payer);
+        let ddc_key = crate::pdas::delegated_data_credits(&self.program_cache.sub_dao, payer);
         let account_data = self.provider.get_account_data(&ddc_key).await?;
         let mut account_data = account_data.as_ref();
         let escrow_account =
