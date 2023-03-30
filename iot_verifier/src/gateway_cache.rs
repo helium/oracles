@@ -23,8 +23,8 @@ pub struct GatewayCache {
 pub enum GatewayCacheError {
     #[error("gateway not found: {0}")]
     GatewayNotFound(PublicKeyBinary),
-    #[error("error querying iot config service")]
-    IotConfigClient(#[from] IotConfigClientError),
+    #[error("gateway not asserted: {0}")]
+    GatewayNotAsserted(PublicKeyBinary),
 }
 
 impl GatewayCache {
@@ -73,7 +73,13 @@ impl GatewayCache {
                         _ = self.insert(res.clone()).await;
                         Ok(res)
                     }
-                    _ => Err(GatewayCacheError::GatewayNotFound(address.clone())),
+                    Err(IotConfigClientError::GatewayNotAsserted(_)) => {
+                        Err(GatewayCacheError::GatewayNotAsserted(address.clone()))
+                    }
+                    Err(IotConfigClientError::GatewayNotFound(_)) => {
+                        Err(GatewayCacheError::GatewayNotFound(address.clone()))
+                    }
+                    Err(_) => Err(GatewayCacheError::GatewayNotFound(address.clone())),
                 }
             }
         }

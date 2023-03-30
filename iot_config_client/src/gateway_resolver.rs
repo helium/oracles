@@ -14,10 +14,10 @@ pub trait GatewayInfoResolver {
 #[derive(Debug, Clone)]
 pub struct GatewayInfo {
     pub address: PublicKeyBinary,
-    pub location: Option<u64>,
-    pub elevation: Option<i32>,
-    pub gain: i32,
     pub is_full_hotspot: bool,
+    pub location: u64,
+    pub elevation: i32,
+    pub gain: i32,
     pub region: Region,
 }
 
@@ -25,25 +25,31 @@ pub struct GatewayInfo {
 pub enum GatewayResolverError {
     #[error("unsupported region {0}")]
     Region(String),
+    #[error("gateway not asserted: {0}")]
+    GatewayNotAsserted(PublicKeyBinary),
+    #[error("gateway not found: {0}")]
+    GatewayNotFound(PublicKeyBinary),
 }
 
 impl TryFrom<GatewayInfoProto> for GatewayInfo {
     type Error = GatewayResolverError;
     fn try_from(v: GatewayInfoProto) -> Result<Self, GatewayResolverError> {
-        let region: Region = Region::from_i32(v.region)
-            .ok_or_else(|| GatewayResolverError::Region(format!("{:?}", v.region)))?;
         let location = u64::from_str_radix(&v.location, 16).ok();
-        let elevation = match location {
-            Some(_) => Some(v.elevation),
-            None => None,
-        };
-        Ok(Self {
-            address: v.address.into(),
-            location,
-            elevation,
-            gain: v.gain,
-            is_full_hotspot: v.is_full_hotspot,
-            region,
-        })
+        //TODO: use the updated proto when available
+        //      which will have a metadata field defined as an Option
+        //      if Some(metadata) then we have an asserted gateway
+        //      if None the gateway is unasserted
+        //      we only return Ok(GatewayInfo) for asserted gateways
+        match location {
+            Some(_) => Ok(Self {
+                address: v.address.into(),
+                is_full_hotspot: v.is_full_hotspot,
+                location: location.unwrap(),
+                elevation: v.elevation,
+                gain: v.gain,
+                region: Region::from_i32(v.region).unwrap(),
+            }),
+            None => Err(GatewayResolverError::GatewayNotAsserted(v.address.into())),
+        }
     }
 }

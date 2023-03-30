@@ -86,10 +86,8 @@ impl Server {
             .map_err(sqlx::Error::from)?;
         let mut gw_stream = self.iot_config_client.gateway_stream().await?;
         while let Some(gateway_info) = gw_stream.next().await {
-            if let Some(h3index) = gateway_info.location {
-                if active_gateways.contains_key(&gateway_info.address.as_ref().to_vec()) {
-                    global_map.increment_unclipped(h3index)
-                }
+            if active_gateways.contains_key(&gateway_info.address.as_ref().to_vec()) {
+                global_map.increment_unclipped(gateway_info.location)
             }
         }
         global_map.reduce_global();

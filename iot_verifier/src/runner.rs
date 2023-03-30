@@ -335,7 +335,7 @@ impl Runner {
 
                     let valid_beacon_report = IotValidBeaconReport {
                         received_timestamp: beacon_received_ts,
-                        location: beacon_info.location,
+                        location: Some(beacon_info.location),
                         hex_scale: beacon_verify_result
                             .hex_scale
                             .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,

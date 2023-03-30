@@ -18,7 +18,7 @@ const DEFAULT_PREC: u32 = 15;
 lazy_static! {
     // TODO: year 1 emissions allocate 30% of total to PoC with 6% to beacons and 24% to witnesses but subsequent years back
     // total PoC percentage off 1.5% each year; determine how beacons and witnesses will split the subsequent years' allocations
-    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(60_000_000_000_u64) / Decimal::from(365)) * Decimal::from(1_000_000); // 16_438_356_164_383_560
+    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(60_000_000_000_u64) / Decimal::from(365)) * Decimal::from(1_000_000); // 164_383_561_643_835
     static ref BEACON_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.06);
     static ref WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
     // Data transfer is allocated 50% of daily rewards

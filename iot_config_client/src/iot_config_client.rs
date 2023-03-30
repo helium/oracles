@@ -32,6 +32,8 @@ pub enum IotConfigClientError {
     RegionParamsResolverError(#[from] region_params_resolver::RegionParamsResolverError),
     #[error("gateway not found: {0}")]
     GatewayNotFound(PublicKeyBinary),
+    #[error("gateway not asserted: {0}")]
+    GatewayNotAsserted(PublicKeyBinary),
     #[error("region params not found {0}")]
     RegionParamsNotFound(String),
     #[error("uri error")]
@@ -57,7 +59,10 @@ impl GatewayInfoResolver for IotConfigClient {
         req.signature = self.keypair.sign(&req.encode_to_vec())?;
         let res = self.gateway_client.info(req).await?.into_inner();
         match res.info {
-            Some(gateway_info) => Ok(gateway_info.try_into()?),
+            Some(gateway_info) => match gateway_info.try_into() {
+                Ok(gwinfo) => Ok(gwinfo),
+                Err(_) => Err(IotConfigClientError::GatewayNotAsserted(address.clone())),
+            },
             _ => Err(IotConfigClientError::GatewayNotFound(address.clone())),
         }
     }
