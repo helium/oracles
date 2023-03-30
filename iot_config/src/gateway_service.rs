@@ -1,7 +1,7 @@
 use crate::{region_map::RegionMap, GrpcResult, GrpcStreamResult, Settings};
 use anyhow::Result;
 use chrono::Utc;
-use file_store::traits::MsgVerify;
+use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
@@ -31,6 +31,15 @@ impl GatewayService {
             region_map,
             signing_key: settings.signing_keypair()?,
         })
+    }
+
+    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
+    where
+        R: Message,
+    {
+        self.signing_key
+            .sign(&response.encode_to_vec())
+            .map_err(|_| Status::internal("response signing error"))
     }
 }
 
@@ -159,16 +168,14 @@ impl iot_config::Gateway for GatewayService {
         Ok(Response::new(resp))
     }
 
-    // placeholder implementation
     async fn info(&self, _request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         Ok(Response::new(GatewayInfoResV1 {
-            timestamp: Utc::now().timestamp() as u64,
+            timestamp: Utc::now().encode_timestamp(),
             info: None,
             signature: vec![],
         }))
     }
 
-    // placeholder implementation
     type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
     async fn info_stream(
         &self,

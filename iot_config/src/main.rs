@@ -90,11 +90,11 @@ impl Daemon {
             route_svc.clone_update_channel(),
         );
         let admin_svc = AdminService::new(
+            settings,
             auth_cache.clone(),
             pool.clone(),
             region_map.clone(),
-            settings.network,
-        );
+        )?;
         let session_key_filter_svc = SessionKeyFilterService::new(
             auth_cache.clone(),
             pool.clone(),

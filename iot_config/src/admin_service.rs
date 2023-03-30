@@ -1,18 +1,18 @@
 use crate::{
     admin::{self, AuthCache, KeyType},
     region_map::{self, RegionMap},
-    GrpcResult,
+    GrpcResult, Settings,
 };
 use anyhow::Result;
 use file_store::traits::MsgVerify;
 use futures::future::TryFutureExt;
-use helium_crypto::{Network, PublicKey, PublicKeyBinary};
+use helium_crypto::{Keypair, Network, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
         self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
         AdminRemoveKeyReqV1, RegionParamsReqV1, RegionParamsResV1,
     },
-    Region,
+    Message,
 };
 use sqlx::{Pool, Postgres};
 use tonic::{Request, Response, Status};
@@ -22,21 +22,23 @@ pub struct AdminService {
     pool: Pool<Postgres>,
     region_map: RegionMap,
     required_network: Network,
+    signing_key: Keypair,
 }
 
 impl AdminService {
     pub fn new(
+        settings: &Settings,
         auth_cache: AuthCache,
         pool: Pool<Postgres>,
         region_map: RegionMap,
-        required_network: Network,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             auth_cache,
             pool,
             region_map,
-            required_network,
-        }
+            required_network: settings.network,
+            signing_key: settings.signing_keypair()?,
+        })
     }
 
     async fn verify_request_signature<R>(&self, request: &R) -> Result<(), Status>
@@ -168,15 +170,27 @@ impl iot_config::Admin for AdminService {
         Ok(Response::new(AdminLoadRegionResV1 {}))
     }
 
-    // placeholder implementation
     async fn region_params(
         &self,
-        _request: Request<RegionParamsReqV1>,
+        request: Request<RegionParamsReqV1>,
     ) -> GrpcResult<RegionParamsResV1> {
-        Ok(Response::new(RegionParamsResV1 {
-            params: None,
+        let request = request.into_inner();
+        self.verify_request_signature(&request).await?;
+
+        let region = request.region();
+
+        let params = self.region_map.get_params(&region).await;
+
+        let mut resp = RegionParamsResV1 {
+            region: request.region,
+            params,
             signature: vec![],
-            region: Region::Us915.into(),
-        }))
+        };
+        resp.signature = self
+            .signing_key
+            .sign(&resp.encode_to_vec())
+            .map_err(|_| Status::internal("resp signing error"))?;
+        tracing::debug!(region = region.to_string(), "returning region params");
+        Ok(Response::new(resp))
     }
 }

@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod admin_service;
+pub mod gateway_info;
 pub mod gateway_service;
 pub mod lora_field;
 pub mod org;
