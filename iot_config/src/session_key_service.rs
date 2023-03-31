@@ -3,18 +3,26 @@ use crate::{
     lora_field::DevAddrConstraint,
     org::{self, DbOrgError},
     session_key::{self, SessionKeyFilter},
-    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
+    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
 };
 use anyhow::{anyhow, Result};
-use file_store::traits::MsgVerify;
-use futures::stream::{StreamExt, TryStreamExt};
-use helium_crypto::PublicKey;
-use helium_proto::services::iot_config::{
-    self, ActionV1, SessionKeyFilterGetReqV1, SessionKeyFilterListReqV1,
-    SessionKeyFilterStreamReqV1, SessionKeyFilterStreamResV1, SessionKeyFilterUpdateReqV1,
-    SessionKeyFilterUpdateResV1, SessionKeyFilterV1,
+use chrono::Utc;
+use file_store::traits::{MsgVerify, TimestampEncode};
+use futures::{
+    future::TryFutureExt,
+    stream::{StreamExt, TryStreamExt},
+};
+use helium_crypto::{Keypair, PublicKey, Sign};
+use helium_proto::{
+    services::iot_config::{
+        self, ActionV1, SessionKeyFilterGetReqV1, SessionKeyFilterListReqV1,
+        SessionKeyFilterStreamReqV1, SessionKeyFilterStreamResV1, SessionKeyFilterUpdateReqV1,
+        SessionKeyFilterUpdateResV1, SessionKeyFilterV1,
+    },
+    Message,
 };
 use sqlx::{Pool, Postgres};
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
 
@@ -25,16 +33,23 @@ pub struct SessionKeyFilterService {
     pool: Pool<Postgres>,
     update_channel: broadcast::Sender<SessionKeyFilterStreamResV1>,
     shutdown: triggered::Listener,
+    signing_key: Arc<Keypair>,
 }
 
 impl SessionKeyFilterService {
-    pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
-        Self {
+    pub fn new(
+        settings: &Settings,
+        auth_cache: AuthCache,
+        pool: Pool<Postgres>,
+        shutdown: triggered::Listener,
+    ) -> Result<Self> {
+        Ok(Self {
             auth_cache,
             pool,
             update_channel: update_channel(),
             shutdown,
-        }
+            signing_key: Arc::new(settings.signing_keypair()?),
+        })
     }
 
     fn subscribe_to_session_keys(&self) -> broadcast::Receiver<SessionKeyFilterStreamResV1> {
@@ -45,17 +60,21 @@ impl SessionKeyFilterService {
         self.update_channel.clone()
     }
 
-    async fn verify_request_signature<'a, R>(&self, request: &R, id: u64) -> Result<(), Status>
+    async fn verify_request_signature<'a, R>(
+        &self,
+        signer: &PublicKey,
+        request: &R,
+        id: u64,
+    ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
         if self
             .auth_cache
-            .verify_signature(KeyType::Administrator, request)
-            .await
+            .verify_signature_with_type(KeyType::Administrator, signer, request)
             .is_ok()
         {
-            tracing::debug!("request authorized by admin");
+            tracing::debug!(signer = signer.to_string(), "request authorized by admin");
             return Ok(());
         }
 
@@ -63,42 +82,48 @@ impl SessionKeyFilterService {
             .await
             .map_err(|_| Status::internal("auth verification error"))?;
 
-        for pubkey in org_keys.iter() {
-            if request.verify(pubkey).is_ok() {
-                tracing::debug!("request authorized by delegate {pubkey}");
-                return Ok(());
-            }
+        if org_keys.as_slice().contains(signer) && request.verify(signer).is_ok() {
+            tracing::debug!(
+                signer = signer.to_string(),
+                "request authorized by delegate"
+            );
+            return Ok(());
         }
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    async fn verify_stream_request_signature<R>(&self, request: &R) -> Result<(), Status>
+    fn verify_stream_request_signature<R>(
+        &self,
+        signer: &PublicKey,
+        request: &R,
+    ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
-        if self
-            .auth_cache
-            .verify_signature(KeyType::PacketRouter, request)
-            .await
-            .is_ok()
-        {
-            tracing::debug!("request authorized for registered packet router");
-            Ok(())
-        } else if self
-            .auth_cache
-            .verify_signature(KeyType::Administrator, request)
-            .await
-            .is_ok()
-        {
-            tracing::debug!("request authorized by admin");
+        if self.auth_cache.verify_signature(signer, request).is_ok() {
+            tracing::debug!(signer = signer.to_string(), "request authorized");
             Ok(())
         } else {
             Err(Status::permission_denied("unauthorized request signature"))
         }
     }
 
+    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
+        PublicKey::try_from(bytes)
+            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
+    }
+
+    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
+    where
+        R: Message,
+    {
+        self.signing_key
+            .sign(&response.encode_to_vec())
+            .map_err(|_| Status::internal("response signing error"))
+    }
+
     async fn update_validator(&self, oui: u64) -> Result<SkfValidator, DbOrgError> {
-        let admin_keys = self.auth_cache.get_keys(KeyType::Administrator).await;
+        let admin_keys = self.auth_cache.get_keys_by_type(KeyType::Administrator);
 
         SkfValidator::new(oui, admin_keys, &self.pool).await
     }
@@ -113,7 +138,9 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     ) -> GrpcResult<Self::listStream> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, request.oui).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, request.oui)
+            .await?;
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
@@ -141,7 +168,9 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     async fn get(&self, request: Request<SessionKeyFilterGetReqV1>) -> GrpcResult<Self::getStream> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, request.oui).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, request.oui)
+            .await?;
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
         let pool = self.pool.clone();
@@ -216,6 +245,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                     &to_add,
                     &to_remove,
                     &self.pool,
+                    self.signing_key.clone(),
                     self.clone_update_channel(),
                 )
                 .await
@@ -240,6 +270,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 &to_add,
                 &to_remove,
                 &self.pool,
+                self.signing_key.clone(),
                 self.clone_update_channel(),
             )
             .await
@@ -248,7 +279,15 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 Status::internal("session key update failed")
             })?;
         }
-        Ok(Response::new(SessionKeyFilterUpdateResV1 {}))
+
+        let mut resp = SessionKeyFilterUpdateResV1 {
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+
+        Ok(Response::new(resp))
     }
 
     type streamStream = GrpcStreamResult<SessionKeyFilterStreamResV1>;
@@ -258,18 +297,23 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     ) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
 
-        self.verify_stream_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_stream_request_signature(&signer, &request)?;
 
         tracing::info!("client subscribed to session key stream");
 
         let pool = self.pool.clone();
         let shutdown_listener = self.shutdown.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let signing_key = self.signing_key.clone();
 
         let mut session_key_updates = self.subscribe_to_session_keys();
 
         tokio::spawn(async move {
-            if stream_existing_skfs(&pool, tx.clone()).await.is_err() {
+            if stream_existing_skfs(&pool, signing_key, tx.clone())
+                .await
+                .is_err()
+            {
                 return;
             }
 
@@ -294,14 +338,28 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
 
 async fn stream_existing_skfs(
     pool: &Pool<Postgres>,
+    signing_key: Arc<Keypair>,
     tx: mpsc::Sender<Result<SessionKeyFilterStreamResV1, Status>>,
 ) -> Result<()> {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
     session_key::list_stream(pool)
         .then(|session_key_filter| {
-            tx.send(Ok(SessionKeyFilterStreamResV1 {
+            let mut skf_resp = SessionKeyFilterStreamResV1 {
                 action: ActionV1::Add.into(),
                 filter: Some(session_key_filter.into()),
-            }))
+                timestamp,
+                signer: signer.clone(),
+                signature: vec![],
+            };
+
+            futures::future::ready(signing_key.sign(&skf_resp.encode_to_vec()))
+                .map_err(|_| anyhow!("failed signing session key filter"))
+                .and_then(|signature| {
+                    skf_resp.signature = signature;
+                    tx.send(Ok(skf_resp))
+                        .map_err(|_| anyhow!("failed sending session key filter"))
+                })
         })
         .map_err(|err| anyhow!(err))
         .try_fold((), |acc, _| async move { Ok(acc) })

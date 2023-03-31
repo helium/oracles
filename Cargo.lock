@@ -3281,7 +3281,6 @@ dependencies = [
  "libflate",
  "metrics",
  "metrics-exporter-prometheus",
- "node-follower",
  "poc-metrics",
  "prost",
  "serde",

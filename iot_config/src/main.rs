@@ -77,29 +77,36 @@ impl Daemon {
 
         let listen_addr = settings.listen_addr()?;
 
-        let auth_cache = AuthCache::new(settings, &pool).await?;
-        let region_map = RegionMap::new(&pool).await?;
+        let (auth_updater, auth_cache) = AuthCache::new(settings, &pool).await?;
+        let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
 
-        let gateway_svc = GatewayService::new(settings, region_map.clone())?;
-        let route_svc =
-            RouteService::new(auth_cache.clone(), pool.clone(), shutdown_listener.clone());
-        let org_svc = OrgService::new(
-            auth_cache.clone(),
-            pool.clone(),
-            settings.network,
-            route_svc.clone_update_channel(),
-        );
-        let admin_svc = AdminService::new(
+        let gateway_svc = GatewayService::new(settings, pool.clone(), region_map.clone(), auth_cache.clone())?;
+        let route_svc = RouteService::new(
             settings,
             auth_cache.clone(),
             pool.clone(),
+            shutdown_listener.clone(),
+        )?;
+        let org_svc = OrgService::new(
+            settings,
+            auth_cache.clone(),
+            pool.clone(),
+            route_svc.clone_update_channel(),
+        )?;
+        let admin_svc = AdminService::new(
+            settings,
+            auth_cache.clone(),
+            auth_updater,
+            pool.clone(),
             region_map.clone(),
+            region_updater,
         )?;
         let session_key_filter_svc = SessionKeyFilterService::new(
+            settings,
             auth_cache.clone(),
             pool.clone(),
             shutdown_listener.clone(),
-        );
+        )?;
 
         let server = transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))

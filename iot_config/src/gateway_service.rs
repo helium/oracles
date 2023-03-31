@@ -1,7 +1,14 @@
-use crate::{region_map::RegionMap, GrpcResult, GrpcStreamResult, Settings};
+use crate::{
+    admin::AuthCache, gateway_info::{self, GatewayInfo, db::IotMetadata},
+    region_map::RegionMapReader, GrpcResult, GrpcStreamResult, Settings
+};
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
+use futures::{
+    future::TryFutureExt,
+    stream::{StreamExt, TryStreamExt},
+};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
@@ -12,25 +19,30 @@ use helium_proto::{
     Message, Region,
 };
 use hextree::Cell;
-use node_follower::{
-    follower_service::FollowerService,
-    gateway_resp::{GatewayInfo, GatewayInfoResolver},
-};
+use sqlx::{Pool, Postgres};
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct GatewayService {
-    follower_service: FollowerService,
-    region_map: RegionMap,
-    signing_key: Keypair,
+    auth_cache: AuthCache,
+    pool: Pool<Postgres>,
+    region_map: RegionMapReader,
+    signing_key: Arc<Keypair>,
 }
 
 impl GatewayService {
-    pub fn new(settings: &Settings, region_map: RegionMap) -> Result<Self> {
+    pub fn new(settings: &Settings, pool: Pool<Postgres>, region_map: RegionMapReader, auth_cache: AuthCache) -> Result<Self> {
         Ok(Self {
-            follower_service: FollowerService::from_settings(&settings.follower),
+            auth_cache,
+            pool,
             region_map,
-            signing_key: settings.signing_keypair()?,
+            signing_key: Arc::new(settings.signing_keypair()?),
         })
+    }
+
+    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
+        PublicKey::try_from(bytes)
+            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
     }
 
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
@@ -41,6 +53,16 @@ impl GatewayService {
             .sign(&response.encode_to_vec())
             .map_err(|_| Status::internal("response signing error"))
     }
+
+    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        self.auth_cache
+            .verify_signature(signer, request)
+            .map_err(|_| Status::permission_denied("invalid admin signature"))?;
+        Ok(())
+    }
 }
 
 #[tonic::async_trait]
@@ -49,33 +71,44 @@ impl iot_config::Gateway for GatewayService {
         &self,
         request: Request<GatewayLocationReqV1>,
     ) -> GrpcResult<GatewayLocationResV1> {
-        // Should this rpc be admin-authorized only or should a requesting pubkey
-        // field be added to the request to do basic signature verification, allowing
-        // open access but discourage endpoint abuse?
         let request = request.into_inner();
 
-        let gateway_address: &PublicKeyBinary = &request.gateway.into();
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
 
-        let location = self
-            .follower_service
-            .clone()
-            .resolve_gateway_info(gateway_address)
+        let address: &PublicKeyBinary = &request.gateway.into();
+
+        let location = gateway_info::db::get_info(&self.pool, address)
             .await
-            .map_err(|_| Status::internal(format!("error retrieving gateway {gateway_address}")))
-            .and_then(|info| {
-                info.location
-                    .ok_or_else(|| Status::not_found(format!("{gateway_address} not asserted")))
-            })?;
+            .map_err(|_| Status::internal("error fetching gateway info"))?
+            .map_or_else(
+                || Err(Status::not_found(format!("gateway not found: pubkey = {address:}"))),
+                |info| {
+                    if let Some(location) = info.location {
+                        Ok(location)
+                    } else {
+                        Err(Status::not_found(format!("gateway unasserted: pubkey = {address:}")))
+                    }
+                }
+            )?;
 
         let location = Cell::from_raw(location)
             .map_err(|_| {
                 Status::internal(format!(
-                    "invalid h3 index location {location} for {gateway_address}"
+                    "invalid h3 index location {location} for {address}"
                 ))
             })?
             .to_string();
 
-        Ok(Response::new(GatewayLocationResV1 { location }))
+        let mut resp = GatewayLocationResV1 {
+            location,
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     async fn region_params(
@@ -84,105 +117,166 @@ impl iot_config::Gateway for GatewayService {
     ) -> GrpcResult<GatewayRegionParamsResV1> {
         let request = request.into_inner();
 
-        let pubkey = PublicKey::try_from(request.address.clone())
-            .map_err(|_| Status::invalid_argument("invalid gateway address"))?;
+        let pubkey = self.verify_public_key(&request.address)?;
         request
             .verify(&pubkey)
             .map_err(|_| Status::permission_denied("invalid request signature"))?;
 
-        let pubkey: &PublicKeyBinary = &pubkey.into();
-        tracing::debug!(pubkey = pubkey.to_string(), "fetching region params");
+        let address: &PublicKeyBinary = &pubkey.into();
+        tracing::debug!(pubkey = address.to_string(), "fetching region params");
 
         let default_region = Region::from_i32(request.region).ok_or(Status::invalid_argument(
             format!("invalid lora region {}", request.region),
         ))?;
 
-        let (region, gain) = match self
-            .follower_service
-            .clone()
-            .resolve_gateway_info(pubkey)
+        let (region, gain) = if let Some(info) = gateway_info::db::get_info(&self.pool, address)
             .await
-        {
-            Err(_) => {
-                tracing::debug!(
-                    pubkey = pubkey.to_string(),
-                    default_region = default_region.to_string(),
-                    "error retrieving gateway from chain"
-                );
-                (default_region, 0)
-            }
-            Ok(GatewayInfo { location, gain, .. }) => {
-                let region = match location {
-                    None => {
-                        tracing::debug!(
-                            pubkey = pubkey.to_string(),
-                            default_region = default_region.to_string(),
-                            "no asserted location"
-                        );
-                        default_region
-                    }
-                    Some(location) => match Cell::from_raw(location) {
+            .map_err(|_| Status::internal("error fetching gateway info"))? {
+                if let (Some(location), Some(gain)) = (info.location, info.gain) {
+                    let region = match hextree::Cell::from_raw(location) {
                         Ok(h3_location) => self
                             .region_map
                             .get_region(h3_location)
-                            .await
                             .unwrap_or_else(|| {
-                                tracing::debug!(
-                                    pubkey = pubkey.to_string(),
-                                    location = location,
-                                    "gateway region lookup failed for assert location"
-                                );
+                                tracing::debug!(pubkey = address.to_string(), location = location, "gateway region lookup failed for asserted location");
                                 default_region
                             }),
                         Err(_) => {
-                            tracing::debug!(
-                                pubkey = pubkey.to_string(),
-                                location = location,
-                                "gateway asserted location is invalid h3 index"
-                            );
+                            tracing::debug!(pubkey = address.to_string(), location = location, "gateway asserted location is invalid h3 index");
                             default_region
                         }
-                    },
-                };
-                (region, gain)
-            }
-        };
+                    };
+                    (region, gain)
+                } else {
+                    tracing::debug!(pubkey = address.to_string(), default_region = default_region.to_string(), "gateway not asserted");
+                    (default_region, 0)
+                }
+            } else {
+                tracing::debug!(pubkey = address.to_string(), default_region = default_region.to_string(), "error retrieving gateway from chain");
+                (default_region, 0)
+            };
 
-        let params = self.region_map.get_params(&region).await;
+        let params = self.region_map.get_params(&region);
 
         let mut resp = GatewayRegionParamsResV1 {
             region: region.into(),
             params,
             gain: gain as u64,
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self
-            .signing_key
-            .sign(&resp.encode_to_vec())
-            .map_err(|_| Status::internal("resp signing error"))?;
+        resp.signature = self.sign_response(&resp)?;
         tracing::debug!(
-            pubkey = pubkey.to_string(),
+            pubkey = address.to_string(),
             region = region.to_string(),
             "returning region params"
         );
         Ok(Response::new(resp))
     }
 
-    async fn info(&self, _request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
-        Ok(Response::new(GatewayInfoResV1 {
+    async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
+        let request = request.into_inner();
+
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let address = &request.address.into();
+        let metadata_info = gateway_info::db::get_info(&self.pool, address)
+            .await
+            .map_err(|_| Status::internal("error fetching gateway info"))?
+            .ok_or(Status::not_found(format!("gateway not found: pubkey = {address:}")))?;
+
+        let gateway_info = GatewayInfo::chain_metadata_to_info(metadata_info, &self.region_map);
+        let mut resp = GatewayInfoResV1 {
+            info: Some(gateway_info.try_into().map_err(|_| Status::internal("unexpected error converting gateway info to protobuf"))?),
             timestamp: Utc::now().encode_timestamp(),
-            info: None,
+            signer: self.signing_key.public_key().into(),
             signature: vec![],
-        }))
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+
+        Ok(Response::new(resp))
     }
 
     type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
     async fn info_stream(
         &self,
-        _request: Request<GatewayInfoStreamReqV1>,
+        request: Request<GatewayInfoStreamReqV1>,
     ) -> GrpcResult<Self::info_streamStream> {
-        let (_tx, rx) = tokio::sync::mpsc::channel(20);
+        let request = request.into_inner();
+
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        tracing::debug!("fetching all gateways' info");
+
+        let pool = self.pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+        let region_map = self.region_map.clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
+
+        tokio::spawn(async move {
+            stream_all_gateways_info(&pool, tx.clone(), &signing_key, region_map.clone(), batch_size).await
+        });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
+}
+
+async fn stream_all_gateways_info(
+    pool: &Pool<Postgres>,
+    tx: tokio::sync::mpsc::Sender<Result<GatewayInfoStreamResV1, Status>>,
+    signing_key: &Keypair,
+    region_map: RegionMapReader,
+    batch_size: u32,
+) -> anyhow::Result<()> {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
+    let region_map = &region_map;
+    let tx = &tx;
+    Ok(gateway_info::db::all_info_stream(pool)
+        .map(Ok::<IotMetadata, sqlx::Error>)
+        .try_filter_map(|info| async move {
+            let result: Option<iot_config::GatewayInfo> = match GatewayInfo::chain_metadata_to_info(info, region_map).try_into() {
+                Ok(info_proto) => Some(info_proto),
+                Err(_) => None,
+            };
+            Ok(result)
+        })
+        .try_chunks(batch_size as usize)
+        .map_ok(move |batch| {
+            (
+                GatewayInfoStreamResV1 {
+                    gateways: batch,
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                },
+                signing_key.clone()
+            )
+        })
+        .try_filter_map(|(res, keypair)| async move {
+            let result = match keypair.sign(&res.encode_to_vec()) {
+                Ok(signature) => Some(GatewayInfoStreamResV1 {
+                        gateways: res.gateways,
+                        timestamp: res.timestamp,
+                        signer: res.signer,
+                        signature,
+                }),
+                Err(_) => None,
+            };
+            Ok(result)
+        })
+        .map_err(|err| Status::internal(format!("info batch failed with reason: {err:?}")))
+        .try_for_each(|res| {
+            tx.send(Ok(res))
+                .map_err(|err| Status::internal(format!("info batch send failed with reason {err:?}")))
+        })
+        .or_else(|err| {
+            tx.send(Err(Status::internal(format!("info batch failed with reason: {err:?}"))))
+        })
+        .await?)
 }
