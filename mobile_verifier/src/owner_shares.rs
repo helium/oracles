@@ -135,9 +135,6 @@ pub struct OwnerShares {
     pub shares: HashMap<PublicKeyBinary, RadioShares>,
 }
 
-const REWARDS_PER_SHARE_PREC: u32 = 9;
-const MOBILE_SCALE: u32 = 1_000_000;
-
 impl OwnerShares {
     pub async fn aggregate(
         resolver: &mut impl OwnerResolver,
@@ -180,8 +177,7 @@ impl OwnerShares {
     ) -> Result<impl Iterator<Item = proto::RadioRewardShare> + 'a, ClockError> {
         let total_shares = self.total_shares();
         let total_rewards = transfer_rewards.remaining_rewards;
-        let rewards_per_share = (total_rewards / total_shares)
-            .round_dp_with_strategy(REWARDS_PER_SHARE_PREC, RoundingStrategy::ToPositiveInfinity);
+        let rewards_per_share = total_rewards / total_shares;
         Ok(self
             .shares
             .into_iter()
@@ -194,8 +190,8 @@ impl OwnerShares {
                         amount: {
                             let rewards = rewards_per_share * radio_share.amount
                                 + transfer_rewards.reward(&radio_share.hotspot_key);
-                            let rewards = (rewards * Decimal::from(MOBILE_SCALE))
-                                .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+                            let rewards =
+                                rewards.round_dp_with_strategy(0, RoundingStrategy::ToZero);
                             rewards.to_u64().unwrap_or(0)
                         },
                         start_epoch: epoch.start.encode_timestamp(),
@@ -207,12 +203,12 @@ impl OwnerShares {
     }
 }
 
-// 100M genesis rewards per day
-const GENESIS_REWARDS_PER_DAY: i64 = 100_000_000;
-
 lazy_static! {
     static ref GENESIS_START: DateTime<Utc> =
         Utc.with_ymd_and_hms(2022, 7, 11, 0, 0, 0).single().unwrap();
+
+    // 100M genesis rewards per day
+    static ref GENESIS_REWARDS_PER_DAY: Decimal = dec!(100_000_000) * dec!(1_000_000);
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -225,8 +221,7 @@ pub fn get_scheduled_tokens(
 ) -> Result<Decimal, ClockError> {
     (*GENESIS_START <= start)
         .then(|| {
-            (Decimal::from(GENESIS_REWARDS_PER_DAY)
-                / Decimal::from(Duration::hours(24).num_seconds()))
+            (*GENESIS_REWARDS_PER_DAY / Decimal::from(Duration::hours(24).num_seconds()))
                 * Decimal::from(duration.num_seconds())
         })
         .ok_or(ClockError)
@@ -673,19 +668,19 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            997_150_997_151
+            997_150_997_150
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            2_991_452_991_452
+            2_991_452_991_450
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            178_062_678_063
+            178_062_678_062
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
@@ -694,7 +689,7 @@ mod test {
             total += *val
         }
 
-        assert_eq!(total, 4_166_666_666_666); // total emissions for 1 hour
+        assert_eq!(total, 4_166_666_666_662); // total emissions for 1 hour
     }
 
     #[tokio::test]
