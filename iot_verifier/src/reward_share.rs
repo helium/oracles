@@ -25,8 +25,8 @@ lazy_static! {
     static ref DATA_TRANSFER_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.50);
     // dc remainer distributed at ration of 4:1 in favour of witnesses
     // ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
-    static ref WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.75);
-    static ref BEACON_DC_REMAINER_PERCENT: Decimal = dec!(0.25);
+    static ref WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.80);
+    static ref BEACON_DC_REMAINER_PERCENT: Decimal = dec!(0.20);
     static ref DC_USD_PRICE: Decimal =  dec!(0.00001);
 
 }
