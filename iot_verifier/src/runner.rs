@@ -20,10 +20,8 @@ use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
     LoraPocV1, VerificationStatus,
 };
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::path::Path;
 use tokio::time::{self, MissedTickBehavior};
@@ -299,7 +297,6 @@ impl Runner {
                     };
 
                     let max_witnesses_per_poc = self.max_witnesses_per_poc as usize;
-                    let beacon_id = beacon.report_id(beacon_received_ts);
 
                     // filter witnesses into selected and unselected lists
                     // the selected list will contain only valid witnesses
@@ -314,11 +311,8 @@ impl Runner {
                         filter_witnesses(verified_witnesses_result.verified_witnesses);
 
                     // keep a subset of our selected and valid witnesses
-                    let mut unselected_witnesses = shuffle_and_split_witnesses(
-                        &beacon_id,
-                        &mut selected_witnesses,
-                        max_witnesses_per_poc,
-                    )?;
+                    let mut unselected_witnesses =
+                        sort_and_split_witnesses(&mut selected_witnesses, max_witnesses_per_poc)?;
 
                     // concat the unselected valid witnesses and the invalid witnesses
                     // these will then form the unseleted list on the poc
@@ -544,23 +538,19 @@ fn poc_per_witness_reward_unit(num_witnesses: u32) -> anyhow::Result<Decimal> {
     Ok(reward_units.round_dp(SCALING_PRECISION))
 }
 
-/// maybe shuffle & split the verified witness list
+/// maybe sort & split the verified witness list
 // if the number of witnesses exceeds our cap
 // split the list into two
 // one representing selected witnesses
 // the other representing unselected witnesses
-fn shuffle_and_split_witnesses(
-    poc_id: &[u8],
+fn sort_and_split_witnesses(
     witnesses: &mut Vec<IotVerifiedWitnessReport>,
     max_count: usize,
 ) -> anyhow::Result<Vec<IotVerifiedWitnessReport>> {
     if witnesses.len() <= max_count {
         return Ok(Vec::new());
     }
-    // Seed a random number from the poc_id for shuffling the witnesses
-    let seed = Sha256::digest(poc_id);
-    let mut rng = StdRng::from_seed(seed.into());
-    witnesses.shuffle(&mut rng);
+    witnesses.sort_by(|a, b| a.received_timestamp.cmp(&b.received_timestamp));
     let unselected_witnesses = witnesses.split_off(max_count);
     Ok(unselected_witnesses)
 }
@@ -701,6 +691,8 @@ mod tests {
         let key1 =
             PublicKeyBinary::from_str("112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf")
                 .unwrap();
+
+        let current_time = Utc::now();
         let report = IotWitnessReport {
             pub_key: key1,
             data: vec![],
@@ -713,38 +705,53 @@ mod tests {
             signature: vec![],
         };
 
-        let witness = IotVerifiedWitnessReport {
-            received_timestamp: Utc::now(),
-            report,
-            location: Some(631252734740306943),
-            gain: 20,
-            elevation: 100,
-            hex_scale: Decimal::ZERO,
-            reward_unit: Decimal::ZERO,
-            status: VerificationStatus::Valid,
-            invalid_reason: InvalidReason::ReasonNone,
-            participant_side: InvalidParticipantSide::SideNone,
-        };
-        let poc_id: Vec<u8> = vec![0];
+        // list of 30 witnesses
+        let mut selected_witnesses: Vec<IotVerifiedWitnessReport> = (0..30)
+            .map(|i| IotVerifiedWitnessReport {
+                received_timestamp: current_time
+                    .checked_add_signed(ChronoDuration::milliseconds(i))
+                    .unwrap(),
+                report: report.clone(),
+                location: Some(631252734740306943),
+                gain: 20,
+                elevation: 100,
+                hex_scale: Decimal::ZERO,
+                reward_unit: Decimal::ZERO,
+                status: VerificationStatus::Valid,
+                invalid_reason: InvalidReason::ReasonNone,
+                participant_side: InvalidParticipantSide::SideNone,
+            })
+            .collect::<Vec<IotVerifiedWitnessReport>>();
+        selected_witnesses.reverse();
         let max_witnesses_per_poc = 14;
 
-        // list of 20 witnesses
-        let mut selected_witnesses = vec![witness.clone(); 20];
-        assert_eq!(20, selected_witnesses.len());
-        // after shuffle and split we should have 14 selected and 6 unselected
+        assert_eq!(30, selected_witnesses.len());
+        assert_eq!(
+            current_time
+                .checked_add_signed(ChronoDuration::milliseconds(9))
+                .unwrap(),
+            selected_witnesses[20].received_timestamp
+        );
+
         let unselected_witnesses =
-            shuffle_and_split_witnesses(&poc_id, &mut selected_witnesses, max_witnesses_per_poc)
-                .unwrap();
+            sort_and_split_witnesses(&mut selected_witnesses, max_witnesses_per_poc).unwrap();
         assert_eq!(14, selected_witnesses.len());
-        assert_eq!(6, unselected_witnesses.len());
+        assert_eq!(16, unselected_witnesses.len());
+
+        assert_eq!(current_time, selected_witnesses[0].received_timestamp);
+        assert_eq!(
+            current_time
+                .checked_add_signed(ChronoDuration::milliseconds(4))
+                .unwrap(),
+            selected_witnesses[4].received_timestamp
+        );
 
         // list of 10 witnesses
-        let mut selected_witnesses2 = vec![witness; 10];
+        let mut selected_witnesses2 = vec![selected_witnesses[0].clone(); 10];
         assert_eq!(10, selected_witnesses2.len());
-        // after shuffle and split we should have 10 selected and 0 unselected
+        // after sort and split we should have 10 selected and 0 unselected
         let unselected_witnesses2 =
-            shuffle_and_split_witnesses(&poc_id, &mut selected_witnesses2, max_witnesses_per_poc)
-                .unwrap();
+            sort_and_split_witnesses(&mut selected_witnesses2, max_witnesses_per_poc).unwrap();
         assert_eq!(10, selected_witnesses2.len());
         assert_eq!(0, unselected_witnesses2.len());
     }
