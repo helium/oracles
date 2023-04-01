@@ -1,14 +1,13 @@
 use crate::{
-    admin::AuthCache, gateway_info::{self, GatewayInfo, db::IotMetadata},
-    region_map::RegionMapReader, GrpcResult, GrpcStreamResult, Settings
+    admin::AuthCache,
+    gateway_info::{self, GatewayInfo},
+    region_map::RegionMapReader,
+    GrpcResult, GrpcStreamResult, Settings,
 };
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
-use futures::{
-    future::TryFutureExt,
-    stream::{StreamExt, TryStreamExt},
-};
+use futures::stream::StreamExt;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
@@ -31,7 +30,12 @@ pub struct GatewayService {
 }
 
 impl GatewayService {
-    pub fn new(settings: &Settings, pool: Pool<Postgres>, region_map: RegionMapReader, auth_cache: AuthCache) -> Result<Self> {
+    pub fn new(
+        settings: &Settings,
+        pool: Pool<Postgres>,
+        region_map: RegionMapReader,
+        auth_cache: AuthCache,
+    ) -> Result<Self> {
         Ok(Self {
             auth_cache,
             pool,
@@ -82,14 +86,20 @@ impl iot_config::Gateway for GatewayService {
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .map_or_else(
-                || Err(Status::not_found(format!("gateway not found: pubkey = {address:}"))),
+                || {
+                    Err(Status::not_found(format!(
+                        "gateway not found: pubkey = {address:}"
+                    )))
+                },
                 |info| {
                     if let Some(location) = info.location {
                         Ok(location)
                     } else {
-                        Err(Status::not_found(format!("gateway unasserted: pubkey = {address:}")))
+                        Err(Status::not_found(format!(
+                            "gateway unasserted: pubkey = {address:}"
+                        )))
                     }
-                }
+                },
             )?;
 
         let location = Cell::from_raw(location)
@@ -131,30 +141,46 @@ impl iot_config::Gateway for GatewayService {
 
         let (region, gain) = if let Some(info) = gateway_info::db::get_info(&self.pool, address)
             .await
-            .map_err(|_| Status::internal("error fetching gateway info"))? {
-                if let (Some(location), Some(gain)) = (info.location, info.gain) {
-                    let region = match hextree::Cell::from_raw(location) {
-                        Ok(h3_location) => self
-                            .region_map
-                            .get_region(h3_location)
-                            .unwrap_or_else(|| {
-                                tracing::debug!(pubkey = address.to_string(), location = location, "gateway region lookup failed for asserted location");
-                                default_region
-                            }),
-                        Err(_) => {
-                            tracing::debug!(pubkey = address.to_string(), location = location, "gateway asserted location is invalid h3 index");
+            .map_err(|_| Status::internal("error fetching gateway info"))?
+        {
+            if let (Some(location), Some(gain)) = (info.location, info.gain) {
+                let region = match hextree::Cell::from_raw(location) {
+                    Ok(h3_location) => {
+                        self.region_map.get_region(h3_location).unwrap_or_else(|| {
+                            tracing::debug!(
+                                pubkey = address.to_string(),
+                                location = location,
+                                "gateway region lookup failed for asserted location"
+                            );
                             default_region
-                        }
-                    };
-                    (region, gain)
-                } else {
-                    tracing::debug!(pubkey = address.to_string(), default_region = default_region.to_string(), "gateway not asserted");
-                    (default_region, 0)
-                }
+                        })
+                    }
+                    Err(_) => {
+                        tracing::debug!(
+                            pubkey = address.to_string(),
+                            location = location,
+                            "gateway asserted location is invalid h3 index"
+                        );
+                        default_region
+                    }
+                };
+                (region, gain)
             } else {
-                tracing::debug!(pubkey = address.to_string(), default_region = default_region.to_string(), "error retrieving gateway from chain");
+                tracing::debug!(
+                    pubkey = address.to_string(),
+                    default_region = default_region.to_string(),
+                    "gateway not asserted"
+                );
                 (default_region, 0)
-            };
+            }
+        } else {
+            tracing::debug!(
+                pubkey = address.to_string(),
+                default_region = default_region.to_string(),
+                "error retrieving gateway from chain"
+            );
+            (default_region, 0)
+        };
 
         let params = self.region_map.get_params(&region);
 
@@ -185,11 +211,15 @@ impl iot_config::Gateway for GatewayService {
         let metadata_info = gateway_info::db::get_info(&self.pool, address)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
-            .ok_or(Status::not_found(format!("gateway not found: pubkey = {address:}")))?;
+            .ok_or(Status::not_found(format!(
+                "gateway not found: pubkey = {address:}"
+            )))?;
 
         let gateway_info = GatewayInfo::chain_metadata_to_info(metadata_info, &self.region_map);
         let mut resp = GatewayInfoResV1 {
-            info: Some(gateway_info.try_into().map_err(|_| Status::internal("unexpected error converting gateway info to protobuf"))?),
+            info: Some(gateway_info.try_into().map_err(|_| {
+                Status::internal("unexpected error converting gateway info to protobuf")
+            })?),
             timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
@@ -219,7 +249,14 @@ impl iot_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            stream_all_gateways_info(&pool, tx.clone(), &signing_key, region_map.clone(), batch_size).await
+            stream_all_gateways_info(
+                &pool,
+                tx.clone(),
+                &signing_key,
+                region_map.clone(),
+                batch_size,
+            )
+            .await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
@@ -231,52 +268,39 @@ async fn stream_all_gateways_info(
     tx: tokio::sync::mpsc::Sender<Result<GatewayInfoStreamResV1, Status>>,
     signing_key: &Keypair,
     region_map: RegionMapReader,
-    batch_size: u32,
+    _batch_size: u32,
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
-    let region_map = &region_map;
     let tx = &tx;
-    Ok(gateway_info::db::all_info_stream(pool)
-        .map(Ok::<IotMetadata, sqlx::Error>)
-        .try_filter_map(|info| async move {
-            let result: Option<iot_config::GatewayInfo> = match GatewayInfo::chain_metadata_to_info(info, region_map).try_into() {
-                Ok(info_proto) => Some(info_proto),
-                Err(_) => None,
+    let mut stream = gateway_info::db::all_info_stream(pool);
+    while let Some(info) = stream.next().await {
+        let gateway_info: iot_config::GatewayInfo =
+            match GatewayInfo::chain_metadata_to_info(info, &region_map).try_into() {
+                Ok(gi) => gi,
+                Err(_) => {
+                    continue;
+                }
             };
-            Ok(result)
-        })
-        .try_chunks(batch_size as usize)
-        .map_ok(move |batch| {
-            (
-                GatewayInfoStreamResV1 {
-                    gateways: batch,
-                    timestamp,
-                    signer: signer.clone(),
-                    signature: vec![],
-                },
-                signing_key.clone()
-            )
-        })
-        .try_filter_map(|(res, keypair)| async move {
-            let result = match keypair.sign(&res.encode_to_vec()) {
-                Ok(signature) => Some(GatewayInfoStreamResV1 {
-                        gateways: res.gateways,
-                        timestamp: res.timestamp,
-                        signer: res.signer,
-                        signature,
-                }),
-                Err(_) => None,
-            };
-            Ok(result)
-        })
-        .map_err(|err| Status::internal(format!("info batch failed with reason: {err:?}")))
-        .try_for_each(|res| {
-            tx.send(Ok(res))
-                .map_err(|err| Status::internal(format!("info batch send failed with reason {err:?}")))
-        })
-        .or_else(|err| {
-            tx.send(Err(Status::internal(format!("info batch failed with reason: {err:?}"))))
-        })
-        .await?)
+
+        let mut response = GatewayInfoStreamResV1 {
+            gateways: vec![gateway_info],
+            timestamp,
+            signer: signer.clone(),
+            signature: vec![],
+        };
+
+        response = match signing_key.sign(&response.encode_to_vec()) {
+            Ok(signature) => GatewayInfoStreamResV1 {
+                signature,
+                ..response
+            },
+            Err(_) => {
+                continue;
+            }
+        };
+
+        tx.send(Ok(response)).await?;
+    }
+    Ok(())
 }

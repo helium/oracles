@@ -6,7 +6,7 @@ use helium_proto::services::iot_config::{
 };
 use iot_config::{
     admin::AuthCache, gateway_service::GatewayService, org_service::OrgService,
-    region_map::RegionMap, route_service::RouteService,
+    region_map::RegionMapReader, route_service::RouteService,
     session_key_service::SessionKeyFilterService, settings::Settings, AdminService,
 };
 use std::{path::PathBuf, time::Duration};
@@ -80,7 +80,12 @@ impl Daemon {
         let (auth_updater, auth_cache) = AuthCache::new(settings, &pool).await?;
         let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
 
-        let gateway_svc = GatewayService::new(settings, pool.clone(), region_map.clone(), auth_cache.clone())?;
+        let gateway_svc = GatewayService::new(
+            settings,
+            pool.clone(),
+            region_map.clone(),
+            auth_cache.clone(),
+        )?;
         let route_svc = RouteService::new(
             settings,
             auth_cache.clone(),
