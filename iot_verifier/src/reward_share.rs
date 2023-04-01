@@ -577,7 +577,7 @@ mod test {
         // the second is the additional reward from unallocated dc transfer rewards
         assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
         assert_eq!(gw1_rewards.beacon_amount, 1_505_343_971 + 17_422_962);
-        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879 + 4_136_05_981);
+        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879 + 413_605_981);
         assert_eq!(gw2_rewards.beacon_amount, 30_106_879_421 + 348_459_252);
         assert_eq!(gw2_rewards.witness_amount, 65_515_187_611 + 758_277_632);
         assert_eq!(gw3_rewards.beacon_amount, 11_290_079_783 + 130_672_219);
