@@ -268,23 +268,25 @@ async fn stream_all_gateways_info(
     tx: tokio::sync::mpsc::Sender<Result<GatewayInfoStreamResV1, Status>>,
     signing_key: &Keypair,
     region_map: RegionMapReader,
-    _batch_size: u32,
+    batch_size: u32,
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
-    let mut stream = gateway_info::db::all_info_stream(pool);
-    while let Some(info) = stream.next().await {
-        let gateway_info: iot_config::GatewayInfo =
-            match GatewayInfo::chain_metadata_to_info(info, &region_map).try_into() {
-                Ok(gi) => gi,
-                Err(_) => {
-                    continue;
+    let mut stream = gateway_info::db::all_info_stream(pool).chunks(batch_size as usize);
+    while let Some(infos) = stream.next().await {
+        let gateway_infos = infos
+            .into_iter()
+            .filter_map(|info| {
+                match GatewayInfo::chain_metadata_to_info(info, &region_map).try_into() {
+                    Ok(gi) => Some(gi),
+                    Err(_) => None,
                 }
-            };
+            })
+            .collect();
 
         let mut response = GatewayInfoStreamResV1 {
-            gateways: vec![gateway_info],
+            gateways: gateway_infos,
             timestamp,
             signer: signer.clone(),
             signature: vec![],
