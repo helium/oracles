@@ -1,15 +1,20 @@
 //! Heartbeat storage
 
 use crate::cell_type::CellType;
-use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Timelike, Utc};
 use file_store::{file_sink, heartbeat::CellHeartbeat};
 use futures::stream::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
+use lazy_static::lazy_static;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{Postgres, Transaction};
 use std::{collections::HashMap, ops::Range};
+
+lazy_static! {
+    static ref MOBILE_INGEST_ROLL_TIME: Duration = Duration::minutes(15);
+}
 
 #[derive(Clone)]
 pub struct Heartbeat {
@@ -143,14 +148,16 @@ impl Heartbeat {
         heartbeats: impl Stream<Item = CellHeartbeat> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = Self> + 'a {
+        let valid_epoch = epoch.start..(epoch.end + *MOBILE_INGEST_ROLL_TIME);
         heartbeats.map(move |heartbeat_report| {
-            let (reward_weight, validity) = match validate_heartbeat(&heartbeat_report, epoch) {
-                Ok(cell_type) => {
-                    let reward_weight = cell_type.reward_weight();
-                    (reward_weight, proto::HeartbeatValidity::Valid)
-                }
-                Err(validity) => (dec!(0), validity),
-            };
+            let (reward_weight, validity) =
+                match validate_heartbeat(&heartbeat_report, &valid_epoch) {
+                    Ok(cell_type) => {
+                        let reward_weight = cell_type.reward_weight();
+                        (reward_weight, proto::HeartbeatValidity::Valid)
+                    }
+                    Err(validity) => (dec!(0), validity),
+                };
             Heartbeat {
                 hotspot_key: heartbeat_report.pubkey.clone(),
                 reward_weight,
