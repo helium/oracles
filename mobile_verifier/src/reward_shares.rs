@@ -85,10 +85,8 @@ impl TransferRewards {
         //
         let (scale, remaining_rewards) =
             if data_transfer_reward_sum / total_rewards > *MAX_DATA_TRANSFER_REWARDS_PERCENT {
-                let scale =
-                    *MAX_DATA_TRANSFER_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum;
                 (
-                    scale,
+                    *MAX_DATA_TRANSFER_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum,
                     total_rewards * (dec!(1.0) - *MAX_DATA_TRANSFER_REWARDS_PERCENT),
                 )
             } else {
