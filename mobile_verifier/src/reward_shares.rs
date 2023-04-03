@@ -31,6 +31,10 @@ impl TransferRewards {
         }
     }
 
+    pub fn scale(&self) -> Decimal {
+        self.scale
+    }
+
     pub fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
         self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.scale
     }
@@ -69,7 +73,10 @@ impl TransferRewards {
             if data_transfer_reward_sum / total_rewards > *MAX_DATA_TRANSFER_REWARDS_PERCENT {
                 let scale =
                     *MAX_DATA_TRANSFER_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum;
-                (scale, total_rewards * *MAX_DATA_TRANSFER_REWARDS_PERCENT)
+                (
+                    scale,
+                    total_rewards * (dec!(1.0) - *MAX_DATA_TRANSFER_REWARDS_PERCENT),
+                )
             } else {
                 (Decimal::ONE, total_rewards - data_transfer_reward_sum)
             };
@@ -90,8 +97,7 @@ fn bytes_to_dc(bytes: u64) -> u64 {
 }
 
 lazy_static! {
-    static ref MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.2);
-    static ref MIN_POC_REWARDS_PERCENT: Decimal = dec!(0.8);
+    static ref MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.8);
     static ref DC_USD_PRICE: Decimal = dec!(0.00000003);
 }
 
@@ -307,6 +313,50 @@ mod test {
         assert_eq!(
             data_transfer_rewards.remaining_rewards,
             dec!(4166666666666.6666666066666666)
+        );
+    }
+
+    #[tokio::test]
+    async fn transfer_reward_scale() {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed payer parse");
+
+        // Just an absurdly large amount of DC
+        let mut transfer_sessions = Vec::new();
+        for _ in 0..1_000_000 {
+            transfer_sessions.push(ValidDataTransferSession {
+                pub_key: owner.clone(),
+                payer: payer.clone(),
+                upload_bytes: 66 * 80_000_000 * 95_000_000,
+                download_bytes: 0,
+                num_dcs: 0, // Not used
+                first_timestamp: DateTime::default(),
+                last_timestamp: DateTime::default(),
+            });
+        }
+
+        let data_transfer_sessions = stream::iter(transfer_sessions);
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(24))..now;
+
+        let data_transfer_rewards =
+            TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_sessions, &epoch)
+                .await
+                .expect("Could not fetch data transfer sessions");
+
+        assert_eq!(
+            data_transfer_rewards.remaining_rewards,
+            dec!(20_000_000) * dec!(1_000_000)
+        );
+        assert_eq!(
+            // Rewards are automatically scaled
+            data_transfer_rewards.reward(&owner),
+            dec!(80_000_000) * dec!(1_000_000)
         );
     }
 

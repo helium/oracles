@@ -5,6 +5,7 @@ use crate::{
     scheduler::Scheduler,
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
 };
+use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
@@ -14,7 +15,7 @@ use helium_proto::{
     RewardManifest,
 };
 use price::PriceTracker;
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
@@ -130,6 +131,13 @@ impl VerifierDaemon {
             &scheduler.reward_period,
         )
         .await?;
+
+        // It's important to gauge the scale metric. If this value is < 1.0, we are in
+        // big trouble.
+        let Some(scale) = transfer_rewards.scale().to_f64() else {
+            bail!("The data transfer rewards scale cannot be converted to a float");
+        };
+        metrics::gauge!("data_transfer_rewards_scale", scale);
 
         for reward_share in
             poc_rewards.into_radio_shares(&transfer_rewards, &scheduler.reward_period)?
