@@ -1,6 +1,6 @@
 use crate::{
     heartbeats::Heartbeats,
-    owner_shares::{get_scheduled_tokens, OwnerShares, TransferRewards},
+    reward_shares::{get_scheduled_tokens, RewardShares, TransferRewards},
     speedtests::{Average, SpeedtestAverages},
     Settings,
 };
@@ -40,13 +40,13 @@ impl Cmd {
 
         let heartbeats = Heartbeats::validated(&pool).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let owner_shares =
-            OwnerShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
+        let reward_shares =
+            RewardShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
         let transfer_rewards = TransferRewards::empty(&epoch);
-        for reward in owner_shares.into_radio_shares(&transfer_rewards, &epoch)? {
+        for reward in reward_shares.into_radio_shares(&transfer_rewards, &epoch)? {
             total_rewards += reward.amount;
             *owner_rewards
                 .entry(PublicKey::try_from(reward.owner_key)?)

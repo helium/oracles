@@ -67,7 +67,8 @@ impl TransferRewards {
 
         let (scale, remaining_rewards) =
             if data_transfer_reward_sum / total_rewards > *MAX_DATA_TRANSFER_REWARDS_PERCENT {
-                let scale = *MIN_POC_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum;
+                let scale =
+                    *MAX_DATA_TRANSFER_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum;
                 (scale, total_rewards * *MAX_DATA_TRANSFER_REWARDS_PERCENT)
             } else {
                 (Decimal::ONE, total_rewards - data_transfer_reward_sum)
@@ -91,7 +92,7 @@ fn bytes_to_dc(bytes: u64) -> u64 {
 lazy_static! {
     static ref MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.2);
     static ref MIN_POC_REWARDS_PERCENT: Decimal = dec!(0.8);
-    static ref DC_USD_PRICE: Decimal = dec!(0.00001);
+    static ref DC_USD_PRICE: Decimal = dec!(0.00000003);
 }
 
 const DEFAULT_PREC: u32 = 15;
@@ -131,11 +132,11 @@ impl RadioShares {
 }
 
 #[derive(Default)]
-pub struct OwnerShares {
+pub struct RewardShares {
     pub shares: HashMap<PublicKeyBinary, RadioShares>,
 }
 
-impl OwnerShares {
+impl RewardShares {
     pub async fn aggregate(
         resolver: &mut impl OwnerResolver,
         heartbeats: Heartbeats,
@@ -269,8 +270,45 @@ mod test {
         speedtests::{Speedtest, SpeedtestAverages},
     };
     use chrono::{Duration, NaiveDateTime, Utc};
+    use futures::stream;
     use helium_proto::services::poc_mobile::HeartbeatValidity;
     use std::collections::{HashMap, VecDeque};
+
+    #[tokio::test]
+    async fn transfer_reward_amount() {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed payer parse");
+
+        let data_transfer_sessions = stream::iter(vec![ValidDataTransferSession {
+            pub_key: owner.clone(),
+            payer,
+            upload_bytes: 66,
+            download_bytes: 1,
+            num_dcs: 0, // Not used
+            first_timestamp: DateTime::default(),
+            last_timestamp: DateTime::default(),
+        }]);
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+
+        let data_transfer_rewards =
+            TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_sessions, &epoch)
+                .await
+                .expect("Could not fetch data transfer sessions");
+
+        assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00000006));
+        assert_eq!(data_transfer_rewards.scale, dec!(1.0));
+        // Is this correct?
+        assert_eq!(
+            data_transfer_rewards.remaining_rewards,
+            dec!(4166666666666.6666666066666666)
+        );
+    }
 
     struct MapResolver {
         owners: HashMap<PublicKeyBinary, PublicKeyBinary>,
@@ -412,7 +450,7 @@ mod test {
         speedtests.insert(g2, VecDeque::from(g2_speedtests));
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
-        let owner_rewards = OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+        let owner_rewards = RewardShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards");
 
@@ -653,7 +691,7 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
         let transfer_rewards = TransferRewards::empty(&epoch);
-        for radio_share in OwnerShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+        for radio_share in RewardShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards")
             .into_radio_shares(&transfer_rewards, &epoch)
@@ -747,7 +785,7 @@ mod test {
         let now = Utc::now();
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
-        let owner_shares = OwnerShares { shares };
+        let owner_shares = RewardShares { shares };
         let epoch = now - Duration::hours(1)..now;
         let transfer_rewards = TransferRewards::empty(&epoch);
         for reward in owner_shares
