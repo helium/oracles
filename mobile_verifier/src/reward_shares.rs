@@ -69,6 +69,20 @@ impl TransferRewards {
 
         let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?;
 
+        // Determine if we need to scale the rewards given for data transfer rewards.
+        // Ideally this should never happen, but if the total number of data transfer rewards
+        // is greater than (at the time of writing) 80% of the total pool, we need to scale
+        // the rewards given for data transfer.
+        //
+        // If we find that total data_transfer reward sum is greater than 80%, we use the
+        // following math to calculate the scale:
+        //
+        // [ scale * data_transfer_reward_sum ] / total_rewards = 0.8
+        //
+        //   therefore:
+        //
+        // scale = [ 0.8 * total_rewards ] / data_transfer_reward_sum
+        //
         let (scale, remaining_rewards) =
             if data_transfer_reward_sum / total_rewards > *MAX_DATA_TRANSFER_REWARDS_PERCENT {
                 let scale =
