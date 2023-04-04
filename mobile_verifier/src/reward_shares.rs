@@ -313,6 +313,14 @@ mod test {
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
+        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap();
+        println!("total rewards for epoch: {total_rewards}");
+        // confirm our hourly rewards add up to expected 24hr amount
+        // total_rewards will be in bones
+        assert_eq!(
+            total_rewards / dec!(1_000_000) * dec!(24),
+            dec!(100_000_000)
+        );
 
         let data_transfer_rewards =
             TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_sessions, &epoch)
@@ -321,10 +329,9 @@ mod test {
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00000006));
         assert_eq!(data_transfer_rewards.scale, dec!(1.0));
-        // Is this correct?
         assert_eq!(
             data_transfer_rewards.remaining_rewards,
-            dec!(4166666666666.6666666066666666)
+            total_rewards - (data_transfer_rewards.reward(&owner) * data_transfer_rewards.scale)
         );
     }
 
