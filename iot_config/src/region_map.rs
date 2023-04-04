@@ -18,7 +18,9 @@ pub struct RegionMapReader {
 }
 
 impl RegionMapReader {
-    pub async fn new(db: impl sqlx::PgExecutor<'_> + Copy) -> anyhow::Result<(watch::Sender<RegionMap>, Self)> {
+    pub async fn new(
+        db: impl sqlx::PgExecutor<'_> + Copy,
+    ) -> anyhow::Result<(watch::Sender<RegionMap>, Self)> {
         let region_map = RegionMap::new(db).await?;
         let (map_sender, map_receiver) = watch::channel(region_map);
         Ok((map_sender, Self { map_receiver }))
@@ -72,7 +74,8 @@ pub async fn build_region_tree(
 ) -> anyhow::Result<HexTreeMap<Region, EqCompactor>> {
     let mut region_tree = HexTreeMap::with_compactor(EqCompactor);
 
-    let mut regions = sqlx::query_as::<_, HexRegion>("select * from regions").fetch(db);
+    let mut regions =
+        sqlx::query_as::<_, HexRegion>("select * from regions order by region desc").fetch(db);
 
     while let Some(region_row) = regions.try_next().await? {
         if let Some(indexes) = region_row.indexes {

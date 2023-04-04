@@ -206,14 +206,10 @@ impl iot_config::Admin for AdminService {
                 self.region_updater.send_modify(|region_map| {
                     region_map.insert_params(region, params);
                 });
-                match updated_region {
-                    Some(region_tree) => {
-                        tracing::debug!(region_cells = region_tree.len(), "new compacted region map");
-                        self.region_updater.send_modify(|region_map| {
-                            region_map.replace_tree(region_tree)
-                        });
-                    }
-                    None => ()
+                if let Some(region_tree) = updated_region {
+                    tracing::debug!(region_cells = region_tree.len(), "new compacted region map");
+                    self.region_updater
+                        .send_modify(|region_map| region_map.replace_tree(region_tree));
                 };
                 Ok(())
             })

@@ -272,16 +272,14 @@ async fn stream_all_gateways_info(
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
-    let tx = &tx;
     let mut stream = gateway_info::db::all_info_stream(pool).chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
         let gateway_infos = infos
             .into_iter()
             .filter_map(|info| {
-                match GatewayInfo::chain_metadata_to_info(info, &region_map).try_into() {
-                    Ok(gi) => Some(gi),
-                    Err(_) => None,
-                }
+                GatewayInfo::chain_metadata_to_info(info, &region_map)
+                    .try_into()
+                    .ok()
             })
             .collect();
 

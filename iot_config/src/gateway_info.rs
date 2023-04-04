@@ -27,8 +27,13 @@ pub struct GatewayInfo {
 }
 
 impl GatewayInfo {
-    pub fn chain_metadata_to_info(meta: db::IotMetadata, region_map: &region_map::RegionMapReader) -> Self {
-        let metadata = if let (Some(location), Some(elevation), Some(gain)) = (meta.location, meta.elevation, meta.gain) {
+    pub fn chain_metadata_to_info(
+        meta: db::IotMetadata,
+        region_map: &region_map::RegionMapReader,
+    ) -> Self {
+        let metadata = if let (Some(location), Some(elevation), Some(gain)) =
+            (meta.location, meta.elevation, meta.gain)
+        {
             if let Ok(region) = h3index_to_region(location, region_map) {
                 Some(GatewayMetadata {
                     location,
@@ -51,11 +56,12 @@ impl GatewayInfo {
     }
 }
 
-fn h3index_to_region(location: u64, region_map: &region_map::RegionMapReader) -> anyhow::Result<Region> {
+fn h3index_to_region(
+    location: u64,
+    region_map: &region_map::RegionMapReader,
+) -> anyhow::Result<Region> {
     hextree::Cell::from_raw(location)
-        .map(|cell| {
-            region_map.get_region(cell)
-        })?
+        .map(|cell| region_map.get_region(cell))?
         .ok_or(anyhow!("invalid region"))
 }
 
