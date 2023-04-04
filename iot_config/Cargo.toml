@@ -20,6 +20,8 @@ futures-util = {workspace = true}
 helium-crypto = {workspace = true}
 helium-proto = {workspace = true}
 hextree = {workspace = true}
+http = {workspace = true}
+http-serde = {workspace = true}
 libflate = "1"
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}

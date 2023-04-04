@@ -74,7 +74,7 @@ pub trait GatewayInfoResolver {
         address: &PublicKeyBinary,
     ) -> Result<Option<GatewayInfo>, Self::Error>;
 
-    async fn stream_gateway_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
+    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
 }
 
 impl From<GatewayInfoProto> for GatewayInfo {

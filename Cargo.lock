@@ -3278,6 +3278,8 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "hextree",
+ "http",
+ "http-serde",
  "libflate",
  "metrics",
  "metrics-exporter-prometheus",
