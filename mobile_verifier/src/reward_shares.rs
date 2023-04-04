@@ -19,7 +19,7 @@ use std::ops::Range;
 pub struct TransferRewards {
     scale: Decimal,
     rewards: HashMap<PublicKeyBinary, Decimal>,
-    pub remaining_rewards: Decimal,
+    pub remaining_poc_rewards: Decimal,
 }
 
 impl TransferRewards {
@@ -27,7 +27,8 @@ impl TransferRewards {
         Self {
             scale: Decimal::ONE,
             rewards: HashMap::new(),
-            remaining_rewards: get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap(),
+            remaining_poc_rewards: get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
+                .unwrap(),
         }
     }
 
@@ -83,7 +84,7 @@ impl TransferRewards {
         //
         // scale = [ 0.8 * total_rewards ] / data_transfer_reward_sum
         //
-        let (scale, remaining_rewards) =
+        let (scale, remaining_poc_rewards) =
             if data_transfer_reward_sum / total_rewards > *MAX_DATA_TRANSFER_REWARDS_PERCENT {
                 (
                     *MAX_DATA_TRANSFER_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum,
@@ -96,7 +97,7 @@ impl TransferRewards {
         Ok(Self {
             scale,
             rewards,
-            remaining_rewards,
+            remaining_poc_rewards,
         })
     }
 }
@@ -195,8 +196,8 @@ impl RewardShares {
         epoch: &'a Range<DateTime<Utc>>,
     ) -> Result<impl Iterator<Item = proto::RadioRewardShare> + 'a, ClockError> {
         let total_shares = self.total_shares();
-        let total_rewards = transfer_rewards.remaining_rewards;
-        let rewards_per_share = total_rewards / total_shares;
+        let total_poc_rewards = transfer_rewards.remaining_poc_rewards;
+        let poc_rewards_per_share = total_poc_rewards / total_shares;
         Ok(self
             .shares
             .into_iter()
@@ -207,7 +208,7 @@ impl RewardShares {
                         owner_key: owner_key.clone().into(),
                         cbsd_id: radio_share.cbsd_id,
                         amount: {
-                            let rewards = rewards_per_share * radio_share.amount
+                            let rewards = poc_rewards_per_share * radio_share.amount
                                 + transfer_rewards.reward(&radio_share.hotspot_key);
                             let rewards =
                                 rewards.round_dp_with_strategy(0, RoundingStrategy::ToZero);
@@ -292,6 +293,18 @@ mod test {
     use helium_proto::services::poc_mobile::HeartbeatValidity;
     use std::collections::{HashMap, VecDeque};
 
+    #[test]
+    fn bytes_to_bones() {
+        assert_eq!(
+            dc_to_mobile_bones(Decimal::from(bytes_to_dc(66)), dec!(1.0)),
+            dec!(0.00000003)
+        );
+        assert_eq!(
+            dc_to_mobile_bones(Decimal::from(bytes_to_dc(67)), dec!(1.0)),
+            dec!(0.00000006)
+        );
+    }
+
     #[tokio::test]
     async fn transfer_reward_amount() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -314,7 +327,6 @@ mod test {
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
         let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap();
-        println!("total rewards for epoch: {total_rewards}");
         // confirm our hourly rewards add up to expected 24hr amount
         // total_rewards will be in bones
         assert_eq!(
@@ -330,7 +342,7 @@ mod test {
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00000006));
         assert_eq!(data_transfer_rewards.scale, dec!(1.0));
         assert_eq!(
-            data_transfer_rewards.remaining_rewards,
+            data_transfer_rewards.remaining_poc_rewards,
             total_rewards - (data_transfer_rewards.reward(&owner) * data_transfer_rewards.scale)
         );
     }
@@ -350,13 +362,23 @@ mod test {
             transfer_sessions.push(ValidDataTransferSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
-                upload_bytes: 66 * 80_000_000 * 95_000_000,
+                upload_bytes: 66 * 5_333_333_333_333_333,
                 download_bytes: 0,
                 num_dcs: 0, // Not used
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),
             });
         }
+
+        transfer_sessions.push(ValidDataTransferSession {
+            pub_key: owner.clone(),
+            payer: payer.clone(),
+            upload_bytes: 66 * 1,
+            download_bytes: 0,
+            num_dcs: 0, // Not used
+            first_timestamp: DateTime::default(),
+            last_timestamp: DateTime::default(),
+        });
 
         let data_transfer_sessions = stream::iter(transfer_sessions);
 
@@ -369,7 +391,7 @@ mod test {
                 .expect("Could not fetch data transfer sessions");
 
         assert_eq!(
-            data_transfer_rewards.remaining_rewards,
+            data_transfer_rewards.remaining_poc_rewards,
             dec!(20_000_000) * dec!(1_000_000)
         );
         assert_eq!(
@@ -377,6 +399,7 @@ mod test {
             data_transfer_rewards.reward(&owner),
             dec!(80_000_000) * dec!(1_000_000)
         );
+        assert_eq!(data_transfer_rewards.scale().round_dp(15), dec!(0.5));
     }
 
     struct MapResolver {
