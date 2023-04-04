@@ -35,6 +35,7 @@ pub struct Settings {
     pub database: db_store::Settings,
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,
+    pub operation_fund_key: String,
 }
 
 pub fn default_log() -> String {
@@ -66,6 +67,10 @@ impl Settings {
 
     pub fn interval(&self) -> Duration {
         Duration::seconds(self.interval)
+    }
+
+    pub fn operation_fund_key(&self) -> Vec<u8> {
+        self.operation_fund_key.clone().into_bytes()
     }
 }
 

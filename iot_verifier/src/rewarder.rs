@@ -1,4 +1,4 @@
-use crate::{reward_share::GatewayShares, scheduler::Scheduler};
+use crate::{reward_share::GatewayShares, reward_share::OperationalRewards, scheduler::Scheduler};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
@@ -10,7 +10,7 @@ use tokio::time::sleep;
 
 pub struct Rewarder {
     pub pool: Pool<Postgres>,
-    pub gateway_rewards_sink: file_sink::FileSinkClient,
+    pub rewards_sink: file_sink::FileSinkClient,
     pub reward_manifests_sink: file_sink::FileSinkClient,
     pub reward_period_hours: i64,
     pub reward_offset: Duration,
@@ -67,19 +67,29 @@ impl Rewarder {
         scheduler: &Scheduler,
         iot_price: Decimal,
     ) -> anyhow::Result<()> {
-        let reward_shares = GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
+        let gateway_reward_shares =
+            GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
+
+        let operational_rewards = OperationalRewards::compute(&scheduler.reward_period);
+
         for reward_share in
-            reward_shares.into_gateway_reward_shares(&scheduler.reward_period, iot_price)
+            gateway_reward_shares.into_gateway_reward_shares(&scheduler.reward_period, iot_price)
         {
-            self.gateway_rewards_sink
+            self.rewards_sink
+                .write(reward_share, [])
+                .await?
+                // Await the returned oneshot to ensure we wrote the file
+                .await??;
+        }
+        for reward_share in operational_rewards.rewards {
+            self.rewards_sink
                 .write(reward_share, [])
                 .await?
                 // Await the returned oneshot to ensure we wrote the file
                 .await??;
         }
 
-        let written_files = self.gateway_rewards_sink.commit().await?.await??;
-
+        let written_files = self.rewards_sink.commit().await?.await??;
         // Write the rewards manifest for the completed period
         self.reward_manifests_sink
             .write(

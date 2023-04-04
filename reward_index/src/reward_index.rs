@@ -1,9 +1,8 @@
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKey;
 
 pub async fn insert<'c, E>(
     executor: E,
-    address: &PublicKey,
+    address: &Vec<u8>,
     amount: u64,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error>
@@ -18,8 +17,8 @@ where
     sqlx::query(
         r#"
         insert into reward_index (
-                address, 
-                rewards, 
+                address,
+                rewards,
                 last_reward
             ) values ($1, $2, $3)
             on conflict(address) do update set

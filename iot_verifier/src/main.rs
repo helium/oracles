@@ -20,6 +20,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
 #[clap(about = "Helium POC IOT Verifier")]
+
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
     /// given path will be loaded. Environemnt variables can override the
@@ -93,8 +94,8 @@ impl Server {
 
         let store_base_path = std::path::Path::new(&settings.cache);
         // Gateway reward shares sink
-        let (gateway_rewards_sink, mut gateway_rewards_server) = file_sink::FileSinkBuilder::new(
-            FileType::GatewayRewardShare,
+        let (rewards_sink, mut gateway_rewards_server) = file_sink::FileSinkBuilder::new(
+            FileType::IotRewardShare,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_gateway_reward_shares"),
         )
@@ -116,7 +117,7 @@ impl Server {
 
         let rewarder = Rewarder {
             pool: pool.clone(),
-            gateway_rewards_sink,
+            rewards_sink,
             reward_manifests_sink,
             reward_period_hours: settings.rewards,
             reward_offset: settings.reward_offset_duration(),

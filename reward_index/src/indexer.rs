@@ -1,13 +1,13 @@
 use crate::{reward_index, settings, Settings};
-use anyhow::Result;
+use anyhow::{Result, bail};
 use file_store::{
     file_info_poller::FileInfoStream, reward_manifest::RewardManifest, FileInfo, FileStore,
 };
 use futures::{stream, StreamExt, TryStreamExt};
-use helium_crypto::PublicKey;
 use helium_proto::{
-    services::poc_lora::GatewayRewardShare, services::poc_mobile::RadioRewardShare, Message,
+    services::poc_mobile::RadioRewardShare, services::poc_lora::IotRewardShare, Message,
 };
+use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
 use std::{collections::HashMap, str::FromStr};
@@ -17,6 +17,7 @@ pub struct Indexer {
     pool: Pool<Postgres>,
     verifier_store: FileStore,
     mode: settings::Mode,
+    op_fund_key: Vec<u8>,
 }
 
 impl Indexer {
@@ -25,6 +26,7 @@ impl Indexer {
             mode: settings.mode,
             verifier_store: FileStore::from_settings(&settings.verifier).await?,
             pool,
+            op_fund_key: settings.operation_fund_key(),
         })
     }
 
@@ -79,31 +81,41 @@ impl Indexer {
         let mut hotspot_rewards: HashMap<Vec<u8>, u64> = HashMap::new();
 
         while let Some(msg) = reward_shares.try_next().await? {
-            let (hotspot_key, amount) = extract_reward_share(&self.mode, &msg)?;
-            *hotspot_rewards.entry(hotspot_key).or_default() += amount;
+            let (key, amount) = extract_reward_share(&self.mode, &self.op_fund_key, &msg)?;
+            *hotspot_rewards.entry(key).or_default() += amount;
         }
 
-        for (address, amount) in hotspot_rewards {
-            let pub_key = PublicKey::try_from(address)?;
-            reward_index::insert(&mut *txn, &pub_key, amount, &manifest_time).await?;
+        for (key, amount) in hotspot_rewards {
+            reward_index::insert(&mut *txn, &key, amount, &manifest_time).await?;
         }
 
         Ok(())
     }
 }
 
-fn extract_reward_share(mode: &settings::Mode, msg: &[u8]) -> Result<(Vec<u8>, u64)> {
+fn extract_reward_share(mode: &settings::Mode, op_fund_key: &[u8], msg: &[u8]) -> Result<(Vec<u8>, u64)> {
     match mode {
         settings::Mode::Mobile => {
             let share = RadioRewardShare::decode(msg)?;
             Ok((share.hotspot_key, share.amount))
         }
         settings::Mode::Iot => {
-            let share = GatewayRewardShare::decode(msg)?;
-            Ok((
-                share.hotspot_key,
-                share.witness_amount + share.beacon_amount + share.dc_transfer_amount,
-            ))
+            let share = IotRewardShare::decode(msg)?;
+            match share.reward {
+                Some(ProtoReward::GatewayReward(r)) =>  {
+                    Ok((
+                        r.hotspot_key,
+                        r.witness_amount + r.beacon_amount + r.dc_transfer_amount,
+                    ))
+                },
+                Some(ProtoReward::OperationalReward(r)) =>  {
+                    Ok((
+                        op_fund_key.to_vec(),
+                        r.amount
+                    ))
+                },
+                _ => bail!("got an invalid reward share"),
+            }
         }
     }
 }

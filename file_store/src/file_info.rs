@@ -115,7 +115,7 @@ pub const REWARD_MANIFEST: &str = "reward_manifest";
 pub const IOT_PACKET_REPORT: &str = "packetreport";
 pub const IOT_VALID_PACKET: &str = "iot_valid_packet";
 pub const INVALID_PACKET: &str = "invalid_packet";
-pub const GATEWAY_REWARD_SHARE: &str = "gateway_reward_share";
+pub const IOT_REWARD_SHARE: &str = "iot_reward_share";
 pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
@@ -143,7 +143,7 @@ pub enum FileType {
     IotPacketReport,
     IotValidPacket,
     InvalidPacket,
-    GatewayRewardShare,
+    IotRewardShare,
     DataTransferSessionIngestReport,
     ValidDataTransferSession,
     PriceReport,
@@ -172,7 +172,7 @@ impl fmt::Display for FileType {
             Self::IotPacketReport => IOT_PACKET_REPORT,
             Self::IotValidPacket => IOT_VALID_PACKET,
             Self::InvalidPacket => INVALID_PACKET,
-            Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
+            Self::IotRewardShare => IOT_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
@@ -204,7 +204,7 @@ impl FileType {
             Self::IotPacketReport => IOT_PACKET_REPORT,
             Self::IotValidPacket => IOT_VALID_PACKET,
             Self::InvalidPacket => INVALID_PACKET,
-            Self::GatewayRewardShare => GATEWAY_REWARD_SHARE,
+            Self::IotRewardShare => IOT_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
@@ -236,7 +236,7 @@ impl FromStr for FileType {
             IOT_PACKET_REPORT => Self::IotPacketReport,
             IOT_VALID_PACKET => Self::IotValidPacket,
             INVALID_PACKET => Self::InvalidPacket,
-            GATEWAY_REWARD_SHARE => Self::GatewayRewardShare,
+            IOT_REWARD_SHARE => Self::IotRewardShare,
             DATA_TRANSFER_SESSION_INGEST_REPORT => Self::DataTransferSessionIngestReport,
             VALID_DATA_TRANSFER_SESSION => Self::ValidDataTransferSession,
             PRICE_REPORT => Self::PriceReport,
