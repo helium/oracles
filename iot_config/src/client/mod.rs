@@ -3,10 +3,10 @@ use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
-    services::{iot_config, Channel},
-    Message,
+    services::{iot_config, Channel, Endpoint},
+    BlockchainRegionParamV1, Message, Region,
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 mod settings;
 pub use settings::Settings;
@@ -14,16 +14,19 @@ pub use settings::Settings;
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
     #[error("error signing request: {0}")]
-    SigningError(#[from] helium_crypto::Error),
+    Signing(#[from] helium_crypto::Error),
     #[error("grpc error response: {0}")]
-    GrpcError(#[from] tonic::Status),
+    Rpc(#[from] tonic::Status),
     #[error("error verifying response signature: {0}")]
-    VerificationError(#[from] file_store::Error),
+    Verification(#[from] file_store::Error),
+    #[error("error resolving region params: {0}")]
+    UndefinedRegionParams(String),
 }
 
 #[derive(Clone, Debug)]
 pub struct Client {
-    pub client: iot_config::GatewayClient<Channel>,
+    pub gateway_client: iot_config::gateway_client::GatewayClient<Channel>,
+    pub admin_client: iot_config::admin_client::AdminClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
     batch_size: u32,
@@ -31,11 +34,37 @@ pub struct Client {
 
 impl Client {
     pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
+        let channel = Endpoint::from(settings.url.clone())
+            .connect_timeout(Duration::from_secs(settings.connect_timeout))
+            .timeout(Duration::from_secs(settings.rpc_timeout))
+            .connect_lazy();
         Ok(Self {
-            client: settings.connect(),
+            gateway_client: iot_config::gateway_client::GatewayClient::new(channel.clone()),
+            admin_client: iot_config::admin_client::AdminClient::new(channel),
             signing_key: settings.signing_keypair()?,
             config_pubkey: settings.config_pubkey()?,
             batch_size: settings.batch_size,
+        })
+    }
+
+    pub async fn resolve_region_params(
+        &mut self,
+        region: Region,
+    ) -> Result<RegionParamsInfo, ClientError> {
+        let mut request = iot_config::RegionParamsReqV1 {
+            region: region.into(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        let response = self.admin_client.region_params(request).await?.into_inner();
+        response.verify(&self.config_pubkey)?;
+        Ok(RegionParamsInfo {
+            region: response.region(),
+            region_params: response
+                .params
+                .ok_or_else(|| ClientError::UndefinedRegionParams(format!("{region}")))?
+                .region_params,
         })
     }
 }
@@ -55,7 +84,7 @@ impl gateway_info::GatewayInfoResolver for Client {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
-        let response = match self.client.info(request).await {
+        let response = match self.gateway_client.info(request).await {
             Ok(info_resp) => {
                 let response = info_resp.into_inner();
                 response.verify(&self.config_pubkey)?;
@@ -79,7 +108,7 @@ impl gateway_info::GatewayInfoResolver for Client {
         tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
         let response_stream = self
-            .client
+            .gateway_client
             .info_stream(request)
             .await?
             .into_inner()
@@ -97,4 +126,16 @@ impl gateway_info::GatewayInfoResolver for Client {
 
         Ok(response_stream)
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct RegionParamsInfo {
+    pub region: Region,
+    pub region_params: Vec<BlockchainRegionParamV1>,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum RegionParamsResolveError {
+    #[error("params undefined for region: {0}")]
+    Undefined(String),
 }

@@ -1,6 +1,5 @@
-use helium_proto::services::{iot_config, Channel, Endpoint};
 use serde::Deserialize;
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Settings {
@@ -35,14 +34,6 @@ pub fn default_batch_size() -> u32 {
 }
 
 impl Settings {
-    pub fn connect(&self) -> iot_config::GatewayClient<Channel> {
-        let channel = Endpoint::from(self.url.clone())
-            .connect_timeout(Duration::from_secs(self.connect_timeout))
-            .timeout(Duration::from_secs(self.rpc_timeout))
-            .connect_lazy();
-        iot_config::GatewayClient::new(channel)
-    }
-
     pub fn signing_keypair(
         &self,
     ) -> Result<Arc<helium_crypto::Keypair>, Box<helium_crypto::Error>> {
