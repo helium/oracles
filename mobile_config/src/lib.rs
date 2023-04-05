@@ -3,8 +3,8 @@ use tonic::{Response, Status};
 
 pub mod admin_service;
 pub mod client;
-pub mod hotspot_metadata;
-pub mod hotspot_service;
+pub mod gateway_info;
+pub mod gateway_service;
 pub mod key_cache;
 pub mod router_service;
 pub mod settings;

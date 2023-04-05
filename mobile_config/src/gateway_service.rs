@@ -1,5 +1,5 @@
 use crate::{
-    hotspot_metadata::{self, HotspotMetadata},
+    gateway_info::{self, GatewayInfo},
     key_cache::{KeyCache, KeyType},
     GrpcResult, GrpcStreamResult,
 };
@@ -12,8 +12,8 @@ use futures::{
 use helium_crypto::{Keypair, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
-        self, HotspotMetadataReqV1, HotspotMetadataResV1, HotspotMetadataStreamReqV1,
-        HotspotMetadataStreamResV1,
+        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1,
+        GatewayInfoStreamResV1,
     },
     Message,
 };
@@ -21,13 +21,13 @@ use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-pub struct HotspotService {
+pub struct GatewayService {
     key_cache: KeyCache,
     metadata_pool: Pool<Postgres>,
     signing_key: Arc<Keypair>,
 }
 
-impl HotspotService {
+impl GatewayService {
     pub fn new(key_cache: KeyCache, metadata_pool: Pool<Postgres>, signing_key: Keypair) -> Self {
         Self {
             key_cache,
@@ -71,11 +71,11 @@ impl HotspotService {
 }
 
 #[tonic::async_trait]
-impl mobile_config::Hotspot for HotspotService {
-    async fn metadata(
+impl mobile_config::Gateway for GatewayService {
+    async fn info(
         &self,
-        request: Request<HotspotMetadataReqV1>,
-    ) -> GrpcResult<HotspotMetadataResV1> {
+        request: Request<GatewayInfoReqV1>,
+    ) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
 
         self.verify_request_signature(&request).await?;
@@ -83,18 +83,19 @@ impl mobile_config::Hotspot for HotspotService {
         let pubkey: PublicKeyBinary = request.address.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching hotspot metadata");
 
-        hotspot_metadata::db::get_metadata(&self.metadata_pool, &pubkey)
+        gateway_info::db::get_info(&self.metadata_pool, &pubkey)
             .await
             .map_err(|_| Status::internal("error fetching hotspot metadata"))?
             .map_or_else(
                 || Err(Status::not_found(pubkey.to_string())),
-                |metadata| {
-                    let metadata = metadata
+                |info| {
+                    let info = info
                         .try_into()
-                        .map_err(|_| Status::internal("error serializing hotspot metadata"))?;
-                    let mut res = HotspotMetadataResV1 {
-                        metadata: Some(metadata),
+                        .map_err(|_| Status::internal("error serializing gateway info"))?;
+                    let mut res = GatewayInfoResV1 {
+                        info: Some(info),
                         timestamp: Utc::now().encode_timestamp(),
+                        signer: self.signing_key.public_key().into(),
                         signature: vec![],
                     };
                     res.signature = self.sign_response(&res)?;
@@ -103,16 +104,16 @@ impl mobile_config::Hotspot for HotspotService {
             )
     }
 
-    type metadata_streamStream = GrpcStreamResult<HotspotMetadataStreamResV1>;
-    async fn metadata_stream(
+    type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
+    async fn info_stream(
         &self,
-        request: Request<HotspotMetadataStreamReqV1>,
-    ) -> GrpcResult<Self::metadata_streamStream> {
+        request: Request<GatewayInfoStreamReqV1>,
+    ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
 
         self.verify_request_signature(&request).await?;
 
-        tracing::debug!("fetching all hotspots' metadata");
+        tracing::debug!("fetching all gateways' info");
 
         let pool = self.metadata_pool.clone();
         let signing_key = self.signing_key.clone();
@@ -121,34 +122,34 @@ impl mobile_config::Hotspot for HotspotService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            stream_all_hotspots_metadata(&pool, tx.clone(), signing_key.clone(), batch_size).await
+            stream_all_gateways_info(&pool, tx.clone(), signing_key.clone(), batch_size).await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
 }
 
-async fn stream_all_hotspots_metadata(
+async fn stream_all_gateways_info(
     pool: &Pool<Postgres>,
-    tx: tokio::sync::mpsc::Sender<Result<HotspotMetadataStreamResV1, Status>>,
+    tx: tokio::sync::mpsc::Sender<Result<GatewayInfoStreamResV1, Status>>,
     signing_key: Arc<Keypair>,
     batch_size: u32,
 ) -> anyhow::Result<()> {
-    Ok(hotspot_metadata::db::all_metadata_stream(pool)
-        .map(Ok::<HotspotMetadata, sqlx::Error>)
-        .try_filter_map(|metadata| async move {
-            let result: Option<mobile_config::HotspotMetadata> = match metadata.try_into() {
-                Ok(metadata_proto) => Some(metadata_proto),
-                Err(_) => None,
-            };
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
+    Ok(gateway_info::db::all_info_stream(pool)
+        .map(Ok::<GatewayInfo, sqlx::Error>)
+        .try_filter_map(|info| async move {
+            let result: Option<mobile_config::GatewayInfo> = info.try_into().ok();
             Ok(result)
         })
         .try_chunks(batch_size as usize)
         .map_ok(move |batch| {
             (
-                HotspotMetadataStreamResV1 {
-                    hotspots: batch,
-                    timestamp: Utc::now().encode_timestamp(),
+                GatewayInfoStreamResV1 {
+                    gateways: batch,
+                    timestamp,
+                    signer: signer.clone(),
                     signature: vec![],
                 },
                 signing_key.clone(),
@@ -156,9 +157,10 @@ async fn stream_all_hotspots_metadata(
         })
         .try_filter_map(|(res, keypair)| async move {
             let result = match keypair.sign(&res.encode_to_vec()) {
-                Ok(signature) => Some(HotspotMetadataStreamResV1 {
-                    hotspots: res.hotspots,
+                Ok(signature) => Some(GatewayInfoStreamResV1 {
+                    gateways: res.hotspots,
                     timestamp: res.timestamp,
+                    signer: res.signer,
                     signature,
                 }),
                 Err(_) => None,

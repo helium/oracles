@@ -1,9 +1,9 @@
 use anyhow::{Error, Result};
 use clap::Parser;
 use futures_util::TryFutureExt;
-use helium_proto::services::mobile_config::{AdminServer, HotspotServer, RouterServer};
+use helium_proto::services::mobile_config::{AdminServer, GatewayServer, RouterServer};
 use mobile_config::{
-    admin_service::AdminService, hotspot_service::HotspotService, key_cache::KeyCache,
+    admin_service::AdminService, gateway_service::GatewayService, key_cache::KeyCache,
     router_service::RouterService, settings::Settings,
 };
 use std::{path::PathBuf, time::Duration};
@@ -83,7 +83,7 @@ impl Daemon {
         let key_cache = KeyCache::new(settings, pool.clone()).await?;
 
         let admin_svc = AdminService::new(key_cache.clone(), settings.network);
-        let hotspot_svc = HotspotService::new(
+        let gateway_svc = GatewayService::new(
             key_cache.clone(),
             metadata_pool.clone(),
             settings.signing_keypair()?,
@@ -94,7 +94,7 @@ impl Daemon {
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(AdminServer::new(admin_svc))
-            .add_service(HotspotServer::new(hotspot_svc))
+            .add_service(HotspotServer::new(gateway_svc))
             .add_service(RouterServer::new(router_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from);
