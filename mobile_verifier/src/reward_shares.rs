@@ -91,7 +91,7 @@ impl TransferRewards {
         // If we find that total data_transfer reward sum is greater than 80%, we use the
         // following math to calculate the scale:
         //
-        // [ scale * data_transfer_reward_sum ] / total_emissions_pool = 0.8
+        // [ scale * data_transfer_reward_sum ] / total_emissions_pool = 0.4
         //
         //   therefore:
         //
