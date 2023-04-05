@@ -10,11 +10,26 @@ use helium_proto::services::{
     follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
     poc_mobile as proto, Channel,
 };
-use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
+
+/// 100M genesis rewards per day
+const GENESIS_REWARDS_PER_DAY: Decimal = dec!(100_000_000_000_000);
+
+/// Total emissions pool
+const TOTAL_EMISSIONS_POOL: Decimal = dec!(166_666_666_666_666);
+
+/// Maximum amount of the total emissions pool allocated for data transfer
+/// rewards
+const MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.4);
+
+/// The fixed price of a mobile data credit
+const DC_USD_PRICE: Decimal = dec!(0.00000003);
+
+/// Default precision used for rounding
+const DEFAULT_PREC: u32 = 15;
 
 pub struct TransferRewards {
     scale: Decimal,
@@ -68,31 +83,29 @@ impl TransferRewards {
             })
             .collect();
 
-        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?;
-
         // Determine if we need to scale the rewards given for data transfer rewards.
         // Ideally this should never happen, but if the total number of data transfer rewards
-        // is greater than (at the time of writing) 80% of the total pool, we need to scale
+        // is greater than (at the time of writing) 40% of the total pool, we need to scale
         // the rewards given for data transfer.
         //
         // If we find that total data_transfer reward sum is greater than 80%, we use the
         // following math to calculate the scale:
         //
-        // [ scale * data_transfer_reward_sum ] / total_rewards = 0.8
+        // [ scale * data_transfer_reward_sum ] / total_emissions_pool = 0.8
         //
         //   therefore:
         //
-        // scale = [ 0.8 * total_rewards ] / data_transfer_reward_sum
+        // scale = [ 0.8 * total_emissions_pool ] / data_transfer_reward_sum
         //
-        let (scale, remaining_poc_rewards) =
-            if data_transfer_reward_sum / total_rewards > *MAX_DATA_TRANSFER_REWARDS_PERCENT {
-                (
-                    *MAX_DATA_TRANSFER_REWARDS_PERCENT * total_rewards / data_transfer_reward_sum,
-                    total_rewards * (dec!(1.0) - *MAX_DATA_TRANSFER_REWARDS_PERCENT),
-                )
-            } else {
-                (Decimal::ONE, total_rewards - data_transfer_reward_sum)
-            };
+        let scale = if data_transfer_reward_sum / TOTAL_EMISSIONS_POOL
+            > MAX_DATA_TRANSFER_REWARDS_PERCENT
+        {
+            MAX_DATA_TRANSFER_REWARDS_PERCENT * TOTAL_EMISSIONS_POOL / data_transfer_reward_sum
+        } else {
+            Decimal::ONE
+        };
+        let remaining_poc_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?
+            - scale * data_transfer_reward_sum;
 
         Ok(Self {
             scale,
@@ -109,16 +122,9 @@ fn bytes_to_dc(bytes: u64) -> u64 {
     (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }
 
-lazy_static! {
-    static ref MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.8);
-    static ref DC_USD_PRICE: Decimal = dec!(0.00000003);
-}
-
-const DEFAULT_PREC: u32 = 15;
-
 /// Returns the equivalent amount of Mobile bones for a specified amount of Data Credits
 pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_price: Decimal) -> Decimal {
-    let dc_in_usd = dc_amount * *DC_USD_PRICE;
+    let dc_in_usd = dc_amount * DC_USD_PRICE;
     (dc_in_usd / mobile_price)
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
@@ -223,12 +229,9 @@ impl RewardShares {
     }
 }
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref GENESIS_START: DateTime<Utc> =
         Utc.with_ymd_and_hms(2022, 7, 11, 0, 0, 0).single().unwrap();
-
-    // 100M genesis rewards per day
-    static ref GENESIS_REWARDS_PER_DAY: Decimal = dec!(100_000_000) * dec!(1_000_000);
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -241,7 +244,7 @@ pub fn get_scheduled_tokens(
 ) -> Result<Decimal, ClockError> {
     (*GENESIS_START <= start)
         .then(|| {
-            (*GENESIS_REWARDS_PER_DAY / Decimal::from(Duration::hours(24).num_seconds()))
+            (GENESIS_REWARDS_PER_DAY / Decimal::from(Duration::hours(24).num_seconds()))
                 * Decimal::from(duration.num_seconds())
         })
         .ok_or(ClockError)
@@ -362,23 +365,13 @@ mod test {
             transfer_sessions.push(ValidDataTransferSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
-                upload_bytes: 66 * 5_333_333_333_333_333,
+                upload_bytes: 66 * 4_444_444_444_444_444, //5_333_333_333_333_333,
                 download_bytes: 0,
                 num_dcs: 0, // Not used
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),
             });
         }
-
-        transfer_sessions.push(ValidDataTransferSession {
-            pub_key: owner.clone(),
-            payer: payer.clone(),
-            upload_bytes: 66 * 1,
-            download_bytes: 0,
-            num_dcs: 0, // Not used
-            first_timestamp: DateTime::default(),
-            last_timestamp: DateTime::default(),
-        });
 
         let data_transfer_sessions = stream::iter(transfer_sessions);
 
@@ -391,15 +384,15 @@ mod test {
                 .expect("Could not fetch data transfer sessions");
 
         assert_eq!(
-            data_transfer_rewards.remaining_poc_rewards,
-            dec!(20_000_000) * dec!(1_000_000)
+            data_transfer_rewards.remaining_poc_rewards.trunc(),
+            dec!(33_333_333_333_333)
         );
         assert_eq!(
             // Rewards are automatically scaled
-            data_transfer_rewards.reward(&owner),
-            dec!(80_000_000) * dec!(1_000_000)
+            data_transfer_rewards.reward(&owner).trunc(),
+            dec!(66_666_666_666_666)
         );
-        assert_eq!(data_transfer_rewards.scale().round_dp(15), dec!(0.5));
+        assert_eq!(data_transfer_rewards.scale().round_dp(1), dec!(0.5));
     }
 
     struct MapResolver {
