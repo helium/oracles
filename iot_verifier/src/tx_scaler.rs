@@ -5,7 +5,10 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::stream::StreamExt;
-use iot_config_client::iot_config_client::{IotConfigClient, IotConfigClientError};
+use iot_config::{
+    client::{Client as IotConfigClient, ClientError as IotConfigClientError},
+    gateway_info::GatewayInfoResolver,
+};
 
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -84,11 +87,11 @@ impl Server {
             .gateways_recent_activity(refresh_start)
             .await
             .map_err(sqlx::Error::from)?;
-        let mut gw_stream = self.iot_config_client.gateway_stream().await?;
+        let mut gw_stream = self.iot_config_client.stream_gateways_info().await?;
         while let Some(gateway_info) = gw_stream.next().await {
-            if let Some(h3index) = gateway_info.location {
+            if let Some(metadata) = gateway_info.metadata {
                 if active_gateways.contains_key(&gateway_info.address.as_ref().to_vec()) {
-                    global_map.increment_unclipped(h3index)
+                    global_map.increment_unclipped(metadata.location)
                 }
             }
         }

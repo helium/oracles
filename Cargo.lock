@@ -3298,25 +3298,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iot-config-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "beacon",
- "futures",
- "helium-crypto",
- "helium-proto",
- "http",
- "http-serde",
- "rand 0.8.5",
- "retainer",
- "serde",
- "thiserror",
- "tonic",
-]
-
-[[package]]
 name = "iot-packet-verifier"
 version = "0.1.0"
 dependencies = [
@@ -3379,7 +3360,7 @@ dependencies = [
  "helium-proto",
  "http-serde",
  "humantime",
- "iot-config-client",
+ "iot-config",
  "itertools",
  "lazy_static",
  "metrics",

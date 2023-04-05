@@ -6,7 +6,7 @@ use file_store::{
     file_upload, iot_packet::IotValidPacket, FileStore, FileType,
 };
 use futures::TryFutureExt;
-use iot_config_client::iot_config_client::IotConfigClient;
+use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, packet_loader,
     poc_report::Report, purger, region_cache::RegionCache, rewarder::Rewarder, runner,

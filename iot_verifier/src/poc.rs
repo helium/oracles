@@ -20,7 +20,7 @@ use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
     BlockchainRegionParamV1, Region as ProtoRegion,
 };
-use iot_config_client::gateway_resolver::GatewayInfo;
+use iot_config::gateway_info::{GatewayInfo, GatewayMetadata};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -111,20 +111,31 @@ impl Poc {
         // it not available then declare beacon invalid
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
-            Err(_e) => {
+            Err(_err) => {
                 return Ok(VerifyBeaconResult::gateway_not_found());
             }
         };
-        let beaconer_region_info =
-            match region_cache.resolve_region_info(beaconer_info.region).await {
-                Ok(res) => res,
-                Err(_e) => {
-                    return Ok(VerifyBeaconResult::invalid(
-                        InvalidReason::InvalidRegion,
-                        beaconer_info,
-                    ));
-                }
-            };
+        let beaconer_metadata = match beaconer_info.metadata {
+            Some(ref metadata) => metadata,
+            None => {
+                return Ok(VerifyBeaconResult::invalid(
+                    InvalidReason::NotAsserted,
+                    beaconer_info,
+                ))
+            }
+        };
+        let beaconer_region_info = match region_cache
+            .resolve_region_info(beaconer_metadata.region)
+            .await
+        {
+            Ok(res) => res,
+            Err(_e) => {
+                return Ok(VerifyBeaconResult::invalid(
+                    InvalidReason::InvalidRegion,
+                    beaconer_info,
+                ));
+            }
+        };
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
         match do_beacon_verifications(
@@ -139,12 +150,8 @@ impl Poc {
             beacon_interval_tolerance,
         ) {
             Ok(()) => {
-                let beaconer_location = beaconer_info
-                    .location
-                    .ok_or(VerificationError::NotFound("invalid beaconer_location"))?;
-
                 let tx_scale = hex_density_map
-                    .get(beaconer_location)
+                    .get(beaconer_metadata.location)
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);
                 Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
@@ -226,6 +233,29 @@ impl Poc {
                 ))
             }
         };
+        let witness_metadata = match witness_info.metadata {
+            Some(ref metadata) => metadata,
+            None => {
+                return Ok(IotVerifiedWitnessReport::invalid(
+                    InvalidReason::NotAsserted,
+                    &witness_report.report,
+                    witness_report.received_timestamp,
+                    None,
+                    InvalidParticipantSide::Witness,
+                ))
+            }
+        };
+        // to avoid assuming beaconer location is set and to avoid unwrap
+        // we explicity match location here again
+        let Some(ref beaconer_metadata) = beaconer_info.metadata else {
+            return Ok(IotVerifiedWitnessReport::invalid(
+                InvalidReason::NotAsserted,
+                &witness_report.report,
+                witness_report.received_timestamp,
+                None,
+                InvalidParticipantSide::Beaconer,
+            ))
+        };
         // run the witness verifications
         match do_witness_verifications(
             self.entropy_start,
@@ -233,29 +263,17 @@ impl Poc {
             witness_report,
             &witness_info,
             &self.beacon_report,
-            beaconer_info,
+            beaconer_metadata,
         ) {
             Ok(()) => {
-                // to avoid assuming beaconer location is set and to avoid unwrap
-                // we explicity match location here again
-                let Some(beaconer_location) = beaconer_info.location else {
-                    return Ok(IotVerifiedWitnessReport::invalid(
-                        InvalidReason::NotAsserted,
-                        &witness_report.report,
-                        witness_report.received_timestamp,
-                        None,
-                        InvalidParticipantSide::Beaconer,
-                    ))
-                };
-
                 let tx_scale = hex_density_map
-                    .get(beaconer_location)
+                    .get(beaconer_metadata.location)
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);
                 Ok(IotVerifiedWitnessReport::valid(
                     &witness_report.report,
                     witness_report.received_timestamp,
-                    witness_info.location,
+                    Some(witness_metadata.location),
                     tx_scale,
                 ))
             }
@@ -287,8 +305,11 @@ pub fn do_beacon_verifications(
         beaconer_info.address.clone()
     );
     let beacon_received_ts = beacon_report.received_timestamp;
+    let beaconer_metadata = match beaconer_info.metadata {
+        Some(ref metadata) => metadata,
+        None => return Err(InvalidReason::NotAsserted),
+    };
     verify_entropy(entropy_start, entropy_end, beacon_received_ts)?;
-    verify_gw_location(beaconer_info.location)?;
     verify_gw_capability(beaconer_info.is_full_hotspot)?;
     verify_beacon_schedule(
         &last_beacon,
@@ -298,9 +319,9 @@ pub fn do_beacon_verifications(
     )?;
     verify_beacon_payload(
         &beacon_report.report,
-        beaconer_info.region,
+        beaconer_metadata.region,
         beaconer_region_params,
-        beaconer_info.gain,
+        beaconer_metadata.gain,
         entropy_start,
         entropy_version as u32,
     )?;
@@ -317,13 +338,17 @@ pub fn do_witness_verifications(
     witness_report: &IotWitnessIngestReport,
     witness_info: &GatewayInfo,
     beacon_report: &IotBeaconIngestReport,
-    beaconer_info: &GatewayInfo,
+    beaconer_metadata: &GatewayMetadata,
 ) -> GenericVerifyResult {
     tracing::debug!(
         "verifying witness from gateway: {:?}",
         witness_info.address.clone()
     );
     let beacon_report = &beacon_report;
+    let witness_metadata = match witness_info.metadata {
+        Some(ref metadata) => metadata,
+        None => return Err(InvalidReason::NotAsserted),
+    };
     verify_self_witness(
         &beacon_report.report.pub_key,
         &witness_report.report.pub_key,
@@ -334,23 +359,22 @@ pub fn do_witness_verifications(
         witness_report.received_timestamp,
     )?;
     verify_witness_data(&beacon_report.report.data, &witness_report.report.data)?;
-    verify_gw_location(witness_info.location)?;
     verify_gw_capability(witness_info.is_full_hotspot)?;
     verify_witness_freq(
         beacon_report.report.frequency,
         witness_report.report.frequency,
     )?;
-    verify_witness_region(beaconer_info.region, witness_info.region)?;
-    verify_witness_cell_distance(beaconer_info.location, witness_info.location)?;
-    verify_witness_distance(beaconer_info.location, witness_info.location)?;
+    verify_witness_region(beaconer_metadata.region, witness_metadata.region)?;
+    verify_witness_cell_distance(beaconer_metadata.location, witness_metadata.location)?;
+    verify_witness_distance(beaconer_metadata.location, witness_metadata.location)?;
     verify_witness_rssi(
         witness_report.report.signal,
         witness_report.report.frequency,
         beacon_report.report.tx_power,
-        beaconer_info.gain,
-        witness_info.gain,
-        beaconer_info.location,
-        witness_info.location,
+        beaconer_metadata.gain,
+        witness_metadata.gain,
+        beaconer_metadata.location,
+        witness_metadata.location,
     )?;
     tracing::debug!(
         "valid witness from gateway: {:?}",
@@ -472,21 +496,6 @@ fn verify_beacon_payload(
     Ok(())
 }
 
-/// verify gateway has an asserted location
-fn verify_gw_location(gateway_loc: Option<u64>) -> GenericVerifyResult {
-    match gateway_loc {
-        Some(location) => location,
-        None => {
-            tracing::debug!(
-                "beacon verification failed, reason: {:?}",
-                InvalidReason::NotAsserted
-            );
-            return Err(InvalidReason::NotAsserted);
-        }
-    };
-    Ok(())
-}
-
 /// verify gateway is permitted to participate in POC
 fn verify_gw_capability(is_full_hotspot: bool) -> GenericVerifyResult {
     if !is_full_hotspot {
@@ -544,17 +553,8 @@ fn verify_witness_region(
 }
 
 /// verify witness does not exceed max distance from beaconer
-fn verify_witness_distance(
-    beacon_loc: Option<u64>,
-    witness_loc: Option<u64>,
-) -> GenericVerifyResult {
-    // other verifications handle location checks but dont assume
-    // we have a valid location passed in here
-    // if no location for either beaconer or witness then default
-    // this verification to a fail
-    let l1 = beacon_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
-    let l2 = witness_loc.ok_or(InvalidReason::MaxDistanceExceeded)?;
-    let witness_distance = match calc_distance(l1, l2) {
+fn verify_witness_distance(beacon_loc: u64, witness_loc: u64) -> GenericVerifyResult {
+    let witness_distance = match calc_distance(beacon_loc, witness_loc) {
         Ok(d) => d,
         Err(_) => return Err(InvalidReason::MaxDistanceExceeded),
     };
@@ -569,17 +569,8 @@ fn verify_witness_distance(
 }
 
 /// verify min hex distance between beaconer and witness
-fn verify_witness_cell_distance(
-    beacon_loc: Option<u64>,
-    witness_loc: Option<u64>,
-) -> GenericVerifyResult {
-    // other verifications handle location checks but dont assume
-    // we have a valid location passed in here
-    // if no location for either beaconer or witness then default
-    // this verification to a fail
-    let l1 = beacon_loc.ok_or(InvalidReason::BelowMinDistance)?;
-    let l2 = witness_loc.ok_or(InvalidReason::BelowMinDistance)?;
-    let cell_distance = match calc_cell_distance(l1, l2) {
+fn verify_witness_cell_distance(beacon_loc: u64, witness_loc: u64) -> GenericVerifyResult {
+    let cell_distance = match calc_cell_distance(beacon_loc, witness_loc) {
         Ok(d) => d,
         Err(_) => return Err(InvalidReason::BelowMinDistance),
     };
@@ -600,17 +591,10 @@ fn verify_witness_rssi(
     beacon_tx_power: i32,
     beacon_gain: i32,
     witness_gain: i32,
-    beacon_loc: Option<u64>,
-    witness_loc: Option<u64>,
+    beacon_loc: u64,
+    witness_loc: u64,
 ) -> GenericVerifyResult {
-    // other verifications handle location checks but dont assume
-    // we have a valid location passed in here
-    // if no location for either beaconer or witness or
-    // distance between the two cannot be determined
-    // then default this verification to a fail
-    let l1 = beacon_loc.ok_or(InvalidReason::BadRssi)?;
-    let l2 = witness_loc.ok_or(InvalidReason::BadRssi)?;
-    let distance = match calc_distance(l1, l2) {
+    let distance = match calc_distance(beacon_loc, witness_loc) {
         Ok(d) => d,
         Err(_) => return Err(InvalidReason::BadRssi),
     };
@@ -1009,12 +993,6 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_location() {
-        assert!(verify_gw_location(Some(LOC1)).is_ok());
-        assert_eq!(Err(InvalidReason::NotAsserted), verify_gw_location(None));
-    }
-
-    #[test]
     fn test_verify_capability() {
         assert!(verify_gw_capability(true).is_ok());
         assert_eq!(
@@ -1070,10 +1048,10 @@ mod tests {
         let beacon_loc = LOC0;
         let witness1_loc = LOC1;
         let witness2_loc = LOC2;
-        assert!(verify_witness_distance(Some(beacon_loc), Some(witness1_loc)).is_ok());
+        assert!(verify_witness_distance(beacon_loc, witness1_loc).is_ok());
         assert_eq!(
             Err(InvalidReason::MaxDistanceExceeded),
-            verify_witness_distance(Some(beacon_loc), Some(witness2_loc))
+            verify_witness_distance(beacon_loc, witness2_loc)
         );
     }
 
@@ -1086,10 +1064,10 @@ mod tests {
         // witness 1 location is 7 cells from the beaconer and thus invalid
         assert_eq!(
             Err(InvalidReason::BelowMinDistance),
-            verify_witness_cell_distance(Some(beacon_loc), Some(witness1_loc))
+            verify_witness_cell_distance(beacon_loc, witness1_loc)
         );
         // witness 2's location is 28 cells from the beaconer and thus valid
-        assert!(verify_witness_cell_distance(Some(beacon_loc), Some(witness2_loc)).is_ok());
+        assert!(verify_witness_cell_distance(beacon_loc, witness2_loc).is_ok());
     }
 
     #[test]
@@ -1109,8 +1087,8 @@ mod tests {
             beacon1_tx_power,
             beacon1_gain,
             witness1_gain,
-            Some(beacon_loc),
-            Some(witness1_loc),
+            beacon_loc,
+            witness1_loc,
         )
         .is_ok());
         let beacon2_tx_power = 27;
@@ -1126,8 +1104,8 @@ mod tests {
                 beacon2_tx_power,
                 beacon2_gain,
                 witness2_gain,
-                Some(beacon_loc),
-                Some(witness2_loc),
+                beacon_loc,
+                witness2_loc,
             )
         );
     }
@@ -1271,6 +1249,9 @@ mod tests {
         // create default data structs
         let beacon_report = valid_beacon_report(Utc::now() - Duration::minutes(2));
         let beaconer_info = beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, true);
+        let beaconer_metadata = beaconer_info
+            .metadata
+            .expect("beaconer should have metadata");
         let witness_info = witness_gateway_info(Some(LOC4), ProtoRegion::Eu868, true);
         let entropy_start = Utc.timestamp_millis_opt(1676381847900).unwrap();
         let entropy_end = entropy_start + Duration::minutes(3);
@@ -1283,7 +1264,7 @@ mod tests {
             &witness_report1,
             &witness_info,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::SelfWitness), resp1);
 
@@ -1295,7 +1276,7 @@ mod tests {
             &witness_report2,
             &witness_info,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::EntropyExpired), resp2);
 
@@ -1307,7 +1288,7 @@ mod tests {
             &witness_report3,
             &witness_info,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::InvalidPacket), resp3);
 
@@ -1320,7 +1301,7 @@ mod tests {
             &witness_report4,
             &witness_info4,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::NotAsserted), resp4);
 
@@ -1332,7 +1313,7 @@ mod tests {
             &witness_report5,
             &witness_info,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::InvalidFrequency), resp5);
 
@@ -1345,7 +1326,7 @@ mod tests {
             &witness_report6,
             &witness_info6,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::InvalidRegion), resp6);
 
@@ -1358,7 +1339,7 @@ mod tests {
             &witness_report7,
             &witness_info7,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::BelowMinDistance), resp7);
 
@@ -1371,7 +1352,7 @@ mod tests {
             &witness_report8,
             &witness_info8,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::MaxDistanceExceeded), resp8);
 
@@ -1383,7 +1364,7 @@ mod tests {
             &witness_report9,
             &witness_info,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::BadRssi), resp9);
 
@@ -1396,7 +1377,7 @@ mod tests {
             &witness_report10,
             &witness_info10,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Err(InvalidReason::InvalidCapability), resp10);
 
@@ -1409,7 +1390,7 @@ mod tests {
             &witness_report11,
             &witness_info11,
             &beacon_report,
-            &beaconer_info,
+            &beaconer_metadata,
         );
         assert_eq!(Ok(()), resp11);
     }
@@ -1419,13 +1400,16 @@ mod tests {
         region: ProtoRegion,
         is_full_hotspot: bool,
     ) -> GatewayInfo {
-        GatewayInfo {
+        let metadata = location.map(|location| GatewayMetadata {
             location,
+            gain: 12,
+            elevation: 100,
+            region,
+        });
+        GatewayInfo {
             address: PublicKeyBinary::from_str(PUBKEY1).unwrap(),
             is_full_hotspot,
-            gain: 12,
-            elevation: Some(100),
-            region,
+            metadata,
         }
     }
 
@@ -1434,13 +1418,16 @@ mod tests {
         region: ProtoRegion,
         is_full_hotspot: bool,
     ) -> GatewayInfo {
-        GatewayInfo {
+        let metadata = location.map(|location| GatewayMetadata {
             location,
+            gain: 20,
+            elevation: 100,
+            region,
+        });
+        GatewayInfo {
             address: PublicKeyBinary::from_str(PUBKEY2).unwrap(),
             is_full_hotspot,
-            gain: 20,
-            elevation: Some(100),
-            region,
+            metadata,
         }
     }
 
