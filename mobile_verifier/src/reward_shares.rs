@@ -95,7 +95,7 @@ impl TransferRewards {
         //
         //   therefore:
         //
-        // scale = [ 0.8 * total_emissions_pool ] / data_transfer_reward_sum
+        // scale = [ 0.4 * total_emissions_pool ] / data_transfer_reward_sum
         //
         let scale = if data_transfer_reward_sum / TOTAL_EMISSIONS_POOL
             > MAX_DATA_TRANSFER_REWARDS_PERCENT
