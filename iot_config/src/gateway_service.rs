@@ -24,7 +24,7 @@ use tonic::{Request, Response, Status};
 
 pub struct GatewayService {
     auth_cache: AuthCache,
-    pool: Pool<Postgres>,
+    metadata_pool: Pool<Postgres>,
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
 }
@@ -32,13 +32,13 @@ pub struct GatewayService {
 impl GatewayService {
     pub fn new(
         settings: &Settings,
-        pool: Pool<Postgres>,
+        metadata_pool: Pool<Postgres>,
         region_map: RegionMapReader,
         auth_cache: AuthCache,
     ) -> Result<Self> {
         Ok(Self {
             auth_cache,
-            pool,
+            metadata_pool,
             region_map,
             signing_key: Arc::new(settings.signing_keypair()?),
         })
@@ -82,7 +82,7 @@ impl iot_config::Gateway for GatewayService {
 
         let address: &PublicKeyBinary = &request.gateway.into();
 
-        let location = gateway_info::db::get_info(&self.pool, address)
+        let location = gateway_info::db::get_info(&self.metadata_pool, address)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .map_or_else(
@@ -139,9 +139,10 @@ impl iot_config::Gateway for GatewayService {
             format!("invalid lora region {}", request.region),
         ))?;
 
-        let (region, gain) = if let Some(info) = gateway_info::db::get_info(&self.pool, address)
-            .await
-            .map_err(|_| Status::internal("error fetching gateway info"))?
+        let (region, gain) = if let Some(info) =
+            gateway_info::db::get_info(&self.metadata_pool, address)
+                .await
+                .map_err(|_| Status::internal("error fetching gateway info"))?
         {
             if let (Some(location), Some(gain)) = (info.location, info.gain) {
                 let region = match hextree::Cell::from_raw(location) {
@@ -208,7 +209,7 @@ impl iot_config::Gateway for GatewayService {
         self.verify_request_signature(&signer, &request)?;
 
         let address = &request.address.into();
-        let metadata_info = gateway_info::db::get_info(&self.pool, address)
+        let metadata_info = gateway_info::db::get_info(&self.metadata_pool, address)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .ok_or(Status::not_found(format!(
@@ -241,7 +242,7 @@ impl iot_config::Gateway for GatewayService {
 
         tracing::debug!("fetching all gateways' info");
 
-        let pool = self.pool.clone();
+        let pool = self.metadata_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let region_map = self.region_map.clone();

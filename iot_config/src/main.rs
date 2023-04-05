@@ -71,9 +71,15 @@ impl Daemon {
         // Create database pool
         let (pool, db_join_handle) = settings
             .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
+            .connect("iot-config-store", shutdown_listener.clone())
             .await?;
         sqlx::migrate!().run(&pool).await?;
+
+        // Create on-chain metadata pool
+        let (metadata_pool, md_pool_handle) = settings
+            .metadata
+            .connect("iot-config-metadata", shutdown_listener.clone())
+            .await?;
 
         let listen_addr = settings.listen_addr()?;
 
@@ -82,7 +88,7 @@ impl Daemon {
 
         let gateway_svc = GatewayService::new(
             settings,
-            pool.clone(),
+            metadata_pool,
             region_map.clone(),
             auth_cache.clone(),
         )?;
@@ -124,7 +130,11 @@ impl Daemon {
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from);
 
-        tokio::try_join!(db_join_handle.map_err(Error::from), server)?;
+        tokio::try_join!(
+            db_join_handle.map_err(Error::from),
+            md_pool_handle.map_err(Error::from),
+            server
+        )?;
 
         Ok(())
     }
