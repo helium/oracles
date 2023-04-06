@@ -60,7 +60,7 @@ impl OrgService {
             .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
     }
 
-    async fn verify_request_signature<R>(
+    fn verify_admin_request_signature<R>(
         &self,
         signer: &PublicKey,
         request: &R,
@@ -71,6 +71,16 @@ impl OrgService {
         self.auth_cache
             .verify_signature_with_type(KeyType::Administrator, signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
+        Ok(())
+    }
+
+    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        self.auth_cache
+            .verify_signature(signer, request)
+            .map_err(|_| Status::permission_denied("invalid request signature"))?;
         Ok(())
     }
 
@@ -147,7 +157,7 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
 
         let signer = self.verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request).await?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
         let mut verify_delegates: Vec<&[u8]> = request
@@ -219,7 +229,7 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
 
         let signer = self.verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request).await?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
         let mut verify_delegates: Vec<&[u8]> = request
@@ -286,7 +296,7 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
 
         let signer = self.verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request).await?;
+        self.verify_request_signature(&signer, &request)?;
 
         if !org::is_locked(request.oui, &self.pool)
             .await
@@ -351,7 +361,7 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
 
         let signer = self.verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request).await?;
+        self.verify_request_signature(&signer, &request)?;
 
         if org::is_locked(request.oui, &self.pool)
             .await

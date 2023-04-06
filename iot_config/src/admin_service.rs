@@ -49,13 +49,27 @@ impl AdminService {
         })
     }
 
-    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
+    fn verify_admin_request_signature<R>(
+        &self,
+        signer: &PublicKey,
+        request: &R,
+    ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
         self.auth_cache
             .verify_signature_with_type(KeyType::Administrator, signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
+        Ok(())
+    }
+
+    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        self.auth_cache
+            .verify_signature(signer, request)
+            .map_err(|_| Status::permission_denied("invalid request signature"))?;
         Ok(())
     }
 
@@ -91,7 +105,7 @@ impl iot_config::Admin for AdminService {
         let request = request.into_inner();
 
         let signer = self.verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let key_type = request.key_type().into();
         let pubkey = self
@@ -137,7 +151,7 @@ impl iot_config::Admin for AdminService {
         let request = request.into_inner();
 
         let signer = self.verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         admin::remove_key(request.pubkey.clone().into(), &self.pool)
             .and_then(|deleted| async move {
@@ -177,7 +191,7 @@ impl iot_config::Admin for AdminService {
         let request = request.into_inner();
 
         let signer = self.verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let region = Region::from_i32(request.region).ok_or(Status::invalid_argument(format!(
             "invalid lora region {}",
