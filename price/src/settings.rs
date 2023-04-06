@@ -3,7 +3,7 @@ use chrono::Duration;
 use config::{Config, Environment, File};
 use helium_proto::BlockchainTokenTypeV1;
 use serde::Deserialize;
-use solana_program::pubkey::Pubkey as SolPubkey;
+use solana_sdk::pubkey::Pubkey as SolPubkey;
 use std::{path::Path, str::FromStr};
 
 #[derive(Debug, Deserialize, Clone)]
@@ -54,10 +54,6 @@ pub struct Settings {
     /// Tick interval (secs). Default = 60s.
     #[serde(default = "default_interval")]
     pub interval: i64,
-    /// Price age (get price as long as it was updated within `age` seconds of current time) (in secs).
-    /// Default = 60s.
-    #[serde(default = "default_age")]
-    pub age: u64,
     /// Cluster Configuration
     #[serde(default = "default_cluster")]
     pub cluster: ClusterConfig,
@@ -75,10 +71,6 @@ pub fn default_log() -> String {
 }
 
 pub fn default_interval() -> i64 {
-    60
-}
-
-pub fn default_age() -> u64 {
     60
 }
 
