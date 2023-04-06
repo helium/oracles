@@ -6,7 +6,7 @@ pub struct Settings {
     /// grpc url to the iot config oracle server
     #[serde(with = "http_serde::uri")]
     pub url: http::Uri,
-    /// File from which to load keypair for signing config server requests
+    /// File from which to load keypair for signing config client requests
     pub signing_keypair: String,
     /// B58 encoded public key of the iot config server for verifying responses
     pub config_pubkey: String,
