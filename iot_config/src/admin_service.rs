@@ -127,7 +127,16 @@ impl iot_config::Admin for AdminService {
         let request = request.into_inner();
         self.verify_request_signature(&request).await?;
 
-        let region = request.region();
+        let region = Region::from_i32(request.region).ok_or(Status::invalid_argument(format!(
+            "invalid lora region {}",
+            request.region
+        )))?;
+
+        if region == Region::Unknown {
+            return Err(Status::invalid_argument(
+                "unable to override the 'UKNOWN' region",
+            ));
+        }
 
         let params = match request.params {
             Some(params) => params,
