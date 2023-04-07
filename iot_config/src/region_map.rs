@@ -110,6 +110,14 @@ pub async fn build_params_map(
         let params = BlockchainRegionParamsV1::decode(region_row.params.as_slice())?;
         params_map.insert(region, params);
     }
+
+    // insert the Unknown region with Empty params
+    params_map.insert(
+        Region::Unknown,
+        BlockchainRegionParamsV1 {
+            region_params: vec![],
+        },
+    );
     Ok(params_map)
 }
 
