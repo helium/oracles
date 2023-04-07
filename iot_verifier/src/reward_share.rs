@@ -384,7 +384,7 @@ impl OperationalRewards {
         let op_fund_share = proto::IotRewardShare {
             start_period: reward_period.start.encode_timestamp(),
             end_period: reward_period.end.encode_timestamp(),
-            reward: Some(ProtoReward::OperationalReward(op_fund_reward))
+            reward: Some(ProtoReward::OperationalReward(op_fund_reward)),
         };
         operational_rewards.rewards.push(op_fund_share);
         operational_rewards
