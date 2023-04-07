@@ -26,6 +26,7 @@ helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 triggered = {workspace = true}
-pyth-sdk-solana = "0.7.1"
-solana-client = ">= 1.9, < 1.15"
-solana-program = ">= 1.9, < 1.15"
+solana-client = {workspace = true}
+solana-sdk = {workspace = true}
+price-oracle = {workspace = true}
+anchor-lang = {workspace = true}

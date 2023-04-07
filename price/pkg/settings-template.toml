@@ -8,9 +8,6 @@ source = "https://api.devnet.solana.com"
 # Price tick interval (secs). Default = 60s. Optional.
 interval = 60
 
-# Price age (get price as long as it was updated within `age` seconds of current time) (in secs). Optional.
-age = 60
-
 # Cache folder to use. Default blow
 #
 # cache = "/var/data/price"

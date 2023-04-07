@@ -1,12 +1,13 @@
 use crate::{metrics::Metrics, Settings};
+use anchor_lang::AccountDeserialize;
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::file_sink;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
-use pyth_sdk_solana::load_price_feed_from_account;
+use price_oracle::{calculate_current_price, PriceOracleV0};
 use serde::Serialize;
-use solana_client::rpc_client::RpcClient;
-use solana_program::pubkey::Pubkey as SolPubkey;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey as SolPubkey;
 use tokio::time;
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,7 +29,6 @@ impl Price {
 
 pub struct PriceGenerator {
     token_type: BlockchainTokenTypeV1,
-    age: u64,
     client: RpcClient,
     interval_duration: std::time::Duration,
     last_price_opt: Option<Price>,
@@ -66,11 +66,10 @@ impl TryFrom<PriceReportV1> for Price {
 
 impl PriceGenerator {
     pub async fn new(settings: &Settings, token_type: BlockchainTokenTypeV1) -> Result<Self> {
-        let client = RpcClient::new(&settings.source);
+        let client = RpcClient::new(settings.source.clone());
         Ok(Self {
             last_price_opt: None,
             token_type,
-            age: settings.age,
             client,
             key: settings.price_key(token_type)?,
             default_price: settings.default_price(token_type),
@@ -153,7 +152,7 @@ impl PriceGenerator {
         key: &SolPubkey,
         file_sink: &file_sink::FileSinkClient,
     ) -> Result<()> {
-        let price_opt = match get_price(&self.client, key, self.age, self.token_type).await {
+        let price_opt = match get_price(&self.client, key, self.token_type).await {
             Ok(new_price) => {
                 tracing::info!(
                     "updating price for {:?} to {}",
@@ -220,19 +219,19 @@ impl PriceGenerator {
 pub async fn get_price(
     client: &RpcClient,
     price_key: &SolPubkey,
-    age: u64,
     token_type: BlockchainTokenTypeV1,
 ) -> Result<Price> {
-    let mut price_account = client.get_account(price_key)?;
-    tracing::debug!("price_account: {:?}", price_account);
+    let price_oracle_v0_data = client.get_account_data(price_key).await?;
+    let mut price_oracle_v0_data = price_oracle_v0_data.as_ref();
+    let price_oracle_v0 = PriceOracleV0::try_deserialize(&mut price_oracle_v0_data)?;
 
     let current_time = Utc::now();
     let current_timestamp = current_time.timestamp();
-    let price_feed = load_price_feed_from_account(price_key, &mut price_account)?;
-    tracing::debug!("price_feed: {:?}", price_feed);
 
-    price_feed
-        .get_price_no_older_than(current_timestamp, age)
-        .map(|feed_price| Price::new(current_time, feed_price.price as u64, token_type))
-        .ok_or_else(|| anyhow!("unable to fetch price"))
+    calculate_current_price(&price_oracle_v0.oracles, current_timestamp)
+        .map(|price| {
+            tracing::debug!("got price: {:?} for token_type: {:?}", price, token_type);
+            Price::new(current_time, price, token_type)
+        })
+        .ok_or_else(|| anyhow!("unable to fetch price!"))
 }

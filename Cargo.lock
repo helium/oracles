@@ -1485,7 +1485,7 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1548,19 +1548,8 @@ dependencies = [
 
 [[package]]
 name = "clockwork-cron"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec00fac13ba4c45201f7bcbfd44df23b659521ef765de9d31d14a1194d028cce"
-dependencies = [
- "chrono",
- "nom",
- "once_cell",
-]
-
-[[package]]
-name = "clockwork-cron"
-version = "2.0.2"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
+version = "2.0.1"
+source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
 dependencies = [
  "chrono",
  "nom",
@@ -1569,82 +1558,44 @@ dependencies = [
 
 [[package]]
 name = "clockwork-network-program"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "358aa1fb9a328d355cababfabb5ca69134a8bc703d355fe2979442441e30d6b7"
+version = "2.0.1"
+source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "clockwork-utils 1.4.2",
-]
-
-[[package]]
-name = "clockwork-network-program"
-version = "2.0.2"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "clockwork-utils 2.0.2",
+ "clockwork-utils",
 ]
 
 [[package]]
 name = "clockwork-sdk"
-version = "2.0.2"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
+version = "2.0.1"
+source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
 dependencies = [
  "anchor-lang",
  "chrono",
- "clockwork-thread-program 2.0.2",
+ "clockwork-thread-program",
  "nom",
  "once_cell",
 ]
 
 [[package]]
 name = "clockwork-thread-program"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00d8201d1680a1540e157a0a9f3cb84d9cc9a25ad66fcb9328c6f94b2fe14175"
+version = "2.0.1"
+source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
 dependencies = [
  "anchor-lang",
  "chrono",
- "clockwork-cron 1.4.2",
- "clockwork-network-program 1.4.2",
- "clockwork-utils 1.4.2",
- "static-pubkey",
- "version",
-]
-
-[[package]]
-name = "clockwork-thread-program"
-version = "2.0.2"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
-dependencies = [
- "anchor-lang",
- "chrono",
- "clockwork-cron 2.0.2",
- "clockwork-network-program 2.0.2",
- "clockwork-thread-program 1.4.2",
- "clockwork-utils 2.0.2",
+ "clockwork-cron",
+ "clockwork-network-program",
+ "clockwork-utils",
  "static-pubkey",
  "version",
 ]
 
 [[package]]
 name = "clockwork-utils"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26a6168b2af3007a81363951be00237defe4152e77e407d96f365f5de1a6dd37"
-dependencies = [
- "anchor-lang",
- "base64 0.13.1",
- "static-pubkey",
-]
-
-[[package]]
-name = "clockwork-utils"
-version = "2.0.2"
-source = "git+https://github.com/clockwork-xyz/clockwork?branch=main#25b8759f261a1d550094867649678f3cf72ad82d"
+version = "2.0.1"
+source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
 dependencies = [
  "anchor-lang",
  "base64 0.13.1",
@@ -2073,7 +2024,7 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -3017,7 +2968,7 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -3650,12 +3601,12 @@ dependencies = [
 [[package]]
 name = "lazy-transactions"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
  "bytemuck",
- "spl-concurrent-merkle-tree 0.1.3",
+ "spl-concurrent-merkle-tree 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -4090,6 +4041,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpl-bubblegum"
+version = "0.6.0"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+dependencies = [
+ "anchor-lang",
+ "bytemuck",
+ "mpl-token-metadata 1.8.3",
+ "solana-program",
+ "spl-account-compression 0.1.8",
+ "spl-associated-token-account",
+ "spl-token",
+]
+
+[[package]]
 name = "mpl-token-auth-rules"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4110,7 +4075,7 @@ dependencies = [
 [[package]]
 name = "mpl-token-metadata"
 version = "1.8.3"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "arrayref",
  "borsh",
@@ -4159,7 +4124,7 @@ dependencies = [
 [[package]]
 name = "mpl-token-metadata-context-derive"
 version = "0.2.1"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "quote 1.0.21",
  "syn 1.0.104",
@@ -4180,7 +4145,7 @@ dependencies = [
 [[package]]
 name = "mpl-utils"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "arrayref",
  "borsh",
@@ -4779,6 +4744,7 @@ dependencies = [
 name = "price"
 version = "0.1.0"
 dependencies = [
+ "anchor-lang",
  "anyhow",
  "chrono",
  "clap 3.2.23",
@@ -4790,17 +4756,25 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
+ "price-oracle",
  "prost",
- "pyth-sdk-solana",
  "serde",
  "serde_json",
  "solana-client",
- "solana-program",
+ "solana-sdk",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "triggered",
+]
+
+[[package]]
+name = "price-oracle"
+version = "0.1.0"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+dependencies = [
+ "anchor-lang",
 ]
 
 [[package]]
@@ -5871,12 +5845,13 @@ dependencies = [
 [[package]]
 name = "shared-utils"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "mpl-bubblegum",
  "mpl-token-metadata 1.8.3",
- "spl-account-compression",
+ "spl-account-compression 0.1.5",
  "uint",
 ]
 
@@ -6576,7 +6551,18 @@ dependencies = [
  "anchor-lang",
  "bytemuck",
  "spl-concurrent-merkle-tree 0.1.2",
- "spl-noop",
+ "spl-noop 0.1.3 (git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26)",
+]
+
+[[package]]
+name = "spl-account-compression"
+version = "0.1.8"
+source = "git+https://github.com/solana-labs/solana-program-library#776d0624c1c194404d2f864cef113b18b4ae49ba"
+dependencies = [
+ "anchor-lang",
+ "bytemuck",
+ "spl-concurrent-merkle-tree 0.1.3 (git+https://github.com/solana-labs/solana-program-library)",
+ "spl-noop 0.1.3 (git+https://github.com/solana-labs/solana-program-library)",
 ]
 
 [[package]]
@@ -6610,6 +6596,16 @@ name = "spl-concurrent-merkle-tree"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26dd605d33bdc8d2522a9f55207c3eac06737b2e8310f602e252b510e3db1210"
+dependencies = [
+ "bytemuck",
+ "solana-program",
+ "thiserror",
+]
+
+[[package]]
+name = "spl-concurrent-merkle-tree"
+version = "0.1.3"
+source = "git+https://github.com/solana-labs/solana-program-library#776d0624c1c194404d2f864cef113b18b4ae49ba"
 dependencies = [
  "bytemuck",
  "solana-program",
@@ -6678,6 +6674,14 @@ dependencies = [
 name = "spl-noop"
 version = "0.1.3"
 source = "git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26#e6db7bcf6da7b41c3ab250a0c8489ea50d511a90"
+dependencies = [
+ "solana-program",
+]
+
+[[package]]
+name = "spl-noop"
+version = "0.1.3"
+source = "git+https://github.com/solana-labs/solana-program-library#776d0624c1c194404d2f864cef113b18b4ae49ba"
 dependencies = [
  "solana-program",
 ]
@@ -7375,7 +7379,7 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -7424,7 +7428,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -7600,7 +7604,7 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#17da037a699444b4eb71842cd129bd92e1622e5b"
+source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
