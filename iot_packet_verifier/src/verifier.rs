@@ -105,9 +105,11 @@ where
                     .map_err(VerificationError::BurnError)?;
                 valid_packets
                     .write(ValidPacket {
+                        packet_timestamp: report.timestamp(),
                         payload_size: report.payload_size,
                         gateway: report.gateway.into(),
                         payload_hash: report.payload_hash,
+                        num_dcs: 0,
                     })
                     .await
                     .map_err(VerificationError::ValidPacketWriterError)?;
@@ -412,6 +414,8 @@ mod test {
             payload_size,
             payload_hash,
             gateway: vec![],
+            num_dcs: 0,
+            packet_timestamp: Utc::now().timestamp() as u64,
         }
     }
 

@@ -43,6 +43,7 @@ impl From<DataTransferSession> for ValidDataTransferSession {
             download_bytes: ds.download_bytes as u64,
             first_timestamp: ds.first_timestamp.encode_timestamp_millis(),
             last_timestamp: ds.last_timestamp.encode_timestamp_millis(),
+            num_dcs: 0,
         }
     }
 }

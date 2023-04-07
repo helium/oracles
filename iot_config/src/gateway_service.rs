@@ -1,10 +1,12 @@
-use crate::{region_map::RegionMap, GrpcResult, Settings};
+use crate::{region_map::RegionMap, GrpcResult, GrpcStreamResult, Settings};
 use anyhow::Result;
+use chrono::Utc;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
+        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
+        GatewayLocationReqV1, GatewayLocationResV1, GatewayRegionParamsReqV1,
         GatewayRegionParamsResV1,
     },
     Message, Region,
@@ -155,5 +157,25 @@ impl iot_config::Gateway for GatewayService {
             "returning region params"
         );
         Ok(Response::new(resp))
+    }
+
+    // placeholder implementation
+    async fn info(&self, _request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
+        Ok(Response::new(GatewayInfoResV1 {
+            timestamp: Utc::now().timestamp() as u64,
+            info: None,
+            signature: vec![],
+        }))
+    }
+
+    // placeholder implementation
+    type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
+    async fn info_stream(
+        &self,
+        _request: Request<GatewayInfoStreamReqV1>,
+    ) -> GrpcResult<Self::info_streamStream> {
+        let (_tx, rx) = tokio::sync::mpsc::channel(20);
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
     }
 }

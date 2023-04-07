@@ -207,6 +207,7 @@ impl GatewayShares {
                     ),
                     start_period: reward_period.start.encode_timestamp(),
                     end_period: reward_period.end.encode_timestamp(),
+                    dc_transfer_amount: 0,
                 },
             )
             .filter(|reward_share| {
