@@ -1,6 +1,6 @@
 use crate::{metrics::Metrics, Settings};
 use anchor_lang::AccountDeserialize;
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::file_sink;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
@@ -228,15 +228,10 @@ pub async fn get_price(
     let current_time = Utc::now();
     let current_timestamp = current_time.timestamp();
 
-    let price = calculate_current_price(&price_oracle_v0.oracles, current_timestamp);
-
-    match price {
-        Some(p) => {
-            tracing::debug!("got price: {:?}", p);
-            Ok(Price::new(current_time, p, token_type))
-        }
-        None => {
-            bail!("unable to fetch price!")
-        }
-    }
+    calculate_current_price(&price_oracle_v0.oracles, current_timestamp)
+        .map(|price| {
+            tracing::debug!("got price: {:?} for token_type: {:?}", price, token_type);
+            Price::new(current_time, price, token_type)
+        })
+        .ok_or_else(|| anyhow!("unable to fetch price!"))
 }
