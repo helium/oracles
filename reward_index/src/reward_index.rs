@@ -4,6 +4,7 @@ pub async fn insert<'c, E>(
     executor: E,
     address: &Vec<u8>,
     amount: u64,
+    reward_type: String,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error>
 where
@@ -20,7 +21,8 @@ where
                 address,
                 rewards,
                 last_reward
-            ) values ($1, $2, $3)
+                reward_type
+            ) values ($1, $2, $3, $4)
             on conflict(address) do update set
                 rewards = reward_index.rewards + EXCLUDED.rewards,
                 last_reward = EXCLUDED.last_reward
@@ -29,6 +31,7 @@ where
     .bind(address)
     .bind(amount as i64)
     .bind(timestamp)
+    .bind(reward_type)
     .execute(executor)
     .await?;
 
