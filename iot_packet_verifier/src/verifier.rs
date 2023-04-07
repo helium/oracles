@@ -409,13 +409,13 @@ mod test {
         }
     }
 
-    fn valid_packet(payload_size: u32, payload_hash: Vec<u8>) -> ValidPacket {
+    fn valid_packet(payload_size: u32, payload_hash: Vec<u8>, timestamp: u64) -> ValidPacket {
         ValidPacket {
             payload_size,
             payload_hash,
             gateway: vec![],
             num_dcs: 0,
-            packet_timestamp: Utc::now().timestamp() as u64,
+            packet_timestamp: timestamp,
         }
     }
 
@@ -480,14 +480,14 @@ mod test {
             valid_packets,
             vec![
                 // First two packets for OUI #0 are valid
-                valid_packet(24, vec![1]),
-                valid_packet(48, vec![2]),
+                valid_packet(24, vec![1], 0),
+                valid_packet(48, vec![2], 1000),
                 // All packets for OUI #1 are valid
-                valid_packet(24, vec![4]),
-                valid_packet(48, vec![5]),
-                valid_packet(1, vec![6]),
+                valid_packet(24, vec![4], 0),
+                valid_packet(48, vec![5], 1000),
+                valid_packet(1, vec![6], 2000),
                 // All packets for OUI #2 are valid
-                valid_packet(24, vec![7]),
+                valid_packet(24, vec![7], 0),
             ]
         );
 
