@@ -35,12 +35,12 @@ pub fn default_batch_size() -> u32 {
 }
 
 impl Settings {
-    pub fn connect(&self) -> mobile_config::HotspotClient<Channel> {
+    pub fn connect(&self) -> mobile_config::GatewayClient<Channel> {
         let channel = Endpoint::from(self.url.clone())
             .connect_timeout(Duration::from_secs(self.connect_timeout))
             .timeout(Duration::from_secs(self.rpc_timeout))
             .connect_lazy();
-        mobile_config::HotspotClient::new(channel)
+        mobile_config::GatewayClient::new(channel)
     }
 
     pub fn signing_keypair(

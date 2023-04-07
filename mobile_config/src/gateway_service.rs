@@ -1,6 +1,6 @@
 use crate::{
     gateway_info::{self, GatewayInfo},
-    key_cache::{KeyCache, KeyType},
+    key_cache::KeyCache,
     GrpcResult, GrpcStreamResult,
 };
 use chrono::Utc;
@@ -9,11 +9,10 @@ use futures::{
     stream::{StreamExt, TryStreamExt},
     TryFutureExt,
 };
-use helium_crypto::{Keypair, PublicKeyBinary, Sign};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
-        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1,
-        GatewayInfoStreamResV1,
+        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
     },
     Message,
 };
@@ -36,28 +35,19 @@ impl GatewayService {
         }
     }
 
-    async fn verify_request_signature<'a, R>(&self, request: &R) -> Result<(), Status>
+    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
     where
         R: MsgVerify,
     {
-        if self
-            .key_cache
-            .verify_signature(KeyType::Oracle, request)
-            .await
-            .is_ok()
-        {
-            tracing::debug!("request authorized by oracle");
-            return Ok(());
-        } else if self
-            .key_cache
-            .verify_signature(KeyType::Administrator, request)
-            .await
-            .is_ok()
-        {
-            tracing::debug!("request authorized by admin");
+        if self.key_cache.verify_signature(signer, request).is_ok() {
+            tracing::debug!(signer = signer.to_string(), "request authorized");
             return Ok(());
         }
         Err(Status::permission_denied("unauthorized request signature"))
+    }
+
+    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
+        PublicKey::try_from(bytes).map_err(|_| Status::invalid_argument("invalid public key"))
     }
 
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
@@ -72,20 +62,18 @@ impl GatewayService {
 
 #[tonic::async_trait]
 impl mobile_config::Gateway for GatewayService {
-    async fn info(
-        &self,
-        request: Request<GatewayInfoReqV1>,
-    ) -> GrpcResult<GatewayInfoResV1> {
+    async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
-        tracing::debug!(pubkey = pubkey.to_string(), "fetching hotspot metadata");
+        tracing::debug!(pubkey = pubkey.to_string(), "fetching gateway info");
 
         gateway_info::db::get_info(&self.metadata_pool, &pubkey)
             .await
-            .map_err(|_| Status::internal("error fetching hotspot metadata"))?
+            .map_err(|_| Status::internal("error fetching gateway info"))?
             .map_or_else(
                 || Err(Status::not_found(pubkey.to_string())),
                 |info| {
@@ -111,7 +99,8 @@ impl mobile_config::Gateway for GatewayService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
 
         tracing::debug!("fetching all gateways' info");
 
@@ -158,7 +147,7 @@ async fn stream_all_gateways_info(
         .try_filter_map(|(res, keypair)| async move {
             let result = match keypair.sign(&res.encode_to_vec()) {
                 Ok(signature) => Some(GatewayInfoStreamResV1 {
-                    gateways: res.hotspots,
+                    gateways: res.gateways,
                     timestamp: res.timestamp,
                     signer: res.signer,
                     signature,
@@ -167,14 +156,14 @@ async fn stream_all_gateways_info(
             };
             Ok(result)
         })
-        .map_err(|err| Status::internal(format!("metadata batch failed with reason: {err:?}")))
+        .map_err(|err| Status::internal(format!("info batch failed with reason: {err:?}")))
         .try_for_each(|res| {
             tx.send(Ok(res))
-                .map_err(|err| Status::internal(format!("metadata batch send failed {err:?}")))
+                .map_err(|err| Status::internal(format!("info batch send failed {err:?}")))
         })
         .or_else(|err| {
             tx.send(Err(Status::internal(format!(
-                "metadata batch failed with reason: {err:?}"
+                "info batch failed with reason: {err:?}"
             ))))
         })
         .await?)

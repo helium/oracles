@@ -80,9 +80,10 @@ impl Daemon {
 
         let listen_addr = settings.listen_addr()?;
 
-        let key_cache = KeyCache::new(settings, pool.clone()).await?;
+        let (key_cache_updater, key_cache) = KeyCache::new(settings, &pool).await?;
 
-        let admin_svc = AdminService::new(key_cache.clone(), settings.network);
+        let admin_svc =
+            AdminService::new(settings, key_cache.clone(), key_cache_updater, pool.clone())?;
         let gateway_svc = GatewayService::new(
             key_cache.clone(),
             metadata_pool.clone(),
@@ -94,7 +95,7 @@ impl Daemon {
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(AdminServer::new(admin_svc))
-            .add_service(HotspotServer::new(gateway_svc))
+            .add_service(GatewayServer::new(gateway_svc))
             .add_service(RouterServer::new(router_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from);

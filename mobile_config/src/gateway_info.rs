@@ -33,15 +33,13 @@ impl From<GatewayInfoProto> for GatewayInfo {
     fn from(info: GatewayInfoProto) -> Self {
         let metadata = if let Some(metadata) = info.metadata {
             u64::from_str_radix(&metadata.location, 16)
-                .map(|location| GatewayMetadata {
-                    location,
-                })
+                .map(|location| GatewayMetadata { location })
                 .ok()
         } else {
             None
         };
         Self {
-            address: meta.address.into(),
+            address: info.address.into(),
             metadata,
         }
     }
@@ -59,7 +57,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
             None
         };
         Ok(Self {
-            address: meta.address.into(),
+            address: info.address.into(),
             metadata,
         })
     }
@@ -89,17 +87,19 @@ pub(crate) mod db {
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
     ) -> impl Stream<Item = GatewayInfo> + 'a {
-        sqlx::query_as::<_, GatewayInfo>(
-            r#" select (hotspot_key, location) from mobile_metadata "#,
-        )
-        .fetch(db)
-        .filter_map(|metadata| async move { metadata.ok() })
-        .boxed()
+        sqlx::query_as::<_, GatewayInfo>(r#" select (hotspot_key, location) from mobile_metadata "#)
+            .fetch(db)
+            .filter_map(|metadata| async move { metadata.ok() })
+            .boxed()
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            let metadata = row.get::<Option<i64>, &str>("location").map(|loc| GatewayMetadata { location: loc as u64 });
+            let metadata = row
+                .get::<Option<i64>, &str>("location")
+                .map(|loc| GatewayMetadata {
+                    location: loc as u64,
+                });
             Ok(Self {
                 address: row.get::<PublicKeyBinary, &str>("hotspot_key"),
                 metadata,

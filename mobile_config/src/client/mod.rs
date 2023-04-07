@@ -1,4 +1,4 @@
-use crate::hotspot_metadata;
+use crate::gateway_info;
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -23,7 +23,7 @@ pub enum ClientError {
 
 #[derive(Clone, Debug)]
 pub struct Client {
-    pub client: mobile_config::HotspotClient<Channel>,
+    pub client: mobile_config::GatewayClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
     batch_size: u32,
@@ -41,26 +41,25 @@ impl Client {
 }
 
 #[async_trait::async_trait]
-impl hotspot_metadata::HotspotMetadataResolver for Client {
+impl gateway_info::GatewayInfoResolver for Client {
     type Error = ClientError;
 
-    async fn resolve_hotspot_metadata(
+    async fn resolve_gateway_info(
         &mut self,
         address: &PublicKeyBinary,
-    ) -> Result<Option<hotspot_metadata::HotspotMetadata>, Self::Error> {
-        let mut request = mobile_config::HotspotMetadataReqV1 {
+    ) -> Result<Option<gateway_info::GatewayInfo>, Self::Error> {
+        let mut request = mobile_config::GatewayInfoReqV1 {
             address: address.clone().into(),
+            signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
-        tracing::debug!(pubkey = address.to_string(), "fetching hotspot metadata");
-        let response = match self.client.metadata(request).await {
-            Ok(metadata_res) => {
-                let response = metadata_res.into_inner();
+        tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
+        let response = match self.client.info(request).await {
+            Ok(info_res) => {
+                let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;
-                response
-                    .metadata
-                    .map(hotspot_metadata::HotspotMetadata::from)
+                response.info.map(gateway_info::GatewayInfo::from)
             }
             Err(status) if status.code() == tonic::Code::NotFound => None,
             Err(status) => Err(status)?,
@@ -68,19 +67,20 @@ impl hotspot_metadata::HotspotMetadataResolver for Client {
         Ok(response)
     }
 
-    async fn stream_hotspots_metadata(
+    async fn stream_gateways_info(
         &mut self,
-    ) -> Result<hotspot_metadata::HotspotMetadataStream, Self::Error> {
-        let mut req = mobile_config::HotspotMetadataStreamReqV1 {
+    ) -> Result<gateway_info::GatewayInfoStream, Self::Error> {
+        let mut req = mobile_config::GatewayInfoStreamReqV1 {
             batch_size: self.batch_size,
+            signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
-        tracing::debug!("fetching hotspot metadata stream");
+        tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
         let res_stream = self
             .client
-            .metadata_stream(req)
+            .info_stream(req)
             .await?
             .into_inner()
             .filter_map(|res| async move { res.ok() })
@@ -91,8 +91,8 @@ impl hotspot_metadata::HotspotMetadataResolver for Client {
                     Err(_) => None,
                 }
             })
-            .flat_map(|res| stream::iter(res.hotspots.into_iter()))
-            .map(hotspot_metadata::HotspotMetadata::from)
+            .flat_map(|res| stream::iter(res.gateways.into_iter()))
+            .map(gateway_info::GatewayInfo::from)
             .boxed();
 
         Ok(res_stream)
