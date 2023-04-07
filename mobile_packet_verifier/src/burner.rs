@@ -255,7 +255,7 @@ impl Burner {
     }
 }
 
-const BYTES_PER_DC: u64 = 20_000;
+const BYTES_PER_DC: u64 = 66;
 
 fn bytes_to_dc(bytes: u64) -> u64 {
     let bytes = bytes.max(BYTES_PER_DC);

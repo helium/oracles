@@ -3973,6 +3973,7 @@ dependencies = [
  "node-follower",
  "once_cell",
  "poc-metrics",
+ "price",
  "prost",
  "rand 0.8.5",
  "rust_decimal",

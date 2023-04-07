@@ -1,7 +1,7 @@
 mod cell_type;
 mod heartbeats;
 mod ingest;
-mod owner_shares;
+mod reward_shares;
 mod settings;
 mod speedtests;
 

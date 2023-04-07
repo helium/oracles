@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use file_store::{
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    mobile_transfer::ValidDataTransferSession,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
     FileStore, FileType,
@@ -11,8 +12,8 @@ use std::ops::Range;
 pub async fn ingest_heartbeats(
     file_store: &FileStore,
     epoch: &Range<DateTime<Utc>>,
-) -> file_store::Result<impl Stream<Item = CellHeartbeat>> {
-    Ok(file_store
+) -> impl Stream<Item = CellHeartbeat> {
+    file_store
         .source(
             file_store
                 .list(FileType::CellHeartbeatIngestReport, epoch.start, epoch.end)
@@ -33,14 +34,14 @@ pub async fn ingest_heartbeats(
                 },
                 |report| Some(report.report),
             )
-        }))
+        })
 }
 
 pub async fn ingest_speedtests(
     file_store: &FileStore,
     epoch: &Range<DateTime<Utc>>,
-) -> file_store::Result<impl Stream<Item = CellSpeedtest>> {
-    Ok(file_store
+) -> impl Stream<Item = CellSpeedtest> {
+    file_store
         .source(
             file_store
                 .list(FileType::CellSpeedtestIngestReport, epoch.start, epoch.end)
@@ -61,5 +62,33 @@ pub async fn ingest_speedtests(
                 },
                 |report| Some(report.report),
             )
-        }))
+        })
+}
+
+pub async fn ingest_valid_data_transfers(
+    file_store: &FileStore,
+    epoch: &Range<DateTime<Utc>>,
+) -> impl Stream<Item = ValidDataTransferSession> {
+    file_store
+        .source(
+            file_store
+                .list(FileType::ValidDataTransferSession, epoch.start, epoch.end)
+                .boxed(),
+        )
+        .filter_map(|msg| async move {
+            msg.map_err(|err| {
+                tracing::error!("Error fetching speedtest ingest report: {:?}", err);
+                err
+            })
+            .ok()
+        })
+        .filter_map(|msg| async move {
+            ValidDataTransferSession::decode(msg).map_or_else(
+                |err| {
+                    tracing::error!("Could not decode valid data transfer session: {:?}", err);
+                    None
+                },
+                Some,
+            )
+        })
 }

@@ -1,4 +1,5 @@
 use crate::{
+    reward_shares::TransferRewards,
     speedtests::EmptyDatabase,
     verifier::{VerifiedEpoch, Verifier},
     Settings,
@@ -39,7 +40,7 @@ impl Cmd {
             speedtests,
         } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
-        let owner_shares = verifier
+        let reward_shares = verifier
             .reward_epoch(
                 heartbeats.collect().await,
                 speedtests.filter_map(|x| async { x.ok() }).collect().await,
@@ -48,7 +49,8 @@ impl Cmd {
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
-        for reward in owner_shares.into_radio_shares(&epoch)? {
+        let transfer_rewards = TransferRewards::empty();
+        for reward in reward_shares.into_radio_shares(&transfer_rewards, &epoch) {
             total_rewards += reward.amount;
             *owner_rewards
                 .entry(PublicKey::try_from(reward.owner_key)?)
