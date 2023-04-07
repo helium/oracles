@@ -1,6 +1,6 @@
 use crate::{
     heartbeats::Heartbeats,
-    reward_shares::{get_scheduled_tokens_for_poc_and_dc, RewardShares, TransferRewards},
+    reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares, TransferRewards},
     speedtests::{Average, SpeedtestAverages},
     Settings,
 };
@@ -28,9 +28,7 @@ impl Cmd {
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
-        let expected_rewards =
-            get_scheduled_tokens_for_poc_and_dc(epoch.start, epoch.end - epoch.start)
-                .expect("Couldn't get expected rewards");
+        let expected_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
 
         let mut follower = settings.follower.connect_follower();
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
@@ -42,12 +40,12 @@ impl Cmd {
         let heartbeats = Heartbeats::validated(&pool).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
         let reward_shares =
-            RewardShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
+            PocShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
-        let transfer_rewards = TransferRewards::empty(&epoch);
-        for reward in reward_shares.into_radio_shares(&transfer_rewards, &epoch)? {
+        let transfer_rewards = TransferRewards::empty();
+        for reward in reward_shares.into_radio_shares(&transfer_rewards, &epoch) {
             total_rewards += reward.amount;
             *owner_rewards
                 .entry(PublicKey::try_from(reward.owner_key)?)

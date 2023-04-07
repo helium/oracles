@@ -2,7 +2,7 @@ use crate::{
     heartbeats::Heartbeats,
     speedtests::{Average, SpeedtestAverages},
 };
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -29,40 +29,36 @@ const DC_USD_PRICE: Decimal = dec!(0.00000003);
 const DEFAULT_PREC: u32 = 15;
 
 pub struct TransferRewards {
-    scale: Decimal,
+    reward_scale: Decimal,
     rewards: HashMap<PublicKeyBinary, Decimal>,
-    pub remaining_poc_rewards: Decimal,
+    reward_sum: Decimal,
 }
 
 impl TransferRewards {
-    pub fn empty(epoch: &Range<DateTime<Utc>>) -> Self {
+    pub fn empty() -> Self {
         Self {
-            scale: Decimal::ONE,
+            reward_scale: Decimal::ONE,
             rewards: HashMap::new(),
-            remaining_poc_rewards: get_scheduled_tokens_for_poc_and_dc(
-                epoch.start,
-                epoch.end - epoch.start,
-            )
-            .unwrap(),
+            reward_sum: Decimal::ZERO,
         }
     }
 
-    pub fn scale(&self) -> Decimal {
-        self.scale
+    pub fn reward_scale(&self) -> Decimal {
+        self.reward_scale
     }
 
     pub fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
-        self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.scale
+        self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.reward_scale
     }
 
     pub async fn from_transfer_sessions(
         mobile_price: Decimal,
         transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
         epoch: &Range<DateTime<Utc>>,
-    ) -> Result<Self, ClockError> {
+    ) -> Self {
         tokio::pin!(transfer_sessions);
 
-        let mut data_transfer_reward_sum = Decimal::ZERO;
+        let mut reward_sum = Decimal::ZERO;
         let rewards = transfer_sessions
             // Accumulate bytes per hotspot
             .fold(
@@ -77,14 +73,13 @@ impl TransferRewards {
             // Calculate rewards per hotspot
             .map(|(pub_key, dc_amount)| {
                 let bones = dc_to_mobile_bones(dc_amount, mobile_price);
-                data_transfer_reward_sum += bones;
+                reward_sum += bones;
                 (pub_key, bones)
             })
             .collect();
 
         let duration = epoch.end - epoch.start;
-        let total_emissions_pool = get_total_scheduled_tokens(epoch.start, duration)?;
-        let rewards_for_poc_and_dc = get_scheduled_tokens_for_poc_and_dc(epoch.start, duration)?;
+        let total_emissions_pool = get_total_scheduled_tokens(duration);
 
         // Determine if we need to scale the rewards given for data transfer rewards.
         // Ideally this should never happen, but if the total number of data transfer rewards
@@ -100,20 +95,18 @@ impl TransferRewards {
         //
         // scale = [ 0.4 * total_emissions_pool ] / data_transfer_reward_sum
         //
-        let scale = if data_transfer_reward_sum / total_emissions_pool
-            > MAX_DATA_TRANSFER_REWARDS_PERCENT
+        let reward_scale = if reward_sum / total_emissions_pool > MAX_DATA_TRANSFER_REWARDS_PERCENT
         {
-            MAX_DATA_TRANSFER_REWARDS_PERCENT * total_emissions_pool / data_transfer_reward_sum
+            MAX_DATA_TRANSFER_REWARDS_PERCENT * total_emissions_pool / reward_sum
         } else {
             Decimal::ONE
         };
-        let remaining_poc_rewards = rewards_for_poc_and_dc - scale * data_transfer_reward_sum;
 
-        Ok(Self {
-            scale,
+        Self {
+            reward_scale,
             rewards,
-            remaining_poc_rewards,
-        })
+            reward_sum: reward_sum * reward_scale,
+        }
     }
 }
 
@@ -152,11 +145,11 @@ impl RadioShares {
 }
 
 #[derive(Default)]
-pub struct RewardShares {
+pub struct PocShares {
     pub shares: HashMap<PublicKeyBinary, RadioShares>,
 }
 
-impl RewardShares {
+impl PocShares {
     pub async fn aggregate(
         resolver: &mut impl OwnerResolver,
         heartbeats: Heartbeats,
@@ -195,12 +188,13 @@ impl RewardShares {
         self,
         transfer_rewards: &'a TransferRewards,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> Result<impl Iterator<Item = proto::RadioRewardShare> + 'a, ClockError> {
+    ) -> impl Iterator<Item = proto::RadioRewardShare> + 'a {
         let total_shares = self.total_shares();
-        let total_poc_rewards = transfer_rewards.remaining_poc_rewards;
-        let poc_rewards_per_share = total_poc_rewards / total_shares;
-        Ok(self
-            .shares
+        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
+            - transfer_rewards.reward_sum;
+
+        let poc_rewards_per_share = available_poc_rewards / total_shares;
+        self.shares
             .into_iter()
             .flat_map(move |(owner_key, radio_shares)| {
                 radio_shares
@@ -220,36 +214,17 @@ impl RewardShares {
                         hotspot_key: radio_share.hotspot_key.into(),
                     })
                     .filter(|radio_share| radio_share.amount > 0)
-            }))
+            })
     }
 }
 
-lazy_static::lazy_static! {
-    static ref GENESIS_START: DateTime<Utc> =
-        Utc.with_ymd_and_hms(2022, 7, 11, 0, 0, 0).single().unwrap();
+pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
+    (TOTAL_EMISSIONS_POOL / dec!(180) / Decimal::from(Duration::hours(24).num_seconds()))
+        * Decimal::from(duration.num_seconds())
 }
 
-#[derive(thiserror::Error, Debug)]
-#[error("clock is set before the genesis start")]
-pub struct ClockError;
-
-pub fn get_total_scheduled_tokens(
-    start: DateTime<Utc>,
-    duration: Duration,
-) -> Result<Decimal, ClockError> {
-    (*GENESIS_START <= start)
-        .then(|| {
-            (TOTAL_EMISSIONS_POOL / dec!(180) / Decimal::from(Duration::hours(24).num_seconds()))
-                * Decimal::from(duration.num_seconds())
-        })
-        .ok_or(ClockError)
-}
-
-pub fn get_scheduled_tokens_for_poc_and_dc(
-    start: DateTime<Utc>,
-    duration: Duration,
-) -> Result<Decimal, ClockError> {
-    Ok(get_total_scheduled_tokens(start, duration)? * dec!(0.6))
+pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
+    get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -331,8 +306,8 @@ mod test {
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
-        let total_rewards =
-            get_scheduled_tokens_for_poc_and_dc(epoch.start, epoch.end - epoch.start).unwrap();
+        let total_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
+
         // confirm our hourly rewards add up to expected 24hr amount
         // total_rewards will be in bones
         assert_eq!(
@@ -342,14 +317,16 @@ mod test {
 
         let data_transfer_rewards =
             TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_sessions, &epoch)
-                .await
-                .expect("Could not fetch data transfer sessions");
+                .await;
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00000006));
-        assert_eq!(data_transfer_rewards.scale, dec!(1.0));
+        assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
+        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
+            - data_transfer_rewards.reward_sum;
         assert_eq!(
-            data_transfer_rewards.remaining_poc_rewards,
-            total_rewards - (data_transfer_rewards.reward(&owner) * data_transfer_rewards.scale)
+            available_poc_rewards,
+            total_rewards
+                - (data_transfer_rewards.reward(&owner) * data_transfer_rewards.reward_scale())
         );
     }
 
@@ -383,19 +360,21 @@ mod test {
 
         let data_transfer_rewards =
             TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_sessions, &epoch)
-                .await
-                .expect("Could not fetch data transfer sessions");
+                .await;
 
-        assert_eq!(
-            data_transfer_rewards.remaining_poc_rewards.trunc(),
-            dec!(33_333_333_333_333)
-        );
+        // We have constructed the data transfer in such a way that they easily exceed the maximum
+        // allotted reward amount for data transfer, which is 40% of the daily tokens. We check to
+        // ensure that amount of tokens remaining for POC is no less than 20% of the rewards allocated
+        // for POC and data transfer (which is 60% of the daily total emissions).
+        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
+            - data_transfer_rewards.reward_sum;
+        assert_eq!(available_poc_rewards.trunc(), dec!(33_333_333_333_333));
         assert_eq!(
             // Rewards are automatically scaled
             data_transfer_rewards.reward(&owner).trunc(),
             dec!(66_666_666_666_666)
         );
-        assert_eq!(data_transfer_rewards.scale().round_dp(1), dec!(0.5));
+        assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.5));
     }
 
     struct MapResolver {
@@ -538,7 +517,7 @@ mod test {
         speedtests.insert(g2, VecDeque::from(g2_speedtests));
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
-        let owner_rewards = RewardShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+        let owner_rewards = PocShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards");
 
@@ -778,12 +757,11 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        let transfer_rewards = TransferRewards::empty(&epoch);
-        for radio_share in RewardShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+        let transfer_rewards = TransferRewards::empty();
+        for radio_share in PocShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards")
             .into_radio_shares(&transfer_rewards, &epoch)
-            .expect("Clock is out of sync")
         {
             *owner_rewards
                 .entry(PublicKeyBinary::from(radio_share.owner_key))
@@ -873,13 +851,10 @@ mod test {
         let now = Utc::now();
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
-        let owner_shares = RewardShares { shares };
+        let owner_shares = PocShares { shares };
         let epoch = now - Duration::hours(1)..now;
-        let transfer_rewards = TransferRewards::empty(&epoch);
-        for reward in owner_shares
-            .into_radio_shares(&transfer_rewards, &epoch)
-            .expect("Could not convert to radio shares")
-        {
+        let transfer_rewards = TransferRewards::empty();
+        for reward in owner_shares.into_radio_shares(&transfer_rewards, &epoch) {
             let actual_owner = PublicKeyBinary::from(reward.owner_key);
             assert_eq!(actual_owner, owner1);
         }

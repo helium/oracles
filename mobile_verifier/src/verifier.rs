@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
-    reward_shares::{ResolveError, RewardShares, TransferRewards},
+    reward_shares::{PocShares, ResolveError, TransferRewards},
     scheduler::Scheduler,
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
 };
@@ -130,17 +130,17 @@ impl VerifierDaemon {
             .await,
             &scheduler.reward_period,
         )
-        .await?;
+        .await;
 
         // It's important to gauge the scale metric. If this value is < 1.0, we are in
         // big trouble.
-        let Some(scale) = transfer_rewards.scale().to_f64() else {
+        let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
             bail!("The data transfer rewards scale cannot be converted to a float");
         };
         metrics::gauge!("data_transfer_rewards_scale", scale);
 
         for reward_share in
-            poc_rewards.into_radio_shares(&transfer_rewards, &scheduler.reward_period)?
+            poc_rewards.into_radio_shares(&transfer_rewards, &scheduler.reward_period)
         {
             self.radio_rewards
                 .write(reward_share, [])
@@ -227,8 +227,8 @@ impl Verifier {
         &mut self,
         heartbeats: Heartbeats,
         speedtests: SpeedtestAverages,
-    ) -> Result<RewardShares, ResolveError> {
-        RewardShares::aggregate(&mut self.follower, heartbeats, speedtests).await
+    ) -> Result<PocShares, ResolveError> {
+        PocShares::aggregate(&mut self.follower, heartbeats, speedtests).await
     }
 }
 
