@@ -1,6 +1,6 @@
 use crate::{
     heartbeats::Heartbeats,
-    reward_shares::{get_scheduled_tokens, RewardShares, TransferRewards},
+    reward_shares::{get_scheduled_tokens_for_poc_and_dc, RewardShares, TransferRewards},
     speedtests::{Average, SpeedtestAverages},
     Settings,
 };
@@ -28,8 +28,9 @@ impl Cmd {
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
-        let expected_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
-            .expect("Couldn't get expected rewards");
+        let expected_rewards =
+            get_scheduled_tokens_for_poc_and_dc(epoch.start, epoch.end - epoch.start)
+                .expect("Couldn't get expected rewards");
 
         let mut follower = settings.follower.connect_follower();
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();

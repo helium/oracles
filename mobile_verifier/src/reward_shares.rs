@@ -15,11 +15,8 @@ use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 
-/// 100M genesis rewards per day
-const GENESIS_REWARDS_PER_DAY: Decimal = dec!(100_000_000_000_000);
-
-/// Total emissions pool
-const TOTAL_EMISSIONS_POOL: Decimal = dec!(166_666_666_666_666);
+/// Total tokens emissions pool per 180 days
+const TOTAL_EMISSIONS_POOL: Decimal = dec!(30_000_000_000_000_000);
 
 /// Maximum amount of the total emissions pool allocated for data transfer
 /// rewards
@@ -42,8 +39,11 @@ impl TransferRewards {
         Self {
             scale: Decimal::ONE,
             rewards: HashMap::new(),
-            remaining_poc_rewards: get_scheduled_tokens(epoch.start, epoch.end - epoch.start)
-                .unwrap(),
+            remaining_poc_rewards: get_scheduled_tokens_for_poc_and_dc(
+                epoch.start,
+                epoch.end - epoch.start,
+            )
+            .unwrap(),
         }
     }
 
@@ -68,8 +68,7 @@ impl TransferRewards {
             .fold(
                 HashMap::<PublicKeyBinary, Decimal>::new(),
                 |mut entries, session| async move {
-                    *entries.entry(session.pub_key).or_default() +=
-                        Decimal::from(bytes_to_dc(session.download_bytes + session.upload_bytes));
+                    *entries.entry(session.pub_key).or_default() += Decimal::from(session.num_dcs);
                     entries
                 },
             )
@@ -77,18 +76,22 @@ impl TransferRewards {
             .into_iter()
             // Calculate rewards per hotspot
             .map(|(pub_key, dc_amount)| {
-                let mobiles = dc_to_mobile_bones(dc_amount, mobile_price);
-                data_transfer_reward_sum += mobiles;
-                (pub_key, mobiles)
+                let bones = dc_to_mobile_bones(dc_amount, mobile_price);
+                data_transfer_reward_sum += bones;
+                (pub_key, bones)
             })
             .collect();
+
+        let duration = epoch.end - epoch.start;
+        let total_emissions_pool = get_total_scheduled_tokens(epoch.start, duration)?;
+        let rewards_for_poc_and_dc = get_scheduled_tokens_for_poc_and_dc(epoch.start, duration)?;
 
         // Determine if we need to scale the rewards given for data transfer rewards.
         // Ideally this should never happen, but if the total number of data transfer rewards
         // is greater than (at the time of writing) 40% of the total pool, we need to scale
         // the rewards given for data transfer.
         //
-        // If we find that total data_transfer reward sum is greater than 80%, we use the
+        // If we find that total data_transfer reward sum is greater than 40%, we use the
         // following math to calculate the scale:
         //
         // [ scale * data_transfer_reward_sum ] / total_emissions_pool = 0.4
@@ -97,15 +100,14 @@ impl TransferRewards {
         //
         // scale = [ 0.4 * total_emissions_pool ] / data_transfer_reward_sum
         //
-        let scale = if data_transfer_reward_sum / TOTAL_EMISSIONS_POOL
+        let scale = if data_transfer_reward_sum / total_emissions_pool
             > MAX_DATA_TRANSFER_REWARDS_PERCENT
         {
-            MAX_DATA_TRANSFER_REWARDS_PERCENT * TOTAL_EMISSIONS_POOL / data_transfer_reward_sum
+            MAX_DATA_TRANSFER_REWARDS_PERCENT * total_emissions_pool / data_transfer_reward_sum
         } else {
             Decimal::ONE
         };
-        let remaining_poc_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start)?
-            - scale * data_transfer_reward_sum;
+        let remaining_poc_rewards = rewards_for_poc_and_dc - scale * data_transfer_reward_sum;
 
         Ok(Self {
             scale,
@@ -113,13 +115,6 @@ impl TransferRewards {
             remaining_poc_rewards,
         })
     }
-}
-
-const BYTES_PER_DC: u64 = 66;
-
-fn bytes_to_dc(bytes: u64) -> u64 {
-    let bytes = bytes.max(BYTES_PER_DC);
-    (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }
 
 /// Returns the equivalent amount of Mobile bones for a specified amount of Data Credits
@@ -238,16 +233,23 @@ lazy_static::lazy_static! {
 #[error("clock is set before the genesis start")]
 pub struct ClockError;
 
-pub fn get_scheduled_tokens(
+pub fn get_total_scheduled_tokens(
     start: DateTime<Utc>,
     duration: Duration,
 ) -> Result<Decimal, ClockError> {
     (*GENESIS_START <= start)
         .then(|| {
-            (GENESIS_REWARDS_PER_DAY / Decimal::from(Duration::hours(24).num_seconds()))
+            (TOTAL_EMISSIONS_POOL / dec!(180) / Decimal::from(Duration::hours(24).num_seconds()))
                 * Decimal::from(duration.num_seconds())
         })
         .ok_or(ClockError)
+}
+
+pub fn get_scheduled_tokens_for_poc_and_dc(
+    start: DateTime<Utc>,
+    duration: Duration,
+) -> Result<Decimal, ClockError> {
+    Ok(get_total_scheduled_tokens(start, duration)? * dec!(0.6))
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -299,11 +301,11 @@ mod test {
     #[test]
     fn bytes_to_bones() {
         assert_eq!(
-            dc_to_mobile_bones(Decimal::from(bytes_to_dc(66)), dec!(1.0)),
+            dc_to_mobile_bones(Decimal::from(1), dec!(1.0)),
             dec!(0.00000003)
         );
         assert_eq!(
-            dc_to_mobile_bones(Decimal::from(bytes_to_dc(67)), dec!(1.0)),
+            dc_to_mobile_bones(Decimal::from(2), dec!(1.0)),
             dec!(0.00000006)
         );
     }
@@ -322,14 +324,15 @@ mod test {
             payer,
             upload_bytes: 66,
             download_bytes: 1,
-            num_dcs: 0, // Not used
+            num_dcs: 2,
             first_timestamp: DateTime::default(),
             last_timestamp: DateTime::default(),
         }]);
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
-        let total_rewards = get_scheduled_tokens(epoch.start, epoch.end - epoch.start).unwrap();
+        let total_rewards =
+            get_scheduled_tokens_for_poc_and_dc(epoch.start, epoch.end - epoch.start).unwrap();
         // confirm our hourly rewards add up to expected 24hr amount
         // total_rewards will be in bones
         assert_eq!(
@@ -365,9 +368,9 @@ mod test {
             transfer_sessions.push(ValidDataTransferSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
-                upload_bytes: 66 * 4_444_444_444_444_444, //5_333_333_333_333_333,
+                upload_bytes: 66 * 4_444_444_444_444_444,
                 download_bytes: 0,
-                num_dcs: 0, // Not used
+                num_dcs: 4444444444444445,
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),
             });
