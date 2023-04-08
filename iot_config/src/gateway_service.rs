@@ -84,31 +84,23 @@ impl iot_config::Gateway for GatewayService {
 
         let location = gateway_info::db::get_info(&self.metadata_pool, address)
             .await
-            .map_err(|_| Status::internal("error fetching gateway info"))?
-            .map_or_else(
-                || {
-                    Err(Status::not_found(format!(
-                        "gateway not found: pubkey = {address:}"
-                    )))
-                },
-                |info| {
-                    if let Some(location) = info.location {
-                        Ok(location)
-                    } else {
-                        Err(Status::not_found(format!(
-                            "gateway unasserted: pubkey = {address:}"
-                        )))
-                    }
-                },
-            )?;
-
-        let location = Cell::from_raw(location)
-            .map_err(|_| {
-                Status::internal(format!(
-                    "invalid h3 index location {location} for {address}"
-                ))
-            })?
-            .to_string();
+            .map_err(|_| Status::internal("error fetching gateway info"))
+            .and_then(|opt| {
+                opt.ok_or_else(|| {
+                    Status::not_found(format!("gateway not found: pubkey = {}", address.to_string()))
+                })
+            })
+            .and_then(|iot_metadata| {
+                iot_metadata.location.ok_or_else(|| {
+                    Status::not_found(format!("gateway unasserted: pubkey = {}", address.to_string()))
+                })
+            })
+            .and_then(|location| {
+                Cell::from_raw(location).map_err(|_| {
+                    Status::internal(format!("invalid h3 index location {location} for {}", address.to_string()))
+                })
+            })
+            .map(|cell| cell.to_string())?;
 
         let mut resp = GatewayLocationResV1 {
             location,

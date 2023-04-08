@@ -138,7 +138,6 @@ impl RouteService {
         route_id: &str,
         check_constraints: bool,
     ) -> Result<DevAddrEuiValidator, DbOrgError> {
-        // let admin_keys = self.auth_cache.get_keys().into_iter().filter(|(_, keytype)| keytype == &KeyType::Administrator).map(|(pubkey, _)| pubkey).collect();
         let admin_keys = self.auth_cache.get_keys_by_type(KeyType::Administrator);
 
         DevAddrEuiValidator::new(route_id, admin_keys, &self.pool, check_constraints).await
