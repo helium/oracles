@@ -10,7 +10,7 @@ use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     future::TryFutureExt,
-    stream::{self, StreamExt, TryStreamExt},
+    stream::{StreamExt, TryStreamExt},
 };
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{

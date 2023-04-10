@@ -1,8 +1,7 @@
 use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
-    iot_config,
-    mobile_config,
+    iot_config, mobile_config,
     poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
 };
 use helium_proto::{

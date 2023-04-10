@@ -108,7 +108,7 @@ impl mobile_config::Gateway for GatewayService {
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
 
-        let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
             stream_all_gateways_info(&pool, tx.clone(), signing_key.clone(), batch_size).await
