@@ -3970,7 +3970,6 @@ dependencies = [
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
- "node-follower",
  "once_cell",
  "poc-metrics",
  "price",

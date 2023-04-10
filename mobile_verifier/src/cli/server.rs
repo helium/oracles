@@ -78,18 +78,6 @@ impl Cmd {
         .await?;
 
         // Reward manifest
-        let (old_reward_manifests, mut old_reward_manifests_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::RewardManifest,
-                store_base_path,
-                concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
-            )
-            .deposits(Some(file_upload_tx.clone()))
-            .auto_commit(false)
-            .create()
-            .await?;
-
-        // Reward manifest
         let (reward_manifests, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
@@ -100,8 +88,6 @@ impl Cmd {
         .create()
         .await?;
 
-        let follower = settings.follower.connect_follower();
-
         let reward_period_hours = settings.rewards;
         let verifications_per_period = settings.verifications;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
@@ -109,7 +95,7 @@ impl Cmd {
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        let verifier = Verifier::new(file_store, follower);
+        let verifier = Verifier::new(file_store);
 
         let verifier_daemon = VerifierDaemon {
             verification_offset: settings.verification_offset_duration(),
@@ -117,7 +103,6 @@ impl Cmd {
             heartbeats,
             speedtest_avgs,
             radio_rewards,
-            old_reward_manifests,
             mobile_rewards,
             reward_manifests,
             reward_period_hours,
@@ -141,9 +126,6 @@ impl Cmd {
                 .run(&shutdown_listener)
                 .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
-            old_reward_manifests_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
             reward_manifests_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),

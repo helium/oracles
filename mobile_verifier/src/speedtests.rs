@@ -188,6 +188,7 @@ pub struct SpeedtestAverages {
 }
 
 impl SpeedtestAverages {
+    #[cfg(test)]
     pub fn into_iter(self) -> impl IntoIterator<Item = SpeedtestRollingAverage> {
         self.speedtests
             .into_iter()

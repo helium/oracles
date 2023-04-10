@@ -30,7 +30,6 @@ impl Cmd {
         let epoch = start..end;
         let expected_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
 
-        let mut follower = settings.follower.connect_follower();
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (pool, _join_handle) = settings
             .database
@@ -39,8 +38,7 @@ impl Cmd {
 
         let heartbeats = Heartbeats::validated(&pool).await?;
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let reward_shares =
-            PocShares::aggregate(&mut follower, heartbeats, speedtests.clone()).await?;
+        let reward_shares = PocShares::aggregate(heartbeats, speedtests.clone()).await;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
