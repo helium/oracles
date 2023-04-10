@@ -21,7 +21,7 @@ where
         insert into reward_index (
                 address,
                 rewards,
-                last_reward
+                last_reward,
                 reward_type
             ) values ($1, $2, $3, $4)
             on conflict(address) do update set
