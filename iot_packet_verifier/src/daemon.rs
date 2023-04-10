@@ -99,7 +99,13 @@ impl Cmd {
         );
 
         // Set up the balance cache:
-        let balances = BalanceCache::new(&pool, sub_dao, rpc_client.clone()).await?;
+        let balances = BalanceCache::new(
+            &pool,
+            sub_dao,
+            rpc_client.clone(),
+            settings.enable_balance_check,
+        )
+        .await?;
 
         // Set up the balance burner:
         let burn_keypair = match read_keypair_file(&settings.burn_keypair) {

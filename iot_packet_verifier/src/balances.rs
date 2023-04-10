@@ -15,6 +15,7 @@ pub struct BalanceCache {
     sub_dao: Pubkey,
     provider: Arc<RpcClient>,
     balances: BalanceStore,
+    enabled: bool,
 }
 
 pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>;
@@ -38,32 +39,36 @@ impl BalanceCache {
         pool: &Pool<Postgres>,
         sub_dao: Pubkey,
         provider: Arc<RpcClient>,
+        enabled: bool,
     ) -> Result<Self, DebitError> {
         let mut burns = sqlx::query_as("SELECT * FROM pending_burns").fetch(pool);
 
         let mut balances = HashMap::new();
 
-        while let Some(Burn {
-            payer,
-            amount: burn_amount,
-            ..
-        }) = burns.next().await.transpose()?
-        {
-            // Look up the current balance of the payer
-            let balance = payer_balance(provider.as_ref(), &sub_dao, &payer).await?;
-            balances.insert(
+        if enabled {
+            while let Some(Burn {
                 payer,
-                Balance {
-                    burned: burn_amount as u64,
-                    balance,
-                },
-            );
+                amount: burn_amount,
+                ..
+            }) = burns.next().await.transpose()?
+            {
+                // Look up the current balance of the payer
+                let balance = payer_balance(provider.as_ref(), &sub_dao, &payer).await?;
+                balances.insert(
+                    payer,
+                    Balance {
+                        burned: burn_amount as u64,
+                        balance,
+                    },
+                );
+            }
         }
 
         Ok(Self {
             sub_dao,
             provider,
             balances: Arc::new(Mutex::new(balances)),
+            enabled,
         })
     }
 
@@ -83,6 +88,10 @@ impl Debiter for BalanceCache {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<bool, DebitError> {
+        if !self.enabled {
+            return Ok(true);
+        }
+
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {

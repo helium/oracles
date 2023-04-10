@@ -32,6 +32,8 @@ pub struct Settings {
     pub org_url: http::Uri,
     #[serde(default)]
     pub enable_dc_burn: bool,
+    #[serde(default)]
+    pub enable_balance_check: bool,
 }
 
 pub fn default_burn_period() -> u64 {
