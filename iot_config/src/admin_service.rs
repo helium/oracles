@@ -13,7 +13,7 @@ use helium_proto::{
         self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
         AdminRemoveKeyReqV1, RegionParamsReqV1, RegionParamsResV1,
     },
-    Message,
+    Message, Region,
 };
 use sqlx::{Pool, Postgres};
 use tokio::sync::watch;

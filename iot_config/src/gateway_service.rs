@@ -87,17 +87,19 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::internal("error fetching gateway info"))
             .and_then(|opt| {
                 opt.ok_or_else(|| {
-                    Status::not_found(format!("gateway not found: pubkey = {}", address.to_string()))
+                    Status::not_found(format!("gateway not found: pubkey = {address}"))
                 })
             })
             .and_then(|iot_metadata| {
                 iot_metadata.location.ok_or_else(|| {
-                    Status::not_found(format!("gateway unasserted: pubkey = {}", address.to_string()))
+                    Status::not_found(format!("gateway unasserted: pubkey = {address}"))
                 })
             })
             .and_then(|location| {
                 Cell::from_raw(location).map_err(|_| {
-                    Status::internal(format!("invalid h3 index location {location} for {}", address.to_string()))
+                    Status::internal(format!(
+                        "invalid h3 index location {location} for {address}"
+                    ))
                 })
             })
             .map(|cell| cell.to_string())?;
