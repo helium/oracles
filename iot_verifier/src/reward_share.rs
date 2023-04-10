@@ -4,7 +4,7 @@ use file_store::{iot_packet::IotValidPacket, iot_valid_poc::IotPoc, traits::Time
 use futures::stream::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_lora as proto;
-
+use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
 use lazy_static::lazy_static;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -23,6 +23,8 @@ lazy_static! {
     static ref WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
     // Data transfer is allocated 50% of daily rewards
     static ref DATA_TRANSFER_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.50);
+    // Operations fund is allocated 7% of daily rewards
+    static ref OPERATIONS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
     // dc remainer distributed at ration of 4:1 in favour of witnesses
     // ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
     static ref WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.80);
@@ -60,6 +62,16 @@ fn get_scheduled_dc_tokens(duration: Duration) -> Decimal {
         *REWARDS_PER_DAY * *DATA_TRANSFER_REWARDS_PER_DAY_PERCENT,
         duration,
     )
+}
+
+fn get_scheduled_ops_fund_tokens(duration: Duration) -> u64 {
+    get_tokens_by_duration(
+        *REWARDS_PER_DAY * *OPERATIONS_REWARDS_PER_DAY_PERCENT,
+        duration,
+    )
+    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+    .to_u64()
+    .unwrap_or(0)
 }
 
 #[derive(sqlx::FromRow)]
@@ -291,11 +303,11 @@ impl GatewayShares {
         Ok(())
     }
 
-    pub fn into_gateway_reward_shares(
+    pub fn into_iot_reward_shares(
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
         iot_price: Decimal,
-    ) -> impl Iterator<Item = proto::GatewayRewardShare> + '_ {
+    ) -> impl Iterator<Item = proto::IotRewardShare> + '_ {
         // the total number of shares for beacons, witnesses and data transfer
         // dc shares here is the sum of all spent data transfer DC this epoch
         let (total_beacon_shares, total_witness_shares, total_dc_shares) = self.total_shares();
@@ -330,30 +342,46 @@ impl GatewayShares {
         // compute the awards per hotspot
         self.shares
             .into_iter()
-            .map(
-                move |(hotspot_key, reward_shares)| proto::GatewayRewardShare {
-                    hotspot_key: hotspot_key.into(),
-                    beacon_amount: compute_rewards(
-                        beacon_rewards_per_share,
-                        reward_shares.beacon_shares,
-                    ),
-                    witness_amount: compute_rewards(
-                        witness_rewards_per_share,
-                        reward_shares.witness_shares,
-                    ),
-                    dc_transfer_amount: compute_rewards(
-                        dc_transfer_rewards_per_share,
-                        reward_shares.dc_shares,
-                    ),
-                    start_period: reward_period.start.encode_timestamp(),
-                    end_period: reward_period.end.encode_timestamp(),
-                },
-            )
+            .map(move |(hotspot_key, reward_shares)| proto::GatewayReward {
+                hotspot_key: hotspot_key.into(),
+                beacon_amount: compute_rewards(
+                    beacon_rewards_per_share,
+                    reward_shares.beacon_shares,
+                ),
+                witness_amount: compute_rewards(
+                    witness_rewards_per_share,
+                    reward_shares.witness_shares,
+                ),
+                dc_transfer_amount: compute_rewards(
+                    dc_transfer_rewards_per_share,
+                    reward_shares.dc_shares,
+                ),
+            })
             .filter(|reward_share| {
                 reward_share.beacon_amount > 0
                     || reward_share.witness_amount > 0
                     || reward_share.dc_transfer_amount > 0
             })
+            .map(|gateway_reward| proto::IotRewardShare {
+                start_period: reward_period.start.encode_timestamp(),
+                end_period: reward_period.end.encode_timestamp(),
+                reward: Some(ProtoReward::GatewayReward(gateway_reward)),
+            })
+    }
+}
+
+pub mod operational_rewards {
+    use super::*;
+
+    pub fn compute(reward_period: &Range<DateTime<Utc>>) -> proto::IotRewardShare {
+        let op_fund_reward = proto::OperationalReward {
+            amount: get_scheduled_ops_fund_tokens(reward_period.end - reward_period.start),
+        };
+        proto::IotRewardShare {
+            start_period: reward_period.start.encode_timestamp(),
+            end_period: reward_period.end.encode_timestamp(),
+            reward: Some(ProtoReward::OperationalReward(op_fund_reward)),
+        }
     }
 }
 
@@ -422,6 +450,16 @@ mod test {
             dc_shares: dc_shares
                 .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven),
         }
+    }
+
+    #[test]
+    fn test_non_gateway_reward_shares() {
+        let epoch_duration = Duration::hours(1);
+        let total_tokens_for_period = *REWARDS_PER_DAY / dec!(24);
+        println!("total_tokens_for_period: {total_tokens_for_period}");
+
+        let operation_tokens_for_period = get_scheduled_ops_fund_tokens(epoch_duration);
+        assert_eq!(479452054794, operation_tokens_for_period);
     }
 
     #[test]
@@ -499,21 +537,20 @@ mod test {
             gw6.clone(),
             reward_shares_in_dec(dec!(150), dec!(350), gw6_dc_spend),
         ); // 0.0150, 0.0350
-        let gw_shares = GatewayShares { shares };
 
-        let rewards: HashMap<PublicKeyBinary, proto::GatewayRewardShare> = gw_shares
-            .into_gateway_reward_shares(&reward_period, iot_price)
-            .map(|reward| {
-                (
-                    reward
-                        .hotspot_key
-                        .clone()
-                        .try_into()
-                        .expect("failed to decode hotspot_key"),
-                    reward,
-                )
-            })
+        let gw_shares = GatewayShares { shares };
+        let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
+        let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
+            .into_iot_reward_shares(&reward_period, iot_price)
             .collect();
+        for reward in gw_reward_shares {
+            if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
+                rewards.insert(
+                    gateway_reward.hotspot_key.clone().try_into().unwrap(),
+                    gateway_reward,
+                );
+            }
+        }
 
         let gw1_rewards = rewards
             .get(&gw1)
@@ -679,21 +716,20 @@ mod test {
             gw6.clone(),
             reward_shares_in_dec(dec!(150), dec!(350), total_dc_to_spend * dec!(0.8)),
         ); // 0.0150, 0.0350
-        let gw_shares = GatewayShares { shares };
 
-        let rewards: HashMap<PublicKeyBinary, proto::GatewayRewardShare> = gw_shares
-            .into_gateway_reward_shares(&reward_period, iot_price)
-            .map(|reward| {
-                (
-                    reward
-                        .hotspot_key
-                        .clone()
-                        .try_into()
-                        .expect("failed to decode hotspot_key"),
-                    reward,
-                )
-            })
+        let gw_shares = GatewayShares { shares };
+        let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
+        let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
+            .into_iot_reward_shares(&reward_period, iot_price)
             .collect();
+        for reward in gw_reward_shares {
+            if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
+                rewards.insert(
+                    gateway_reward.hotspot_key.clone().try_into().unwrap(),
+                    gateway_reward,
+                );
+            }
+        }
 
         let gw1_rewards = rewards
             .get(&gw1)
@@ -840,21 +876,20 @@ mod test {
             gw6.clone(),
             reward_shares_in_dec(dec!(150), dec!(350), total_dc_to_spend * dec!(0.2)),
         ); // 0.0150, 0.0350
-        let gw_shares = GatewayShares { shares };
 
-        let rewards: HashMap<PublicKeyBinary, proto::GatewayRewardShare> = gw_shares
-            .into_gateway_reward_shares(&reward_period, iot_price)
-            .map(|reward| {
-                (
-                    reward
-                        .hotspot_key
-                        .clone()
-                        .try_into()
-                        .expect("failed to decode hotspot_key"),
-                    reward,
-                )
-            })
+        let gw_shares = GatewayShares { shares };
+        let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
+        let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
+            .into_iot_reward_shares(&reward_period, iot_price)
             .collect();
+        for reward in gw_reward_shares {
+            if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
+                rewards.insert(
+                    gateway_reward.hotspot_key.clone().try_into().unwrap(),
+                    gateway_reward,
+                );
+            }
+        }
 
         let gw1_rewards = rewards
             .get(&gw1)
