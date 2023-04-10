@@ -10,7 +10,6 @@ use helium_proto::{
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
-use std::fmt;
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::mpsc::Receiver;
 
@@ -21,21 +20,12 @@ pub struct Indexer {
     op_fund_key: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
+#[sqlx(type_name = "reward_type", rename_all = "snake_case")]
 pub enum RewardType {
     Mobile,
     IotGateway,
     IotOperational,
-}
-
-impl fmt::Display for RewardType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Mobile => f.write_str("mobile"),
-            Self::IotGateway => f.write_str("iot_gateway"),
-            Self::IotOperational => f.write_str("iot_operational"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -118,7 +108,7 @@ impl Indexer {
                 &mut *txn,
                 &reward_key.key,
                 amount,
-                reward_key.reward_type.to_string(),
+                reward_key.reward_type,
                 &manifest_time,
             )
             .await?;

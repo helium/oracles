@@ -1,10 +1,11 @@
+use crate::indexer::RewardType;
 use chrono::{DateTime, Utc};
 
 pub async fn insert<'c, E>(
     executor: E,
     address: &Vec<u8>,
     amount: u64,
-    reward_type: String,
+    reward_type: RewardType,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error>
 where
