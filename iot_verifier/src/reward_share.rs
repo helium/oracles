@@ -370,24 +370,18 @@ impl GatewayShares {
     }
 }
 
-#[derive(Default)]
-pub struct OperationalRewards {
-    pub rewards: Vec<proto::IotRewardShare>,
-}
+pub mod operational_rewards {
+    use super::*;
 
-impl OperationalRewards {
-    pub fn compute(reward_period: &Range<DateTime<Utc>>) -> Self {
-        let mut operational_rewards = Self::default();
+    pub fn compute(reward_period: &Range<DateTime<Utc>>) -> proto::IotRewardShare {
         let op_fund_reward = proto::OperationalReward {
             amount: get_scheduled_ops_fund_tokens(reward_period.end - reward_period.start),
         };
-        let op_fund_share = proto::IotRewardShare {
+        proto::IotRewardShare {
             start_period: reward_period.start.encode_timestamp(),
             end_period: reward_period.end.encode_timestamp(),
             reward: Some(ProtoReward::OperationalReward(op_fund_reward)),
-        };
-        operational_rewards.rewards.push(op_fund_share);
-        operational_rewards
+        }
     }
 }
 

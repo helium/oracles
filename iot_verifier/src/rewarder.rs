@@ -1,4 +1,4 @@
-use crate::{reward_share::GatewayShares, reward_share::OperationalRewards, scheduler::Scheduler};
+use crate::{reward_share::operational_rewards, reward_share::GatewayShares, scheduler::Scheduler};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
@@ -70,8 +70,6 @@ impl Rewarder {
         let gateway_reward_shares =
             GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
 
-        let operational_rewards = OperationalRewards::compute(&scheduler.reward_period);
-
         for reward_share in
             gateway_reward_shares.into_iot_reward_shares(&scheduler.reward_period, iot_price)
         {
@@ -81,13 +79,12 @@ impl Rewarder {
                 // Await the returned oneshot to ensure we wrote the file
                 .await??;
         }
-        for reward_share in operational_rewards.rewards {
-            self.rewards_sink
-                .write(reward_share, [])
-                .await?
-                // Await the returned oneshot to ensure we wrote the file
-                .await??;
-        }
+
+        self.rewards_sink
+            .write(operational_rewards::compute(&scheduler.reward_period), [])
+            .await?
+            // Await the returned oneshot to ensure we wrote the file
+            .await??;
 
         let written_files = self.rewards_sink.commit().await?.await??;
         // Write the rewards manifest for the completed period
