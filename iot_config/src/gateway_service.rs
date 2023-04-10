@@ -206,9 +206,7 @@ impl iot_config::Gateway for GatewayService {
         let metadata_info = gateway_info::db::get_info(&self.metadata_pool, address)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
-            .ok_or(Status::not_found(format!(
-                "gateway not found: pubkey = {address:}"
-            )))?;
+            .ok_or_else(|| Status::not_found(format!("gateway not found: pubkey = {address:}")))?;
 
         let gateway_info = GatewayInfo::chain_metadata_to_info(metadata_info, &self.region_map);
         let mut resp = GatewayInfoResV1 {

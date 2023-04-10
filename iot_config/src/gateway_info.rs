@@ -62,7 +62,7 @@ fn h3index_to_region(
 ) -> anyhow::Result<Region> {
     hextree::Cell::from_raw(location)
         .map(|cell| region_map.get_region(cell))?
-        .ok_or(anyhow!("invalid region"))
+        .ok_or_else(|| anyhow!("invalid region"))
 }
 
 #[async_trait::async_trait]
