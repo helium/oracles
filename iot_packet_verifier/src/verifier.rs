@@ -201,6 +201,7 @@ impl ConfigServer for CachedOrgClient {
             let mut req = OrgEnableReqV1 {
                 oui,
                 timestamp: Utc::now().timestamp_millis() as u64,
+                signer: self.keypair.public_key().into(),
                 signature: vec![],
             };
             let signature = self.keypair.sign(&req.encode_to_vec())?;
@@ -215,6 +216,7 @@ impl ConfigServer for CachedOrgClient {
             let mut req = OrgDisableReqV1 {
                 oui,
                 timestamp: Utc::now().timestamp_millis() as u64,
+                signer: self.keypair.public_key().into(),
                 signature: vec![],
             };
             let signature = self.keypair.sign(&req.encode_to_vec())?;

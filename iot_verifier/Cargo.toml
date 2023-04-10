@@ -42,7 +42,7 @@ file-store = { path = "../file_store" }
 metrics = {workspace = true}
 retainer = {workspace = true}
 blake3 = {workspace = true}
-iot-config-client = { path = "../iot_config_client" }
+iot-config = { path = "../iot_config" }
 poc-metrics = { path = "../metrics" }
 db-store = {path = "../db_store"}
 denylist = {path = "../denylist"}

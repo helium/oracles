@@ -1,5 +1,7 @@
 pub mod admin;
 pub mod admin_service;
+pub mod client;
+pub mod gateway_info;
 pub mod gateway_service;
 pub mod lora_field;
 pub mod org;
@@ -12,6 +14,7 @@ pub mod session_key_service;
 pub mod settings;
 
 pub use admin_service::AdminService;
+pub use client::{Client, Settings as ClientSettings};
 pub use gateway_service::GatewayService;
 use lora_field::{LoraField, NetIdField};
 pub use org_service::OrgService;

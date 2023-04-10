@@ -2,12 +2,20 @@ use crate::{
     broadcast_update,
     lora_field::{DevAddrRange, EuiPair, NetIdField},
 };
-use futures::stream::{self, Stream, StreamExt, TryStreamExt};
+use anyhow::anyhow;
+use chrono::Utc;
+use file_store::traits::TimestampEncode;
+use futures::{
+    future::TryFutureExt,
+    stream::{self, Stream, StreamExt, TryStreamExt},
+};
+use helium_crypto::{Keypair, Sign};
+use helium_proto::Message;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{types::Uuid, Row};
-use std::collections::BTreeMap;
-use tokio::sync::broadcast::{error::SendError, Sender};
+use std::{collections::BTreeMap, sync::Arc};
+use tokio::sync::broadcast::Sender;
 
 pub mod proto {
     pub use helium_proto::{
@@ -16,7 +24,7 @@ pub mod proto {
             ActionV1, ProtocolGwmpMappingV1, ProtocolGwmpV1, ProtocolHttpRoamingV1,
             ProtocolPacketRouterV1, RouteStreamResV1, RouteV1, ServerV1,
         },
-        Region,
+        Message, Region,
     };
 }
 
@@ -73,22 +81,21 @@ pub struct StorageRoute {
 #[derive(thiserror::Error, Debug)]
 pub enum RouteStorageError {
     #[error("db persist failed: {0}")]
-    PersistError(#[from] sqlx::Error),
+    StorageError(#[from] sqlx::Error),
     #[error("uuid parse error: {0}")]
     UuidParse(#[from] sqlx::types::uuid::Error),
     #[error("protocol serialize error: {0}")]
     ProtocolSerde(#[from] serde_json::Error),
     #[error("protocol error: {0}")]
     ServerProtocol(String),
-    #[error("stream update error: {0}")]
-    StreamUpdate(#[from] Box<SendError<proto::RouteStreamResV1>>),
 }
 
 pub async fn create_route(
     route: Route,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    signing_key: &Keypair,
     update_tx: Sender<proto::RouteStreamResV1>,
-) -> Result<Route, RouteStorageError> {
+) -> anyhow::Result<Route> {
     let net_id: i32 = route.net_id.into();
     let protocol_opts = route
         .server
@@ -123,12 +130,26 @@ pub async fn create_route(
     transaction.commit().await?;
 
     if new_route.active && !new_route.locked {
-        _ = update_tx.send(proto::RouteStreamResV1 {
+        let timestamp = Utc::now().encode_timestamp();
+        let signer = signing_key.public_key().into();
+        let mut update = proto::RouteStreamResV1 {
             action: proto::ActionV1::Add.into(),
             data: Some(proto::route_stream_res_v1::Data::Route(
                 new_route.clone().into(),
             )),
-        });
+            timestamp,
+            signer,
+            signature: vec![],
+        };
+        signing_key
+            .sign(&update.encode_to_vec())
+            .map_err(|err| anyhow!(format!("error signing route stream response: {err:?}")))
+            .and_then(|signature| {
+                update.signature = signature;
+                update_tx.send(update).map_err(|err| {
+                    anyhow!(format!("error broadcasting route stream response: {err:?}"))
+                })
+            })?;
     };
 
     Ok(new_route)
@@ -137,8 +158,9 @@ pub async fn create_route(
 pub async fn update_route(
     route: Route,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    signing_key: &Keypair,
     update_tx: Sender<proto::RouteStreamResV1>,
-) -> Result<Route, RouteStorageError> {
+) -> anyhow::Result<Route> {
     let protocol_opts = route
         .server
         .protocol
@@ -170,12 +192,27 @@ pub async fn update_route(
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer = signing_key.public_key().into();
+    let mut update_res = proto::RouteStreamResV1 {
         action: proto::ActionV1::Add.into(),
         data: Some(proto::route_stream_res_v1::Data::Route(
             updated_route.clone().into(),
         )),
-    });
+        timestamp,
+        signer,
+        signature: vec![],
+    };
+
+    _ = signing_key
+        .sign(&update_res.encode_to_vec())
+        .map_err(|err| anyhow!(format!("error signing route stream response: {err:?}")))
+        .and_then(|signature| {
+            update_res.signature = signature;
+            update_tx.send(update_res).map_err(|err| {
+                anyhow!(format!("error broadcasting route stream response: {err:?}"))
+            })
+        });
 
     Ok(updated_route)
 }
@@ -183,7 +220,7 @@ pub async fn update_route(
 async fn insert_euis(
     euis: &[EuiPair],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<EuiPair>, RouteStorageError> {
+) -> anyhow::Result<Vec<EuiPair>> {
     if euis.is_empty() {
         return Ok(vec![]);
     }
@@ -213,7 +250,7 @@ async fn insert_euis(
 async fn remove_euis(
     euis: &[EuiPair],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<EuiPair>, RouteStorageError> {
+) -> anyhow::Result<Vec<EuiPair>> {
     if euis.is_empty() {
         return Ok(vec![]);
     }
@@ -244,8 +281,9 @@ pub async fn update_euis(
     to_add: &[EuiPair],
     to_remove: &[EuiPair],
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    signing_key: Arc<Keypair>,
     update_tx: Sender<proto::RouteStreamResV1>,
-) -> Result<(), RouteStorageError> {
+) -> anyhow::Result<()> {
     let mut transaction = db.begin().await?;
 
     let added_euis: Vec<(EuiPair, proto::ActionV1)> = insert_euis(to_add, &mut transaction)
@@ -263,16 +301,25 @@ pub async fn update_euis(
     transaction.commit().await?;
 
     tokio::spawn(async move {
+        let timestamp = Utc::now().encode_timestamp();
+        let signer: Vec<u8> = signing_key.public_key().into();
         stream::iter([added_euis, removed_euis].concat())
             .map(Ok)
             .try_for_each(|(update, action)| {
-                broadcast_update::<proto::RouteStreamResV1>(
-                    proto::RouteStreamResV1 {
-                        action: i32::from(action),
-                        data: Some(proto::route_stream_res_v1::Data::EuiPair(update.into())),
-                    },
-                    update_tx.clone(),
-                )
+                let mut update_res = proto::RouteStreamResV1 {
+                    action: i32::from(action),
+                    data: Some(proto::route_stream_res_v1::Data::EuiPair(update.into())),
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                };
+                futures::future::ready(signing_key.sign(&update_res.encode_to_vec()))
+                    .map_err(|_| anyhow!("failed signing eui pair update"))
+                    .and_then(|signature| {
+                        update_res.signature = signature;
+                        broadcast_update::<proto::RouteStreamResV1>(update_res, update_tx.clone())
+                            .map_err(|_| anyhow!("failed broadcasting eui pair update"))
+                    })
             })
             .await
     });
@@ -283,7 +330,7 @@ pub async fn update_euis(
 async fn insert_devaddr_ranges(
     ranges: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<DevAddrRange>, RouteStorageError> {
+) -> anyhow::Result<Vec<DevAddrRange>> {
     if ranges.is_empty() {
         return Ok(vec![]);
     }
@@ -314,7 +361,7 @@ async fn insert_devaddr_ranges(
 async fn remove_devaddr_ranges(
     ranges: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<DevAddrRange>, RouteStorageError> {
+) -> anyhow::Result<Vec<DevAddrRange>> {
     if ranges.is_empty() {
         return Ok(vec![]);
     }
@@ -346,8 +393,9 @@ pub async fn update_devaddr_ranges(
     to_add: &[DevAddrRange],
     to_remove: &[DevAddrRange],
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    signing_key: Arc<Keypair>,
     update_tx: Sender<proto::RouteStreamResV1>,
-) -> Result<(), RouteStorageError> {
+) -> anyhow::Result<()> {
     let mut transaction = db.begin().await?;
 
     let added_devaddrs: Vec<(DevAddrRange, proto::ActionV1)> =
@@ -367,18 +415,28 @@ pub async fn update_devaddr_ranges(
     transaction.commit().await?;
 
     tokio::spawn(async move {
+        let timestamp = Utc::now().encode_timestamp();
+        let signer: Vec<u8> = signing_key.public_key().into();
         stream::iter([added_devaddrs, removed_devaddrs].concat())
             .map(Ok)
             .try_for_each(|(update, action)| {
-                broadcast_update::<proto::RouteStreamResV1>(
-                    proto::RouteStreamResV1 {
-                        action: i32::from(action),
-                        data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
-                            update.into(),
-                        )),
-                    },
-                    update_tx.clone(),
-                )
+                let mut devaddr_res = proto::RouteStreamResV1 {
+                    action: i32::from(action),
+                    data: Some(proto::route_stream_res_v1::Data::DevaddrRange(
+                        update.into(),
+                    )),
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                };
+
+                futures::future::ready(signing_key.sign(&devaddr_res.encode_to_vec()))
+                    .map_err(|_| anyhow!("failed to sign devaddr range update"))
+                    .and_then(|signature| {
+                        devaddr_res.signature = signature;
+                        broadcast_update::<proto::RouteStreamResV1>(devaddr_res, update_tx.clone())
+                            .map_err(|_| anyhow!("failed to broadcast devaddr range update"))
+                    })
             })
             .await
     });
@@ -386,10 +444,7 @@ pub async fn update_devaddr_ranges(
     Ok(())
 }
 
-pub async fn list_routes(
-    oui: u64,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<Route>, RouteStorageError> {
+pub async fn list_routes(oui: u64, db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Vec<Route>> {
     Ok(sqlx::query_as::<_, StorageRoute>(
         r#"
         select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
@@ -507,10 +562,7 @@ pub fn devaddr_range_stream<'a>(
     .boxed()
 }
 
-pub async fn get_route(
-    id: &str,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Route, RouteStorageError> {
+pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Route> {
     let uuid = Uuid::try_parse(id)?;
     let route_row = sqlx::query_as::<_, StorageRoute>(
         r#"
@@ -548,8 +600,9 @@ pub async fn get_route(
 pub async fn delete_route(
     id: &str,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    signing_key: &Keypair,
     update_tx: Sender<proto::RouteStreamResV1>,
-) -> Result<(), RouteStorageError> {
+) -> anyhow::Result<()> {
     let uuid = Uuid::try_parse(id)?;
     let mut transaction = db.begin().await?;
 
@@ -567,12 +620,27 @@ pub async fn delete_route(
 
     transaction.commit().await?;
 
-    _ = update_tx.send(proto::RouteStreamResV1 {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer = signing_key.public_key().into();
+    let mut delete_res = proto::RouteStreamResV1 {
         action: proto::ActionV1::Remove.into(),
         data: Some(proto::route_stream_res_v1::Data::Route(
             route.clone().into(),
         )),
-    });
+        timestamp,
+        signer,
+        signature: vec![],
+    };
+
+    _ = signing_key
+        .sign(&delete_res.encode_to_vec())
+        .map_err(|_| anyhow!("failed to sign route delete update"))
+        .and_then(|signature| {
+            delete_res.signature = signature;
+            update_tx
+                .send(delete_res)
+                .map_err(|_| anyhow!("failed to broadcast route delete update"))
+        });
 
     Ok(())
 }

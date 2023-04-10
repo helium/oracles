@@ -10,6 +10,7 @@ license.workspace = true
 anyhow = {workspace = true}
 async-trait = {workspace = true}
 base64 = {workspace = true}
+chrono = {workspace = true}
 clap = {workspace = true}
 config = {workspace = true}
 db-store = {path = "../db_store"}
@@ -19,10 +20,11 @@ futures-util = {workspace = true}
 helium-crypto = {workspace = true}
 helium-proto = {workspace = true}
 hextree = {workspace = true}
+http = {workspace = true}
+http-serde = {workspace = true}
 libflate = "1"
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
-node-follower = {path = "../node_follower"}
 poc-metrics = {path = "../metrics"}
 prost = {workspace = true}
 serde = {workspace = true}
@@ -35,4 +37,3 @@ tonic = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
-chrono = { workspace = true }

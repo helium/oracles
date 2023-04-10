@@ -2,15 +2,19 @@ use crate::{
     admin::{AuthCache, KeyType},
     lora_field, org,
     route::list_routes,
-    GrpcResult, HELIUM_NET_ID,
+    GrpcResult, Settings, HELIUM_NET_ID,
 };
 use anyhow::Result;
-use file_store::traits::MsgVerify;
-use helium_crypto::{Network, PublicKey};
-use helium_proto::services::iot_config::{
-    self, route_stream_res_v1, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1,
-    OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1, OrgListReqV1,
-    OrgListResV1, OrgResV1, OrgV1, RouteStreamResV1,
+use chrono::Utc;
+use file_store::traits::{MsgVerify, TimestampEncode};
+use helium_crypto::{Keypair, Network, PublicKey, Sign};
+use helium_proto::{
+    services::iot_config::{
+        self, route_stream_res_v1, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1,
+        OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1,
+        OrgListReqV1, OrgListResV1, OrgResV1, OrgV1, RouteStreamResV1,
+    },
+    Message,
 };
 use sqlx::{Pool, Postgres};
 use tokio::sync::broadcast::Sender;
@@ -21,21 +25,23 @@ pub struct OrgService {
     pool: Pool<Postgres>,
     required_network: Network,
     route_update_tx: Sender<RouteStreamResV1>,
+    signing_key: Keypair,
 }
 
 impl OrgService {
     pub fn new(
+        settings: &Settings,
         auth_cache: AuthCache,
         pool: Pool<Postgres>,
-        required_network: Network,
         route_update_tx: Sender<RouteStreamResV1>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             auth_cache,
             pool,
-            required_network,
+            required_network: settings.network,
             route_update_tx,
-        }
+            signing_key: settings.signing_keypair()?,
+        })
     }
 
     fn verify_network(&self, public_key: PublicKey) -> Result<PublicKey, Status> {
@@ -54,15 +60,37 @@ impl OrgService {
             .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
     }
 
-    async fn verify_request_signature<R>(&self, request: &R) -> Result<(), Status>
+    fn verify_admin_request_signature<R>(
+        &self,
+        signer: &PublicKey,
+        request: &R,
+    ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
         self.auth_cache
-            .verify_signature(KeyType::Administrator, request)
-            .await
+            .verify_signature_with_type(KeyType::Administrator, signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
         Ok(())
+    }
+
+    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        self.auth_cache
+            .verify_signature(signer, request)
+            .map_err(|_| Status::permission_denied("invalid request signature"))?;
+        Ok(())
+    }
+
+    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
+    where
+        R: Message,
+    {
+        self.signing_key
+            .sign(&response.encode_to_vec())
+            .map_err(|_| Status::internal("response signing error"))
     }
 }
 
@@ -76,7 +104,15 @@ impl iot_config::Org for OrgService {
             .map(|org| org.into())
             .collect();
 
-        Ok(Response::new(OrgListResV1 { orgs: proto_orgs }))
+        let mut resp = OrgListResV1 {
+            orgs: proto_orgs,
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     async fn get(&self, request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
@@ -100,7 +136,7 @@ impl iot_config::Org for OrgService {
             })
             .map_err(|err| Status::internal(format!("net id error: {err}")))?;
 
-        Ok(Response::new(OrgResV1 {
+        let mut resp = OrgResV1 {
             org: Some(org.org.into()),
             net_id: net_id.into(),
             devaddr_constraints: org
@@ -108,13 +144,20 @@ impl iot_config::Org for OrgService {
                 .into_iter()
                 .map(|constraint| constraint.into())
                 .collect(),
-        }))
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
         let mut verify_delegates: Vec<&[u8]> = request
@@ -169,17 +212,24 @@ impl iot_config::Org for OrgService {
                 Status::internal("org constraints save failed")
             })?;
 
-        Ok(Response::new(OrgResV1 {
+        let mut resp = OrgResV1 {
             org: Some(org.into()),
             net_id: HELIUM_NET_ID.into(),
             devaddr_constraints: vec![devaddr_constraint.into()],
-        }))
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
         let mut verify_delegates: Vec<&[u8]> = request
@@ -229,17 +279,24 @@ impl iot_config::Org for OrgService {
                 Status::internal("org constraints save failed")
             })?;
 
-        Ok(Response::new(OrgResV1 {
+        let mut resp = OrgResV1 {
             org: Some(org.into()),
             net_id: net_id.into(),
             devaddr_constraints: vec![devaddr_range.into()],
-        }))
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     async fn disable(&self, request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
 
         if !org::is_locked(request.oui, &self.pool)
             .await
@@ -266,16 +323,19 @@ impl iot_config::Org for OrgService {
                 ))
             })?;
 
+            let timestamp = Utc::now().encode_timestamp();
+            let signer: Vec<u8> = self.signing_key.public_key().into();
             for route in org_routes {
                 let route_id = route.id.clone();
-                if self
-                    .route_update_tx
-                    .send(RouteStreamResV1 {
-                        action: ActionV1::Add.into(),
-                        data: Some(route_stream_res_v1::Data::Route(route.into())),
-                    })
-                    .is_err()
-                {
+                let mut update = RouteStreamResV1 {
+                    action: ActionV1::Add.into(),
+                    data: Some(route_stream_res_v1::Data::Route(route.into())),
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                };
+                update.signature = self.sign_response(&update)?;
+                if self.route_update_tx.send(update).is_err() {
                     tracing::info!(
                         route_id = route_id,
                         "all subscribers disconnected; route disable incomplete"
@@ -286,13 +346,22 @@ impl iot_config::Org for OrgService {
             }
         }
 
-        Ok(Response::new(OrgDisableResV1 { oui: request.oui }))
+        let mut resp = OrgDisableResV1 {
+            oui: request.oui,
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     async fn enable(&self, request: Request<OrgEnableReqV1>) -> GrpcResult<OrgEnableResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
 
         if org::is_locked(request.oui, &self.pool)
             .await
@@ -319,16 +388,19 @@ impl iot_config::Org for OrgService {
                 ))
             })?;
 
+            let timestamp = Utc::now().encode_timestamp();
+            let signer: Vec<u8> = self.signing_key.public_key().into();
             for route in org_routes {
                 let route_id = route.id.clone();
-                if self
-                    .route_update_tx
-                    .send(RouteStreamResV1 {
-                        action: ActionV1::Add.into(),
-                        data: Some(route_stream_res_v1::Data::Route(route.into())),
-                    })
-                    .is_err()
-                {
+                let mut update = RouteStreamResV1 {
+                    action: ActionV1::Add.into(),
+                    data: Some(route_stream_res_v1::Data::Route(route.into())),
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                };
+                update.signature = self.sign_response(&update)?;
+                if self.route_update_tx.send(update).is_err() {
                     tracing::info!(
                         route_id = route_id,
                         "all subscribers disconnected; route enable incomplete"
@@ -339,6 +411,14 @@ impl iot_config::Org for OrgService {
             }
         }
 
-        Ok(Response::new(OrgEnableResV1 { oui: request.oui }))
+        let mut resp = OrgEnableResV1 {
+            oui: request.oui,
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 }

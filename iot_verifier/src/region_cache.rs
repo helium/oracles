@@ -1,8 +1,7 @@
 use helium_crypto::PublicKeyBinary;
 use helium_proto::Region as ProtoRegion;
-use iot_config_client::{
-    iot_config_client::{IotConfigClient, IotConfigClientError},
-    region_params_resolver::{RegionParamsInfo, RegionParamsResolver},
+use iot_config::client::{
+    Client as IotConfigClient, ClientError as IotConfigClientError, RegionParamsInfo,
 };
 use retainer::Cache;
 use std::time::Duration;

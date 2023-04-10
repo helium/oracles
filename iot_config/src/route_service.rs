@@ -3,23 +3,28 @@ use crate::{
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
     org::{self, DbOrgError},
     route::{self, Route, RouteStorageError},
-    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
+    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
 };
 use anyhow::{anyhow, Result};
-use file_store::traits::MsgVerify;
+use chrono::Utc;
+use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     future::TryFutureExt,
     stream::{StreamExt, TryStreamExt},
 };
-use helium_crypto::PublicKey;
-use helium_proto::services::iot_config::{
-    self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
-    RouteDeleteReqV1, RouteDevaddrRangesResV1, RouteEuisResV1, RouteGetDevaddrRangesReqV1,
-    RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1, RouteListResV1, RouteStreamReqV1,
-    RouteStreamResV1, RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1, RouteUpdateReqV1,
-    RouteV1,
+use helium_crypto::{Keypair, PublicKey, Sign};
+use helium_proto::{
+    services::iot_config::{
+        self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
+        RouteDeleteReqV1, RouteDevaddrRangesResV1, RouteEuisResV1, RouteGetDevaddrRangesReqV1,
+        RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1, RouteListResV1, RouteResV1,
+        RouteStreamReqV1, RouteStreamResV1, RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1,
+        RouteUpdateReqV1, RouteV1,
+    },
+    Message,
 };
 use sqlx::{Pool, Postgres};
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
 
@@ -30,6 +35,7 @@ pub struct RouteService {
     pool: Pool<Postgres>,
     update_channel: broadcast::Sender<RouteStreamResV1>,
     shutdown: triggered::Listener,
+    signing_key: Arc<Keypair>,
 }
 
 #[derive(Clone, Debug)]
@@ -39,13 +45,19 @@ enum OrgId<'a> {
 }
 
 impl RouteService {
-    pub fn new(auth_cache: AuthCache, pool: Pool<Postgres>, shutdown: triggered::Listener) -> Self {
-        Self {
+    pub fn new(
+        settings: &Settings,
+        auth_cache: AuthCache,
+        pool: Pool<Postgres>,
+        shutdown: triggered::Listener,
+    ) -> Result<Self> {
+        Ok(Self {
             auth_cache,
             pool,
             update_channel: update_channel(),
             shutdown,
-        }
+            signing_key: Arc::new(settings.signing_keypair()?),
+        })
     }
 
     fn subscribe_to_routes(&self) -> broadcast::Receiver<RouteStreamResV1> {
@@ -58,6 +70,7 @@ impl RouteService {
 
     async fn verify_request_signature<'a, R>(
         &self,
+        signer: &PublicKey,
         request: &R,
         id: OrgId<'a>,
     ) -> Result<(), Status>
@@ -66,11 +79,10 @@ impl RouteService {
     {
         if self
             .auth_cache
-            .verify_signature(KeyType::Administrator, request)
-            .await
+            .verify_signature_with_type(KeyType::Administrator, signer, request)
             .is_ok()
         {
-            tracing::debug!("request authorized by admin");
+            tracing::debug!(signer = signer.to_string(), "request authorized by admin");
             return Ok(());
         }
 
@@ -80,41 +92,45 @@ impl RouteService {
         }
         .map_err(|_| Status::internal("auth verification error"))?;
 
-        for pubkey in org_keys.iter() {
-            if request.verify(pubkey).is_ok() {
-                tracing::debug!(
-                    pubkey = pubkey.to_string(),
-                    "request authorized by delegate"
-                );
-                return Ok(());
-            }
+        if org_keys.as_slice().contains(signer) && request.verify(signer).is_ok() {
+            tracing::debug!(
+                signer = signer.to_string(),
+                "request authorized by delegate"
+            );
+            return Ok(());
         }
+
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    async fn verify_stream_request_signature<R>(&self, request: &R) -> Result<(), Status>
+    fn verify_stream_request_signature<R>(
+        &self,
+        signer: &PublicKey,
+        request: &R,
+    ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
-        if self
-            .auth_cache
-            .verify_signature(KeyType::PacketRouter, request)
-            .await
-            .is_ok()
-        {
-            tracing::debug!("request authorized for registered packet router");
-            Ok(())
-        } else if self
-            .auth_cache
-            .verify_signature(KeyType::Administrator, request)
-            .await
-            .is_ok()
-        {
-            tracing::debug!("request authorized by admin");
+        if self.auth_cache.verify_signature(signer, request).is_ok() {
+            tracing::debug!(signer = signer.to_string(), "request authorized");
             Ok(())
         } else {
             Err(Status::permission_denied("unauthorized request signature"))
         }
+    }
+
+    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
+        PublicKey::try_from(bytes)
+            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
+    }
+
+    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
+    where
+        R: Message,
+    {
+        self.signing_key
+            .sign(&response.encode_to_vec())
+            .map_err(|_| Status::internal("response signing error"))
     }
 
     async fn update_validator(
@@ -122,7 +138,7 @@ impl RouteService {
         route_id: &str,
         check_constraints: bool,
     ) -> Result<DevAddrEuiValidator, DbOrgError> {
-        let admin_keys = self.auth_cache.get_keys(KeyType::Administrator).await;
+        let admin_keys = self.auth_cache.get_keys_by_type(KeyType::Administrator);
 
         DevAddrEuiValidator::new(route_id, admin_keys, &self.pool, check_constraints).await
     }
@@ -133,7 +149,8 @@ impl iot_config::Route for RouteService {
     async fn list(&self, request: Request<RouteListReqV1>) -> GrpcResult<RouteListResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, OrgId::Oui(request.oui))
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
             .await?;
 
         tracing::debug!(org = request.oui, "list routes");
@@ -145,15 +162,22 @@ impl iot_config::Route for RouteService {
             .map(|route| route.into())
             .collect();
 
-        Ok(Response::new(RouteListResV1 {
+        let mut resp = RouteListResV1 {
             routes: proto_routes,
-        }))
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
-    async fn get(&self, request: Request<RouteGetReqV1>) -> GrpcResult<RouteV1> {
+    async fn get(&self, request: Request<RouteGetReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, OrgId::RouteId(&request.id))
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
             .await?;
 
         tracing::debug!(route_id = request.id, "get route");
@@ -165,13 +189,22 @@ impl iot_config::Route for RouteService {
                 Status::internal("fetch route failed")
             })?;
 
-        Ok(Response::new(route.into()))
+        let mut resp = RouteResV1 {
+            route: Some(route.into()),
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
-    async fn create(&self, request: Request<RouteCreateReqV1>) -> GrpcResult<RouteV1> {
+    async fn create(&self, request: Request<RouteCreateReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, OrgId::Oui(request.oui))
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
             .await?;
 
         let route: Route = request
@@ -192,17 +225,30 @@ impl iot_config::Route for RouteService {
             ));
         }
 
-        let new_route: Route = route::create_route(route, &self.pool, self.clone_update_channel())
-            .await
-            .map_err(|err| {
-                tracing::error!("route create failed {err:?}");
-                Status::internal("route create failed")
-            })?;
+        let new_route: Route = route::create_route(
+            route,
+            &self.pool,
+            &self.signing_key,
+            self.clone_update_channel(),
+        )
+        .await
+        .map_err(|err| {
+            tracing::error!("route create failed {err:?}");
+            Status::internal("route create failed")
+        })?;
 
-        Ok(Response::new(new_route.into()))
+        let mut resp = RouteResV1 {
+            route: Some(new_route.into()),
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
-    async fn update(&self, request: Request<RouteUpdateReqV1>) -> GrpcResult<RouteV1> {
+    async fn update(&self, request: Request<RouteUpdateReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
 
         let route: Route = request
@@ -217,23 +263,38 @@ impl iot_config::Route for RouteService {
             "route update {route:?}"
         );
 
-        self.verify_request_signature(&request, OrgId::Oui(route.oui))
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::Oui(route.oui))
             .await?;
 
-        let updated_route = route::update_route(route, &self.pool, self.clone_update_channel())
-            .await
-            .map_err(|err| {
-                tracing::error!("route update failed {err:?}");
-                Status::internal("update route failed")
-            })?;
+        let updated_route = route::update_route(
+            route,
+            &self.pool,
+            &self.signing_key,
+            self.clone_update_channel(),
+        )
+        .await
+        .map_err(|err| {
+            tracing::error!("route update failed {err:?}");
+            Status::internal("update route failed")
+        })?;
 
-        Ok(Response::new(updated_route.into()))
+        let mut resp = RouteResV1 {
+            route: Some(updated_route.into()),
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
-    async fn delete(&self, request: Request<RouteDeleteReqV1>) -> GrpcResult<RouteV1> {
+    async fn delete(&self, request: Request<RouteDeleteReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, OrgId::RouteId(&request.id))
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
             .await?;
 
         tracing::debug!(route_id = request.id, "route delete");
@@ -242,33 +303,48 @@ impl iot_config::Route for RouteService {
             .await
             .map_err(|_| Status::internal("fetch route failed"))?;
 
-        route::delete_route(&request.id, &self.pool, self.clone_update_channel())
-            .await
-            .map_err(|err| {
-                tracing::error!("route delete failed {err:?}");
-                Status::internal("delete route failed")
-            })?;
+        route::delete_route(
+            &request.id,
+            &self.pool,
+            &self.signing_key,
+            self.clone_update_channel(),
+        )
+        .await
+        .map_err(|err| {
+            tracing::error!("route delete failed {err:?}");
+            Status::internal("delete route failed")
+        })?;
 
-        Ok(Response::new(route.into()))
+        let mut resp = RouteResV1 {
+            route: Some(route.into()),
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
 
-        self.verify_stream_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_stream_request_signature(&signer, &request)?;
 
         tracing::info!("client subscribed to route stream");
         let pool = self.pool.clone();
         let shutdown_listener = self.shutdown.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let signing_key = self.signing_key.clone();
 
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            if stream_existing_routes(&pool, tx.clone())
-                .and_then(|_| stream_existing_euis(&pool, tx.clone()))
-                .and_then(|_| stream_existing_devaddrs(&pool, tx.clone()))
+            if stream_existing_routes(&pool, &signing_key, tx.clone())
+                .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
                 .await
                 .is_err()
             {
@@ -300,7 +376,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<Self::get_euisStream> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
             .await?;
 
         let pool = self.pool.clone();
@@ -387,12 +464,18 @@ impl iot_config::Route for RouteService {
                     removing = to_remove.len(),
                     "updating eui pairs",
                 );
-                route::update_euis(&to_add, &to_remove, &self.pool, self.update_channel.clone())
-                    .await
-                    .map_err(|err| {
-                        tracing::error!("eui pair update failed: {err:?}");
-                        Status::internal("eui pair update failed")
-                    })?;
+                route::update_euis(
+                    &to_add,
+                    &to_remove,
+                    &self.pool,
+                    self.signing_key.clone(),
+                    self.update_channel.clone(),
+                )
+                .await
+                .map_err(|err| {
+                    tracing::error!("eui pair update failed: {err:?}");
+                    Status::internal("eui pair update failed")
+                })?;
                 to_add = vec![];
                 to_remove = vec![];
                 pending_updates = 0;
@@ -406,14 +489,27 @@ impl iot_config::Route for RouteService {
                 "updating euis",
             );
 
-            route::update_euis(&to_add, &to_remove, &self.pool, self.clone_update_channel())
-                .await
-                .map_err(|err| {
-                    tracing::error!("eui update failed: {err:?}");
-                    Status::internal("eui update failed")
-                })?;
+            route::update_euis(
+                &to_add,
+                &to_remove,
+                &self.pool,
+                self.signing_key.clone(),
+                self.clone_update_channel(),
+            )
+            .await
+            .map_err(|err| {
+                tracing::error!("eui update failed: {err:?}");
+                Status::internal("eui update failed")
+            })?;
         }
-        Ok(Response::new(RouteEuisResV1 {}))
+        let mut resp = RouteEuisResV1 {
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 
     type get_devaddr_rangesStream = GrpcStreamResult<DevaddrRangeV1>;
@@ -423,7 +519,8 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<Self::get_devaddr_rangesStream> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
             .await?;
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
@@ -515,6 +612,7 @@ impl iot_config::Route for RouteService {
                     &to_add,
                     &to_remove,
                     &self.pool,
+                    self.signing_key.clone(),
                     self.update_channel.clone(),
                 )
                 .await
@@ -539,6 +637,7 @@ impl iot_config::Route for RouteService {
                 &to_add,
                 &to_remove,
                 &self.pool,
+                self.signing_key.clone(),
                 self.update_channel.clone(),
             )
             .await
@@ -547,7 +646,14 @@ impl iot_config::Route for RouteService {
                 Status::internal("devaddr range update failed")
             })?;
         }
-        Ok(Response::new(RouteDevaddrRangesResV1 {}))
+        let mut resp = RouteDevaddrRangesResV1 {
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp)?;
+
+        Ok(Response::new(resp))
     }
 }
 
@@ -709,14 +815,27 @@ where
 
 async fn stream_existing_routes(
     pool: &Pool<Postgres>,
+    signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
+    let tx = &tx;
     route::active_route_stream(pool)
-        .then(|route| {
-            tx.send(Ok(RouteStreamResV1 {
+        .then(move |route| {
+            let mut route_res = RouteStreamResV1 {
                 action: ActionV1::Add.into(),
                 data: Some(route_stream_res_v1::Data::Route(route.into())),
-            }))
+                timestamp,
+                signer: signer.clone(),
+                signature: vec![],
+            };
+            if let Ok(signature) = signing_key.sign(&route_res.encode_to_vec()) {
+                route_res.signature = signature;
+                tx.send(Ok(route_res))
+            } else {
+                tx.send(Err(Status::internal("failed to sign route")))
+            }
         })
         .map_err(|err| anyhow!(err))
         .try_fold((), |acc, _| async move { Ok(acc) })
@@ -725,14 +844,27 @@ async fn stream_existing_routes(
 
 async fn stream_existing_euis(
     pool: &Pool<Postgres>,
+    signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
+    let tx = &tx;
     route::eui_stream(pool)
-        .then(|eui_pair| {
-            tx.send(Ok(RouteStreamResV1 {
+        .then(move |eui_pair| {
+            let mut eui_pair_res = RouteStreamResV1 {
                 action: ActionV1::Add.into(),
                 data: Some(route_stream_res_v1::Data::EuiPair(eui_pair.into())),
-            }))
+                timestamp,
+                signer: signer.clone(),
+                signature: vec![],
+            };
+            if let Ok(signature) = signing_key.sign(&eui_pair_res.encode_to_vec()) {
+                eui_pair_res.signature = signature;
+                tx.send(Ok(eui_pair_res))
+            } else {
+                tx.send(Err(Status::internal("failed to sign eui pair")))
+            }
         })
         .map_err(|err| anyhow!(err))
         .try_fold((), |acc, _| async move { Ok(acc) })
@@ -741,16 +873,29 @@ async fn stream_existing_euis(
 
 async fn stream_existing_devaddrs(
     pool: &Pool<Postgres>,
+    signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
+    let tx = &tx;
     route::devaddr_range_stream(pool)
-        .then(|devaddr_range| {
-            tx.send(Ok(RouteStreamResV1 {
+        .then(move |devaddr_range| {
+            let mut devaddr_range_res = RouteStreamResV1 {
                 action: ActionV1::Add.into(),
                 data: Some(route_stream_res_v1::Data::DevaddrRange(
                     devaddr_range.into(),
                 )),
-            }))
+                timestamp,
+                signer: signer.clone(),
+                signature: vec![],
+            };
+            if let Ok(signature) = signing_key.sign(&devaddr_range_res.encode_to_vec()) {
+                devaddr_range_res.signature = signature;
+                tx.send(Ok(devaddr_range_res))
+            } else {
+                tx.send(Err(Status::internal("failed to sign devaddr range")))
+            }
         })
         .map_err(|err| anyhow!(err))
         .try_fold((), |acc, _| async move { Ok(acc) })

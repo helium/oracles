@@ -40,17 +40,3 @@ max_connections = 20
 # Endpoint for metrics. Default below
 #
 # endpoint = "127.0.0.1:19000"
-
-[follower]
-
-# Local grpc url to node follower for gateway location lookups
-#[serde(with = "http_serde::uri", default = "default_url")]
-# url = http://127.0.0.1:8080
-# Start block to begin streaming followed transactions
-block = 0
-# Connect timeout for follower in seconds. Default 5
-# connect = 5
-# RPC timeout for follower in seconds. Default 5
-# rpc = 5
-# Batch size for gateway stream results. Default 100
-# batch = 100

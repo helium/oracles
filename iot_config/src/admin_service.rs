@@ -1,52 +1,75 @@
 use crate::{
-    admin::{self, AuthCache, KeyType},
-    region_map::{self, RegionMap},
-    GrpcResult,
+    admin::{self, AuthCache, CacheKeys, KeyType},
+    region_map::{self, RegionMap, RegionMapReader},
+    GrpcResult, Settings,
 };
-use anyhow::Result;
-use file_store::traits::MsgVerify;
+use anyhow::{anyhow, Result};
+use chrono::Utc;
+use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::future::TryFutureExt;
-use helium_crypto::{Network, PublicKey, PublicKeyBinary};
+use helium_crypto::{Keypair, Network, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
         self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
         AdminRemoveKeyReqV1, RegionParamsReqV1, RegionParamsResV1,
     },
-    Region,
+    Message, Region,
 };
 use sqlx::{Pool, Postgres};
+use tokio::sync::watch;
 use tonic::{Request, Response, Status};
 
 pub struct AdminService {
     auth_cache: AuthCache,
+    auth_updater: watch::Sender<CacheKeys>,
     pool: Pool<Postgres>,
-    region_map: RegionMap,
+    region_map: RegionMapReader,
+    region_updater: watch::Sender<RegionMap>,
     required_network: Network,
+    signing_key: Keypair,
 }
 
 impl AdminService {
     pub fn new(
+        settings: &Settings,
         auth_cache: AuthCache,
+        auth_updater: watch::Sender<CacheKeys>,
         pool: Pool<Postgres>,
-        region_map: RegionMap,
-        required_network: Network,
-    ) -> Self {
-        Self {
+        region_map: RegionMapReader,
+        region_updater: watch::Sender<RegionMap>,
+    ) -> Result<Self> {
+        Ok(Self {
             auth_cache,
+            auth_updater,
             pool,
             region_map,
-            required_network,
-        }
+            region_updater,
+            required_network: settings.network,
+            signing_key: settings.signing_keypair()?,
+        })
     }
 
-    async fn verify_request_signature<R>(&self, request: &R) -> Result<(), Status>
+    fn verify_admin_request_signature<R>(
+        &self,
+        signer: &PublicKey,
+        request: &R,
+    ) -> Result<(), Status>
     where
         R: MsgVerify,
     {
         self.auth_cache
-            .verify_signature(KeyType::Administrator, request)
-            .await
+            .verify_signature_with_type(KeyType::Administrator, signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
+        Ok(())
+    }
+
+    fn verify_request_signature<R>(&self, signer: &PublicKey, request: &R) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        self.auth_cache
+            .verify_signature(signer, request)
+            .map_err(|_| Status::permission_denied("invalid request signature"))?;
         Ok(())
     }
 
@@ -65,6 +88,15 @@ impl AdminService {
         PublicKey::try_from(bytes)
             .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
     }
+
+    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
+    where
+        R: Message,
+    {
+        self.signing_key
+            .sign(&response.encode_to_vec())
+            .map_err(|_| Status::internal("response signing error"))
+    }
 }
 
 #[tonic::async_trait]
@@ -72,7 +104,8 @@ impl iot_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let key_type = request.key_type().into();
         let pubkey = self
@@ -82,29 +115,51 @@ impl iot_config::Admin for AdminService {
 
         admin::insert_key(request.pubkey.clone().into(), key_type, &self.pool)
             .and_then(|_| async move {
-                self.auth_cache.insert_key(key_type, pubkey).await;
-                Ok(())
+                if self.auth_updater.send_if_modified(|cache| {
+                    if let std::collections::hash_map::Entry::Vacant(key) = cache.entry(pubkey) {
+                        key.insert(key_type);
+                        true
+                    } else {
+                        false
+                    }
+                }) {
+                    Ok(())
+                } else {
+                    Err(anyhow!("key already registered"))
+                }
             })
-            .map_err(|_| {
+            .map_err(|err| {
                 let pubkey: PublicKeyBinary = request.pubkey.into();
                 tracing::error!(pubkey = pubkey.to_string(), "pubkey add failed");
-                Status::internal(format!("error saving requested key: {pubkey}"))
+                Status::internal(format!("error saving requested key: {pubkey}, {err:?}"))
             })
             .await?;
 
-        Ok(Response::new(AdminKeyResV1 {}))
+        let timestamp = Utc::now().encode_timestamp();
+        let signer = self.signing_key.public_key().into();
+        let mut resp = AdminKeyResV1 {
+            timestamp,
+            signer,
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+
+        Ok(Response::new(resp))
     }
 
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
 
-        self.verify_request_signature(&request).await?;
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         admin::remove_key(request.pubkey.clone().into(), &self.pool)
             .and_then(|deleted| async move {
                 match deleted {
-                    Some((pubkey, key_type)) => {
-                        self.auth_cache.remove_key(key_type, &pubkey).await;
+                    Some((pubkey, _key_type)) => {
+                        self.auth_updater.send_modify(|cache| {
+                            cache.remove(&pubkey);
+                        });
                         Ok(())
                     }
                     None => Ok(()),
@@ -117,7 +172,16 @@ impl iot_config::Admin for AdminService {
             })
             .await?;
 
-        Ok(Response::new(AdminKeyResV1 {}))
+        let timestamp = Utc::now().encode_timestamp();
+        let signer = self.signing_key.public_key().into();
+        let mut resp = AdminKeyResV1 {
+            timestamp,
+            signer,
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+
+        Ok(Response::new(resp))
     }
 
     async fn load_region(
@@ -125,7 +189,9 @@ impl iot_config::Admin for AdminService {
         request: Request<AdminLoadRegionReqV1>,
     ) -> GrpcResult<AdminLoadRegionResV1> {
         let request = request.into_inner();
-        self.verify_request_signature(&request).await?;
+
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_admin_request_signature(&signer, &request)?;
 
         let region = Region::from_i32(request.region).ok_or(Status::invalid_argument(format!(
             "invalid lora region {}",
@@ -149,34 +215,63 @@ impl iot_config::Admin for AdminService {
             None
         };
 
-        let updated_region = region_map::update_region(region, &params, idz, &self.pool)
-            .await
+        region_map::update_region(region, &params.clone(), idz, &self.pool)
+            .and_then(|updated_region| async move {
+                self.region_updater.send_modify(|region_map| {
+                    region_map.insert_params(region, params);
+                });
+                if let Some(region_tree) = updated_region {
+                    tracing::debug!(region_cells = region_tree.len(), "new compacted region map");
+                    self.region_updater
+                        .send_modify(|region_map| region_map.replace_tree(region_tree));
+                };
+                Ok(())
+            })
             .map_err(|err| {
                 tracing::error!(
                     region = region.to_string(),
                     "failed to update region: {err:?}"
                 );
                 Status::internal("region update failed")
-            })?;
+            })
+            .await?;
 
-        self.region_map.insert_params(region, params).await;
-        if let Some(region_tree) = updated_region {
-            tracing::debug!(region_cells = region_tree.len(), "new compacted region map");
-            self.region_map.replace_tree(region_tree).await;
-        }
+        let timestamp = Utc::now().encode_timestamp();
+        let signer = self.signing_key.public_key().into();
+        let mut resp = AdminLoadRegionResV1 {
+            timestamp,
+            signer,
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
-        Ok(Response::new(AdminLoadRegionResV1 {}))
+        Ok(Response::new(resp))
     }
 
-    // placeholder implementation
     async fn region_params(
         &self,
-        _request: Request<RegionParamsReqV1>,
+        request: Request<RegionParamsReqV1>,
     ) -> GrpcResult<RegionParamsResV1> {
-        Ok(Response::new(RegionParamsResV1 {
-            params: None,
+        let request = request.into_inner();
+
+        let signer = self.verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let region = request.region();
+
+        let params = self.region_map.get_params(&region);
+
+        let timestamp = Utc::now().encode_timestamp();
+        let signer = self.signing_key.public_key().into();
+        let mut resp = RegionParamsResV1 {
+            region: request.region,
+            params,
+            signer,
             signature: vec![],
-            region: Region::Us915.into(),
-        }))
+            timestamp,
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        tracing::debug!(region = region.to_string(), "returning region params");
+        Ok(Response::new(resp))
     }
 }
