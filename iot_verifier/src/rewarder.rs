@@ -1,4 +1,7 @@
-use crate::{reward_share::operational_rewards, reward_share::GatewayShares, scheduler::Scheduler};
+use crate::{
+    reward_share::{operational_rewards, GatewayShares},
+    scheduler::Scheduler,
+};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
