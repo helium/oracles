@@ -71,7 +71,7 @@ impl Burner {
         keypair: Keypair,
     ) -> Result<Self, BurnError> {
         let program_cache = BurnProgramCache::new(settings, provider.as_ref()).await?;
-        if program_cache.dc_burn_authority != keypair.pubkey() {
+        if settings.enable_dc_burn && program_cache.dc_burn_authority != keypair.pubkey() {
             return Err(BurnError::InvalidKeypair);
         }
         Ok(Self {

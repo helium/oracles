@@ -13,6 +13,9 @@ pub struct Cli {
     /// settins in the given file.
     #[clap(short = 'c')]
     config: Option<PathBuf>,
+
+    #[clap(subcommand)]
+    cmd: Cmd,
 }
 
 impl Cli {
@@ -22,7 +25,20 @@ impl Cli {
             .with(tracing_subscriber::EnvFilter::new(&settings.log))
             .with(tracing_subscriber::fmt::layer())
             .init();
-        daemon::run_daemon(&settings).await
+        self.cmd.run(settings).await
+    }
+}
+
+#[derive(clap::Subcommand)]
+pub enum Cmd {
+    Server(daemon::Cmd),
+}
+
+impl Cmd {
+    async fn run(self, settings: Settings) -> Result<()> {
+        match self {
+            Self::Server(cmd) => cmd.run(&settings).await,
+        }
     }
 }
 
