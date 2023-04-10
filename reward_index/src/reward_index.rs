@@ -1,10 +1,11 @@
+use crate::indexer::RewardType;
 use chrono::{DateTime, Utc};
-use helium_crypto::PublicKey;
 
 pub async fn insert<'c, E>(
     executor: E,
-    address: &PublicKey,
+    address: &Vec<u8>,
     amount: u64,
+    reward_type: RewardType,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error>
 where
@@ -18,10 +19,11 @@ where
     sqlx::query(
         r#"
         insert into reward_index (
-                address, 
-                rewards, 
-                last_reward
-            ) values ($1, $2, $3)
+                address,
+                rewards,
+                last_reward,
+                reward_type
+            ) values ($1, $2, $3, $4)
             on conflict(address) do update set
                 rewards = reward_index.rewards + EXCLUDED.rewards,
                 last_reward = EXCLUDED.last_reward
@@ -30,6 +32,7 @@ where
     .bind(address)
     .bind(amount as i64)
     .bind(timestamp)
+    .bind(reward_type)
     .execute(executor)
     .await?;
 
