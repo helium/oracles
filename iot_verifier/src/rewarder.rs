@@ -73,7 +73,7 @@ impl Rewarder {
         let operational_rewards = OperationalRewards::compute(&scheduler.reward_period);
 
         for reward_share in
-            gateway_reward_shares.into_gateway_reward_shares(&scheduler.reward_period, iot_price)
+            gateway_reward_shares.into_iot_reward_shares(&scheduler.reward_period, iot_price)
         {
             self.rewards_sink
                 .write(reward_share, [])

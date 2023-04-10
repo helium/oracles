@@ -303,7 +303,7 @@ impl GatewayShares {
         Ok(())
     }
 
-    pub fn into_gateway_reward_shares(
+    pub fn into_iot_reward_shares(
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
         iot_price: Decimal,
@@ -547,7 +547,7 @@ mod test {
         let gw_shares = GatewayShares { shares };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
-            .into_gateway_reward_shares(&reward_period, iot_price)
+            .into_iot_reward_shares(&reward_period, iot_price)
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
@@ -726,7 +726,7 @@ mod test {
         let gw_shares = GatewayShares { shares };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
-            .into_gateway_reward_shares(&reward_period, iot_price)
+            .into_iot_reward_shares(&reward_period, iot_price)
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
@@ -886,7 +886,7 @@ mod test {
         let gw_shares = GatewayShares { shares };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
-            .into_gateway_reward_shares(&reward_period, iot_price)
+            .into_iot_reward_shares(&reward_period, iot_price)
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {

@@ -1,5 +1,5 @@
 use crate::{reward_index, settings, Settings};
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use file_store::{
     file_info_poller::FileInfoStream, reward_manifest::RewardManifest, FileInfo, FileStore,
 };
@@ -50,7 +50,12 @@ impl Indexer {
             mode: settings.mode,
             verifier_store: FileStore::from_settings(&settings.verifier).await?,
             pool,
-            op_fund_key: settings.operation_fund_key(),
+            op_fund_key: match settings.mode {
+                settings::Mode::Iot => settings
+                    .operation_fund_key()
+                    .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
+                settings::Mode::Mobile => vec![],
+            },
         })
     }
 
