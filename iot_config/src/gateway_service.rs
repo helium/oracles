@@ -84,9 +84,9 @@ impl iot_config::Gateway for GatewayService {
         let pubkey: &PublicKeyBinary = &pubkey.into();
         tracing::debug!(pubkey = pubkey.to_string(), "fetching region params");
 
-        let default_region = Region::from_i32(request.region).ok_or(Status::invalid_argument(
-            format!("invalid lora region {}", request.region),
-        ))?;
+        let default_region = Region::from_i32(request.region).ok_or_else(|| {
+            Status::invalid_argument(format!("invalid lora region {}", request.region))
+        })?;
 
         let (region, gain) = match self
             .follower_service

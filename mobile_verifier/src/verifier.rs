@@ -27,6 +27,8 @@ pub struct VerifierDaemon {
     pub heartbeats: FileSinkClient,
     pub speedtest_avgs: FileSinkClient,
     pub radio_rewards: FileSinkClient,
+    pub old_reward_manifests: FileSinkClient,
+    pub mobile_rewards: FileSinkClient,
     pub reward_manifests: FileSinkClient,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
@@ -139,17 +141,39 @@ impl VerifierDaemon {
         };
         metrics::gauge!("data_transfer_rewards_scale", scale);
 
-        for reward_share in
-            poc_rewards.into_radio_shares(&transfer_rewards, &scheduler.reward_period)
+        for (radio_reward_share, mobile_reward_share) in
+            poc_rewards.into_rewards(&transfer_rewards, &scheduler.reward_period)
         {
             self.radio_rewards
-                .write(reward_share, [])
+                .write(radio_reward_share, [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+            self.mobile_rewards
+                .write(mobile_reward_share, [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
         }
 
         let written_files = self.radio_rewards.commit().await?.await??;
+
+        // Write out the manifest file
+        self.old_reward_manifests
+            .write(
+                RewardManifest {
+                    start_timestamp: scheduler.reward_period.start.encode_timestamp(),
+                    end_timestamp: scheduler.reward_period.end.encode_timestamp(),
+                    written_files,
+                },
+                [],
+            )
+            .await?
+            .await??;
+
+        self.reward_manifests.commit().await?;
+
+        let written_files = self.mobile_rewards.commit().await?.await??;
 
         // Write out the manifest file
         self.reward_manifests

@@ -184,11 +184,11 @@ impl PocShares {
             })
     }
 
-    pub fn into_radio_shares<'a>(
+    pub fn into_rewards<'a>(
         self,
         transfer_rewards: &'a TransferRewards,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::RadioRewardShare> + 'a {
+    ) -> impl Iterator<Item = (proto::RadioRewardShare, proto::MobileRewardShare)> + 'a {
         let total_shares = self.total_shares();
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - transfer_rewards.reward_sum;
@@ -199,21 +199,44 @@ impl PocShares {
             .flat_map(move |(owner_key, radio_shares)| {
                 radio_shares
                     .into_iter()
-                    .map(move |radio_share| proto::RadioRewardShare {
-                        owner_key: owner_key.clone().into(),
-                        cbsd_id: radio_share.cbsd_id,
-                        amount: {
-                            let rewards = poc_rewards_per_share * radio_share.amount
-                                + transfer_rewards.reward(&radio_share.hotspot_key);
-                            let rewards =
-                                rewards.round_dp_with_strategy(0, RoundingStrategy::ToZero);
-                            rewards.to_u64().unwrap_or(0)
-                        },
-                        start_epoch: epoch.start.encode_timestamp(),
-                        end_epoch: epoch.end.encode_timestamp(),
-                        hotspot_key: radio_share.hotspot_key.into(),
+                    .map(move |poc_share| {
+                        let start_period = epoch.start.encode_timestamp();
+                        let end_period = epoch.end.encode_timestamp();
+                        let poc_reward = poc_rewards_per_share * poc_share.amount;
+                        let dc_transfer_reward = transfer_rewards.reward(&poc_share.hotspot_key);
+                        let hotspot_key: Vec<u8> = poc_share.hotspot_key.into();
+                        let radio_reward_share = proto::RadioRewardShare {
+                            owner_key: owner_key.clone().into(),
+                            cbsd_id: poc_share.cbsd_id.clone(),
+                            amount: (poc_reward + dc_transfer_reward)
+                                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                .to_u64()
+                                .unwrap_or(0),
+                            start_epoch: start_period,
+                            end_epoch: end_period,
+                            hotspot_key: hotspot_key.clone(),
+                        };
+                        let mobile_reward_share = proto::MobileRewardShare {
+                            start_period,
+                            end_period,
+                            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                                proto::RadioReward {
+                                    hotspot_key,
+                                    cbsd_id: poc_share.cbsd_id,
+                                    dc_transfer_reward: dc_transfer_reward
+                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                        .to_u64()
+                                        .unwrap_or(0),
+                                    poc_reward: poc_reward
+                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                        .to_u64()
+                                        .unwrap_or(0),
+                                },
+                            )),
+                        };
+                        (radio_reward_share, mobile_reward_share)
                     })
-                    .filter(|radio_share| radio_share.amount > 0)
+                    .filter(|(radio_share, _)| radio_share.amount > 0)
             })
     }
 }
@@ -758,10 +781,10 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
         let transfer_rewards = TransferRewards::empty();
-        for radio_share in PocShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+        for (radio_share, _) in PocShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
             .await
             .expect("Could not generate rewards")
-            .into_radio_shares(&transfer_rewards, &epoch)
+            .into_rewards(&transfer_rewards, &epoch)
         {
             *owner_rewards
                 .entry(PublicKeyBinary::from(radio_share.owner_key))
@@ -854,7 +877,7 @@ mod test {
         let owner_shares = PocShares { shares };
         let epoch = now - Duration::hours(1)..now;
         let transfer_rewards = TransferRewards::empty();
-        for reward in owner_shares.into_radio_shares(&transfer_rewards, &epoch) {
+        for (reward, _) in owner_shares.into_rewards(&transfer_rewards, &epoch) {
             let actual_owner = PublicKeyBinary::from(reward.owner_key);
             assert_eq!(actual_owner, owner1);
         }

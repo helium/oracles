@@ -66,6 +66,29 @@ impl Cmd {
         .create()
         .await?;
 
+        // Mobile rewards
+        let (mobile_rewards, mut mobile_rewards_server) = file_sink::FileSinkBuilder::new(
+            FileType::MobileRewardShare,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .create()
+        .await?;
+
+        // Reward manifest
+        let (old_reward_manifests, mut old_reward_manifests_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::RewardManifest,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
+            )
+            .deposits(Some(file_upload_tx.clone()))
+            .auto_commit(false)
+            .create()
+            .await?;
+
         // Reward manifest
         let (reward_manifests, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
@@ -94,6 +117,8 @@ impl Cmd {
             heartbeats,
             speedtest_avgs,
             radio_rewards,
+            old_reward_manifests,
+            mobile_rewards,
             reward_manifests,
             reward_period_hours,
             verifications_per_period,
@@ -112,7 +137,13 @@ impl Cmd {
             radio_rewards_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
+            mobile_rewards_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
+            old_reward_manifests_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
             reward_manifests_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
