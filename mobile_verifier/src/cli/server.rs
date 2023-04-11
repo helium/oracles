@@ -62,6 +62,17 @@ impl Cmd {
             concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
         )
         .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(true)
+        .create()
+        .await?;
+
+        // Mobile rewards
+        let (mobile_rewards, mut mobile_rewards_server) = file_sink::FileSinkBuilder::new(
+            FileType::MobileRewardShare,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -77,8 +88,6 @@ impl Cmd {
         .create()
         .await?;
 
-        let follower = settings.follower.connect_follower();
-
         let reward_period_hours = settings.rewards;
         let verifications_per_period = settings.verifications;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
@@ -86,7 +95,7 @@ impl Cmd {
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        let verifier = Verifier::new(file_store, follower);
+        let verifier = Verifier::new(file_store);
 
         let verifier_daemon = VerifierDaemon {
             verification_offset: settings.verification_offset_duration(),
@@ -94,6 +103,7 @@ impl Cmd {
             heartbeats,
             speedtest_avgs,
             radio_rewards,
+            mobile_rewards,
             reward_manifests,
             reward_period_hours,
             verifications_per_period,
@@ -110,6 +120,9 @@ impl Cmd {
                 .run(&shutdown_listener)
                 .map_err(Error::from),
             radio_rewards_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
+            mobile_rewards_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),

@@ -38,7 +38,6 @@ metrics-exporter-prometheus = {workspace = true}
 file-store = {path = "../file_store"}
 db-store = { path = "../db_store" }
 poc-metrics = {path = "../metrics"}
-node-follower = {path = "../node_follower"}
 price = {path = "../price"}
 rand = {workspace = true}
 async-trait = {workspace = true}

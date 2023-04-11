@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
-    reward_shares::{PocShares, ResolveError, TransferRewards},
+    reward_shares::{PocShares, TransferRewards},
     scheduler::Scheduler,
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
 };
@@ -10,10 +10,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use futures::{stream::Stream, StreamExt};
-use helium_proto::{
-    services::{follower, Channel},
-    RewardManifest,
-};
+use helium_proto::RewardManifest;
 use price::PriceTracker;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -27,6 +24,7 @@ pub struct VerifierDaemon {
     pub heartbeats: FileSinkClient,
     pub speedtest_avgs: FileSinkClient,
     pub radio_rewards: FileSinkClient,
+    pub mobile_rewards: FileSinkClient,
     pub reward_manifests: FileSinkClient,
     pub reward_period_hours: i64,
     pub verifications_per_period: i32,
@@ -114,7 +112,7 @@ impl VerifierDaemon {
         let speedtests =
             SpeedtestAverages::validated(&self.pool, scheduler.reward_period.end).await?;
 
-        let poc_rewards = self.verifier.reward_epoch(heartbeats, speedtests).await?;
+        let poc_rewards = PocShares::aggregate(heartbeats, speedtests).await;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
@@ -139,17 +137,22 @@ impl VerifierDaemon {
         };
         metrics::gauge!("data_transfer_rewards_scale", scale);
 
-        for reward_share in
-            poc_rewards.into_radio_shares(&transfer_rewards, &scheduler.reward_period)
+        for (radio_reward_share, mobile_reward_share) in
+            poc_rewards.into_rewards(&transfer_rewards, &scheduler.reward_period)
         {
             self.radio_rewards
-                .write(reward_share, [])
+                .write(radio_reward_share, [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+            self.mobile_rewards
+                .write(mobile_reward_share, [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
         }
 
-        let written_files = self.radio_rewards.commit().await?.await??;
+        let written_files = self.mobile_rewards.commit().await?.await??;
 
         // Write out the manifest file
         self.reward_manifests
@@ -184,15 +187,11 @@ impl VerifierDaemon {
 
 pub struct Verifier {
     pub file_store: FileStore,
-    pub follower: follower::Client<Channel>,
 }
 
 impl Verifier {
-    pub fn new(file_store: FileStore, follower: follower::Client<Channel>) -> Self {
-        Self {
-            file_store,
-            follower,
-        }
+    pub fn new(file_store: FileStore) -> Self {
+        Self { file_store }
     }
 
     pub async fn verify_epoch<'a>(
@@ -221,14 +220,6 @@ impl Verifier {
             heartbeats,
             speedtests,
         })
-    }
-
-    pub async fn reward_epoch(
-        &mut self,
-        heartbeats: Heartbeats,
-        speedtests: SpeedtestAverages,
-    ) -> Result<PocShares, ResolveError> {
-        PocShares::aggregate(&mut self.follower, heartbeats, speedtests).await
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{
-    reward_shares::TransferRewards,
+    reward_shares::{PocShares, TransferRewards},
     speedtests::EmptyDatabase,
     verifier::{VerifiedEpoch, Verifier},
     Settings,
@@ -32,25 +32,23 @@ impl Cmd {
         let epoch = start..end;
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
-        let follower = settings.follower.connect_follower();
-        let mut verifier = Verifier::new(file_store, follower);
+        let mut verifier = Verifier::new(file_store);
 
         let VerifiedEpoch {
             heartbeats,
             speedtests,
         } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
-        let reward_shares = verifier
-            .reward_epoch(
-                heartbeats.collect().await,
-                speedtests.filter_map(|x| async { x.ok() }).collect().await,
-            )
-            .await?;
+        let reward_shares = PocShares::aggregate(
+            heartbeats.collect().await,
+            speedtests.filter_map(|x| async { x.ok() }).collect().await,
+        )
+        .await;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
         let transfer_rewards = TransferRewards::empty();
-        for reward in reward_shares.into_radio_shares(&transfer_rewards, &epoch) {
+        for (reward, _) in reward_shares.into_rewards(&transfer_rewards, &epoch) {
             total_rewards += reward.amount;
             *owner_rewards
                 .entry(PublicKey::try_from(reward.owner_key)?)

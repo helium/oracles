@@ -129,9 +129,9 @@ impl iot_config::Gateway for GatewayService {
         let address: &PublicKeyBinary = &pubkey.into();
         tracing::debug!(pubkey = address.to_string(), "fetching region params");
 
-        let default_region = Region::from_i32(request.region).ok_or(Status::invalid_argument(
-            format!("invalid lora region {}", request.region),
-        ))?;
+        let default_region = Region::from_i32(request.region).ok_or_else(|| {
+            Status::invalid_argument(format!("invalid lora region {}", request.region))
+        })?;
 
         let (region, gain) = if let Some(info) =
             gateway_info::db::get_info(&self.metadata_pool, address)

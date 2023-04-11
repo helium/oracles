@@ -193,10 +193,9 @@ impl iot_config::Admin for AdminService {
         let signer = self.verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
-        let region = Region::from_i32(request.region).ok_or(Status::invalid_argument(format!(
-            "invalid lora region {}",
-            request.region
-        )))?;
+        let region = Region::from_i32(request.region).ok_or_else(|| {
+            Status::invalid_argument(format!("invalid lora region {}", request.region))
+        })?;
 
         if region == Region::Unknown {
             return Err(Status::invalid_argument(

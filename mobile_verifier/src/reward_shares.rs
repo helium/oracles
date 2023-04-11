@@ -6,10 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    follower::{self, follower_gateway_resp_v1::Result as GatewayResult, FollowerGatewayReqV1},
-    poc_mobile as proto, Channel,
-};
+use helium_proto::services::poc_mobile as proto;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -117,104 +114,105 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_price: Decimal) -> Decimal 
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
-pub struct RadioShare {
-    hotspot_key: PublicKeyBinary,
-    cbsd_id: String,
-    amount: Decimal,
-}
-
 #[derive(Default)]
 pub struct RadioShares {
-    shares: Vec<RadioShare>,
+    radio_shares: HashMap<String, Decimal>,
 }
 
 impl RadioShares {
-    pub fn push(&mut self, share: RadioShare) {
-        self.shares.push(share);
-    }
-
-    pub fn total_shares(&self) -> Decimal {
-        self.shares
-            .iter()
-            .fold(Decimal::ZERO, |sum, radio_share| sum + radio_share.amount)
-    }
-
-    pub fn into_iter(self) -> impl Iterator<Item = RadioShare> {
-        self.shares.into_iter()
+    fn total_shares(&self) -> Decimal {
+        self.radio_shares
+            .values()
+            .fold(Decimal::ZERO, |sum, amount| sum + amount)
     }
 }
 
 #[derive(Default)]
 pub struct PocShares {
-    pub shares: HashMap<PublicKeyBinary, RadioShares>,
+    pub hotspot_shares: HashMap<PublicKeyBinary, RadioShares>,
 }
 
 impl PocShares {
-    pub async fn aggregate(
-        resolver: &mut impl OwnerResolver,
-        heartbeats: Heartbeats,
-        speedtests: SpeedtestAverages,
-    ) -> Result<Self, ResolveError> {
-        let mut owner_shares = Self::default();
+    pub async fn aggregate(heartbeats: Heartbeats, speedtests: SpeedtestAverages) -> Self {
+        let mut poc_shares = Self::default();
         for heartbeat in heartbeats.into_rewardables() {
-            if let Some(owner) = resolver.resolve_owner(&heartbeat.hotspot_key).await? {
-                let speedmultiplier = speedtests
-                    .get_average(&heartbeat.hotspot_key)
-                    .as_ref()
-                    .map_or(Decimal::ZERO, Average::reward_multiplier);
-                owner_shares
-                    .shares
-                    .entry(owner)
-                    .or_default()
-                    .push(RadioShare {
-                        hotspot_key: heartbeat.hotspot_key,
-                        cbsd_id: heartbeat.cbsd_id,
-                        amount: heartbeat.reward_weight * speedmultiplier,
-                    })
-            }
+            let speedmultiplier = speedtests
+                .get_average(&heartbeat.hotspot_key)
+                .as_ref()
+                .map_or(Decimal::ZERO, Average::reward_multiplier);
+            *poc_shares
+                .hotspot_shares
+                .entry(heartbeat.hotspot_key)
+                .or_default()
+                .radio_shares
+                .entry(heartbeat.cbsd_id)
+                .or_default() += heartbeat.reward_weight * speedmultiplier;
         }
-        Ok(owner_shares)
+        poc_shares
     }
 
     pub fn total_shares(&self) -> Decimal {
-        self.shares
+        self.hotspot_shares
             .iter()
             .fold(Decimal::ZERO, |sum, (_, radio_shares)| {
                 sum + radio_shares.total_shares()
             })
     }
 
-    pub fn into_radio_shares<'a>(
+    pub fn into_rewards<'a>(
         self,
         transfer_rewards: &'a TransferRewards,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::RadioRewardShare> + 'a {
+    ) -> impl Iterator<Item = (proto::RadioRewardShare, proto::MobileRewardShare)> + 'a {
         let total_shares = self.total_shares();
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - transfer_rewards.reward_sum;
 
         let poc_rewards_per_share = available_poc_rewards / total_shares;
-        self.shares
-            .into_iter()
-            .flat_map(move |(owner_key, radio_shares)| {
+        self.hotspot_shares.into_iter().flat_map(
+            move |(hotspot_key, RadioShares { radio_shares })| {
                 radio_shares
                     .into_iter()
-                    .map(move |radio_share| proto::RadioRewardShare {
-                        owner_key: owner_key.clone().into(),
-                        cbsd_id: radio_share.cbsd_id,
-                        amount: {
-                            let rewards = poc_rewards_per_share * radio_share.amount
-                                + transfer_rewards.reward(&radio_share.hotspot_key);
-                            let rewards =
-                                rewards.round_dp_with_strategy(0, RoundingStrategy::ToZero);
-                            rewards.to_u64().unwrap_or(0)
-                        },
-                        start_epoch: epoch.start.encode_timestamp(),
-                        end_epoch: epoch.end.encode_timestamp(),
-                        hotspot_key: radio_share.hotspot_key.into(),
+                    .map(move |(cbsd_id, amount)| {
+                        let start_period = epoch.start.encode_timestamp();
+                        let end_period = epoch.end.encode_timestamp();
+                        let poc_reward = poc_rewards_per_share * amount;
+                        let dc_transfer_reward = transfer_rewards.reward(&hotspot_key);
+                        let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+                        let radio_reward_share = proto::RadioRewardShare {
+                            owner_key: Vec::new(),
+                            cbsd_id: cbsd_id.clone(),
+                            amount: (poc_reward + dc_transfer_reward)
+                                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                .to_u64()
+                                .unwrap_or(0),
+                            start_epoch: start_period,
+                            end_epoch: end_period,
+                            hotspot_key: hotspot_key.clone(),
+                        };
+                        let mobile_reward_share = proto::MobileRewardShare {
+                            start_period,
+                            end_period,
+                            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                                proto::RadioReward {
+                                    hotspot_key,
+                                    cbsd_id,
+                                    dc_transfer_reward: dc_transfer_reward
+                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                        .to_u64()
+                                        .unwrap_or(0),
+                                    poc_reward: poc_reward
+                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                        .to_u64()
+                                        .unwrap_or(0),
+                                },
+                            )),
+                        };
+                        (radio_reward_share, mobile_reward_share)
                     })
-                    .filter(|radio_share| radio_share.amount > 0)
-            })
+                    .filter(|(radio_share, _)| radio_share.amount > 0)
+            },
+        )
     }
 }
 
@@ -225,39 +223,6 @@ pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
 
 pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error(transparent)]
-pub struct ResolveError(#[from] tonic::Status);
-
-#[async_trait::async_trait]
-pub trait OwnerResolver: Send {
-    async fn resolve_owner(
-        &mut self,
-        address: &PublicKeyBinary,
-    ) -> Result<Option<PublicKeyBinary>, ResolveError>;
-}
-
-#[async_trait::async_trait]
-impl OwnerResolver for follower::Client<Channel> {
-    async fn resolve_owner(
-        &mut self,
-        address: &PublicKeyBinary,
-    ) -> Result<Option<PublicKeyBinary>, ResolveError> {
-        let req = FollowerGatewayReqV1 {
-            address: address.clone().into(),
-        };
-        let res = self.find_gateway(req).await?.into_inner();
-
-        if let Some(GatewayResult::Info(gateway_info)) = res.result {
-            if let Ok(pub_key) = PublicKeyBinary::try_from(gateway_info.owner) {
-                return Ok(Some(pub_key));
-            }
-        }
-
-        Ok(None)
-    }
 }
 
 #[cfg(test)]
@@ -377,20 +342,6 @@ mod test {
         assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.5));
     }
 
-    struct MapResolver {
-        owners: HashMap<PublicKeyBinary, PublicKeyBinary>,
-    }
-
-    #[async_trait::async_trait]
-    impl OwnerResolver for MapResolver {
-        async fn resolve_owner(
-            &mut self,
-            address: &PublicKeyBinary,
-        ) -> Result<Option<PublicKeyBinary>, ResolveError> {
-            Ok(self.owners.get(address).cloned())
-        }
-    }
-
     fn bytes_per_s(mbps: i64) -> i64 {
         mbps * 125000
     }
@@ -438,7 +389,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_single_owner_multiple_hotspots() {
+    async fn test_radio_weights() {
         let g1: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
             .parse()
             .expect("unable to construct pubkey");
@@ -448,19 +399,6 @@ mod test {
 
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
-
-        let owner1: PublicKeyBinary = "1ay5TAKuQDjLS6VTpoWU51p3ik3Sif1b3DWRstErqkXFJ4zuG7r"
-            .parse()
-            .expect("unable to get test pubkey");
-        let owner2: PublicKeyBinary = "1126cBTucnhedhxnWp6puBWBk6Xdbpi7nkqeaX4s4xoDy2ja7bcd"
-            .parse()
-            .expect("unable to get pubkey");
-
-        let mut owners = HashMap::new();
-        owners.insert(g1.clone(), owner1.clone());
-        owners.insert(g2.clone(), owner2.clone());
-
-        let mut resolver = MapResolver { owners };
 
         let now = Utc::now();
         let timestamp = now.naive_utc();
@@ -513,32 +451,30 @@ mod test {
             acceptable_speedtest(timestamp),
         ];
         let mut speedtests = HashMap::new();
-        speedtests.insert(g1, VecDeque::from(g1_speedtests));
-        speedtests.insert(g2, VecDeque::from(g2_speedtests));
+        speedtests.insert(g1.clone(), VecDeque::from(g1_speedtests));
+        speedtests.insert(g2.clone(), VecDeque::from(g2_speedtests));
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
-        let owner_rewards = PocShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
-            .await
-            .expect("Could not generate rewards");
+        let rewards = PocShares::aggregate(heartbeats, speedtest_avgs).await;
 
         // The owner with two hotspots gets more rewards
         assert!(
-            owner_rewards
-                .shares
-                .get(&owner1)
-                .expect("Could not fetch owner1 shares")
+            rewards
+                .hotspot_shares
+                .get(&g1)
+                .expect("Could not fetch gateway1 shares")
                 .total_shares()
-                > owner_rewards
-                    .shares
-                    .get(&owner2)
-                    .expect("Could not fetch owner2 shares")
+                > rewards
+                    .hotspot_shares
+                    .get(&g2)
+                    .expect("Could not fetch gateway2 shares")
                     .total_shares()
         );
     }
 
     #[tokio::test]
     async fn reward_shares_with_speed_multiplier() {
-        // init hotspots
+        // init owners
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner1 parse");
@@ -588,7 +524,6 @@ mod test {
         owners.insert(gw6.clone(), owner3.clone());
         owners.insert(gw7.clone(), owner3.clone());
         owners.insert(gw8.clone(), owner4.clone());
-        let mut resolver = MapResolver { owners };
 
         // init cells and cell_types
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
@@ -758,14 +693,20 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
         let transfer_rewards = TransferRewards::empty();
-        for radio_share in PocShares::aggregate(&mut resolver, heartbeats, speedtest_avgs)
+        for (_, mobile_reward) in PocShares::aggregate(heartbeats, speedtest_avgs)
             .await
-            .expect("Could not generate rewards")
-            .into_radio_shares(&transfer_rewards, &epoch)
+            .into_rewards(&transfer_rewards, &epoch)
         {
-            *owner_rewards
-                .entry(PublicKeyBinary::from(radio_share.owner_key))
-                .or_default() += radio_share.amount;
+            let radio_reward = match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let owner = owners
+                .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
+                .expect("Could not find owner")
+                .clone();
+
+            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
         }
 
         assert_eq!(
@@ -800,13 +741,6 @@ mod test {
     async fn dont_write_zero_rewards() {
         use rust_decimal_macros::dec;
 
-        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner1 parse");
-        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
-            .parse()
-            .expect("failed owner2 parse");
-
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
@@ -818,45 +752,37 @@ mod test {
         let c2 = "P27-SCE4255W2107CW5000015".to_string();
         let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
 
-        let mut shares = HashMap::new();
+        let mut hotspot_shares = HashMap::new();
 
-        shares.insert(
-            owner1.clone(),
+        hotspot_shares.insert(
+            gw1.clone(),
             RadioShares {
-                shares: vec![RadioShare {
-                    hotspot_key: gw1,
-                    cbsd_id: c1,
-                    amount: dec!(10.0),
-                }],
+                radio_shares: vec![(c1, dec!(10.0))].into_iter().collect(),
             },
         );
-        shares.insert(
-            owner2,
+        hotspot_shares.insert(
+            gw2,
             RadioShares {
-                shares: vec![
-                    RadioShare {
-                        hotspot_key: gw2.clone(),
-                        cbsd_id: c2,
-                        amount: dec!(-1.0),
-                    },
-                    RadioShare {
-                        hotspot_key: gw2,
-                        cbsd_id: c3,
-                        amount: dec!(0.0),
-                    },
-                ],
+                radio_shares: vec![(c2, dec!(-1.0)), (c3, dec!(0.0))]
+                    .into_iter()
+                    .collect(),
             },
         );
 
         let now = Utc::now();
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
-        let owner_shares = PocShares { shares };
+        let owner_shares = PocShares { hotspot_shares };
         let epoch = now - Duration::hours(1)..now;
         let transfer_rewards = TransferRewards::empty();
-        for reward in owner_shares.into_radio_shares(&transfer_rewards, &epoch) {
-            let actual_owner = PublicKeyBinary::from(reward.owner_key);
-            assert_eq!(actual_owner, owner1);
+        let expected_hotspot = gw1;
+        for (_, mobile_reward) in owner_shares.into_rewards(&transfer_rewards, &epoch) {
+            let radio_reward = match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
+            assert_eq!(actual_hotspot, expected_hotspot);
         }
     }
 }
