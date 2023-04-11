@@ -2,7 +2,7 @@ use crate::{
     admin::{AuthCache, KeyType},
     lora_field, org,
     route::list_routes,
-    GrpcResult, Settings, HELIUM_NET_ID,
+    verify_public_key, GrpcResult, Settings, HELIUM_NET_ID,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -53,11 +53,6 @@ impl OrgService {
                 public_key.network
             )))
         }
-    }
-
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes)
-            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
     }
 
     fn verify_admin_request_signature<R>(
@@ -156,7 +151,7 @@ impl iot_config::Org for OrgService {
     async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
         let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
@@ -169,7 +164,7 @@ impl iot_config::Org for OrgService {
         _ = verify_keys
             .iter()
             .map(|key| {
-                self.verify_public_key(key)
+                verify_public_key(key)
                     .and_then(|pub_key| self.verify_network(pub_key))
                     .map_err(|err| {
                         tracing::error!("failed pubkey validation: {err}");
@@ -228,7 +223,7 @@ impl iot_config::Org for OrgService {
     async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
         let mut verify_keys: Vec<&[u8]> = vec![request.owner.as_ref(), request.payer.as_ref()];
@@ -241,7 +236,7 @@ impl iot_config::Org for OrgService {
         _ = verify_keys
             .iter()
             .map(|key| {
-                self.verify_public_key(key)
+                verify_public_key(key)
                     .and_then(|pub_key| self.verify_network(pub_key))
                     .map_err(|err| {
                         Status::invalid_argument(format!("failed pubkey validation: {err}"))
@@ -295,7 +290,7 @@ impl iot_config::Org for OrgService {
     async fn disable(&self, request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         if !org::is_locked(request.oui, &self.pool)
@@ -360,7 +355,7 @@ impl iot_config::Org for OrgService {
     async fn enable(&self, request: Request<OrgEnableReqV1>) -> GrpcResult<OrgEnableResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         if org::is_locked(request.oui, &self.pool)

@@ -22,6 +22,7 @@ pub use route_service::RouteService;
 pub use session_key_service::SessionKeyFilterService;
 pub use settings::Settings;
 
+use helium_crypto::PublicKey;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
@@ -52,4 +53,9 @@ fn enqueue_update(queue_size: usize) -> bool {
     // enqueue the message for broadcast if
     // the current queue is <= 80% full
     (queue_size * 100) / BROADCAST_CHANNEL_QUEUE <= 80
+}
+
+pub fn verify_public_key(bytes: &[u8]) -> Result<PublicKey, Status> {
+    PublicKey::try_from(bytes)
+        .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
 }

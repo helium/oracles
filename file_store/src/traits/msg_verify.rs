@@ -1,7 +1,7 @@
 use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
-    iot_config,
+    iot_config, mobile_config,
     poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
 };
 use helium_proto::{
@@ -61,6 +61,14 @@ impl_msg_verify!(iot_config::RegionParamsReqV1, signature);
 impl_msg_verify!(iot_config::GatewayInfoResV1, signature);
 impl_msg_verify!(iot_config::GatewayInfoStreamResV1, signature);
 impl_msg_verify!(iot_config::RegionParamsResV1, signature);
+impl_msg_verify!(mobile_config::AdminAddKeyReqV1, signature);
+impl_msg_verify!(mobile_config::AdminRemoveKeyReqV1, signature);
+impl_msg_verify!(mobile_config::RouterGetReqV1, signature);
+impl_msg_verify!(mobile_config::RouterListReqV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoReqV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoStreamReqV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoResV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoStreamResV1, signature);
 
 #[cfg(test)]
 mod test {

@@ -19,6 +19,7 @@ members = [
     "iot_packet_verifier",
     "iot_config",
     "price",
+    "mobile_config",
 ]
 
 [workspace.package]

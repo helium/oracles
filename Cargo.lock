@@ -3855,6 +3855,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.0",
+ "chrono",
+ "clap 3.2.23",
+ "config",
+ "db-store",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "hextree",
+ "http",
+ "http-serde",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "poc-metrics",
+ "prost",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
+
+[[package]]
 name = "mobile-packet-verifier"
 version = "0.1.0"
 dependencies = [

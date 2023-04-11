@@ -1,0 +1,41 @@
+# log settings for the application (RUST_LOG format). Default below
+# 
+# log = "iot-mobile=debug,poc_store=info"
+
+
+# Listen addres for public grpc. Default below
+#
+# listen = "0.0.0.0:8080"
+
+network = "mainnet"
+
+[database]
+
+# Url for the main service database
+url = "postgres://postgres:postgres@127.0.0.1:5432/config_db"
+
+# Max connections to database
+max_connections = 20
+
+[metadata]
+# Connection fields and auth values for connecting to RDS via IAM
+host = "helius.aws"
+port = 5432
+username = "helius"
+database = "db"
+
+auth_type = "iam"
+
+iam_role_arn = "arn::iam"
+iam_role_session_name = "role-session-name"
+iam_duration_seconds = 900
+iam_region = "us-west-2"
+
+# Max connections to database
+max_connections = 20
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+# endpoint = "127.0.0.1:19000"

@@ -2,7 +2,7 @@ use crate::{
     admin::AuthCache,
     gateway_info::{self, GatewayInfo},
     region_map::RegionMapReader,
-    GrpcResult, GrpcStreamResult, Settings,
+    verify_public_key, GrpcResult, GrpcStreamResult, Settings,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -44,11 +44,6 @@ impl GatewayService {
         })
     }
 
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes)
-            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
-    }
-
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
     where
         R: Message,
@@ -77,7 +72,7 @@ impl iot_config::Gateway for GatewayService {
     ) -> GrpcResult<GatewayLocationResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         let address: &PublicKeyBinary = &request.gateway.into();
@@ -121,7 +116,7 @@ impl iot_config::Gateway for GatewayService {
     ) -> GrpcResult<GatewayRegionParamsResV1> {
         let request = request.into_inner();
 
-        let pubkey = self.verify_public_key(&request.address)?;
+        let pubkey = verify_public_key(&request.address)?;
         request
             .verify(&pubkey)
             .map_err(|_| Status::permission_denied("invalid request signature"))?;
@@ -199,7 +194,7 @@ impl iot_config::Gateway for GatewayService {
     async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         let address = &request.address.into();
@@ -229,7 +224,7 @@ impl iot_config::Gateway for GatewayService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         tracing::debug!("fetching all gateways' info");
