@@ -145,7 +145,7 @@ impl Loader {
             .unwrap_or(window_default_lookback)
             .max(window_max_lookback);
         let before_max = after + self.window_width;
-        let before = (now - (self.window_width * 3)).min(before_max);
+        let before = (now - (self.window_width * 3)).max(before_max);
         let window_width = (before - after).num_minutes() as u64;
         tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
         self.process_window(gateway_cache, after, before).await?;
