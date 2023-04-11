@@ -282,7 +282,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.signature = self.sign_response(&resp)?;
         Ok(Response::new(resp))
     }
 

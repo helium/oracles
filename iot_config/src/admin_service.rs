@@ -136,7 +136,7 @@ impl iot_config::Admin for AdminService {
             signer,
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.signature = self.sign_response(&resp)?;
 
         Ok(Response::new(resp))
     }
@@ -173,7 +173,7 @@ impl iot_config::Admin for AdminService {
             signer,
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.signature = self.sign_response(&resp)?;
 
         Ok(Response::new(resp))
     }
@@ -236,7 +236,7 @@ impl iot_config::Admin for AdminService {
             signer,
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.signature = self.sign_response(&resp)?;
 
         Ok(Response::new(resp))
     }
@@ -263,7 +263,7 @@ impl iot_config::Admin for AdminService {
             signature: vec![],
             timestamp,
         };
-        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        resp.signature = self.sign_response(&resp)?;
         tracing::debug!(region = region.to_string(), "returning region params");
         Ok(Response::new(resp))
     }
