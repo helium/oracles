@@ -24,7 +24,7 @@ use std::{
 
 #[async_trait::async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
-    type Error: Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error>;
 

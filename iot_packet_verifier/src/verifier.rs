@@ -22,6 +22,7 @@ use std::{
     fmt::Debug,
     mem,
 };
+use crate::pending_burns::PendingBurns;
 
 pub struct Verifier<D, C> {
     pub debiter: D,
@@ -80,7 +81,7 @@ where
                 .map_err(VerificationError::DebitError)?
             {
                 pending_burns
-                    .add_burn(&payer, debit_amount)
+                    .add_burned_amount(&payer, debit_amount)
                     .await
                     .map_err(VerificationError::BurnError)?;
                 valid_packets
@@ -228,14 +229,14 @@ impl ConfigServer for CachedOrgClient {
 }
 
 #[async_trait]
-pub trait PendingBurns {
+pub trait AddPendingBurn {
     type Error;
 
     async fn add_burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), Self::Error>;
 }
 
 #[async_trait]
-impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
+impl AddPendingBurn for &'_ mut Transaction<'_, Postgres> {
     type Error = sqlx::Error;
 
     async fn add_burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), Self::Error> {
@@ -304,7 +305,7 @@ mod test {
     }
 
     #[async_trait]
-    impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    impl AddPendingBurn for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         type Error = ();
 
         async fn add_burn(&mut self, payer: &PublicKeyBinary, amount: u64) -> Result<(), ()> {

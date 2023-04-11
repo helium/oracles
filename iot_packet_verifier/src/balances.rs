@@ -1,4 +1,4 @@
-use crate::{burner::Burn, solana::SolanaNetwork, verifier::Debiter};
+use crate::{pending_burns::{PendingBurns, Burn}, solana::SolanaNetwork, verifier::Debiter};
 use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use sqlx::{Pool, Postgres};
@@ -14,24 +14,18 @@ pub struct BalanceCache<S> {
 
 pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>;
 
-#[derive(thiserror::Error, Debug)]
-pub enum DebitError<E> {
-    #[error("Sql error: {0}")]
-    SqlError(#[from] sqlx::Error),
-    #[error("Solana Rpc Error: {0}")]
-    SolanaRpcError(E),
-}
-
 impl<S> BalanceCache<S>
 where
     S: SolanaNetwork,
 {
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
-    pub async fn new(pool: &Pool<Postgres>, solana: S) -> Result<Self, DebitError<S::Error>> {
-        let mut burns = sqlx::query_as("SELECT * FROM pending_burns").fetch(pool);
-
+    pub async fn new<P>(pending_burns: &mut P, solana: S) -> anyhow::Result<Self>
+    where
+        P: PendingBurns,
+    {
         let mut balances = HashMap::new();
+        let mut burns = pending_burns.fetch_all();
 
         while let Some(Burn {
             payer,
@@ -42,8 +36,7 @@ where
             // Look up the current balance of the payer
             let balance = solana
                 .payer_balance(&payer)
-                .await
-                .map_err(DebitError::SolanaRpcError)?;
+                .await?;
             balances.insert(
                 payer,
                 Balance {
@@ -71,7 +64,7 @@ impl<S> Debiter for BalanceCache<S>
 where
     S: SolanaNetwork,
 {
-    type Error = DebitError<S::Error>;
+    type Error = S::Error;
 
     /// Debits the balance from the cache, returning true if there was enough
     /// balance and false otherwise.
@@ -79,15 +72,14 @@ where
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<bool, DebitError<S::Error>> {
+    ) -> Result<bool, S::Error> {
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {
             let new_balance = self
                 .solana
                 .payer_balance(payer)
-                .await
-                .map_err(DebitError::SolanaRpcError)?;
+                .await?;
             balances.insert(payer.clone(), Balance::new(new_balance));
             balances.get_mut(payer).unwrap()
         } else {
@@ -98,8 +90,7 @@ where
                 balance.balance = self
                     .solana
                     .payer_balance(payer)
-                    .await
-                    .map_err(DebitError::SolanaRpcError)?;
+                    .await?;
             }
 
             balance

@@ -85,7 +85,7 @@ impl Cmd {
         });
 
         // Set up the postgres pool:
-        let (pool, db_handle) = settings
+        let (mut pool, db_handle) = settings
             .database
             .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
             .await?;
@@ -112,7 +112,7 @@ impl Cmd {
         };
 
         // Set up the balance cache:
-        let balances = BalanceCache::new(&pool, solana.clone()).await?;
+        let balances = BalanceCache::new(&mut pool, solana.clone()).await?;
 
         // Set up the balance burner:
         let burner = Burner::new(&pool, &balances, settings.burn_period, solana).await?;

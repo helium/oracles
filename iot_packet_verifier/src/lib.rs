@@ -5,3 +5,4 @@ pub mod pdas;
 pub mod settings;
 pub mod solana;
 pub mod verifier;
+pub mod pending_burns;
