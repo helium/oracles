@@ -62,7 +62,7 @@ impl Cmd {
             concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
         )
         .deposits(Some(file_upload_tx.clone()))
-        .auto_commit(false)
+        .auto_commit(true)
         .create()
         .await?;
 
