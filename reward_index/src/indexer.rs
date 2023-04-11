@@ -4,9 +4,10 @@ use file_store::{
     file_info_poller::FileInfoStream, reward_manifest::RewardManifest, FileInfo, FileStore,
 };
 use futures::{stream, StreamExt, TryStreamExt};
-use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
 use helium_proto::{
-    services::poc_lora::IotRewardShare, services::poc_mobile::RadioRewardShare, Message,
+    services::poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
+    services::poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
+    Message,
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
@@ -120,17 +121,22 @@ impl Indexer {
     fn extract_reward_share(&self, msg: &[u8]) -> Result<(RewardKey, u64)> {
         match self.mode {
             settings::Mode::Mobile => {
-                let share = RadioRewardShare::decode(msg)?;
-                let key = RewardKey {
-                    key: share.hotspot_key,
-                    reward_type: RewardType::MobileGateway,
-                };
-                Ok((key, share.amount))
+                let share = MobileRewardShare::decode(msg)?;
+                match share.reward {
+                    Some(MobileReward::RadioReward(r)) => Ok((
+                        RewardKey {
+                            key: r.hotspot_key,
+                            reward_type: RewardType::MobileGateway,
+                        },
+                        r.dc_transfer_reward + r.poc_reward,
+                    )),
+                    _ => bail!("got an invalid mobile reward share"),
+                }
             }
             settings::Mode::Iot => {
                 let share = IotRewardShare::decode(msg)?;
                 match share.reward {
-                    Some(ProtoReward::GatewayReward(r)) => {
+                    Some(IotReward::GatewayReward(r)) => {
                         let key = RewardKey {
                             key: r.hotspot_key,
                             reward_type: RewardType::IotGateway,
@@ -140,7 +146,7 @@ impl Indexer {
                             r.witness_amount + r.beacon_amount + r.dc_transfer_amount,
                         ))
                     }
-                    Some(ProtoReward::OperationalReward(r)) => {
+                    Some(IotReward::OperationalReward(r)) => {
                         let key = RewardKey {
                             key: self.op_fund_key.clone().to_vec(),
                             reward_type: RewardType::IotOperational,
