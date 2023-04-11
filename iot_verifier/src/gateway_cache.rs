@@ -1,8 +1,8 @@
 use futures::stream::StreamExt;
 use helium_crypto::PublicKeyBinary;
-use iot_config_client::{
-    gateway_resolver::{GatewayInfo, GatewayInfoResolver},
-    iot_config_client::{IotConfigClient, IotConfigClientError},
+use iot_config::{
+    client::{Client as IotConfigClient, ClientError as IotConfigClientError},
+    gateway_info::{GatewayInfo, GatewayInfoResolver},
 };
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
@@ -43,7 +43,11 @@ impl GatewayCache {
 
     pub async fn prewarm(&self) -> anyhow::Result<()> {
         tracing::info!("starting prewarming gateway cache");
-        let mut gw_stream = self.iot_config_client.clone().gateway_stream().await?;
+        let mut gw_stream = self
+            .iot_config_client
+            .clone()
+            .stream_gateways_info()
+            .await?;
         while let Some(gateway_info) = gw_stream.next().await {
             _ = self.insert(gateway_info).await;
         }
@@ -67,7 +71,7 @@ impl GatewayCache {
                     .resolve_gateway_info(address)
                     .await
                 {
-                    Ok(res) => {
+                    Ok(Some(res)) => {
                         tracing::debug!("cache miss: {:?}", address);
                         metrics::increment_counter!("oracles_iot_verifier_gateway_cache_miss");
                         _ = self.insert(res.clone()).await;

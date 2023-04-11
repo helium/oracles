@@ -23,9 +23,10 @@ pub struct Settings {
     /// Network required in all public keys: mainnet | testnet
     pub network: Network,
     pub database: db_store::Settings,
+    /// Settings passed to the db_store crate for connecting to
+    /// the database for Solana on-chain data
+    pub metadata: db_store::Settings,
     pub metrics: poc_metrics::Settings,
-    /// Helium blockchain node client for gateway location lookups
-    pub follower: node_follower::Settings,
 }
 
 pub fn default_log() -> String {

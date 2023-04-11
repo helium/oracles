@@ -6,7 +6,7 @@ use helium_proto::services::iot_config::{
 };
 use iot_config::{
     admin::AuthCache, gateway_service::GatewayService, org_service::OrgService,
-    region_map::RegionMap, route_service::RouteService,
+    region_map::RegionMapReader, route_service::RouteService,
     session_key_service::SessionKeyFilterService, settings::Settings, AdminService,
 };
 use std::{path::PathBuf, time::Duration};
@@ -71,35 +71,53 @@ impl Daemon {
         // Create database pool
         let (pool, db_join_handle) = settings
             .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
+            .connect("iot-config-store", shutdown_listener.clone())
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
+        // Create on-chain metadata pool
+        let (metadata_pool, md_pool_handle) = settings
+            .metadata
+            .connect("iot-config-metadata", shutdown_listener.clone())
+            .await?;
+
         let listen_addr = settings.listen_addr()?;
 
-        let auth_cache = AuthCache::new(settings, &pool).await?;
-        let region_map = RegionMap::new(&pool).await?;
+        let (auth_updater, auth_cache) = AuthCache::new(settings, &pool).await?;
+        let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
 
-        let gateway_svc = GatewayService::new(settings, region_map.clone())?;
-        let route_svc =
-            RouteService::new(auth_cache.clone(), pool.clone(), shutdown_listener.clone());
-        let org_svc = OrgService::new(
-            auth_cache.clone(),
-            pool.clone(),
-            settings.network,
-            route_svc.clone_update_channel(),
-        );
-        let admin_svc = AdminService::new(
-            auth_cache.clone(),
-            pool.clone(),
+        let gateway_svc = GatewayService::new(
+            settings,
+            metadata_pool,
             region_map.clone(),
-            settings.network,
-        );
-        let session_key_filter_svc = SessionKeyFilterService::new(
+            auth_cache.clone(),
+        )?;
+        let route_svc = RouteService::new(
+            settings,
             auth_cache.clone(),
             pool.clone(),
             shutdown_listener.clone(),
-        );
+        )?;
+        let org_svc = OrgService::new(
+            settings,
+            auth_cache.clone(),
+            pool.clone(),
+            route_svc.clone_update_channel(),
+        )?;
+        let admin_svc = AdminService::new(
+            settings,
+            auth_cache.clone(),
+            auth_updater,
+            pool.clone(),
+            region_map.clone(),
+            region_updater,
+        )?;
+        let session_key_filter_svc = SessionKeyFilterService::new(
+            settings,
+            auth_cache.clone(),
+            pool.clone(),
+            shutdown_listener.clone(),
+        )?;
 
         let server = transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
@@ -112,7 +130,11 @@ impl Daemon {
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from);
 
-        tokio::try_join!(db_join_handle.map_err(Error::from), server)?;
+        tokio::try_join!(
+            db_join_handle.map_err(Error::from),
+            md_pool_handle.map_err(Error::from),
+            server
+        )?;
 
         Ok(())
     }

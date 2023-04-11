@@ -19,7 +19,7 @@ pub struct Settings {
     #[serde(default = "default_base_stale_period")]
     pub base_stale_period: i64,
     pub database: db_store::Settings,
-    pub iot_config_client: iot_config_client::Settings,
+    pub iot_config_client: iot_config::client::Settings,
     pub ingest: file_store::Settings,
     pub packet_ingest: file_store::Settings,
 

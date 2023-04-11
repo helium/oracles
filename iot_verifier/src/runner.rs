@@ -333,9 +333,10 @@ impl Runner {
                             VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
                         });
 
+                    let location = beacon_info.metadata.map(|metadata| metadata.location);
                     let valid_beacon_report = IotValidBeaconReport {
                         received_timestamp: beacon_received_ts,
-                        location: beacon_info.location,
+                        location,
                         hex_scale: beacon_verify_result
                             .hex_scale
                             .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,

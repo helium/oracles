@@ -1,9 +1,18 @@
 use crate::{broadcast_update, lora_field::DevAddrField};
-use futures::stream::{self, Stream, StreamExt, TryStreamExt};
-use helium_proto::services::iot_config::{
-    ActionV1, SessionKeyFilterStreamResV1, SessionKeyFilterV1,
+use anyhow::anyhow;
+use chrono::Utc;
+use file_store::traits::TimestampEncode;
+use futures::{
+    future::TryFutureExt,
+    stream::{self, Stream, StreamExt, TryStreamExt},
+};
+use helium_crypto::{Keypair, Sign};
+use helium_proto::{
+    services::iot_config::{ActionV1, SessionKeyFilterStreamResV1, SessionKeyFilterV1},
+    Message,
 };
 use sqlx::{postgres::PgRow, FromRow, Row};
+use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 
 #[derive(Clone, Debug)]
@@ -68,6 +77,7 @@ pub async fn update_session_keys(
     to_add: &[SessionKeyFilter],
     to_remove: &[SessionKeyFilter],
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    signing_key: Arc<Keypair>,
     update_tx: Sender<SessionKeyFilterStreamResV1>,
 ) -> Result<(), sqlx::Error> {
     let mut transaction = db.begin().await?;
@@ -89,16 +99,28 @@ pub async fn update_session_keys(
     transaction.commit().await?;
 
     tokio::spawn(async move {
+        let timestamp = Utc::now().encode_timestamp();
+        let signer: Vec<u8> = signing_key.public_key().into();
         stream::iter([added_updates, removed_updates].concat())
             .map(Ok)
             .try_for_each(|(update, action)| {
-                broadcast_update::<SessionKeyFilterStreamResV1>(
-                    SessionKeyFilterStreamResV1 {
-                        action: i32::from(action),
-                        filter: Some(update.into()),
-                    },
-                    update_tx.clone(),
-                )
+                let mut skf_update = SessionKeyFilterStreamResV1 {
+                    action: i32::from(action),
+                    filter: Some(update.into()),
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                };
+                futures::future::ready(signing_key.sign(&skf_update.encode_to_vec()))
+                    .map_err(|_| anyhow!("failed to sign session key filter update"))
+                    .and_then(|signature| {
+                        skf_update.signature = signature;
+                        broadcast_update::<SessionKeyFilterStreamResV1>(
+                            skf_update,
+                            update_tx.clone(),
+                        )
+                        .map_err(|_| anyhow!("failed to broadcast session key filter update"))
+                    })
             })
             .await
     });

@@ -1,15 +1,7 @@
 use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
-    iot_config::{
-        AdminAddKeyReqV1, AdminLoadRegionReqV1, AdminRemoveKeyReqV1, GatewayLocationReqV1,
-        GatewayRegionParamsReqV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1, OrgDisableReqV1,
-        OrgEnableReqV1, RouteCreateReqV1, RouteDeleteReqV1, RouteGetDevaddrRangesReqV1,
-        RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1, RouteStreamReqV1,
-        RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1, RouteUpdateReqV1,
-        SessionKeyFilterGetReqV1, SessionKeyFilterListReqV1, SessionKeyFilterStreamReqV1,
-        SessionKeyFilterUpdateReqV1,
-    },
+    iot_config,
     poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
 };
 use helium_proto::{
@@ -40,29 +32,35 @@ impl_msg_verify!(SpeedtestReqV1, signature);
 impl_msg_verify!(LoraBeaconReportReqV1, signature);
 impl_msg_verify!(LoraWitnessReportReqV1, signature);
 impl_msg_verify!(DataTransferSessionReqV1, signature);
-impl_msg_verify!(OrgCreateHeliumReqV1, signature);
-impl_msg_verify!(OrgCreateRoamerReqV1, signature);
-impl_msg_verify!(OrgDisableReqV1, signature);
-impl_msg_verify!(OrgEnableReqV1, signature);
-impl_msg_verify!(RouteStreamReqV1, signature);
-impl_msg_verify!(RouteListReqV1, signature);
-impl_msg_verify!(RouteGetReqV1, signature);
-impl_msg_verify!(RouteCreateReqV1, signature);
-impl_msg_verify!(RouteUpdateReqV1, signature);
-impl_msg_verify!(RouteDeleteReqV1, signature);
-impl_msg_verify!(RouteGetEuisReqV1, signature);
-impl_msg_verify!(RouteUpdateEuisReqV1, signature);
-impl_msg_verify!(RouteGetDevaddrRangesReqV1, signature);
-impl_msg_verify!(RouteUpdateDevaddrRangesReqV1, signature);
-impl_msg_verify!(GatewayLocationReqV1, signature);
-impl_msg_verify!(GatewayRegionParamsReqV1, signature);
-impl_msg_verify!(AdminAddKeyReqV1, signature);
-impl_msg_verify!(AdminLoadRegionReqV1, signature);
-impl_msg_verify!(AdminRemoveKeyReqV1, signature);
-impl_msg_verify!(SessionKeyFilterGetReqV1, signature);
-impl_msg_verify!(SessionKeyFilterListReqV1, signature);
-impl_msg_verify!(SessionKeyFilterStreamReqV1, signature);
-impl_msg_verify!(SessionKeyFilterUpdateReqV1, signature);
+impl_msg_verify!(iot_config::OrgCreateHeliumReqV1, signature);
+impl_msg_verify!(iot_config::OrgCreateRoamerReqV1, signature);
+impl_msg_verify!(iot_config::OrgDisableReqV1, signature);
+impl_msg_verify!(iot_config::OrgEnableReqV1, signature);
+impl_msg_verify!(iot_config::RouteStreamReqV1, signature);
+impl_msg_verify!(iot_config::RouteListReqV1, signature);
+impl_msg_verify!(iot_config::RouteGetReqV1, signature);
+impl_msg_verify!(iot_config::RouteCreateReqV1, signature);
+impl_msg_verify!(iot_config::RouteUpdateReqV1, signature);
+impl_msg_verify!(iot_config::RouteDeleteReqV1, signature);
+impl_msg_verify!(iot_config::RouteGetEuisReqV1, signature);
+impl_msg_verify!(iot_config::RouteUpdateEuisReqV1, signature);
+impl_msg_verify!(iot_config::RouteGetDevaddrRangesReqV1, signature);
+impl_msg_verify!(iot_config::RouteUpdateDevaddrRangesReqV1, signature);
+impl_msg_verify!(iot_config::GatewayLocationReqV1, signature);
+impl_msg_verify!(iot_config::GatewayRegionParamsReqV1, signature);
+impl_msg_verify!(iot_config::AdminAddKeyReqV1, signature);
+impl_msg_verify!(iot_config::AdminLoadRegionReqV1, signature);
+impl_msg_verify!(iot_config::AdminRemoveKeyReqV1, signature);
+impl_msg_verify!(iot_config::SessionKeyFilterGetReqV1, signature);
+impl_msg_verify!(iot_config::SessionKeyFilterListReqV1, signature);
+impl_msg_verify!(iot_config::SessionKeyFilterStreamReqV1, signature);
+impl_msg_verify!(iot_config::SessionKeyFilterUpdateReqV1, signature);
+impl_msg_verify!(iot_config::GatewayInfoReqV1, signature);
+impl_msg_verify!(iot_config::GatewayInfoStreamReqV1, signature);
+impl_msg_verify!(iot_config::RegionParamsReqV1, signature);
+impl_msg_verify!(iot_config::GatewayInfoResV1, signature);
+impl_msg_verify!(iot_config::GatewayInfoStreamResV1, signature);
+impl_msg_verify!(iot_config::RegionParamsResV1, signature);
 
 #[cfg(test)]
 mod test {
