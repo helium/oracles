@@ -17,7 +17,7 @@ pub trait PendingBurns {
     async fn subtract_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
-        amount: i64,
+        amount: u64,
     ) -> Result<(), Self::Error>;
 
     async fn add_burned_amount(
@@ -49,7 +49,7 @@ impl PendingBurns for Pool<Postgres> {
     async fn subtract_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
-        amount: i64,
+        amount: u64,
     ) -> Result<(), Self::Error> {
         sqlx::query(
             r#"
@@ -59,7 +59,7 @@ impl PendingBurns for Pool<Postgres> {
             WHERE payer = $3
             "#,
         )
-        .bind(amount)
+        .bind(amount as i64)
         .bind(Utc::now().naive_utc())
         .bind(payer)
         .execute(&*self)
@@ -111,7 +111,7 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
     async fn subtract_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
-        amount: i64,
+        amount: u64,
     ) -> Result<(), Self::Error> {
         sqlx::query(
             r#"
@@ -121,7 +121,7 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
             WHERE payer = $3
             "#,
         )
-        .bind(amount)
+        .bind(amount as i64)
         .bind(Utc::now().naive_utc())
         .bind(payer)
         .execute(&mut **self)
@@ -152,21 +152,6 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
         Ok(())
     }
 }
-
-/*
-#[async_trait::async_trait]
-pub trait PendingBurns {
-    type Error;
-
-    fn fetch_all<'a>(
-        &'a self,
-    ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>>;
-
-    async fn fetch_next(&self) -> Result<Option<Burn>, Self::Error>;
-
-    async fn subtract_amount_burned(&self, payer: &PublicKeyBinary, amount: i64) -> Result<(), Self::Error>;
-}
-*/
 
 #[derive(FromRow, Debug)]
 pub struct Burn {

@@ -1,51 +1,48 @@
 use crate::{
     balances::{BalanceCache, BalanceStore},
+    pending_burns::{Burn, PendingBurns},
     solana::SolanaNetwork,
 };
-use chrono::Utc;
-use helium_crypto::PublicKeyBinary;
-use sqlx::{FromRow, Pool, Postgres};
 use std::time::Duration;
 use tokio::task;
 
-pub struct Burner<S> {
-    pool: Pool<Postgres>,
+pub struct Burner<P, S> {
+    pending_burns: P,
     balances: BalanceStore,
     burn_period: Duration,
     solana: S,
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum BurnError<E> {
-    #[error("Sql error: {0}")]
-    SqlError(#[from] sqlx::Error),
+pub enum BurnError<P, S> {
     #[error("Join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("Sql error: {0}")]
+    SqlError(P),
     #[error("Solana error: {0}")]
-    SolanaError(E),
+    SolanaError(S),
 }
 
-const BURN_THRESHOLD: i64 = 10_000;
-
-impl<S> Burner<S>
-where
-    S: SolanaNetwork,
-{
-    pub async fn new(
-        pool: &Pool<Postgres>,
-        balances: &BalanceCache<S>,
-        burn_period: u64,
-        solana: S,
-    ) -> Result<Self, BurnError<S::Error>> {
-        Ok(Self {
-            pool: pool.clone(),
+impl<P, S> Burner<P, S> {
+    pub fn new(pending_burns: P, balances: &BalanceCache<S>, burn_period: u64, solana: S) -> Self {
+        Self {
+            pending_burns,
             balances: balances.balances(),
             burn_period: Duration::from_secs(60 * burn_period),
             solana,
-        })
+        }
     }
+}
 
-    pub async fn run(self, shutdown: &triggered::Listener) -> Result<(), BurnError<S::Error>> {
+impl<P, S> Burner<P, S>
+where
+    P: PendingBurns + Send + Sync + 'static,
+    S: SolanaNetwork,
+{
+    pub async fn run(
+        mut self,
+        shutdown: &triggered::Listener,
+    ) -> Result<(), BurnError<P::Error, S::Error>> {
         let burn_service = task::spawn(async move {
             loop {
                 self.burn().await?;
@@ -59,16 +56,15 @@ where
         }
     }
 
-    pub async fn burn(&self) -> Result<(), BurnError<S::Error>> {
+    pub async fn burn(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {
         // Create burn transaction and execute it:
 
-        let Some(Burn { payer, amount, id }): Option<Burn> =
-            sqlx::query_as("SELECT * FROM pending_burns WHERE amount >= $1 ORDER BY last_burn ASC")
-                .bind(BURN_THRESHOLD)
-                .fetch_optional(&self.pool)
-            .await? else {
-                return Ok(());
-            };
+        let Some(Burn { payer, amount }) = self.pending_burns.fetch_next().await
+            .map_err(BurnError::SqlError)? else {
+            return Ok(());
+        };
+
+        let amount = amount as u64;
 
         self.solana
             .burn_data_credits(&payer, amount as u64)
@@ -77,19 +73,10 @@ where
 
         // Now that we have successfully executed the burn and are no long in
         // sync land, we can remove the amount burned.
-        sqlx::query(
-            r#"
-            UPDATE pending_burns SET
-              amount = amount - $1,
-              last_burn = $2
-            WHERE id = $3
-            "#,
-        )
-        .bind(amount)
-        .bind(Utc::now().naive_utc())
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        self.pending_burns
+            .subtract_burned_amount(&payer, amount)
+            .await
+            .map_err(BurnError::SqlError)?;
 
         let mut balance_lock = self.balances.lock().await;
         let balances = balance_lock.get_mut(&payer).unwrap();
@@ -99,11 +86,4 @@ where
 
         Ok(())
     }
-}
-
-#[derive(FromRow, Debug)]
-pub struct Burn {
-    pub id: i32,
-    pub payer: PublicKeyBinary,
-    pub amount: i64,
 }

@@ -1,7 +1,6 @@
 use crate::{pending_burns::{PendingBurns, Burn}, solana::SolanaNetwork, verifier::Debiter};
 use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
-use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 

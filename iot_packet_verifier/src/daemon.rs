@@ -115,7 +115,7 @@ impl Cmd {
         let balances = BalanceCache::new(&mut pool, solana.clone()).await?;
 
         // Set up the balance burner:
-        let burner = Burner::new(&pool, &balances, settings.burn_period, solana).await?;
+        let burner = Burner::new(pool.clone(), &balances, settings.burn_period, solana);
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
