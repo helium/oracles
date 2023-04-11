@@ -1,5 +1,4 @@
 use config::{Config, Environment, File};
-use helium_crypto::Network;
 use serde::Deserialize;
 use std::{
     net::{AddrParseError, SocketAddr},
@@ -20,8 +19,6 @@ pub struct Settings {
     pub keypair: String,
     /// B58 encoded public key of the admin keypair
     pub admin: String,
-    /// Network required in all public keys: mainnet | testnet
-    pub network: Network,
     pub database: db_store::Settings,
     /// Settings passed to the db_store crate for connecting to
     /// the database for Solana on-chain data

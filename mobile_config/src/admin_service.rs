@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::future::TryFutureExt;
-use helium_crypto::{Keypair, Network, PublicKey, PublicKeyBinary, Sign};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{self, AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1},
     Message,
@@ -20,7 +20,6 @@ pub struct AdminService {
     key_cache: KeyCache,
     key_cache_updater: watch::Sender<CacheKeys>,
     pool: Pool<Postgres>,
-    required_network: Network,
     signing_key: Keypair,
 }
 
@@ -35,7 +34,6 @@ impl AdminService {
             key_cache,
             key_cache_updater,
             pool,
-            required_network: settings.network,
             signing_key: settings.signing_keypair()?,
         })
     }
@@ -52,17 +50,6 @@ impl AdminService {
             .verify_signature_with_type(KeyType::Administrator, signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
         Ok(())
-    }
-
-    fn verify_network(&self, public_key: PublicKey) -> Result<PublicKey, Status> {
-        if self.required_network == public_key.network {
-            Ok(public_key)
-        } else {
-            Err(Status::invalid_argument(format!(
-                "invalid network: {}",
-                public_key.network
-            )))
-        }
     }
 
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
@@ -84,8 +71,7 @@ impl mobile_config::Admin for AdminService {
         self.verify_admin_request_signature(&signer, &request)?;
 
         let key_type = request.key_type().into();
-        let pubkey = verify_public_key(request.pubkey.as_ref())
-            .and_then(|pubkey| self.verify_network(pubkey))?;
+        let pubkey = verify_public_key(request.pubkey.as_ref())?;
 
         key_cache::db::insert_key(request.pubkey.clone().into(), key_type, &self.pool)
             .and_then(|_| async move {

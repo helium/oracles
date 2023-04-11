@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
-use helium_crypto::{Keypair, Network, PublicKey, Sign};
+use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
         self, route_stream_res_v1, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1,
@@ -23,7 +23,6 @@ use tonic::{Request, Response, Status};
 pub struct OrgService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
-    required_network: Network,
     route_update_tx: Sender<RouteStreamResV1>,
     signing_key: Keypair,
 }
@@ -38,21 +37,9 @@ impl OrgService {
         Ok(Self {
             auth_cache,
             pool,
-            required_network: settings.network,
             route_update_tx,
             signing_key: settings.signing_keypair()?,
         })
-    }
-
-    fn verify_network(&self, public_key: PublicKey) -> Result<PublicKey, Status> {
-        if self.required_network == public_key.network {
-            Ok(public_key)
-        } else {
-            Err(Status::invalid_argument(format!(
-                "invalid network: {}",
-                public_key.network
-            )))
-        }
     }
 
     fn verify_admin_request_signature<R>(
@@ -164,12 +151,10 @@ impl iot_config::Org for OrgService {
         _ = verify_keys
             .iter()
             .map(|key| {
-                verify_public_key(key)
-                    .and_then(|pub_key| self.verify_network(pub_key))
-                    .map_err(|err| {
-                        tracing::error!("failed pubkey validation: {err}");
-                        Status::invalid_argument(format!("failed pubkey validation: {err}"))
-                    })
+                verify_public_key(key).map_err(|err| {
+                    tracing::error!("failed pubkey validation: {err}");
+                    Status::invalid_argument(format!("failed pubkey validation: {err}"))
+                })
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
@@ -236,11 +221,9 @@ impl iot_config::Org for OrgService {
         _ = verify_keys
             .iter()
             .map(|key| {
-                verify_public_key(key)
-                    .and_then(|pub_key| self.verify_network(pub_key))
-                    .map_err(|err| {
-                        Status::invalid_argument(format!("failed pubkey validation: {err}"))
-                    })
+                verify_public_key(key).map_err(|err| {
+                    Status::invalid_argument(format!("failed pubkey validation: {err}"))
+                })
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
