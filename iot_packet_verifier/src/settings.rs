@@ -31,9 +31,7 @@ pub struct Settings {
     #[serde(with = "http_serde::uri", default = "default_url")]
     pub org_url: http::Uri,
     #[serde(default)]
-    pub enable_dc_burn: bool,
-    #[serde(default)]
-    pub enable_balance_check: bool,
+    pub enable_solana_integration: bool,
 }
 
 pub fn default_burn_period() -> u64 {

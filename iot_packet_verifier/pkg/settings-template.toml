@@ -25,12 +25,12 @@ config_keypair = ""
 # Solana cluster to use. "devnet" or "mainnet"
 cluster = "devnet"
 
-# Whether or not we should burn data credits on the Solana network. Defaults to false
-enable_dc_burn = false
-
-# Whether or not we should check the Solana network for available balance. If this is
-# disabled, it is assumed that all payers have sufficient balance. Defaults to false.
-enable_balance_check = false
+# If set to true, enables integration with the Solana network. This includes
+# checking payer balances and burning data credits. If this is disabled, all
+# payers will have a default balance of 1,000,000 data credits, and burned
+# data credits will only be stored in the database. This is set to false by
+# default.
+enable_solana_integration = "false"
 
 [database]
 

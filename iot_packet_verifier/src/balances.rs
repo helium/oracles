@@ -1,85 +1,77 @@
-use crate::{burner::Burn, pdas, verifier::Debiter};
-use anchor_lang::AccountDeserialize;
-use data_credits::DelegatedDataCreditsV0;
+use crate::{burner::Burn, solana::SolanaNetwork, verifier::Debiter};
 use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
-use solana_sdk::{program_pack::Pack, pubkey::Pubkey};
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 /// Caches balances fetched from the solana chain and debits made by the
 /// packet verifier.
-pub struct BalanceCache {
-    sub_dao: Pubkey,
-    provider: Arc<RpcClient>,
+pub struct BalanceCache<S> {
     balances: BalanceStore,
-    enabled: bool,
+    solana: S,
 }
 
 pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>;
 
 #[derive(thiserror::Error, Debug)]
-pub enum DebitError {
+pub enum DebitError<E> {
     #[error("Sql error: {0}")]
     SqlError(#[from] sqlx::Error),
-    #[error("Solana rpc error: {0}")]
-    RpcClientError(#[from] ClientError),
-    #[error("Anchor error: {0}")]
-    AnchorError(#[from] anchor_lang::error::Error),
-    #[error("Solana program error: {0}")]
-    ProgramError(#[from] solana_sdk::program_error::ProgramError),
+    #[error("Solana Rpc Error: {0}")]
+    SolanaRpcError(E),
 }
 
-impl BalanceCache {
+impl<S> BalanceCache<S>
+where
+    S: SolanaNetwork,
+{
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
-    pub async fn new(
-        pool: &Pool<Postgres>,
-        sub_dao: Pubkey,
-        provider: Arc<RpcClient>,
-        enabled: bool,
-    ) -> Result<Self, DebitError> {
+    pub async fn new(pool: &Pool<Postgres>, solana: S) -> Result<Self, DebitError<S::Error>> {
         let mut burns = sqlx::query_as("SELECT * FROM pending_burns").fetch(pool);
 
         let mut balances = HashMap::new();
 
-        if enabled {
-            while let Some(Burn {
+        while let Some(Burn {
+            payer,
+            amount: burn_amount,
+            ..
+        }) = burns.next().await.transpose()?
+        {
+            // Look up the current balance of the payer
+            let balance = solana
+                .payer_balance(&payer)
+                .await
+                .map_err(DebitError::SolanaRpcError)?;
+            balances.insert(
                 payer,
-                amount: burn_amount,
-                ..
-            }) = burns.next().await.transpose()?
-            {
-                // Look up the current balance of the payer
-                let balance = payer_balance(provider.as_ref(), &sub_dao, &payer).await?;
-                balances.insert(
-                    payer,
-                    Balance {
-                        burned: burn_amount as u64,
-                        balance,
-                    },
-                );
-            }
+                Balance {
+                    burned: burn_amount as u64,
+                    balance,
+                },
+            );
         }
 
         Ok(Self {
-            sub_dao,
-            provider,
             balances: Arc::new(Mutex::new(balances)),
-            enabled,
+            solana,
         })
     }
+}
 
+impl<S> BalanceCache<S> {
     pub fn balances(&self) -> BalanceStore {
         self.balances.clone()
     }
 }
 
 #[async_trait::async_trait]
-impl Debiter for BalanceCache {
-    type Error = DebitError;
+impl<S> Debiter for BalanceCache<S>
+where
+    S: SolanaNetwork,
+{
+    type Error = DebitError<S::Error>;
 
     /// Debits the balance from the cache, returning true if there was enough
     /// balance and false otherwise.
@@ -87,15 +79,15 @@ impl Debiter for BalanceCache {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<bool, DebitError> {
-        if !self.enabled {
-            return Ok(true);
-        }
-
+    ) -> Result<bool, DebitError<S::Error>> {
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {
-            let new_balance = payer_balance(self.provider.as_ref(), &self.sub_dao, payer).await?;
+            let new_balance = self
+                .solana
+                .payer_balance(payer)
+                .await
+                .map_err(DebitError::SolanaRpcError)?;
             balances.insert(payer.clone(), Balance::new(new_balance));
             balances.get_mut(payer).unwrap()
         } else {
@@ -103,8 +95,11 @@ impl Debiter for BalanceCache {
 
             // If the balance is not sufficient, check to see if it has been increased
             if balance.balance < amount + balance.burned {
-                balance.balance =
-                    payer_balance(self.provider.as_ref(), &self.sub_dao, payer).await?;
+                balance.balance = self
+                    .solana
+                    .payer_balance(payer)
+                    .await
+                    .map_err(DebitError::SolanaRpcError)?;
             }
 
             balance
@@ -118,20 +113,6 @@ impl Debiter for BalanceCache {
 
         Ok(sufficient)
     }
-}
-
-pub async fn payer_balance(
-    provider: &RpcClient,
-    sub_dao: &Pubkey,
-    payer: &PublicKeyBinary,
-) -> Result<u64, DebitError> {
-    let ddc_key = pdas::delegated_data_credits(sub_dao, payer);
-    let account_data = provider.get_account_data(&ddc_key).await?;
-    let mut account_data = account_data.as_ref();
-    let ddc = DelegatedDataCreditsV0::try_deserialize(&mut account_data)?;
-    let account_data = provider.get_account_data(&ddc.escrow_account).await?;
-    let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
-    Ok(account_layout.amount)
 }
 
 pub struct Balance {

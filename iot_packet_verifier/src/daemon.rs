@@ -2,6 +2,7 @@ use crate::{
     balances::BalanceCache,
     burner::Burner,
     settings::Settings,
+    solana::SolanaRpc,
     verifier::{CachedOrgClient, Verifier},
 };
 use anyhow::{bail, Error, Result};
@@ -15,14 +16,14 @@ use file_store::{
 };
 use futures_util::TryFutureExt;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{pubkey::Pubkey, signature::read_keypair_file};
+use solana_sdk::signature::read_keypair_file;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 
 struct Daemon {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache, CachedOrgClient>,
+    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, CachedOrgClient>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
@@ -90,29 +91,31 @@ impl Cmd {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        // Set up the solana RpcClient:
-        let rpc_client = Arc::new(RpcClient::new(settings.solana_rpc.clone()));
-
-        let (sub_dao, _) = Pubkey::find_program_address(
-            &["sub_dao".as_bytes(), settings.dnt_mint()?.as_ref()],
-            &helium_sub_daos::ID,
-        );
+        let solana = if settings.enable_solana_integration {
+            let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
+                Ok(kp) => kp,
+                Err(e) => bail!("Failed to read keypair file ({})", e),
+            };
+            // Set up the solana RpcClient:
+            Some(
+                SolanaRpc::new(
+                    RpcClient::new(settings.solana_rpc.clone()),
+                    settings.cluster.clone(),
+                    burn_keypair,
+                    settings.dc_mint()?,
+                    settings.dnt_mint()?,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
 
         // Set up the balance cache:
-        let balances = BalanceCache::new(
-            &pool,
-            sub_dao,
-            rpc_client.clone(),
-            settings.enable_balance_check,
-        )
-        .await?;
+        let balances = BalanceCache::new(&pool, solana.clone()).await?;
 
         // Set up the balance burner:
-        let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
-            Ok(kp) => kp,
-            Err(e) => bail!("Failed to read keypair file ({})", e),
-        };
-        let burner = Burner::new(settings, &pool, &balances, rpc_client, burn_keypair).await?;
+        let burner = Burner::new(&pool, &balances, settings.burn_period, solana).await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
