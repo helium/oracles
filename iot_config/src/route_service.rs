@@ -3,7 +3,7 @@ use crate::{
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
     org::{self, DbOrgError},
     route::{self, Route, RouteStorageError},
-    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
+    update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -119,11 +119,6 @@ impl RouteService {
         }
     }
 
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes)
-            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
-    }
-
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
     where
         R: Message,
@@ -149,7 +144,7 @@ impl iot_config::Route for RouteService {
     async fn list(&self, request: Request<RouteListReqV1>) -> GrpcResult<RouteListResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
             .await?;
 
@@ -176,7 +171,7 @@ impl iot_config::Route for RouteService {
     async fn get(&self, request: Request<RouteGetReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
             .await?;
 
@@ -203,7 +198,7 @@ impl iot_config::Route for RouteService {
     async fn create(&self, request: Request<RouteCreateReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::Oui(request.oui))
             .await?;
 
@@ -263,7 +258,7 @@ impl iot_config::Route for RouteService {
             "route update {route:?}"
         );
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::Oui(route.oui))
             .await?;
 
@@ -293,7 +288,7 @@ impl iot_config::Route for RouteService {
     async fn delete(&self, request: Request<RouteDeleteReqV1>) -> GrpcResult<RouteResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
             .await?;
 
@@ -330,7 +325,7 @@ impl iot_config::Route for RouteService {
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_stream_request_signature(&signer, &request)?;
 
         tracing::info!("client subscribed to route stream");
@@ -376,7 +371,7 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<Self::get_euisStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
             .await?;
 
@@ -519,7 +514,7 @@ impl iot_config::Route for RouteService {
     ) -> GrpcResult<Self::get_devaddr_rangesStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
             .await?;
 

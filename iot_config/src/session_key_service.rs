@@ -3,7 +3,7 @@ use crate::{
     lora_field::DevAddrConstraint,
     org::{self, DbOrgError},
     session_key::{self, SessionKeyFilter},
-    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
+    update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -108,11 +108,6 @@ impl SessionKeyFilterService {
         }
     }
 
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes)
-            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
-    }
-
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
     where
         R: Message,
@@ -138,7 +133,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     ) -> GrpcResult<Self::listStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, request.oui)
             .await?;
 
@@ -168,7 +163,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     async fn get(&self, request: Request<SessionKeyFilterGetReqV1>) -> GrpcResult<Self::getStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, request.oui)
             .await?;
 
@@ -218,7 +213,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                     Err(_) => Err(Status::invalid_argument("no session key filter provided")),
                 }
             })
-            .ok_or(Status::invalid_argument("no session key filter provided"))?
+            .ok_or_else(|| Status::invalid_argument("no session key filter provided"))?
             .await?;
 
         incoming_stream
@@ -298,7 +293,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     ) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_stream_request_signature(&signer, &request)?;
 
         tracing::info!("client subscribed to session key stream");

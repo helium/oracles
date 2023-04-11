@@ -1,6 +1,6 @@
 use crate::{
     key_cache::{KeyCache, KeyType},
-    GrpcResult,
+    verify_public_key, GrpcResult,
 };
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
@@ -37,10 +37,6 @@ impl RouterService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes).map_err(|_| Status::invalid_argument("invalid public key"))
-    }
-
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
     where
         R: Message,
@@ -51,8 +47,7 @@ impl RouterService {
     }
 
     fn verify_router_registered(&self, router: &[u8]) -> Result<(), Status> {
-        let pubkey = self
-            .verify_public_key(router)
+        let pubkey = verify_public_key(router)
             .map_err(|_| Status::invalid_argument("invalid router key"))?;
         tracing::debug!(
             pubkey = pubkey.to_string(),
@@ -76,7 +71,7 @@ impl mobile_config::Router for RouterService {
     async fn get(&self, request: Request<RouterGetReqV1>) -> GrpcResult<RouterGetResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         self.verify_router_registered(&request.pubkey)?;
@@ -93,7 +88,7 @@ impl mobile_config::Router for RouterService {
     async fn list(&self, request: Request<RouterListReqV1>) -> GrpcResult<RouterListResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         tracing::debug!("listing registered router keys");

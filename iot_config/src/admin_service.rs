@@ -1,7 +1,7 @@
 use crate::{
     admin::{self, AuthCache, CacheKeys, KeyType},
     region_map::{self, RegionMap, RegionMapReader},
-    GrpcResult, Settings,
+    verify_public_key, GrpcResult, Settings,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -84,11 +84,6 @@ impl AdminService {
         }
     }
 
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes)
-            .map_err(|_| Status::invalid_argument(format!("invalid public key: {bytes:?}")))
-    }
-
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
     where
         R: Message,
@@ -104,12 +99,11 @@ impl iot_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
         let key_type = request.key_type().into();
-        let pubkey = self
-            .verify_public_key(request.pubkey.as_ref())
+        let pubkey = verify_public_key(request.pubkey.as_ref())
             .and_then(|pubkey| self.verify_network(pubkey))
             .map_err(|_| Status::invalid_argument("invalid pubkey supplied"))?;
 
@@ -150,7 +144,7 @@ impl iot_config::Admin for AdminService {
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
         admin::remove_key(request.pubkey.clone().into(), &self.pool)
@@ -190,7 +184,7 @@ impl iot_config::Admin for AdminService {
     ) -> GrpcResult<AdminLoadRegionResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
         let region = Region::from_i32(request.region).ok_or_else(|| {
@@ -253,7 +247,7 @@ impl iot_config::Admin for AdminService {
     ) -> GrpcResult<RegionParamsResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         let region = request.region();

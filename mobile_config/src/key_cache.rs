@@ -21,10 +21,7 @@ impl KeyCache {
     ) -> anyhow::Result<(watch::Sender<CacheKeys>, Self)> {
         let config_admin = settings.admin_pubkey()?;
 
-        let mut stored_keys = db::fetch_stored_keys(db)
-            .await?
-            .into_iter()
-            .collect::<CacheKeys>();
+        let mut stored_keys = db::fetch_stored_keys(db).await?;
         stored_keys.insert(config_admin, KeyType::Administrator);
 
         let (cache_sender, cache_receiver) = watch::channel(stored_keys);
@@ -140,12 +137,10 @@ impl std::fmt::Display for KeyType {
 }
 
 pub(crate) mod db {
-    use super::{KeyType, PublicKey, PublicKeyBinary};
+    use super::{CacheKeys, KeyType, PublicKey, PublicKeyBinary};
     use sqlx::Row;
 
-    pub(crate) async fn fetch_stored_keys(
-        db: impl sqlx::PgExecutor<'_>,
-    ) -> anyhow::Result<Vec<(PublicKey, KeyType)>> {
+    pub async fn fetch_stored_keys(db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<CacheKeys> {
         Ok(
             sqlx::query(r#" select pubkey, key_type from registered_keys "#)
                 .fetch_all(db)
@@ -156,7 +151,7 @@ pub(crate) mod db {
         )
     }
 
-    pub(crate) async fn insert_key(
+    pub async fn insert_key(
         pubkey: PublicKeyBinary,
         key_type: KeyType,
         db: impl sqlx::PgExecutor<'_>,
@@ -171,7 +166,7 @@ pub(crate) mod db {
         )
     }
 
-    pub(crate) async fn remove_key(
+    pub async fn remove_key(
         pubkey: PublicKeyBinary,
         db: impl sqlx::PgExecutor<'_>,
     ) -> anyhow::Result<Option<(PublicKey, KeyType)>> {

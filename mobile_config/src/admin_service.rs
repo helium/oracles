@@ -1,7 +1,7 @@
 use crate::{
     key_cache::{self, CacheKeys, KeyCache, KeyType},
     settings::Settings,
-    GrpcResult,
+    verify_public_key, GrpcResult,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -65,10 +65,6 @@ impl AdminService {
         }
     }
 
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes).map_err(|_| Status::invalid_argument("invalid public key"))
-    }
-
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
     where
         R: Message,
@@ -84,12 +80,11 @@ impl mobile_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
         let key_type = request.key_type().into();
-        let pubkey = self
-            .verify_public_key(request.pubkey.as_ref())
+        let pubkey = verify_public_key(request.pubkey.as_ref())
             .and_then(|pubkey| self.verify_network(pubkey))?;
 
         key_cache::db::insert_key(request.pubkey.clone().into(), key_type, &self.pool)
@@ -126,7 +121,7 @@ impl mobile_config::Admin for AdminService {
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
         key_cache::db::remove_key(request.pubkey.clone().into(), &self.pool)

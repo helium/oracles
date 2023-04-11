@@ -75,7 +75,7 @@ pub(crate) mod db {
     ) -> anyhow::Result<Option<GatewayInfo>> {
         Ok(sqlx::query_as::<_, GatewayInfo>(
             r#"
-                select (hotspot_key, location) from mobile_metadata
+                select hotspot_key::text, location from mobile_metadata
                 where hotspot_key = $1
                 "#,
         )
@@ -87,10 +87,12 @@ pub(crate) mod db {
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
     ) -> impl Stream<Item = GatewayInfo> + 'a {
-        sqlx::query_as::<_, GatewayInfo>(r#" select (hotspot_key, location) from mobile_metadata "#)
-            .fetch(db)
-            .filter_map(|metadata| async move { metadata.ok() })
-            .boxed()
+        sqlx::query_as::<_, GatewayInfo>(
+            r#" select hotspot_key::text, location from mobile_metadata "#,
+        )
+        .fetch(db)
+        .filter_map(|metadata| async move { metadata.ok() })
+        .boxed()
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {

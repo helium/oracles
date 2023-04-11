@@ -140,7 +140,7 @@ pub(crate) mod db {
     ) -> anyhow::Result<Option<IotMetadata>> {
         Ok(sqlx::query_as::<_, IotMetadata>(
             r#"
-            select (hotspot_key, location, elevation, gain, is_full_hotspot) from iot_metadata
+            select hotspot_key::text, location, elevation, gain, is_full_hotspot from iot_metadata
             where hotspot_key = $1
             "#,
         )
@@ -154,7 +154,7 @@ pub(crate) mod db {
     ) -> impl Stream<Item = IotMetadata> + 'a {
         sqlx::query_as::<_, IotMetadata>(
             r#"
-            select (hotspot_key, location, elevation, gain, is_full_hotspot) from iot_metadata
+            select hotspot_key::text, location, elevation, gain, is_full_hotspot from iot_metadata
             "#,
         )
         .fetch(db)

@@ -1,7 +1,7 @@
 use crate::{
     gateway_info::{self, GatewayInfo},
     key_cache::KeyCache,
-    GrpcResult, GrpcStreamResult,
+    verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
@@ -46,10 +46,6 @@ impl GatewayService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    fn verify_public_key(&self, bytes: &[u8]) -> Result<PublicKey, Status> {
-        PublicKey::try_from(bytes).map_err(|_| Status::invalid_argument("invalid public key"))
-    }
-
     fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
     where
         R: Message,
@@ -65,7 +61,7 @@ impl mobile_config::Gateway for GatewayService {
     async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         let pubkey: PublicKeyBinary = request.address.into();
@@ -99,7 +95,7 @@ impl mobile_config::Gateway for GatewayService {
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
 
-        let signer = self.verify_public_key(&request.signer)?;
+        let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
         tracing::debug!("fetching all gateways' info");
