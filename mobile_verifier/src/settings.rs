@@ -26,6 +26,7 @@ pub struct Settings {
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,
+    pub config_client: mobile_config::ClientSettings,
 }
 
 pub fn default_log() -> String {

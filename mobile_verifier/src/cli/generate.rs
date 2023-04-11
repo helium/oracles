@@ -7,8 +7,9 @@ use crate::{
 use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use file_store::FileStore;
-use futures::stream::StreamExt;
+use futures::TryStreamExt;
 use helium_crypto::PublicKey;
+use mobile_config::Client;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -31,8 +32,9 @@ impl Cmd {
         tracing::info!("Verifying shares from the following time range: {start} to {end}");
         let epoch = start..end;
 
+        let config_client = Client::from_settings(&settings.config_client)?;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
-        let mut verifier = Verifier::new(file_store);
+        let verifier = Verifier::new(config_client, file_store);
 
         let VerifiedEpoch {
             heartbeats,
@@ -40,8 +42,8 @@ impl Cmd {
         } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
 
         let reward_shares = PocShares::aggregate(
-            heartbeats.collect().await,
-            speedtests.filter_map(|x| async { x.ok() }).collect().await,
+            heartbeats.try_collect().await?,
+            speedtests.try_collect().await?,
         )
         .await;
 
