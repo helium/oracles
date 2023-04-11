@@ -237,17 +237,20 @@ impl GatewayShares {
     }
 
     pub async fn clear_rewarded_shares(
-        db: impl sqlx::PgExecutor<'_>,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         period_end: DateTime<Utc>,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            "delete from gateway_shares where reward_timestamp <= $1;
-                  delete from gateway_dc_shares where reward_timestamp <= $1",
-        )
-        .bind(period_end)
-        .execute(db)
-        .await
-        .map(|_| ())
+        sqlx::query("delete from gateway_shares where reward_timestamp <= $1")
+            .bind(period_end)
+            .execute(&mut *tx)
+            .await
+            .map(|_| ())?;
+
+        sqlx::query("delete from gateway_dc_shares where reward_timestamp <= $1")
+            .bind(period_end)
+            .execute(&mut *tx)
+            .await
+            .map(|_| ())
     }
 
     pub fn total_shares(&self) -> (Decimal, Decimal, Decimal) {
