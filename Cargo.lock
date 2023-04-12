@@ -3987,6 +3987,7 @@ dependencies = [
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
+ "mobile-config",
  "once_cell",
  "poc-metrics",
  "price",

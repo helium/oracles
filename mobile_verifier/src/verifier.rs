@@ -11,6 +11,7 @@ use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use futures::{stream::Stream, StreamExt};
 use helium_proto::RewardManifest;
+use mobile_config::{client::ClientError, Client};
 use price::PriceTracker;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -91,7 +92,7 @@ impl VerifierDaemon {
         pin!(speedtests);
 
         // TODO: switch to a bulk transaction
-        while let Some(heartbeat) = heartbeats.next().await {
+        while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             heartbeat.write(&self.heartbeats).await?;
             heartbeat.save(&mut transaction).await?;
         }
@@ -186,25 +187,30 @@ impl VerifierDaemon {
 }
 
 pub struct Verifier {
+    pub config_client: Client,
     pub file_store: FileStore,
 }
 
 impl Verifier {
-    pub fn new(file_store: FileStore) -> Self {
-        Self { file_store }
+    pub fn new(config_client: Client, file_store: FileStore) -> Self {
+        Self {
+            config_client,
+            file_store,
+        }
     }
 
     pub async fn verify_epoch<'a>(
-        &mut self,
+        &'a self,
         pool: impl SpeedtestStore + Copy + 'a,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> file_store::Result<
         VerifiedEpoch<
-            impl Stream<Item = Heartbeat> + 'a,
+            impl Stream<Item = Result<Heartbeat, ClientError>> + 'a,
             impl Stream<Item = Result<SpeedtestRollingAverage, FetchError>> + 'a,
         >,
     > {
         let heartbeats = Heartbeat::validate_heartbeats(
+            &self.config_client,
             ingest::ingest_heartbeats(&self.file_store, epoch).await,
             epoch,
         )

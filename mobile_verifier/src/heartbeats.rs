@@ -7,6 +7,7 @@ use futures::stream::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use lazy_static::lazy_static;
+use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{Postgres, Transaction};
@@ -145,27 +146,45 @@ pub struct SaveHeartbeatError(#[from] sqlx::Error);
 
 impl Heartbeat {
     pub async fn validate_heartbeats<'a>(
+        config_client: &'a Client,
         heartbeats: impl Stream<Item = CellHeartbeat> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = Self> + 'a {
+    ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
         let valid_epoch = epoch.start..(epoch.end + *MOBILE_INGEST_ROLL_TIME);
-        heartbeats.map(move |heartbeat_report| {
-            let (reward_weight, validity) =
-                match validate_heartbeat(&heartbeat_report, &valid_epoch) {
-                    Ok(cell_type) => {
-                        let reward_weight = cell_type.reward_weight();
-                        (reward_weight, proto::HeartbeatValidity::Valid)
-                    }
-                    Err(validity) => (dec!(0), validity),
-                };
-            Heartbeat {
-                hotspot_key: heartbeat_report.pubkey.clone(),
-                reward_weight,
-                cbsd_id: heartbeat_report.cbsd_id.clone(),
-                timestamp: heartbeat_report.timestamp.naive_utc(),
-                validity,
-            }
-        })
+        heartbeats
+            .map(move |heartbeat_report| {
+                let (reward_weight, validity) =
+                    match validate_heartbeat(&heartbeat_report, &valid_epoch) {
+                        Ok(cell_type) => {
+                            let reward_weight = cell_type.reward_weight();
+                            (reward_weight, proto::HeartbeatValidity::Valid)
+                        }
+                        Err(validity) => (dec!(0), validity),
+                    };
+                Heartbeat {
+                    hotspot_key: heartbeat_report.pubkey.clone(),
+                    reward_weight,
+                    cbsd_id: heartbeat_report.cbsd_id.clone(),
+                    timestamp: heartbeat_report.timestamp.naive_utc(),
+                    validity,
+                }
+            })
+            .then(|mut heartbeat| {
+                let mut config_client = config_client.clone();
+                async move {
+                    // If we get back some gateway info for the given address, it's a valid address
+                    heartbeat.validity = if config_client
+                        .resolve_gateway_info(&heartbeat.hotspot_key)
+                        .await?
+                        .is_some()
+                    {
+                        proto::HeartbeatValidity::Valid
+                    } else {
+                        proto::HeartbeatValidity::GatewayOwnerNotFound
+                    };
+                    Ok(heartbeat)
+                }
+            })
     }
 
     pub async fn write(&self, heartbeats: &file_sink::FileSinkClient) -> file_store::Result {

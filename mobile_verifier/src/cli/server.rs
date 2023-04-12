@@ -6,6 +6,7 @@ use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{file_sink, file_upload, FileStore, FileType};
 use futures_util::TryFutureExt;
+use mobile_config::Client;
 use price::PriceTracker;
 
 #[derive(Debug, clap::Args)]
@@ -90,12 +91,13 @@ impl Cmd {
 
         let reward_period_hours = settings.rewards;
         let verifications_per_period = settings.verifications;
+        let config_client = Client::from_settings(&settings.config_client)?;
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        let verifier = Verifier::new(file_store);
+        let verifier = Verifier::new(config_client, file_store);
 
         let verifier_daemon = VerifierDaemon {
             verification_offset: settings.verification_offset_duration(),
