@@ -67,7 +67,7 @@ where
         let amount = amount as u64;
 
         self.solana
-            .burn_data_credits(&payer, amount as u64)
+            .burn_data_credits(&payer, amount)
             .await
             .map_err(BurnError::SolanaError)?;
 
@@ -80,7 +80,7 @@ where
 
         let mut balance_lock = self.balances.lock().await;
         let balances = balance_lock.get_mut(&payer).unwrap();
-        balances.burned -= amount as u64;
+        balances.burned -= amount;
         // Zero the balance in order to force a reset:
         balances.balance = 0;
 
