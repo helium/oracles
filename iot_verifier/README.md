@@ -9,6 +9,7 @@ This crates takes beacon and witness reports as input from an S3 bucket and veri
 | :--- | :-- | :-- |
 | IotBeaconIngestReport | iot_beacon_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L83) |
 | IotWitnessIngestReport | iot_witness_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L90) |
+| ValidPacket | valid_packet.* | [Proto](https://github.com/helium/proto/blob/40388d260fd3603f453a965dbc13f79470b5adcb/src/service/packet_verifier.proto#L5) |
 | Entropy | entropy.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/entropy.proto#L5) |
 
 ## Validations
@@ -41,7 +42,7 @@ witness reports
 | IotPoc | iot_poc.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L162) |
 | IotInvalidBeaconReport | iot_invalid_beacon.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L125) |
 | IotInvalidWitnessReport | iot_invalid_witness.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L133) |
-| GatewayRewardShare | gateway_reward_share.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_lora.proto#L171) |
+| IotRewardShare| iot_reward_share.\* | [Proto](https://github.com/helium/proto/blob/40388d260fd3603f453a965dbc13f79470b5adcb/src/service/poc_lora.proto#L186) |
 | RewardManifest | reward_manifest.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/reward_manifest.proto#L5) |
 
 ## Env Vars
