@@ -292,7 +292,7 @@ impl GatewayShares {
         reward_period: &Range<DateTime<Utc>>,
     ) -> Result<(), sqlx::Error> {
         let mut rows = sqlx::query_as::<_, GatewayDCShare>(
-            "select * from gateway_dc_shares where reward_timestamp > $1 and reward_timestamp <= $2",
+            "select hotspot_key, reward_timestamp, num_dcs::numeric, id from gateway_dc_shares where reward_timestamp > $1 and reward_timestamp <= $2",
         )
         .bind(reward_period.start)
         .bind(reward_period.end)
