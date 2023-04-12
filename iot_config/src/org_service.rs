@@ -66,12 +66,9 @@ impl OrgService {
         Ok(())
     }
 
-    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
-    where
-        R: Message,
-    {
+    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
-            .sign(&response.encode_to_vec())
+            .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
 }
@@ -92,7 +89,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -130,7 +127,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -200,7 +197,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -265,7 +262,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -312,7 +309,7 @@ impl iot_config::Org for OrgService {
                     signer: signer.clone(),
                     signature: vec![],
                 };
-                update.signature = self.sign_response(&update)?;
+                update.signature = self.sign_response(&update.encode_to_vec())?;
                 if self.route_update_tx.send(update).is_err() {
                     tracing::info!(
                         route_id = route_id,
@@ -330,7 +327,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -377,7 +374,7 @@ impl iot_config::Org for OrgService {
                     signer: signer.clone(),
                     signature: vec![],
                 };
-                update.signature = self.sign_response(&update)?;
+                update.signature = self.sign_response(&update.encode_to_vec())?;
                 if self.route_update_tx.send(update).is_err() {
                     tracing::info!(
                         route_id = route_id,
@@ -395,7 +392,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
