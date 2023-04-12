@@ -37,12 +37,9 @@ impl RouterService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
-    where
-        R: Message,
-    {
+    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
-            .sign(&response.encode_to_vec())
+            .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
 
@@ -81,7 +78,7 @@ impl mobile_config::Router for RouterService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        response.signature = self.sign_response(&response)?;
+        response.signature = self.sign_response(&response.encode_to_vec())?;
         Ok(Response::new(response))
     }
 
@@ -106,7 +103,7 @@ impl mobile_config::Router for RouterService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        response.signature = self.sign_response(&response)?;
+        response.signature = self.sign_response(&response.encode_to_vec())?;
         Ok(Response::new(response))
     }
 }

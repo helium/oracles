@@ -108,12 +108,9 @@ impl SessionKeyFilterService {
         }
     }
 
-    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
-    where
-        R: Message,
-    {
+    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
-            .sign(&response.encode_to_vec())
+            .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
 

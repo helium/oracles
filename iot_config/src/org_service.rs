@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
-use helium_crypto::{Keypair, Network, PublicKey, Sign};
+use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
         self, route_stream_res_v1, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1,
@@ -23,7 +23,6 @@ use tonic::{Request, Response, Status};
 pub struct OrgService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
-    required_network: Network,
     route_update_tx: Sender<RouteStreamResV1>,
     signing_key: Keypair,
 }
@@ -38,21 +37,9 @@ impl OrgService {
         Ok(Self {
             auth_cache,
             pool,
-            required_network: settings.network,
             route_update_tx,
             signing_key: settings.signing_keypair()?,
         })
-    }
-
-    fn verify_network(&self, public_key: PublicKey) -> Result<PublicKey, Status> {
-        if self.required_network == public_key.network {
-            Ok(public_key)
-        } else {
-            Err(Status::invalid_argument(format!(
-                "invalid network: {}",
-                public_key.network
-            )))
-        }
     }
 
     fn verify_admin_request_signature<R>(
@@ -79,12 +66,9 @@ impl OrgService {
         Ok(())
     }
 
-    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
-    where
-        R: Message,
-    {
+    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
-            .sign(&response.encode_to_vec())
+            .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
 }
@@ -105,7 +89,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -143,7 +127,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -164,12 +148,10 @@ impl iot_config::Org for OrgService {
         _ = verify_keys
             .iter()
             .map(|key| {
-                verify_public_key(key)
-                    .and_then(|pub_key| self.verify_network(pub_key))
-                    .map_err(|err| {
-                        tracing::error!("failed pubkey validation: {err}");
-                        Status::invalid_argument(format!("failed pubkey validation: {err}"))
-                    })
+                verify_public_key(key).map_err(|err| {
+                    tracing::error!("failed pubkey validation: {err}");
+                    Status::invalid_argument(format!("failed pubkey validation: {err}"))
+                })
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
@@ -215,7 +197,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -236,11 +218,9 @@ impl iot_config::Org for OrgService {
         _ = verify_keys
             .iter()
             .map(|key| {
-                verify_public_key(key)
-                    .and_then(|pub_key| self.verify_network(pub_key))
-                    .map_err(|err| {
-                        Status::invalid_argument(format!("failed pubkey validation: {err}"))
-                    })
+                verify_public_key(key).map_err(|err| {
+                    Status::invalid_argument(format!("failed pubkey validation: {err}"))
+                })
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
@@ -282,7 +262,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -329,7 +309,7 @@ impl iot_config::Org for OrgService {
                     signer: signer.clone(),
                     signature: vec![],
                 };
-                update.signature = self.sign_response(&update)?;
+                update.signature = self.sign_response(&update.encode_to_vec())?;
                 if self.route_update_tx.send(update).is_err() {
                     tracing::info!(
                         route_id = route_id,
@@ -347,7 +327,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }
@@ -394,7 +374,7 @@ impl iot_config::Org for OrgService {
                     signer: signer.clone(),
                     signature: vec![],
                 };
-                update.signature = self.sign_response(&update)?;
+                update.signature = self.sign_response(&update.encode_to_vec())?;
                 if self.route_update_tx.send(update).is_err() {
                     tracing::info!(
                         route_id = route_id,
@@ -412,7 +392,7 @@ impl iot_config::Org for OrgService {
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
-        resp.signature = self.sign_response(&resp)?;
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
         Ok(Response::new(resp))
     }

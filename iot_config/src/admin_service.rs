@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::future::TryFutureExt;
-use helium_crypto::{Keypair, Network, PublicKey, PublicKeyBinary, Sign};
+use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::iot_config::{
         self, AdminAddKeyReqV1, AdminKeyResV1, AdminLoadRegionReqV1, AdminLoadRegionResV1,
@@ -25,7 +25,6 @@ pub struct AdminService {
     pool: Pool<Postgres>,
     region_map: RegionMapReader,
     region_updater: watch::Sender<RegionMap>,
-    required_network: Network,
     signing_key: Keypair,
 }
 
@@ -44,7 +43,6 @@ impl AdminService {
             pool,
             region_map,
             region_updater,
-            required_network: settings.network,
             signing_key: settings.signing_keypair()?,
         })
     }
@@ -73,23 +71,9 @@ impl AdminService {
         Ok(())
     }
 
-    fn verify_network(&self, public_key: PublicKey) -> Result<PublicKey, Status> {
-        if self.required_network == public_key.network {
-            Ok(public_key)
-        } else {
-            Err(Status::invalid_argument(format!(
-                "invalid network: {}",
-                public_key.network
-            )))
-        }
-    }
-
-    fn sign_response<R>(&self, response: &R) -> Result<Vec<u8>, Status>
-    where
-        R: Message,
-    {
+    fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
-            .sign(&response.encode_to_vec())
+            .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
 }
@@ -104,7 +88,6 @@ impl iot_config::Admin for AdminService {
 
         let key_type = request.key_type().into();
         let pubkey = verify_public_key(request.pubkey.as_ref())
-            .and_then(|pubkey| self.verify_network(pubkey))
             .map_err(|_| Status::invalid_argument("invalid pubkey supplied"))?;
 
         admin::insert_key(request.pubkey.clone().into(), key_type, &self.pool)

@@ -1,5 +1,4 @@
 use config::{Config, Environment, File};
-use helium_crypto::Network;
 use serde::Deserialize;
 use std::{
     net::{AddrParseError, SocketAddr},
@@ -20,8 +19,6 @@ pub struct Settings {
     pub signing_keypair: String,
     /// B58 encoded public key of the default admin keypair
     pub admin_pubkey: String,
-    /// Network required in all public keys: mainnet | testnet
-    pub network: Network,
     /// Settings passed to the db_store crate for connecting to
     /// the config service's own persistence store
     pub database: db_store::Settings,
