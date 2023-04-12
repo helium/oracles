@@ -69,31 +69,31 @@ impl gateway_info::GatewayInfoResolver for Client {
         address: &PublicKeyBinary,
     ) -> Result<Option<gateway_info::GatewayInfo>, Self::Error> {
         if let Some(cached_response) = self.cache.get(address).await {
-            Ok(cached_response.value().clone())
-        } else {
-            let mut request = mobile_config::GatewayInfoReqV1 {
-                address: address.clone().into(),
-                signer: self.signing_key.public_key().into(),
-                signature: vec![],
-            };
-            request.signature = self.signing_key.sign(&request.encode_to_vec())?;
-            tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
-            let response = match self.client.info(request).await {
-                Ok(info_res) => {
-                    let response = info_res.into_inner();
-                    response.verify(&self.config_pubkey)?;
-                    response.info.map(gateway_info::GatewayInfo::from)
-                }
-                Err(status) if status.code() == tonic::Code::NotFound => None,
-                Err(status) => Err(status)?,
-            };
-
-            self.cache
-                .insert(address.clone(), response.clone(), self.cache_ttl)
-                .await;
-
-            Ok(response)
+            return Ok(cached_response.value().clone());
         }
+
+        let mut request = mobile_config::GatewayInfoReqV1 {
+            address: address.clone().into(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
+        let response = match self.client.info(request).await {
+            Ok(info_res) => {
+                let response = info_res.into_inner();
+                response.verify(&self.config_pubkey)?;
+                response.info.map(gateway_info::GatewayInfo::from)
+            }
+            Err(status) if status.code() == tonic::Code::NotFound => None,
+            Err(status) => Err(status)?,
+        };
+
+        self.cache
+            .insert(address.clone(), response.clone(), self.cache_ttl)
+            .await;
+
+        Ok(response)
     }
 
     async fn stream_gateways_info(
