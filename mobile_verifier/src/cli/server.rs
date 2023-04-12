@@ -41,6 +41,7 @@ impl Cmd {
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
         )
         .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
         .await?;
@@ -52,6 +53,7 @@ impl Cmd {
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
         )
         .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
         .await?;

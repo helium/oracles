@@ -102,6 +102,9 @@ impl VerifierDaemon {
             speedtest.save(&mut transaction).await?;
         }
 
+        let _ = self.heartbeats.commit().await?.await??;
+        let _ = self.speedtest_avgs.commit().await?.await??;
+
         save_last_verified_end_time(&mut transaction, &scheduler.verification_period.end).await?;
         transaction.commit().await?;
 
