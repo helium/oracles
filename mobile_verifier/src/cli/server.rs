@@ -92,12 +92,13 @@ impl Cmd {
         let reward_period_hours = settings.rewards;
         let verifications_per_period = settings.verifications;
         let config_client = Client::from_settings(&settings.config_client)?;
-        let file_store = FileStore::from_settings(&settings.ingest).await?;
+        let ingest = FileStore::from_settings(&settings.ingest).await?;
+        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        let verifier = Verifier::new(config_client, file_store);
+        let verifier = Verifier::new(config_client, ingest);
 
         let verifier_daemon = VerifierDaemon {
             verification_offset: settings.verification_offset_duration(),
@@ -111,6 +112,7 @@ impl Cmd {
             verifications_per_period,
             verifier,
             price_tracker,
+            data_transfer_ingest,
         };
 
         tokio::try_join!(

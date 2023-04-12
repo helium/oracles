@@ -33,8 +33,8 @@ impl Cmd {
         let epoch = start..end;
 
         let config_client = Client::from_settings(&settings.config_client)?;
-        let file_store = FileStore::from_settings(&settings.ingest).await?;
-        let verifier = Verifier::new(config_client, file_store);
+        let ingest = FileStore::from_settings(&settings.ingest).await?;
+        let verifier = Verifier::new(config_client, ingest);
 
         let VerifiedEpoch {
             heartbeats,
