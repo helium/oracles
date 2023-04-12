@@ -1,3 +1,4 @@
+use crate::pending_burns::PendingBurns;
 use async_trait::async_trait;
 use chrono::Utc;
 use file_store::{
@@ -21,7 +22,6 @@ use std::{
     fmt::Debug,
     mem,
 };
-use crate::pending_burns::PendingBurns;
 
 pub struct Verifier<D, C> {
     pub debiter: D,
@@ -246,4 +246,3 @@ impl<T: prost::Message + 'static> PacketWriter<T> for &'_ FileSinkClient {
         Ok(())
     }
 }
-

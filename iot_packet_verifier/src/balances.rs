@@ -1,4 +1,8 @@
-use crate::{pending_burns::{PendingBurns, Burn}, solana::SolanaNetwork, verifier::Debiter};
+use crate::{
+    pending_burns::{Burn, PendingBurns},
+    solana::SolanaNetwork,
+    verifier::Debiter,
+};
 use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use std::{collections::HashMap, sync::Arc};
@@ -33,9 +37,7 @@ where
         }) = burns.next().await.transpose()?
         {
             // Look up the current balance of the payer
-            let balance = solana
-                .payer_balance(&payer)
-                .await?;
+            let balance = solana.payer_balance(&payer).await?;
             balances.insert(
                 payer,
                 Balance {
@@ -75,10 +77,7 @@ where
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {
-            let new_balance = self
-                .solana
-                .payer_balance(payer)
-                .await?;
+            let new_balance = self.solana.payer_balance(payer).await?;
             balances.insert(payer.clone(), Balance::new(new_balance));
             balances.get_mut(payer).unwrap()
         } else {
@@ -86,10 +85,7 @@ where
 
             // If the balance is not sufficient, check to see if it has been increased
             if balance.balance < amount + balance.burned {
-                balance.balance = self
-                    .solana
-                    .payer_balance(payer)
-                    .await?;
+                balance.balance = self.solana.payer_balance(payer).await?;
             }
 
             balance

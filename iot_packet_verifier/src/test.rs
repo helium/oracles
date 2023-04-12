@@ -2,7 +2,7 @@ use crate::{pending_burns::*, verifier::*};
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use file_store::iot_packet::PacketRouterPacketReport;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use futures_util::stream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
@@ -35,19 +35,27 @@ impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     fn fetch_all<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>> {
-        todo!()
+        stream::iter(self.lock().await.clone().into_iter().map(Ok)).boxed()
     }
 
     async fn fetch_next(&mut self) -> Result<Option<Burn>, Self::Error> {
-        todo!()
+        Ok(self
+            .lock()
+            .await
+            .iter()
+            .max_by_key(|(payer, amount)| amount)
+            .map(|(payer, amount)| Burn { payer, amount }))
     }
 
     async fn subtract_burned_amount(
         &mut self,
-        _payer: &PublicKeyBinary,
-        _amount: u64,
+        payer: &PublicKeyBinary,
+        amount: u64,
     ) -> Result<(), Self::Error> {
-        todo!()
+        let mut map = self.lock().await;
+        let balance = map.get_mut(payer).unwrap();
+        *balance -= amount;
+        Ok(())
     }
 
     async fn add_burned_amount(
