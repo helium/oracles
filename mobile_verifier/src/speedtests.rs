@@ -3,6 +3,7 @@ use file_store::{file_sink, speedtest::CellSpeedtest, traits::TimestampEncode};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
+use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{
@@ -73,6 +74,7 @@ impl SpeedtestRollingAverage {
     }
 
     pub async fn validate_speedtests<'a>(
+        config_client: &'a Client,
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
         exec: impl SpeedtestStore + Copy + 'a,
     ) -> impl Stream<Item = Result<Self, FetchError>> + 'a {
@@ -89,13 +91,21 @@ impl SpeedtestRollingAverage {
             .await;
 
         futures::stream::iter(tests_by_publickey.into_iter())
-            .then(move |(pubkey, cell_speedtests)| async move {
-                let rolling_average = exec
-                    .fetch(&pubkey)
-                    .await?
-                    .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
-                Ok((rolling_average, cell_speedtests))
+            .then(move |(pubkey, cell_speedtests)| {
+                let mut config_client = config_client.clone();
+                async move {
+                    // If we get back some gateway info for the given address, it's a valid address
+                    if config_client.resolve_gateway_info(&pubkey).await?.is_none() {
+                        return Ok(None);
+                    }
+                    let rolling_average = exec
+                        .fetch(&pubkey)
+                        .await?
+                        .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
+                    Ok(Some((rolling_average, cell_speedtests)))
+                }
             })
+            .filter_map(|item| async move { item.transpose() })
             .map_ok(|(rolling_average, cell_speedtests)| {
                 let speedtests = cell_speedtests
                     .into_iter()
@@ -403,8 +413,12 @@ impl SpeedtestTier {
 // nothing.
 
 #[derive(thiserror::Error, Debug)]
-#[error(transparent)]
-pub struct FetchError(#[from] sqlx::Error);
+pub enum FetchError {
+    #[error("Config client error: {0}")]
+    ConfigClientError(#[from] ClientError),
+    #[error("Sql error: {0}")]
+    SqlError(#[from] sqlx::Error),
+}
 
 #[async_trait::async_trait]
 pub trait SpeedtestStore {
