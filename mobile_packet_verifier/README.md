@@ -5,7 +5,11 @@ of bytes downloaded and uploaded. After a specified period, it burns a proportio
 amount of data credits from the payer and issues validated data transfer sessions 
 so that the mobile verifier may reward the hotspots. 
 
-The mobile packet verifier assumes that all payers have sufficient balance.
+The mobile packet verifier does not check the balance of the payer and write out 
+invalid data transfer sessions if it fails to debit the balance. The assumption is 
+that payers will always have data credits to pay. If they do not, the mobile packet
+verifier will error out, and will fail to write out validated data transfer sessions 
+for rewards.
 
 ## S3 Inputs 
 
