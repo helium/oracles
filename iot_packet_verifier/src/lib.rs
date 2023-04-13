@@ -6,6 +6,3 @@ pub mod pending_burns;
 pub mod settings;
 pub mod solana;
 pub mod verifier;
-
-#[cfg(test)]
-mod test;

@@ -1,10 +1,12 @@
+use async_trait::async_trait;
 use chrono::Utc;
-use futures::Stream;
+use futures::{stream, Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::{FromRow, Pool, Postgres, Transaction};
-use std::pin::Pin;
+use std::{collections::HashMap, convert::Infallible, pin::Pin, sync::Arc};
+use tokio::sync::Mutex;
 
-#[async_trait::async_trait]
+#[async_trait]
 pub trait PendingBurns {
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -29,7 +31,7 @@ pub trait PendingBurns {
 
 const BURN_THRESHOLD: i64 = 10_000;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl PendingBurns for Pool<Postgres> {
     type Error = sqlx::Error;
 
@@ -91,7 +93,7 @@ impl PendingBurns for Pool<Postgres> {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
     type Error = sqlx::Error;
 
@@ -149,6 +151,62 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
         .bind(Utc::now().naive_utc())
         .fetch_one(&mut **self)
         .await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    type Error = Infallible;
+
+    async fn fetch_all<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>> {
+        stream::iter(
+            self.lock()
+                .await
+                .clone()
+                .into_iter()
+                .map(|(payer, amount)| {
+                    Ok(Burn {
+                        payer,
+                        amount: amount as i64,
+                    })
+                }),
+        )
+        .boxed()
+    }
+
+    async fn fetch_next(&mut self) -> Result<Option<Burn>, Self::Error> {
+        Ok(self
+            .lock()
+            .await
+            .iter()
+            .max_by_key(|(_, amount)| **amount)
+            .map(|(payer, amount)| Burn {
+                payer: payer.clone(),
+                amount: *amount as i64,
+            }))
+    }
+
+    async fn subtract_burned_amount(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), Self::Error> {
+        let mut map = self.lock().await;
+        let balance = map.get_mut(payer).unwrap();
+        *balance -= amount;
+        Ok(())
+    }
+
+    async fn add_burned_amount(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), Self::Error> {
+        let mut map = self.lock().await;
+        *map.entry(payer.clone()).or_default() += amount;
         Ok(())
     }
 }

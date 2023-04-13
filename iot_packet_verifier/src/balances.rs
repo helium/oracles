@@ -101,6 +101,7 @@ where
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct Balance {
     pub balance: u64,
     pub burned: u64,

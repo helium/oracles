@@ -1,6 +1,7 @@
 use crate::pdas;
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::AccountDeserialize;
+use async_trait::async_trait;
 use data_credits::DelegatedDataCreditsV0;
 use data_credits::{accounts, instruction};
 use helium_crypto::PublicKeyBinary;
@@ -17,12 +18,15 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
+use std::collections::HashMap;
+use std::convert::Infallible;
 use std::{
     sync::Arc,
     time::{SystemTime, SystemTimeError},
 };
+use tokio::sync::Mutex;
 
-#[async_trait::async_trait]
+#[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -81,7 +85,7 @@ impl SolanaRpc {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl SolanaNetwork for SolanaRpc {
     type Error = SolanaRpcError;
 
@@ -248,7 +252,7 @@ impl BurnProgramCache {
 
 const FIXED_BALANCE: u64 = 1_000_000_000;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl SolanaNetwork for Option<Arc<SolanaRpc>> {
     type Error = SolanaRpcError;
 
@@ -270,5 +274,23 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         } else {
             Ok(())
         }
+    }
+}
+
+#[async_trait]
+impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    type Error = Infallible;
+
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+        Ok(*self.lock().await.get(payer).unwrap())
+    }
+
+    async fn burn_data_credits(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), Self::Error> {
+        *self.lock().await.get_mut(payer).unwrap() -= amount;
+        Ok(())
     }
 }

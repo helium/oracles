@@ -19,9 +19,12 @@ use helium_proto::{
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
+    convert::Infallible,
     fmt::Debug,
     mem,
+    sync::Arc,
 };
+use tokio::sync::Mutex;
 
 pub struct Verifier<D, C> {
     pub debiter: D,
@@ -118,10 +121,12 @@ where
     }
 }
 
+pub const BYTES_PER_DC: u64 = 24;
+
 pub fn payload_size_to_dc(payload_size: u64) -> u64 {
-    let payload_size = payload_size.max(24);
+    let payload_size = payload_size.max(BYTES_PER_DC);
     // perform a div_ciel function:
-    (payload_size + 24 - 1) / 24
+    (payload_size + BYTES_PER_DC - 1) / BYTES_PER_DC
 }
 
 #[async_trait]
@@ -133,6 +138,22 @@ pub trait Debiter {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<bool, Self::Error>;
+}
+
+#[async_trait]
+impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    type Error = Infallible;
+
+    async fn debit_if_sufficient(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<bool, Infallible> {
+        let map = self.lock().await;
+        let balance = map.get(payer).unwrap();
+        // Don't debit the amount if we're mocking. That is a job for the burner.
+        Ok(*balance >= amount)
+    }
 }
 
 #[async_trait]
@@ -243,6 +264,16 @@ impl<T: prost::Message + 'static> PacketWriter<T> for &'_ FileSinkClient {
 
     async fn write(&mut self, packet: T) -> Result<(), Self::Error> {
         (*self).write(packet, []).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<T: Send> PacketWriter<T> for &'_ mut Vec<T> {
+    type Error = ();
+
+    async fn write(&mut self, packet: T) -> Result<(), ()> {
+        (*self).push(packet);
         Ok(())
     }
 }
