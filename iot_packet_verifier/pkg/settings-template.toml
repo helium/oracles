@@ -25,6 +25,9 @@ config_keypair = ""
 # Solana cluster to use. "devnet" or "mainnet"
 cluster = "devnet"
 
+# How many minutes the burner runs
+burn_period = 1
+
 # If set to true, enables integration with the Solana network. This includes
 # checking payer balances and burning data credits. If this is disabled, all
 # payers will have a default balance of 1,000,000 data credits, and burned
