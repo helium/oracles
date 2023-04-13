@@ -35,28 +35,23 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn from_settings(
-        settings: &Settings,
-    ) -> Result<(Self, tokio::task::JoinHandle<()>), Box<helium_crypto::Error>> {
+    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
         let cache = Arc::new(Cache::new());
         let cloned_cache = cache.clone();
-        let cache_monitor = tokio::spawn(async move {
+        tokio::spawn(async move {
             cloned_cache
                 .monitor(4, 0.25, CACHE_EVICTION_FREQUENCY)
                 .await
         });
 
-        Ok((
-            Self {
-                client: settings.connect(),
-                signing_key: settings.signing_keypair()?,
-                config_pubkey: settings.config_pubkey()?,
-                batch_size: settings.batch_size,
-                cache_ttl: settings.cache_ttl(),
-                cache,
-            },
-            cache_monitor,
-        ))
+        Ok(Self {
+            client: settings.connect(),
+            signing_key: settings.signing_keypair()?,
+            config_pubkey: settings.config_pubkey()?,
+            batch_size: settings.batch_size,
+            cache_ttl: settings.cache_ttl(),
+            cache,
+        })
     }
 }
 
