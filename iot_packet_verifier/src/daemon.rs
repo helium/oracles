@@ -52,6 +52,8 @@ impl Daemon {
         &mut self,
         report_file: FileInfoStream<PacketRouterPacketReport>,
     ) -> Result<()> {
+        tracing::info!("Verifying file: {}", report_file.file_info);
+
         let mut transaction = self.pool.begin().await?;
         let reports = report_file.into_stream(&mut transaction).await?;
 

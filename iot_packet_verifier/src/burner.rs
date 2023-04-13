@@ -64,6 +64,8 @@ where
             return Ok(());
         };
 
+        tracing::info!("Burning {amount} DC from {payer}");
+
         let amount = amount as u64;
 
         self.solana
