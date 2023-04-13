@@ -2,7 +2,7 @@ use crate::{
     admin::{AuthCache, KeyType},
     lora_field, org,
     route::list_routes,
-    GrpcResult, HELIUM_NET_ID,
+    telemetry, GrpcResult, HELIUM_NET_ID,
 };
 use anyhow::Result;
 use file_store::traits::MsgVerify;
@@ -69,6 +69,8 @@ impl OrgService {
 #[tonic::async_trait]
 impl iot_config::Org for OrgService {
     async fn list(&self, _request: Request<OrgListReqV1>) -> GrpcResult<OrgListResV1> {
+        telemetry::count_request("org", "list");
+
         let proto_orgs: Vec<OrgV1> = org::list(&self.pool)
             .await
             .map_err(|_| Status::internal("org list failed"))?
@@ -81,6 +83,7 @@ impl iot_config::Org for OrgService {
 
     async fn get(&self, request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
+        telemetry::count_request("org", "get");
 
         let org = org::get_with_constraints(request.oui, &self.pool)
             .await
@@ -113,6 +116,7 @@ impl iot_config::Org for OrgService {
 
     async fn create_helium(&self, request: Request<OrgCreateHeliumReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
+        telemetry::count_request("org", "create-helium");
 
         self.verify_request_signature(&request).await?;
 
@@ -178,6 +182,7 @@ impl iot_config::Org for OrgService {
 
     async fn create_roamer(&self, request: Request<OrgCreateRoamerReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
+        telemetry::count_request("org", "create-roamer");
 
         self.verify_request_signature(&request).await?;
 
@@ -238,6 +243,7 @@ impl iot_config::Org for OrgService {
 
     async fn disable(&self, request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {
         let request = request.into_inner();
+        telemetry::count_request("org", "disable");
 
         self.verify_request_signature(&request).await?;
 
@@ -291,6 +297,7 @@ impl iot_config::Org for OrgService {
 
     async fn enable(&self, request: Request<OrgEnableReqV1>) -> GrpcResult<OrgEnableResV1> {
         let request = request.into_inner();
+        telemetry::count_request("org", "enable");
 
         self.verify_request_signature(&request).await?;
 

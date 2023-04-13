@@ -3,7 +3,7 @@ use crate::{
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
     org::{self, DbOrgError},
     route::{self, Route, RouteStorageError},
-    update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
+    telemetry, update_channel, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
 };
 use anyhow::{anyhow, Result};
 use file_store::traits::MsgVerify;
@@ -132,6 +132,7 @@ impl RouteService {
 impl iot_config::Route for RouteService {
     async fn list(&self, request: Request<RouteListReqV1>) -> GrpcResult<RouteListResV1> {
         let request = request.into_inner();
+        telemetry::count_request("route", "list");
 
         self.verify_request_signature(&request, OrgId::Oui(request.oui))
             .await?;
@@ -152,6 +153,7 @@ impl iot_config::Route for RouteService {
 
     async fn get(&self, request: Request<RouteGetReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
+        telemetry::count_request("route", "get");
 
         self.verify_request_signature(&request, OrgId::RouteId(&request.id))
             .await?;
@@ -170,6 +172,7 @@ impl iot_config::Route for RouteService {
 
     async fn create(&self, request: Request<RouteCreateReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
+        telemetry::count_request("route", "create");
 
         self.verify_request_signature(&request, OrgId::Oui(request.oui))
             .await?;
@@ -204,6 +207,7 @@ impl iot_config::Route for RouteService {
 
     async fn update(&self, request: Request<RouteUpdateReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
+        telemetry::count_request("route", "update");
 
         let route: Route = request
             .clone()
@@ -232,6 +236,7 @@ impl iot_config::Route for RouteService {
 
     async fn delete(&self, request: Request<RouteDeleteReqV1>) -> GrpcResult<RouteV1> {
         let request = request.into_inner();
+        telemetry::count_request("route", "delete");
 
         self.verify_request_signature(&request, OrgId::RouteId(&request.id))
             .await?;
@@ -255,6 +260,7 @@ impl iot_config::Route for RouteService {
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
+        telemetry::count_request("route", "stream");
 
         self.verify_stream_request_signature(&request).await?;
 
@@ -276,11 +282,15 @@ impl iot_config::Route for RouteService {
             }
 
             tracing::info!("existing routes sent; streaming updates as available");
+            telemetry::stream_subscribe("route-stream");
             loop {
                 let shutdown = shutdown_listener.clone();
 
                 tokio::select! {
-                    _ = shutdown => return,
+                    _ = shutdown => {
+                        telemetry::stream_unsubscribe("route-stream");
+                        return
+                    }
                     msg = route_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
                             return;
@@ -299,6 +309,7 @@ impl iot_config::Route for RouteService {
         request: Request<RouteGetEuisReqV1>,
     ) -> GrpcResult<Self::get_euisStream> {
         let request = request.into_inner();
+        telemetry::count_request("route", "get-euis");
 
         self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
             .await?;
@@ -347,6 +358,7 @@ impl iot_config::Route for RouteService {
         request: GrpcStreamRequest<RouteUpdateEuisReqV1>,
     ) -> GrpcResult<RouteEuisResV1> {
         let mut request = request.into_inner();
+        telemetry::count_request("route", "update-euis");
 
         let mut to_add: Vec<EuiPair> = vec![];
         let mut to_remove: Vec<EuiPair> = vec![];
@@ -382,6 +394,7 @@ impl iot_config::Route for RouteService {
             };
             pending_updates += 1;
             if pending_updates >= UPDATE_BATCH_LIMIT {
+                telemetry::count_eui_updates(to_add.len(), to_remove.len());
                 tracing::debug!(
                     adding = to_add.len(),
                     removing = to_remove.len(),
@@ -400,6 +413,7 @@ impl iot_config::Route for RouteService {
         }
 
         if pending_updates > 0 {
+            telemetry::count_eui_updates(to_add.len(), to_remove.len());
             tracing::debug!(
                 adding = to_add.len(),
                 removing = to_remove.len(),
@@ -422,6 +436,7 @@ impl iot_config::Route for RouteService {
         request: Request<RouteGetDevaddrRangesReqV1>,
     ) -> GrpcResult<Self::get_devaddr_rangesStream> {
         let request = request.into_inner();
+        telemetry::count_request("route", "get-devaddr-ranges");
 
         self.verify_request_signature(&request, OrgId::RouteId(&request.route_id))
             .await?;
@@ -471,6 +486,7 @@ impl iot_config::Route for RouteService {
         request: GrpcStreamRequest<RouteUpdateDevaddrRangesReqV1>,
     ) -> GrpcResult<RouteDevaddrRangesResV1> {
         let mut request = request.into_inner();
+        telemetry::count_request("route", "update-devaddr-ranges");
 
         let mut to_add: Vec<DevAddrRange> = vec![];
         let mut to_remove: Vec<DevAddrRange> = vec![];
@@ -506,6 +522,7 @@ impl iot_config::Route for RouteService {
             };
             pending_updates += 1;
             if pending_updates >= UPDATE_BATCH_LIMIT {
+                telemetry::count_devaddr_updates(to_add.len(), to_remove.len());
                 tracing::debug!(
                     adding = to_add.len(),
                     removing = to_remove.len(),
@@ -529,6 +546,7 @@ impl iot_config::Route for RouteService {
         }
 
         if pending_updates > 0 {
+            telemetry::count_devaddr_updates(to_add.len(), to_remove.len());
             tracing::debug!(
                 adding = to_add.len(),
                 removing = to_remove.len(),

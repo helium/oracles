@@ -10,6 +10,7 @@ pub mod route_service;
 pub mod session_key;
 pub mod session_key_service;
 pub mod settings;
+pub mod telemetry;
 
 pub use admin_service::AdminService;
 pub use gateway_service::GatewayService;
