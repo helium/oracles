@@ -6,7 +6,7 @@ use crate::{
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
 };
 use anyhow::bail;
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use futures::{stream::Stream, StreamExt};
@@ -16,7 +16,10 @@ use price::PriceTracker;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::ops::Range;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    ops::Range,
+};
 use tokio::pin;
 use tokio::time::sleep;
 
@@ -91,10 +94,16 @@ impl VerifierDaemon {
         pin!(heartbeats);
         pin!(speedtests);
 
+        let mut cache: HashMap<(String, u32), bool> = HashMap::new();
+
         // TODO: switch to a bulk transaction
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             heartbeat.write(&self.heartbeats).await?;
-            heartbeat.save(&mut transaction).await?;
+            let key = (heartbeat.cbsd_id.clone(), heartbeat.timestamp.hour());
+            if let Entry::Vacant(e) = cache.entry(key) {
+                e.insert(true);
+                heartbeat.save(&mut transaction).await?;
+            }
         }
 
         while let Some(speedtest) = speedtests.next().await.transpose()? {
