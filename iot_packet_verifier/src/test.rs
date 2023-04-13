@@ -32,10 +32,22 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     type Error = Infallible;
 
-    fn fetch_all<'a>(
+    async fn fetch_all<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>> {
-        stream::iter(self.lock().await.clone().into_iter().map(Ok)).boxed()
+        stream::iter(
+            self.lock()
+                .await
+                .clone()
+                .into_iter()
+                .map(|(payer, amount)| {
+                    Ok(Burn {
+                        payer,
+                        amount: amount as i64,
+                    })
+                }),
+        )
+        .boxed()
     }
 
     async fn fetch_next(&mut self) -> Result<Option<Burn>, Self::Error> {
@@ -43,8 +55,11 @@ impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
             .lock()
             .await
             .iter()
-            .max_by_key(|(payer, amount)| amount)
-            .map(|(payer, amount)| Burn { payer, amount }))
+            .max_by_key(|(_, amount)| **amount)
+            .map(|(payer, amount)| Burn {
+                payer: payer.clone(),
+                amount: *amount as i64,
+            }))
     }
 
     async fn subtract_burned_amount(

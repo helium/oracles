@@ -28,7 +28,7 @@ where
         P: PendingBurns,
     {
         let mut balances = HashMap::new();
-        let mut burns = pending_burns.fetch_all();
+        let mut burns = pending_burns.fetch_all().await;
 
         while let Some(Burn {
             payer,

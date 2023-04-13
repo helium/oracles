@@ -8,7 +8,7 @@ use std::pin::Pin;
 pub trait PendingBurns {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn fetch_all<'a>(
+    async fn fetch_all<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>>;
 
@@ -33,7 +33,7 @@ const BURN_THRESHOLD: i64 = 10_000;
 impl PendingBurns for Pool<Postgres> {
     type Error = sqlx::Error;
 
-    fn fetch_all<'a>(
+    async fn fetch_all<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>> {
         sqlx::query_as("SELECT * FROM pending_burns").fetch(&*self)
@@ -95,7 +95,7 @@ impl PendingBurns for Pool<Postgres> {
 impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
     type Error = sqlx::Error;
 
-    fn fetch_all<'a>(
+    async fn fetch_all<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>> {
         sqlx::query_as("SELECT * FROM pending_burns").fetch(&mut **self)
