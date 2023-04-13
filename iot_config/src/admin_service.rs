@@ -1,7 +1,7 @@
 use crate::{
     admin::{self, AuthCache, CacheKeys, KeyType},
     region_map::{self, RegionMap, RegionMapReader},
-    verify_public_key, GrpcResult, Settings,
+    telemetry, verify_public_key, GrpcResult, Settings,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -82,6 +82,7 @@ impl AdminService {
 impl iot_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "add-key");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -126,6 +127,7 @@ impl iot_config::Admin for AdminService {
 
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "remove-key");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -166,6 +168,7 @@ impl iot_config::Admin for AdminService {
         request: Request<AdminLoadRegionReqV1>,
     ) -> GrpcResult<AdminLoadRegionResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "load-region");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -197,7 +200,9 @@ impl iot_config::Admin for AdminService {
                     region_map.insert_params(region, params);
                 });
                 if let Some(region_tree) = updated_region {
-                    tracing::debug!(region_cells = region_tree.len(), "new compacted region map");
+                    let region_tree_size = region_tree.len();
+                    tracing::debug!(region_cells = region_tree_size, "new compacted region map");
+                    telemetry::gauge_hexes(region_tree_size);
                     self.region_updater
                         .send_modify(|region_map| region_map.replace_tree(region_tree));
                 };
@@ -229,6 +234,7 @@ impl iot_config::Admin for AdminService {
         request: Request<RegionParamsReqV1>,
     ) -> GrpcResult<RegionParamsResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "region-params");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;

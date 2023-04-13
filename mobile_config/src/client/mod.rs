@@ -6,10 +6,13 @@ use helium_proto::{
     services::{mobile_config, Channel},
     Message,
 };
-use std::sync::Arc;
+use retainer::Cache;
+use std::{sync::Arc, time::Duration};
 
 mod settings;
 pub use settings::Settings;
+
+const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ClientError {
@@ -21,22 +24,39 @@ pub enum ClientError {
     VerificationError(#[from] file_store::Error),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Client {
     pub client: mobile_config::GatewayClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
     batch_size: u32,
+    cache: Arc<Cache<PublicKeyBinary, Option<gateway_info::GatewayInfo>>>,
+    cache_ttl: Duration,
 }
 
 impl Client {
-    pub fn from_settings(settings: &Settings) -> Result<Self, Box<helium_crypto::Error>> {
-        Ok(Self {
-            client: settings.connect(),
-            signing_key: settings.signing_keypair()?,
-            config_pubkey: settings.config_pubkey()?,
-            batch_size: settings.batch_size,
-        })
+    pub fn from_settings(
+        settings: &Settings,
+    ) -> Result<(Self, tokio::task::JoinHandle<()>), Box<helium_crypto::Error>> {
+        let cache = Arc::new(Cache::new());
+        let cloned_cache = cache.clone();
+        let cache_monitor = tokio::spawn(async move {
+            cloned_cache
+                .monitor(4, 0.25, CACHE_EVICTION_FREQUENCY)
+                .await
+        });
+
+        Ok((
+            Self {
+                client: settings.connect(),
+                signing_key: settings.signing_keypair()?,
+                config_pubkey: settings.config_pubkey()?,
+                batch_size: settings.batch_size,
+                cache_ttl: settings.cache_ttl(),
+                cache,
+            },
+            cache_monitor,
+        ))
     }
 }
 
@@ -48,6 +68,10 @@ impl gateway_info::GatewayInfoResolver for Client {
         &mut self,
         address: &PublicKeyBinary,
     ) -> Result<Option<gateway_info::GatewayInfo>, Self::Error> {
+        if let Some(cached_response) = self.cache.get(address).await {
+            return Ok(cached_response.value().clone());
+        }
+
         let mut request = mobile_config::GatewayInfoReqV1 {
             address: address.clone().into(),
             signer: self.signing_key.public_key().into(),
@@ -64,6 +88,11 @@ impl gateway_info::GatewayInfoResolver for Client {
             Err(status) if status.code() == tonic::Code::NotFound => None,
             Err(status) => Err(status)?,
         };
+
+        self.cache
+            .insert(address.clone(), response.clone(), self.cache_ttl)
+            .await;
+
         Ok(response)
     }
 
