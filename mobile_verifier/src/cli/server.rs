@@ -93,7 +93,7 @@ impl Cmd {
 
         let reward_period_hours = settings.rewards;
         let verifications_per_period = settings.verifications;
-        let (config_client, config_client_handle) = Client::from_settings(&settings.config_client)?;
+        let config_client = Client::from_settings(&settings.config_client)?;
         let ingest = FileStore::from_settings(&settings.ingest).await?;
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
@@ -119,7 +119,6 @@ impl Cmd {
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
-            config_client_handle.map_err(Error::from),
             heartbeats_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),

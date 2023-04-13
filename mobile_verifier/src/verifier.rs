@@ -229,6 +229,7 @@ impl Verifier {
         .await;
 
         let speedtests = SpeedtestRollingAverage::validate_speedtests(
+            &self.config_client,
             ingest::ingest_speedtests(&self.ingest, epoch).await,
             pool,
         )

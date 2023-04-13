@@ -32,7 +32,7 @@ impl Cmd {
         tracing::info!("Verifying shares from the following time range: {start} to {end}");
         let epoch = start..end;
 
-        let (config_client, config_client_handle) = Client::from_settings(&settings.config_client)?;
+        let config_client = Client::from_settings(&settings.config_client)?;
         let ingest = FileStore::from_settings(&settings.ingest).await?;
         let verifier = Verifier::new(config_client, ingest);
 
@@ -66,7 +66,6 @@ impl Cmd {
                 "total_rewards": total_rewards,
             }))?
         );
-        config_client_handle.abort();
 
         Ok(())
     }
