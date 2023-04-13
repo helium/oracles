@@ -9,6 +9,7 @@ pub mod gateway_service;
 pub mod key_cache;
 pub mod router_service;
 pub mod settings;
+pub mod telemetry;
 
 pub use client::{Client, Settings as ClientSettings};
 

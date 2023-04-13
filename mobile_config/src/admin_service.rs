@@ -1,7 +1,7 @@
 use crate::{
     key_cache::{self, CacheKeys, KeyCache, KeyType},
     settings::Settings,
-    verify_public_key, GrpcResult,
+    telemetry, verify_public_key, GrpcResult,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -63,6 +63,7 @@ impl AdminService {
 impl mobile_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "add-key");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
@@ -103,6 +104,7 @@ impl mobile_config::Admin for AdminService {
 
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "remove-key");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
