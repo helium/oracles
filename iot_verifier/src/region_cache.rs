@@ -57,7 +57,7 @@ impl RegionCache {
                             .await;
                         Ok(res)
                     }
-                    _ => Err(RegionCacheError::RegionNotFound(region)),
+                    Err(err) => Err(RegionCacheError::IotConfigClient(err)),
                 }
             }
         }

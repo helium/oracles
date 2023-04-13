@@ -281,6 +281,7 @@ impl Runner {
                     // be discarded from the list returned for the beacon
                     // thus one or more failing witnesses will not block the overall POC
                     if !verified_witnesses_result.failed_witnesses.is_empty() {
+                        tracing::warn!("failed to handle witness");
                         for failed_witness_report in verified_witnesses_result.failed_witnesses {
                             let failed_witness = failed_witness_report.report;
                             let id =
