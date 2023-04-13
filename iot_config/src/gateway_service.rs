@@ -1,4 +1,4 @@
-use crate::{region_map::RegionMap, GrpcResult, GrpcStreamResult, Settings};
+use crate::{region_map::RegionMap, telemetry, GrpcResult, GrpcStreamResult, Settings};
 use anyhow::Result;
 use chrono::Utc;
 use file_store::traits::MsgVerify;
@@ -44,6 +44,7 @@ impl iot_config::Gateway for GatewayService {
         // field be added to the request to do basic signature verification, allowing
         // open access but discourage endpoint abuse?
         let request = request.into_inner();
+        telemetry::count_request("gateway", "location");
 
         let gateway_address: &PublicKeyBinary = &request.gateway.into();
 
@@ -74,6 +75,7 @@ impl iot_config::Gateway for GatewayService {
         request: Request<GatewayRegionParamsReqV1>,
     ) -> GrpcResult<GatewayRegionParamsResV1> {
         let request = request.into_inner();
+        telemetry::count_request("gateway", "region-params");
 
         let pubkey = PublicKey::try_from(request.address.clone())
             .map_err(|_| Status::invalid_argument("invalid gateway address"))?;
@@ -151,6 +153,7 @@ impl iot_config::Gateway for GatewayService {
             .signing_key
             .sign(&resp.encode_to_vec())
             .map_err(|_| Status::internal("resp signing error"))?;
+        telemetry::count_region_lookup(default_region, region);
         tracing::debug!(
             pubkey = pubkey.to_string(),
             region = region.to_string(),
@@ -161,6 +164,7 @@ impl iot_config::Gateway for GatewayService {
 
     // placeholder implementation
     async fn info(&self, _request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
+        telemetry::count_request("gateway", "info");
         Ok(Response::new(GatewayInfoResV1 {
             timestamp: Utc::now().timestamp() as u64,
             info: None,
@@ -174,6 +178,7 @@ impl iot_config::Gateway for GatewayService {
         &self,
         _request: Request<GatewayInfoStreamReqV1>,
     ) -> GrpcResult<Self::info_streamStream> {
+        telemetry::count_request("gateway", "info-stream");
         let (_tx, rx) = tokio::sync::mpsc::channel(20);
 
         Ok(Response::new(GrpcStreamResult::new(rx)))

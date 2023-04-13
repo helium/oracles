@@ -1,7 +1,7 @@
 use crate::{
     admin::{self, AuthCache, KeyType},
     region_map::{self, RegionMap},
-    GrpcResult,
+    telemetry, GrpcResult,
 };
 use anyhow::Result;
 use file_store::traits::MsgVerify;
@@ -71,6 +71,7 @@ impl AdminService {
 impl iot_config::Admin for AdminService {
     async fn add_key(&self, request: Request<AdminAddKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "add-key");
 
         self.verify_request_signature(&request).await?;
 
@@ -97,6 +98,7 @@ impl iot_config::Admin for AdminService {
 
     async fn remove_key(&self, request: Request<AdminRemoveKeyReqV1>) -> GrpcResult<AdminKeyResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "remove-key");
 
         self.verify_request_signature(&request).await?;
 
@@ -125,6 +127,7 @@ impl iot_config::Admin for AdminService {
         request: Request<AdminLoadRegionReqV1>,
     ) -> GrpcResult<AdminLoadRegionResV1> {
         let request = request.into_inner();
+        telemetry::count_request("admin", "load-region");
         self.verify_request_signature(&request).await?;
 
         let region = Region::from_i32(request.region).ok_or(Status::invalid_argument(format!(
@@ -161,7 +164,9 @@ impl iot_config::Admin for AdminService {
 
         self.region_map.insert_params(region, params).await;
         if let Some(region_tree) = updated_region {
-            tracing::debug!(region_cells = region_tree.len(), "new compacted region map");
+            let region_tree_size = region_tree.len();
+            telemetry::gauge_hexes(region_tree_size);
+            tracing::debug!(region_cells = region_tree_size, "new compacted region map");
             self.region_map.replace_tree(region_tree).await;
         }
 
@@ -172,6 +177,7 @@ impl iot_config::Admin for AdminService {
         &self,
         _request: Request<RegionParamsReqV1>,
     ) -> GrpcResult<RegionParamsResV1> {
+        telemetry::count_request("admin", "region-params");
         Ok(Response::new(RegionParamsResV1 {
             params: None,
             signature: vec![],
