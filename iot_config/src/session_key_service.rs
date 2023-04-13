@@ -3,7 +3,8 @@ use crate::{
     lora_field::DevAddrConstraint,
     org::{self, DbOrgError},
     session_key::{self, SessionKeyFilter},
-    update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult, Settings,
+    telemetry, update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
+    Settings,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;
@@ -129,6 +130,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
         request: Request<SessionKeyFilterListReqV1>,
     ) -> GrpcResult<Self::listStream> {
         let request = request.into_inner();
+        telemetry::count_request("session-key-filter", "list");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, request.oui)
@@ -159,6 +161,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
     type getStream = GrpcStreamResult<SessionKeyFilterV1>;
     async fn get(&self, request: Request<SessionKeyFilterGetReqV1>) -> GrpcResult<Self::getStream> {
         let request = request.into_inner();
+        telemetry::count_request("session-key-filter", "get");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request, request.oui)
@@ -192,6 +195,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
         request: GrpcStreamRequest<SessionKeyFilterUpdateReqV1>,
     ) -> GrpcResult<SessionKeyFilterUpdateResV1> {
         let request = request.into_inner();
+        telemetry::count_request("session-key-filter", "update");
 
         let mut incoming_stream = request.peekable();
         let mut validator: SkfValidator = Pin::new(&mut incoming_stream)
@@ -246,6 +250,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                 ) = batch
                     .into_iter()
                     .partition(|(action, _update)| action == &ActionV1::Add);
+                telemetry::count_skf_updates(to_add.len(), to_remove.len());
                 tracing::debug!(
                     adding = to_add.len(),
                     removing = to_remove.len(),
@@ -289,6 +294,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
         request: Request<SessionKeyFilterStreamReqV1>,
     ) -> GrpcResult<Self::streamStream> {
         let request = request.into_inner();
+        telemetry::count_request("session-key-filter", "stream");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_stream_request_signature(&signer, &request)?;
@@ -311,11 +317,15 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
             }
 
             tracing::info!("existing session keys sent; streaming updates as available");
+            telemetry::stream_subscribe("session-key-filter-stream");
             loop {
                 let shutdown = shutdown_listener.clone();
 
                 tokio::select! {
-                    _ = shutdown => return,
+                    _ = shutdown => {
+                        telemetry::stream_unsubscribe("session-key-filter-stream");
+                        return
+                    }
                     msg = session_key_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
                             return;
