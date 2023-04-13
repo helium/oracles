@@ -20,6 +20,8 @@ pub struct Settings {
     /// Batch size for hotspot metadata stream results. Default 100
     #[serde(default = "default_batch_size")]
     pub batch_size: u32,
+    #[serde(default = "default_cache_ttl_in_secs")]
+    pub cache_ttl_in_secs: u64,
 }
 
 pub fn default_connect_timeout() -> u64 {
@@ -32,6 +34,10 @@ pub fn default_rpc_timeout() -> u64 {
 
 pub fn default_batch_size() -> u32 {
     100
+}
+
+pub fn default_cache_ttl_in_secs() -> u64 {
+    60 * 60
 }
 
 impl Settings {
@@ -52,5 +58,9 @@ impl Settings {
 
     pub fn config_pubkey(&self) -> Result<helium_crypto::PublicKey, helium_crypto::Error> {
         helium_crypto::PublicKey::from_str(&self.config_pubkey)
+    }
+
+    pub fn cache_ttl(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.cache_ttl_in_secs)
     }
 }

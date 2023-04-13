@@ -29,6 +29,7 @@ prost = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 sqlx = {workspace = true}
+retainer = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = "0"
