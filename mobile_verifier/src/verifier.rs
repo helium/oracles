@@ -16,7 +16,10 @@ use price::PriceTracker;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    ops::Range,
+};
 use tokio::pin;
 use tokio::time::sleep;
 
@@ -97,8 +100,8 @@ impl VerifierDaemon {
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             heartbeat.write(&self.heartbeats).await?;
             let key = (heartbeat.cbsd_id.clone(), heartbeat.timestamp.hour());
-            if !cache.contains_key(&key) {
-                cache.insert(key, true);
+            if let Entry::Vacant(e) = cache.entry(key) {
+                e.insert(true);
                 heartbeat.save(&mut transaction).await?;
             }
         }
