@@ -8,9 +8,15 @@ const EUI_ADD_COUNT_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "euis-ad
 const EUI_REMOVE_COUNT_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "euis-removed");
 const DEVADDR_ADD_COUNT_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "devaddrs-added");
 const DEVADDR_REMOVE_COUNT_METRIC: &str = concat!(env!("CARGO_PKG_NAME"), "-", "devaddrs-removed");
+const GATEWAY_CHAIN_LOOKUP_METRIC: &str =
+    concat!(env!("CARGO_PKG_NAME"), "-", "gateway-chain-lookup");
 
 pub fn count_request(service: &'static str, rpc: &'static str) {
     metrics::increment_counter!(RPC_METRIC, "service" => service, "rpc" => rpc);
+}
+
+pub fn count_gateway_chain_lookup(result: &'static str) {
+    metrics::increment_counter!(GATEWAY_CHAIN_LOOKUP_METRIC, "result" => result);
 }
 
 pub fn gauge_hexes(cells: usize) {

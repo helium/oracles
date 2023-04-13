@@ -69,8 +69,16 @@ impl mobile_config::Gateway for GatewayService {
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .map_or_else(
-                || Err(Status::not_found(pubkey.to_string())),
+                || {
+                    telemetry::count_gateway_chain_lookup("not-found");
+                    Err(Status::not_found(pubkey.to_string()))
+                },
                 |info| {
+                    if info.metadata.is_some() {
+                        telemetry::count_gateway_chain_lookup("asserted");
+                    } else {
+                        telemetry::count_gateway_chain_lookup("not-asserted");
+                    };
                     let info = info
                         .try_into()
                         .map_err(|_| Status::internal("error serializing gateway info"))?;

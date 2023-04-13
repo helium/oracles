@@ -80,15 +80,18 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::internal("error fetching gateway info"))
             .and_then(|opt| {
                 opt.ok_or_else(|| {
+                    telemetry::count_gateway_chain_lookup("not-found");
                     Status::not_found(format!("gateway not found: pubkey = {address}"))
                 })
             })
             .and_then(|iot_metadata| {
                 iot_metadata.location.ok_or_else(|| {
+                    telemetry::count_gateway_chain_lookup("not-asserted");
                     Status::not_found(format!("gateway unasserted: pubkey = {address}"))
                 })
             })
             .and_then(|location| {
+                telemetry::count_gateway_chain_lookup("asserted");
                 Cell::from_raw(location).map_err(|_| {
                     Status::internal(format!(
                         "invalid h3 index location {location} for {address}"
@@ -132,6 +135,7 @@ impl iot_config::Gateway for GatewayService {
                 .await
                 .map_err(|_| Status::internal("error fetching gateway info"))?
         {
+            telemetry::count_gateway_chain_lookup("asserted");
             if let (Some(location), Some(gain)) = (info.location, info.gain) {
                 let region = match hextree::Cell::from_raw(location) {
                     Ok(h3_location) => {
@@ -155,6 +159,7 @@ impl iot_config::Gateway for GatewayService {
                 };
                 (region, gain)
             } else {
+                telemetry::count_gateway_chain_lookup("not-asserted");
                 tracing::debug!(
                     pubkey = address.to_string(),
                     default_region = default_region.to_string(),
@@ -163,10 +168,11 @@ impl iot_config::Gateway for GatewayService {
                 (default_region, 0)
             }
         } else {
+            telemetry::count_gateway_chain_lookup("not-found");
             tracing::debug!(
                 pubkey = address.to_string(),
                 default_region = default_region.to_string(),
-                "error retrieving gateway from chain"
+                "gateway not found on chain"
             );
             (default_region, 0)
         };
@@ -202,7 +208,18 @@ impl iot_config::Gateway for GatewayService {
         let metadata_info = gateway_info::db::get_info(&self.metadata_pool, address)
             .await
             .map_err(|_| Status::internal("error fetching gateway info"))?
-            .ok_or_else(|| Status::not_found(format!("gateway not found: pubkey = {address:}")))?;
+            .map(|info| {
+                if info.location.is_some() && info.elevation.is_some() && info.gain.is_some() {
+                    telemetry::count_gateway_chain_lookup("asserted");
+                } else {
+                    telemetry::count_gateway_chain_lookup("not-asserted");
+                };
+                info
+            })
+            .ok_or_else(|| {
+                telemetry::count_gateway_chain_lookup("not-found");
+                Status::not_found(format!("gateway not found: pubkey = {address:}"))
+            })?;
 
         let gateway_info = GatewayInfo::chain_metadata_to_info(metadata_info, &self.region_map);
         let mut resp = GatewayInfoResV1 {
