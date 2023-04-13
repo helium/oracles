@@ -1,7 +1,7 @@
 use crate::{
     gateway_info::{self, GatewayInfo},
     key_cache::KeyCache,
-    verify_public_key, GrpcResult, GrpcStreamResult,
+    telemetry, verify_public_key, GrpcResult, GrpcStreamResult,
 };
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
@@ -57,6 +57,7 @@ impl GatewayService {
 impl mobile_config::Gateway for GatewayService {
     async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
+        telemetry::count_request("gateway", "info");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -91,6 +92,7 @@ impl mobile_config::Gateway for GatewayService {
         request: Request<GatewayInfoStreamReqV1>,
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;

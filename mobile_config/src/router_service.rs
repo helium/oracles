@@ -1,6 +1,6 @@
 use crate::{
     key_cache::{KeyCache, KeyType},
-    verify_public_key, GrpcResult,
+    telemetry, verify_public_key, GrpcResult,
 };
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
@@ -67,6 +67,7 @@ impl RouterService {
 impl mobile_config::Router for RouterService {
     async fn get(&self, request: Request<RouterGetReqV1>) -> GrpcResult<RouterGetResV1> {
         let request = request.into_inner();
+        telemetry::count_request("router", "get");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -84,6 +85,7 @@ impl mobile_config::Router for RouterService {
 
     async fn list(&self, request: Request<RouterListReqV1>) -> GrpcResult<RouterListResV1> {
         let request = request.into_inner();
+        telemetry::count_request("router", "list");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
