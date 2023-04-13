@@ -2,7 +2,7 @@ use crate::{
     admin::AuthCache,
     gateway_info::{self, GatewayInfo},
     region_map::RegionMapReader,
-    verify_public_key, GrpcResult, GrpcStreamResult, Settings,
+    telemetry, verify_public_key, GrpcResult, GrpcStreamResult, Settings,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -68,6 +68,7 @@ impl iot_config::Gateway for GatewayService {
         request: Request<GatewayLocationReqV1>,
     ) -> GrpcResult<GatewayLocationResV1> {
         let request = request.into_inner();
+        telemetry::count_request("gateway", "location");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -112,6 +113,7 @@ impl iot_config::Gateway for GatewayService {
         request: Request<GatewayRegionParamsReqV1>,
     ) -> GrpcResult<GatewayRegionParamsResV1> {
         let request = request.into_inner();
+        telemetry::count_request("gateway", "region-params");
 
         let pubkey = verify_public_key(&request.address)?;
         request
@@ -180,6 +182,7 @@ impl iot_config::Gateway for GatewayService {
             signature: vec![],
         };
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
+        telemetry::count_region_lookup(default_region, region);
         tracing::debug!(
             pubkey = address.to_string(),
             region = region.to_string(),
@@ -190,6 +193,7 @@ impl iot_config::Gateway for GatewayService {
 
     async fn info(&self, request: Request<GatewayInfoReqV1>) -> GrpcResult<GatewayInfoResV1> {
         let request = request.into_inner();
+        telemetry::count_request("gateway", "info");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
@@ -220,6 +224,7 @@ impl iot_config::Gateway for GatewayService {
         request: Request<GatewayInfoStreamReqV1>,
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
+        telemetry::count_request("gateway", "info-stream");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;

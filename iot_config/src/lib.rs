@@ -12,6 +12,7 @@ pub mod route_service;
 pub mod session_key;
 pub mod session_key_service;
 pub mod settings;
+pub mod telemetry;
 
 pub use admin_service::AdminService;
 pub use client::{Client, Settings as ClientSettings};
