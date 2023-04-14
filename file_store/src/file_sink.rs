@@ -122,7 +122,7 @@ impl FileSinkBuilder {
             metric: self.metric,
         };
 
-        metrics::register_counter!(client.metric);
+        metrics::register_counter!(client.metric, vec![OK_LABEL]);
 
         let mut sink = FileSink {
             target_path: self.target_path,
