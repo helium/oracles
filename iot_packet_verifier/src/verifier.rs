@@ -155,7 +155,7 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         let map = self.lock().await;
         let balance = map.get(payer).unwrap();
         // Don't debit the amount if we're mocking. That is a job for the burner.
-        Ok((*balance >= amount).then(|| *balance - amount))
+        Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
     }
 }
 

@@ -77,7 +77,7 @@ impl Debiter for InstantBurnedBalance {
         let map = self.0.lock().await;
         let balance = map.get(payer).unwrap();
         // Don't debit the amount if we're mocking. That is a job for the burner.
-        Ok((*balance >= amount).then(|| *balance - amount))
+        Ok((*balance >= amount).then(|| balance.saturating_sub(amount))
     }
 }
 
