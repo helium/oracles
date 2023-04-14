@@ -1,7 +1,7 @@
 
 # log settings for the application (RUST_LOG format). Default below
 # 
-# log = "iot_packe_verifier=debug"
+# log = "iot_packet_verifier=debug"
 
 # Cache location for generated verified reports; Required
 cache = "/var/data/verified-reports"
@@ -28,7 +28,7 @@ cluster = "devnet"
 # URL for the config server
 org_url = ""
 
-# How many minutes the burner runs
+# We will burn data credits from the solana chain every `burn_period` minutes.
 burn_period = 1
 
 # If set to true, enables integration with the Solana network. This includes

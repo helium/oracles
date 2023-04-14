@@ -387,5 +387,5 @@ async fn test_end_to_end() {
     assert_eq!(balance.burned, 1);
 
     // The last packet was valid, so the org should be enabled now
-    assert!(verifier.config_server.payers.get(&0).unwrap().enabled,);
+    assert!(verifier.config_server.payers.get(&0).unwrap().enabled);
 }
