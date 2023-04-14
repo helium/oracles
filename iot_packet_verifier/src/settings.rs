@@ -19,6 +19,7 @@ pub struct Settings {
     /// Path to the keypair for signing config changes
     pub config_keypair: PathBuf,
     /// Data credit burn period in minutes. Default is 1.
+    #[serde(default = "default_burn_period")]
     pub burn_period: u64,
     pub cluster: String,
     pub dc_mint: String,
@@ -32,6 +33,9 @@ pub struct Settings {
     pub org_url: http::Uri,
     #[serde(default)]
     pub enable_solana_integration: bool,
+    /// Minimum data credit balance required for a payer before we disable them
+    #[serde(default = "default_minimum_allowed_balance")]
+    pub minimum_allowed_balance: u64,
 }
 
 pub fn default_burn_period() -> u64 {
@@ -40,6 +44,10 @@ pub fn default_burn_period() -> u64 {
 
 pub fn default_log() -> String {
     "iot_packet_verifier=debug".to_string()
+}
+
+pub fn default_minimum_allowed_balance() -> u64 {
+    35_000_000
 }
 
 impl Settings {

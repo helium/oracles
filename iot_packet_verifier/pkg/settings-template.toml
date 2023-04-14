@@ -38,6 +38,10 @@ burn_period = 1
 # default.
 enable_solana_integration = "false"
 
+# Minimum number of DC left in a balance before we disable the organization.
+# Defaults to 35_000_000 DC, which equates to $35
+minimum_allowed_balance = 35_000_000
+
 [database]
 
 url = "postgresql://postgres:password@localhost:5432/postgres"

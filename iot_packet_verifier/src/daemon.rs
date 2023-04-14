@@ -27,6 +27,7 @@ struct Daemon {
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
+    minimum_allowed_balance: u64,
 }
 
 impl Daemon {
@@ -59,6 +60,7 @@ impl Daemon {
 
         self.verifier
             .verify(
+                self.minimum_allowed_balance,
                 &mut transaction,
                 reports,
                 &self.valid_packets,
@@ -172,6 +174,7 @@ impl Cmd {
                 debiter: balances,
                 config_server: CachedOrgClient::new(org_client, config_keypair),
             },
+            minimum_allowed_balance: settings.minimum_allowed_balance,
         };
 
         // Run the services:
