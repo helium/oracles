@@ -42,6 +42,11 @@ impl GatewayInfo {
                     region,
                 })
             } else {
+                tracing::debug!(
+                    pubkey = meta.address.to_string(),
+                    location,
+                    "gateway region lookup failed for asserted location"
+                );
                 None
             }
         } else {

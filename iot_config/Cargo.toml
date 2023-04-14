@@ -27,6 +27,7 @@ metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
 poc-metrics = {path = "../metrics"}
 prost = {workspace = true}
+retainer = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 sqlx = {workspace = true}
