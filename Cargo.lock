@@ -3313,6 +3313,7 @@ dependencies = [
  "node-follower",
  "poc-metrics",
  "prost",
+ "retainer",
  "serde",
  "serde_json",
  "sqlx",
