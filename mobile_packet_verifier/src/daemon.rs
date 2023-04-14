@@ -8,6 +8,7 @@ use file_store::{
     FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
+use mobile_config::Client;
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use tokio::{
@@ -20,6 +21,7 @@ pub struct Daemon<S> {
     burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
+    config_client: Client,
 }
 
 impl<S> Daemon<S> {
@@ -28,12 +30,14 @@ impl<S> Daemon<S> {
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         burner: Burner<S>,
+        config_client: Client,
     ) -> Self {
         Self {
             pool,
             burner,
             reports,
             burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
+            config_client,
         }
     }
 }
@@ -54,7 +58,7 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&mut transaction, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&mut self.config_client, &mut transaction, ts, reports).await?;
                     transaction.commit().await?;
                 },
                 _ = sleep_until(burn_time) => {
@@ -131,7 +135,9 @@ impl Cmd {
                 .start(shutdown_listener.clone())
                 .await?;
 
-        let daemon = Daemon::new(settings, pool, reports, burner);
+        let config_client = Client::from_settings(&settings.config_client)?;
+
+        let daemon = Daemon::new(settings, pool, reports, burner, config_client);
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),

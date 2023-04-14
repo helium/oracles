@@ -20,6 +20,7 @@ pub struct Settings {
     #[serde(default)]
     pub enable_solana_integration: bool,
     pub solana: Option<solana::Settings>,
+    pub config_client: mobile_config::ClientSettings,
 }
 
 pub fn default_url() -> http::Uri {

@@ -23,6 +23,7 @@ prost = {workspace = true}
 serde = {workspace = true}
 sqlx = {workspace = true}
 solana = {path = "../solana"}
+mobile-config = {path = "../mobile_config"}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tonic = {workspace = true}
