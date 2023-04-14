@@ -16,21 +16,49 @@ use node_follower::{
     follower_service::FollowerService,
     gateway_resp::{GatewayInfo, GatewayInfoResolver},
 };
+use retainer::Cache;
+use std::{sync::Arc, time::Duration};
 use tonic::{Request, Response, Status};
+
+const CACHE_EVICTION_DURATION: Duration = Duration::from_secs(60 * 60 * 3);
+const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
 
 pub struct GatewayService {
     follower_service: FollowerService,
+    gateway_cache: Arc<Cache<PublicKeyBinary, GatewayInfo>>,
     region_map: RegionMap,
     signing_key: Keypair,
 }
 
 impl GatewayService {
     pub fn new(settings: &Settings, region_map: RegionMap) -> Result<Self> {
+        let gateway_cache = Arc::new(Cache::new());
+        let cache_clone = gateway_cache.clone();
+        tokio::spawn(async move { cache_clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY).await });
+
         Ok(Self {
             follower_service: FollowerService::from_settings(&settings.follower),
+            gateway_cache,
             region_map,
             signing_key: settings.signing_keypair()?,
         })
+    }
+
+    async fn resolve_gateway_info(&self, pubkey: &PublicKeyBinary) -> Result<GatewayInfo> {
+        match self.gateway_cache.get(pubkey).await {
+            Some(gateway) => Ok(gateway.value().clone()),
+            None => {
+                let gateway = self
+                    .follower_service
+                    .clone()
+                    .resolve_gateway_info(pubkey)
+                    .await?;
+                self.gateway_cache
+                    .insert(pubkey.clone(), gateway.clone(), CACHE_EVICTION_DURATION)
+                    .await;
+                Ok(gateway)
+            }
+        }
     }
 }
 
@@ -90,12 +118,7 @@ impl iot_config::Gateway for GatewayService {
             format!("invalid lora region {}", request.region),
         ))?;
 
-        let (region, gain) = match self
-            .follower_service
-            .clone()
-            .resolve_gateway_info(pubkey)
-            .await
-        {
+        let (region, gain) = match self.resolve_gateway_info(pubkey).await {
             Err(_) => {
                 tracing::debug!(
                     pubkey = pubkey.to_string(),
