@@ -1,18 +1,13 @@
 
 # log settings for the application (RUST_LOG format). Default below
 # 
-# log = "iot_packet_verifier=debug"
+# log = "mobile_4packet_verifier=debug"
 
 # Cache location for generated verified reports; Required
 cache = "/var/data/verified-reports"
 
-# URL for the config server
-org_url = ""
-
-# Path to the keypair used to authorize config server rpc calls
-config_keypair = ""
-
 # We will burn data credits from the solana chain every `burn_period` minutes.
+# Default value is 1 minute.
 burn_period = 1
 
 # If set to true, enables integration with the Solana network. This includes
@@ -31,8 +26,8 @@ burn_keypair = ""
 cluster = "devnet"
 # Public key for the Data Credits Mint
 dc_mint = "dcuc8Amr83Wz27ZkQ2K9NS6r8zRpf1J6cvArEBDZDmm"
-# Public key for the DNT Mint (IOT mint)
-dnt_mint = "iotEVVZLEywoTn1QdwNPddxPWszn3zFhEot3MfL9fns"
+# Public key for the DNT Mint (Mobile mint)
+dnt_mint = "mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6"
 
 [database]
 
@@ -48,11 +43,11 @@ url = "postgresql://postgres:password@localhost:5432/postgres"
 
 # Name of bucket to access ingest data. Required
 #
-bucket = "helium-hpr-alpha"
+bucket = "helium-mainnet-mobile-ingest"
 
 # Region for bucket. Defaults to below
 #
-region = "us-west-1"
+region = "us-west-2"
 
 # Optional URL for AWS api endpoint. Inferred from aws config settings or aws
 # IAM context by default

@@ -20,6 +20,7 @@ members = [
     "iot_config",
     "price",
     "mobile_config",
+    "solana",
 ]
 
 [workspace.package]
@@ -29,6 +30,7 @@ edition = "2021"
 
 [workspace.dependencies]
 anchor-lang = "0.26.0"
+anchor-client = "0.26"
 anyhow = {version = "1", features = ["backtrace"]}
 thiserror = "1"
 clap = {version = "3", features = ["derive"]}
@@ -60,6 +62,8 @@ helium-proto = {git = "https://github.com/helium/proto", branch = "master", feat
 hextree = "*"
 solana-client = "1.14"
 solana-sdk = "1.14"
+solana-program = "1.11"
+spl-token = "3.5.0"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
 beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "main"}
 humantime = "2"

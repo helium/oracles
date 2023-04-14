@@ -1,0 +1,24 @@
+[package]
+name = "solana"
+version = "0.1.0"
+description = "Solana integration for Helium Oracles"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = {workspace = true}
+anchor-lang = {workspace = true}
+anchor-client = {workspace = true}
+solana-client = {workspace = true}
+solana-sdk = {workspace = true}
+solana-program = {workspace = true}
+spl-token = {workspace = true}
+serde = {workspace = true}
+data-credits = {workspace = true}
+helium-sub-daos = {workspace = true}
+sha2 = {workspace = true}
+tokio = {workspace = true}
+helium-crypto = {workspace = true, features = ["solana"]}
+thiserror = {workspace = true}
+tracing = {workspace = true}

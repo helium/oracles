@@ -5,27 +5,26 @@ use file_store::{
     mobile_session::DataTransferSessionIngestReport, FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::signature::read_keypair_file;
+use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use tokio::{
     sync::mpsc::Receiver,
     time::{sleep_until, Duration, Instant},
 };
 
-pub struct Daemon {
+pub struct Daemon<S> {
     pool: Pool<Postgres>,
-    burner: Burner,
+    burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
 }
 
-impl Daemon {
+impl<S> Daemon<S> {
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-        burner: Burner,
+        burner: Burner<S>,
     ) -> Self {
         Self {
             pool,
@@ -34,7 +33,12 @@ impl Daemon {
             burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
         }
     }
+}
 
+impl<S> Daemon<S>
+where
+    S: SolanaNetwork,
+{
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
         let mut burn_time = Instant::now() + self.burn_period;
         loop {
@@ -81,13 +85,15 @@ impl Cmd {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        // Set up the solana RpcClient:
-        let rpc_client = RpcClient::new(settings.solana_rpc.clone());
-
-        // Set up the balance burner:
-        let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
-            Ok(kp) => kp,
-            Err(e) => bail!("Failed to read keypair file ({})", e),
+        // Set up the solana network:
+        let solana = if settings.enable_solana_integration {
+            let Some(ref solana_settings) = settings.solana else {
+                bail!("Missing solana section in settings");
+            };
+            // Set up the solana RpcClient:
+            Some(SolanaRpc::new(solana_settings).await?)
+        } else {
+            None
         };
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
@@ -106,7 +112,7 @@ impl Cmd {
         .create()
         .await?;
 
-        let burner = Burner::new(settings, valid_sessions, rpc_client, burn_keypair).await?;
+        let burner = Burner::new(valid_sessions, solana);
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
