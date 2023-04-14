@@ -28,22 +28,18 @@ pub struct Settings {
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
-    #[serde(with = "http_serde::uri", default = "default_url")]
+    #[serde(with = "http_serde::uri")]
     pub org_url: http::Uri,
     #[serde(default)]
-    pub enable_dc_burn: bool,
+    pub enable_solana_integration: bool,
 }
 
 pub fn default_burn_period() -> u64 {
     1
 }
 
-pub fn default_url() -> http::Uri {
-    http::Uri::from_static("http://127.0.0.1:8080")
-}
-
 pub fn default_log() -> String {
-    "iot_packet_verifier=debug,poc_store=info".to_string()
+    "iot_packet_verifier=debug".to_string()
 }
 
 impl Settings {

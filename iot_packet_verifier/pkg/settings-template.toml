@@ -1,7 +1,7 @@
 
 # log settings for the application (RUST_LOG format). Default below
 # 
-# log = "mobile-verifier=debug,poc_store=info"
+# log = "iot_packet_verifier=debug"
 
 # Cache location for generated verified reports; Required
 cache = "/var/data/verified-reports"
@@ -25,8 +25,18 @@ config_keypair = ""
 # Solana cluster to use. "devnet" or "mainnet"
 cluster = "devnet"
 
-# Whether or not we should burn data credits on the Solana network. Defaults to false
-enable_dc_burn = false
+# URL for the config server
+org_url = ""
+
+# We will burn data credits from the solana chain every `burn_period` minutes.
+burn_period = 1
+
+# If set to true, enables integration with the Solana network. This includes
+# checking payer balances and burning data credits. If this is disabled, all
+# payers will have a default balance of 1,000,000 data credits, and burned
+# data credits will only be stored in the database. This is set to false by
+# default.
+enable_solana_integration = "false"
 
 [database]
 
@@ -35,24 +45,6 @@ url = "postgresql://postgres:password@localhost:5432/postgres"
 # Max connections to the database. Default below
 #
 # max_connections = 10
-
-[org]
-
-# Local grpc url to node follower for rewards tracking and submission
-#[serde(with = "http_serde::uri", default = "default_url")]
-url = "http://127.0.0.1:8080"
-
-# Start block to start streaming followed transactions from.
-# block = 0
-
-# Connect timeout for follower in seconds. Default 5
-# connect = 5
-
-# RPC timeout for follower in seconds. Default 5
-# rpc = 5
-
-# batch size for gateway stream results. Default 100
-# batch = 100
 
 [ingest]
 
