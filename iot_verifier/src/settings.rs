@@ -46,10 +46,16 @@ pub struct Settings {
     /// Trigger interval for generating a transmit scaling map
     #[serde(default = "default_transmit_scale_interval")]
     pub transmit_scale_interval: i64,
+    // roll up time defined in the ingestors ( in seconds )
+    // ie the time after which they will write out files to s3
+    // this will be used when padding out the witness
+    // loader window before and after values
+    #[serde(default = "default_ingestor_rollup_time")]
+    pub ingestor_rollup_time: i64,
     /// window width for the poc report loader ( in seconds )
     /// each poll the loader will load reports from start time to start time + window width
     /// NOTE: the window width should be as a minimum equal to the ingestor roll up period
-    ///       any less and the verifier will potentially miss incoming
+    ///       any less and the verifier will potentially miss incoming reports
     #[serde(default = "default_poc_loader_window_width")]
     pub poc_loader_window_width: i64,
     /// cadence for how often to look for poc reports from s3 buckets
@@ -91,6 +97,10 @@ pub fn default_poc_loader_window_width() -> i64 {
     5 * 60
 }
 
+// Default: 5 minutes
+pub fn default_ingestor_rollup_time() -> i64 {
+    5 * 60
+}
 // Default: 5 minutes
 // in normal operational mode the poll time should be set same as that of the window width
 // however, if for example we are loading historic data, ie looking back 24hours, we will want
@@ -178,6 +188,10 @@ impl Settings {
 
     pub fn poc_loader_window_width(&self) -> Duration {
         Duration::seconds(self.poc_loader_window_width)
+    }
+
+    pub fn ingestor_rollup_time(&self) -> Duration {
+        Duration::seconds(self.ingestor_rollup_time)
     }
 
     pub fn poc_loader_poll_time(&self) -> time::Duration {

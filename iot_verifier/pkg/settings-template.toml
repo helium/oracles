@@ -17,6 +17,10 @@ beacon_interval = 21600
 # Default beacon interval tolerance ( 10 minutes) (in seconds)
 beacon_interval_tolerance = 600
 
+# how ofter the ingestors write out to s3
+# this is used to pad the witness loading `after` and `before` periods
+ingestor_rollup_time = 300
+
 # window width for the  poc report loader ( in seconds )
 # NOTE: the window width should be as a minimum equal to the ingestor roll up period
 #       any less and the verifier will potentially miss incoming reports

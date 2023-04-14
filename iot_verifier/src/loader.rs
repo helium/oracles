@@ -32,6 +32,7 @@ pub struct Loader {
     pool: PgPool,
     poll_time: time::Duration,
     window_width: ChronoDuration,
+    ingestor_rollup_time: ChronoDuration,
     max_lookback_age: ChronoDuration,
     deny_list_latest_url: String,
     deny_list_trigger_interval: Duration,
@@ -60,6 +61,7 @@ impl Loader {
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let poll_time = settings.poc_loader_poll_time();
         let window_width = settings.poc_loader_window_width();
+        let ingestor_rollup_time = settings.ingestor_rollup_time();
         let max_lookback_age = settings.loader_window_max_lookback_age();
         let deny_list = DenyList::new()?;
         Ok(Self {
@@ -67,6 +69,7 @@ impl Loader {
             ingest_store,
             poll_time,
             window_width,
+            ingestor_rollup_time,
             max_lookback_age,
             deny_list_latest_url: settings.denylist.denylist_url.clone(),
             deny_list_trigger_interval: settings.denylist.trigger_interval(),
@@ -225,8 +228,8 @@ impl Loader {
                 FileType::IotWitnessIngestReport,
                 &self.ingest_store,
                 gateway_cache,
-                after - self.window_width,
-                before + self.window_width,
+                after - self.ingestor_rollup_time,
+                before + self.ingestor_rollup_time,
                 None,
                 Some(&filter),
             )
