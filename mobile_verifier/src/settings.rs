@@ -23,6 +23,7 @@ pub struct Settings {
     pub verification_offset_minutes: i64,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
+    pub data_transfer_ingest: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,

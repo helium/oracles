@@ -35,6 +35,7 @@ pub struct VerifierDaemon {
     pub verification_offset: Duration,
     pub verifier: Verifier,
     pub price_tracker: PriceTracker,
+    pub data_transfer_ingest: FileStore,
 }
 
 impl VerifierDaemon {
@@ -134,7 +135,7 @@ impl VerifierDaemon {
         let transfer_rewards = TransferRewards::from_transfer_sessions(
             mobile_price,
             ingest::ingest_valid_data_transfers(
-                &self.verifier.file_store,
+                &self.data_transfer_ingest,
                 &scheduler.reward_period,
             )
             .await,
@@ -199,14 +200,14 @@ impl VerifierDaemon {
 
 pub struct Verifier {
     pub config_client: Client,
-    pub file_store: FileStore,
+    pub ingest: FileStore,
 }
 
 impl Verifier {
-    pub fn new(config_client: Client, file_store: FileStore) -> Self {
+    pub fn new(config_client: Client, ingest: FileStore) -> Self {
         Self {
             config_client,
-            file_store,
+            ingest,
         }
     }
 
@@ -222,14 +223,14 @@ impl Verifier {
     > {
         let heartbeats = Heartbeat::validate_heartbeats(
             &self.config_client,
-            ingest::ingest_heartbeats(&self.file_store, epoch).await,
+            ingest::ingest_heartbeats(&self.ingest, epoch).await,
             epoch,
         )
         .await;
 
         let speedtests = SpeedtestRollingAverage::validate_speedtests(
             &self.config_client,
-            ingest::ingest_speedtests(&self.file_store, epoch).await,
+            ingest::ingest_speedtests(&self.ingest, epoch).await,
             pool,
         )
         .await;
