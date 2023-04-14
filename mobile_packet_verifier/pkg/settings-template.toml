@@ -6,8 +6,8 @@
 # Cache location for generated verified reports; Required
 cache = "/var/data/verified-reports"
 
-# We will burn data credits from the solana chain every `burn_period` minutes.
-# Default value is 1 minute.
+# We will burn data credits from the solana chain every `burn_period` hours.
+# Default value is 1 hour.
 burn_period = 1
 
 # If set to true, enables integration with the Solana network. This includes

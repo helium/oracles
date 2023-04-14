@@ -10,21 +10,21 @@ use std::collections::HashMap;
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
-    upload_bytes: i64,
-    download_bytes: i64,
+    uploaded_bytes: i64,
+    downloaded_bytes: i64,
     first_timestamp: DateTime<Utc>,
     last_timestamp: DateTime<Utc>,
 }
 
 #[derive(Default)]
 pub struct PayerTotals {
-    total_bytes: u64,
+    total_dcs: u64,
     sessions: Vec<DataTransferSession>,
 }
 
 impl PayerTotals {
     fn push_sess(&mut self, sess: DataTransferSession) {
-        self.total_bytes += sess.download_bytes as u64 + sess.upload_bytes as u64;
+        self.total_dcs += bytes_to_dc(sess.downloaded_bytes as u64 + sess.uploaded_bytes as u64);
         self.sessions.push(sess);
     }
 }
@@ -76,36 +76,36 @@ where
         for (
             payer,
             PayerTotals {
-                total_bytes,
+                total_dcs,
                 sessions,
             },
         ) in payer_totals.into_iter()
         {
-            let amount = bytes_to_dc(total_bytes);
-
-            tracing::info!("Burning {amount} DC from {payer}");
+            tracing::info!("Burning {total_dcs} DC from {payer}");
 
             self.solana
-                .burn_data_credits(&payer, amount)
+                .burn_data_credits(&payer, total_dcs)
                 .await
                 .map_err(BurnError::SolanaError)?;
 
             // Delete from the data transfer session and write out to S3
 
-            sqlx::query("DELETE FROM data_tranfer_sessions WHERE payer = $1")
+            sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
                 .bind(payer)
                 .execute(pool)
                 .await?;
 
             for session in sessions {
+                let num_dcs =
+                    bytes_to_dc(session.uploaded_bytes as u64 + session.downloaded_bytes as u64);
                 self.valid_sessions
                     .write(
                         ValidDataTransferSession {
                             pub_key: session.pub_key.into(),
                             payer: session.payer.into(),
-                            upload_bytes: session.upload_bytes as u64,
-                            download_bytes: session.download_bytes as u64,
-                            num_dcs: amount,
+                            upload_bytes: session.uploaded_bytes as u64,
+                            download_bytes: session.downloaded_bytes as u64,
+                            num_dcs,
                             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
                             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
                         },

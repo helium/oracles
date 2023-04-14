@@ -32,7 +32,7 @@ pub async fn accumulate_sessions(
             ON CONFLICT (pub_key, payer) DO UPDATE SET
             uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
             downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            last_timestamp = MAX(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
         )
             .bind(event.pub_key)

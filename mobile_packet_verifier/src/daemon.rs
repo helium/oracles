@@ -1,8 +1,11 @@
 use crate::{burner::Burner, settings::Settings};
 use anyhow::{bail, Error, Result};
+use chrono::{TimeZone, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_source, file_upload,
-    mobile_session::DataTransferSessionIngestReport, FileSinkBuilder, FileStore, FileType,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_source, file_upload,
+    mobile_session::DataTransferSessionIngestReport,
+    FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
 use solana::{SolanaNetwork, SolanaRpc};
@@ -120,6 +123,9 @@ impl Cmd {
             file_source::continuous_source::<DataTransferSessionIngestReport>()
                 .db(pool.clone())
                 .store(file_store)
+                .lookback(LookbackBehavior::StartAfter(
+                    Utc.timestamp_millis_opt(0).unwrap(),
+                ))
                 .file_type(FileType::DataTransferSessionIngestReport)
                 .build()?
                 .start(shutdown_listener.clone())
