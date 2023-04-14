@@ -133,12 +133,11 @@ impl GatewayPocShare {
         let mut shares: Vec<Self> = Vec::new();
         let beacon_scaling_factor = report.beacon_report.hex_scale;
         let beacon_reward_unit = report.beacon_report.reward_unit;
-        let ts = Utc::now();
         if beacon_scaling_factor > Decimal::ZERO && beacon_reward_unit > Decimal::ZERO {
             shares.push(Self {
                 hotspot_key: report.beacon_report.report.pub_key.clone(),
                 reward_type: PocReportType::Beacon,
-                reward_timestamp: ts,
+                reward_timestamp: report.beacon_report.received_timestamp,
                 hex_scale: beacon_scaling_factor,
                 reward_unit: beacon_reward_unit,
                 poc_id: report.poc_id.clone(),
@@ -154,7 +153,7 @@ impl GatewayPocShare {
                 shares.push(Self {
                     hotspot_key: witness.report.pub_key.clone(),
                     reward_type: PocReportType::Witness,
-                    reward_timestamp: ts,
+                    reward_timestamp: witness.received_timestamp,
                     hex_scale: witness_hex_scale,
                     reward_unit: witness_reward_unit,
                     poc_id: report.poc_id.clone(),
