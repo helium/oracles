@@ -49,7 +49,7 @@ impl TransferRewards {
     }
 
     pub async fn from_transfer_sessions(
-        mobile_price: Decimal,
+        mobile_bone_price: Decimal,
         transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
         epoch: &Range<DateTime<Utc>>,
     ) -> Self {
@@ -69,7 +69,7 @@ impl TransferRewards {
             .into_iter()
             // Calculate rewards per hotspot
             .map(|(pub_key, dc_amount)| {
-                let bones = dc_to_mobile_bones(dc_amount, mobile_price);
+                let bones = dc_to_mobile_bones(dc_amount, mobile_bone_price);
                 reward_sum += bones;
                 (pub_key, bones)
             })
@@ -108,9 +108,9 @@ impl TransferRewards {
 }
 
 /// Returns the equivalent amount of Mobile bones for a specified amount of Data Credits
-pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_price: Decimal) -> Decimal {
+pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Decimal {
     let dc_in_usd = dc_amount * DC_USD_PRICE;
-    (dc_in_usd / mobile_price)
+    (dc_in_usd / mobile_bone_price)
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
