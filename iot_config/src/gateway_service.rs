@@ -80,18 +80,18 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::internal("error fetching gateway info"))
             .and_then(|opt| {
                 opt.ok_or_else(|| {
-                    telemetry::count_gateway_chain_lookup("not-found");
+                    telemetry::count_gateway_info_lookup("not-found");
                     Status::not_found(format!("gateway not found: pubkey = {address}"))
                 })
             })
             .and_then(|iot_metadata| {
                 iot_metadata.location.ok_or_else(|| {
-                    telemetry::count_gateway_chain_lookup("not-asserted");
+                    telemetry::count_gateway_info_lookup("not-asserted");
                     Status::not_found(format!("gateway unasserted: pubkey = {address}"))
                 })
             })
             .and_then(|location| {
-                telemetry::count_gateway_chain_lookup("asserted");
+                telemetry::count_gateway_info_lookup("asserted");
                 Cell::from_raw(location).map_err(|_| {
                     Status::internal(format!(
                         "invalid h3 index location {location} for {address}"
@@ -117,6 +117,7 @@ impl iot_config::Gateway for GatewayService {
     ) -> GrpcResult<GatewayRegionParamsResV1> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "region-params");
+        let request_start = std::time::Instant::now();
 
         let pubkey = verify_public_key(&request.address)?;
         request
@@ -135,7 +136,7 @@ impl iot_config::Gateway for GatewayService {
                 .await
                 .map_err(|_| Status::internal("error fetching gateway info"))?
         {
-            telemetry::count_gateway_chain_lookup("asserted");
+            telemetry::count_gateway_info_lookup("asserted");
             if let (Some(location), Some(gain)) = (info.location, info.gain) {
                 let region = match hextree::Cell::from_raw(location) {
                     Ok(h3_location) => {
@@ -159,7 +160,7 @@ impl iot_config::Gateway for GatewayService {
                 };
                 (region, gain)
             } else {
-                telemetry::count_gateway_chain_lookup("not-asserted");
+                telemetry::count_gateway_info_lookup("not-asserted");
                 tracing::debug!(
                     pubkey = address.to_string(),
                     default_region = default_region.to_string(),
@@ -168,7 +169,7 @@ impl iot_config::Gateway for GatewayService {
                 (default_region, 0)
             }
         } else {
-            telemetry::count_gateway_chain_lookup("not-found");
+            telemetry::count_gateway_info_lookup("not-found");
             tracing::debug!(
                 pubkey = address.to_string(),
                 default_region = default_region.to_string(),
@@ -188,12 +189,13 @@ impl iot_config::Gateway for GatewayService {
             signature: vec![],
         };
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
-        telemetry::count_region_lookup(default_region, region);
         tracing::debug!(
             pubkey = address.to_string(),
             region = region.to_string(),
             "returning region params"
         );
+        telemetry::duration_gateway_info_lookup(request_start);
+        telemetry::count_region_lookup(default_region, region);
         Ok(Response::new(resp))
     }
 
@@ -210,14 +212,14 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::internal("error fetching gateway info"))?
             .map(|info| {
                 if info.location.is_some() && info.elevation.is_some() && info.gain.is_some() {
-                    telemetry::count_gateway_chain_lookup("asserted");
+                    telemetry::count_gateway_info_lookup("asserted");
                 } else {
-                    telemetry::count_gateway_chain_lookup("not-asserted");
-                };
+                    telemetry::count_gateway_info_lookup("not-asserted");
+                }
                 info
             })
             .ok_or_else(|| {
-                telemetry::count_gateway_chain_lookup("not-found");
+                telemetry::count_gateway_info_lookup("not-found");
                 Status::not_found(format!("gateway not found: pubkey = {address:}"))
             })?;
 
