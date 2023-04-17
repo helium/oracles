@@ -168,7 +168,7 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::permission_denied("invalid request signature"))?;
 
         let address: &PublicKeyBinary = &pubkey.into();
-        tracing::debug!(pubkey = address.to_string(), "fetching region params");
+        tracing::debug!(pubkey = %address, "fetching region params");
 
         let default_region = Region::from_i32(request.region).ok_or_else(|| {
             Status::invalid_argument(format!("invalid lora region {}", request.region))
@@ -177,8 +177,8 @@ impl iot_config::Gateway for GatewayService {
         let (region, gain) = match self.resolve_gateway_info(address).await {
             Err(_) => {
                 tracing::debug!(
-                    pubkey = address.to_string(),
-                    default_region = default_region.to_string(),
+                    pubkey = %address,
+                    %default_region,
                     "unable to retrieve gateway from chain"
                 );
                 (default_region, 0)
@@ -186,8 +186,8 @@ impl iot_config::Gateway for GatewayService {
             Ok(GatewayInfo { metadata, .. }) => match metadata {
                 None => {
                     tracing::debug!(
-                        pubkey = address.to_string(),
-                        default_region = default_region.to_string(),
+                        pubkey = %address,
+                        %default_region,
                         "gateway not asserted"
                     );
                     (default_region, 0)
@@ -209,8 +209,8 @@ impl iot_config::Gateway for GatewayService {
         };
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
         tracing::debug!(
-            pubkey = address.to_string(),
-            region = region.to_string(),
+            pubkey = %address,
+            %region,
             "returning region params"
         );
         telemetry::duration_gateway_info_lookup(request_start);
