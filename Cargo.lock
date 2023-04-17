@@ -1440,7 +1440,7 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1979,13 +1979,14 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
  "circuit-breaker",
  "helium-sub-daos",
  "lazy-transactions",
+ "price-oracle",
  "pyth-sdk-solana",
 ]
 
@@ -2923,7 +2924,7 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -3531,7 +3532,7 @@ dependencies = [
 [[package]]
 name = "lazy-transactions"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -3998,7 +3999,7 @@ dependencies = [
 [[package]]
 name = "mpl-bubblegum"
 version = "0.6.0"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "bytemuck",
@@ -4030,13 +4031,13 @@ dependencies = [
 [[package]]
 name = "mpl-token-metadata"
 version = "1.8.3"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "arrayref",
  "borsh",
  "mpl-token-auth-rules",
- "mpl-token-metadata-context-derive 0.2.1 (git+https://github.com/helium/helium-program-library.git)",
- "mpl-utils 0.1.0 (git+https://github.com/helium/helium-program-library.git)",
+ "mpl-token-metadata-context-derive 0.2.1 (git+https://github.com/helium/helium-program-library.git?tag=v0.1.0)",
+ "mpl-utils 0.1.0 (git+https://github.com/helium/helium-program-library.git?tag=v0.1.0)",
  "num-derive",
  "num-traits",
  "shank",
@@ -4079,7 +4080,7 @@ dependencies = [
 [[package]]
 name = "mpl-token-metadata-context-derive"
 version = "0.2.1"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "quote 1.0.21",
  "syn 1.0.104",
@@ -4100,7 +4101,7 @@ dependencies = [
 [[package]]
 name = "mpl-utils"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "arrayref",
  "borsh",
@@ -4727,7 +4728,7 @@ dependencies = [
 [[package]]
 name = "price-oracle"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
 ]
@@ -5800,7 +5801,7 @@ dependencies = [
 [[package]]
 name = "shared-utils"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -7355,7 +7356,7 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -7580,7 +7581,7 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git#6dd531945fed2d181e9a14678cd8459f1394481b"
+source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
