@@ -362,6 +362,7 @@ impl iot_config::Route for RouteService {
                     }
                     msg = route_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
+                            telemetry::stream_unsubscribe("route-stream");
                             return;
                         }
                     }

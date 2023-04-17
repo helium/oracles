@@ -328,6 +328,7 @@ impl iot_config::SessionKeyFilter for SessionKeyFilterService {
                     }
                     msg = session_key_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
+                            telemetry::stream_unsubscribe("session-key-filter-stream");
                             return;
                         }
                     }
