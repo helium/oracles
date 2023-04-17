@@ -67,8 +67,8 @@ where
 {
     type Error = S::Error;
 
-    /// Debits the balance from the cache, returning the remaining balance if there
-    /// was enough balance and false otherwise.
+    /// Debits the balance from the cache, returning the remaining balance as an
+    /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
         &self,
         payer: &PublicKeyBinary,
