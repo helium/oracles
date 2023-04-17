@@ -67,13 +67,13 @@ where
 {
     type Error = S::Error;
 
-    /// Debits the balance from the cache, returning true if there was enough
-    /// balance and false otherwise.
+    /// Debits the balance from the cache, returning the remaining balance as an
+    /// option if there was enough and none otherwise.
     async fn debit_if_sufficient(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<bool, S::Error> {
+    ) -> Result<Option<u64>, S::Error> {
         let mut balances = self.balances.lock().await;
 
         let mut balance = if !balances.contains_key(payer) {
@@ -91,13 +91,12 @@ where
             balance
         };
 
-        let sufficient = balance.balance >= amount + balance.burned;
-
-        if sufficient {
+        Ok(if balance.balance >= amount + balance.burned {
             balance.burned += amount;
-        }
-
-        Ok(sufficient)
+            Some(balance.balance - balance.burned)
+        } else {
+            None
+        })
     }
 }
 

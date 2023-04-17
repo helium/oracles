@@ -69,11 +69,15 @@ struct InstantBurnedBalance(Arc<Mutex<HashMap<PublicKeyBinary, u64>>>);
 impl Debiter for InstantBurnedBalance {
     type Error = ();
 
-    async fn debit_if_sufficient(&self, payer: &PublicKeyBinary, amount: u64) -> Result<bool, ()> {
+    async fn debit_if_sufficient(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<Option<u64>, ()> {
         let map = self.0.lock().await;
         let balance = map.get(payer).unwrap();
         // Don't debit the amount if we're mocking. That is a job for the burner.
-        Ok(*balance >= amount)
+        Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
     }
 }
 
@@ -188,6 +192,7 @@ async fn test_verifier() {
     // Run the verifier:
     verifier
         .verify(
+            0,
             balances.clone(),
             stream::iter(packets),
             &mut valid_packets,
@@ -263,6 +268,7 @@ async fn test_end_to_end() {
     // Verify four packets, each costing one DC. The last one should be invalid
     verifier
         .verify(
+            0,
             pending_burns.clone(),
             stream::iter(vec![
                 packet_report(0, 0, BYTES_PER_DC as u32, vec![1]),
@@ -333,6 +339,7 @@ async fn test_end_to_end() {
 
     verifier
         .verify(
+            0,
             pending_burns.clone(),
             stream::iter(vec![packet_report(0, 4, BYTES_PER_DC as u32, vec![5])]),
             &mut valid_packets,
@@ -358,6 +365,7 @@ async fn test_end_to_end() {
     // should clear
     verifier
         .verify(
+            0,
             pending_burns.clone(),
             stream::iter(vec![
                 packet_report(0, 5, 2 * BYTES_PER_DC as u32, vec![6]),

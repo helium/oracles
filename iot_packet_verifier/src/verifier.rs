@@ -53,6 +53,7 @@ where
     /// Verify a stream of packet reports. Writes out `valid_packets` and `invalid_packets`.
     pub async fn verify<B, R, VP, IP>(
         &mut self,
+        minimum_allowed_balance: u64,
         mut pending_burns: B,
         reports: R,
         mut valid_packets: VP,
@@ -76,12 +77,13 @@ where
                 .fetch_org(report.oui, &mut org_cache)
                 .await
                 .map_err(VerificationError::ConfigError)?;
-            if self
+            let remaining_balance = self
                 .debiter
                 .debit_if_sufficient(&payer, debit_amount)
                 .await
-                .map_err(VerificationError::DebitError)?
-            {
+                .map_err(VerificationError::DebitError)?;
+
+            if remaining_balance.is_some() {
                 pending_burns
                     .add_burned_amount(&payer, debit_amount)
                     .await
@@ -96,10 +98,6 @@ where
                     })
                     .await
                     .map_err(VerificationError::ValidPacketWriterError)?;
-                self.config_server
-                    .enable_org(report.oui)
-                    .await
-                    .map_err(VerificationError::ConfigError)?;
             } else {
                 invalid_packets
                     .write(InvalidPacket {
@@ -110,11 +108,14 @@ where
                     })
                     .await
                     .map_err(VerificationError::InvalidPacketWriterError)?;
-                self.config_server
-                    .disable_org(report.oui)
-                    .await
-                    .map_err(VerificationError::ConfigError)?;
             }
+            match remaining_balance {
+                Some(remaining_balance) if remaining_balance >= minimum_allowed_balance => {
+                    self.config_server.enable_org(report.oui).await
+                }
+                _ => self.config_server.disable_org(report.oui).await,
+            }
+            .map_err(VerificationError::ConfigError)?
         }
 
         Ok(())
@@ -133,11 +134,13 @@ pub fn payload_size_to_dc(payload_size: u64) -> u64 {
 pub trait Debiter {
     type Error;
 
+    /// Debit the balance from the account. If the debit was successful,
+    /// return the remaining amount.
     async fn debit_if_sufficient(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<Option<u64>, Self::Error>;
 }
 
 #[async_trait]
@@ -148,11 +151,11 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<bool, Infallible> {
+    ) -> Result<Option<u64>, Infallible> {
         let map = self.lock().await;
         let balance = map.get(payer).unwrap();
         // Don't debit the amount if we're mocking. That is a job for the burner.
-        Ok(*balance >= amount)
+        Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
     }
 }
 
