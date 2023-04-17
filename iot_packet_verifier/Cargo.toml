@@ -8,8 +8,6 @@ license.workspace = true
 
 [dependencies]
 anyhow = {workspace = true}
-anchor-lang = {workspace = true}
-anchor-client = "0.26"
 async-trait = {workspace = true}
 clap = {workspace = true}
 config = {workspace = true}
@@ -20,14 +18,11 @@ futures-util = {workspace = true}
 file-store = {path = "../file_store"}
 helium-proto = {workspace = true}
 helium-crypto = {workspace = true, features = ["sqlx-postgres", "multisig", "solana"]}
-solana-client = {workspace = true}
-solana-sdk = {workspace = true}
-solana-program = "1.11"
-spl-token = "3.5.0"
 poc-metrics = {path = "../metrics"}
 prost = {workspace = true}
 serde = {workspace = true}
 sqlx = {workspace = true}
+solana = {path = "../solana"}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tonic = {workspace = true}
@@ -36,9 +31,7 @@ tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
-sha2 = {workspace = true}
-data-credits = {workspace = true}
-helium-sub-daos = {workspace = true}
+
 
 
 

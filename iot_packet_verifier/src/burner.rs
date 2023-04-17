@@ -1,8 +1,8 @@
 use crate::{
     balances::{BalanceCache, BalanceStore},
     pending_burns::{Burn, PendingBurns},
-    solana::SolanaNetwork,
 };
+use solana::SolanaNetwork;
 use std::time::Duration;
 use tokio::task;
 

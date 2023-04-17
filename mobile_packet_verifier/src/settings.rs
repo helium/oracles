@@ -1,8 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use solana_sdk::pubkey::{ParsePubkeyError, Pubkey};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -12,23 +11,17 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
-    /// Solana RpcClient URL:
-    pub solana_rpc: String,
-    /// Path to the keypair for signing burn transactions
-    pub burn_keypair: PathBuf,
     /// Burn period in hours. (Default is 1)
     #[serde(default = "default_burn_period")]
     pub burn_period: i64,
-    pub cluster: String,
-    pub dc_mint: String,
-    pub dnt_mint: String,
-    pub hnt_mint: String,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     #[serde(default)]
-    pub enable_dc_burn: bool,
+    pub enable_solana_integration: bool,
+    pub solana: Option<solana::Settings>,
+    pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
 }
@@ -70,18 +63,6 @@ impl Settings {
             .add_source(Environment::with_prefix("MOBILE_PACKET_VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn dc_mint(&self) -> Result<Pubkey, ParsePubkeyError> {
-        self.dc_mint.parse()
-    }
-
-    pub fn dnt_mint(&self) -> Result<Pubkey, ParsePubkeyError> {
-        self.dnt_mint.parse()
-    }
-
-    pub fn hnt_mint(&self) -> Result<Pubkey, ParsePubkeyError> {
-        self.hnt_mint.parse()
     }
 
     pub fn start_after(&self) -> DateTime<Utc> {

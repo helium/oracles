@@ -2,7 +2,6 @@ use crate::{
     balances::BalanceCache,
     burner::Burner,
     settings::Settings,
-    solana::SolanaRpc,
     verifier::{CachedOrgClient, Verifier},
 };
 use anyhow::{bail, Error, Result};
@@ -14,8 +13,7 @@ use file_store::{
     FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::signature::read_keypair_file;
+use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
@@ -93,21 +91,11 @@ impl Cmd {
         sqlx::migrate!().run(&pool).await?;
 
         let solana = if settings.enable_solana_integration {
-            let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
-                Ok(kp) => kp,
-                Err(e) => bail!("Failed to read keypair file ({})", e),
+            let Some(ref solana_settings) = settings.solana else {
+                bail!("Missing solana section in settings");
             };
             // Set up the solana RpcClient:
-            Some(
-                SolanaRpc::new(
-                    RpcClient::new(settings.solana_rpc.clone()),
-                    settings.cluster.clone(),
-                    burn_keypair,
-                    settings.dc_mint()?,
-                    settings.dnt_mint()?,
-                )
-                .await?,
-            )
+            Some(SolanaRpc::new(solana_settings).await?)
         } else {
             None
         };

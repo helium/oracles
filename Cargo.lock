@@ -3301,31 +3301,23 @@ dependencies = [
 name = "iot-packet-verifier"
 version = "0.1.0"
 dependencies = [
- "anchor-client",
- "anchor-lang",
  "anyhow",
  "async-trait",
  "chrono",
  "clap 3.2.23",
  "config",
- "data-credits",
  "db-store",
  "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "helium-sub-daos",
  "http",
  "http-serde",
  "poc-metrics",
  "prost",
  "serde",
- "sha2 0.10.6",
- "solana-client",
- "solana-program",
- "solana-sdk",
- "spl-token",
+ "solana",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3894,31 +3886,25 @@ dependencies = [
 name = "mobile-packet-verifier"
 version = "0.1.0"
 dependencies = [
- "anchor-client",
- "anchor-lang",
  "anyhow",
  "async-trait",
  "chrono",
  "clap 3.2.23",
  "config",
- "data-credits",
  "db-store",
  "file-store",
  "futures",
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "helium-sub-daos",
  "http",
  "http-serde",
+ "mobile-config",
  "poc-metrics",
  "prost",
  "serde",
  "sha2 0.10.6",
- "solana-client",
- "solana-program",
- "solana-sdk",
- "spl-token",
+ "solana",
  "sqlx",
  "thiserror",
  "tokio",
@@ -5887,6 +5873,27 @@ checksum = "02e2d2db9033d13a1567121ddd7a095ee144db4e1ca1b1bda3419bc0da294ebd"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "solana"
+version = "0.1.0"
+dependencies = [
+ "anchor-client",
+ "anchor-lang",
+ "async-trait",
+ "data-credits",
+ "helium-crypto",
+ "helium-sub-daos",
+ "serde",
+ "sha2 0.9.9",
+ "solana-client",
+ "solana-program",
+ "solana-sdk",
+ "spl-token",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
