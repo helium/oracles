@@ -59,7 +59,7 @@ region = "us-west-2"
 
 # Name of bucket to write details to. Required
 #
-bucket = "todo"
+bucket = ""
 
 # Region for bucket. Defaults to below
 #
