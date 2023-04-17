@@ -18,7 +18,7 @@ const DEFAULT_PREC: u32 = 15;
 lazy_static! {
     // TODO: year 1 emissions allocate 30% of total to PoC with 6% to beacons and 24% to witnesses but subsequent years back
     // total PoC percentage off 1.5% each year; determine how beacons and witnesses will split the subsequent years' allocations
-    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(60_000_000_000_u64) / Decimal::from(365)) * Decimal::from(1_000_000); // 16_438_356_164_383_560
+    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(65_000_000_000_u64) / Decimal::from(365)) * Decimal::from(1_000_000); // 178_082_191_780_822
     static ref BEACON_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.06);
     static ref WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
     // Data transfer is allocated 50% of daily rewards
@@ -477,7 +477,7 @@ mod test {
         println!("total_tokens_for_period: {total_tokens_for_period}");
 
         let operation_tokens_for_period = get_scheduled_ops_fund_tokens(epoch_duration);
-        assert_eq!(479452054794, operation_tokens_for_period);
+        assert_eq!(519406392694, operation_tokens_for_period);
     }
 
     #[test]
@@ -627,20 +627,17 @@ mod test {
 
         // assert the beacon and witness amount, these will now have an allocation
         // of any unused data transfer rewards
-        // two values are listed per assertion:
-        // the first is the expected beacon or witness poc reward
-        // the second is the additional reward from unallocated dc transfer rewards
         assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
-        assert_eq!(gw1_rewards.beacon_amount, 1_505_343_971 + 17_371_519);
-        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879 + 412_384_756);
-        assert_eq!(gw2_rewards.beacon_amount, 30_106_879_421 + 347_430_381);
-        assert_eq!(gw2_rewards.witness_amount, 65_515_187_611 + 756_038_719);
-        assert_eq!(gw3_rewards.beacon_amount, 11_290_079_783 + 130_286_392);
-        assert_eq!(gw3_rewards.witness_amount, 47_647_409_172 + 549_846_341);
-        assert_eq!(gw5_rewards.beacon_amount, 3_010_687_942 + 34_743_038);
-        assert_eq!(gw5_rewards.witness_amount, 83_382_966_051 + 962_231_097);
-        assert_eq!(gw6_rewards.beacon_amount, 22_580_159_566 + 260_572_785);
-        assert_eq!(gw6_rewards.witness_amount, 41_691_483_025 + 481_115_549);
+        assert_eq!(gw1_rewards.beacon_amount, 1_649_612_734);
+        assert_eq!(gw1_rewards.witness_amount, 39_160_371_873);
+        assert_eq!(gw2_rewards.beacon_amount, 32_992_254_691);
+        assert_eq!(gw2_rewards.witness_amount, 71_794_015_101);
+        assert_eq!(gw3_rewards.beacon_amount, 12_372_095_509);
+        assert_eq!(gw3_rewards.witness_amount, 52_213_829_164);
+        assert_eq!(gw5_rewards.beacon_amount, 3_299_225_469);
+        assert_eq!(gw5_rewards.witness_amount, 91_374_201_038);
+        assert_eq!(gw6_rewards.beacon_amount, 24_744_191_018);
+        assert_eq!(gw6_rewards.witness_amount, 45_687_100_519);
 
         // assert the total POC rewards allocated equals TOTAL_POC_REWARDS_FOR_PERIOD
         // plus the remainder of the total dc transfer rewards for the period
@@ -665,7 +662,7 @@ mod test {
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 4
-        assert_eq!(poc_diff, 4);
+        assert_eq!(poc_diff, 5);
     }
 
     #[test]
@@ -797,29 +794,29 @@ mod test {
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 2
-        assert_eq!(data_transfer_diff, 2);
+        assert_eq!(data_transfer_diff, 3);
 
         // assert the expected data transfer rewards amounts per gateway
-        assert_eq!(gw1_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
-        assert_eq!(gw2_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
-        assert_eq!(gw3_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
-        assert_eq!(gw5_rewards.dc_transfer_amount, 47_564_687_975); // ~8.33% of total rewards
-        assert_eq!(gw6_rewards.dc_transfer_amount, 380_517_503_805); // ~66.64% of total rewards, or 8x each of the other gateways
+        assert_eq!(gw1_rewards.dc_transfer_amount, 51_528_411_973); // ~8.33% of total rewards
+        assert_eq!(gw2_rewards.dc_transfer_amount, 51_528_411_973); // ~8.33% of total rewards
+        assert_eq!(gw3_rewards.dc_transfer_amount, 51_528_411_973); // ~8.33% of total rewards
+        assert_eq!(gw5_rewards.dc_transfer_amount, 51_528_411_973); // ~8.33% of total rewards
+        assert_eq!(gw6_rewards.dc_transfer_amount, 412_227_295_788); // ~66.64% of total rewards, or 8x each of the other gateways
 
         // assert the beacon and witness amount
         // these will be rewards solely from POC as there are zero unallocated
         // dc transfer rewards
         assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
-        assert_eq!(gw1_rewards.beacon_amount, 1_505_343_971);
-        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879);
-        assert_eq!(gw2_rewards.beacon_amount, 30_106_879_421);
-        assert_eq!(gw2_rewards.witness_amount, 65_515_187_611);
-        assert_eq!(gw3_rewards.beacon_amount, 11_290_079_783);
-        assert_eq!(gw3_rewards.witness_amount, 47_647_409_172);
-        assert_eq!(gw5_rewards.beacon_amount, 3_010_687_942);
-        assert_eq!(gw5_rewards.witness_amount, 83_382_966_051);
-        assert_eq!(gw6_rewards.beacon_amount, 22_580_159_566);
-        assert_eq!(gw6_rewards.witness_amount, 41_691_483_025);
+        assert_eq!(gw1_rewards.beacon_amount, 1_630_789_302);
+        assert_eq!(gw1_rewards.witness_amount, 38_713_519_952);
+        assert_eq!(gw2_rewards.beacon_amount, 32_615_786_040);
+        assert_eq!(gw2_rewards.witness_amount, 70_974_786_579);
+        assert_eq!(gw3_rewards.beacon_amount, 12_230_919_765);
+        assert_eq!(gw3_rewards.witness_amount, 51_618_026_603);
+        assert_eq!(gw5_rewards.beacon_amount, 3_261_578_604);
+        assert_eq!(gw5_rewards.witness_amount, 90_331_546_555);
+        assert_eq!(gw6_rewards.beacon_amount, 24_461_839_530);
+        assert_eq!(gw6_rewards.witness_amount, 45_165_773_277);
 
         // assert the total rewards allocated equals TOTAL_POC_REWARDS_FOR_PERIOD
         // plus 0% of the total dc transfer rewards for the period
@@ -965,28 +962,25 @@ mod test {
         assert_eq!(expected_data_transfer_percent.round(), dec!(55));
 
         // assert the expected dc amounts per gateway
-        assert_eq!(gw1_rewards.dc_transfer_amount, 57_077_623_955); // 10% of total
+        assert_eq!(gw1_rewards.dc_transfer_amount, 61_834_091_922); // 10% of total
         assert_eq!(gw2_rewards.dc_transfer_amount, 0); // 0% of total
-        assert_eq!(gw3_rewards.dc_transfer_amount, 114_155_247_910); // 20% of total
-        assert_eq!(gw5_rewards.dc_transfer_amount, 28_538_811_977); // 5% of total
-        assert_eq!(gw6_rewards.dc_transfer_amount, 114_155_247_910); // 20% of total
+        assert_eq!(gw3_rewards.dc_transfer_amount, 123_668_183_844); // 20% of total
+        assert_eq!(gw5_rewards.dc_transfer_amount, 30_917_045_961); // 5% of total
+        assert_eq!(gw6_rewards.dc_transfer_amount, 123_668_183_844); // 20% of total
 
         // assert the beacon and witness amount, these will now have an allocation
         // of any unused data transfer rewards
-        // two values are listed here:
-        // the first is the expected beacon/witness poc reward
-        // the second is the additional reward from unallocated dc transfer rewards
         assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
-        assert_eq!(gw1_rewards.beacon_amount, 1_505_343_971 + 7_840_333);
-        assert_eq!(gw1_rewards.witness_amount, 35_735_556_879 + 186_122_698);
-        assert_eq!(gw2_rewards.beacon_amount, 30_106_879_421 + 156_806_670);
-        assert_eq!(gw2_rewards.witness_amount, 65_515_187_611 + 341_224_947);
-        assert_eq!(gw3_rewards.beacon_amount, 11_290_079_783 + 58_802_501);
-        assert_eq!(gw3_rewards.witness_amount, 47_647_409_172 + 248_163_598);
-        assert_eq!(gw5_rewards.beacon_amount, 3_010_687_942 + 15_680_667);
-        assert_eq!(gw5_rewards.witness_amount, 83_382_966_051 + 434_286_296);
-        assert_eq!(gw6_rewards.beacon_amount, 22_580_159_566 + 117_605_002);
-        assert_eq!(gw6_rewards.witness_amount, 41_691_483_025 + 217_143_148);
+        assert_eq!(gw1_rewards.beacon_amount, 1_639_282_996);
+        assert_eq!(gw1_rewards.witness_amount, 38_915_152_878);
+        assert_eq!(gw2_rewards.beacon_amount, 32_785_659_934);
+        assert_eq!(gw2_rewards.witness_amount, 71_344_446_943);
+        assert_eq!(gw3_rewards.beacon_amount, 12_294_622_475);
+        assert_eq!(gw3_rewards.witness_amount, 51_886_870_504);
+        assert_eq!(gw5_rewards.beacon_amount, 3_278_565_993);
+        assert_eq!(gw5_rewards.witness_amount, 90_802_023_383);
+        assert_eq!(gw6_rewards.beacon_amount, 24_589_244_950);
+        assert_eq!(gw6_rewards.witness_amount, 45_401_011_691);
 
         // assert the total POC rewards allocated equal TOTAL_POC_REWARDS_FOR_PERIOD
         // plus 45% of the total dc transfer rewards for the period
@@ -1013,7 +1007,7 @@ mod test {
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 3
-        assert_eq!(poc_diff, 4);
+        assert_eq!(poc_diff, 5);
     }
 
     #[test]
