@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use helium_proto::services::{iot_config::config_org_client::OrgClient, Channel, Endpoint};
 use serde::Deserialize;
@@ -24,6 +25,12 @@ pub struct Settings {
     #[serde(default)]
     pub enable_solana_integration: bool,
     pub solana: Option<solana::Settings>,
+    #[serde(default = "default_start_after")]
+    pub start_after: u64,
+}
+
+pub fn default_start_after() -> u64 {
+    0
 }
 
 pub fn default_burn_period() -> u64 {
@@ -64,5 +71,11 @@ impl Settings {
     pub fn config_keypair(&self) -> Result<helium_crypto::Keypair, Box<helium_crypto::Error>> {
         let data = std::fs::read(&self.config_keypair).map_err(helium_crypto::Error::from)?;
         Ok(helium_crypto::Keypair::try_from(&data[..])?)
+    }
+
+    pub fn start_after(&self) -> DateTime<Utc> {
+        Utc.timestamp_opt(self.start_after as i64, 0)
+            .single()
+            .unwrap()
     }
 }

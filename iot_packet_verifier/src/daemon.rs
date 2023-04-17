@@ -5,7 +5,6 @@ use crate::{
     verifier::{CachedOrgClient, Verifier},
 };
 use anyhow::{bail, Error, Result};
-use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -142,9 +141,7 @@ impl Cmd {
             file_source::continuous_source::<PacketRouterPacketReport>()
                 .db(pool.clone())
                 .store(file_store)
-                .lookback(LookbackBehavior::StartAfter(
-                    Utc.timestamp_millis_opt(0).unwrap(),
-                ))
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .file_type(FileType::IotPacketReport)
                 .build()?
                 .start(shutdown_listener.clone())

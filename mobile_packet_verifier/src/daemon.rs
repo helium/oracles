@@ -131,6 +131,7 @@ impl Cmd {
                     Utc.timestamp_millis_opt(0).unwrap(),
                 ))
                 .file_type(FileType::DataTransferSessionIngestReport)
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .build()?
                 .start(shutdown_listener.clone())
                 .await?;

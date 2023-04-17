@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
@@ -21,6 +22,12 @@ pub struct Settings {
     pub enable_solana_integration: bool,
     pub solana: Option<solana::Settings>,
     pub config_client: mobile_config::ClientSettings,
+    #[serde(default = "default_start_after")]
+    pub start_after: u64,
+}
+
+pub fn default_start_after() -> u64 {
+    0
 }
 
 pub fn default_url() -> http::Uri {
@@ -56,5 +63,11 @@ impl Settings {
             .add_source(Environment::with_prefix("MOBILE_PACKET_VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
+    }
+
+    pub fn start_after(&self) -> DateTime<Utc> {
+        Utc.timestamp_opt(self.start_after as i64, 0)
+            .single()
+            .unwrap()
     }
 }

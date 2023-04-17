@@ -80,7 +80,9 @@ impl Server {
             .store(file_store)
             .file_type(FileType::RewardManifest)
             .lookback(LookbackBehavior::StartAfter(
-                Utc.timestamp_opt(0, 0).single().unwrap(),
+                Utc.timestamp_opt(settings.start_after as i64, 0)
+                    .single()
+                    .unwrap(),
             ))
             .poll_duration(settings.interval())
             .offset(settings.interval() * 2)
