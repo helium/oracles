@@ -1,40 +1,51 @@
 use crate::{burner::Burner, settings::Settings};
 use anyhow::{bail, Error, Result};
+use chrono::{TimeZone, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_source, file_upload,
-    mobile_session::DataTransferSessionIngestReport, FileSinkBuilder, FileStore, FileType,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_source, file_upload,
+    mobile_session::DataTransferSessionIngestReport,
+    FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::signature::read_keypair_file;
+use mobile_config::Client;
+use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use tokio::{
     sync::mpsc::Receiver,
     time::{sleep_until, Duration, Instant},
 };
 
-pub struct Daemon {
+pub struct Daemon<S> {
     pool: Pool<Postgres>,
-    burner: Burner,
+    burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
+    config_client: Client,
 }
 
-impl Daemon {
+impl<S> Daemon<S> {
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-        burner: Burner,
+        burner: Burner<S>,
+        config_client: Client,
     ) -> Self {
         Self {
             pool,
             burner,
             reports,
             burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
+            config_client,
         }
     }
+}
 
+impl<S> Daemon<S>
+where
+    S: SolanaNetwork,
+{
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
         let mut burn_time = Instant::now() + self.burn_period;
         loop {
@@ -47,7 +58,7 @@ impl Daemon {
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&mut transaction, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&mut self.config_client, &mut transaction, ts, reports).await?;
                     transaction.commit().await?;
                 },
                 _ = sleep_until(burn_time) => {
@@ -81,13 +92,15 @@ impl Cmd {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        // Set up the solana RpcClient:
-        let rpc_client = RpcClient::new(settings.solana_rpc.clone());
-
-        // Set up the balance burner:
-        let burn_keypair = match read_keypair_file(&settings.burn_keypair) {
-            Ok(kp) => kp,
-            Err(e) => bail!("Failed to read keypair file ({})", e),
+        // Set up the solana network:
+        let solana = if settings.enable_solana_integration {
+            let Some(ref solana_settings) = settings.solana else {
+                bail!("Missing solana section in settings");
+            };
+            // Set up the solana RpcClient:
+            Some(SolanaRpc::new(solana_settings).await?)
+        } else {
+            None
         };
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
@@ -106,7 +119,7 @@ impl Cmd {
         .create()
         .await?;
 
-        let burner = Burner::new(settings, valid_sessions, rpc_client, burn_keypair).await?;
+        let burner = Burner::new(valid_sessions, solana);
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
@@ -114,12 +127,18 @@ impl Cmd {
             file_source::continuous_source::<DataTransferSessionIngestReport>()
                 .db(pool.clone())
                 .store(file_store)
+                .lookback(LookbackBehavior::StartAfter(
+                    Utc.timestamp_millis_opt(0).unwrap(),
+                ))
                 .file_type(FileType::DataTransferSessionIngestReport)
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .build()?
                 .start(shutdown_listener.clone())
                 .await?;
 
-        let daemon = Daemon::new(settings, pool, reports, burner);
+        let config_client = Client::from_settings(&settings.config_client)?;
+
+        let daemon = Daemon::new(settings, pool, reports, burner, config_client);
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),

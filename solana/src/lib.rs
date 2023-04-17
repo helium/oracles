@@ -1,4 +1,3 @@
-use crate::pdas;
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::AccountDeserialize;
 use async_trait::async_trait;
@@ -6,6 +5,8 @@ use data_credits::DelegatedDataCreditsV0;
 use data_credits::{accounts, instruction};
 use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use solana_client::{
     client_error::ClientError, nonblocking::rpc_client::RpcClient,
     rpc_config::RpcSendTransactionConfig,
@@ -14,7 +15,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
     pubkey::{ParsePubkeyError, Pubkey},
-    signature::Keypair,
+    signature::{read_keypair_file, Keypair},
     signer::Signer,
     transaction::Transaction,
 };
@@ -55,6 +56,17 @@ pub enum SolanaRpcError {
     InvalidKeypair,
     #[error("System time error: {0}")]
     SystemTimeError(#[from] SystemTimeError),
+    #[error("Failed to read keypair file")]
+    FailedToReadKeypairError,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Settings {
+    rpc_url: String,
+    cluster: String,
+    burn_keypair: String,
+    dc_mint: String,
+    dnt_mint: String,
 }
 
 pub struct SolanaRpc {
@@ -65,19 +77,19 @@ pub struct SolanaRpc {
 }
 
 impl SolanaRpc {
-    pub async fn new(
-        provider: RpcClient,
-        cluster: String,
-        keypair: Keypair,
-        dc_mint: Pubkey,
-        dnt_mint: Pubkey,
-    ) -> Result<Arc<Self>, SolanaRpcError> {
+    pub async fn new(settings: &Settings) -> Result<Arc<Self>, SolanaRpcError> {
+        let dc_mint = settings.dc_mint.parse()?;
+        let dnt_mint = settings.dnt_mint.parse()?;
+        let Ok(keypair) = read_keypair_file(&settings.burn_keypair) else {
+            return Err(SolanaRpcError::FailedToReadKeypairError);
+        };
+        let provider = RpcClient::new(settings.rpc_url.clone());
         let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
         if program_cache.dc_burn_authority != keypair.pubkey() {
             return Err(SolanaRpcError::InvalidKeypair);
         }
         Ok(Arc::new(Self {
-            cluster,
+            cluster: settings.cluster.clone(),
             provider,
             program_cache,
             keypair: keypair.to_bytes(),
@@ -90,7 +102,7 @@ impl SolanaNetwork for SolanaRpc {
     type Error = SolanaRpcError;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
-        let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, payer);
+        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
         let account_data = self.provider.get_account_data(&ddc_key).await?;
         let mut account_data = account_data.as_ref();
         let ddc = DelegatedDataCreditsV0::try_deserialize(&mut account_data)?;
@@ -104,8 +116,6 @@ impl SolanaNetwork for SolanaRpc {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<(), Self::Error> {
-        tracing::info!("Burning {} DC from {}", amount, payer);
-
         // Fetch the sub dao epoch info:
         const EPOCH_LENGTH: u64 = 60 * 60 * 24;
         let epoch = SystemTime::now()
@@ -122,7 +132,7 @@ impl SolanaNetwork for SolanaRpc {
         );
 
         // Fetch escrow account
-        let ddc_key = pdas::delegated_data_credits(&self.program_cache.sub_dao, payer);
+        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
         let account_data = self.provider.get_account_data(&ddc_key).await?;
         let mut account_data = account_data.as_ref();
         let escrow_account =
@@ -143,10 +153,7 @@ impl SolanaNetwork for SolanaRpc {
                 sub_dao: self.program_cache.sub_dao,
                 account_payer: self.program_cache.account_payer,
                 data_credits: self.program_cache.data_credits,
-                delegated_data_credits: pdas::delegated_data_credits(
-                    &self.program_cache.sub_dao,
-                    payer,
-                ),
+                delegated_data_credits: delegated_data_credits(&self.program_cache.sub_dao, payer),
                 token_program: spl_token::id(),
                 helium_sub_daos_program: helium_sub_daos::id(),
                 system_program: solana_program::system_program::id(),
@@ -293,4 +300,20 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         *self.lock().await.get_mut(payer).unwrap() -= amount;
         Ok(())
     }
+}
+
+/// Returns the PDA for the Delegated Data Credits of the given `payer`.
+pub fn delegated_data_credits(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubkey {
+    let mut hasher = Sha256::new();
+    hasher.update(payer.to_string());
+    let sha_digest = hasher.finalize();
+    let (ddc_key, _) = Pubkey::find_program_address(
+        &[
+            "delegated_data_credits".as_bytes(),
+            sub_dao.as_ref(),
+            &sha_digest,
+        ],
+        &data_credits::ID,
+    );
+    ddc_key
 }

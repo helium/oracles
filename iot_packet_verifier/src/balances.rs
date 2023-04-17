@@ -1,10 +1,10 @@
 use crate::{
     pending_burns::{Burn, PendingBurns},
-    solana::SolanaNetwork,
     verifier::Debiter,
 };
 use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
+use solana::SolanaNetwork;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
