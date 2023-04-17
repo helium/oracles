@@ -341,10 +341,10 @@ impl GatewayShares {
         let dc_transfer_rewards_per_share =
             rewards_per_share(total_dc_transfer_rewards_capped, total_dc_shares);
         // compute the awards per hotspot
-        tracing::info!(%total_dc_shares, "total dc spend for period", );
-        tracing::info!(%total_dc_transfer_rewards_used, "total rewards for spent dc this period" );
-        tracing::info!(%dc_transfer_rewards_unused, "total unused dc rewards this period", );
-        tracing::info!(%dc_transfer_rewards_per_share, "dc rewards per share");
+        tracing::info!("total dc spend for period: {total_dc_shares}");
+        tracing::info!("total rewards for spent dc this period: {total_dc_transfer_rewards_used}");
+        tracing::info!("total unused dc rewards this period: {dc_transfer_rewards_unused}");
+        tracing::info!("dc rewards per share: {dc_transfer_rewards_per_share}");
         self.shares
             .into_iter()
             .map(move |(hotspot_key, reward_shares)| proto::GatewayReward {
