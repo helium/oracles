@@ -154,7 +154,7 @@ impl Loader {
             "sliding window, after: {after}, before: {before}, cur width: {:?}, required width: {:?}",
             cur_window_width.num_minutes(), self.window_width.num_minutes()
         );
-        // if the current window width is less that our expected width
+        // if the current window width is less than our expected width
         // then do nothing
         // this likely means our loader tick interval is set to a value
         // less than our width
