@@ -77,7 +77,8 @@ impl GatewayCache {
                         _ = self.insert(res.clone()).await;
                         Ok(res)
                     }
-                    _ => Err(GatewayCacheError::GatewayNotFound(address.clone())),
+                    Ok(None) => Err(GatewayCacheError::GatewayNotFound(address.clone())),
+                    Err(err) => Err(GatewayCacheError::IotConfigClient(err)),
                 }
             }
         }

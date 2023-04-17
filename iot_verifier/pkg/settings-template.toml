@@ -17,6 +17,10 @@ beacon_interval = 21600
 # Default beacon interval tolerance ( 10 minutes) (in seconds)
 beacon_interval_tolerance = 600
 
+# how often the ingestors write out to s3
+# this is used to pad the witness loading `after` and `before` periods
+ingestor_rollup_time = 300
+
 # window width for the  poc report loader ( in seconds )
 # NOTE: the window width should be as a minimum equal to the ingestor roll up period
 #       any less and the verifier will potentially miss incoming reports
@@ -49,24 +53,6 @@ url = "postgres://postgres:postgres@127.0.0.1:5432/iot_verifier"
 
 # Max connections to the database.
 max_connections = 400
-
-[follower]
-
-# Local grpc url to node follower for rewards tracking and submission
-#[serde(with = "http_serde::uri", default = "default_url")]
-# url = http://127.0.0.1:8080
-
-# Start block to start streaming followed transactions from.
-block = 0
-
-# Connect timeout for follower in seconds. Default 5
-# connect = 5
-
-# RPC timeout for follower in seconds. Default 5
-# rpc = 5
-
-# batch size for gateway stream results. Default 100
-# batch = 100
 
 [ingest]
 

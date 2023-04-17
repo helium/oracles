@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use helium_proto::EntropyReportV1;
 use serde::Serialize;
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct EntropyReport {
     pub data: Vec<u8>,
     pub timestamp: DateTime<Utc>,
@@ -21,7 +21,7 @@ impl MsgTimestamp<u64> for EntropyReport {
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for EntropyReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.timestamp.to_timestamp_millis()
+        self.timestamp.to_timestamp()
     }
 }
 

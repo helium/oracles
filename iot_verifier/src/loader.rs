@@ -32,6 +32,7 @@ pub struct Loader {
     pool: PgPool,
     poll_time: time::Duration,
     window_width: ChronoDuration,
+    ingestor_rollup_time: ChronoDuration,
     max_lookback_age: ChronoDuration,
     deny_list_latest_url: String,
     deny_list_trigger_interval: Duration,
@@ -60,6 +61,7 @@ impl Loader {
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let poll_time = settings.poc_loader_poll_time();
         let window_width = settings.poc_loader_window_width();
+        let ingestor_rollup_time = settings.ingestor_rollup_time();
         let max_lookback_age = settings.loader_window_max_lookback_age();
         let deny_list = DenyList::new()?;
         Ok(Self {
@@ -67,6 +69,7 @@ impl Loader {
             ingest_store,
             poll_time,
             window_width,
+            ingestor_rollup_time,
             max_lookback_age,
             deny_list_latest_url: settings.denylist.denylist_url.clone(),
             deny_list_trigger_interval: settings.denylist.trigger_interval(),
@@ -146,8 +149,19 @@ impl Loader {
             .max(window_max_lookback);
         let before_max = after + self.window_width;
         let before = (now - (self.window_width * 3)).min(before_max);
-        let window_width = (before - after).num_minutes() as u64;
-        tracing::info!("sliding window, after: {after}, before: {before}, width: {window_width}");
+        let cur_window_width = before - after;
+        tracing::info!(
+            "sliding window, after: {after}, before: {before}, cur width: {:?}, required width: {:?}",
+            cur_window_width.num_minutes(), self.window_width.num_minutes()
+        );
+        // if the current window width is less than our expected width
+        // then do nothing
+        // this likely means our loader tick interval is set to a value
+        // less than our width
+        if cur_window_width < self.window_width {
+            tracing::info!("current window width insufficient. completed handling poc_report tick");
+            return Ok(());
+        }
         self.process_window(gateway_cache, after, before).await?;
         Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
         Report::pending_beacons_to_ready(&self.pool, now).await?;
@@ -192,9 +206,15 @@ impl Loader {
         let mut beacon_packet_data = xor_data.into_inner();
         beacon_packet_data.sort_unstable();
         beacon_packet_data.dedup();
-        tracing::info!("xor filter len {:?}", beacon_packet_data.len());
+        let xor_len = beacon_packet_data.len();
+        tracing::info!("xor filter len {:?}", xor_len);
         let filter = Xor16::from(beacon_packet_data);
         tracing::info!("completed creating beacon xor filter");
+        // if we dont have any beacons, then dont go any further
+        // no point processing witnesses if no beacons to associate with
+        if xor_len == 0 {
+            return Ok(());
+        };
 
         // process the witnesses
         // widen the window for these over that used for the beacons
@@ -208,8 +228,8 @@ impl Loader {
                 FileType::IotWitnessIngestReport,
                 &self.ingest_store,
                 gateway_cache,
-                after - self.window_width,
-                before + self.window_width,
+                after - self.ingestor_rollup_time,
+                before + self.ingestor_rollup_time,
                 None,
                 Some(&filter),
             )

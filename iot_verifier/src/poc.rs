@@ -1,9 +1,10 @@
 use crate::{
     entropy::ENTROPY_LIFESPAN,
     gateway_cache::GatewayCache,
+    gateway_cache::GatewayCacheError,
     hex_density::HexDensityMap,
     last_beacon::{LastBeacon, LastBeaconError},
-    region_cache::RegionCache,
+    region_cache::{RegionCache, RegionCacheError},
 };
 use beacon;
 use chrono::{DateTime, Duration, Utc};
@@ -12,7 +13,6 @@ use file_store::{
     iot_valid_poc::IotVerifiedWitnessReport,
     iot_witness_report::IotWitnessIngestReport,
 };
-
 use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
 use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
 use helium_crypto::PublicKeyBinary;
@@ -77,6 +77,10 @@ pub enum VerificationError {
     LastBeaconError(#[from] LastBeaconError),
     #[error("calc distance error: {0}")]
     CalcDistanceError(#[from] CalcDistanceError),
+    #[error("error querying gateway info from iot config service")]
+    GatewayCache(#[from] GatewayCacheError),
+    #[error("error querying region info from iot config service")]
+    RegionCache(#[from] RegionCacheError),
 }
 
 impl Poc {
@@ -111,9 +115,10 @@ impl Poc {
         // it not available then declare beacon invalid
         let beaconer_info = match gateway_cache.resolve_gateway_info(&beaconer_pub_key).await {
             Ok(res) => res,
-            Err(_err) => {
-                return Ok(VerifyBeaconResult::gateway_not_found());
+            Err(GatewayCacheError::GatewayNotFound(_)) => {
+                return Ok(VerifyBeaconResult::gateway_not_found())
             }
+            Err(err) => return Err(VerificationError::GatewayCache(err)),
         };
         let beaconer_metadata = match beaconer_info.metadata {
             Some(ref metadata) => metadata,
@@ -129,12 +134,7 @@ impl Poc {
             .await
         {
             Ok(res) => res,
-            Err(_e) => {
-                return Ok(VerifyBeaconResult::invalid(
-                    InvalidReason::InvalidRegion,
-                    beaconer_info,
-                ));
-            }
+            Err(err) => return Err(VerificationError::RegionCache(err)),
         };
         // we have beaconer info, proceed to verifications
         let last_beacon = LastBeacon::get(pool, beaconer_pub_key.as_ref()).await?;
@@ -223,7 +223,7 @@ impl Poc {
         // pull the witness info from our follower
         let witness_info = match gateway_cache.resolve_gateway_info(&witness_pub_key).await {
             Ok(res) => res,
-            Err(_e) => {
+            Err(GatewayCacheError::GatewayNotFound(_)) => {
                 return Ok(IotVerifiedWitnessReport::invalid(
                     InvalidReason::GatewayNotFound,
                     &witness_report.report,
@@ -232,6 +232,7 @@ impl Poc {
                     InvalidParticipantSide::Witness,
                 ))
             }
+            Err(err) => return Err(VerificationError::GatewayCache(err)),
         };
         let witness_metadata = match witness_info.metadata {
             Some(ref metadata) => metadata,
