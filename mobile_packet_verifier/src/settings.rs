@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use solana_sdk::pubkey::{ParsePubkeyError, Pubkey};
@@ -28,6 +29,12 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     #[serde(default)]
     pub enable_dc_burn: bool,
+    #[serde(default = "default_start_after")]
+    pub start_after: u64,
+}
+
+pub fn default_start_after() -> u64 {
+    0
 }
 
 pub fn default_url() -> http::Uri {
@@ -75,5 +82,11 @@ impl Settings {
 
     pub fn hnt_mint(&self) -> Result<Pubkey, ParsePubkeyError> {
         self.hnt_mint.parse()
+    }
+
+    pub fn start_after(&self) -> DateTime<Utc> {
+        Utc.timestamp_opt(self.start_after as i64, 0)
+            .single()
+            .unwrap()
     }
 }

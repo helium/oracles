@@ -1,8 +1,10 @@
 use crate::{burner::Burner, settings::Settings};
 use anyhow::{bail, Error, Result};
 use file_store::{
-    file_info_poller::FileInfoStream, file_source, file_upload,
-    mobile_session::DataTransferSessionIngestReport, FileSinkBuilder, FileStore, FileType,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_source, file_upload,
+    mobile_session::DataTransferSessionIngestReport,
+    FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -115,6 +117,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(file_store)
                 .file_type(FileType::DataTransferSessionIngestReport)
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .build()?
                 .start(shutdown_listener.clone())
                 .await?;
