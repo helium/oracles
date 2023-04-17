@@ -97,9 +97,9 @@ blake3 = "*"
 retainer = "*"
 rand = "0.8"
 itertools = "*"
-data-credits = {git = "https://github.com/helium/helium-program-library.git"}
-helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git"}
-price-oracle = {git = "https://github.com/helium/helium-program-library.git"}
+data-credits = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
+helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
+price-oracle = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
 
 [patch.crates-io]
 sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }
