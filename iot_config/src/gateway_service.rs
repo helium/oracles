@@ -40,25 +40,10 @@ impl GatewayService {
         metadata_pool: Pool<Postgres>,
         region_map: RegionMapReader,
         auth_cache: AuthCache,
-        shutdown: triggered::Listener,
     ) -> Result<Self> {
         let gateway_cache = Arc::new(Cache::new());
         let cache_clone = gateway_cache.clone();
-        tokio::spawn(async move {
-            loop {
-                let shutdown = shutdown.clone();
-                tokio::select! {
-                    _ = shutdown => {
-                        cache_clone.clear().await;
-                        return
-                    }
-                    () = cache_clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY) => {
-                        tracing::debug!("processed gateway info cache evictions");
-                        continue
-                    }
-                }
-            }
-        });
+        tokio::spawn(async move { cache_clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY).await });
 
         Ok(Self {
             auth_cache,
