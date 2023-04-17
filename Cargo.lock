@@ -3285,6 +3285,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
+ "retainer",
  "serde",
  "serde_json",
  "sqlx",

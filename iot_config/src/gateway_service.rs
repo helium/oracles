@@ -18,12 +18,17 @@ use helium_proto::{
     Message, Region,
 };
 use hextree::Cell;
+use retainer::Cache;
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tonic::{Request, Response, Status};
+
+const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
+const CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 3);
 
 pub struct GatewayService {
     auth_cache: AuthCache,
+    gateway_cache: Arc<Cache<PublicKeyBinary, GatewayInfo>>,
     metadata_pool: Pool<Postgres>,
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
@@ -36,8 +41,13 @@ impl GatewayService {
         region_map: RegionMapReader,
         auth_cache: AuthCache,
     ) -> Result<Self> {
+        let gateway_cache = Arc::new(Cache::new());
+        let cache_clone = gateway_cache.clone();
+        tokio::spawn(async move { cache_clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY).await });
+
         Ok(Self {
             auth_cache,
+            gateway_cache,
             metadata_pool,
             region_map,
             signing_key: Arc::new(settings.signing_keypair()?),
@@ -59,6 +69,31 @@ impl GatewayService {
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
         Ok(())
     }
+
+    async fn resolve_gateway_info(&self, pubkey: &PublicKeyBinary) -> Result<GatewayInfo, Status> {
+        match self.gateway_cache.get(pubkey).await {
+            Some(gateway) => Ok(gateway.value().clone()),
+            None => {
+                let metadata = gateway_info::db::get_info(&self.metadata_pool, pubkey)
+                    .await
+                    .map_err(|_| Status::internal("error fetching gateway info"))?
+                    .ok_or_else(|| {
+                        telemetry::count_gateway_info_lookup("not-found");
+                        Status::not_found(format!("gateway not found: pubkey = {pubkey:}"))
+                    })?;
+                let gateway = GatewayInfo::chain_metadata_to_info(metadata, &self.region_map);
+                self.gateway_cache
+                    .insert(pubkey.clone(), gateway.clone(), CACHE_TTL)
+                    .await;
+                if gateway.metadata.is_some() {
+                    telemetry::count_gateway_info_lookup("asserted");
+                } else {
+                    telemetry::count_gateway_info_lookup("not-asserted");
+                };
+                Ok(gateway)
+            }
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -75,23 +110,16 @@ impl iot_config::Gateway for GatewayService {
 
         let address: &PublicKeyBinary = &request.gateway.into();
 
-        let location = gateway_info::db::get_info(&self.metadata_pool, address)
+        let location = self
+            .resolve_gateway_info(address)
             .await
-            .map_err(|_| Status::internal("error fetching gateway info"))
-            .and_then(|opt| {
-                opt.ok_or_else(|| {
-                    telemetry::count_gateway_info_lookup("not-found");
-                    Status::not_found(format!("gateway not found: pubkey = {address}"))
-                })
-            })
-            .and_then(|iot_metadata| {
-                iot_metadata.location.ok_or_else(|| {
-                    telemetry::count_gateway_info_lookup("not-asserted");
-                    Status::not_found(format!("gateway unasserted: pubkey = {address}"))
-                })
+            .and_then(|gateway| match gateway.metadata {
+                Some(metadata) => Ok(metadata.location),
+                None => Err(Status::not_found(format!(
+                    "gateway unasserted: pubkey = {address}"
+                ))),
             })
             .and_then(|location| {
-                telemetry::count_gateway_info_lookup("asserted");
                 Cell::from_raw(location).map_err(|_| {
                     Status::internal(format!(
                         "invalid h3 index location {location} for {address}"
@@ -125,58 +153,34 @@ impl iot_config::Gateway for GatewayService {
             .map_err(|_| Status::permission_denied("invalid request signature"))?;
 
         let address: &PublicKeyBinary = &pubkey.into();
-        tracing::debug!(pubkey = address.to_string(), "fetching region params");
+        tracing::debug!(pubkey = %address, "fetching region params");
 
         let default_region = Region::from_i32(request.region).ok_or_else(|| {
             Status::invalid_argument(format!("invalid lora region {}", request.region))
         })?;
 
-        let (region, gain) = if let Some(info) =
-            gateway_info::db::get_info(&self.metadata_pool, address)
-                .await
-                .map_err(|_| Status::internal("error fetching gateway info"))?
-        {
-            telemetry::count_gateway_info_lookup("asserted");
-            if let (Some(location), Some(gain)) = (info.location, info.gain) {
-                let region = match hextree::Cell::from_raw(location) {
-                    Ok(h3_location) => {
-                        self.region_map.get_region(h3_location).unwrap_or_else(|| {
-                            tracing::debug!(
-                                pubkey = address.to_string(),
-                                location = location,
-                                "gateway region lookup failed for asserted location"
-                            );
-                            default_region
-                        })
-                    }
-                    Err(_) => {
-                        tracing::debug!(
-                            pubkey = address.to_string(),
-                            location = location,
-                            "gateway asserted location is invalid h3 index"
-                        );
-                        default_region
-                    }
-                };
-                (region, gain)
-            } else {
-                telemetry::count_gateway_info_lookup("not-asserted");
+        let (region, gain) = match self.resolve_gateway_info(address).await {
+            Err(_) => {
                 tracing::debug!(
-                    pubkey = address.to_string(),
-                    default_region = default_region.to_string(),
-                    "gateway not asserted"
+                    pubkey = %address,
+                    %default_region,
+                    "unable to retrieve gateway from chain"
                 );
                 (default_region, 0)
             }
-        } else {
-            telemetry::count_gateway_info_lookup("not-found");
-            tracing::debug!(
-                pubkey = address.to_string(),
-                default_region = default_region.to_string(),
-                "gateway not found on chain"
-            );
-            (default_region, 0)
+            Ok(GatewayInfo { metadata, .. }) => match metadata {
+                None => {
+                    tracing::debug!(
+                        pubkey = %address,
+                        %default_region,
+                        "gateway not asserted"
+                    );
+                    (default_region, 0)
+                }
+                Some(metadata) => (metadata.region, metadata.gain),
+            },
         };
+        telemetry::count_region_lookup(default_region, region);
 
         let params = self.region_map.get_params(&region);
 
@@ -190,12 +194,11 @@ impl iot_config::Gateway for GatewayService {
         };
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
         tracing::debug!(
-            pubkey = address.to_string(),
-            region = region.to_string(),
+            pubkey = %address,
+            %region,
             "returning region params"
         );
         telemetry::duration_gateway_info_lookup(request_start);
-        telemetry::count_region_lookup(default_region, region);
         Ok(Response::new(resp))
     }
 
@@ -207,23 +210,8 @@ impl iot_config::Gateway for GatewayService {
         self.verify_request_signature(&signer, &request)?;
 
         let address = &request.address.into();
-        let metadata_info = gateway_info::db::get_info(&self.metadata_pool, address)
-            .await
-            .map_err(|_| Status::internal("error fetching gateway info"))?
-            .map(|info| {
-                if info.location.is_some() && info.elevation.is_some() && info.gain.is_some() {
-                    telemetry::count_gateway_info_lookup("asserted");
-                } else {
-                    telemetry::count_gateway_info_lookup("not-asserted");
-                }
-                info
-            })
-            .ok_or_else(|| {
-                telemetry::count_gateway_info_lookup("not-found");
-                Status::not_found(format!("gateway not found: pubkey = {address:}"))
-            })?;
+        let gateway_info = self.resolve_gateway_info(address).await?;
 
-        let gateway_info = GatewayInfo::chain_metadata_to_info(metadata_info, &self.region_map);
         let mut resp = GatewayInfoResV1 {
             info: Some(gateway_info.try_into().map_err(|_| {
                 Status::internal("unexpected error converting gateway info to protobuf")
