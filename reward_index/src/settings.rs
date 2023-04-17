@@ -36,6 +36,12 @@ pub struct Settings {
     pub verifier: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub operation_fund_key: Option<String>,
+    #[serde(default = "default_start_after")]
+    pub start_after: u64,
+}
+
+pub fn default_start_after() -> u64 {
+    0
 }
 
 pub fn default_log() -> String {

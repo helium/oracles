@@ -131,9 +131,11 @@ impl VerifierDaemon {
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
             .await?;
         // Mobile prices are supplied in 10^6, so we must convert them to Decimal
-        let mobile_price = Decimal::from(mobile_price) / dec!(1_000_000);
+        let mobile_bone_price = Decimal::from(mobile_price)
+            / dec!(1_000_000)  // Per Mobile token
+            / dec!(1_000_000); // Per Bone
         let transfer_rewards = TransferRewards::from_transfer_sessions(
-            mobile_price,
+            mobile_bone_price,
             ingest::ingest_valid_data_transfers(
                 &self.data_transfer_ingest,
                 &scheduler.reward_period,
