@@ -91,6 +91,7 @@ impl Daemon {
             metadata_pool,
             region_map.clone(),
             auth_cache.clone(),
+            shutdown_listener.clone(),
         )?;
         let route_svc = RouteService::new(
             settings,
