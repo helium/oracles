@@ -104,21 +104,21 @@ impl RouteService {
         Err(Status::permission_denied("unauthorized request signature"))
     }
 
-    fn verify_stream_request_signature<R>(
-        &self,
-        signer: &PublicKey,
-        request: &R,
-    ) -> Result<(), Status>
-    where
-        R: MsgVerify,
-    {
-        if self.auth_cache.verify_signature(signer, request).is_ok() {
-            tracing::debug!(signer = signer.to_string(), "request authorized");
-            Ok(())
-        } else {
-            Err(Status::permission_denied("unauthorized request signature"))
-        }
-    }
+    // fn verify_stream_request_signature<R>(
+    //     &self,
+    //     signer: &PublicKey,
+    //     request: &R,
+    // ) -> Result<(), Status>
+    // where
+    //     R: MsgVerify,
+    // {
+    //     if self.auth_cache.verify_signature(signer, request).is_ok() {
+    //         tracing::debug!(signer = signer.to_string(), "request authorized");
+    //         Ok(())
+    //     } else {
+    //         Err(Status::permission_denied("unauthorized request signature"))
+    //     }
+    // }
 
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
@@ -326,11 +326,11 @@ impl iot_config::Route for RouteService {
 
     type streamStream = GrpcStreamResult<RouteStreamResV1>;
     async fn stream(&self, request: Request<RouteStreamReqV1>) -> GrpcResult<Self::streamStream> {
-        let request = request.into_inner();
+        let _request = request.into_inner();
         telemetry::count_request("route", "stream");
 
-        let signer = verify_public_key(&request.signer)?;
-        self.verify_stream_request_signature(&signer, &request)?;
+        // let signer = verify_public_key(&request.signer)?;
+        // self.verify_stream_request_signature(&signer, &request)?;
 
         tracing::info!("client subscribed to route stream");
         let pool = self.pool.clone();
