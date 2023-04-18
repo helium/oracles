@@ -67,6 +67,7 @@ spl-token = "3.5.0"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
 beacon = {git = "https://github.com/helium/gateway-rs.git", branch = "main"}
 humantime = "2"
+jemallocator = "0.5"
 metrics = "0"
 metrics-exporter-prometheus = "0"
 tracing = "0"

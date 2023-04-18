@@ -2,6 +2,7 @@ use anyhow::{Error, Result};
 use clap::Parser;
 use futures_util::TryFutureExt;
 use helium_proto::services::mobile_config::{AdminServer, GatewayServer, RouterServer};
+use jemallocator::Jemalloc;
 use mobile_config::{
     admin_service::AdminService, gateway_service::GatewayService, key_cache::KeyCache,
     router_service::RouterService, settings::Settings,
@@ -10,6 +11,11 @@ use std::{path::PathBuf, time::Duration};
 use tokio::signal;
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+// We use jemalloc due to high allocation churn and fragmentation when
+// using the system allocator.
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]

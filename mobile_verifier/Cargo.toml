@@ -42,3 +42,4 @@ poc-metrics = {path = "../metrics"}
 price = {path = "../price"}
 rand = {workspace = true}
 async-trait = {workspace = true}
+jemallocator = {workspace = true}

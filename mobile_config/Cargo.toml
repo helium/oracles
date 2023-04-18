@@ -22,6 +22,7 @@ helium-proto = {workspace = true}
 hextree = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
+jemallocator = {workspace = true}
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
 poc-metrics = {path = "../metrics"}

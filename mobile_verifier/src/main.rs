@@ -1,11 +1,17 @@
 use anyhow::Result;
 use clap::Parser;
+use jemallocator::Jemalloc;
 use mobile_verifier::{
     cli::{generate, reward_from_db, server},
     Settings,
 };
 use std::path;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+// We use jemalloc due to high allocation churn and fragmentation when
+// using the system allocator.
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]

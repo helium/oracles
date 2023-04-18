@@ -9,10 +9,16 @@ use iot_config::{
     region_map::RegionMapReader, route_service::RouteService,
     session_key_service::SessionKeyFilterService, settings::Settings, AdminService,
 };
+use jemallocator::Jemalloc;
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+// We use jemalloc due to high allocation churn and fragmentation
+// when using the system allocator, particularly in region maps.
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]

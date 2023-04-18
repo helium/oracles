@@ -12,15 +12,20 @@ use iot_verifier::{
     poc_report::Report, purger, region_cache::RegionCache, rewarder::Rewarder, runner,
     tx_scaler::Server as DensityScaler, Settings,
 };
+use jemallocator::Jemalloc;
 use price::PriceTracker;
 use std::path;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+// We use jemalloc due to high allocation churn and fragmentation when
+// using the system allocator.
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
 #[clap(about = "Helium POC IOT Verifier")]
-
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
     /// given path will be loaded. Environemnt variables can override the

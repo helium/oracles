@@ -3281,6 +3281,7 @@ dependencies = [
  "hextree",
  "http",
  "http-serde",
+ "jemallocator",
  "libflate",
  "metrics",
  "metrics-exporter-prometheus",
@@ -3316,6 +3317,7 @@ dependencies = [
  "helium-proto",
  "http",
  "http-serde",
+ "jemallocator",
  "metrics",
  "poc-metrics",
  "prost",
@@ -3357,6 +3359,7 @@ dependencies = [
  "humantime",
  "iot-config",
  "itertools",
+ "jemallocator",
  "lazy_static",
  "metrics",
  "once_cell",
@@ -3407,6 +3410,26 @@ name = "itoa"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4217ad341ebadf8d8e724e264f13e593e0648f5b3e94b3896a5df283be015ecc"
+
+[[package]]
+name = "jemalloc-sys"
+version = "0.5.3+5.3.0-patched"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9bd5d616ea7ed58b571b2e209a65759664d7fb021a0819d7a790afc67e47ca1"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "jemallocator"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c2514137880c52b0b4822b563fadd38257c1f380858addb74a400889696ea6"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
+]
 
 [[package]]
 name = "jobserver"
@@ -3868,6 +3891,7 @@ dependencies = [
  "hextree",
  "http",
  "http-serde",
+ "jemallocator",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
@@ -3902,6 +3926,7 @@ dependencies = [
  "helium-proto",
  "http",
  "http-serde",
+ "jemallocator",
  "metrics",
  "mobile-config",
  "poc-metrics",
@@ -3975,6 +4000,7 @@ dependencies = [
  "helium-proto",
  "http-serde",
  "humantime",
+ "jemallocator",
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
@@ -5893,7 +5919,7 @@ dependencies = [
  "helium-sub-daos",
  "metrics",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "solana-client",
  "solana-program",
  "solana-sdk",
@@ -7414,7 +7440,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 

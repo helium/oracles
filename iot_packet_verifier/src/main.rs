@@ -1,8 +1,14 @@
 use anyhow::Result;
 use clap::Parser;
 use iot_packet_verifier::{daemon, settings::Settings};
+use jemallocator::Jemalloc;
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+// We use jemalloc due to high allocation churn and fragmentation
+// when using the system allocator.
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
