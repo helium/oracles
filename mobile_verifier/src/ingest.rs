@@ -77,7 +77,7 @@ pub async fn ingest_valid_data_transfers(
         )
         .filter_map(|msg| async move {
             msg.map_err(|err| {
-                tracing::error!("Error fetching speedtest ingest report: {:?}", err);
+                tracing::error!("Error fetching valid data transfer session: {:?}", err);
                 err
             })
             .ok()
