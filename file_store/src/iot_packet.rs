@@ -110,6 +110,7 @@ impl TryFrom<ValidPacket> for IotValidPacket {
 impl IotValidPacket {
     pub fn packet_id(&self) -> Vec<u8> {
         let mut hasher = Hasher::new();
+        let now = Utc::now().timestamp_micros() as u64;
         hasher.update(self.gateway.as_ref());
         hasher.update(self.payload_hash.as_ref());
         hasher.update(
@@ -118,6 +119,7 @@ impl IotValidPacket {
                 .encode_timestamp_millis()
                 .to_le_bytes(),
         );
+        hasher.update(&now.to_le_bytes());
         hasher.finalize().as_bytes().to_vec()
     }
 }
