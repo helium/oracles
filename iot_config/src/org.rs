@@ -232,7 +232,10 @@ pub async fn get_org_pubkeys(
 ) -> Result<Vec<PublicKey>, DbOrgError> {
     let org = get(oui, db).await?;
 
-    let mut pubkeys: Vec<PublicKey> = vec![PublicKey::try_from(org.owner)?];
+    let mut pubkeys: Vec<PublicKey> = vec![
+        PublicKey::try_from(org.owner)?,
+        PublicKey::try_from(org.payer)?,
+    ];
 
     let mut delegate_pubkeys: Vec<PublicKey> = org
         .delegate_keys
@@ -262,7 +265,10 @@ pub async fn get_org_pubkeys_by_route(
     .fetch_one(db)
     .await?;
 
-    let mut pubkeys: Vec<PublicKey> = vec![PublicKey::try_from(org.owner)?];
+    let mut pubkeys: Vec<PublicKey> = vec![
+        PublicKey::try_from(org.owner)?,
+        PublicKey::try_from(org.payer)?,
+    ];
 
     let mut delegate_keys: Vec<PublicKey> = org
         .delegate_keys

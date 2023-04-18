@@ -1,6 +1,6 @@
 use crate::{
     admin::{AuthCache, KeyType},
-    lora_field::{DevAddrConstraint, DevAddrRange, EuiPair},
+    lora_field::{DevAddrConstraint, DevAddrRange, EuiPair, Skf},
     org::{self, DbOrgError},
     route::{self, Route, RouteStorageError},
     telemetry, update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
@@ -16,20 +16,22 @@ use futures::{
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
     services::iot_config::{
-        self, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1, RouteCreateReqV1,
-        RouteDeleteReqV1, RouteDevaddrRangesResV1, RouteEuisResV1, RouteGetDevaddrRangesReqV1,
-        RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1, RouteListResV1, RouteResV1,
-        RouteStreamReqV1, RouteStreamResV1, RouteUpdateDevaddrRangesReqV1, RouteUpdateEuisReqV1,
-        RouteUpdateReqV1, RouteV1,
+        self, route_skf_update_req_v1, route_stream_res_v1, ActionV1, DevaddrRangeV1, EuiPairV1,
+        RouteCreateReqV1, RouteDeleteReqV1, RouteDevaddrRangesResV1, RouteEuisResV1,
+        RouteGetDevaddrRangesReqV1, RouteGetEuisReqV1, RouteGetReqV1, RouteListReqV1,
+        RouteListResV1, RouteResV1, RouteSkfGetReqV1, RouteSkfListReqV1, RouteSkfUpdateReqV1,
+        RouteSkfUpdateResV1, RouteStreamReqV1, RouteStreamResV1, RouteUpdateDevaddrRangesReqV1,
+        RouteUpdateEuisReqV1, RouteUpdateReqV1, RouteV1, SkfV1,
     },
     Message,
 };
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tonic::{Request, Response, Status};
 
 const UPDATE_BATCH_LIMIT: usize = 5_000;
+const SKF_UPDATE_LIMIT: usize = 100;
 
 pub struct RouteService {
     auth_cache: AuthCache,
@@ -134,6 +136,37 @@ impl RouteService {
         let admin_keys = self.auth_cache.get_keys_by_type(KeyType::Administrator);
 
         DevAddrEuiValidator::new(route_id, admin_keys, &self.pool, check_constraints).await
+    }
+
+    async fn validate_skf_devaddrs<'a>(
+        &self,
+        route_id: &'a str,
+        updates: &[route_skf_update_req_v1::RouteSkfUpdateV1],
+    ) -> Result<(), Status> {
+        let ranges: Vec<DevAddrRange> = route::list_devaddr_ranges_for_route(route_id, &self.pool)
+            .map_err(|err| match err {
+                RouteStorageError::UuidParse(_) => {
+                    Status::invalid_argument(format!("unable to parse route_id: {route_id}"))
+                }
+                _ => Status::internal("error retrieving devaddrs for route"),
+            })?
+            .filter_map(|range| async move { range.ok() })
+            .collect()
+            .await;
+
+        'update_addrs: for update in updates {
+            for range in &ranges {
+                if range.contains_addr(update.devaddr.into()) {
+                    continue 'update_addrs;
+                }
+            }
+            return Err(Status::invalid_argument(format!(
+                "devaddr {} not within registered ranges for route {}",
+                update.devaddr, route_id
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -344,6 +377,7 @@ impl iot_config::Route for RouteService {
             if stream_existing_routes(&pool, &signing_key, tx.clone())
                 .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
                 .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_skfs(&pool, &signing_key, tx.clone()))
                 .await
                 .is_err()
             {
@@ -351,18 +385,18 @@ impl iot_config::Route for RouteService {
             }
 
             tracing::info!("existing routes sent; streaming updates as available");
-            telemetry::stream_subscribe("route-stream");
+            telemetry::route_stream_subscribe();
             loop {
                 let shutdown = shutdown_listener.clone();
 
                 tokio::select! {
                     _ = shutdown => {
-                        telemetry::stream_unsubscribe("route-stream");
+                        telemetry::route_stream_unsubscribe();
                         return
                     }
                     msg = route_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
-                            telemetry::stream_unsubscribe("route-stream");
+                            telemetry::route_stream_unsubscribe();
                             return;
                         }
                     }
@@ -428,88 +462,88 @@ impl iot_config::Route for RouteService {
         &self,
         request: GrpcStreamRequest<RouteUpdateEuisReqV1>,
     ) -> GrpcResult<RouteEuisResV1> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
         telemetry::count_request("route", "update-euis");
 
-        let mut to_add: Vec<EuiPair> = vec![];
-        let mut to_remove: Vec<EuiPair> = vec![];
-        let mut pending_updates: usize = 0;
-
-        let mut validator: DevAddrEuiValidator =
-            if let Ok(Some(first_update)) = request.message().await {
-                if let Some(eui_pair) = &first_update.eui_pair {
-                    let mut validator = self
-                        .update_validator(&eui_pair.route_id, false)
-                        .await
-                        .map_err(|_| Status::internal("unable to verify updates"))?;
-                    validator.validate_update(&first_update)?;
-                    match first_update.action() {
-                        ActionV1::Add => to_add.push(eui_pair.into()),
-                        ActionV1::Remove => to_remove.push(eui_pair.into()),
-                    };
-                    pending_updates += 1;
-                    validator
-                } else {
-                    return Err(Status::invalid_argument("no valid route_id for update"));
+        let mut incoming_stream = request.peekable();
+        let mut validator: DevAddrEuiValidator = Pin::new(&mut incoming_stream)
+            .peek()
+            .await
+            .map(|first_update| async move {
+                match first_update {
+                    Ok(ref update) => match update.eui_pair {
+                        Some(ref eui_pair) => self
+                            .update_validator(&eui_pair.route_id, false)
+                            .await
+                            .map_err(|err| {
+                                Status::internal(format!("unable to verify updates: {err:?}"))
+                            }),
+                        None => Err(Status::invalid_argument("no eui pairs provided")),
+                    },
+                    Err(_) => Err(Status::invalid_argument("no eui pairs provided")),
                 }
-            } else {
-                return Err(Status::invalid_argument("no eui pair provided"));
-            };
+            })
+            .ok_or_else(|| Status::invalid_argument("no eui pairs provided"))?
+            .await?;
 
-        while let Ok(Some(update)) = request.message().await {
-            validator.validate_update(&update)?;
-            match (update.action(), update.eui_pair) {
-                (ActionV1::Add, Some(eui_pair)) => to_add.push(eui_pair.into()),
-                (ActionV1::Remove, Some(eui_pair)) => to_remove.push(eui_pair.into()),
-                _ => return Err(Status::invalid_argument("no eui pair provided")),
-            };
-            pending_updates += 1;
-            if pending_updates >= UPDATE_BATCH_LIMIT {
+        incoming_stream
+            .map_ok(|update| match validator.validate_update(&update) {
+                Ok(()) => Ok(update),
+                Err(reason) => Err(Status::invalid_argument(format!(
+                    "invalid update request: {reason:?}"
+                ))),
+            })
+            .try_chunks(UPDATE_BATCH_LIMIT)
+            .map_err(|err| Status::internal(format!("eui pair updates failed to batch: {err:?}")))
+            .and_then(|batch| async move {
+                batch
+                    .into_iter()
+                    .collect::<Result<Vec<RouteUpdateEuisReqV1>, Status>>()
+            })
+            .and_then(|batch| async move {
+                batch
+                    .into_iter()
+                    .map(
+                        |update: RouteUpdateEuisReqV1| match (update.action(), update.eui_pair) {
+                            (ActionV1::Add, Some(eui_pair)) => Ok((ActionV1::Add, eui_pair)),
+                            (ActionV1::Remove, Some(eui_pair)) => Ok((ActionV1::Remove, eui_pair)),
+                            _ => Err(Status::invalid_argument("invalid eui pair update request")),
+                        },
+                    )
+                    .collect::<Result<Vec<(ActionV1, EuiPairV1)>, Status>>()
+            })
+            .try_for_each(|batch: Vec<(ActionV1, EuiPairV1)>| async move {
+                let (to_add, to_remove): (Vec<(ActionV1, EuiPairV1)>, Vec<(ActionV1, EuiPairV1)>) =
+                    batch
+                        .into_iter()
+                        .partition(|(action, _update)| action == &ActionV1::Add);
                 telemetry::count_eui_updates(to_add.len(), to_remove.len());
                 tracing::debug!(
                     adding = to_add.len(),
                     removing = to_remove.len(),
-                    "updating eui pairs",
+                    "updating eui pairs"
                 );
+                let adds_update: Vec<EuiPair> =
+                    to_add.into_iter().map(|(_, add)| add.into()).collect();
+                let removes_update: Vec<EuiPair> = to_remove
+                    .into_iter()
+                    .map(|(_, remove)| remove.into())
+                    .collect();
                 route::update_euis(
-                    &to_add,
-                    &to_remove,
+                    &adds_update,
+                    &removes_update,
                     &self.pool,
                     self.signing_key.clone(),
-                    self.update_channel.clone(),
+                    self.clone_update_channel(),
                 )
                 .await
                 .map_err(|err| {
                     tracing::error!("eui pair update failed: {err:?}");
-                    Status::internal("eui pair update failed")
-                })?;
-                to_add = vec![];
-                to_remove = vec![];
-                pending_updates = 0;
-            }
-        }
+                    Status::internal(format!("eui pair update failed: {err:?}"))
+                })
+            })
+            .await?;
 
-        if pending_updates > 0 {
-            telemetry::count_eui_updates(to_add.len(), to_remove.len());
-            tracing::debug!(
-                adding = to_add.len(),
-                removing = to_remove.len(),
-                "updating euis",
-            );
-
-            route::update_euis(
-                &to_add,
-                &to_remove,
-                &self.pool,
-                self.signing_key.clone(),
-                self.clone_update_channel(),
-            )
-            .await
-            .map_err(|err| {
-                tracing::error!("eui update failed: {err:?}");
-                Status::internal("eui update failed")
-            })?;
-        }
         let mut resp = RouteEuisResV1 {
             timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
@@ -576,88 +610,94 @@ impl iot_config::Route for RouteService {
         &self,
         request: GrpcStreamRequest<RouteUpdateDevaddrRangesReqV1>,
     ) -> GrpcResult<RouteDevaddrRangesResV1> {
-        let mut request = request.into_inner();
+        let request = request.into_inner();
         telemetry::count_request("route", "update-devaddr-ranges");
 
-        let mut to_add: Vec<DevAddrRange> = vec![];
-        let mut to_remove: Vec<DevAddrRange> = vec![];
-        let mut pending_updates: usize = 0;
-
-        let mut validator: DevAddrEuiValidator =
-            if let Ok(Some(first_update)) = request.message().await {
-                if let Some(devaddr) = &first_update.devaddr_range {
-                    let mut validator = self
-                        .update_validator(&devaddr.route_id, true)
-                        .await
-                        .map_err(|_| Status::internal("unable to verify updates"))?;
-                    validator.validate_update(&first_update)?;
-                    match first_update.action() {
-                        ActionV1::Add => to_add.push(devaddr.into()),
-                        ActionV1::Remove => to_remove.push(devaddr.into()),
-                    };
-                    pending_updates += 1;
-                    validator
-                } else {
-                    return Err(Status::invalid_argument("no valid route_id for update"));
+        let mut incoming_stream = request.peekable();
+        let mut validator: DevAddrEuiValidator = Pin::new(&mut incoming_stream)
+            .peek()
+            .await
+            .map(|first_update| async move {
+                match first_update {
+                    Ok(ref update) => match update.devaddr_range {
+                        Some(ref devaddr_range) => self
+                            .update_validator(&devaddr_range.route_id, true)
+                            .await
+                            .map_err(|err| {
+                                Status::internal(format!("unable to verify update {err:?}"))
+                            }),
+                        None => Err(Status::invalid_argument("no devaddr range provided")),
+                    },
+                    Err(_) => Err(Status::invalid_argument("no devaddr range provided")),
                 }
-            } else {
-                return Err(Status::invalid_argument("no devaddr range provided"));
-            };
+            })
+            .ok_or_else(|| Status::invalid_argument("no devaddr range provided"))?
+            .await?;
 
-        while let Ok(Some(update)) = request.message().await {
-            validator.validate_update(&update)?;
-            match (update.action(), update.devaddr_range) {
-                (ActionV1::Add, Some(devaddr)) => to_add.push(devaddr.into()),
-                (ActionV1::Remove, Some(devaddr)) => to_remove.push(devaddr.into()),
-                _ => return Err(Status::invalid_argument("no devaddr range provided")),
-            };
-            pending_updates += 1;
-            if pending_updates >= UPDATE_BATCH_LIMIT {
+        incoming_stream
+            .map_ok(|update| match validator.validate_update(&update) {
+                Ok(()) => Ok(update),
+                Err(reason) => Err(Status::invalid_argument(format!(
+                    "invalid update request: {reason:?}"
+                ))),
+            })
+            .try_chunks(UPDATE_BATCH_LIMIT)
+            .map_err(|err| {
+                Status::internal(format!("devaddr range update failed to batch: {err:?}"))
+            })
+            .and_then(|batch| async move {
+                batch
+                    .into_iter()
+                    .collect::<Result<Vec<RouteUpdateDevaddrRangesReqV1>, Status>>()
+            })
+            .and_then(|batch| async move {
+                batch
+                    .into_iter()
+                    .map(|update: RouteUpdateDevaddrRangesReqV1| {
+                        match (update.action(), update.devaddr_range) {
+                            (ActionV1::Add, Some(range)) => Ok((ActionV1::Add, range)),
+                            (ActionV1::Remove, Some(range)) => Ok((ActionV1::Remove, range)),
+                            _ => Err(Status::invalid_argument(
+                                "invalid devaddr range update request",
+                            )),
+                        }
+                    })
+                    .collect::<Result<Vec<(ActionV1, DevaddrRangeV1)>, Status>>()
+            })
+            .try_for_each(|batch: Vec<(ActionV1, DevaddrRangeV1)>| async move {
+                let (to_add, to_remove): (
+                    Vec<(ActionV1, DevaddrRangeV1)>,
+                    Vec<(ActionV1, DevaddrRangeV1)>,
+                ) = batch
+                    .into_iter()
+                    .partition(|(action, _update)| action == &ActionV1::Add);
                 telemetry::count_devaddr_updates(to_add.len(), to_remove.len());
                 tracing::debug!(
                     adding = to_add.len(),
                     removing = to_remove.len(),
                     "updating devaddr ranges"
                 );
+                let adds_update: Vec<DevAddrRange> =
+                    to_add.into_iter().map(|(_, add)| add.into()).collect();
+                let removes_update: Vec<DevAddrRange> = to_remove
+                    .into_iter()
+                    .map(|(_, remove)| remove.into())
+                    .collect();
                 route::update_devaddr_ranges(
-                    &to_add,
-                    &to_remove,
+                    &adds_update,
+                    &removes_update,
                     &self.pool,
                     self.signing_key.clone(),
-                    self.update_channel.clone(),
+                    self.clone_update_channel(),
                 )
                 .await
                 .map_err(|err| {
                     tracing::error!("devaddr range update failed: {err:?}");
                     Status::internal("devaddr range update failed")
-                })?;
-                to_add = vec![];
-                to_remove = vec![];
-                pending_updates = 0;
-            }
-        }
+                })
+            })
+            .await?;
 
-        if pending_updates > 0 {
-            telemetry::count_devaddr_updates(to_add.len(), to_remove.len());
-            tracing::debug!(
-                adding = to_add.len(),
-                removing = to_remove.len(),
-                "updating devaddr ranges"
-            );
-
-            route::update_devaddr_ranges(
-                &to_add,
-                &to_remove,
-                &self.pool,
-                self.signing_key.clone(),
-                self.update_channel.clone(),
-            )
-            .await
-            .map_err(|err| {
-                tracing::error!("devaddr range update failed: {err:?}");
-                Status::internal("devaddr range update failed")
-            })?;
-        }
         let mut resp = RouteDevaddrRangesResV1 {
             timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
@@ -665,6 +705,182 @@ impl iot_config::Route for RouteService {
         };
         resp.signature = self.sign_response(&resp.encode_to_vec())?;
 
+        Ok(Response::new(resp))
+    }
+
+    type list_skfsStream = GrpcStreamResult<SkfV1>;
+    async fn list_skfs(
+        &self,
+        request: Request<RouteSkfListReqV1>,
+    ) -> GrpcResult<Self::list_skfsStream> {
+        let request = request.into_inner();
+        telemetry::count_request("route", "list-skfs");
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
+            .await?;
+
+        let pool = self.pool.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
+
+        tracing::debug!(
+            route_id = request.route_id,
+            "listing session key filters for route"
+        );
+
+        tokio::spawn(async move {
+            let mut skf_stream = match route::list_skfs_for_route(&request.route_id, &pool) {
+                Ok(skfs) => skfs,
+                Err(RouteStorageError::UuidParse(err)) => {
+                    _ = tx
+                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .await;
+                    return;
+                }
+                Err(_) => {
+                    _ = tx
+                        .send(Err(Status::internal(format!(
+                            "failed retrieving skfs for route {}",
+                            &request.route_id
+                        ))))
+                        .await;
+                    return;
+                }
+            };
+
+            while let Some(skf) = skf_stream.next().await {
+                let message = match skf {
+                    Ok(skf) => Ok(skf.into()),
+                    Err(bad_skf) => Err(Status::internal(format!("invalid skf: {:?}", bad_skf))),
+                };
+                if tx.send(message).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    type get_skfsStream = GrpcStreamResult<SkfV1>;
+    async fn get_skfs(
+        &self,
+        request: Request<RouteSkfGetReqV1>,
+    ) -> GrpcResult<Self::get_skfsStream> {
+        let request = request.into_inner();
+        telemetry::count_request("route", "get-skfs");
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
+            .await?;
+
+        let pool = self.pool.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel(20);
+
+        tracing::debug!(
+            route_id = request.route_id,
+            "listing session key filters for route and devaddr"
+        );
+
+        tokio::spawn(async move {
+            let mut skf_stream = match route::list_skfs_for_route_and_devaddr(
+                &request.route_id,
+                request.devaddr.into(),
+                &pool,
+            ) {
+                Ok(skfs) => skfs,
+                Err(RouteStorageError::UuidParse(err)) => {
+                    _ = tx
+                        .send(Err(Status::invalid_argument(format!("{}", err))))
+                        .await;
+                    return;
+                }
+                Err(_) => {
+                    _ = tx
+                        .send(Err(Status::internal(format!(
+                            "failed retrieving skfs for route {} and devaddr {}",
+                            &request.route_id, &request.devaddr
+                        ))))
+                        .await;
+                    return;
+                }
+            };
+
+            while let Some(skf) = skf_stream.next().await {
+                let message = match skf {
+                    Ok(skf) => Ok(skf.into()),
+                    Err(bad_skf) => Err(Status::internal(format!("invalid skf: {:?}", bad_skf))),
+                };
+                if tx.send(message).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
+    async fn update_skfs(
+        &self,
+        request: Request<RouteSkfUpdateReqV1>,
+    ) -> GrpcResult<RouteSkfUpdateResV1> {
+        let request = request.into_inner();
+        telemetry::count_request("route", "update-skfs");
+
+        if request.updates.len() > SKF_UPDATE_LIMIT {
+            return Err(Status::invalid_argument(
+                "exceeds 100 skf update limit per request",
+            ));
+        };
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
+            .await?;
+
+        self.validate_skf_devaddrs(&request.route_id, &request.updates)
+            .await?;
+
+        let (to_add, to_remove): (Vec<(ActionV1, Skf)>, Vec<(ActionV1, Skf)>) = request
+            .updates
+            .into_iter()
+            .map(|update: route_skf_update_req_v1::RouteSkfUpdateV1| {
+                (
+                    update.action(),
+                    Skf::new(
+                        request.route_id.clone(),
+                        update.devaddr.into(),
+                        update.session_key,
+                    ),
+                )
+            })
+            .partition(|(action, _update)| action == &ActionV1::Add);
+        telemetry::count_skf_updates(to_add.len(), to_remove.len());
+        tracing::debug!(
+            adding = to_add.len(),
+            removing = to_remove.len(),
+            "updating session key filters"
+        );
+        let adds_update: Vec<Skf> = to_add.into_iter().map(|(_, add)| add).collect();
+        let removes_update: Vec<Skf> = to_remove.into_iter().map(|(_, remove)| remove).collect();
+        route::update_skfs(
+            &adds_update,
+            &removes_update,
+            &self.pool,
+            self.signing_key.clone(),
+            self.clone_update_channel(),
+        )
+        .await
+        .map_err(|err| {
+            tracing::error!("session key update failed: {err:?}");
+            Status::internal(format!("session key update failed {err:?}"))
+        })?;
+
+        let mut resp = RouteSkfUpdateResV1 {
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
         Ok(Response::new(resp))
     }
 }
@@ -677,8 +893,8 @@ struct DevAddrEuiValidator {
 
 #[derive(thiserror::Error, Debug)]
 enum DevAddrEuiValidationError {
-    #[error("devaddr range outside of constraint bounds {0}")]
-    RangeOutOfBounds(String),
+    #[error("devaddr or range outside of bounds {0}")]
+    DevAddrOutOfBounds(String),
     #[error("no route for update {0}")]
     NoRouteId(String),
     #[error("unauthorized signature {0}")]
@@ -793,7 +1009,7 @@ where
                         return Ok(update);
                     }
                 }
-                Err(DevAddrEuiValidationError::RangeOutOfBounds(format!(
+                Err(DevAddrEuiValidationError::DevAddrOutOfBounds(format!(
                     "{update:?}"
                 )))
             }
@@ -907,6 +1123,34 @@ async fn stream_existing_devaddrs(
                 tx.send(Ok(devaddr_range_res))
             } else {
                 tx.send(Err(Status::internal("failed to sign devaddr range")))
+            }
+        })
+        .map_err(|err| anyhow!(err))
+        .try_fold((), |acc, _| async move { Ok(acc) })
+        .await
+}
+
+async fn stream_existing_skfs(
+    pool: &Pool<Postgres>,
+    signing_key: &Keypair,
+    tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+) -> Result<()> {
+    let timestamp = Utc::now().encode_timestamp();
+    let signer: Vec<u8> = signing_key.public_key().into();
+    route::skf_stream(pool)
+        .then(|skf| {
+            let mut skf_res = RouteStreamResV1 {
+                action: ActionV1::Add.into(),
+                data: Some(route_stream_res_v1::Data::Skf(skf.into())),
+                timestamp,
+                signer: signer.clone(),
+                signature: vec![],
+            };
+            if let Ok(signature) = signing_key.sign(&skf_res.encode_to_vec()) {
+                skf_res.signature = signature;
+                tx.send(Ok(skf_res))
+            } else {
+                tx.send(Err(Status::internal("failed to sign session key filter")))
             }
         })
         .map_err(|err| anyhow!(err))
