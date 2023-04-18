@@ -93,6 +93,8 @@ services:
         iot-verifier
         mobile-packet-verifier
         iot-packet-verifier
+        iot-price
+        mobile-price
       ORACLE_ID: oraclesecretid
       ORACLE_KEY: oraclesecretkey
     entrypoint:

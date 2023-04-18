@@ -1105,7 +1105,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#6fee25879eb308f159cb5d4ead77e3806a0a9971"
+source = "git+https://github.com/helium/gateway-rs.git?branch=jg/temp-skf-proto-update#f0262843064976ebe87f5da3f5a85073c695a157"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -2879,7 +2879,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#b13b21f12819e30ebcf249bad462bdd196d1fe76"
+source = "git+https://github.com/helium/proto?branch=macpie/skf#7a53b71a5035654ea38fc9f4d6b0d0d87fa0cad3"
 dependencies = [
  "bytes",
  "prost",
