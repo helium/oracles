@@ -2,6 +2,7 @@ use crate::{
     cli::print_json,
     file_source,
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    mobile_session::DataTransferSessionIngestReport,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     FileType, Result, Settings,
 };
@@ -171,6 +172,24 @@ impl Cmd {
                         "price": manifest.price,
                         "timestamp": manifest.timestamp,
                         "token_type": manifest.token_type(),
+                    }))?;
+                }
+                FileType::DataTransferSessionIngestReport => {
+                    use crate::traits::MsgDecode;
+
+                    let report = DataTransferSessionIngestReport::decode(msg)?;
+                    print_json(&json!({
+                        "received_timestamp": report.received_timestamp,
+                        "pub_key": report.report.pub_key,
+                        "reward_cancelled": report.report.reward_cancelled,
+                        "session_req_signature": report.report.signature,
+                        "upload_bytes": report.report.data_transfer_usage.upload_bytes,
+                        "download_bytes": report.report.data_transfer_usage.download_bytes,
+                        "radio_access_techonology": report.report.data_transfer_usage.radio_access_technology,
+                        "event_id": report.report.data_transfer_usage.event_id,
+                        "payer": report.report.data_transfer_usage.payer,
+                        "timestamp": report.report.data_transfer_usage.timestamp,
+                        "event_signature": report.report.data_transfer_usage.signature,
                     }))?;
                 }
                 _ => (),
