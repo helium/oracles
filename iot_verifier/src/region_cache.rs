@@ -6,7 +6,7 @@ use iot_config::client::{
 use retainer::Cache;
 use std::time::Duration;
 
-const CACHE_TTL: u64 = 86400;
+const CACHE_TTL: u64 = 10_800;
 
 pub struct RegionCache {
     pub iot_config_client: IotConfigClient,
