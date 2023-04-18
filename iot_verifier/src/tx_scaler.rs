@@ -23,6 +23,7 @@ pub struct Server {
     hex_density_map: SharedHexDensityMap,
     pool: PgPool,
     trigger_interval: Duration,
+    refresh_offset: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +47,7 @@ impl Server {
             hex_density_map: SharedHexDensityMap::new(),
             pool,
             trigger_interval: Duration::seconds(settings.transmit_scale_interval),
+            refresh_offset: settings.loader_window_max_lookback_age(),
         };
 
         server.refresh_scaling_map().await?;
@@ -80,7 +82,7 @@ impl Server {
     }
 
     pub async fn refresh_scaling_map(&mut self) -> Result<(), TxScalerError> {
-        let refresh_start = Utc::now();
+        let refresh_start = Utc::now() - self.refresh_offset;
         tracing::info!("density_scaler: generating hex scaling map, starting at {refresh_start:?}");
         let mut global_map = GlobalHexMap::new();
         let active_gateways = self
