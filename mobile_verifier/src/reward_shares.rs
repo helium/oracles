@@ -12,8 +12,8 @@ use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 
-/// Total tokens emissions pool per 180 days
-const TOTAL_EMISSIONS_POOL: Decimal = dec!(30_000_000_000_000_000);
+/// Total tokens emissions pool per 365 days
+const TOTAL_EMISSIONS_POOL: Decimal = dec!(60_000_000_000_000_000);
 
 /// Maximum amount of the total emissions pool allocated for data transfer
 /// rewards
@@ -217,7 +217,7 @@ impl PocShares {
 }
 
 pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
-    (TOTAL_EMISSIONS_POOL / dec!(180) / Decimal::from(Duration::hours(24).num_seconds()))
+    (TOTAL_EMISSIONS_POOL / dec!(365) / Decimal::from(Duration::hours(24).num_seconds()))
         * Decimal::from(duration.num_seconds())
 }
 
@@ -276,8 +276,8 @@ mod test {
         // confirm our hourly rewards add up to expected 24hr amount
         // total_rewards will be in bones
         assert_eq!(
-            total_rewards / dec!(1_000_000) * dec!(24),
-            dec!(100_000_000)
+            (total_rewards / dec!(1_000_000) * dec!(24)).trunc(),
+            dec!(98_630_136)
         );
 
         let data_transfer_rewards =
@@ -333,11 +333,11 @@ mod test {
         // for POC and data transfer (which is 60% of the daily total emissions).
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
-        assert_eq!(available_poc_rewards.trunc(), dec!(33_333_333_333_333));
+        assert_eq!(available_poc_rewards.trunc(), dec!(32_876_712_328_767));
         assert_eq!(
             // Rewards are automatically scaled
             data_transfer_rewards.reward(&owner).trunc(),
-            dec!(66_666_666_666_666)
+            dec!(65_753_424_657_534)
         );
         assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.5));
     }
@@ -713,19 +713,20 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            997_150_997_150
+            983_491_394_449 // 997_150_997_150
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            2_991_452_991_450
+            2_950_474_183_346 // 2_991_452_991_450
         );
+
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            178_062_678_062
+            175_623_463_294 // 178_062_678_062
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
@@ -734,7 +735,7 @@ mod test {
             total += *val
         }
 
-        assert_eq!(total, 4_166_666_666_662); // total emissions for 1 hour
+        assert_eq!(total, 4_109_589_041_089); // total emissions for 1 hour
     }
 
     #[tokio::test]
