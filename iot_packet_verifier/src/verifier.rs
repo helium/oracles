@@ -214,7 +214,7 @@ impl ConfigServer for CachedOrgClient {
         if let Entry::Vacant(e) = cache.entry(oui) {
             let req = OrgGetReqV1 { oui };
             let pubkey =
-                PublicKeyBinary::from(self.client.get(req).await?.into_inner().org.unwrap().owner);
+                PublicKeyBinary::from(self.client.get(req).await?.into_inner().org.unwrap().payer);
             e.insert(pubkey);
         }
         Ok(cache.get(&oui).unwrap().clone())
