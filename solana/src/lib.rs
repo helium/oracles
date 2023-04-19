@@ -109,7 +109,11 @@ impl SolanaNetwork for SolanaRpc {
             &data_credits::ID,
         );
         tracing::debug!("escrow_account: {escrow_account}");
-        let account_data = self.provider.get_account_data(&escrow_account).await?;
+        let Ok(account_data) = self.provider.get_account_data(&escrow_account).await else {
+            // If the account is empty, it has no DC
+            tracing::info!("{payer} has no account, therefore no balance");
+            return Ok(0);
+        };
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
         Ok(account_layout.amount)
     }
