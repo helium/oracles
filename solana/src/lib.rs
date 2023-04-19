@@ -6,10 +6,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{
-    client_error::ClientError, nonblocking::rpc_client::RpcClient,
-    rpc_config::RpcSendTransactionConfig,
-};
+use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
@@ -49,8 +46,6 @@ pub enum SolanaRpcError {
     ProgramError(#[from] solana_sdk::program_error::ProgramError),
     #[error("Parse pubkey error: {0}")]
     ParsePubkeyError(#[from] ParsePubkeyError),
-    #[error("Burn transaction {0} failed")]
-    TransactionFailed(solana_sdk::signature::Signature),
     #[error("DC burn authority does not match keypair")]
     InvalidKeypair,
     #[error("System time error: {0}")]
@@ -82,7 +77,8 @@ impl SolanaRpc {
         let Ok(keypair) = read_keypair_file(&settings.burn_keypair) else {
             return Err(SolanaRpcError::FailedToReadKeypairError);
         };
-        let provider = RpcClient::new(settings.rpc_url.clone());
+        let provider =
+            RpcClient::new_with_commitment(settings.rpc_url.clone(), CommitmentConfig::finalized());
         let program_cache = BurnProgramCache::new(&provider, dc_mint, dnt_mint).await?;
         if program_cache.dc_burn_authority != keypair.pubkey() {
             return Err(SolanaRpcError::InvalidKeypair);
@@ -192,20 +188,7 @@ impl SolanaNetwork for SolanaRpc {
             blockhash,
         );
 
-        // Preflight can be flakey, so we skip it for now
-        let config = RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..Default::default()
-        };
-        let signature = self
-            .provider
-            .send_transaction_with_config(&tx, config)
-            .await?;
-        let result = self.provider.confirm_transaction(&signature).await?;
-
-        if !result {
-            return Err(SolanaRpcError::TransactionFailed(signature));
-        }
+        let signature = self.provider.send_and_confirm_transaction(&tx).await?;
 
         tracing::info!(
             "Successfully burned data credits. Transaction: {}",
