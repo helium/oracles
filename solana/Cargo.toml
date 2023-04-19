@@ -22,3 +22,4 @@ tokio = {workspace = true}
 helium-crypto = {workspace = true, features = ["solana"]}
 thiserror = {workspace = true}
 tracing = {workspace = true}
+clap = {workspace = true}
