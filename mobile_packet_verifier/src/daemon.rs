@@ -47,7 +47,8 @@ where
     S: SolanaNetwork,
 {
     pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
-        let mut burn_time = Instant::now() + self.burn_period;
+        // Set the initial burn period to one minute
+        let mut burn_time = Instant::now() + Duration::from_secs(60);
         loop {
             tokio::select! {
                 file = self.reports.recv() => {
