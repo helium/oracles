@@ -106,7 +106,9 @@ impl iot_config::Gateway for GatewayService {
         telemetry::count_request("gateway", "location");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request)?;
+        request
+            .verify(&signer)
+            .map_err(|_| Status::permission_denied("invalid request signature"))?;
 
         let address: &PublicKeyBinary = &request.gateway.into();
 
