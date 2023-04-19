@@ -106,10 +106,7 @@ impl SolanaNetwork for SolanaRpc {
         let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
         tracing::debug!("DDC key: {ddc_key}");
         let (escrow_account, _) = Pubkey::find_program_address(
-            &[
-                "escrow_dc_account".as_bytes(),
-                &ddc_key.to_bytes(),
-            ],
+            &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
             &data_credits::ID,
         );
         tracing::debug!("escrow_account: {escrow_account}");
