@@ -43,16 +43,12 @@ fn get_scheduled_poc_tokens(
     dc_transfer_remainder: Decimal,
 ) -> (Decimal, Decimal) {
     (
+        get_tokens_by_duration(*REWARDS_PER_DAY * *BEACON_REWARDS_PER_DAY_PERCENT, duration)
+            + (dc_transfer_remainder * *BEACON_DC_REMAINER_PERCENT),
         get_tokens_by_duration(
-            (*REWARDS_PER_DAY * *BEACON_REWARDS_PER_DAY_PERCENT)
-                + (dc_transfer_remainder * *BEACON_DC_REMAINER_PERCENT),
+            *REWARDS_PER_DAY * *WITNESS_REWARDS_PER_DAY_PERCENT,
             duration,
-        ),
-        get_tokens_by_duration(
-            (*REWARDS_PER_DAY * *WITNESS_REWARDS_PER_DAY_PERCENT)
-                + (dc_transfer_remainder * *WITNESS_DC_REMAINER_PERCENT),
-            duration,
-        ),
+        ) + (dc_transfer_remainder * *WITNESS_DC_REMAINER_PERCENT),
     )
 }
 
@@ -610,15 +606,15 @@ mod test {
         // assert the expected data transfer rewards amounts per gateway
         // using the dc_to_iot_bones helper function
         let gw1_expected_dc_rewards = dc_to_iot_bones(gw1_dc_spend, iot_price).to_u64().unwrap();
-        assert_eq!(gw1_expected_dc_rewards.to_u64().unwrap(), 13983286);
+        assert_eq!(gw1_expected_dc_rewards.to_u64().unwrap(), 13_983_286);
         let gw2_expected_dc_rewards = dc_to_iot_bones(gw2_dc_spend, iot_price).to_u64().unwrap();
-        assert_eq!(gw2_expected_dc_rewards.to_u64().unwrap(), 139275766);
+        assert_eq!(gw2_expected_dc_rewards.to_u64().unwrap(), 139_275_766);
         let gw3_expected_dc_rewards = dc_to_iot_bones(gw3_dc_spend, iot_price).to_u64().unwrap();
-        assert_eq!(gw3_expected_dc_rewards.to_u64().unwrap(), 139275766);
+        assert_eq!(gw3_expected_dc_rewards.to_u64().unwrap(), 139_275_766);
         let gw5_expected_dc_rewards = dc_to_iot_bones(gw5_dc_spend, iot_price).to_u64().unwrap();
         assert_eq!(gw5_expected_dc_rewards.to_u64().unwrap(), 0);
         let gw6_expected_dc_rewards = dc_to_iot_bones(gw6_dc_spend, iot_price).to_u64().unwrap();
-        assert_eq!(gw6_expected_dc_rewards.to_u64().unwrap(), 1392757660);
+        assert_eq!(gw6_expected_dc_rewards.to_u64().unwrap(), 1_392_757_660);
         assert_eq!(gw1_rewards.dc_transfer_amount, gw1_expected_dc_rewards);
         assert_eq!(gw2_rewards.dc_transfer_amount, gw2_expected_dc_rewards);
         assert_eq!(gw3_rewards.dc_transfer_amount, gw3_expected_dc_rewards);
@@ -628,16 +624,16 @@ mod test {
         // assert the beacon and witness amount, these will now have an allocation
         // of any unused data transfer rewards
         assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
-        assert_eq!(gw1_rewards.beacon_amount, 1_649_612_734);
-        assert_eq!(gw1_rewards.witness_amount, 39_160_371_873);
-        assert_eq!(gw2_rewards.beacon_amount, 32_992_254_691);
-        assert_eq!(gw2_rewards.witness_amount, 71_794_015_101);
-        assert_eq!(gw3_rewards.beacon_amount, 12_372_095_509);
-        assert_eq!(gw3_rewards.witness_amount, 52_213_829_164);
-        assert_eq!(gw5_rewards.beacon_amount, 3_299_225_469);
-        assert_eq!(gw5_rewards.witness_amount, 91_374_201_038);
-        assert_eq!(gw6_rewards.beacon_amount, 24_744_191_018);
-        assert_eq!(gw6_rewards.witness_amount, 45_687_100_519);
+        assert_eq!(gw1_rewards.beacon_amount, 4_341_363_593);
+        assert_eq!(gw1_rewards.witness_amount, 103_060_196_599);
+        assert_eq!(gw2_rewards.beacon_amount, 86_827_271_860);
+        assert_eq!(gw2_rewards.witness_amount, 188_943_693_766);
+        assert_eq!(gw3_rewards.beacon_amount, 32_560_226_947);
+        assert_eq!(gw3_rewards.witness_amount, 137_413_595_466);
+        assert_eq!(gw5_rewards.beacon_amount, 8_682_727_186);
+        assert_eq!(gw5_rewards.witness_amount, 240_473_792_066);
+        assert_eq!(gw6_rewards.beacon_amount, 65_120_453_895);
+        assert_eq!(gw6_rewards.witness_amount, 120_236_896_033);
 
         // assert the total POC rewards allocated equals TOTAL_POC_REWARDS_FOR_PERIOD
         // plus the remainder of the total dc transfer rewards for the period
@@ -662,7 +658,7 @@ mod test {
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 4
-        assert_eq!(poc_diff, 5);
+        assert_eq!(poc_diff, 3);
     }
 
     #[test]
@@ -971,16 +967,16 @@ mod test {
         // assert the beacon and witness amount, these will now have an allocation
         // of any unused data transfer rewards
         assert_eq!(rewards.get(&gw4), None); // Validate zero-amount entry filtered out
-        assert_eq!(gw1_rewards.beacon_amount, 1_639_282_996);
-        assert_eq!(gw1_rewards.witness_amount, 38_915_152_878);
-        assert_eq!(gw2_rewards.beacon_amount, 32_785_659_934);
-        assert_eq!(gw2_rewards.witness_amount, 71_344_446_943);
-        assert_eq!(gw3_rewards.beacon_amount, 12_294_622_475);
-        assert_eq!(gw3_rewards.witness_amount, 51_886_870_504);
-        assert_eq!(gw5_rewards.beacon_amount, 3_278_565_993);
-        assert_eq!(gw5_rewards.witness_amount, 90_802_023_383);
-        assert_eq!(gw6_rewards.beacon_amount, 24_589_244_950);
-        assert_eq!(gw6_rewards.witness_amount, 45_401_011_691);
+        assert_eq!(gw1_rewards.beacon_amount, 2_853_881_337);
+        assert_eq!(gw1_rewards.witness_amount, 67_748_661_320);
+        assert_eq!(gw2_rewards.beacon_amount, 57_077_626_753);
+        assert_eq!(gw2_rewards.witness_amount, 124_205_879_087);
+        assert_eq!(gw3_rewards.beacon_amount, 21_404_110_032);
+        assert_eq!(gw3_rewards.witness_amount, 90_331_548_427);
+        assert_eq!(gw5_rewards.beacon_amount, 5_707_762_675);
+        assert_eq!(gw5_rewards.witness_amount, 158_080_209_748);
+        assert_eq!(gw6_rewards.beacon_amount, 42_808_220_065);
+        assert_eq!(gw6_rewards.witness_amount, 79_040_104_874);
 
         // assert the total POC rewards allocated equal TOTAL_POC_REWARDS_FOR_PERIOD
         // plus 45% of the total dc transfer rewards for the period
@@ -1007,7 +1003,7 @@ mod test {
         // but due to rounding whilst going to u64 in compute_rewards,
         // is permitted to be a few bones less
         // tolerance here is 3
-        assert_eq!(poc_diff, 5);
+        assert_eq!(poc_diff, 4);
     }
 
     #[test]
