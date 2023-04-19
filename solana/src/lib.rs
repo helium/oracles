@@ -1,7 +1,6 @@
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::AccountDeserialize;
 use async_trait::async_trait;
-use data_credits::DelegatedDataCreditsV0;
 use data_credits::{accounts, instruction};
 use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
@@ -137,10 +136,10 @@ impl SolanaNetwork for SolanaRpc {
 
         // Fetch escrow account
         let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
-        let account_data = self.provider.get_account_data(&ddc_key).await?;
-        let mut account_data = account_data.as_ref();
-        let escrow_account =
-            DelegatedDataCreditsV0::try_deserialize(&mut account_data)?.escrow_account;
+        let (escrow_account, _) = Pubkey::find_program_address(
+            &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
+            &data_credits::ID,
+        );
 
         let instructions = {
             let request = RequestBuilder::from(
