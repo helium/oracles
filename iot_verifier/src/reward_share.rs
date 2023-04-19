@@ -186,7 +186,7 @@ impl GatewayDCShare {
     pub fn share_from_packet(packet: &IotValidPacket) -> Self {
         Self {
             hotspot_key: packet.gateway.clone(),
-            reward_timestamp: packet.packet_timestamp,
+            reward_timestamp: Utc::now(),
             num_dcs: Decimal::new(packet.num_dcs as i64, 0),
             id: packet.packet_id(),
         }
