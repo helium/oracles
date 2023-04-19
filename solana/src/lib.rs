@@ -102,11 +102,15 @@ impl SolanaNetwork for SolanaRpc {
     type Error = SolanaRpcError;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+        tracing::debug!("Fetching balance for payer: {payer}");
         let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
-        let account_data = self.provider.get_account_data(&ddc_key).await?;
-        let mut account_data = account_data.as_ref();
-        let ddc = DelegatedDataCreditsV0::try_deserialize(&mut account_data)?;
-        let account_data = self.provider.get_account_data(&ddc.escrow_account).await?;
+        tracing::debug!("DDC key: {ddc_key}");
+        let (escrow_account, _) = Pubkey::find_program_address(
+            &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
+            &data_credits::ID,
+        );
+        tracing::debug!("escrow_account: {escrow_account}");
+        let account_data = self.provider.get_account_data(&escrow_account).await?;
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
         Ok(account_layout.amount)
     }
@@ -226,20 +230,26 @@ impl BurnProgramCache {
         dc_mint: Pubkey,
         dnt_mint: Pubkey,
     ) -> Result<Self, SolanaRpcError> {
+        tracing::debug!("dc_mint = {dc_mint}");
+        tracing::debug!("dnt_mint = {dnt_mint}");
         let (account_payer, _) =
             Pubkey::find_program_address(&["account_payer".as_bytes()], &data_credits::ID);
+        tracing::debug!("account_payer = {account_payer}");
         let (data_credits, _) =
             Pubkey::find_program_address(&["dc".as_bytes(), dc_mint.as_ref()], &data_credits::ID);
+        tracing::debug!("data_credits = {data_credits}");
         let (sub_dao, _) = Pubkey::find_program_address(
             &["sub_dao".as_bytes(), dnt_mint.as_ref()],
             &helium_sub_daos::ID,
         );
+        tracing::debug!("sub_dao = {sub_dao}");
         let (dao, dc_burn_authority) = {
             let account_data = provider.get_account_data(&sub_dao).await?;
             let mut account_data = account_data.as_ref();
             let sub_dao = SubDaoV0::try_deserialize(&mut account_data)?;
             (sub_dao.dao, sub_dao.dc_burn_authority)
         };
+        tracing::debug!("dao = {dao}");
         let registrar = {
             let account_data = provider.get_account_data(&dao).await?;
             let mut account_data = account_data.as_ref();
