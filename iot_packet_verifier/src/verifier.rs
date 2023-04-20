@@ -258,7 +258,6 @@ impl CachedOrgClient {
                 // Go through and check balances of all orgs and re-enable if they
                 // have a greater than minimum balance.
                 // This could almost certainly become a Stream.
-                let mut to_enable = Vec::new();
                 let disabled_clients = client.lock().await.disabled_clients.clone();
                 for disabled_org in disabled_clients {
                     // Check balance
@@ -269,15 +268,9 @@ impl CachedOrgClient {
                         .map_err(MonitorError::SolanaError)?
                         >= minimum_allowed_balance
                     {
-                        to_enable.push(disabled_org);
+                        client.lock().await.enable_org(disabled_org).await?;
                     }
                 }
-
-                // Enable all the orgs that need to be:
-                for org in to_enable {
-                    client.lock().await.enable_org(org).await?;
-                }
-
                 // Sleep until we should re-check the monitor
                 sleep_until(Instant::now() + monitor_period).await;
             }
