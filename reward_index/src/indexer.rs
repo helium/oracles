@@ -65,8 +65,8 @@ impl Indexer {
                     return Ok(());
             }
             msg = receiver.recv() => if let Some(file_info_stream) = msg {
-                    let key = file_info_stream.file_info.key.clone();
-                    tracing::info!("Processing reward file {}", key);
+                    let key = &file_info_stream.file_info.key.clone();
+                    tracing::info!(file = %key, "Processing reward file");
                     let mut txn = self.pool.begin().await?;
                     let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
@@ -77,7 +77,7 @@ impl Indexer {
                         )
                     }
                     txn.commit().await?;
-                    tracing::info!("Completed processing reward file {}", key);
+                    tracing::info!(file = %key, "Completed processing reward file");
                 }
             }
         }
