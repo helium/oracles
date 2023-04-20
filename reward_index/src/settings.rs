@@ -75,10 +75,8 @@ impl Settings {
         Duration::seconds(self.interval)
     }
 
-    pub fn operation_fund_key(&self) -> Option<Vec<u8>> {
-        self.operation_fund_key
-            .clone()
-            .map(|string| string.into_bytes())
+    pub fn operation_fund_key(&self) -> Option<String> {
+        self.operation_fund_key.clone()
     }
 }
 

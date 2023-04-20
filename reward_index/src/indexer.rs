@@ -4,6 +4,7 @@ use file_store::{
     file_info_poller::FileInfoStream, reward_manifest::RewardManifest, FileInfo, FileStore,
 };
 use futures::{stream, StreamExt, TryStreamExt};
+use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
     services::poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
@@ -18,7 +19,7 @@ pub struct Indexer {
     pool: Pool<Postgres>,
     verifier_store: FileStore,
     mode: settings::Mode,
-    op_fund_key: Vec<u8>,
+    op_fund_key: String,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,7 +32,7 @@ pub enum RewardType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RewardKey {
-    key: Vec<u8>,
+    key: String,
     reward_type: RewardType,
 }
 
@@ -45,7 +46,7 @@ impl Indexer {
                 settings::Mode::Iot => settings
                     .operation_fund_key()
                     .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
-                settings::Mode::Mobile => vec![],
+                settings::Mode::Mobile => String::new(),
             },
         })
     }
@@ -64,7 +65,8 @@ impl Indexer {
                     return Ok(());
             }
             msg = receiver.recv() => if let Some(file_info_stream) = msg {
-                    tracing::info!("Processing reward file {}", file_info_stream.file_info.key);
+                    let key = &file_info_stream.file_info.key.clone();
+                    tracing::info!(file = %key, "Processing reward file");
                     let mut txn = self.pool.begin().await?;
                     let mut stream = file_info_stream.into_stream(&mut txn).await?;
 
@@ -74,8 +76,8 @@ impl Indexer {
                             self.handle_rewards(&mut txn, reward_manifest).await?
                         )
                     }
-
                     txn.commit().await?;
+                    tracing::info!(file = %key, "Completed processing reward file");
                 }
             }
         }
@@ -107,7 +109,7 @@ impl Indexer {
         for (reward_key, amount) in hotspot_rewards {
             reward_index::insert(
                 &mut *txn,
-                &reward_key.key,
+                reward_key.key,
                 amount,
                 reward_key.reward_type,
                 &manifest_time,
@@ -125,7 +127,7 @@ impl Indexer {
                 match share.reward {
                     Some(MobileReward::RadioReward(r)) => Ok((
                         RewardKey {
-                            key: r.hotspot_key,
+                            key: PublicKeyBinary::from(r.hotspot_key).to_string(),
                             reward_type: RewardType::MobileGateway,
                         },
                         r.dc_transfer_reward + r.poc_reward,
@@ -138,14 +140,14 @@ impl Indexer {
                 match share.reward {
                     Some(IotReward::GatewayReward(r)) => Ok((
                         RewardKey {
-                            key: r.hotspot_key,
+                            key: PublicKeyBinary::from(r.hotspot_key).to_string(),
                             reward_type: RewardType::IotGateway,
                         },
                         r.witness_amount + r.beacon_amount + r.dc_transfer_amount,
                     )),
                     Some(IotReward::OperationalReward(r)) => Ok((
                         RewardKey {
-                            key: self.op_fund_key.clone().to_vec(),
+                            key: self.op_fund_key.clone(),
                             reward_type: RewardType::IotOperational,
                         },
                         r.amount,
