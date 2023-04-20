@@ -68,13 +68,13 @@ impl TransferRewards {
             )
             .await
             .into_iter()
+            .filter(|(pub_key, _)| hotspots.is_valid(pub_key))
             // Calculate rewards per hotspot
             .map(|(pub_key, dc_amount)| {
                 let bones = dc_to_mobile_bones(dc_amount, mobile_bone_price);
                 reward_sum += bones;
                 (pub_key, bones)
             })
-            .filter(|(pub_key, _)| hotspots.is_valid(pub_key))
             .collect();
 
         let duration = epoch.end - epoch.start;
