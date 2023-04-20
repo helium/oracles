@@ -243,6 +243,7 @@ impl CachedOrgClient {
         solana: S,
         minimum_allowed_balance: u64,
         monitor_period: Duration,
+        shutdown: triggered::Listener,
     ) -> impl std::future::Future<Output = Result<(), MonitorError<S::Error>>>
     where
         S: SolanaNetwork,
@@ -274,10 +275,13 @@ impl CachedOrgClient {
             }
         });
         async move {
-            match join_handle.await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(err)) => Err(err),
-                Err(err) => Err(MonitorError::from(err)),
+            tokio::select! {
+                result = join_handle => match result {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(err)) => Err(err),
+                    Err(err) => Err(MonitorError::from(err)),
+                },
+                _ = shutdown => Ok(())
             }
         }
     }

@@ -184,7 +184,8 @@ impl Cmd {
                 config_server,
                 solana,
                 settings.minimum_allowed_balance,
-                Duration::from_secs(60 * settings.monitor_funds_period)
+                Duration::from_secs(60 * settings.monitor_funds_period),
+                shutdown_listener.clone(),
             )
             .map_err(Error::from),
             source_join_handle.map_err(Error::from),
