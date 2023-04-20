@@ -207,7 +207,7 @@ impl CachedOrgClient {
     }
 
     async fn enable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
-        tracing::info!("Enabling org: {oui}");
+        tracing::info!(%oui, "enabling org");
 
         self.disabled_clients.remove(&oui);
         let mut req = OrgEnableReqV1 {
@@ -223,7 +223,7 @@ impl CachedOrgClient {
     }
 
     async fn disable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
-        tracing::info!("Disabling org: {oui}");
+        tracing::info!(%oui, "disabling org");
 
         self.disabled_clients.insert(oui);
         let mut req = OrgDisableReqV1 {
@@ -303,6 +303,8 @@ pub enum OrgClientError {
     RpcError(#[from] tonic::Status),
     #[error("Crypto error: {0}")]
     CryptoError(#[from] helium_crypto::Error),
+    #[error("No org")]
+    NoOrg,
 }
 
 #[async_trait]
@@ -324,7 +326,7 @@ impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
                     .await?
                     .into_inner()
                     .org
-                    .unwrap()
+                    .ok_or(OrgClientError::NoOrg)?
                     .payer,
             );
             e.insert(pubkey);

@@ -64,7 +64,7 @@ where
             return Ok(());
         };
 
-        tracing::info!("Burning {amount} DC from {payer}");
+        tracing::info!(%amount, %payer, "Burning DC");
 
         let amount = amount as u64;
 

@@ -107,7 +107,7 @@ impl SolanaNetwork for SolanaRpc {
         );
         let Ok(account_data) = self.provider.get_account_data(&escrow_account).await else {
             // If the account is empty, it has no DC
-            tracing::info!("{payer} has no account, therefore no balance");
+            tracing::info!(%payer, "Account not found, therefore no balance");
             return Ok(0);
         };
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
@@ -201,8 +201,8 @@ impl SolanaNetwork for SolanaRpc {
             .await?;
 
         tracing::info!(
-            "Successfully burned data credits. Transaction: {}",
-            signature
+            transaction = %signature,
+            "Successfully burned data credits",
         );
 
         Ok(())
