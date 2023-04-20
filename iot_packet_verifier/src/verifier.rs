@@ -191,7 +191,7 @@ impl CachedOrgClient {
         mut client: OrgClient<Channel>,
         keypair: Keypair,
     ) -> Result<Arc<Mutex<Self>>, tonic::Status> {
-        // Fetch all clients and set them as disabled;
+        // Fetch all disables orgs:
         let mut disabled_clients = HashSet::new();
         let orgs = client.list(OrgListReqV1 {}).await?.into_inner();
         for org in orgs.orgs {
