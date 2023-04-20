@@ -167,17 +167,17 @@ impl PocShares {
         let total_shares = self.total_shares();
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - transfer_rewards.reward_sum;
-
         let poc_rewards_per_share = available_poc_rewards / total_shares;
         self.hotspot_shares.into_iter().flat_map(
             move |(hotspot_key, RadioShares { radio_shares })| {
+                let mut dc_transfer_reward = Some(transfer_rewards.reward(&hotspot_key));
                 radio_shares
                     .into_iter()
                     .map(move |(cbsd_id, amount)| {
                         let start_period = epoch.start.encode_timestamp();
                         let end_period = epoch.end.encode_timestamp();
                         let poc_reward = poc_rewards_per_share * amount;
-                        let dc_transfer_reward = transfer_rewards.reward(&hotspot_key);
+                        let dc_transfer_reward = dc_transfer_reward.take().unwrap_or(Decimal::ZERO);
                         let hotspot_key: Vec<u8> = hotspot_key.clone().into();
                         let radio_reward_share = proto::RadioRewardShare {
                             owner_key: Vec::new(),
