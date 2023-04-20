@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 
 pub async fn insert<'c, E>(
     executor: E,
-    address: &Vec<u8>,
+    address: String,
     amount: u64,
     reward_type: RewardType,
     timestamp: &DateTime<Utc>,
