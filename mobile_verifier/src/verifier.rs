@@ -141,6 +141,7 @@ impl VerifierDaemon {
                 &scheduler.reward_period,
             )
             .await,
+            &poc_rewards,
             &scheduler.reward_period,
         )
         .await;

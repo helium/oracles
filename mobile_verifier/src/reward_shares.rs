@@ -51,6 +51,7 @@ impl TransferRewards {
     pub async fn from_transfer_sessions(
         mobile_bone_price: Decimal,
         transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
+        hotspots: &PocShares,
         epoch: &Range<DateTime<Utc>>,
     ) -> Self {
         tokio::pin!(transfer_sessions);
@@ -73,6 +74,7 @@ impl TransferRewards {
                 reward_sum += bones;
                 (pub_key, bones)
             })
+            .filter(|(pub_key, _)| hotspots.is_valid(pub_key))
             .collect();
 
         let duration = epoch.end - epoch.start;
@@ -151,10 +153,18 @@ impl PocShares {
         poc_shares
     }
 
+    pub fn is_valid(&self, hotspot: &PublicKeyBinary) -> bool {
+        if let Some(shares) = self.hotspot_shares.get(hotspot) {
+            !shares.total_shares().is_zero()
+        } else {
+            false
+        }
+    }
+
     pub fn total_shares(&self) -> Decimal {
         self.hotspot_shares
-            .iter()
-            .fold(Decimal::ZERO, |sum, (_, radio_shares)| {
+            .values()
+            .fold(Decimal::ZERO, |sum, radio_shares| {
                 sum + radio_shares.total_shares()
             })
     }
@@ -238,6 +248,12 @@ mod test {
     use helium_proto::services::poc_mobile::HeartbeatValidity;
     use std::collections::{HashMap, VecDeque};
 
+    fn valid_shares() -> RadioShares {
+        let mut radio_shares: HashMap<String, Decimal> = Default::default();
+        radio_shares.insert(String::new(), Decimal::ONE);
+        RadioShares { radio_shares }
+    }
+
     #[test]
     fn bytes_to_bones() {
         assert_eq!(
@@ -269,6 +285,10 @@ mod test {
             last_timestamp: DateTime::default(),
         }]);
 
+        let mut hotspot_shares = HashMap::default();
+        hotspot_shares.insert(owner.clone(), valid_shares());
+        let poc_shares = PocShares { hotspot_shares };
+
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
         let total_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
@@ -280,9 +300,13 @@ mod test {
             dec!(98_630_136)
         );
 
-        let data_transfer_rewards =
-            TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_sessions, &epoch)
-                .await;
+        let data_transfer_rewards = TransferRewards::from_transfer_sessions(
+            dec!(1.0),
+            data_transfer_sessions,
+            &poc_shares,
+            &epoch,
+        )
+        .await;
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00000006));
         assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
@@ -323,9 +347,17 @@ mod test {
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
 
-        let data_transfer_rewards =
-            TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_sessions, &epoch)
-                .await;
+        let mut hotspot_shares = HashMap::default();
+        hotspot_shares.insert(owner.clone(), valid_shares());
+        let poc_shares = PocShares { hotspot_shares };
+
+        let data_transfer_rewards = TransferRewards::from_transfer_sessions(
+            dec!(1.0),
+            data_transfer_sessions,
+            &poc_shares,
+            &epoch,
+        )
+        .await;
 
         // We have constructed the data transfer in such a way that they easily exceed the maximum
         // allotted reward amount for data transfer, which is 40% of the daily tokens. We check to
