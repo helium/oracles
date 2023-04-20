@@ -173,8 +173,6 @@ pub trait ConfigServer {
         cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, Self::Error>;
 
-    //    async fn enable_org(&mut self, oui: u64) -> Result<(), Self::Error>;
-
     async fn disable_org(&self, oui: u64) -> Result<(), Self::Error>;
 }
 
