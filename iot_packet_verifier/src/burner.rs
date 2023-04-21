@@ -86,6 +86,8 @@ where
         // Zero the balance in order to force a reset:
         balances.balance = 0;
 
+        metrics::counter!("burned", amount, "payer" => payer.to_string());
+
         Ok(())
     }
 }

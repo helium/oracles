@@ -19,7 +19,7 @@ use helium_proto::{
 };
 use solana::SolanaNetwork;
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     convert::Infallible,
     fmt::Debug,
     sync::Arc,
