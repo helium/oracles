@@ -24,16 +24,16 @@ struct MockConfig {
 
 #[derive(Default)]
 struct MockConfigServer {
-    payers: HashMap<u64, MockConfig>,
+    payers: Arc<Mutex<HashMap<u64, MockConfig>>>,
 }
 
 impl MockConfigServer {
-    fn insert(&mut self, oui: u64, payer: PublicKeyBinary) {
-        self.payers.insert(
+    async fn insert(&self, oui: u64, payer: PublicKeyBinary) {
+        self.payers.lock().await.insert(
             oui,
             MockConfig {
                 payer,
-                enabled: false,
+                enabled: true,
             },
         );
     }
@@ -44,20 +44,15 @@ impl ConfigServer for MockConfigServer {
     type Error = ();
 
     async fn fetch_org(
-        &mut self,
+        &self,
         oui: u64,
         _cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, ()> {
-        Ok(self.payers.get(&oui).unwrap().payer.clone())
+        Ok(self.payers.lock().await.get(&oui).unwrap().payer.clone())
     }
 
-    async fn enable_org(&mut self, oui: u64) -> Result<(), ()> {
-        self.payers.get_mut(&oui).unwrap().enabled = true;
-        Ok(())
-    }
-
-    async fn disable_org(&mut self, oui: u64) -> Result<(), ()> {
-        self.payers.get_mut(&oui).unwrap().enabled = false;
+    async fn disable_org(&self, oui: u64) -> Result<(), ()> {
+        self.payers.lock().await.get_mut(&oui).unwrap().enabled = false;
         Ok(())
     }
 }
@@ -170,15 +165,15 @@ async fn test_verifier() {
         packet_report(2, 0, 24, vec![7]),
     ];
     // Set up orgs:
-    let mut orgs = MockConfigServer::default();
-    orgs.insert(0_u64, PublicKeyBinary::from(vec![0]));
-    orgs.insert(1_u64, PublicKeyBinary::from(vec![1]));
-    orgs.insert(2_u64, PublicKeyBinary::from(vec![2]));
+    let orgs = MockConfigServer::default();
+    orgs.insert(0_u64, PublicKeyBinary::from(vec![0])).await;
+    orgs.insert(1_u64, PublicKeyBinary::from(vec![1])).await;
+    orgs.insert(2_u64, PublicKeyBinary::from(vec![2])).await;
     // Set up balances:
     let mut balances = HashMap::new();
     balances.insert(PublicKeyBinary::from(vec![0]), 3);
-    balances.insert(PublicKeyBinary::from(vec![1]), 4);
-    balances.insert(PublicKeyBinary::from(vec![2]), 1);
+    balances.insert(PublicKeyBinary::from(vec![1]), 5);
+    balances.insert(PublicKeyBinary::from(vec![2]), 2);
     let balances = InstantBurnedBalance(Arc::new(Mutex::new(balances)));
     // Set up output:
     let mut valid_packets = Vec::new();
@@ -192,7 +187,7 @@ async fn test_verifier() {
     // Run the verifier:
     verifier
         .verify(
-            0,
+            1,
             balances.clone(),
             stream::iter(packets),
             &mut valid_packets,
@@ -220,9 +215,10 @@ async fn test_verifier() {
     assert_eq!(invalid_packets, vec![invalid_packet(1, vec![3]),]);
 
     // Verify that only org #0 is disabled:
-    assert!(!verifier.config_server.payers.get(&0).unwrap().enabled);
-    assert!(verifier.config_server.payers.get(&1).unwrap().enabled);
-    assert!(verifier.config_server.payers.get(&2).unwrap().enabled);
+    let payers = verifier.config_server.payers.lock().await;
+    assert!(!payers.get(&0).unwrap().enabled);
+    assert!(payers.get(&1).unwrap().enabled);
+    assert!(payers.get(&2).unwrap().enabled);
 }
 
 #[tokio::test]
@@ -252,8 +248,8 @@ async fn test_end_to_end() {
     );
 
     // Orgs:
-    let mut orgs = MockConfigServer::default();
-    orgs.insert(0_u64, payer.clone());
+    let orgs = MockConfigServer::default();
+    orgs.insert(0_u64, payer.clone()).await;
 
     // Packet output:
     let mut valid_packets = Vec::new();
@@ -268,7 +264,7 @@ async fn test_end_to_end() {
     // Verify four packets, each costing one DC. The last one should be invalid
     verifier
         .verify(
-            0,
+            1,
             pending_burns.clone(),
             stream::iter(vec![
                 packet_report(0, 0, BYTES_PER_DC as u32, vec![1]),
@@ -283,7 +279,16 @@ async fn test_end_to_end() {
         .unwrap();
 
     // Org 0 should be disabled now:
-    assert!(!verifier.config_server.payers.get(&0).unwrap().enabled,);
+    assert!(
+        !verifier
+            .config_server
+            .payers
+            .lock()
+            .await
+            .get(&0)
+            .unwrap()
+            .enabled
+    );
 
     assert_eq!(
         valid_packets,
@@ -339,7 +344,7 @@ async fn test_end_to_end() {
 
     verifier
         .verify(
-            0,
+            1,
             pending_burns.clone(),
             stream::iter(vec![packet_report(0, 4, BYTES_PER_DC as u32, vec![5])]),
             &mut valid_packets,
@@ -365,7 +370,7 @@ async fn test_end_to_end() {
     // should clear
     verifier
         .verify(
-            0,
+            1,
             pending_burns.clone(),
             stream::iter(vec![
                 packet_report(0, 5, 2 * BYTES_PER_DC as u32, vec![6]),
@@ -393,7 +398,4 @@ async fn test_end_to_end() {
     };
     assert_eq!(balance.balance, 1);
     assert_eq!(balance.burned, 1);
-
-    // The last packet was valid, so the org should be enabled now
-    assert!(verifier.config_server.payers.get(&0).unwrap().enabled);
 }

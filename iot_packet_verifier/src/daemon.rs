@@ -15,12 +15,12 @@ use file_store::{
 use futures_util::TryFutureExt;
 use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
-use std::sync::Arc;
-use tokio::sync::mpsc::Receiver;
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{mpsc::Receiver, Mutex};
 
 struct Daemon {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, CachedOrgClient>,
+    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<CachedOrgClient>>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
@@ -50,7 +50,7 @@ impl Daemon {
         &mut self,
         report_file: FileInfoStream<PacketRouterPacketReport>,
     ) -> Result<()> {
-        tracing::info!("Verifying file: {}", report_file.file_info);
+        tracing::info!(file = %report_file.file_info, "Verifying file");
 
         let mut transaction = self.pool.begin().await?;
         let reports = report_file.into_stream(&mut transaction).await?;
@@ -106,7 +106,12 @@ impl Cmd {
         let balances = BalanceCache::new(&mut pool, solana.clone()).await?;
 
         // Set up the balance burner:
-        let burner = Burner::new(pool.clone(), &balances, settings.burn_period, solana);
+        let burner = Burner::new(
+            pool.clone(),
+            &balances,
+            settings.burn_period,
+            solana.clone(),
+        );
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
@@ -150,6 +155,7 @@ impl Cmd {
                 .await?;
 
         let config_keypair = settings.config_keypair()?;
+        let config_server = CachedOrgClient::new(org_client, config_keypair);
         let verifier_daemon = Daemon {
             pool,
             report_files,
@@ -157,7 +163,7 @@ impl Cmd {
             invalid_packets,
             verifier: Verifier {
                 debiter: balances,
-                config_server: CachedOrgClient::new(org_client, config_keypair),
+                config_server: config_server.clone(),
             },
             minimum_allowed_balance: settings.minimum_allowed_balance,
         };
@@ -174,6 +180,14 @@ impl Cmd {
             invalid_packets_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
+            CachedOrgClient::monitor_funds(
+                config_server,
+                solana,
+                settings.minimum_allowed_balance,
+                Duration::from_secs(60 * settings.monitor_funds_period),
+                shutdown_listener.clone(),
+            )
+            .map_err(Error::from),
             source_join_handle.map_err(Error::from),
         )?;
 

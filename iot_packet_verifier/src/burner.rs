@@ -64,7 +64,7 @@ where
             return Ok(());
         };
 
-        tracing::info!("Burning {amount} DC from {payer}");
+        tracing::info!(%amount, %payer, "Burning DC");
 
         let amount = amount as u64;
 
@@ -85,6 +85,8 @@ where
         balances.burned -= amount;
         // Zero the balance in order to force a reset:
         balances.balance = 0;
+
+        metrics::counter!("burned", amount, "payer" => payer.to_string());
 
         Ok(())
     }

@@ -12,19 +12,23 @@ use helium_proto::services::{
 };
 use helium_proto::{
     services::{
-        iot_config::{config_org_client::OrgClient, OrgDisableReqV1, OrgEnableReqV1},
+        iot_config::{config_org_client::OrgClient, OrgDisableReqV1, OrgEnableReqV1, OrgListReqV1},
         Channel,
     },
     Message,
 };
+use solana::SolanaNetwork;
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::Infallible,
     fmt::Debug,
-    mem,
     sync::Arc,
 };
-use tokio::sync::Mutex;
+use tokio::{
+    sync::Mutex,
+    task::JoinError,
+    time::{sleep_until, Duration, Instant},
+};
 
 pub struct Verifier<D, C> {
     pub debiter: D,
@@ -83,7 +87,7 @@ where
                 .await
                 .map_err(VerificationError::DebitError)?;
 
-            if remaining_balance.is_some() {
+            if let Some(remaining_balance) = remaining_balance {
                 pending_burns
                     .add_burned_amount(&payer, debit_amount)
                     .await
@@ -98,6 +102,13 @@ where
                     })
                     .await
                     .map_err(VerificationError::ValidPacketWriterError)?;
+
+                if remaining_balance < minimum_allowed_balance {
+                    self.config_server
+                        .disable_org(report.oui)
+                        .await
+                        .map_err(VerificationError::ConfigError)?;
+                }
             } else {
                 invalid_packets
                     .write(InvalidPacket {
@@ -109,13 +120,6 @@ where
                     .await
                     .map_err(VerificationError::InvalidPacketWriterError)?;
             }
-            match remaining_balance {
-                Some(remaining_balance) if remaining_balance >= minimum_allowed_balance => {
-                    self.config_server.enable_org(report.oui).await
-                }
-                _ => self.config_server.disable_org(report.oui).await,
-            }
-            .map_err(VerificationError::ConfigError)?
         }
 
         Ok(())
@@ -164,14 +168,12 @@ pub trait ConfigServer {
     type Error;
 
     async fn fetch_org(
-        &mut self,
+        &self,
         oui: u64,
         cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, Self::Error>;
 
-    async fn enable_org(&mut self, oui: u64) -> Result<(), Self::Error>;
-
-    async fn disable_org(&mut self, oui: u64) -> Result<(), Self::Error>;
+    async fn disable_org(&self, oui: u64) -> Result<(), Self::Error>;
 }
 
 // TODO: Move this somewhere else
@@ -180,18 +182,105 @@ pub trait ConfigServer {
 // consistent with BalanceCache
 pub struct CachedOrgClient {
     pub keypair: Keypair,
-    pub enabled_clients: HashMap<u64, bool>,
     pub client: OrgClient<Channel>,
 }
 
 impl CachedOrgClient {
-    pub fn new(client: OrgClient<Channel>, keypair: Keypair) -> Self {
-        CachedOrgClient {
-            keypair,
-            enabled_clients: HashMap::new(),
-            client,
+    pub fn new(client: OrgClient<Channel>, keypair: Keypair) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(CachedOrgClient { keypair, client }))
+    }
+
+    async fn enable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
+        tracing::info!(%oui, "enabling org");
+
+        let mut req = OrgEnableReqV1 {
+            oui,
+            timestamp: Utc::now().timestamp_millis() as u64,
+            signer: self.keypair.public_key().into(),
+            signature: vec![],
+        };
+        let signature = self.keypair.sign(&req.encode_to_vec())?;
+        req.signature = signature;
+        let _ = self.client.enable(req).await?;
+        Ok(())
+    }
+
+    async fn disable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
+        tracing::info!(%oui, "disabling org");
+
+        let mut req = OrgDisableReqV1 {
+            oui,
+            timestamp: Utc::now().timestamp_millis() as u64,
+            signer: self.keypair.public_key().into(),
+            signature: vec![],
+        };
+        let signature = self.keypair.sign(&req.encode_to_vec())?;
+        req.signature = signature;
+        let _ = self.client.disable(req).await?;
+        Ok(())
+    }
+
+    pub fn monitor_funds<S>(
+        client: Arc<Mutex<Self>>,
+        solana: S,
+        minimum_allowed_balance: u64,
+        monitor_period: Duration,
+        shutdown: triggered::Listener,
+    ) -> impl std::future::Future<Output = Result<(), MonitorError<S::Error>>>
+    where
+        S: SolanaNetwork,
+    {
+        let join_handle = tokio::spawn(async move {
+            loop {
+                tracing::info!("Checking if any orgs need to be re-enabled");
+
+                // Fetch all disables orgs:
+                let orgs = client
+                    .lock()
+                    .await
+                    .client
+                    .list(OrgListReqV1 {})
+                    .await
+                    .map_err(OrgClientError::RpcError)?
+                    .into_inner();
+                for org in orgs.orgs {
+                    if org.locked {
+                        let payer = PublicKeyBinary::from(org.payer);
+                        if solana
+                            .payer_balance(&payer)
+                            .await
+                            .map_err(MonitorError::SolanaError)?
+                            >= minimum_allowed_balance
+                        {
+                            client.lock().await.enable_org(org.oui).await?;
+                        }
+                    }
+                }
+                // Sleep until we should re-check the monitor
+                sleep_until(Instant::now() + monitor_period).await;
+            }
+        });
+        async move {
+            tokio::select! {
+                result = join_handle => match result {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(err)) => Err(err),
+                    Err(err) => Err(MonitorError::from(err)),
+                },
+                _ = shutdown => Ok(())
+            }
         }
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum MonitorError<S> {
+    #[error("Join error: {0}")]
+    JoinError(#[from] JoinError),
+    #[error("Org client error: {0}")]
+    OrcClientError(#[from] OrgClientError),
+    #[error("Solana error: {0}")]
+    SolanaError(S),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -200,54 +289,39 @@ pub enum OrgClientError {
     RpcError(#[from] tonic::Status),
     #[error("Crypto error: {0}")]
     CryptoError(#[from] helium_crypto::Error),
+    #[error("No org")]
+    NoOrg,
 }
 
 #[async_trait]
-impl ConfigServer for CachedOrgClient {
+impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
     type Error = OrgClientError;
 
     async fn fetch_org(
-        &mut self,
+        &self,
         oui: u64,
         cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, Self::Error> {
         if let Entry::Vacant(e) = cache.entry(oui) {
             let req = OrgGetReqV1 { oui };
-            let pubkey =
-                PublicKeyBinary::from(self.client.get(req).await?.into_inner().org.unwrap().payer);
+            let pubkey = PublicKeyBinary::from(
+                self.lock()
+                    .await
+                    .client
+                    .get(req)
+                    .await?
+                    .into_inner()
+                    .org
+                    .ok_or(OrgClientError::NoOrg)?
+                    .payer,
+            );
             e.insert(pubkey);
         }
         Ok(cache.get(&oui).unwrap().clone())
     }
 
-    async fn enable_org(&mut self, oui: u64) -> Result<(), Self::Error> {
-        if !mem::replace(self.enabled_clients.entry(oui).or_insert(false), true) {
-            let mut req = OrgEnableReqV1 {
-                oui,
-                timestamp: Utc::now().timestamp_millis() as u64,
-                signer: self.keypair.public_key().into(),
-                signature: vec![],
-            };
-            let signature = self.keypair.sign(&req.encode_to_vec())?;
-            req.signature = signature;
-            let _ = self.client.enable(req).await?;
-        }
-        Ok(())
-    }
-
-    async fn disable_org(&mut self, oui: u64) -> Result<(), Self::Error> {
-        if mem::replace(self.enabled_clients.entry(oui).or_insert(true), false) {
-            let mut req = OrgDisableReqV1 {
-                oui,
-                timestamp: Utc::now().timestamp_millis() as u64,
-                signer: self.keypair.public_key().into(),
-                signature: vec![],
-            };
-            let signature = self.keypair.sign(&req.encode_to_vec())?;
-            req.signature = signature;
-            let _ = self.client.disable(req).await?;
-        }
-        Ok(())
+    async fn disable_org(&self, oui: u64) -> Result<(), Self::Error> {
+        self.lock().await.disable_org(oui).await
     }
 }
 

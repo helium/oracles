@@ -31,6 +31,10 @@ pub struct Settings {
     pub solana: Option<solana::Settings>,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
+    /// Number of minutes we should sleep before checking to re-enable
+    /// any disabled orgs.
+    #[serde(default = "default_monitor_funds_period")]
+    pub monitor_funds_period: u64,
 }
 
 pub fn default_start_after() -> u64 {
@@ -46,7 +50,11 @@ pub fn default_log() -> String {
 }
 
 pub fn default_minimum_allowed_balance() -> u64 {
-    35_000_000
+    3_500_000
+}
+
+pub fn default_monitor_funds_period() -> u64 {
+    30
 }
 
 impl Settings {

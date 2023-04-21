@@ -18,6 +18,7 @@ futures-util = {workspace = true}
 file-store = {path = "../file_store"}
 helium-proto = {workspace = true}
 helium-crypto = {workspace = true, features = ["sqlx-postgres", "multisig", "solana"]}
+metrics = {workspace = true}
 poc-metrics = {path = "../metrics"}
 prost = {workspace = true}
 serde = {workspace = true}

@@ -88,6 +88,8 @@ where
                 .await
                 .map_err(BurnError::SolanaError)?;
 
+            metrics::counter!("burned", total_dcs, "payer" => payer.to_string());
+
             // Delete from the data transfer session and write out to S3
 
             sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
