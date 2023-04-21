@@ -31,6 +31,8 @@ pub struct Settings {
     pub solana: Option<solana::Settings>,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
+    /// Number of minutes we should sleep before checking to re-enable
+    /// any disabled orgs.
     #[serde(default = "default_monitor_funds_period")]
     pub monitor_funds_period: u64,
 }

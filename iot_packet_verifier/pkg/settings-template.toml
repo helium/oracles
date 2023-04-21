@@ -27,7 +27,7 @@ enable_solana_integration = "false"
 minimum_allowed_balance = 3_500_000
 
 # How often we should check the organizations to see if they have repleneshed
-# their funds. Defaults to 30 minutes.
+# their funds in minutes. Defaults to 30 minutes.
 monitor_funds_period = 30
 
 [solana]
