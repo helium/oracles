@@ -77,7 +77,7 @@ pub struct Cmd {}
 
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
-        poc_metrics::install_metrics();
+        poc_metrics::start_metrics(&settings.metrics)?;
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         tokio::spawn(async move {
