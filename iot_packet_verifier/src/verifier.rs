@@ -237,7 +237,6 @@ impl CachedOrgClient {
                 tracing::info!("Checking if any orgs need to be re-enabled");
 
                 // Fetch all disables orgs:
-                let mut disabled_clients = HashSet::new();
                 let orgs = client
                     .lock()
                     .await
@@ -248,7 +247,6 @@ impl CachedOrgClient {
                     .into_inner();
                 for org in orgs.orgs {
                     if org.locked {
-                        disabled_clients.insert(org.oui);
                         let payer = client.fetch_org(org.oui, &mut org_cache).await?;
                         if solana
                             .payer_balance(&payer)
