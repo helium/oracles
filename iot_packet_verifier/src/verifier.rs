@@ -231,8 +231,6 @@ impl CachedOrgClient {
         S: SolanaNetwork,
     {
         let join_handle = tokio::spawn(async move {
-            // TODO: Move this somewhere else, use retainer
-            let mut org_cache = HashMap::new();
             loop {
                 tracing::info!("Checking if any orgs need to be re-enabled");
 
@@ -247,7 +245,7 @@ impl CachedOrgClient {
                     .into_inner();
                 for org in orgs.orgs {
                     if org.locked {
-                        let payer = client.fetch_org(org.oui, &mut org_cache).await?;
+                        let payer = PublicKeyBinary::from(org.payer);
                         if solana
                             .payer_balance(&payer)
                             .await
