@@ -155,7 +155,7 @@ impl Cmd {
                 .await?;
 
         let config_keypair = settings.config_keypair()?;
-        let config_server = CachedOrgClient::new(org_client, config_keypair).await?;
+        let config_server = CachedOrgClient::new(org_client, config_keypair);
         let verifier_daemon = Daemon {
             pool,
             report_files,

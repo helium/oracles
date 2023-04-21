@@ -182,34 +182,17 @@ pub trait ConfigServer {
 // consistent with BalanceCache
 pub struct CachedOrgClient {
     pub keypair: Keypair,
-    pub disabled_clients: HashSet<u64>,
     pub client: OrgClient<Channel>,
 }
 
 impl CachedOrgClient {
-    pub async fn new(
-        mut client: OrgClient<Channel>,
-        keypair: Keypair,
-    ) -> Result<Arc<Mutex<Self>>, tonic::Status> {
-        // Fetch all disables orgs:
-        let mut disabled_clients = HashSet::new();
-        let orgs = client.list(OrgListReqV1 {}).await?.into_inner();
-        for org in orgs.orgs {
-            if org.locked {
-                disabled_clients.insert(org.oui);
-            }
-        }
-        Ok(Arc::new(Mutex::new(CachedOrgClient {
-            keypair,
-            disabled_clients,
-            client,
-        })))
+    pub fn new(client: OrgClient<Channel>, keypair: Keypair) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(CachedOrgClient { keypair, client }))
     }
 
     async fn enable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
         tracing::info!(%oui, "enabling org");
 
-        self.disabled_clients.remove(&oui);
         let mut req = OrgEnableReqV1 {
             oui,
             timestamp: Utc::now().timestamp_millis() as u64,
@@ -225,7 +208,6 @@ impl CachedOrgClient {
     async fn disable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
         tracing::info!(%oui, "disabling org");
 
-        self.disabled_clients.insert(oui);
         let mut req = OrgDisableReqV1 {
             oui,
             timestamp: Utc::now().timestamp_millis() as u64,
@@ -254,20 +236,28 @@ impl CachedOrgClient {
             loop {
                 tracing::info!("Checking if any orgs need to be re-enabled");
 
-                // Go through and check balances of all orgs and re-enable if they
-                // have a greater than minimum balance.
-                // This could almost certainly become a Stream.
-                let disabled_clients = client.lock().await.disabled_clients.clone();
-                for disabled_org in disabled_clients {
-                    // Check balance
-                    let payer = client.fetch_org(disabled_org, &mut org_cache).await?;
-                    if solana
-                        .payer_balance(&payer)
-                        .await
-                        .map_err(MonitorError::SolanaError)?
-                        >= minimum_allowed_balance
-                    {
-                        client.lock().await.enable_org(disabled_org).await?;
+                // Fetch all disables orgs:
+                let mut disabled_clients = HashSet::new();
+                let orgs = client
+                    .lock()
+                    .await
+                    .client
+                    .list(OrgListReqV1 {})
+                    .await
+                    .map_err(OrgClientError::RpcError)?
+                    .into_inner();
+                for org in orgs.orgs {
+                    if org.locked {
+                        disabled_clients.insert(org.oui);
+                        let payer = client.fetch_org(org.oui, &mut org_cache).await?;
+                        if solana
+                            .payer_balance(&payer)
+                            .await
+                            .map_err(MonitorError::SolanaError)?
+                            >= minimum_allowed_balance
+                        {
+                            client.lock().await.enable_org(org.oui).await?;
+                        }
                     }
                 }
                 // Sleep until we should re-check the monitor
