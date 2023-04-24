@@ -62,7 +62,8 @@ impl TransferRewards {
             .fold(
                 HashMap::<PublicKeyBinary, Decimal>::new(),
                 |mut entries, session| async move {
-                    *entries.entry(session.pub_key).or_default() += Decimal::from(session.num_dcs);
+                    *entries.entry(session.pub_key).or_default() +=
+                        Decimal::from(bytes_to_dc(session.download_bytes + session.upload_bytes));
                     entries
                 },
             )
@@ -107,6 +108,13 @@ impl TransferRewards {
             reward_sum: reward_sum * reward_scale,
         }
     }
+}
+
+const BYTES_PER_DC: u64 = 20_000;
+
+fn bytes_to_dc(bytes: u64) -> u64 {
+    let bytes = bytes.max(BYTES_PER_DC);
+    (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }
 
 /// Returns the equivalent amount of Mobile bones for a specified amount of Data Credits
@@ -278,7 +286,7 @@ mod test {
         let data_transfer_sessions = stream::iter(vec![ValidDataTransferSession {
             pub_key: owner.clone(),
             payer,
-            upload_bytes: 66,
+            upload_bytes: 20_000,
             download_bytes: 1,
             num_dcs: 2,
             first_timestamp: DateTime::default(),
@@ -330,12 +338,14 @@ mod test {
 
         // Just an absurdly large amount of DC
         let mut transfer_sessions = Vec::new();
-        for _ in 0..3_003 {
+        for _ in 0..30_003 {
             transfer_sessions.push(ValidDataTransferSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
-                upload_bytes: 0,
+                upload_bytes: 8888888888888890000,
                 download_bytes: 0,
+                // When we get rid of bytes_to_dc, use num_dcs and change the
+                // range back to 3_003
                 num_dcs: 4444444444444445,
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),
