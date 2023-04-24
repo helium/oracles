@@ -39,10 +39,5 @@ fn main() {
         ],
         &data_credits::ID,
     );
-    println!("ddc_key: {ddc_key}");
-    let (escrow_account, _) = Pubkey::find_program_address(
-        &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
-        &data_credits::ID,
-    );
-    println!("escrow_account: {escrow_account}");
+    println!("https://explorer.solana.com/address/{ddc_key}");
 }
