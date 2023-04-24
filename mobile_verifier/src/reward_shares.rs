@@ -330,13 +330,13 @@ mod test {
 
         // Just an absurdly large amount of DC
         let mut transfer_sessions = Vec::new();
-        for _ in 0..1_000_000 {
+        for _ in 0..3_003 {
             transfer_sessions.push(ValidDataTransferSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
                 upload_bytes: 0,
                 download_bytes: 0,
-                num_dcs: 4444444444445,
+                num_dcs: 4444444444444445,
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),
             });

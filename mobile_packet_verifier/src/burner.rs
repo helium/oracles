@@ -81,14 +81,34 @@ where
             },
         ) in payer_totals.into_iter()
         {
-            tracing::info!("Burning {total_dcs} DC from {payer}");
+            tracing::info!(%total_dcs, %payer, "Burning DC");
 
-            self.solana
+            if self
+                .solana
                 .burn_data_credits(&payer, total_dcs)
                 .await
-                .map_err(BurnError::SolanaError)?;
+                .is_err()
+            {
+                // We have failed to burn data credits:
+                metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
+                continue;
+            }
 
-            metrics::counter!("burned", total_dcs, "payer" => payer.to_string());
+            // We succesfully managed to burn data credits:
+
+            metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "true");
+
+            // Fetch the balance after
+
+            metrics::gauge!(
+                "balance",
+                self
+                    .solana
+                    .payer_balance(&payer)
+                    .await
+                    .map_err(BurnError::SolanaError)? as f64,
+                "payer" => payer.to_string()
+            );
 
             // Delete from the data transfer session and write out to S3
 
