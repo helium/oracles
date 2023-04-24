@@ -1,19 +1,32 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use helium_crypto::{PublicKey, PublicKeyBinary};
 use sha2::{Digest, Sha256};
 use solana_sdk::pubkey::Pubkey;
 
 #[derive(Parser)]
-#[clap(about = "Look up the DC escrow account for a Payer account")]
+#[clap(about = "Look up the Delegated Data Credit account for a Helium router key")]
 struct Cli {
+    #[clap(value_enum)]
+    mode: Dnt,
     payer: PublicKey,
 }
 
+#[derive(ValueEnum, Clone)]
+enum Dnt {
+    Mobile,
+    Iot,
+}
+
 fn main() {
-    let Cli { payer } = Cli::parse();
-    let sub_dao: Pubkey = "39Lw1RH6zt8AJvKn3BTxmUDofzduCM2J3kSaGDZ8L7Sk"
-        .parse()
-        .unwrap();
+    let Cli { mode, payer } = Cli::parse();
+    let sub_dao: Pubkey = match mode {
+        Dnt::Mobile => "Gm9xDCJawDEKDrrQW6haw94gABaYzQwCq4ZQU8h8bd22"
+            .parse()
+            .unwrap(),
+        Dnt::Iot => "39Lw1RH6zt8AJvKn3BTxmUDofzduCM2J3kSaGDZ8L7Sk"
+            .parse()
+            .unwrap(),
+    };
     let payer = PublicKeyBinary::from(payer);
     let mut hasher = Sha256::new();
     hasher.update(payer.to_string());
@@ -26,9 +39,5 @@ fn main() {
         ],
         &data_credits::ID,
     );
-    let (escrow_account, _) = Pubkey::find_program_address(
-        &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
-        &data_credits::ID,
-    );
-    println!("https://explorer.solana.com/address/{escrow_account}");
+    println!("https://explorer.solana.com/address/{ddc_key}");
 }
