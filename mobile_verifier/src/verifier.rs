@@ -170,7 +170,17 @@ impl VerifierDaemon {
 
         let written_files = self.mobile_rewards.commit().await?.await??;
 
-        // Write out the manifest file
+        let mut transaction = self.pool.begin().await?;
+        // Clear the heartbeats table:
+        sqlx::query("TRUNCATE TABLE heartbeats;")
+            .execute(&mut transaction)
+            .await?;
+
+        save_last_rewarded_end_time(&mut transaction, &scheduler.reward_period.end).await?;
+        save_next_rewarded_end_time(&mut transaction, &scheduler.next_reward_period().end).await?;
+        transaction.commit().await?;
+
+        // now that the db has been purged, safe to write out the manifest
         self.reward_manifests
             .write(
                 RewardManifest {
@@ -184,18 +194,6 @@ impl VerifierDaemon {
             .await??;
 
         self.reward_manifests.commit().await?;
-
-        let mut transaction = self.pool.begin().await?;
-
-        // Clear the heartbeats table:
-        sqlx::query("TRUNCATE TABLE heartbeats;")
-            .execute(&mut transaction)
-            .await?;
-
-        save_last_rewarded_end_time(&mut transaction, &scheduler.reward_period.end).await?;
-        save_next_rewarded_end_time(&mut transaction, &scheduler.next_reward_period().end).await?;
-
-        transaction.commit().await?;
 
         Ok(())
     }
