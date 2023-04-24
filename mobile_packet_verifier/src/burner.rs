@@ -121,7 +121,7 @@ where
     }
 }
 
-const BYTES_PER_DC: u64 = 66;
+const BYTES_PER_DC: u64 = 20_000;
 
 fn bytes_to_dc(bytes: u64) -> u64 {
     let bytes = bytes.max(BYTES_PER_DC);

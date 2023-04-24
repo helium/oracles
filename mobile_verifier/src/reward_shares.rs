@@ -20,7 +20,7 @@ const TOTAL_EMISSIONS_POOL: Decimal = dec!(60_000_000_000_000_000);
 const MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.4);
 
 /// The fixed price of a mobile data credit
-const DC_USD_PRICE: Decimal = dec!(0.00000003);
+const DC_USD_PRICE: Decimal = dec!(0.00001);
 
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
@@ -258,11 +258,11 @@ mod test {
     fn bytes_to_bones() {
         assert_eq!(
             dc_to_mobile_bones(Decimal::from(1), dec!(1.0)),
-            dec!(0.00000003)
+            dec!(0.00001)
         );
         assert_eq!(
             dc_to_mobile_bones(Decimal::from(2), dec!(1.0)),
-            dec!(0.00000006)
+            dec!(0.00002)
         );
     }
 
@@ -308,7 +308,7 @@ mod test {
         )
         .await;
 
-        assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00000006));
+        assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
         assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
@@ -334,9 +334,9 @@ mod test {
             transfer_sessions.push(ValidDataTransferSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
-                upload_bytes: 66 * 4_444_444_444_444_444,
+                upload_bytes: 0,
                 download_bytes: 0,
-                num_dcs: 4444444444444445,
+                num_dcs: 4444444444445,
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),
             });
