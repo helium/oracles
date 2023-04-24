@@ -81,14 +81,34 @@ where
             },
         ) in payer_totals.into_iter()
         {
-            tracing::info!("Burning {total_dcs} DC from {payer}");
+            tracing::info!(%total_dcs, %payer, "Burning DC");
 
-            self.solana
+            if self
+                .solana
                 .burn_data_credits(&payer, total_dcs)
                 .await
-                .map_err(BurnError::SolanaError)?;
+                .is_err()
+            {
+                // We have failed to burn data credits:
+                metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
+                continue;
+            }
 
-            metrics::counter!("burned", total_dcs, "payer" => payer.to_string());
+            // We succesfully managed to burn data credits:
+
+            metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "true");
+
+            // Fetch the balance after
+
+            metrics::gauge!(
+                "balance",
+                self
+                    .solana
+                    .payer_balance(&payer)
+                    .await
+                    .map_err(BurnError::SolanaError)? as f64,
+                "payer" => payer.to_string()
+            );
 
             // Delete from the data transfer session and write out to S3
 
@@ -121,9 +141,10 @@ where
     }
 }
 
-const BYTES_PER_DC: u64 = 66;
+const BYTES_PER_DC: u64 = 20_000;
 
 fn bytes_to_dc(bytes: u64) -> u64 {
     let bytes = bytes.max(BYTES_PER_DC);
+    // Integer div/ceil from: https://stackoverflow.com/a/2745086
     (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }

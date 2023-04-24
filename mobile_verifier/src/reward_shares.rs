@@ -20,7 +20,7 @@ const TOTAL_EMISSIONS_POOL: Decimal = dec!(60_000_000_000_000_000);
 const MAX_DATA_TRANSFER_REWARDS_PERCENT: Decimal = dec!(0.4);
 
 /// The fixed price of a mobile data credit
-const DC_USD_PRICE: Decimal = dec!(0.00000003);
+const DC_USD_PRICE: Decimal = dec!(0.00001);
 
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
@@ -62,7 +62,8 @@ impl TransferRewards {
             .fold(
                 HashMap::<PublicKeyBinary, Decimal>::new(),
                 |mut entries, session| async move {
-                    *entries.entry(session.pub_key).or_default() += Decimal::from(session.num_dcs);
+                    *entries.entry(session.pub_key).or_default() +=
+                        Decimal::from(bytes_to_dc(session.download_bytes + session.upload_bytes));
                     entries
                 },
             )
@@ -107,6 +108,14 @@ impl TransferRewards {
             reward_sum: reward_sum * reward_scale,
         }
     }
+}
+
+const BYTES_PER_DC: u64 = 20_000;
+
+fn bytes_to_dc(bytes: u64) -> u64 {
+    let bytes = bytes.max(BYTES_PER_DC);
+    // Integer div/ceil from: https://stackoverflow.com/a/2745086
+    (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }
 
 /// Returns the equivalent amount of Mobile bones for a specified amount of Data Credits
@@ -258,11 +267,11 @@ mod test {
     fn bytes_to_bones() {
         assert_eq!(
             dc_to_mobile_bones(Decimal::from(1), dec!(1.0)),
-            dec!(0.00000003)
+            dec!(0.00001)
         );
         assert_eq!(
             dc_to_mobile_bones(Decimal::from(2), dec!(1.0)),
-            dec!(0.00000006)
+            dec!(0.00002)
         );
     }
 
@@ -278,7 +287,7 @@ mod test {
         let data_transfer_sessions = stream::iter(vec![ValidDataTransferSession {
             pub_key: owner.clone(),
             payer,
-            upload_bytes: 66,
+            upload_bytes: 20_000,
             download_bytes: 1,
             num_dcs: 2,
             first_timestamp: DateTime::default(),
@@ -308,7 +317,7 @@ mod test {
         )
         .await;
 
-        assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00000006));
+        assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
         assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
@@ -330,12 +339,14 @@ mod test {
 
         // Just an absurdly large amount of DC
         let mut transfer_sessions = Vec::new();
-        for _ in 0..1_000_000 {
+        for _ in 0..30_003 {
             transfer_sessions.push(ValidDataTransferSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
-                upload_bytes: 66 * 4_444_444_444_444_444,
+                upload_bytes: 8888888888888890000,
                 download_bytes: 0,
+                // When we get rid of bytes_to_dc, use num_dcs and change the
+                // range back to 3_003
                 num_dcs: 4444444444444445,
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),

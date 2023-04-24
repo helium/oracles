@@ -130,7 +130,7 @@ pub const BYTES_PER_DC: u64 = 24;
 
 pub fn payload_size_to_dc(payload_size: u64) -> u64 {
     let payload_size = payload_size.max(BYTES_PER_DC);
-    // perform a div_ciel function:
+    // Integer div/ceil from: https://stackoverflow.com/a/2745086
     (payload_size + BYTES_PER_DC - 1) / BYTES_PER_DC
 }
 
