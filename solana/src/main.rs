@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use solana_sdk::pubkey::Pubkey;
 
 #[derive(Parser)]
-#[clap(about = "Look up the DC accounts for a Payer account")]
+#[clap(about = "Look up the Delegated Data Credit account for a Helium router key")]
 struct Cli {
     #[clap(value_enum)]
     mode: Dnt,
