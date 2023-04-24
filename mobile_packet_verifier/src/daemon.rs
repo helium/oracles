@@ -104,6 +104,13 @@ impl Cmd {
             None
         };
 
+        let pv_balance_monitor = solana::balance_monitor::start(
+            env!("CARGO_PKG_NAME"),
+            solana.clone(),
+            shutdown_listener.clone(),
+        )
+        .await?;
+
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
             file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
@@ -149,6 +156,7 @@ impl Cmd {
             file_upload.run(&shutdown_listener).map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
             conn_handler.map_err(Error::from),
+            pv_balance_monitor.map_err(Error::from),
         )?;
 
         Ok(())

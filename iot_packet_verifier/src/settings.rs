@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     /// RUST_LOG compatible settings string. Defsault to
-    /// "mobile_verifier=debug,poc_store=info"
+    /// "iot_packet_verifier=debug,poc_store=info"
     #[serde(default = "default_log")]
     pub log: String,
     /// Cache location for generated verified reports
