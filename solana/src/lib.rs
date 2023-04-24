@@ -6,10 +6,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{
-    client_error::ClientError, nonblocking::rpc_client::RpcClient,
-    rpc_config::RpcSendTransactionConfig,
-};
+use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
@@ -188,17 +185,7 @@ impl SolanaNetwork for SolanaRpc {
             blockhash,
         );
 
-        let signature = self
-            .provider
-            .send_and_confirm_transaction_with_spinner_and_config(
-                &tx,
-                CommitmentConfig::finalized(),
-                RpcSendTransactionConfig {
-                    skip_preflight: true,
-                    ..Default::default()
-                },
-            )
-            .await?;
+        let signature = self.provider.send_and_confirm_transaction(&tx).await?;
 
         tracing::info!(
             transaction = %signature,
