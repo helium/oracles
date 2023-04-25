@@ -180,7 +180,7 @@ impl Heartbeat {
                     {
                         proto::HeartbeatValidity::Valid
                     } else {
-                        proto::HeartbeatValidity::GatewayOwnerNotFound
+                        proto::HeartbeatValidity::GatewayNotFound
                     };
                     Ok(heartbeat)
                 }
