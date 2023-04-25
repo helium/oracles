@@ -250,6 +250,7 @@ impl BalanceStore for crate::balances::BalanceStore {
 }
 
 #[async_trait]
+// differs from the BalanceStore in the value stored in the contained HashMap; a u64 here instead of a Balance {} struct
 impl BalanceStore for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
         *self.lock().await.entry(payer.clone()).or_default() = balance;
