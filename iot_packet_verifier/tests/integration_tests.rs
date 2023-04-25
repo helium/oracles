@@ -178,6 +178,7 @@ async fn test_config_unlocking() {
     let mut solana_network = HashMap::new();
     solana_network.insert(PublicKeyBinary::from(vec![0]), 3);
     let solana_network = Arc::new(Mutex::new(solana_network));
+    // Set up cache:
     let mut cache = HashMap::new();
     cache.insert(PublicKeyBinary::from(vec![0]), 3);
     let cache = Arc::new(Mutex::new(cache));
@@ -206,7 +207,7 @@ async fn test_config_unlocking() {
 
     assert!(!orgs.payers.lock().await.get(&0).unwrap().enabled);
 
-    // Update the cache:
+    // Update the solana network:
     *solana_network
         .lock()
         .await
@@ -214,6 +215,9 @@ async fn test_config_unlocking() {
         .unwrap() = 50;
 
     let (trigger, listener) = triggered::trigger();
+
+    // Calling monitor funds should re-enable the org and update the
+    // verifier's cache
     let solana = solana_network.clone();
     let balance_cache = cache.clone();
     let orgs_clone = orgs.clone();
@@ -242,6 +246,8 @@ async fn test_config_unlocking() {
         50
     );
 
+    trigger.trigger();
+
     verifier
         .verify(
             1,
@@ -267,8 +273,6 @@ async fn test_config_unlocking() {
             .unwrap(),
         46
     );
-
-    trigger.trigger();
 }
 
 #[tokio::test]
