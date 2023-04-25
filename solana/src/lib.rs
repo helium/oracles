@@ -1,3 +1,5 @@
+pub mod balance_monitor;
+
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::AccountDeserialize;
 use async_trait::async_trait;

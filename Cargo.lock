@@ -5888,8 +5888,10 @@ dependencies = [
  "async-trait",
  "clap 3.2.23",
  "data-credits",
+ "futures",
  "helium-crypto",
  "helium-sub-daos",
+ "metrics",
  "serde",
  "sha2 0.9.9",
  "solana-client",
@@ -5899,6 +5901,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "triggered",
 ]
 
 [[package]]

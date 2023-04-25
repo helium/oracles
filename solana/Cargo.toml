@@ -10,16 +10,19 @@ license.workspace = true
 async-trait = {workspace = true}
 anchor-lang = {workspace = true}
 anchor-client = {workspace = true}
-solana-client = {workspace = true}
-solana-sdk = {workspace = true}
-solana-program = {workspace = true}
-spl-token = {workspace = true}
-serde = {workspace = true}
-data-credits = {workspace = true}
-helium-sub-daos = {workspace = true}
-sha2 = {workspace = true}
-tokio = {workspace = true}
-helium-crypto = {workspace = true, features = ["solana"]}
-thiserror = {workspace = true}
-tracing = {workspace = true}
 clap = {workspace = true}
+data-credits = {workspace = true}
+futures = {workspace = true}
+helium-crypto = {workspace = true, features = ["solana"]}
+helium-sub-daos = {workspace = true}
+metrics = {workspace = true}
+serde = {workspace = true}
+sha2 = {workspace = true}
+solana-client = {workspace = true}
+solana-program = {workspace = true}
+solana-sdk = {workspace = true}
+spl-token = {workspace = true}
+thiserror = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
+triggered = {workspace = true}

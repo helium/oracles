@@ -102,6 +102,13 @@ impl Cmd {
             None
         };
 
+        let sol_balance_monitor = solana::balance_monitor::start(
+            env!("CARGO_PKG_NAME"),
+            solana.clone(),
+            shutdown_listener.clone(),
+        )
+        .await?;
+
         // Set up the balance cache:
         let balances = BalanceCache::new(&mut pool, solana.clone()).await?;
 
@@ -189,6 +196,7 @@ impl Cmd {
             )
             .map_err(Error::from),
             source_join_handle.map_err(Error::from),
+            sol_balance_monitor.map_err(Error::from),
         )?;
 
         Ok(())
