@@ -44,7 +44,12 @@ impl TransferRewards {
         self.reward_scale
     }
 
-    pub fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
+    pub fn reward_sum(&self) -> Decimal {
+        self.reward_sum
+    }
+
+    #[cfg(test)]
+    fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
         self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.reward_scale
     }
 
@@ -106,6 +111,34 @@ impl TransferRewards {
             rewards,
             reward_sum: reward_sum * reward_scale,
         }
+    }
+
+    pub fn into_rewards(
+        self,
+        epoch: &'_ Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+        let Self {
+            reward_scale,
+            rewards,
+            ..
+        } = self;
+        let start_period = epoch.start.encode_timestamp();
+        let end_period = epoch.end.encode_timestamp();
+        rewards
+            .into_iter()
+            .map(move |(hotspot_key, reward)| proto::MobileRewardShare {
+                start_period,
+                end_period,
+                reward: Some(proto::mobile_reward_share::Reward::DataTransferReward(
+                    proto::DataTransferReward {
+                        hotspot_key: hotspot_key.into(),
+                        dc_transfer_reward: (reward * reward_scale)
+                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                            .to_u64()
+                            .unwrap_or(0),
+                    },
+                )),
+            })
     }
 }
 
@@ -169,30 +202,28 @@ impl PocShares {
             })
     }
 
-    pub fn into_rewards<'a>(
+    pub fn into_rewards(
         self,
-        transfer_rewards: &'a TransferRewards,
-        epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = (proto::RadioRewardShare, proto::MobileRewardShare)> + 'a {
+        transfer_rewards_sum: Decimal,
+        epoch: &'_ Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = (proto::RadioRewardShare, proto::MobileRewardShare)> + '_ {
         let total_shares = self.total_shares();
-        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
-            - transfer_rewards.reward_sum;
+        let available_poc_rewards =
+            get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start) - transfer_rewards_sum;
         let poc_rewards_per_share = available_poc_rewards / total_shares;
+        let start_period = epoch.start.encode_timestamp();
+        let end_period = epoch.end.encode_timestamp();
         self.hotspot_shares.into_iter().flat_map(
             move |(hotspot_key, RadioShares { radio_shares })| {
-                let mut dc_transfer_reward = Some(transfer_rewards.reward(&hotspot_key));
                 radio_shares
                     .into_iter()
                     .map(move |(cbsd_id, amount)| {
-                        let start_period = epoch.start.encode_timestamp();
-                        let end_period = epoch.end.encode_timestamp();
                         let poc_reward = poc_rewards_per_share * amount;
-                        let dc_transfer_reward = dc_transfer_reward.take().unwrap_or(Decimal::ZERO);
                         let hotspot_key: Vec<u8> = hotspot_key.clone().into();
                         let radio_reward_share = proto::RadioRewardShare {
                             owner_key: Vec::new(),
                             cbsd_id: cbsd_id.clone(),
-                            amount: (poc_reward + dc_transfer_reward)
+                            amount: poc_reward
                                 .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                                 .to_u64()
                                 .unwrap_or(0),
@@ -207,14 +238,11 @@ impl PocShares {
                                 proto::RadioReward {
                                     hotspot_key,
                                     cbsd_id,
-                                    dc_transfer_reward: dc_transfer_reward
-                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                        .to_u64()
-                                        .unwrap_or(0),
                                     poc_reward: poc_reward
                                         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                                         .to_u64()
                                         .unwrap_or(0),
+                                    ..Default::default()
                                 },
                             )),
                         };
@@ -724,10 +752,9 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        let transfer_rewards = TransferRewards::empty();
         for (_, mobile_reward) in PocShares::aggregate(heartbeats, speedtest_avgs)
             .await
-            .into_rewards(&transfer_rewards, &epoch)
+            .into_rewards(Decimal::ZERO, &epoch)
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -809,7 +836,7 @@ mod test {
         let epoch = now - Duration::hours(1)..now;
         let transfer_rewards = TransferRewards::empty();
         let expected_hotspot = gw1;
-        for (_, mobile_reward) in owner_shares.into_rewards(&transfer_rewards, &epoch) {
+        for (_, mobile_reward) in owner_shares.into_rewards(transfer_rewards.reward_sum(), &epoch) {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
                 _ => unreachable!(),

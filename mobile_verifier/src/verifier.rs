@@ -154,13 +154,21 @@ impl VerifierDaemon {
         metrics::gauge!("data_transfer_rewards_scale", scale);
 
         for (radio_reward_share, mobile_reward_share) in
-            poc_rewards.into_rewards(&transfer_rewards, &scheduler.reward_period)
+            poc_rewards.into_rewards(transfer_rewards.reward_sum(), &scheduler.reward_period)
         {
             self.radio_rewards
                 .write(radio_reward_share, [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
+            self.mobile_rewards
+                .write(mobile_reward_share, [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+        }
+
+        for mobile_reward_share in transfer_rewards.into_rewards(&scheduler.reward_period) {
             self.mobile_rewards
                 .write(mobile_reward_share, [])
                 .await?

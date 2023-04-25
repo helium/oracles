@@ -130,7 +130,14 @@ impl Indexer {
                             key: PublicKeyBinary::from(r.hotspot_key).to_string(),
                             reward_type: RewardType::MobileGateway,
                         },
-                        r.dc_transfer_reward + r.poc_reward,
+                        r.poc_reward,
+                    )),
+                    Some(MobileReward::DataTransferReward(r)) => Ok((
+                        RewardKey {
+                            key: PublicKeyBinary::from(r.hotspot_key).to_string(),
+                            reward_type: RewardType::MobileGateway, // Is this a different reward type?
+                        },
+                        r.dc_transfer_reward,
                     )),
                     _ => bail!("got an invalid mobile reward share"),
                 }
