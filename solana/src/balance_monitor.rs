@@ -9,7 +9,8 @@ pub async fn start(
     app_account: &str,
     solana: Option<Arc<SolanaRpc>>,
     shutdown: triggered::Listener,
-) -> Result<futures::future::BoxFuture<'static, Result<(), tokio::task::JoinError>>, SolanaRpcError> {
+) -> Result<futures::future::BoxFuture<'static, Result<(), tokio::task::JoinError>>, SolanaRpcError>
+{
     Ok(match solana {
         None => Box::pin(async move { Ok(()) }),
         Some(rpc_client) => {
@@ -18,19 +19,20 @@ pub async fn start(
                 return Err(SolanaRpcError::InvalidKeypair)
             };
             let app_metric_name = format!("{app_account}-sol-balance");
-            let handle =
-                tokio::spawn(async move { run(app_metric_name, rpc_client, keypair.pubkey(), shutdown).await });
-            Box::pin(async move {
-                match handle.await {
-                    Ok(()) => Ok(()),
-                    Err(err) => Err(tokio::task::JoinError::from(err)),
-                }
-            })
+            let handle = tokio::spawn(async move {
+                run(app_metric_name, rpc_client, keypair.pubkey(), shutdown).await
+            });
+            Box::pin(async move { handle.await })
         }
     })
 }
 
-async fn run(metric_name: String, solana: Arc<SolanaRpc>, service_pubkey: Pubkey, shutdown: triggered::Listener) {
+async fn run(
+    metric_name: String,
+    solana: Arc<SolanaRpc>,
+    service_pubkey: Pubkey,
+    shutdown: triggered::Listener,
+) {
     let mut trigger = tokio::time::interval(DURATION);
 
     loop {

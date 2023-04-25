@@ -102,7 +102,7 @@ impl Cmd {
             None
         };
 
-        let pv_balance_monitor = solana::balance_monitor::start(
+        let sol_balance_monitor = solana::balance_monitor::start(
             env!("CARGO_PKG_NAME"),
             solana.clone(),
             shutdown_listener.clone(),
@@ -196,7 +196,7 @@ impl Cmd {
             )
             .map_err(Error::from),
             source_join_handle.map_err(Error::from),
-            pv_balance_monitor.map_err(Error::from),
+            sol_balance_monitor.map_err(Error::from),
         )?;
 
         Ok(())
