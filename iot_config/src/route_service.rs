@@ -165,6 +165,7 @@ impl RouteService {
                 update.devaddr, route_id
             )));
         }
+
         Ok(())
     }
 }
