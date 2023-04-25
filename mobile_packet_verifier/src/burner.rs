@@ -98,22 +98,10 @@ where
 
             metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "true");
 
-            // Fetch the balance after
-
-            metrics::gauge!(
-                "balance",
-                self
-                    .solana
-                    .payer_balance(&payer)
-                    .await
-                    .map_err(BurnError::SolanaError)? as f64,
-                "payer" => payer.to_string()
-            );
-
             // Delete from the data transfer session and write out to S3
 
             sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
-                .bind(payer)
+                .bind(&payer)
                 .execute(pool)
                 .await?;
 
@@ -135,6 +123,18 @@ where
                     )
                     .await?;
             }
+
+            // Fetch the balance after
+
+            metrics::gauge!(
+                "balance",
+                self
+                    .solana
+                    .payer_balance(&payer)
+                    .await
+                    .map_err(BurnError::SolanaError)? as f64,
+                "payer" => payer.to_string()
+            );
         }
 
         Ok(())
