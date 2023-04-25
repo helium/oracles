@@ -50,6 +50,7 @@ impl PacketLoader {
             .map(anyhow::Ok)
             .try_fold(transaction, |mut transaction, reward_share| async move {
                 reward_share.save(&mut transaction).await?;
+                metrics::increment_counter!("oracles_iot_verifier_packet_count");
                 Ok(transaction)
             })
             .await?

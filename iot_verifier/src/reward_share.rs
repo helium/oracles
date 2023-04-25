@@ -216,6 +216,9 @@ impl RewardShares {
 #[derive(Default)]
 pub struct GatewayShares {
     pub shares: HashMap<PublicKeyBinary, RewardShares>,
+    pub total_beacon_count: u64,
+    pub total_witness_count: u64,
+    pub total_packet_count: u64,
 }
 
 impl GatewayShares {
@@ -271,11 +274,16 @@ impl GatewayShares {
         .bind(reward_period.start)
         .bind(reward_period.end)
         .fetch(db);
+
         while let Some(gateway_share) = rows.try_next().await? {
             self.shares
                 .entry(gateway_share.hotspot_key.clone())
                 .or_default()
-                .add_poc_reward(&gateway_share)
+                .add_poc_reward(&gateway_share);
+            match gateway_share.reward_type {
+                PocReportType::Beacon => self.total_beacon_count += 1,
+                PocReportType::Witness => self.total_witness_count += 1,
+            }
         }
         Ok(())
     }
@@ -295,7 +303,8 @@ impl GatewayShares {
             self.shares
                 .entry(gateway_share.hotspot_key.clone())
                 .or_default()
-                .add_dc_reward(&gateway_share)
+                .add_dc_reward(&gateway_share);
+            self.total_packet_count += 1
         }
         Ok(())
     }
@@ -552,7 +561,12 @@ mod test {
             reward_shares_in_dec(dec!(150), dec!(350), gw6_dc_spend),
         ); // 0.0150, 0.0350
 
-        let gw_shares = GatewayShares { shares };
+        let gw_shares = GatewayShares {
+            shares,
+            total_beacon_count: 0,
+            total_witness_count: 0,
+            total_packet_count: 0,
+        };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
             .into_iot_reward_shares(&reward_period, iot_price)
@@ -738,7 +752,12 @@ mod test {
             reward_shares_in_dec(dec!(150), dec!(350), gw6_dc_spend),
         ); // 0.0150, 0.0350
 
-        let gw_shares = GatewayShares { shares };
+        let gw_shares = GatewayShares {
+            shares,
+            total_beacon_count: 0,
+            total_witness_count: 0,
+            total_packet_count: 0,
+        };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
             .into_iot_reward_shares(&reward_period, iot_price)
@@ -908,7 +927,12 @@ mod test {
             reward_shares_in_dec(dec!(150), dec!(350), gw6_dc_spend),
         ); // 0.0150, 0.0350
 
-        let gw_shares = GatewayShares { shares };
+        let gw_shares = GatewayShares {
+            shares,
+            total_beacon_count: 0,
+            total_witness_count: 0,
+            total_packet_count: 0,
+        };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
             .into_iot_reward_shares(&reward_period, iot_price)

@@ -2,6 +2,7 @@ use chrono::Duration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
+use std::time::Duration as StdDuration;
 use tokio::time;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -74,6 +75,10 @@ pub struct Settings {
     /// File store poll interval for incoming packets, in seconds. (Default is 900; 15 minutes)
     #[serde(default = "default_packet_interval")]
     pub packet_interval: i64,
+    #[serde(default = "default_rewards_retry_interval")]
+    pub rewards_retry_interval: u64,
+    #[serde(default = "default_rewards_max_delay_duration")]
+    pub rewards_max_delay_duration: i64,
 }
 
 // Default: 60 minutes
@@ -151,6 +156,16 @@ fn default_packet_interval() -> i64 {
     900
 }
 
+// Default: 1 hour
+pub fn default_rewards_retry_interval() -> u64 {
+    60 * 60
+}
+
+// Default: 3 hours
+pub fn default_rewards_max_delay_duration() -> i64 {
+    60 * 60 * 3
+}
+
 impl Settings {
     /// Load Settings from a given path. Settings are loaded from a given
     /// optional path and can be overriden with environment variables.
@@ -215,5 +230,13 @@ impl Settings {
     }
     pub fn packet_interval(&self) -> Duration {
         Duration::seconds(self.packet_interval)
+    }
+
+    pub fn rewards_retry_interval(&self) -> StdDuration {
+        StdDuration::from_secs(self.rewards_retry_interval)
+    }
+
+    pub fn rewards_max_delay_duration(&self) -> Duration {
+        Duration::seconds(self.rewards_max_delay_duration)
     }
 }

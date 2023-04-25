@@ -121,6 +121,8 @@ impl Server {
             reward_manifests_sink,
             reward_period_hours: settings.rewards,
             reward_offset: settings.reward_offset_duration(),
+            rewards_retry_interval: settings.rewards_retry_interval(),
+            rewards_max_delay_duration: settings.rewards_max_delay_duration(),
         };
 
         // setup the entropy loader continious source

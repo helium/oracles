@@ -34,7 +34,7 @@ impl Scheduler {
         self.reward_period.end..(self.reward_period.end + self.reward_period_length)
     }
 
-    pub fn sleep_duration(
+    pub fn sleep_until_next_epoch(
         &self,
         now: DateTime<Utc>,
     ) -> Result<std::time::Duration, OutOfRangeError> {
@@ -49,6 +49,10 @@ impl Scheduler {
         };
 
         duration.to_std().map_err(|_| OutOfRangeError)
+    }
+
+    pub fn time_since_last_reward_period_ended(&self, now: DateTime<Utc>) -> Duration {
+        now - self.reward_period.end
     }
 }
 
@@ -87,7 +91,7 @@ mod tests {
         assert_eq!(
             standard_duration(1410).unwrap(),
             scheduler
-                .sleep_duration(now)
+                .sleep_until_next_epoch(now)
                 .expect("failed sleep duration check")
         );
     }
@@ -111,7 +115,7 @@ mod tests {
         assert_eq!(
             standard_duration(1440).unwrap(),
             scheduler
-                .sleep_duration(now)
+                .sleep_until_next_epoch(now)
                 .expect("failed sleep duration check")
         );
     }
@@ -135,7 +139,7 @@ mod tests {
         assert_eq!(
             standard_duration(15).unwrap(),
             scheduler
-                .sleep_duration(now)
+                .sleep_until_next_epoch(now)
                 .expect("failed sleep duration check")
         );
     }
