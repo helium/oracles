@@ -88,28 +88,11 @@ impl Rewarder {
             .await?
             // Await the returned oneshot to ensure we wrote the file
             .await??;
-
         let written_files = self.rewards_sink.commit().await?.await??;
-        // Write the rewards manifest for the completed period
-        self.reward_manifests_sink
-            .write(
-                RewardManifest {
-                    start_timestamp: scheduler.reward_period.start.encode_timestamp(),
-                    end_timestamp: scheduler.reward_period.end.encode_timestamp(),
-                    written_files,
-                },
-                [],
-            )
-            .await?
-            .await??;
-
-        self.reward_manifests_sink.commit().await?;
 
         let mut transaction = self.pool.begin().await?;
-
         // Clear gateway shares table period to end of reward period
         GatewayShares::clear_rewarded_shares(&mut transaction, scheduler.reward_period.end).await?;
-
         save_rewarded_timestamp(
             "last_rewarded_end_time",
             &scheduler.reward_period.end,
@@ -122,8 +105,21 @@ impl Rewarder {
             &mut transaction,
         )
         .await?;
-
         transaction.commit().await?;
+
+        // now that the db has been purged, safe to write out the manifest
+        self.reward_manifests_sink
+            .write(
+                RewardManifest {
+                    start_timestamp: scheduler.reward_period.start.encode_timestamp(),
+                    end_timestamp: scheduler.reward_period.end.encode_timestamp(),
+                    written_files,
+                },
+                [],
+            )
+            .await?
+            .await??;
+        self.reward_manifests_sink.commit().await?;
 
         Ok(())
     }
