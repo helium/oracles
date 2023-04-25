@@ -8,29 +8,20 @@ services:
       dockerfile: iot_config.Dockerfile
     depends_on:
       - postgres
-      - node
     ports:
       - "8080:8080"
     environment:
-      CFG__DATABASE__URL: postgres://postgres:postgres@postgres:5432/config_db
+      CFG__DATABASE__URL: postgres://postgres:postgres@postgres:5432/iot_config_db
       CFG__DATABASE__MAX_CONNECTIONS: 50
+      CFG__METADATA__URL: postgres://postgres:postgres@postgres:5432/iot_metadata_db
+      CFG__METADATA__MAX_CONNECTIONS: 50
       CFG__LISTEN: 0.0.0.0:8080
       CFG__METRICS__ENDPOINT: 0.0.0.0:19000
-      CFG__FOLLOWER__URL: "http://node:8090"
-      CFG__NETWORK: mainnet
       CFG__ADMIN: ${CONFIG_ADMIN_PUBKEY}
       CFG__KEYPAIR: /config-signing-key.bin
       CFG__LOG: info
     volumes:
       - ${CONFIG_SIGNING_KEY}:/config-signing-key.bin:ro
-
-  node:
-    image: jeffgrunewald/helium-mock-follower:latest
-    environment:
-      FLW_GATEWAYS: /demo_gateways.csv
-      FLW_LISTEN: 0.0.0.0:8090
-    ports:
-      - "8090:8090"
 
   postgres:
     image: postgres:latest
@@ -38,12 +29,16 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
       POSTGRES_DBS: >
-        config_db
-        helius_db
+        iot_config_db
+        iot_metadata_db
         mobile_index_db
         iot_index_db
-        mobile_verified_db
-        iot_verified_db
+        mobile_verifier_db
+        iot_verifier_db
+        mobile_config_db
+        mobile_metadata_db
+        iot_packet_verifier_db
+        mobile_packet_verifier_db
       PGDATA: /data
     ports:
       - "5432:5432"
@@ -94,10 +89,10 @@ services:
         mobile-ingest
         iot-ingest
         iot-entropy
-        mobile-verified
-        iot-verified
-        mobile-index
-        iot-index
+        mobile-verifier
+        iot-verifier
+        mobile-packet-verifier
+        iot-packet-verifier
       ORACLE_ID: oraclesecretid
       ORACLE_KEY: oraclesecretkey
     entrypoint:

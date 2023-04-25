@@ -7,7 +7,6 @@ COPY Cargo.toml Cargo.lock ./
 COPY db_store ./db_store/
 COPY file_store ./file_store/
 COPY metrics ./metrics/
-COPY node_follower /node_follower/
 COPY iot_config/Cargo.toml ./iot_config/Cargo.toml
 
 # Enable sparse registry to avoid crates indexing infinite loop
@@ -17,10 +16,10 @@ RUN mkdir ./iot_config/src \
  # Create a dummy project file to build deps around
  && echo "fn main() {}" > ./iot_config/src/main.rs \
  # Remove unused members of the workspace to avoid compile error on missing members
- && sed -i -e '/ingest/d'       -e '/mobile_rewards/d'         -e '/mobile_verifier/d' \
-           -e '/poc_entropy/d'  -e '/iot_verifier/d'           -e '/poc_iot_injector/d' \
-           -e '/reward_index/d' -e '/denylist/d'               -e '/iot_packet_verifier/d' \
-           -e '/price/d'        -e '/mobile_packet_verifier/d' -e '/mobile_config/d' \
+ && sed -i -e '/ingest/d'       -e '/mobile_config/d' -e '/mobile_verifier/d' \
+           -e '/poc_entropy/d'  -e '/iot_verifier/d'  -e '/price/d' \
+           -e '/reward_index/d' -e '/denylist/d'      -e '/iot_packet_verifier/d' \
+           -e '/mobile_packet_verifier/d' \
            Cargo.toml \
  && cargo build --package iot-config --release
 
