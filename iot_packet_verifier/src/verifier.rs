@@ -1,4 +1,4 @@
-use crate::pending_burns::PendingBurns;
+use crate::{balances::BalanceStore, pending_burns::PendingBurns};
 use async_trait::async_trait;
 use chrono::Utc;
 use file_store::{
@@ -223,6 +223,7 @@ impl CachedOrgClient {
     pub fn monitor_funds<S>(
         client: Arc<Mutex<Self>>,
         solana: S,
+        balances: BalanceStore,
         minimum_allowed_balance: u64,
         monitor_period: Duration,
         shutdown: triggered::Listener,
@@ -246,12 +247,12 @@ impl CachedOrgClient {
                 for org in orgs.orgs {
                     if org.locked {
                         let payer = PublicKeyBinary::from(org.payer);
-                        if solana
+                        let balance = solana
                             .payer_balance(&payer)
                             .await
-                            .map_err(MonitorError::SolanaError)?
-                            >= minimum_allowed_balance
-                        {
+                            .map_err(MonitorError::SolanaError)?;
+                        if balance >= minimum_allowed_balance {
+                            balances.lock().await.entry(payer).or_default().balance = balance;
                             client.lock().await.enable_org(org.oui).await?;
                         }
                     }
