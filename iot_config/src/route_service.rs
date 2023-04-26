@@ -154,16 +154,13 @@ impl RouteService {
             .collect()
             .await;
 
-        'update_addrs: for update in updates {
-            for range in &ranges {
-                if range.contains_addr(update.devaddr.into()) {
-                    continue 'update_addrs;
-                }
+        for update in updates {
+            if !ranges.iter().any(|range| range.contains_addr(update.devaddr.into())) {
+                return Err(Status::invalid_argument(format!(
+                    "devaddr {} not within registered ranges for route {}",
+                    update.devaddr, route_id
+                )));
             }
-            return Err(Status::invalid_argument(format!(
-                "devaddr {} not within registered ranges for route {}",
-                update.devaddr, route_id
-            )));
         }
 
         Ok(())
