@@ -114,6 +114,12 @@ impl Daemon {
             region_updater,
         )?;
 
+        let pubkey = settings
+            .signing_keypair()
+            .map(|keypair| keypair.public_key().to_string())?;
+        tracing::debug!("listening on {listen_addr}");
+        tracing::debug!("signing as {pubkey}");
+
         let server = transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))

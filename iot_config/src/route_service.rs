@@ -155,10 +155,15 @@ impl RouteService {
             .await;
 
         for update in updates {
-            if !ranges.iter().any(|range| range.contains_addr(update.devaddr.into())) {
+            let devaddr = update.devaddr.into();
+            if !ranges.iter().any(|range| range.contains_addr(devaddr)) {
+                let ranges = ranges
+                    .iter()
+                    .map(|r| format!("{} -- {}", r.start_addr, r.end_addr))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return Err(Status::invalid_argument(format!(
-                    "devaddr {} not within registered ranges for route {}",
-                    update.devaddr, route_id
+                    "devaddr {devaddr} not within registered ranges for route {route_id} :: {ranges}"
                 )));
             }
         }
@@ -890,7 +895,7 @@ struct DevAddrEuiValidator {
 
 #[derive(thiserror::Error, Debug)]
 enum DevAddrEuiValidationError {
-    #[error("devaddr or range outside of bounds {0}")]
+    #[error("devaddr range outside of constraint bounds {0}")]
     DevAddrOutOfBounds(String),
     #[error("no route for update {0}")]
     NoRouteId(String),
