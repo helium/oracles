@@ -2,7 +2,7 @@ use crate::{
     balances::BalanceCache,
     burner::Burner,
     settings::Settings,
-    verifier::{CachedOrgClient, Verifier},
+    verifier::{CachedOrgClient, ConfigServer, Verifier},
 };
 use anyhow::{bail, Error, Result};
 use file_store::{
@@ -163,6 +163,7 @@ impl Cmd {
 
         let config_keypair = settings.config_keypair()?;
         let config_server = CachedOrgClient::new(org_client, config_keypair);
+        let balance_store = balances.balances();
         let verifier_daemon = Daemon {
             pool,
             report_files,
@@ -187,14 +188,15 @@ impl Cmd {
             invalid_packets_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
-            CachedOrgClient::monitor_funds(
-                config_server,
-                solana,
-                settings.minimum_allowed_balance,
-                Duration::from_secs(60 * settings.monitor_funds_period),
-                shutdown_listener.clone(),
-            )
-            .map_err(Error::from),
+            config_server
+                .monitor_funds(
+                    solana,
+                    balance_store,
+                    settings.minimum_allowed_balance,
+                    Duration::from_secs(60 * settings.monitor_funds_period),
+                    shutdown_listener.clone(),
+                )
+                .map_err(Error::from),
             source_join_handle.map_err(Error::from),
             sol_balance_monitor.map_err(Error::from),
         )?;

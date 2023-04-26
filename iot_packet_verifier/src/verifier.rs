@@ -163,9 +163,17 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     }
 }
 
+// TODO: Move these to a separate module
+
+pub struct Org {
+    pub oui: u64,
+    pub payer: PublicKeyBinary,
+    pub locked: bool,
+}
+
 #[async_trait]
-pub trait ConfigServer {
-    type Error;
+pub trait ConfigServer: Sized + Send + Sync + 'static {
+    type Error: Send + Sync + 'static;
 
     async fn fetch_org(
         &self,
@@ -174,9 +182,90 @@ pub trait ConfigServer {
     ) -> Result<PublicKeyBinary, Self::Error>;
 
     async fn disable_org(&self, oui: u64) -> Result<(), Self::Error>;
+
+    async fn enable_org(&self, oui: u64) -> Result<(), Self::Error>;
+
+    async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error>;
+
+    async fn monitor_funds<S, B>(
+        self,
+        solana: S,
+        balances: B,
+        minimum_allowed_balance: u64,
+        monitor_period: Duration,
+        shutdown: triggered::Listener,
+    ) -> Result<(), MonitorError<S::Error, Self::Error>>
+    where
+        S: SolanaNetwork,
+        B: BalanceStore,
+    {
+        let join_handle = tokio::spawn(async move {
+            loop {
+                tracing::info!("Checking if any orgs need to be re-enabled");
+
+                for Org { locked, payer, oui } in self
+                    .list_orgs()
+                    .await
+                    .map_err(MonitorError::ConfigClientError)?
+                    .into_iter()
+                {
+                    if locked {
+                        let balance = solana
+                            .payer_balance(&payer)
+                            .await
+                            .map_err(MonitorError::SolanaError)?;
+                        if balance >= minimum_allowed_balance {
+                            balances.set_balance(&payer, balance).await;
+                            self.enable_org(oui)
+                                .await
+                                .map_err(MonitorError::ConfigClientError)?;
+                        }
+                    }
+                }
+                // Sleep until we should re-check the monitor
+                sleep_until(Instant::now() + monitor_period).await;
+            }
+        });
+        tokio::select! {
+            result = join_handle => match result {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(err)) => Err(err),
+                Err(err) => Err(MonitorError::from(err)),
+            },
+            _ = shutdown => Ok(())
+        }
+    }
 }
 
-// TODO: Move this somewhere else
+#[async_trait]
+pub trait BalanceStore: Send + Sync + 'static {
+    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64);
+}
+
+#[async_trait]
+impl BalanceStore for crate::balances::BalanceStore {
+    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
+        self.lock().await.entry(payer.clone()).or_default().balance = balance;
+    }
+}
+
+#[async_trait]
+// differs from the BalanceStore in the value stored in the contained HashMap; a u64 here instead of a Balance {} struct
+impl BalanceStore for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+    async fn set_balance(&self, payer: &PublicKeyBinary, balance: u64) {
+        *self.lock().await.entry(payer.clone()).or_default() = balance;
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum MonitorError<S, E> {
+    #[error("Join error: {0}")]
+    JoinError(#[from] JoinError),
+    #[error("Config client error: {0}")]
+    ConfigClientError(E),
+    #[error("Solana error: {0}")]
+    SolanaError(S),
+}
 
 // Probably should change name to something like OrgClientCache to be more
 // consistent with BalanceCache
@@ -219,68 +308,6 @@ impl CachedOrgClient {
         let _ = self.client.disable(req).await?;
         Ok(())
     }
-
-    pub fn monitor_funds<S>(
-        client: Arc<Mutex<Self>>,
-        solana: S,
-        minimum_allowed_balance: u64,
-        monitor_period: Duration,
-        shutdown: triggered::Listener,
-    ) -> impl std::future::Future<Output = Result<(), MonitorError<S::Error>>>
-    where
-        S: SolanaNetwork,
-    {
-        let join_handle = tokio::spawn(async move {
-            loop {
-                tracing::info!("Checking if any orgs need to be re-enabled");
-
-                // Fetch all disables orgs:
-                let orgs = client
-                    .lock()
-                    .await
-                    .client
-                    .list(OrgListReqV1 {})
-                    .await
-                    .map_err(OrgClientError::RpcError)?
-                    .into_inner();
-                for org in orgs.orgs {
-                    if org.locked {
-                        let payer = PublicKeyBinary::from(org.payer);
-                        if solana
-                            .payer_balance(&payer)
-                            .await
-                            .map_err(MonitorError::SolanaError)?
-                            >= minimum_allowed_balance
-                        {
-                            client.lock().await.enable_org(org.oui).await?;
-                        }
-                    }
-                }
-                // Sleep until we should re-check the monitor
-                sleep_until(Instant::now() + monitor_period).await;
-            }
-        });
-        async move {
-            tokio::select! {
-                result = join_handle => match result {
-                    Ok(Ok(())) => Ok(()),
-                    Ok(Err(err)) => Err(err),
-                    Err(err) => Err(MonitorError::from(err)),
-                },
-                _ = shutdown => Ok(())
-            }
-        }
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum MonitorError<S> {
-    #[error("Join error: {0}")]
-    JoinError(#[from] JoinError),
-    #[error("Org client error: {0}")]
-    OrcClientError(#[from] OrgClientError),
-    #[error("Solana error: {0}")]
-    SolanaError(S),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -322,6 +349,29 @@ impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
 
     async fn disable_org(&self, oui: u64) -> Result<(), Self::Error> {
         self.lock().await.disable_org(oui).await
+    }
+
+    async fn enable_org(&self, oui: u64) -> Result<(), Self::Error> {
+        self.lock().await.enable_org(oui).await
+    }
+
+    async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error> {
+        Ok(self
+            .lock()
+            .await
+            .client
+            .list(OrgListReqV1 {})
+            .await
+            .map_err(OrgClientError::RpcError)?
+            .into_inner()
+            .orgs
+            .into_iter()
+            .map(|org| Org {
+                oui: org.oui,
+                payer: PublicKeyBinary::from(org.payer),
+                locked: org.locked,
+            })
+            .collect())
     }
 }
 

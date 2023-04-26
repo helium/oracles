@@ -12,9 +12,9 @@ use iot_packet_verifier::{
     balances::BalanceCache,
     burner::Burner,
     pending_burns::{Burn, PendingBurns},
-    verifier::{payload_size_to_dc, ConfigServer, Debiter, Verifier, BYTES_PER_DC},
+    verifier::{payload_size_to_dc, ConfigServer, Debiter, Org, Verifier, BYTES_PER_DC},
 };
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 struct MockConfig {
@@ -22,7 +22,7 @@ struct MockConfig {
     enabled: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct MockConfigServer {
     payers: Arc<Mutex<HashMap<u64, MockConfig>>>,
 }
@@ -54,6 +54,25 @@ impl ConfigServer for MockConfigServer {
     async fn disable_org(&self, oui: u64) -> Result<(), ()> {
         self.payers.lock().await.get_mut(&oui).unwrap().enabled = false;
         Ok(())
+    }
+
+    async fn enable_org(&self, oui: u64) -> Result<(), ()> {
+        self.payers.lock().await.get_mut(&oui).unwrap().enabled = true;
+        Ok(())
+    }
+
+    async fn list_orgs(&self) -> Result<Vec<Org>, ()> {
+        Ok(self
+            .payers
+            .lock()
+            .await
+            .iter()
+            .map(|(oui, config)| Org {
+                oui: *oui,
+                payer: config.payer.clone(),
+                locked: !config.enabled,
+            })
+            .collect())
     }
 }
 
@@ -148,6 +167,112 @@ fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
         gateway: vec![],
         reason: InvalidPacketReason::InsufficientBalance as i32,
     }
+}
+
+#[tokio::test]
+async fn test_config_unlocking() {
+    // Set up orgs:
+    let orgs = MockConfigServer::default();
+    orgs.insert(0_u64, PublicKeyBinary::from(vec![0])).await;
+    // Set up balances:
+    let mut solana_network = HashMap::new();
+    solana_network.insert(PublicKeyBinary::from(vec![0]), 3);
+    let solana_network = Arc::new(Mutex::new(solana_network));
+    // Set up cache:
+    let mut cache = HashMap::new();
+    cache.insert(PublicKeyBinary::from(vec![0]), 3);
+    let cache = Arc::new(Mutex::new(cache));
+    let balances = InstantBurnedBalance(cache.clone());
+    // Set up verifier:
+    let mut verifier = Verifier {
+        debiter: balances.clone(),
+        config_server: orgs.clone(),
+    };
+    let mut valid_packets = Vec::new();
+    let mut invalid_packets = Vec::new();
+    verifier
+        .verify(
+            1,
+            balances.clone(),
+            stream::iter(vec![
+                packet_report(0, 0, 24, vec![1]),
+                packet_report(0, 1, 48, vec![2]),
+                packet_report(0, 2, 1, vec![3]),
+            ]),
+            &mut valid_packets,
+            &mut invalid_packets,
+        )
+        .await
+        .unwrap();
+
+    assert!(!orgs.payers.lock().await.get(&0).unwrap().enabled);
+
+    // Update the solana network:
+    *solana_network
+        .lock()
+        .await
+        .get_mut(&PublicKeyBinary::from(vec![0]))
+        .unwrap() = 50;
+
+    let (trigger, listener) = triggered::trigger();
+
+    // Calling monitor funds should re-enable the org and update the
+    // verifier's cache
+    let solana = solana_network.clone();
+    let balance_cache = cache.clone();
+    let orgs_clone = orgs.clone();
+    tokio::spawn(async move {
+        orgs_clone
+            .monitor_funds(
+                solana.clone(),
+                balance_cache,
+                1,
+                Duration::from_secs(100),
+                listener,
+            )
+            .await
+    });
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // We should be re-enabled
+    assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
+    assert_eq!(
+        *cache
+            .lock()
+            .await
+            .get(&PublicKeyBinary::from(vec![0]))
+            .unwrap(),
+        50
+    );
+
+    trigger.trigger();
+
+    verifier
+        .verify(
+            1,
+            balances.clone(),
+            stream::iter(vec![
+                packet_report(0, 0, 24, vec![1]),
+                packet_report(0, 1, 48, vec![2]),
+                packet_report(0, 2, 1, vec![3]),
+            ]),
+            &mut valid_packets,
+            &mut invalid_packets,
+        )
+        .await
+        .unwrap();
+
+    // Still enabled:
+    assert!(orgs.payers.lock().await.get(&0).unwrap().enabled);
+    assert_eq!(
+        *cache
+            .lock()
+            .await
+            .get(&PublicKeyBinary::from(vec![0]))
+            .unwrap(),
+        46
+    );
 }
 
 #[tokio::test]
