@@ -141,7 +141,7 @@ pub async fn create_route(
             signer,
             signature: vec![],
         };
-        signing_key
+        _ = signing_key
             .sign(&update.encode_to_vec())
             .map_err(|err| anyhow!(format!("error signing route stream response: {err:?}")))
             .and_then(|signature| {
@@ -149,7 +149,7 @@ pub async fn create_route(
                 update_tx.send(update).map_err(|err| {
                     anyhow!(format!("error broadcasting route stream response: {err:?}"))
                 })
-            })?;
+            });
     };
 
     Ok(new_route)
