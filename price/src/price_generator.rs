@@ -223,7 +223,7 @@ impl PriceGenerator {
     }
 
     async fn read_price_file(&self) -> Option<Price> {
-        fs::read_to_string(self.latest_price_file.as_path())
+        fs::read_to_string(&self.latest_price_file)
             .map_err(|err| format!("{err:?}"))
             .and_then(|contents| async move {
                 serde_json::from_str::<Price>(&contents).map_err(|err| format!("{err:?}"))
@@ -240,7 +240,7 @@ impl PriceGenerator {
         let result = async { serde_json::to_string_pretty(price) }
             .map_err(|err| format!("{err:?}"))
             .and_then(|json| {
-                fs::write(self.latest_price_file.as_path(), json).map_err(|err| format!("{err:?}"))
+                fs::write(&self.latest_price_file, json).map_err(|err| format!("{err:?}"))
             })
             .await;
 
