@@ -272,20 +272,3 @@ pub async fn get_price(
         })
         .ok_or_else(|| anyhow!("unable to fetch price!"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn brian() {
-        let p = Price {
-            price: 159,
-            timestamp: Utc::now(),
-            token_type: BlockchainTokenTypeV1::Iot,
-        };
-
-        let result = serde_json::to_string_pretty(&p).expect("to string");
-        println!("{}", result);
-    }
-}
