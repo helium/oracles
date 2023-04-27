@@ -60,9 +60,12 @@ impl Server {
         //
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         tokio::spawn(async move {
-            let _ = signal::ctrl_c().await;
-            shutdown_trigger.trigger()
+            tokio::select! {
+                _ = sigterm.recv() => shutdown_trigger.trigger(),
+                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
+            }
         });
 
         // Create database pool
