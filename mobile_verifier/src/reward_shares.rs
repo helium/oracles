@@ -129,8 +129,8 @@ impl TransferRewards {
             .map(move |(hotspot_key, reward)| proto::MobileRewardShare {
                 start_period,
                 end_period,
-                reward: Some(proto::mobile_reward_share::Reward::DataTransferReward(
-                    proto::DataTransferReward {
+                reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
+                    proto::GatewayReward {
                         hotspot_key: hotspot_key.into(),
                         dc_transfer_reward: (reward * reward_scale)
                             .round_dp_with_strategy(0, RoundingStrategy::ToZero)

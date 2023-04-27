@@ -25,6 +25,7 @@ pub struct Indexer {
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
 #[sqlx(type_name = "reward_type", rename_all = "snake_case")]
 pub enum RewardType {
+    MobileRadio,
     MobileGateway,
     IotGateway,
     IotOperational,
@@ -128,14 +129,14 @@ impl Indexer {
                     Some(MobileReward::RadioReward(r)) => Ok((
                         RewardKey {
                             key: PublicKeyBinary::from(r.hotspot_key).to_string(),
-                            reward_type: RewardType::MobileGateway,
+                            reward_type: RewardType::MobileRadio,
                         },
                         r.poc_reward,
                     )),
-                    Some(MobileReward::DataTransferReward(r)) => Ok((
+                    Some(MobileReward::GatewayReward(r)) => Ok((
                         RewardKey {
                             key: PublicKeyBinary::from(r.hotspot_key).to_string(),
-                            reward_type: RewardType::MobileGateway, // Is this a different reward type?
+                            reward_type: RewardType::MobileGateway, 
                         },
                         r.dc_transfer_reward,
                     )),
