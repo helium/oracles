@@ -111,8 +111,9 @@ impl Daemon {
             region_updater,
         )?;
 
-        let keypair = settings.signing_keypair()?;
-        let pubkey = keypair.public_key();
+        let pubkey = settings
+            .signing_keypair()
+            .map(|keypair| keypair.public_key().to_string())?;
         tracing::debug!("listening on {listen_addr}");
         tracing::debug!("signing as {pubkey}");
 
