@@ -3914,6 +3914,7 @@ dependencies = [
  "price",
  "prost",
  "rand 0.8.5",
+ "retainer",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",

@@ -1,7 +1,7 @@
 use crate::{
     reward_shares::{PocShares, TransferRewards},
     speedtests::EmptyDatabase,
-    verifier::{VerifiedEpoch, Verifier},
+//    verifier::{VerifiedEpoch, Verifier},
     Settings,
 };
 use anyhow::Result;
@@ -34,16 +34,22 @@ impl Cmd {
 
         let config_client = Client::from_settings(&settings.config_client)?;
         let ingest = FileStore::from_settings(&settings.ingest).await?;
+        /*
         let verifier = Verifier::new(config_client, ingest);
 
         let VerifiedEpoch {
             heartbeats,
             speedtests,
         } = verifier.verify_epoch(EmptyDatabase, &epoch).await?;
+        */
 
         let reward_shares = PocShares::aggregate(
+            todo!(),
+            todo!(),
+            /*
             heartbeats.try_collect().await?,
             speedtests.try_collect().await?,
+            */
         )
         .await;
 

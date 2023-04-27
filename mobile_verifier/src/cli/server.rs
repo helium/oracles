@@ -1,7 +1,4 @@
-use crate::{
-    verifier::{Verifier, VerifierDaemon},
-    Settings,
-};
+use crate::{verifier::VerifierDaemon, Settings};
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{file_sink, file_upload, FileStore, FileType};
@@ -100,22 +97,22 @@ impl Cmd {
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        let verifier = Verifier::new(config_client, ingest);
+        // let verifier = Verifier::new(config_client, ingest);
 
-        let verifier_daemon = VerifierDaemon {
-            verification_offset: settings.verification_offset_duration(),
-            pool,
-            heartbeats,
-            speedtest_avgs,
-            radio_rewards,
-            mobile_rewards,
-            reward_manifests,
-            reward_period_hours,
-            verifications_per_period,
-            verifier,
-            price_tracker,
-            data_transfer_ingest,
-        };
+        let verifier_daemon: VerifierDaemon = todo!(); /*VerifierDaemon {
+                                                           verification_offset: settings.verification_offset_duration(),
+                                                           pool,
+                                                           heartbeats,
+                                                           speedtest_avgs,
+                                                           radio_rewards,
+                                                           mobile_rewards,
+                                                           reward_manifests,
+                                                           reward_period_hours,
+                                                           verifications_per_period,
+                                                           verifier,
+                                                           price_tracker,
+                                                           data_transfer_ingest,
+                                                       };*/
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),

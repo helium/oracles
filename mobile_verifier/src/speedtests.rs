@@ -76,7 +76,7 @@ impl SpeedtestRollingAverage {
     pub async fn validate_speedtests<'a>(
         config_client: &'a Client,
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
-        exec: impl SpeedtestStore + Copy + 'a,
+        exec: &'a mut impl SpeedtestStore,
     ) -> impl Stream<Item = Result<Self, FetchError>> + 'a {
         let tests_by_publickey = speedtests
             .fold(
@@ -423,7 +423,7 @@ pub enum FetchError {
 #[async_trait::async_trait]
 pub trait SpeedtestStore {
     async fn fetch(
-        self,
+        &mut self,
         id: &PublicKeyBinary,
     ) -> Result<Option<SpeedtestRollingAverage>, FetchError>;
 }
@@ -434,13 +434,13 @@ where
     for<'a> E: sqlx::PgExecutor<'a>,
 {
     async fn fetch(
-        self,
+        &mut self,
         id: &PublicKeyBinary,
     ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
         Ok(
             sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
                 .bind(id)
-                .fetch_optional(self)
+                .fetch_optional(*self)
                 .await?,
         )
     }
@@ -452,7 +452,7 @@ pub struct EmptyDatabase;
 #[async_trait::async_trait]
 impl SpeedtestStore for EmptyDatabase {
     async fn fetch(
-        self,
+        &mut self,
         _id: &PublicKeyBinary,
     ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
         Ok(None)
