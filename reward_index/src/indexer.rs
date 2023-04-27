@@ -136,7 +136,7 @@ impl Indexer {
                     Some(MobileReward::GatewayReward(r)) => Ok((
                         RewardKey {
                             key: PublicKeyBinary::from(r.hotspot_key).to_string(),
-                            reward_type: RewardType::MobileGateway, 
+                            reward_type: RewardType::MobileGateway,
                         },
                         r.dc_transfer_reward,
                     )),
