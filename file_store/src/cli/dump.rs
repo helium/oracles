@@ -2,9 +2,12 @@ use crate::{
     cli::print_json,
     file_source,
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    iot_packet::IotValidPacket,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::MsgDecode,
     FileType, Result, Settings,
 };
+use base64::Engine;
 use csv::Writer;
 use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
@@ -171,6 +174,16 @@ impl Cmd {
                         "price": manifest.price,
                         "timestamp": manifest.timestamp,
                         "token_type": manifest.token_type(),
+                    }))?;
+                }
+                FileType::IotValidPacket => {
+                    let manifest = IotValidPacket::decode(msg)?;
+                    print_json(&json!({
+                        "payload_size": manifest.payload_size,
+                        "gateway": PublicKey::try_from(manifest.gateway)?,
+                        "payload_hash": base64::engine::general_purpose::STANDARD.encode(manifest.payload_hash),
+                        "num_dcs": manifest.num_dcs,
+                        "packet_timestamp": manifest.packet_timestamp,
                     }))?;
                 }
                 _ => (),
