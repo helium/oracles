@@ -16,7 +16,10 @@ use futures_util::TryFutureExt;
 use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio::{
+    signal,
+    sync::{mpsc::Receiver, Mutex},
+};
 
 struct Daemon {
     pool: Pool<Postgres>,
@@ -80,9 +83,12 @@ impl Cmd {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            shutdown_trigger.trigger()
+            tokio::select! {
+                _ = sigterm.recv() => shutdown_trigger.trigger(),
+                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
+            }
         });
 
         // Set up the postgres pool:

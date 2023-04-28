@@ -12,6 +12,7 @@ use mobile_config::Client;
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use tokio::{
+    signal,
     sync::mpsc::Receiver,
     time::{sleep_until, Duration, Instant},
 };
@@ -81,9 +82,12 @@ impl Cmd {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            shutdown_trigger.trigger()
+            tokio::select! {
+                _ = sigterm.recv() => shutdown_trigger.trigger(),
+                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
+            }
         });
 
         // Set up the postgres pool:
