@@ -240,7 +240,7 @@ impl Report {
         .await?)
     }
 
-    pub async fn pending_beacons_to_ready<'c, E>(
+    pub async fn pending_to_ready<'c, E>(
         executor: E,
         timestamp: DateTime<Utc>,
     ) -> Result<(), ReportError>
@@ -252,10 +252,25 @@ impl Report {
             update poc_report set
                 status = 'ready',
                 last_processed = $1
-            where report_type = 'beacon' and status = 'pending';
+            where report_type in ('beacon', 'witness') and status = 'pending';
             "#,
         )
         .bind(timestamp)
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_pending<'c, E>(executor: E) -> Result<(), ReportError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        sqlx::query(
+            r#"
+            delete from poc_report
+            where report_type in ('beacon', 'witness') and status = 'pending';
+            "#,
+        )
         .execute(executor)
         .await?;
         Ok(())

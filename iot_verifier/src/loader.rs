@@ -1,5 +1,6 @@
 use crate::{
     gateway_cache::GatewayCache,
+    gateway_cache::GatewayCacheError,
     meta::Meta,
     metrics::LoaderMetricTracker,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
@@ -16,6 +17,8 @@ use file_store::{
 };
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
+use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{hash::Hasher, ops::DerefMut, time::Duration};
 use tokio::{
@@ -26,6 +29,7 @@ use twox_hash::XxHash64;
 use xorf::{Filter as XorFilter, Xor16};
 
 const REPORTS_META_NAME: &str = "report";
+const MAX_ERROR_RATE: Decimal = dec!(0.4);
 
 pub struct Loader {
     ingest_store: FileStore,
@@ -37,6 +41,11 @@ pub struct Loader {
     deny_list_latest_url: String,
     deny_list_trigger_interval: Duration,
     deny_list: DenyList,
+}
+
+pub struct Counters {
+    pub success_counter: Mutex<u64>,
+    pub error_counter: Mutex<u64>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -53,6 +62,7 @@ pub enum ValidGatewayResult {
     Valid,
     Denied,
     Unknown,
+    Error,
 }
 
 impl Loader {
@@ -130,7 +140,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> anyhow::Result<()> {
+    async fn handle_report_tick(&mut self, gateway_cache: &GatewayCache) -> anyhow::Result<()> {
         tracing::info!("handling report tick");
         let now = Utc::now();
         // the loader loads files from s3 via a sliding window
@@ -162,18 +172,45 @@ impl Loader {
             tracing::info!("current window width insufficient. completed handling poc_report tick");
             return Ok(());
         }
-        self.process_window(gateway_cache, after, before).await?;
-        Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
-        Report::pending_beacons_to_ready(&self.pool, now).await?;
+        let counters = Counters {
+            success_counter: Mutex::new(0),
+            error_counter: Mutex::new(0),
+        };
+        self.process_window(gateway_cache, after, before, &counters)
+            .await?;
+        // check the ratio of report errors to successes
+        // if error rate exceeds threshold then dont advance the sliding window
+        // and drop all processed reports
+        // this allows the same window to be processed again
+        let error_count = *counters.error_counter.lock().await;
+        let success_count = *counters.success_counter.lock().await;
+        // TODO: as most calls to resolve gateway hit the cache, the error rate
+        //       tends to be very low compared to the success rate
+        //       even if config service is down
+        //       this is good thing, but when as cache items expire
+        //       that error rate will ramp up
+        //       that does require config service to be down for an extended period tho
+        //       consider this scenario further
+        let error_rate: Decimal = (error_count / success_count).into();
+        tracing::info!(%error_count, %success_count, %error_rate);
+        if error_rate > MAX_ERROR_RATE {
+            tracing::warn!(
+                "error rate above threshold, dropping reports from window period and retrying"
+            );
+            Report::delete_pending(&self.pool).await?;
+        } else {
+            Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
+            Report::pending_to_ready(&self.pool, now).await?;
+        }
         tracing::info!("completed handling poc_report tick");
         Ok(())
     }
-
     async fn process_window(
         &self,
         gateway_cache: &GatewayCache,
         after: DateTime<Utc>,
         before: DateTime<Utc>,
+        counters: &Counters,
     ) -> anyhow::Result<()> {
         // beacons are processed first
         // an xor filter is constructed based on the beacon packet data
@@ -193,6 +230,7 @@ impl Loader {
                 before,
                 Some(&xor_data),
                 None,
+                counters,
             )
             .await
         {
@@ -232,6 +270,7 @@ impl Loader {
                 before + self.ingestor_rollup_time,
                 None,
                 Some(&filter),
+                counters,
             )
             .await
         {
@@ -254,6 +293,7 @@ impl Loader {
         before: chrono::DateTime<Utc>,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
+        counters: &Counters,
     ) -> anyhow::Result<()> {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
@@ -274,6 +314,7 @@ impl Loader {
                         gateway_cache,
                         xor_data,
                         xor_filter,
+                        counters,
                     )
                     .await
                 {
@@ -301,6 +342,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
+        counters: &Counters,
     ) -> anyhow::Result<()> {
         let file_type = file_info.file_type;
         let tx = Mutex::new(self.pool.begin().await?);
@@ -317,7 +359,7 @@ impl Loader {
                             tracing::warn!("skipping report of type {file_type} due to error {err:?}")
                         }
                         Ok(buf) => {
-                            match self.handle_report(file_type, &buf, gateway_cache, xor_data, xor_filter, &metrics).await
+                            match self.handle_report(file_type, &buf, gateway_cache, xor_data, xor_filter, &metrics, counters).await
                                 {
                                     Ok(Some(bindings)) =>  inserts.push(bindings),
                                     Ok(None) => (),
@@ -341,6 +383,7 @@ impl Loader {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_report(
         &self,
         file_type: FileType,
@@ -349,6 +392,7 @@ impl Loader {
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
         metrics: &LoaderMetricTracker,
+        counters: &Counters,
     ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
             FileType::IotBeaconIngestReport => {
@@ -370,6 +414,7 @@ impl Loader {
                             status: IotStatus::Pending,
                         };
                         metrics.increment_beacons();
+                        *counters.success_counter.lock().await += 1;
                         if let Some(xor_data) = xor_data {
                             let key_hash = filter_key_hash(&beacon.report.data);
                             xor_data.lock().await.deref_mut().push(key_hash)
@@ -382,6 +427,13 @@ impl Loader {
                     }
 
                     ValidGatewayResult::Unknown => {
+                        *counters.success_counter.lock().await += 1;
+                        metrics.increment_beacons_unknown();
+                        Ok(None)
+                    }
+
+                    ValidGatewayResult::Error => {
+                        *counters.error_counter.lock().await += 1;
                         metrics.increment_beacons_unknown();
                         Ok(None)
                     }
@@ -406,8 +458,9 @@ impl Loader {
                                         buf: buf.to_vec(),
                                         received_ts: witness.received_timestamp,
                                         report_type: ReportType::Witness,
-                                        status: IotStatus::Ready,
+                                        status: IotStatus::Pending,
                                     };
+                                    *counters.success_counter.lock().await += 1;
                                     metrics.increment_witnesses();
                                     Ok(Some(res))
                                 }
@@ -416,7 +469,13 @@ impl Loader {
                                     Ok(None)
                                 }
                                 ValidGatewayResult::Unknown => {
+                                    *counters.success_counter.lock().await += 1;
                                     metrics.increment_witnesses_unknown();
+                                    Ok(None)
+                                }
+                                ValidGatewayResult::Error => {
+                                    *counters.error_counter.lock().await += 1;
+                                    metrics.increment_beacons_unknown();
                                     Ok(None)
                                 }
                             }
@@ -450,19 +509,23 @@ impl Loader {
             tracing::debug!("dropping denied gateway : {:?}", &pub_key);
             return ValidGatewayResult::Denied;
         }
-        if self.check_unknown_gw(pub_key, gateway_cache).await {
-            tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
-            return ValidGatewayResult::Unknown;
+        match self.check_gateway_exists(pub_key, gateway_cache).await {
+            Ok(true) => ValidGatewayResult::Valid,
+            Ok(false) => ValidGatewayResult::Unknown,
+            Err(_) => ValidGatewayResult::Error,
         }
-        ValidGatewayResult::Valid
     }
 
-    async fn check_unknown_gw(
+    async fn check_gateway_exists(
         &self,
         pub_key: &PublicKeyBinary,
         gateway_cache: &GatewayCache,
-    ) -> bool {
-        gateway_cache.resolve_gateway_info(pub_key).await.is_err()
+    ) -> Result<bool, GatewayCacheError> {
+        match gateway_cache.resolve_gateway_info(pub_key).await {
+            Ok(_res) => Ok(true),
+            Err(GatewayCacheError::GatewayNotFound(_)) => Ok(false),
+            Err(err) => Err(err),
+        }
     }
 
     async fn check_gw_denied(&self, pub_key: &PublicKeyBinary) -> bool {
