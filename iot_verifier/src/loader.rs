@@ -44,8 +44,8 @@ pub struct Loader {
 }
 
 pub struct Counters {
-    pub success_counter: Mutex<u64>,
-    pub error_counter: Mutex<u64>,
+    pub success_counter: Mutex<Decimal>,
+    pub error_counter: Mutex<Decimal>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -173,8 +173,8 @@ impl Loader {
             return Ok(());
         }
         let counters = Counters {
-            success_counter: Mutex::new(0),
-            error_counter: Mutex::new(0),
+            success_counter: Mutex::new(Decimal::ZERO),
+            error_counter: Mutex::new(Decimal::ZERO),
         };
         self.process_window(gateway_cache, after, before, &counters)
             .await?;
@@ -191,7 +191,7 @@ impl Loader {
         //       that error rate will ramp up
         //       that does require config service to be down for an extended period tho
         //       consider this scenario further
-        let error_rate: Decimal = (error_count / success_count).into();
+        let error_rate = error_count / success_count;
         tracing::info!(%error_count, %success_count, %error_rate);
         if error_rate > MAX_ERROR_RATE {
             tracing::warn!(
@@ -414,7 +414,7 @@ impl Loader {
                             status: IotStatus::Pending,
                         };
                         metrics.increment_beacons();
-                        *counters.success_counter.lock().await += 1;
+                        *counters.success_counter.lock().await += dec!(1);
                         if let Some(xor_data) = xor_data {
                             let key_hash = filter_key_hash(&beacon.report.data);
                             xor_data.lock().await.deref_mut().push(key_hash)
@@ -427,13 +427,13 @@ impl Loader {
                     }
 
                     ValidGatewayResult::Unknown => {
-                        *counters.success_counter.lock().await += 1;
+                        *counters.success_counter.lock().await += dec!(1);
                         metrics.increment_beacons_unknown();
                         Ok(None)
                     }
 
                     ValidGatewayResult::Error => {
-                        *counters.error_counter.lock().await += 1;
+                        *counters.error_counter.lock().await += dec!(1);
                         metrics.increment_beacons_unknown();
                         Ok(None)
                     }
@@ -460,7 +460,7 @@ impl Loader {
                                         report_type: ReportType::Witness,
                                         status: IotStatus::Pending,
                                     };
-                                    *counters.success_counter.lock().await += 1;
+                                    *counters.success_counter.lock().await += dec!(1);
                                     metrics.increment_witnesses();
                                     Ok(Some(res))
                                 }
@@ -469,12 +469,12 @@ impl Loader {
                                     Ok(None)
                                 }
                                 ValidGatewayResult::Unknown => {
-                                    *counters.success_counter.lock().await += 1;
+                                    *counters.success_counter.lock().await += dec!(1);
                                     metrics.increment_witnesses_unknown();
                                     Ok(None)
                                 }
                                 ValidGatewayResult::Error => {
-                                    *counters.error_counter.lock().await += 1;
+                                    *counters.error_counter.lock().await += dec!(1);
                                     metrics.increment_beacons_unknown();
                                     Ok(None)
                                 }
