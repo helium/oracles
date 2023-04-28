@@ -216,6 +216,7 @@ impl RewardShares {
 #[derive(Default)]
 pub struct GatewayShares {
     pub shares: HashMap<PublicKeyBinary, RewardShares>,
+    // track the total number of aggregated beacons, witnesses and packets this period
     pub total_beacon_count: u64,
     pub total_witness_count: u64,
     pub total_packet_count: u64,
@@ -563,6 +564,7 @@ mod test {
 
         let gw_shares = GatewayShares {
             shares,
+            // default counts to zero
             total_beacon_count: 0,
             total_witness_count: 0,
             total_packet_count: 0,
@@ -754,6 +756,7 @@ mod test {
 
         let gw_shares = GatewayShares {
             shares,
+            // default counts to zero
             total_beacon_count: 0,
             total_witness_count: 0,
             total_packet_count: 0,
@@ -929,6 +932,7 @@ mod test {
 
         let gw_shares = GatewayShares {
             shares,
+            // default counts to zero
             total_beacon_count: 0,
             total_witness_count: 0,
             total_packet_count: 0,

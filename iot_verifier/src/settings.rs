@@ -79,6 +79,18 @@ pub struct Settings {
     pub rewards_retry_interval: u64,
     #[serde(default = "default_rewards_max_delay_duration")]
     pub rewards_max_delay_duration: i64,
+
+    // set min counts for the number of beacon, witnesses and packets we expect
+    // to be within a rewardable period
+    // note: these are floor levels, the averages are expected to be higher
+    //       but if we drop below the levels defined here, rewards will be suspended
+    //       enabling a manual review
+    #[serde(default = "default_beacon_min_rewardable_count")]
+    pub beacon_min_rewardable_count: u64,
+    #[serde(default = "default_witness_min_rewardable_count")]
+    pub witness_min_rewardable_count: u64,
+    #[serde(default = "default_packet_min_rewardable_count")]
+    pub packet_min_rewardable_count: u64,
 }
 
 // Default: 60 minutes
@@ -164,6 +176,24 @@ pub fn default_rewards_retry_interval() -> u64 {
 // Default: 3 hours
 pub fn default_rewards_max_delay_duration() -> i64 {
     60 * 60 * 3
+}
+
+// Default: 800_000
+// 200K gateways @ 4 beacons per day
+pub fn default_beacon_min_rewardable_count() -> u64 {
+    800_000
+}
+
+// Default: 4_000_000
+// 5 witnesses per above beacon
+pub fn default_witness_min_rewardable_count() -> u64 {
+    4_000_000
+}
+
+// Default: 100_000
+// TODO: determine a sensible packet floor level
+pub fn default_packet_min_rewardable_count() -> u64 {
+    100_000
 }
 
 impl Settings {

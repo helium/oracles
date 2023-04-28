@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::{
     reward_share::{operational_rewards, GatewayShares},
     scheduler::Scheduler,
+    Settings,
 };
 use chrono::{DateTime, Duration as ChronoDuration, TimeZone, Utc};
 use db_store::meta;
@@ -12,18 +13,11 @@ use helium_proto::RewardManifest;
 use price::PriceTracker;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use sqlx::PgPool;
 use sqlx::{PgExecutor, Pool, Postgres};
 use tokio::time::sleep;
 
 const HALT_REWARDS_DB_KEY: &str = "halt_rewards_override";
-// set min counts for the number of beacon, witnesses and packets we expect
-// to be within a rewardable period
-// note: these are floor levels, the averages are expected to be higher
-//       but if we drop below the levels defined here, rewards will be delayed
-//       enabling a manual review
-const BEACON_MIN_REWARDABLE_COUNT: u64 = 800_000; // 200K gateways @ 4 beacons per day
-const WITNESS_MIN_REWARDABLE_COUNT: u64 = 4_000_000; // 5 witnesses per above beacon
-const PACKET_MIN_REWARDABLE_COUNT: u64 = 100_000; // TODO: work out a sensible packet floor level
 const AVG_SCALING_FACTOR: Decimal = dec!(0.8);
 
 pub struct Rewarder {
@@ -34,6 +28,9 @@ pub struct Rewarder {
     pub reward_offset: ChronoDuration,
     pub rewards_retry_interval: Duration,
     pub rewards_max_delay_duration: ChronoDuration,
+    pub beacon_min_rewardable_count: u64,
+    pub witness_min_rewardable_count: u64,
+    pub packet_min_rewardable_count: u64,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -45,6 +42,26 @@ pub enum RewardType {
 }
 
 impl Rewarder {
+    pub async fn from_settings(
+        settings: &Settings,
+        pool: PgPool,
+        rewards_sink: file_sink::FileSinkClient,
+        reward_manifests_sink: file_sink::FileSinkClient,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            pool,
+            rewards_sink,
+            reward_manifests_sink,
+            reward_period_hours: settings.rewards,
+            reward_offset: settings.reward_offset_duration(),
+            rewards_retry_interval: settings.rewards_retry_interval(),
+            rewards_max_delay_duration: settings.rewards_max_delay_duration(),
+            beacon_min_rewardable_count: settings.beacon_min_rewardable_count,
+            witness_min_rewardable_count: settings.witness_min_rewardable_count,
+            packet_min_rewardable_count: settings.packet_min_rewardable_count,
+        })
+    }
+
     pub async fn run(
         mut self,
         price_tracker: PriceTracker,
@@ -219,18 +236,24 @@ impl Rewarder {
     }
 
     async fn get_historic_averages(&self) -> anyhow::Result<(u64, u64, u64)> {
-        let beacon_avg =
-            history_db::get_avg(&self.pool, RewardType::Beacon, BEACON_MIN_REWARDABLE_COUNT)
-                .await?;
+        let beacon_avg = history_db::get_avg(
+            &self.pool,
+            RewardType::Beacon,
+            self.beacon_min_rewardable_count,
+        )
+        .await?;
         let witness_avg = history_db::get_avg(
             &self.pool,
             RewardType::Witness,
-            WITNESS_MIN_REWARDABLE_COUNT,
+            self.witness_min_rewardable_count,
         )
         .await?;
-        let packet_avg =
-            history_db::get_avg(&self.pool, RewardType::Packet, PACKET_MIN_REWARDABLE_COUNT)
-                .await?;
+        let packet_avg = history_db::get_avg(
+            &self.pool,
+            RewardType::Packet,
+            self.packet_min_rewardable_count,
+        )
+        .await?;
         Ok((beacon_avg, witness_avg, packet_avg))
     }
 }
