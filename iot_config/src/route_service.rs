@@ -1,7 +1,7 @@
 use crate::{
     admin::{AuthCache, KeyType},
     lora_field::{DevAddrConstraint, DevAddrRange, EuiPair, Skf},
-    org::{self, DbOrgError},
+    org::{self, OrgStoreError},
     route::{self, Route, RouteStorageError},
     telemetry, update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
     Settings,
@@ -132,7 +132,7 @@ impl RouteService {
         &self,
         route_id: &str,
         check_constraints: bool,
-    ) -> Result<DevAddrEuiValidator, DbOrgError> {
+    ) -> Result<DevAddrEuiValidator, OrgStoreError> {
         let admin_keys = self.auth_cache.get_keys_by_type(KeyType::Administrator);
 
         DevAddrEuiValidator::new(route_id, admin_keys, &self.pool, check_constraints).await
@@ -911,7 +911,7 @@ impl DevAddrEuiValidator {
         mut admin_keys: Vec<PublicKey>,
         db: impl sqlx::PgExecutor<'_> + Copy,
         check_constraints: bool,
-    ) -> Result<Self, DbOrgError> {
+    ) -> Result<Self, OrgStoreError> {
         let constraints = if check_constraints {
             Some(org::get_constraints_by_route(route_id, db).await?)
         } else {

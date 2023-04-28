@@ -3,7 +3,7 @@ use clap::Parser;
 use futures_util::TryFutureExt;
 use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer};
 use iot_config::{
-    admin::AuthCache, admin_service::AdminService, gateway_service::GatewayService,
+    admin::AuthCache, admin_service::AdminService, gateway_service::GatewayService, org,
     org_service::OrgService, region_map::RegionMapReader, route_service::RouteService,
     settings::Settings,
 };
@@ -86,12 +86,14 @@ impl Daemon {
 
         let (auth_updater, auth_cache) = AuthCache::new(settings, &pool).await?;
         let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
+        let (delegate_key_updater, delegate_key_cache) = org::delegate_keys_cache(&pool).await?;
 
         let gateway_svc = GatewayService::new(
             settings,
             metadata_pool,
             region_map.clone(),
             auth_cache.clone(),
+            delegate_key_cache,
         )?;
         let route_svc = RouteService::new(
             settings,
@@ -104,6 +106,7 @@ impl Daemon {
             auth_cache.clone(),
             pool.clone(),
             route_svc.clone_update_channel(),
+            delegate_key_updater,
         )?;
         let admin_svc = AdminService::new(
             settings,
