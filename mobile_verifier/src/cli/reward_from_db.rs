@@ -1,12 +1,13 @@
 use crate::{
     heartbeats::Heartbeats,
-    reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares, TransferRewards},
+    reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares},
     speedtests::{Average, SpeedtestAverages},
     Settings,
 };
 use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
+use rust_decimal::Decimal;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -42,8 +43,7 @@ impl Cmd {
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
-        let transfer_rewards = TransferRewards::empty();
-        for (reward, _) in reward_shares.into_rewards(&transfer_rewards, &epoch) {
+        for (reward, _) in reward_shares.into_rewards(Decimal::ZERO, &epoch) {
             total_rewards += reward.amount;
             *owner_rewards
                 .entry(PublicKey::try_from(reward.owner_key)?)

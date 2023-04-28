@@ -50,7 +50,7 @@ impl Cmd {
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
         let transfer_rewards = TransferRewards::empty();
-        for (reward, _) in reward_shares.into_rewards(&transfer_rewards, &epoch) {
+        for (reward, _) in reward_shares.into_rewards(transfer_rewards.reward_sum(), &epoch) {
             total_rewards += reward.amount;
             *owner_rewards
                 .entry(PublicKey::try_from(reward.owner_key)?)
