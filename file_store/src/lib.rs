@@ -18,6 +18,7 @@ pub mod mobile_transfer;
 pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
+pub mod task_manager;
 pub mod traits;
 
 pub use crate::file_store::FileStore;
