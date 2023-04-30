@@ -89,7 +89,7 @@ impl TaskManager {
 
                 tokio::select! {
                     _ = stop_receiver.recv() => {
-                        todo!()
+                        stopping = true;
                     }
                     Some(msg) = message_receiver.recv() => match msg {
                         Messages::TaskStopped(index) => {
