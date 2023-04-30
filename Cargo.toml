@@ -18,6 +18,7 @@ members = [
     "price",
     "mobile_config",
     "solana",
+    "task_manager",
 ]
 
 [workspace.package]

@@ -1,0 +1,18 @@
+[package]
+name = "task-manager"
+version = "0.1.0"
+description = "Task Manager"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0"
+futures = {workspace = true}
+futures-util = {workspace = true}
+
+
+
+
