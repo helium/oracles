@@ -9,7 +9,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true }
-tokio-util = "0"
+tokio-util = { workspace = true }
 futures = {workspace = true}
 futures-util = {workspace = true}
 

@@ -1,12 +1,17 @@
 mod select_all;
 
+use std::pin::pin;
+
 use crate::select_all::select_all;
-use futures::{future::BoxFuture, Future};
-use tokio::{signal, sync::mpsc};
+use futures::{future::LocalBoxFuture, Future, StreamExt};
+use tokio::signal;
 use tokio_util::sync::CancellationToken;
 
 pub trait ManagedTask {
-    fn start(self: Box<Self>, token: CancellationToken) -> BoxFuture<'static, anyhow::Result<()>>;
+    fn run(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>>;
 }
 
 pub struct TaskManager {
@@ -17,10 +22,20 @@ pub struct TaskManagerBuilder {
     tasks: Vec<Box<dyn ManagedTask>>,
 }
 
-#[derive(Debug)]
-enum Messages {
-    TaskStopped(usize),
-    StopAll(usize),
+pub struct CancellableLocalFuture {
+    token: CancellationToken,
+    future: LocalBoxFuture<'static, anyhow::Result<()>>,
+}
+
+impl Future for CancellableLocalFuture {
+    type Output = anyhow::Result<()>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        pin!(&mut self.future).poll(cx)
+    }
 }
 
 impl TaskManager {
@@ -37,21 +52,38 @@ impl TaskManager {
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
-        let (stop_sender, stop_receiver) = mpsc::channel(1);
-        let (message_sender, message_receiver) = mpsc::channel(5);
-        register_signal_listeners(stop_sender);
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
 
         let tokens = create_tokens(self.tasks.len());
+        let mut futures = start_futures(tokens.clone(), self.tasks);
 
-        let futures = start_futures(tokens.clone(), self.tasks);
-        let handle = tokio::spawn(async move { handle_futures(futures, message_sender).await });
+        loop {
+            if futures.len() == 0 {
+                break;
+            }
 
-        tokio::spawn(async move { handle_stopping(tokens, stop_receiver, message_receiver).await });
+            let mut select = select_all(futures.into_iter());
 
-        handle
-            .await
-            .map_err(|err| err.into())
-            .and_then(|result| result)
+            tokio::select! {
+                _ = sigterm.recv() => {
+                    return stop_all(select.into_inner()).await;
+                }
+                _ = signal::ctrl_c() => {
+                    return stop_all(select.into_inner()).await;
+                }
+                (result, _index, remaining) = &mut select => match result {
+                    Ok(_) => {
+                        futures = remaining;
+                    }
+                    Err(err) => {
+                        let _ = stop_all(remaining).await;
+                        return Err(err);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -67,92 +99,28 @@ impl TaskManagerBuilder {
     }
 }
 
-async fn handle_futures(
-    futures: Vec<BoxFuture<'static, anyhow::Result<()>>>,
-    sender: mpsc::Sender<Messages>,
-) -> anyhow::Result<()> {
-    let mut all_futures = select_all(futures.into_iter());
-    let mut last_result: Option<anyhow::Result<()>> = None;
-
-    loop {
-        let (result, index, remaining) = all_futures.await;
-        match result {
-            Ok(_) => {
-                sender.send(Messages::TaskStopped(index)).await?;
-            }
-            Err(err) => {
-                sender.send(Messages::StopAll(index)).await?;
-                if last_result.is_none() {
-                    last_result = Some(Err(err));
-                }
-            }
-        }
-
-        if remaining.len() == 0 {
-            break;
-        } else {
-            all_futures = select_all(remaining.into_iter());
-        }
-    }
-
-    last_result.unwrap_or(Ok(()))
-}
-
-async fn handle_stopping(
-    mut tokens: Vec<CancellationToken>,
-    mut stop_receiver: mpsc::Receiver<bool>,
-    mut receiver: mpsc::Receiver<Messages>,
-) {
-    let mut stopping = false;
-    loop {
-        if tokens.len() == 0 {
-            break;
-        }
-
-        if stopping {
-            if let Some(token) = tokens.last() {
-                token.cancel();
-            }
-        }
-
-        tokio::select! {
-            _ = stop_receiver.recv() => {
-                stopping = true;
-            }
-            Some(msg) = receiver.recv() => match msg {
-                Messages::TaskStopped(index) => {
-                    tokens.remove(index);
-                }
-                Messages::StopAll(index) => {
-                    tokens.remove(index);
-                    stopping = true;
-                }
-            },
-        }
-    }
-}
-
 fn start_futures(
     tokens: Vec<CancellationToken>,
     tasks: Vec<Box<dyn ManagedTask>>,
-) -> Vec<BoxFuture<'static, anyhow::Result<()>>> {
+) -> Vec<CancellableLocalFuture> {
     tokens
         .into_iter()
         .zip(tasks.into_iter())
-        .map(|(token, task)| task.start(token))
+        .map(|(token, task)| CancellableLocalFuture {
+            token: token.clone(),
+            future: task.run(token),
+        })
         .collect()
 }
 
-fn register_signal_listeners(sender: mpsc::Sender<bool>) {
-    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
-    tokio::spawn(async move {
-        tokio::select! {
-            _ = sigterm.recv() => (),
-            _ = signal::ctrl_c() => (),
-        }
-
-        let _ = sender.send(true).await;
-    });
+async fn stop_all(futures: Vec<CancellableLocalFuture>) -> anyhow::Result<()> {
+    futures::stream::iter(futures.into_iter().rev())
+        .fold(Ok(()), |last_result, local| async move {
+            local.token.cancel();
+            let result = local.future.await;
+            last_result.and(result)
+        })
+        .await
 }
 
 fn create_tokens(n: usize) -> Vec<CancellationToken> {
@@ -167,6 +135,7 @@ mod tests {
     use super::*;
     use anyhow::anyhow;
     use futures::TryFutureExt;
+    use tokio::sync::mpsc;
 
     struct TestTask {
         id: u64,
@@ -176,10 +145,10 @@ mod tests {
     }
 
     impl ManagedTask for TestTask {
-        fn start(
+        fn run(
             self: Box<Self>,
             token: CancellationToken,
-        ) -> BoxFuture<'static, anyhow::Result<()>> {
+        ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
             let handle = tokio::spawn(async move {
                 tokio::select! {
                     _ = token.cancelled() => (),
@@ -285,43 +254,5 @@ mod tests {
         assert_eq!(Some(3), receiver.recv().await);
         assert_eq!(Some(1), receiver.recv().await);
         assert_eq!("error", result.unwrap_err().to_string());
-    }
-
-    #[tokio::test]
-    async fn handle_stopping_will_stop_in_reverse_order_when_told_to_stop() {
-        let (stop_sender, stop_receiver) = mpsc::channel(1);
-        let (sender, receiver) = mpsc::channel(5);
-
-        let mut tokens: Vec<CancellationToken> = (0..10)
-            .into_iter()
-            .map(|_| CancellationToken::new())
-            .collect();
-
-        let tokens_clone = tokens.clone();
-        tokio::spawn(async move { handle_stopping(tokens_clone, stop_receiver, receiver).await });
-
-        stop_sender.send(true).await.expect("unable to send");
-
-        while tokens.len() != 0 {
-            assert!(ensure_cancelled(tokens.last().unwrap()).await);
-            assert!(ensure_not_cancelled(&tokens[..tokens.len() - 1]));
-
-            sender
-                .send(Messages::TaskStopped(tokens.len() - 1))
-                .await
-                .expect("unable to send");
-            tokens.remove(tokens.len() - 1);
-        }
-    }
-
-    async fn ensure_cancelled(token: &CancellationToken) -> bool {
-        tokio::select! {
-            _ = token.cancelled() => true,
-            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => false,
-        }
-    }
-
-    fn ensure_not_cancelled(tokens: &[CancellationToken]) -> bool {
-        tokens.iter().all(|t| !t.is_cancelled())
     }
 }
