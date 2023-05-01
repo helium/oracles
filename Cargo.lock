@@ -2934,13 +2934,9 @@ checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 
 [[package]]
 name = "hextree"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a6ffc35fc0fb2af599742de1938d44cd18b0ae7cf7a7faf4b067f43cc863902"
-dependencies = [
- "bitfield",
- "thiserror",
-]
+checksum = "9bcae6addbacd470c8033b8f874feb49fa568c17ceadadbf98ee6ae4029cd2b6"
 
 [[package]]
 name = "histogram"

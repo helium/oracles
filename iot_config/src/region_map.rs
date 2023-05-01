@@ -46,7 +46,7 @@ impl RegionMap {
     }
 
     pub fn get_region(&self, location: Cell) -> Option<Region> {
-        self.region_hextree.get(location).cloned()
+        self.region_hextree.get(location).unzip().1.copied()
     }
 
     pub fn get_params(&self, region: &Region) -> Option<BlockchainRegionParamsV1> {
