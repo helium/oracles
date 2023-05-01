@@ -11,7 +11,7 @@ pub type EuiField = LoraField<16>;
 
 pub mod proto {
     pub use helium_proto::services::iot_config::{
-        DevaddrConstraintV1, DevaddrRangeV1, EuiPairV1, OrgV1,
+        DevaddrConstraintV1, DevaddrRangeV1, EuiPairV1, OrgV1, SkfV1,
     };
 }
 
@@ -29,6 +29,10 @@ impl DevAddrRange {
             start_addr,
             end_addr,
         }
+    }
+
+    pub fn contains_addr(&self, addr: DevAddrField) -> bool {
+        self.start_addr <= addr && self.end_addr >= addr
     }
 }
 
@@ -73,10 +77,6 @@ impl DevAddrConstraint {
     pub fn contains_range(&self, range: &DevAddrRange) -> bool {
         self.start_addr <= range.start_addr && self.end_addr >= range.end_addr
     }
-
-    pub fn contains_addr(&self, addr: DevAddrField) -> bool {
-        self.start_addr <= addr && self.end_addr >= addr
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -104,6 +104,35 @@ impl FromRow<'_, PgRow> for EuiPair {
                 .to_string(),
             app_eui: row.try_get::<i64, &str>("app_eui")?.into(),
             dev_eui: row.try_get::<i64, &str>("dev_eui")?.into(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Skf {
+    pub route_id: String,
+    pub devaddr: DevAddrField,
+    pub session_key: String,
+}
+
+impl Skf {
+    pub fn new(route_id: String, devaddr: DevAddrField, session_key: String) -> Self {
+        Self {
+            route_id,
+            devaddr,
+            session_key,
+        }
+    }
+}
+
+impl FromRow<'_, PgRow> for Skf {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            route_id: row
+                .try_get::<sqlx::types::Uuid, &str>("route_id")?
+                .to_string(),
+            devaddr: row.get::<i32, &str>("devaddr").into(),
+            session_key: row.get::<String, &str>("session_key"),
         })
     }
 }
@@ -519,6 +548,46 @@ impl From<&EuiPair> for proto::EuiPairV1 {
             route_id: eui.route_id.clone(),
             app_eui: eui.app_eui.into(),
             dev_eui: eui.dev_eui.into(),
+        }
+    }
+}
+
+impl From<proto::SkfV1> for Skf {
+    fn from(filter: proto::SkfV1) -> Self {
+        Self {
+            route_id: filter.route_id,
+            devaddr: filter.devaddr.into(),
+            session_key: filter.session_key,
+        }
+    }
+}
+
+impl From<&proto::SkfV1> for Skf {
+    fn from(filter: &proto::SkfV1) -> Self {
+        Self {
+            route_id: filter.route_id.to_owned(),
+            devaddr: filter.devaddr.into(),
+            session_key: filter.session_key.to_owned(),
+        }
+    }
+}
+
+impl From<Skf> for proto::SkfV1 {
+    fn from(filter: Skf) -> Self {
+        Self {
+            route_id: filter.route_id,
+            devaddr: filter.devaddr.into(),
+            session_key: filter.session_key,
+        }
+    }
+}
+
+impl From<&Skf> for proto::SkfV1 {
+    fn from(filter: &Skf) -> Self {
+        Self {
+            route_id: filter.route_id.to_owned(),
+            devaddr: filter.devaddr.into(),
+            session_key: filter.session_key.to_owned(),
         }
     }
 }

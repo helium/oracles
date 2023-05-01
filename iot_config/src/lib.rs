@@ -9,8 +9,6 @@ pub mod org_service;
 pub mod region_map;
 pub mod route;
 pub mod route_service;
-pub mod session_key;
-pub mod session_key_service;
 pub mod settings;
 pub mod telemetry;
 
@@ -20,7 +18,6 @@ pub use gateway_service::GatewayService;
 use lora_field::{LoraField, NetIdField};
 pub use org_service::OrgService;
 pub use route_service::RouteService;
-pub use session_key_service::SessionKeyFilterService;
 pub use settings::Settings;
 
 use helium_crypto::PublicKey;

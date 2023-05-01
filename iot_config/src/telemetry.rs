@@ -56,10 +56,10 @@ pub fn count_devaddr_updates(adds: usize, removes: usize) {
     metrics::counter!(DEVADDR_REMOVE_COUNT_METRIC, removes as u64);
 }
 
-pub fn stream_subscribe(stream: &'static str) {
-    metrics::increment_gauge!(STREAM_METRIC, 1.0, "stream" => stream);
+pub fn route_stream_subscribe() {
+    metrics::increment_gauge!(STREAM_METRIC, 1.0);
 }
 
-pub fn stream_unsubscribe(stream: &'static str) {
-    metrics::decrement_gauge!(STREAM_METRIC, 1.0, "stream" => stream);
+pub fn route_stream_unsubscribe() {
+    metrics::decrement_gauge!(STREAM_METRIC, 1.0);
 }

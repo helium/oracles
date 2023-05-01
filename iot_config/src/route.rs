@@ -1,6 +1,6 @@
 use crate::{
     broadcast_update,
-    lora_field::{DevAddrRange, EuiPair, NetIdField},
+    lora_field::{DevAddrField, DevAddrRange, EuiPair, NetIdField, Skf},
 };
 use anyhow::anyhow;
 use chrono::Utc;
@@ -141,15 +141,15 @@ pub async fn create_route(
             signer,
             signature: vec![],
         };
-        signing_key
+        _ = signing_key
             .sign(&update.encode_to_vec())
-            .map_err(|err| anyhow!(format!("error signing route stream response: {err:?}")))
+            .map_err(|err| tracing::error!("error signing route stream response: {err:?}"))
             .and_then(|signature| {
                 update.signature = signature;
                 update_tx.send(update).map_err(|err| {
-                    anyhow!(format!("error broadcasting route stream response: {err:?}"))
+                    tracing::warn!("error broadcasting route stream response: {err:?}")
                 })
-            })?;
+            });
     };
 
     Ok(new_route)
@@ -206,12 +206,12 @@ pub async fn update_route(
 
     _ = signing_key
         .sign(&update_res.encode_to_vec())
-        .map_err(|err| anyhow!(format!("error signing route stream response: {err:?}")))
+        .map_err(|err| tracing::error!("error signing route stream response: {err:?}"))
         .and_then(|signature| {
             update_res.signature = signature;
-            update_tx.send(update_res).map_err(|err| {
-                anyhow!(format!("error broadcasting route stream response: {err:?}"))
-            })
+            update_tx
+                .send(update_res)
+                .map_err(|err| tracing::warn!("error broadcasting route stream response: {err:?}"))
         });
 
     Ok(updated_route)
@@ -562,6 +562,18 @@ pub fn devaddr_range_stream<'a>(
     .boxed()
 }
 
+pub fn skf_stream<'a>(db: impl sqlx::PgExecutor<'a> + 'a + Copy) -> impl Stream<Item = Skf> + 'a {
+    sqlx::query_as::<_, Skf>(
+        r#"
+        select skf.route_id, skf.devaddr, skf.session_key
+        from route_session_key_filters skf
+        "#,
+    )
+    .fetch(db)
+    .filter_map(|skf| async move { skf.ok() })
+    .boxed()
+}
+
 pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Route> {
     let uuid = Uuid::try_parse(id)?;
     let route_row = sqlx::query_as::<_, StorageRoute>(
@@ -645,6 +657,149 @@ pub async fn delete_route(
     Ok(())
 }
 
+pub fn list_skfs_for_route<'a>(
+    id: &str,
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> Result<impl Stream<Item = Result<Skf, sqlx::Error>> + 'a, RouteStorageError> {
+    let id = Uuid::try_parse(id)?;
+    const SKF_SELECT_SQL: &str = r#"
+        select skf.route_id, skf.devaddr, skf.session_key
+            from route_session_key_filters skf
+            where skf.route_id = $1
+    "#;
+
+    Ok(sqlx::query_as::<_, Skf>(SKF_SELECT_SQL)
+        .bind(id)
+        .fetch(db)
+        .boxed())
+}
+
+pub fn list_skfs_for_route_and_devaddr<'a>(
+    id: &str,
+    devaddr: DevAddrField,
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+) -> Result<impl Stream<Item = Result<Skf, sqlx::Error>> + 'a, RouteStorageError> {
+    let id = Uuid::try_parse(id)?;
+
+    Ok(sqlx::query_as::<_, Skf>(
+        r#"
+        select skf.route_id, skf.devaddr, skf.session_key
+        from route_session_key_filters skf
+        where skf.route_id = $1 and devaddr = $2
+        "#,
+    )
+    .bind(id)
+    .bind(i32::from(devaddr))
+    .fetch(db)
+    .boxed())
+}
+
+pub async fn update_skfs(
+    to_add: &[Skf],
+    to_remove: &[Skf],
+    db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    signing_key: Arc<Keypair>,
+    update_tx: Sender<proto::RouteStreamResV1>,
+) -> anyhow::Result<()> {
+    let mut transaction = db.begin().await?;
+
+    let added_updates: Vec<(Skf, proto::ActionV1)> = insert_skfs(to_add, &mut transaction)
+        .await?
+        .into_iter()
+        .map(|added_skf| (added_skf, proto::ActionV1::Add))
+        .collect();
+
+    let removed_updates: Vec<(Skf, proto::ActionV1)> = remove_skfs(to_remove, &mut transaction)
+        .await?
+        .into_iter()
+        .map(|removed_skf| (removed_skf, proto::ActionV1::Remove))
+        .collect();
+
+    transaction.commit().await?;
+
+    tokio::spawn(async move {
+        let timestamp = Utc::now().encode_timestamp();
+        let signer: Vec<u8> = signing_key.public_key().into();
+        stream::iter([added_updates, removed_updates].concat())
+            .map(Ok)
+            .try_for_each(|(update, action)| {
+                let mut skf_update = proto::RouteStreamResV1 {
+                    action: i32::from(action),
+                    data: Some(proto::route_stream_res_v1::Data::Skf(update.into())),
+                    timestamp,
+                    signer: signer.clone(),
+                    signature: vec![],
+                };
+                futures::future::ready(signing_key.sign(&skf_update.encode_to_vec()))
+                    .map_err(|_| anyhow!("failed to sign session key filter update"))
+                    .and_then(|signature| {
+                        skf_update.signature = signature;
+                        broadcast_update::<proto::RouteStreamResV1>(skf_update, update_tx.clone())
+                            .map_err(|_| anyhow!("failed to broadcast session key filter update"))
+                    })
+            })
+            .await
+    });
+
+    Ok(())
+}
+
+async fn insert_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Vec<Skf>> {
+    if skfs.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let skfs = skfs
+        .iter()
+        .map(|filter| filter.try_into())
+        .collect::<Result<Vec<(Uuid, i32, String)>, _>>()?;
+
+    const SKF_INSERT_VALS: &str =
+        " insert into route_session_key_filters (route_id, devaddr, session_key) ";
+    const SKF_INSERT_CONFLICT: &str =
+        " on conflict (route_id, devaddr, session_key) do nothing returning * ";
+
+    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+        sqlx::QueryBuilder::new(SKF_INSERT_VALS);
+    query_builder
+        .push_values(skfs, |mut builder, (route_id, devaddr, session_key)| {
+            builder
+                .push_bind(route_id)
+                .push_bind(devaddr)
+                .push_bind(session_key);
+        })
+        .push(SKF_INSERT_CONFLICT);
+
+    Ok(query_builder.build_query_as::<Skf>().fetch_all(db).await?)
+}
+
+async fn remove_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Vec<Skf>> {
+    if skfs.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let skfs = skfs
+        .iter()
+        .map(|filter| filter.try_into())
+        .collect::<Result<Vec<(Uuid, i32, String)>, _>>()?;
+
+    const SKF_DELETE_VALS: &str =
+        " delete from route_session_key_filters where (route_id, devaddr, session_key) in ";
+    const SKF_DELETE_RETURN: &str = " returning * ";
+    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
+        sqlx::QueryBuilder::new(SKF_DELETE_VALS);
+    query_builder
+        .push_tuples(skfs, |mut builder, (route_id, devaddr, session_key)| {
+            builder
+                .push_bind(route_id)
+                .push_bind(devaddr)
+                .push_bind(session_key);
+        })
+        .push(SKF_DELETE_RETURN);
+
+    Ok(query_builder.build_query_as::<Skf>().fetch_all(db).await?)
+}
+
 #[derive(Debug, Serialize)]
 pub struct RouteList {
     routes: Vec<Route>,
@@ -704,6 +859,15 @@ impl TryFrom<&DevAddrRange> for (Uuid, i32, i32) {
             i32::from(devaddr.start_addr),
             i32::from(devaddr.end_addr),
         ))
+    }
+}
+
+impl TryFrom<&Skf> for (Uuid, i32, String) {
+    type Error = sqlx::types::uuid::Error;
+
+    fn try_from(skf: &Skf) -> Result<(Uuid, i32, String), Self::Error> {
+        let uuid = Uuid::try_parse(&skf.route_id)?;
+        Ok((uuid, i32::from(skf.devaddr), skf.session_key.clone()))
     }
 }
 
