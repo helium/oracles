@@ -1,14 +1,8 @@
-#![allow(dead_code, unused)]
+mod select_all;
 
-use futures::{
-    future::{self, BoxFuture, Shared},
-    Future, StreamExt, TryFutureExt,
-};
-use tokio::{
-    signal,
-    sync::{mpsc, oneshot},
-    task::JoinHandle,
-};
+use crate::select_all::select_all;
+use futures::{future::BoxFuture, Future};
+use tokio::{signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
 pub trait ManagedTask {
@@ -23,6 +17,7 @@ pub struct TaskManagerBuilder {
     tasks: Vec<Box<dyn ManagedTask>>,
 }
 
+#[derive(Debug)]
 enum Messages {
     TaskStopped(usize),
     StopAll(usize),
@@ -42,13 +37,13 @@ impl TaskManager {
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
-        let (stop_sender, mut stop_receiver) = mpsc::channel(1);
-        let (message_sender, mut message_receiver) = mpsc::channel(5);
+        let (stop_sender, stop_receiver) = mpsc::channel(1);
+        let (message_sender, message_receiver) = mpsc::channel(5);
         register_signal_listeners(stop_sender);
 
-        let mut tokens = create_tokens(self.tasks.len());
+        let tokens = create_tokens(self.tasks.len());
 
-        let mut futures = start_futures(tokens.clone(), self.tasks);
+        let futures = start_futures(tokens.clone(), self.tasks);
         let handle = tokio::spawn(async move { handle_futures(futures, message_sender).await });
 
         tokio::spawn(async move { handle_stopping(tokens, stop_receiver, message_receiver).await });
@@ -76,17 +71,17 @@ async fn handle_futures(
     futures: Vec<BoxFuture<'static, anyhow::Result<()>>>,
     sender: mpsc::Sender<Messages>,
 ) -> anyhow::Result<()> {
-    let mut select_all = future::select_all(futures.into_iter());
+    let mut all_futures = select_all(futures.into_iter());
     let mut last_result: Option<anyhow::Result<()>> = None;
 
     loop {
-        let (result, index, remaining) = select_all.await;
+        let (result, index, remaining) = all_futures.await;
         match result {
             Ok(_) => {
-                sender.send(Messages::TaskStopped(index)).await;
+                sender.send(Messages::TaskStopped(index)).await?;
             }
             Err(err) => {
-                sender.send(Messages::StopAll(index)).await;
+                sender.send(Messages::StopAll(index)).await?;
                 if last_result.is_none() {
                     last_result = Some(Err(err));
                 }
@@ -96,7 +91,7 @@ async fn handle_futures(
         if remaining.len() == 0 {
             break;
         } else {
-            select_all = future::select_all(remaining.into_iter());
+            all_futures = select_all(remaining.into_iter());
         }
     }
 
@@ -156,22 +151,22 @@ fn register_signal_listeners(sender: mpsc::Sender<bool>) {
             _ = signal::ctrl_c() => (),
         }
 
-        sender.send(true).await;
+        let _ = sender.send(true).await;
     });
 }
 
 fn create_tokens(n: usize) -> Vec<CancellationToken> {
-    let mut result = Vec::new();
-    for i in 0..n {
-        result.push(CancellationToken::new());
-    }
-    result
+    (0..n).fold(Vec::new(), |mut vec, _| {
+        vec.push(CancellationToken::new());
+        vec
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::anyhow;
+    use futures::TryFutureExt;
 
     struct TestTask {
         id: u64,
@@ -191,7 +186,7 @@ mod tests {
                     _ = tokio::time::sleep(std::time::Duration::from_millis(self.delay)) => (),
                 }
 
-                self.sender.send(self.id).await;
+                self.sender.send(self.id).await.expect("unable to send");
                 self.result
             });
 
@@ -305,13 +300,16 @@ mod tests {
         let tokens_clone = tokens.clone();
         tokio::spawn(async move { handle_stopping(tokens_clone, stop_receiver, receiver).await });
 
-        stop_sender.send(true).await;
+        stop_sender.send(true).await.expect("unable to send");
 
         while tokens.len() != 0 {
             assert!(ensure_cancelled(tokens.last().unwrap()).await);
             assert!(ensure_not_cancelled(&tokens[..tokens.len() - 1]));
 
-            sender.send(Messages::TaskStopped(tokens.len() - 1)).await;
+            sender
+                .send(Messages::TaskStopped(tokens.len() - 1))
+                .await
+                .expect("unable to send");
             tokens.remove(tokens.len() - 1);
         }
     }
