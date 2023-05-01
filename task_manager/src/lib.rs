@@ -291,4 +291,39 @@ mod tests {
         assert_eq!(Some(1), receiver.recv().await);
         assert_eq!("error", result.unwrap_err().to_string());
     }
+
+    #[tokio::test]
+    async fn handle_stopping_will_stop_in_reverse_order_when_told_to_stop() {
+        let (stop_sender, stop_receiver) = mpsc::channel(1);
+        let (sender, receiver) = mpsc::channel(5);
+
+        let mut tokens: Vec<CancellationToken> = (0..10)
+            .into_iter()
+            .map(|_| CancellationToken::new())
+            .collect();
+
+        let tokens_clone = tokens.clone();
+        tokio::spawn(async move { handle_stopping(tokens_clone, stop_receiver, receiver).await });
+
+        stop_sender.send(true).await;
+
+        while tokens.len() != 0 {
+            assert!(ensure_cancelled(tokens.last().unwrap()).await);
+            assert!(ensure_not_cancelled(&tokens[..tokens.len() - 1]));
+
+            sender.send(Messages::TaskStopped(tokens.len() - 1)).await;
+            tokens.remove(tokens.len() - 1);
+        }
+    }
+
+    async fn ensure_cancelled(token: &CancellationToken) -> bool {
+        tokio::select! {
+            _ = token.cancelled() => true,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => false,
+        }
+    }
+
+    fn ensure_not_cancelled(tokens: &[CancellationToken]) -> bool {
+        tokens.iter().all(|t| !t.is_cancelled())
+    }
 }
