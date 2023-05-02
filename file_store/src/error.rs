@@ -28,6 +28,8 @@ pub enum Error {
     DbError(#[from] sqlx::Error),
     #[error("tokio join error")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("error building file info poller")]
+    FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
 }
 
 #[derive(Error, Debug)]
