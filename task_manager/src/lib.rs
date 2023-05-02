@@ -8,7 +8,7 @@ use tokio::signal;
 use tokio_util::sync::CancellationToken;
 
 pub trait ManagedTask {
-    fn run(
+    fn start_task(
         self: Box<Self>,
         token: CancellationToken,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>>;
@@ -57,6 +57,9 @@ impl TaskManager {
         let tokens = create_tokens(self.tasks.len());
         let mut futures = start_futures(tokens.clone(), self.tasks);
 
+        let mut shutdown =
+            futures::future::select(Box::pin(sigterm.recv()), Box::pin(signal::ctrl_c()));
+
         loop {
             if futures.len() == 0 {
                 break;
@@ -65,10 +68,7 @@ impl TaskManager {
             let mut select = select_all(futures.into_iter());
 
             tokio::select! {
-                _ = sigterm.recv() => {
-                    return stop_all(select.into_inner()).await;
-                }
-                _ = signal::ctrl_c() => {
+                _ = &mut shutdown => {
                     return stop_all(select.into_inner()).await;
                 }
                 (result, _index, remaining) = &mut select => match result {
@@ -108,7 +108,7 @@ fn start_futures(
         .zip(tasks.into_iter())
         .map(|(token, task)| CancellableLocalFuture {
             token: token.clone(),
-            future: task.run(token),
+            future: task.start_task(token),
         })
         .collect()
 }
@@ -145,7 +145,7 @@ mod tests {
     }
 
     impl ManagedTask for TestTask {
-        fn run(
+        fn start_task(
             self: Box<Self>,
             token: CancellationToken,
         ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
