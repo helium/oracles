@@ -29,6 +29,8 @@ use twox_hash::XxHash64;
 use xorf::{Filter as XorFilter, Xor16};
 
 const REPORTS_META_NAME: &str = "report";
+
+// the ratio of errors to successes for calls for the config service
 const MAX_ERROR_RATE: Decimal = dec!(0.4);
 
 pub struct Loader {
@@ -43,7 +45,7 @@ pub struct Loader {
     deny_list: DenyList,
 }
 
-pub struct Counters {
+pub struct ConfigAPICounters {
     pub success_counter: Mutex<Decimal>,
     pub error_counter: Mutex<Decimal>,
 }
@@ -140,7 +142,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(&mut self, gateway_cache: &GatewayCache) -> anyhow::Result<()> {
+    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> anyhow::Result<()> {
         tracing::info!("handling report tick");
         let now = Utc::now();
         // the loader loads files from s3 via a sliding window
@@ -174,7 +176,7 @@ impl Loader {
         }
         // initialize counters to trace success vs error rate
         // of api calls to the config service
-        let counters = Counters {
+        let counters = ConfigAPICounters {
             success_counter: Mutex::new(Decimal::ZERO),
             error_counter: Mutex::new(Decimal::ZERO),
         };
@@ -182,20 +184,21 @@ impl Loader {
         self.process_window(gateway_cache, after, before, &counters)
             .await?;
 
-        // check the ratio of report errors to successes
+        // check the ratio of report errors to successes received whilst
+        // processing the current window
         // if error rate exceeds threshold then dont advance the sliding window
         // and drop all processed reports
         // this allows the same window to be processed again next tick
         let error_count = *counters.error_counter.lock().await;
         let success_count = *counters.success_counter.lock().await;
 
-        // NOTE: as most calls to the config service are cached
-        //       ie resolve gateway and resolve region params, the error rate
-        //       tends to be very low compared to the success rate
-        //       even when config service is down
-        //       this is good thing, but if config service is down
-        //       for an extended period of time and as cache items expire
-        //       that error rate will ramp up
+        // as most calls to the config service are cached
+        // ie resolve gateway and resolve region params, the error rate
+        // tends to be very low compared to the success rate
+        // even when config service is down
+        // this is good thing, but if config service is down
+        // for an extended period of time and as cache items expire
+        // that error rate will ramp up
         let error_rate = error_count / success_count;
         tracing::info!(%error_count, %success_count, %error_rate);
 
@@ -217,7 +220,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         after: DateTime<Utc>,
         before: DateTime<Utc>,
-        counters: &Counters,
+        counters: &ConfigAPICounters,
     ) -> anyhow::Result<()> {
         // beacons are processed first
         // an xor filter is constructed based on the beacon packet data
@@ -300,7 +303,7 @@ impl Loader {
         before: chrono::DateTime<Utc>,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
-        counters: &Counters,
+        counters: &ConfigAPICounters,
     ) -> anyhow::Result<()> {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
@@ -349,7 +352,7 @@ impl Loader {
         gateway_cache: &GatewayCache,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
-        counters: &Counters,
+        counters: &ConfigAPICounters,
     ) -> anyhow::Result<()> {
         let file_type = file_info.file_type;
         let tx = Mutex::new(self.pool.begin().await?);
@@ -399,7 +402,7 @@ impl Loader {
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
         metrics: &LoaderMetricTracker,
-        counters: &Counters,
+        counters: &ConfigAPICounters,
     ) -> anyhow::Result<Option<InsertBindings>> {
         match file_type {
             FileType::IotBeaconIngestReport => {

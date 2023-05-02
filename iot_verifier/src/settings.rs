@@ -74,6 +74,14 @@ pub struct Settings {
     /// File store poll interval for incoming packets, in seconds. (Default is 900; 15 minutes)
     #[serde(default = "default_packet_interval")]
     pub packet_interval: i64,
+    /// the max number of times a beacon report will be retried
+    /// after this the report will be ignored and eventually be purged
+    #[serde(default = "default_beacon_max_retries")]
+    pub beacon_max_retries: u64,
+    /// the max number of times a witness report will be retried
+    /// after this the report will be ignored and eventually be purged
+    #[serde(default = "default_witness_max_retries")]
+    pub witness_max_retries: u64,
 }
 
 // Default: 60 minutes
@@ -131,8 +139,9 @@ pub fn default_log() -> String {
     "iot_verifier=debug,poc_store=info".to_string()
 }
 
+// Default: 8 hours
 pub fn default_base_stale_period() -> i64 {
-    0
+    60 * 60 * 8
 }
 
 fn default_reward_period() -> i64 {
@@ -149,6 +158,16 @@ pub fn default_max_witnesses_per_poc() -> u64 {
 
 fn default_packet_interval() -> i64 {
     900
+}
+
+// runner runs at 30 sec intervals
+// 240 permits retries for up two 3 hours
+fn default_beacon_max_retries() -> u64 {
+    240
+}
+
+fn default_witness_max_retries() -> u64 {
+    5
 }
 
 impl Settings {
