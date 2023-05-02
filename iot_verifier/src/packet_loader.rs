@@ -1,4 +1,4 @@
-use crate::reward_share::GatewayDCShare;
+use crate::{gateway_cache::GatewayCache, reward_share::GatewayDCShare};
 use file_store::{file_info_poller::FileInfoStream, iot_packet::IotValidPacket};
 use futures::{StreamExt, TryStreamExt};
 use sqlx::PgPool;
@@ -21,6 +21,7 @@ impl PacketLoader {
         &mut self,
         mut receiver: Receiver<FileInfoStream<IotValidPacket>>,
         shutdown: &triggered::Listener,
+        gateway_cache: &GatewayCache,
     ) -> anyhow::Result<()> {
         tracing::info!("starting verifier iot packet loader");
         loop {
@@ -30,7 +31,7 @@ impl PacketLoader {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 msg = receiver.recv() => if let Some(stream) =  msg {
-                    self.handle_packet(stream).await?;
+                    self.handle_packet(stream, gateway_cache).await?;
                 }
             }
         }
@@ -41,6 +42,7 @@ impl PacketLoader {
     async fn handle_packet(
         &self,
         file_info_stream: FileInfoStream<IotValidPacket>,
+        gateway_cache: &GatewayCache,
     ) -> anyhow::Result<()> {
         let mut transaction = self.pool.begin().await?;
         file_info_stream
@@ -49,7 +51,13 @@ impl PacketLoader {
             .map(|valid_packet| GatewayDCShare::share_from_packet(&valid_packet))
             .map(anyhow::Ok)
             .try_fold(transaction, |mut transaction, reward_share| async move {
-                reward_share.save(&mut transaction).await?;
+                if gateway_cache
+                    .resolve_gateway_info(&reward_share.hotspot_key)
+                    .await
+                    .is_ok()
+                {
+                    reward_share.save(&mut transaction).await?;
+                };
                 Ok(transaction)
             })
             .await?
