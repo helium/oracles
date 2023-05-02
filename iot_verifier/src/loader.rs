@@ -172,30 +172,36 @@ impl Loader {
             tracing::info!("current window width insufficient. completed handling poc_report tick");
             return Ok(());
         }
+        // initialize counters to trace success vs error rate
+        // of api calls to the config service
         let counters = Counters {
             success_counter: Mutex::new(Decimal::ZERO),
             error_counter: Mutex::new(Decimal::ZERO),
         };
+
         self.process_window(gateway_cache, after, before, &counters)
             .await?;
+
         // check the ratio of report errors to successes
         // if error rate exceeds threshold then dont advance the sliding window
         // and drop all processed reports
-        // this allows the same window to be processed again
+        // this allows the same window to be processed again next tick
         let error_count = *counters.error_counter.lock().await;
         let success_count = *counters.success_counter.lock().await;
-        // TODO: as most calls to resolve gateway hit the cache, the error rate
+
+        // NOTE: as most calls to the config service are cached
+        //       ie resolve gateway and resolve region params, the error rate
         //       tends to be very low compared to the success rate
-        //       even if config service is down
-        //       this is good thing, but when as cache items expire
+        //       even when config service is down
+        //       this is good thing, but if config service is down
+        //       for an extended period of time and as cache items expire
         //       that error rate will ramp up
-        //       that does require config service to be down for an extended period tho
-        //       consider this scenario further
         let error_rate = error_count / success_count;
         tracing::info!(%error_count, %success_count, %error_rate);
+
         if error_rate > MAX_ERROR_RATE {
             tracing::warn!(
-                "error rate above threshold, dropping reports from window period and retrying"
+                "error rate above threshold, dropping reports loaded during this window period and retrying"
             );
             Report::delete_pending(&self.pool).await?;
         } else {
@@ -205,6 +211,7 @@ impl Loader {
         tracing::info!("completed handling poc_report tick");
         Ok(())
     }
+
     async fn process_window(
         &self,
         gateway_cache: &GatewayCache,
@@ -414,7 +421,7 @@ impl Loader {
                             status: IotStatus::Pending,
                         };
                         metrics.increment_beacons();
-                        *counters.success_counter.lock().await += dec!(1);
+                        inc_counter(&counters.success_counter).await?;
                         if let Some(xor_data) = xor_data {
                             let key_hash = filter_key_hash(&beacon.report.data);
                             xor_data.lock().await.deref_mut().push(key_hash)
@@ -427,13 +434,13 @@ impl Loader {
                     }
 
                     ValidGatewayResult::Unknown => {
-                        *counters.success_counter.lock().await += dec!(1);
+                        inc_counter(&counters.success_counter).await?;
                         metrics.increment_beacons_unknown();
                         Ok(None)
                     }
 
                     ValidGatewayResult::Error => {
-                        *counters.error_counter.lock().await += dec!(1);
+                        inc_counter(&counters.error_counter).await?;
                         metrics.increment_beacons_unknown();
                         Ok(None)
                     }
@@ -460,7 +467,7 @@ impl Loader {
                                         report_type: ReportType::Witness,
                                         status: IotStatus::Pending,
                                     };
-                                    *counters.success_counter.lock().await += dec!(1);
+                                    inc_counter(&counters.success_counter).await?;
                                     metrics.increment_witnesses();
                                     Ok(Some(res))
                                 }
@@ -469,12 +476,12 @@ impl Loader {
                                     Ok(None)
                                 }
                                 ValidGatewayResult::Unknown => {
-                                    *counters.success_counter.lock().await += dec!(1);
+                                    inc_counter(&counters.success_counter).await?;
                                     metrics.increment_witnesses_unknown();
                                     Ok(None)
                                 }
                                 ValidGatewayResult::Error => {
-                                    *counters.error_counter.lock().await += dec!(1);
+                                    inc_counter(&counters.error_counter).await?;
                                     metrics.increment_beacons_unknown();
                                     Ok(None)
                                 }
@@ -541,4 +548,9 @@ fn filter_key_hash(data: &[u8]) -> u64 {
 
 fn verify_witness_packet_data(packet: &[u8], filter: &Xor16) -> bool {
     filter.contains(&filter_key_hash(packet))
+}
+
+async fn inc_counter(counter: &Mutex<Decimal>) -> anyhow::Result<()> {
+    *counter.lock().await += dec!(1);
+    Ok(())
 }
