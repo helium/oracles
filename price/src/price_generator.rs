@@ -3,14 +3,16 @@ use anchor_lang::AccountDeserialize;
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::file_sink;
-use futures::TryFutureExt;
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use price_oracle::{calculate_current_price, PriceOracleV0};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
 use std::{path::PathBuf, str::FromStr};
+use task_manager::ManagedTask;
 use tokio::{fs, time};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Price {
@@ -38,6 +40,7 @@ pub struct PriceGenerator {
     default_price: Option<u64>,
     stale_price_duration: Duration,
     latest_price_file: PathBuf,
+    file_sink: file_sink::FileSinkClient,
 }
 
 impl From<Price> for PriceReportV1 {
@@ -67,8 +70,21 @@ impl TryFrom<PriceReportV1> for Price {
     }
 }
 
+impl ManagedTask for PriceGenerator {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
+}
+
 impl PriceGenerator {
-    pub async fn new(settings: &Settings, token_type: BlockchainTokenTypeV1) -> Result<Self> {
+    pub async fn new(
+        settings: &Settings,
+        token_type: BlockchainTokenTypeV1,
+        file_sink: file_sink::FileSinkClient,
+    ) -> Result<Self> {
         let client = RpcClient::new(settings.source.clone());
         Ok(Self {
             last_price_opt: None,
@@ -80,20 +96,14 @@ impl PriceGenerator {
             stale_price_duration: settings.stale_price_duration(),
             latest_price_file: PathBuf::from_str(&settings.cache)?
                 .join(format!("{token_type:?}.latest")),
+            file_sink,
         })
     }
 
-    pub async fn run(
-        &mut self,
-        file_sink: file_sink::FileSinkClient,
-        shutdown: &triggered::Listener,
-    ) -> Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> Result<()> {
         match (self.key, self.default_price) {
-            (Some(key), _) => self.run_with_key(key, file_sink, shutdown).await,
-            (None, Some(defaut_price)) => {
-                self.run_with_default(defaut_price, file_sink, shutdown)
-                    .await
-            }
+            (Some(key), _) => self.run_with_key(key, token).await,
+            (None, Some(defaut_price)) => self.run_with_default(defaut_price, token).await,
             _ => {
                 tracing::warn!(
                     "stopping price generator for {:?}, not configured",
@@ -104,12 +114,7 @@ impl PriceGenerator {
         }
     }
 
-    async fn run_with_default(
-        &self,
-        default_price: u64,
-        file_sink: file_sink::FileSinkClient,
-        shutdown: &triggered::Listener,
-    ) -> Result<()> {
+    async fn run_with_default(&self, default_price: u64, token: CancellationToken) -> Result<()> {
         tracing::info!(
             "starting default price generator for {:?}, using price {default_price}",
             self.token_type
@@ -118,12 +123,12 @@ impl PriceGenerator {
 
         loop {
             tokio::select! {
-                _ = shutdown.clone() => break,
+                _ = token.cancelled() => break,
                 _ = trigger.tick() => {
                     let price = Price::new(Utc::now(), default_price, self.token_type);
                     let price_report = PriceReportV1::from(price);
                     tracing::info!("updating {:?} with default price: {}", self.token_type, default_price);
-                    file_sink.write(price_report, []).await?;
+                    self.file_sink.write(price_report, []).await?;
                 }
             }
         }
@@ -132,20 +137,15 @@ impl PriceGenerator {
         Ok(())
     }
 
-    async fn run_with_key(
-        &mut self,
-        key: SolPubkey,
-        file_sink: file_sink::FileSinkClient,
-        shutdown: &triggered::Listener,
-    ) -> Result<()> {
+    async fn run_with_key(&mut self, key: SolPubkey, token: CancellationToken) -> Result<()> {
         tracing::info!("starting price generator for {:?}", self.token_type);
         let mut trigger = time::interval(self.interval_duration);
         self.last_price_opt = self.read_price_file().await;
 
         loop {
             tokio::select! {
-                _ = shutdown.clone() => break,
-                _ = trigger.tick() => self.handle(&key, &file_sink).await?,
+                _ = token.cancelled() => break,
+                _ = trigger.tick() => self.handle(&key).await?,
             }
         }
 
@@ -153,11 +153,7 @@ impl PriceGenerator {
         Ok(())
     }
 
-    async fn handle(
-        &mut self,
-        key: &SolPubkey,
-        file_sink: &file_sink::FileSinkClient,
-    ) -> Result<()> {
+    async fn handle(&mut self, key: &SolPubkey) -> Result<()> {
         let price_opt = match get_price(&self.client, key, self.token_type).await {
             Ok(new_price) => {
                 tracing::info!(
@@ -212,7 +208,7 @@ impl PriceGenerator {
         if let Some(price) = price_opt {
             let price_report = PriceReportV1::from(price);
             tracing::debug!("price_report: {:?}", price_report);
-            file_sink.write(price_report, []).await?;
+            self.file_sink.write(price_report, []).await?;
         }
 
         Ok(())
