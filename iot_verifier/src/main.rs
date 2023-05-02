@@ -182,7 +182,7 @@ impl Server {
             ),
             entropy_loader.run(entropy_loader_receiver, &shutdown),
             loader.run(&shutdown, &gateway_cache),
-            packet_loader.run(pk_loader_receiver, &shutdown),
+            packet_loader.run(pk_loader_receiver, &shutdown, &gateway_cache),
             purger.run(&shutdown),
             rewarder.run(price_tracker, &shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
