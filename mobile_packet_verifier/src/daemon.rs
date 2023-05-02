@@ -1,5 +1,5 @@
 use crate::{burner::Burner, settings::Settings};
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -7,15 +7,16 @@ use file_store::{
     mobile_session::DataTransferSessionIngestReport,
     FileSinkBuilder, FileStore, FileType,
 };
-use futures_util::TryFutureExt;
+use futures::future::LocalBoxFuture;
 use mobile_config::Client;
-use solana::{SolanaNetwork, SolanaRpc};
+use solana::{balance_monitor::BalanceMonitor, SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
+use task_manager::{ManagedTask, TaskManager};
 use tokio::{
-    signal,
     sync::mpsc::Receiver,
     time::{sleep_until, Duration, Instant},
 };
+use tokio_util::sync::CancellationToken;
 
 pub struct Daemon<S> {
     pool: Pool<Postgres>,
@@ -43,15 +44,28 @@ impl<S> Daemon<S> {
     }
 }
 
+impl<S> ManagedTask for Daemon<S>
+where
+    S: SolanaNetwork,
+{
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
+}
+
 impl<S> Daemon<S>
 where
     S: SolanaNetwork,
 {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> Result<()> {
         // Set the initial burn period to one minute
         let mut burn_time = Instant::now() + Duration::from_secs(60);
         loop {
             tokio::select! {
+                _ = token.cancelled() => return Ok(()),
                 file = self.reports.recv() => {
                     let Some(file) = file else {
                         anyhow::bail!("FileInfoPoller sender was dropped unexpectedly");
@@ -68,7 +82,6 @@ where
                     self.burner.burn(&self.pool).await?;
                     burn_time = Instant::now() + self.burn_period;
                 }
-                _ = shutdown.clone() => return Ok(()),
             }
         }
     }
@@ -81,20 +94,8 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Set up the postgres pool:
-        let (pool, conn_handler) = settings
-            .database
-            .connect("mobile-packet-verifier", shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect("mobile-packet-verifier").await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Set up the solana network:
@@ -108,25 +109,19 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = solana::balance_monitor::start(
-            env!("CARGO_PKG_NAME"),
-            solana.clone(),
-            shutdown_listener.clone(),
-        )
-        .await?;
+        let sol_balance_monitor = BalanceMonitor::new(env!("CARGO_PKG_NAME"), solana.clone())?;
 
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings(&settings.output).await?;
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
-        let (valid_sessions, mut valid_sessions_server) = FileSinkBuilder::new(
+        let (valid_sessions, valid_sessions_server) = FileSinkBuilder::new(
             FileType::ValidDataTransferSession,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload))
         .auto_commit(true)
         .create()
         .await?;
@@ -135,7 +130,7 @@ impl Cmd {
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (reports, source_join_handle) =
+        let (reports, reports_server) =
             file_source::continuous_source::<DataTransferSessionIngestReport>()
                 .db(pool.clone())
                 .store(file_store)
@@ -144,25 +139,19 @@ impl Cmd {
                 ))
                 .file_type(FileType::DataTransferSessionIngestReport)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
+                .create()?;
 
         let config_client = Client::from_settings(&settings.config_client)?;
 
         let daemon = Daemon::new(settings, pool, reports, burner, config_client);
 
-        tokio::try_join!(
-            source_join_handle.map_err(Error::from),
-            valid_sessions_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
-            file_upload.run(&shutdown_listener).map_err(Error::from),
-            daemon.run(&shutdown_listener).map_err(Error::from),
-            conn_handler.map_err(Error::from),
-            sol_balance_monitor.map_err(Error::from),
-        )?;
-
-        Ok(())
+        TaskManager::builder()
+            .add(file_upload_server)
+            .add(valid_sessions_server)
+            .add(reports_server)
+            .add(sol_balance_monitor)
+            .add(daemon)
+            .start()
+            .await
     }
 }
