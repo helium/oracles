@@ -11,12 +11,15 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use futures::future::LocalBoxFuture;
 use helium_proto::{
     services::poc_entropy::{EntropyReqV1, PocEntropy, Server as GrpcServer},
     EntropyReportV1,
 };
 use std::net::SocketAddr;
+use task_manager::ManagedTask;
 use tokio::{sync::watch, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 struct EntropyServer {
     entropy_watch: MessageReceiver,
@@ -37,6 +40,15 @@ impl PocEntropy for EntropyServer {
 pub struct ApiServer {
     pub socket_addr: SocketAddr,
     service: MultiplexService<Router, GrpcServer<EntropyServer>>,
+}
+
+impl ManagedTask for ApiServer {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
 }
 
 impl ApiServer {
@@ -62,11 +74,11 @@ impl ApiServer {
         })
     }
 
-    pub async fn run(self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(self, token: CancellationToken) -> anyhow::Result<()> {
         tracing::info!(listen = self.socket_addr.to_string(), "starting");
         axum::Server::bind(&self.socket_addr)
             .serve(tower::make::Shared::new(self.service))
-            .with_graceful_shutdown(shutdown.clone())
+            .with_graceful_shutdown(token.cancelled())
             .await?;
         tracing::info!("stopping api server");
         Ok(())

@@ -1,7 +1,7 @@
 use base64::Engine;
 use chrono::Utc;
 use file_store::file_sink;
-use futures::TryFutureExt;
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_proto::EntropyReportV1;
 use jsonrpsee::{
     core::client::ClientT,
@@ -10,7 +10,9 @@ use jsonrpsee::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use task_manager::ManagedTask;
 use tokio::{sync::watch, time};
+use tokio_util::sync::CancellationToken;
 
 pub const ENTROPY_TICK_TIME: time::Duration = time::Duration::from_secs(60);
 const ENTROPY_TIMEOUT: time::Duration = time::Duration::from_secs(5);
@@ -73,9 +75,9 @@ struct JsonRpcResult {
 
 pub struct EntropyGenerator {
     pub receiver: MessageReceiver,
-
     client: HttpClient,
     sender: MessageSender,
+    file_sink: file_sink::FileSinkClient,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -88,8 +90,20 @@ pub enum GetEntropyError {
     JsonRpcError(#[from] jsonrpsee::core::Error),
 }
 
+impl ManagedTask for EntropyGenerator {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
+}
+
 impl EntropyGenerator {
-    pub async fn new(url: impl AsRef<str>) -> Result<Self, GetEntropyError> {
+    pub async fn new(
+        url: impl AsRef<str>,
+        file_sink: file_sink::FileSinkClient,
+    ) -> Result<Self, GetEntropyError> {
         let client = HttpClientBuilder::default()
             .request_timeout(ENTROPY_TIMEOUT)
             .build(url)?;
@@ -112,25 +126,19 @@ impl EntropyGenerator {
             client,
             receiver,
             sender,
+            file_sink,
         })
     }
 
-    pub async fn run(
-        &mut self,
-        file_sink: file_sink::FileSinkClient,
-        shutdown: &triggered::Listener,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {
         tracing::info!("started entropy generator");
         let mut entropy_timer = time::interval(ENTROPY_TICK_TIME);
         entropy_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
-                _ = shutdown.clone() => break,
-                _ = entropy_timer.tick() => match self.handle_entropy_tick(&file_sink).await {
+                _ = token.cancelled() => break,
+                _ = entropy_timer.tick() => match self.handle_entropy_tick().await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("fatal entropy generator error: {err:?}");
@@ -147,10 +155,7 @@ impl EntropyGenerator {
         self.receiver.clone()
     }
 
-    async fn handle_entropy_tick(
-        &mut self,
-        file_sink: &file_sink::FileSinkClient,
-    ) -> anyhow::Result<()> {
+    async fn handle_entropy_tick(&mut self) -> anyhow::Result<()> {
         let source_data = match Self::get_entropy(&self.client).await {
             Ok(data) => data,
             Err(err) => {
@@ -177,7 +182,9 @@ impl EntropyGenerator {
             entropy.timestamp
         );
 
-        file_sink.write(EntropyReportV1::from(entropy), []).await?;
+        self.file_sink
+            .write(EntropyReportV1::from(entropy), [])
+            .await?;
 
         Ok(())
     }

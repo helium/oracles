@@ -31,8 +31,10 @@ tracing-subscriber = { workspace = true }
 metrics = {workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
+task-manager = { path = "../task_manager" }
