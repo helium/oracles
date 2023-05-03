@@ -42,7 +42,7 @@ pub enum RewardType {
 }
 
 impl Rewarder {
-    pub async fn from_settings(
+    pub fn from_settings(
         settings: &Settings,
         pool: PgPool,
         rewards_sink: file_sink::FileSinkClient,
