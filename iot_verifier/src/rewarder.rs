@@ -328,17 +328,19 @@ mod history_db {
 
     pub async fn insert(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        reward_type: RewardType,
-        count: i64,
+        beacon_count: i64,
+        witness_count: i64,
+        packet_count: i64,
         epoch_ts: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-        INSERT INTO rewards_history(reward_type, count, epoch_ts) VALUES($1, $2, $3)
+        INSERT INTO rewards_history (reward_type, count, epoch_ts) VALUES ('beacon', $1, $4), ('witness', $2, $4), ('packet', $3, $4)
         "#,
         )
-        .bind(reward_type)
-        .bind(count)
+        .bind(beacon_count)
+        .bind(witness_count)
+        .bind(packet_count)
         .bind(epoch_ts)
         .execute(tx)
         .await?;
