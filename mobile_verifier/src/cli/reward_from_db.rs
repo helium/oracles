@@ -1,5 +1,4 @@
 use crate::{
-    heartbeats::Heartbeats,
     reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares, TransferRewards},
     speedtests::{Average, SpeedtestAverages},
     Settings,
@@ -21,6 +20,7 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
+        /*
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);
@@ -73,7 +73,7 @@ impl Cmd {
         );
 
         shutdown_trigger.trigger();
-
+        */
         Ok(())
     }
 }

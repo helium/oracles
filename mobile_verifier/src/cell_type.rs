@@ -9,7 +9,9 @@ pub const CELLTYPE_NEUTRINO_430: &str = "2AG32PBS31010";
 pub const CELLTYPE_SERCCOMM_INDOOR: &str = "P27-SCE4255W";
 pub const CELLTYPE_SERCCOMM_OUTDOOR: &str = "P27-SCO4255PA10";
 
-#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone, Serialize)]
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone, Serialize, sqlx::Type)]
+#[sqlx(type_name = "cell_type")]
+#[sqlx(rename_all = "lowercase")]
 pub enum CellType {
     Nova436H = 0,
     Nova430I = 1,

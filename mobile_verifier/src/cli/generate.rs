@@ -1,7 +1,7 @@
 use crate::{
     reward_shares::{PocShares, TransferRewards},
-    speedtests::EmptyDatabase,
-//    verifier::{VerifiedEpoch, Verifier},
+    // speedtests::EmptyDatabase,
+    //    verifier::{VerifiedEpoch, Verifier},
     Settings,
 };
 use anyhow::Result;
@@ -24,6 +24,7 @@ pub struct Cmd {
 
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
+        /*
         let Self { start, end } = self;
 
         let start = DateTime::from_utc(start, Utc);
@@ -56,11 +57,13 @@ impl Cmd {
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
         let transfer_rewards = TransferRewards::empty();
-        for (reward, _) in reward_shares.into_rewards(&transfer_rewards, &epoch) {
+        for reward in reward_shares.into_rewards(&transfer_rewards, &epoch) {
+            /*
             total_rewards += reward.amount;
             *owner_rewards
                 .entry(PublicKey::try_from(reward.owner_key)?)
-                .or_default() += reward.amount;
+            .or_default() += reward.amount;
+            */
         }
 
         let rewards: Vec<_> = owner_rewards.into_iter().collect();
@@ -72,6 +75,7 @@ impl Cmd {
                 "total_rewards": total_rewards,
             }))?
         );
+        */
 
         Ok(())
     }

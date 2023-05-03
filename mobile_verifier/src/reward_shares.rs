@@ -1,5 +1,5 @@
 use crate::{
-    heartbeats::Heartbeats,
+    heartbeats::HeartbeatReward,
     speedtests::{Average, SpeedtestAverages},
 };
 use chrono::{DateTime, Duration, Utc};
@@ -32,14 +32,6 @@ pub struct TransferRewards {
 }
 
 impl TransferRewards {
-    pub fn empty() -> Self {
-        Self {
-            reward_scale: Decimal::ONE,
-            rewards: HashMap::new(),
-            reward_sum: Decimal::ZERO,
-        }
-    }
-
     pub fn reward_scale(&self) -> Decimal {
         self.reward_scale
     }
@@ -135,9 +127,13 @@ pub struct PocShares {
 }
 
 impl PocShares {
-    pub async fn aggregate(heartbeats: Heartbeats, speedtests: SpeedtestAverages) -> Self {
+    pub async fn aggregate(
+        heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
+        speedtests: SpeedtestAverages,
+    ) -> Result<Self, sqlx::Error> {
         let mut poc_shares = Self::default();
-        for heartbeat in heartbeats.into_rewardables() {
+        let mut heartbeats = std::pin::pin!(heartbeats);
+        while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let speedmultiplier = speedtests
                 .get_average(&heartbeat.hotspot_key)
                 .as_ref()
@@ -150,7 +146,7 @@ impl PocShares {
                 .entry(heartbeat.cbsd_id)
                 .or_default() += heartbeat.reward_weight * speedmultiplier;
         }
-        poc_shares
+        Ok(poc_shares)
     }
 
     pub fn is_valid(&self, hotspot: &PublicKeyBinary) -> bool {
@@ -173,7 +169,7 @@ impl PocShares {
         self,
         transfer_rewards: &'a TransferRewards,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = (proto::RadioRewardShare, proto::MobileRewardShare)> + 'a {
+    ) -> impl Iterator<Item = proto::MobileRewardShare> + 'a {
         let total_shares = self.total_shares();
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - transfer_rewards.reward_sum;
@@ -181,46 +177,32 @@ impl PocShares {
         self.hotspot_shares.into_iter().flat_map(
             move |(hotspot_key, RadioShares { radio_shares })| {
                 let mut dc_transfer_reward = Some(transfer_rewards.reward(&hotspot_key));
-                radio_shares
-                    .into_iter()
-                    .map(move |(cbsd_id, amount)| {
-                        let start_period = epoch.start.encode_timestamp();
-                        let end_period = epoch.end.encode_timestamp();
-                        let poc_reward = poc_rewards_per_share * amount;
-                        let dc_transfer_reward = dc_transfer_reward.take().unwrap_or(Decimal::ZERO);
-                        let hotspot_key: Vec<u8> = hotspot_key.clone().into();
-                        let radio_reward_share = proto::RadioRewardShare {
-                            owner_key: Vec::new(),
-                            cbsd_id: cbsd_id.clone(),
-                            amount: (poc_reward + dc_transfer_reward)
-                                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                .to_u64()
-                                .unwrap_or(0),
-                            start_epoch: start_period,
-                            end_epoch: end_period,
-                            hotspot_key: hotspot_key.clone(),
-                        };
-                        let mobile_reward_share = proto::MobileRewardShare {
-                            start_period,
-                            end_period,
-                            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-                                proto::RadioReward {
-                                    hotspot_key,
-                                    cbsd_id,
-                                    dc_transfer_reward: dc_transfer_reward
-                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                        .to_u64()
-                                        .unwrap_or(0),
-                                    poc_reward: poc_reward
-                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                        .to_u64()
-                                        .unwrap_or(0),
-                                },
-                            )),
-                        };
-                        (radio_reward_share, mobile_reward_share)
-                    })
-                    .filter(|(radio_share, _)| radio_share.amount > 0)
+                radio_shares.into_iter().map(move |(cbsd_id, amount)| {
+                    let start_period = epoch.start.encode_timestamp();
+                    let end_period = epoch.end.encode_timestamp();
+                    let poc_reward = poc_rewards_per_share * amount;
+                    let dc_transfer_reward = dc_transfer_reward.take().unwrap_or(Decimal::ZERO);
+                    let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+                    proto::MobileRewardShare {
+                        start_period,
+                        end_period,
+                        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                            proto::RadioReward {
+                                hotspot_key,
+                                cbsd_id,
+                                dc_transfer_reward: dc_transfer_reward
+                                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                    .to_u64()
+                                    .unwrap_or(0),
+                                poc_reward: poc_reward
+                                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                    .to_u64()
+                                    .unwrap_or(0),
+                            },
+                        )),
+                    }
+                })
+                //                    .filter(|(radio_share, _)| radio_share.amount > 0)
             },
         )
     }

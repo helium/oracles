@@ -8,9 +8,13 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
-    FromRow, Type,
+    FromRow, Postgres, Transaction, Type,
 };
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
+use tokio::sync::Mutex;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 const SPEEDTEST_LAPSE: i64 = 48;
@@ -76,8 +80,8 @@ impl SpeedtestRollingAverage {
     pub async fn validate_speedtests<'a>(
         config_client: &'a Client,
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
-        exec: &'a mut impl SpeedtestStore,
-    ) -> impl Stream<Item = Result<Self, FetchError>> + 'a {
+        exec: &mut Transaction<'_, Postgres>,
+    ) -> Result<impl Stream<Item = Result<Self, ClientError>> + 'a, sqlx::Error> {
         let tests_by_publickey = speedtests
             .fold(
                 HashMap::<PublicKeyBinary, Vec<CellSpeedtest>>::new(),
@@ -90,18 +94,31 @@ impl SpeedtestRollingAverage {
             )
             .await;
 
-        futures::stream::iter(tests_by_publickey.into_iter())
-            .then(move |(pubkey, cell_speedtests)| {
+        let mut speedtests = Vec::new();
+        for (pubkey, cell_speedtests) in tests_by_publickey.into_iter() {
+            let rolling_average: SpeedtestRollingAverage =
+                sqlx::query_as::<_, SpeedtestRollingAverage>(
+                    "SELECT * FROM speedtests WHERE id = $1",
+                )
+                .bind(&pubkey)
+                .fetch_optional(&mut *exec)
+                .await?
+                .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
+            speedtests.push((rolling_average, cell_speedtests));
+        }
+
+        Ok(futures::stream::iter(speedtests.into_iter())
+            .then(move |(rolling_average, cell_speedtests)| {
                 let mut config_client = config_client.clone();
                 async move {
                     // If we get back some gateway info for the given address, it's a valid address
-                    if config_client.resolve_gateway_info(&pubkey).await?.is_none() {
+                    if config_client
+                        .resolve_gateway_info(&rolling_average.id)
+                        .await?
+                        .is_none()
+                    {
                         return Ok(None);
                     }
-                    let rolling_average = exec
-                        .fetch(&pubkey)
-                        .await?
-                        .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
                     Ok(Some((rolling_average, cell_speedtests)))
                 }
             })
@@ -119,7 +136,7 @@ impl SpeedtestRollingAverage {
                     latest_timestamp: speedtests[0].timestamp,
                     speedtests,
                 }
-            })
+            }))
     }
 
     pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
@@ -412,6 +429,7 @@ impl SpeedtestTier {
 // we need is fetch from an actual database and mock fetch that returns
 // nothing.
 
+/*
 #[derive(thiserror::Error, Debug)]
 pub enum FetchError {
     #[error("Config client error: {0}")]
@@ -458,6 +476,7 @@ impl SpeedtestStore for EmptyDatabase {
         Ok(None)
     }
 }
+*/
 
 #[cfg(test)]
 mod test {
