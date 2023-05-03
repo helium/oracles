@@ -130,6 +130,7 @@ pub(crate) mod db {
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
     use sqlx::{PgExecutor, Row};
+    use std::str::FromStr;
 
     pub struct IotMetadata {
         pub address: PublicKeyBinary,
@@ -139,38 +140,43 @@ pub(crate) mod db {
         pub is_full_hotspot: bool,
     }
 
+    const GET_METADATA_SQL: &str = r#"
+            select kta.entity_key, infos.location::bigint, infos.elevation, infos.gain, infos.is_full_hotspot
+            from iot_hotspot_infos infos
+            join key_to_assets kta on infos.asset = kta.asset
+        "#;
+
     pub async fn get_info(
         db: impl PgExecutor<'_>,
         address: &PublicKeyBinary,
     ) -> anyhow::Result<Option<IotMetadata>> {
-        Ok(sqlx::query_as::<_, IotMetadata>(
-            r#"
-            select hotspot_key::text, location, elevation, gain, is_full_hotspot from iot_metadata
-            where hotspot_key = $1
-            "#,
-        )
-        .bind(address)
-        .fetch_optional(db)
-        .await?)
+        let entity_key = bs58::decode(address.to_string()).into_vec()?;
+        let mut query: sqlx::QueryBuilder<sqlx::Postgres> =
+            sqlx::QueryBuilder::new(GET_METADATA_SQL);
+        query.push(" where kta.entity_key = $1 ");
+        Ok(query
+            .build_query_as::<IotMetadata>()
+            .bind(entity_key)
+            .fetch_optional(db)
+            .await?)
     }
 
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
     ) -> impl Stream<Item = IotMetadata> + 'a {
-        sqlx::query_as::<_, IotMetadata>(
-            r#"
-            select hotspot_key::text, location, elevation, gain, is_full_hotspot from iot_metadata
-            "#,
-        )
-        .fetch(db)
-        .filter_map(|metadata| async move { metadata.ok() })
-        .boxed()
+        sqlx::query_as::<_, IotMetadata>(GET_METADATA_SQL)
+            .fetch(db)
+            .filter_map(|metadata| async move { metadata.ok() })
+            .boxed()
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for IotMetadata {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
             Ok(Self {
-                address: row.get::<PublicKeyBinary, &str>("hotspot_key"),
+                address: PublicKeyBinary::from_str(
+                    &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
+                )
+                .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 location: row.get::<Option<i64>, &str>("location").map(|v| v as u64),
                 elevation: row.get::<Option<i32>, &str>("elevation"),
                 gain: row.get::<Option<i32>, &str>("gain"),
