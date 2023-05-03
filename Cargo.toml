@@ -29,6 +29,7 @@ edition = "2021"
 anchor-lang = "0.26.0"
 anchor-client = "0.26"
 anyhow = {version = "1", features = ["backtrace"]}
+bs58 = {version = "0.4", features=["check"]}
 thiserror = "1"
 clap = {version = "3", features = ["derive"]}
 serde =  {version = "1", features=["derive"]}

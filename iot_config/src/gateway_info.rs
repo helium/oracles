@@ -140,37 +140,34 @@ pub(crate) mod db {
         pub is_full_hotspot: bool,
     }
 
+    const GET_METADATA_SQL: &str = r#"
+            select kta.entity_key, infos.location::bigint, infos.elevation, infos.gain, infos.is_full_hotspot
+            from iot_hotspot_infos infos
+            join key_to_assets kta on infos.asset = kta.asset
+        "#;
+
     pub async fn get_info(
         db: impl PgExecutor<'_>,
         address: &PublicKeyBinary,
     ) -> anyhow::Result<Option<IotMetadata>> {
         let entity_key = bs58::decode(address.to_string()).into_vec()?;
-        Ok(sqlx::query_as::<_, IotMetadata>(
-            r#"
-            select kta.entity_key, infos.location::bigint, infos.elevation, infos.gain, infos.is_full_hotspot
-            from iot_hotspot_infos infos
-            join key_to_assets kta on infos.asset = kta.asset
-            where kta.entity_key = $1
-            "#,
-        )
-        .bind(entity_key)
-        .fetch_optional(db)
-        .await?)
+        let mut query: sqlx::QueryBuilder<sqlx::Postgres> =
+            sqlx::QueryBuilder::new(GET_METADATA_SQL);
+        query.push(" where kta.entity_key = $1 ");
+        Ok(query
+            .build_query_as::<IotMetadata>()
+            .bind(entity_key)
+            .fetch_optional(db)
+            .await?)
     }
 
     pub fn all_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
     ) -> impl Stream<Item = IotMetadata> + 'a {
-        sqlx::query_as::<_, IotMetadata>(
-            r#"
-            select kta.entity_key, infos.location::bigint, infos.elevation, infos.gain, infos.is_full_hotspot
-            from iot_hotspot_infos infos
-            join key_to_assets kta on infos.asset = kta.asset
-            "#,
-        )
-        .fetch(db)
-        .filter_map(|metadata| async move { metadata.ok() })
-        .boxed()
+        sqlx::query_as::<_, IotMetadata>(GET_METADATA_SQL)
+            .fetch(db)
+            .filter_map(|metadata| async move { metadata.ok() })
+            .boxed()
     }
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for IotMetadata {
