@@ -301,25 +301,11 @@ async fn save_history(
 ) -> anyhow::Result<()> {
     history_db::insert(
         txn,
-        RewardType::Beacon,
         total_beacon_count as i64,
-        epoch_end,
-    )
-    .await?;
-    history_db::insert(
-        txn,
-        RewardType::Witness,
         total_witness_count as i64,
-        epoch_end,
-    )
-    .await?;
-    history_db::insert(
-        txn,
-        RewardType::Packet,
         total_packet_count as i64,
-        epoch_end,
-    )
-    .await?;
+        epoch_end
+    ).await?;
     Ok(())
 }
 
