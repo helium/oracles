@@ -1100,7 +1100,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#6fee25879eb308f159cb5d4ead77e3806a0a9971"
+source = "git+https://github.com/helium/gateway-rs.git?branch=jg/temp-org-update#9816ec75870cc3f14d08fe87be9b10026ed852f4"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -2849,7 +2849,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#7a137324fc41b415a9df44558954683233a95239"
+source = "git+https://github.com/helium/proto?branch=jg/org-update#e53d82a815111d61e3dc17cb7aca69dae0439f4a"
 dependencies = [
  "bytes",
  "prost",
