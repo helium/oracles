@@ -116,8 +116,7 @@ impl Server {
         .await?;
 
         let rewarder =
-            Rewarder::from_settings(settings, pool.clone(), rewards_sink, reward_manifests_sink)
-                .await?;
+            Rewarder::from_settings(settings, pool.clone(), rewards_sink, reward_manifests_sink)?;
         // setup the entropy loader continious source
         let max_lookback_age = settings.loader_window_max_lookback_age();
         let mut entropy_loader = EntropyLoader { pool: pool.clone() };
