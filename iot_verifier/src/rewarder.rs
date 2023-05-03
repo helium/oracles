@@ -41,6 +41,16 @@ pub enum RewardType {
     Packet,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum RewardError {
+    #[error("file store error: {0}")]
+    FileStoreError(#[from] file_store::Error),
+    #[error("db_store error: {0}")]
+    DbStoreError(#[from] db_store::Error),
+    #[error("below min threshold: {0}")]
+    BelowMinThreshold(&'static str),
+}
+
 impl Rewarder {
     pub fn from_settings(
         settings: &Settings,
@@ -81,18 +91,23 @@ impl Rewarder {
                 self.reward_offset,
             );
 
-            let sleep_duration = if scheduler.should_reward(now) {
-                let iot_price = price_tracker
-                    .price(&helium_proto::BlockchainTokenTypeV1::Iot)
-                    .await?;
-                tracing::info!(
-                    "Rewarding for period: {:?} with iot_price: {iot_price}",
-                    scheduler.reward_period
-                );
-                self.reward(&scheduler, Decimal::from(iot_price)).await?
-            } else {
-                scheduler.sleep_until_next_epoch(Utc::now())?
-            };
+            let sleep_duration =
+                if scheduler.should_reward(now) {
+                    let iot_price = price_tracker
+                        .price(&helium_proto::BlockchainTokenTypeV1::Iot)
+                        .await?;
+                    tracing::info!(
+                        "Rewarding for period: {:?} with iot_price: {iot_price}",
+                        scheduler.reward_period
+                    );
+                    match self.reward(&scheduler, Decimal::from(iot_price)).await {
+                        Ok(()) => scheduler.sleep_until_next_epoch(Utc::now())?,
+                        Err(RewardError::BelowMinThreshold(_)) => self.rewards_retry_interval,
+                        Err(err) => return Err(err),
+                    }
+                } else {
+                    scheduler.sleep_until_next_epoch(Utc::now())?
+                };
 
             tracing::info!(
                 "Sleeping for {}",
@@ -111,7 +126,7 @@ impl Rewarder {
         &mut self,
         scheduler: &Scheduler,
         iot_price: Decimal,
-    ) -> anyhow::Result<Duration> {
+    ) -> anyhow::Result<(), RewardError> {
         let gateway_reward_shares =
             GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
         // get a count of our summed shares by reward type
@@ -126,7 +141,7 @@ impl Rewarder {
             .threshold_check(&gateway_reward_shares, scheduler)
             .await?
         {
-            return Ok(self.rewards_retry_interval);
+            return Err("reward volume below min threshold");
         }
         for reward_share in
             gateway_reward_shares.into_iot_reward_shares(&scheduler.reward_period, iot_price)
@@ -189,8 +204,7 @@ impl Rewarder {
             .await?
             .await??;
         self.reward_manifests_sink.commit().await?;
-        let sleep_duration = scheduler.sleep_until_next_epoch(Utc::now())?;
-        Ok(sleep_duration)
+        Ok(())
     }
 
     async fn threshold_check(
@@ -321,7 +335,8 @@ mod history_db {
     ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-        INSERT INTO rewards_history (reward_type, count, epoch_ts) VALUES ('beacon', $1, $4), ('witness', $2, $4), ('packet', $3, $4)
+        INSERT INTO rewards_history (reward_type, count, epoch_ts)
+        VALUES ('beacon', $1, $4), ('witness', $2, $4), ('packet', $3, $4)
         "#,
         )
         .bind(beacon_count)

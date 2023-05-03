@@ -16,6 +16,16 @@ pub enum NewLoaderError {
     DbStoreError(#[from] db_store::Error),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum RewardError {
+    #[error("file store error: {0}")]
+    FileStoreError(#[from] file_store::Error),
+    #[error("db_store error: {0}")]
+    DbStoreError(#[from] db_store::Error),
+    #[error("below min threshold: {0}")]
+    BelowMinThreshold(&'static str),
+}
+
 impl PacketLoader {
     pub async fn run(
         &mut self,
