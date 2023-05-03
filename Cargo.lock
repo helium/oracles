@@ -1106,12 +1106,11 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/gateway-rs.git?branch=main#7556cbac64062ab8fa003c0b5dc8aa4c8019ad18"
+source = "git+https://github.com/helium/gateway-rs.git?branch=main#ed478089129cd15dee864711865f7ded3dac713e"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
  "helium-proto",
- "lazy_static",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
@@ -2864,7 +2863,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#a96075ee01deb7e89b3254733ccb8ad0d68d7dd8"
+source = "git+https://github.com/helium/proto?branch=master#169886ab876cd4433b14e3cc7b6d8345e32ba576"
 dependencies = [
  "bytes",
  "prost",
@@ -7264,7 +7263,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 

@@ -108,6 +108,19 @@ impl TryFrom<ValidPacket> for IotValidPacket {
     }
 }
 
+impl From<IotValidPacket> for ValidPacket {
+    fn from(v: IotValidPacket) -> Self {
+        let ts = v.timestamp();
+        Self {
+            gateway: v.gateway.into(),
+            payload_hash: v.payload_hash,
+            payload_size: v.payload_size,
+            num_dcs: v.num_dcs,
+            packet_timestamp: ts,
+        }
+    }
+}
+
 impl IotValidPacket {
     pub fn packet_id(&self) -> Vec<u8> {
         let mut hasher = Hasher::new();
