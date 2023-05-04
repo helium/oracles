@@ -67,9 +67,12 @@ impl Server {
 
         // configure shutdown trigger
         let (shutdown_trigger, shutdown) = triggered::trigger();
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         tokio::spawn(async move {
-            let _ = signal::ctrl_c().await;
-            shutdown_trigger.trigger()
+            tokio::select! {
+                _ = sigterm.recv() => shutdown_trigger.trigger(),
+                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
+            }
         });
 
         // Create database pool and run migrations
@@ -179,7 +182,7 @@ impl Server {
             ),
             entropy_loader.run(entropy_loader_receiver, &shutdown),
             loader.run(&shutdown, &gateway_cache),
-            packet_loader.run(pk_loader_receiver, &shutdown),
+            packet_loader.run(pk_loader_receiver, &shutdown, &gateway_cache),
             purger.run(&shutdown),
             rewarder.run(price_tracker, &shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),

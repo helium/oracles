@@ -19,7 +19,7 @@ RUN mkdir ./iot_config/src \
  && sed -i -e '/ingest/d'       -e '/mobile_config/d' -e '/mobile_verifier/d' \
            -e '/poc_entropy/d'  -e '/iot_verifier/d'  -e '/price/d' \
            -e '/reward_index/d' -e '/denylist/d'      -e '/iot_packet_verifier/d' \
-           -e '/mobile_packet_verifier/d' \
+           -e '/solana/d'       -e '/mobile_packet_verifier/d' \
            Cargo.toml \
  && cargo build --package iot-config --release
 

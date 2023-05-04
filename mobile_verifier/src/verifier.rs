@@ -20,12 +20,7 @@ use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::{
-    ops::Range,
-    pin::pin,
-    sync::Arc,
-    time
-};
+use std::{ops::Range, pin::pin, sync::Arc, time};
 use tokio::{
     sync::mpsc::Receiver,
     task::{JoinError, JoinHandle},
@@ -63,7 +58,6 @@ impl VerifierDaemon {
             data_transfer_ingest,
             reward_period_hours,
         } = self;
-
 
         let heartbeat_pool = pool.clone();
         let heartbeat_config_client = config_client.clone();
@@ -152,7 +146,8 @@ impl VerifierDaemon {
                 Duration::zero()
             } else {
                 next_rewarded_end_time - Utc::now()
-            }.to_std()?;
+            }
+            .to_std()?;
             tracing::info!(
                 "Next reward will be given in {}",
                 humantime::format_duration(next_reward)
@@ -229,7 +224,17 @@ impl Rewarder {
         };
         metrics::gauge!("data_transfer_rewards_scale", scale);
 
-        for mobile_reward_share in poc_rewards.into_rewards(&transfer_rewards, reward_period) {
+        for mobile_reward_share in
+            poc_rewards.into_rewards(transfer_rewards.reward_sum(), reward_period)
+        {
+            self.mobile_rewards
+                .write(mobile_reward_share, [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+        }
+
+        for mobile_reward_share in transfer_rewards.into_rewards(reward_period) {
             self.mobile_rewards
                 .write(mobile_reward_share, [])
                 .await?

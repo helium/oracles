@@ -5,6 +5,7 @@ use file_store::{file_sink, file_upload, FileStore, FileType, file_source, heart
 use futures_util::TryFutureExt;
 use mobile_config::Client;
 use price::PriceTracker;
+use tokio::signal;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -14,9 +15,12 @@ impl Cmd {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            shutdown_trigger.trigger()
+            tokio::select! {
+                _ = sigterm.recv() => shutdown_trigger.trigger(),
+                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
+            }
         });
 
         let (pool, db_join_handle) = settings

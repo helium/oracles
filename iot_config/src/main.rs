@@ -1,13 +1,11 @@
 use anyhow::{Error, Result};
 use clap::Parser;
 use futures_util::TryFutureExt;
-use helium_proto::services::iot_config::{
-    AdminServer, GatewayServer, OrgServer, RouteServer, SessionKeyFilterServer,
-};
+use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer};
 use iot_config::{
-    admin::AuthCache, gateway_service::GatewayService, org_service::OrgService,
-    region_map::RegionMapReader, route_service::RouteService,
-    session_key_service::SessionKeyFilterService, settings::Settings, AdminService,
+    admin::AuthCache, admin_service::AdminService, gateway_service::GatewayService,
+    org_service::OrgService, region_map::RegionMapReader, route_service::RouteService,
+    settings::Settings,
 };
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;
@@ -63,9 +61,12 @@ impl Daemon {
 
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
         tokio::spawn(async move {
-            let _ = signal::ctrl_c().await;
-            shutdown_trigger.trigger()
+            tokio::select! {
+                _ = sigterm.recv() => shutdown_trigger.trigger(),
+                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
+            }
         });
 
         // Create database pool
@@ -112,12 +113,12 @@ impl Daemon {
             region_map.clone(),
             region_updater,
         )?;
-        let session_key_filter_svc = SessionKeyFilterService::new(
-            settings,
-            auth_cache.clone(),
-            pool.clone(),
-            shutdown_listener.clone(),
-        )?;
+
+        let pubkey = settings
+            .signing_keypair()
+            .map(|keypair| keypair.public_key().to_string())?;
+        tracing::debug!("listening on {listen_addr}");
+        tracing::debug!("signing as {pubkey}");
 
         let server = transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
@@ -126,7 +127,6 @@ impl Daemon {
             .add_service(OrgServer::new(org_svc))
             .add_service(RouteServer::new(route_svc))
             .add_service(AdminServer::new(admin_svc))
-            .add_service(SessionKeyFilterServer::new(session_key_filter_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from);
 

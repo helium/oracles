@@ -3,14 +3,16 @@ use anchor_lang::AccountDeserialize;
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::file_sink;
+use futures::TryFutureExt;
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use price_oracle::{calculate_current_price, PriceOracleV0};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
-use tokio::time;
+use std::{path::PathBuf, str::FromStr};
+use tokio::{fs, time};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Price {
     timestamp: DateTime<Utc>,
     price: u64,
@@ -35,6 +37,7 @@ pub struct PriceGenerator {
     key: Option<SolPubkey>,
     default_price: Option<u64>,
     stale_price_duration: Duration,
+    latest_price_file: PathBuf,
 }
 
 impl From<Price> for PriceReportV1 {
@@ -75,6 +78,8 @@ impl PriceGenerator {
             default_price: settings.default_price(token_type),
             interval_duration: settings.interval().to_std()?,
             stale_price_duration: settings.stale_price_duration(),
+            latest_price_file: PathBuf::from_str(&settings.cache)?
+                .join(format!("{token_type:?}.latest")),
         })
     }
 
@@ -135,6 +140,7 @@ impl PriceGenerator {
     ) -> Result<()> {
         tracing::info!("starting price generator for {:?}", self.token_type);
         let mut trigger = time::interval(self.interval_duration);
+        self.last_price_opt = self.read_price_file().await;
 
         loop {
             tokio::select! {
@@ -160,6 +166,7 @@ impl PriceGenerator {
                     new_price.price
                 );
                 self.last_price_opt = Some(new_price.clone());
+                self.write_price_file(&new_price).await;
 
                 Metrics::update(
                     "price_update_counter".to_string(),
@@ -213,6 +220,36 @@ impl PriceGenerator {
 
     fn is_valid(&self, price: &Price) -> bool {
         price.timestamp > Utc::now() - self.stale_price_duration
+    }
+
+    async fn read_price_file(&self) -> Option<Price> {
+        fs::read_to_string(&self.latest_price_file)
+            .map_err(|err| format!("{err:?}"))
+            .and_then(|contents| async move {
+                serde_json::from_str::<Price>(&contents).map_err(|err| format!("{err:?}"))
+            })
+            .await
+            .map_err(|err| {
+                tracing::warn!(token = ?self.token_type, "unable to read latest price file due to {err}");
+                err
+            })
+            .ok()
+    }
+
+    async fn write_price_file(&self, price: &Price) {
+        let result = async { serde_json::to_string_pretty(price) }
+            .map_err(|err| format!("{err:?}"))
+            .and_then(|json| {
+                fs::write(&self.latest_price_file, json).map_err(|err| format!("{err:?}"))
+            })
+            .await;
+
+        match result {
+            Ok(_) => (),
+            Err(err) => {
+                tracing::warn!(token = ?self.token_type, "unable to save latest price file due to {err}");
+            }
+        }
     }
 }
 
