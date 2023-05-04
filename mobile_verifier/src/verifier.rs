@@ -38,13 +38,12 @@ pub struct VerifierDaemon {
     pub speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     pub valid_heartbeats: FileSinkClient,
     pub valid_speedtests: FileSinkClient,
+    pub mobile_rewards: FileSinkClient,
+    pub reward_manifests: FileSinkClient,
+    pub data_transfer_ingest: FileStore,
     pub reward_period_hours: i64,
     pub config_client: Client,
-
-    mobile_rewards: FileSinkClient,
-    reward_manifests: FileSinkClient,
-    price_tracker: PriceTracker,
-    data_transfer_ingest: FileStore,
+    pub price_tracker: PriceTracker,
 }
 
 impl VerifierDaemon {
@@ -62,11 +61,9 @@ impl VerifierDaemon {
             reward_manifests,
             price_tracker,
             data_transfer_ingest,
-            ..
+            reward_period_hours,
         } = self;
 
-        // let reward_period_length = Duration::hours(self.reward_period_hours);
-        // let verification_period_length = reward_period_length / self.verifications_per_period;
 
         let heartbeat_pool = pool.clone();
         let heartbeat_config_client = config_client.clone();
@@ -144,6 +141,7 @@ impl VerifierDaemon {
             reward_manifests,
             price_tracker,
             data_transfer_ingest,
+            reward_period_duration: Duration::hours(reward_period_hours),
         };
 
         loop {
@@ -154,15 +152,13 @@ impl VerifierDaemon {
                 Duration::zero()
             } else {
                 next_rewarded_end_time - Utc::now()
-            };
-            /*
+            }.to_std()?;
             tracing::info!(
                 "Next reward will be given in {}",
                 humantime::format_duration(next_reward)
             );
-            */
             tokio::select! {
-                _ = sleep(next_reward.to_std().unwrap()) =>
+                _ = sleep(next_reward) =>
                     rewarder.reward(&(last_rewarded_end_time..next_rewarded_end_time)).await?,
                 e = &mut heartbeat_verification_task => return flatten(e),
                 e = &mut speedtest_verification_task => return flatten(e),
@@ -185,6 +181,7 @@ fn flatten(j: Result<Result<(), anyhow::Error>, JoinError>) -> Result<(), anyhow
 
 pub struct Rewarder {
     pool: Pool<Postgres>,
+    reward_period_duration: Duration,
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
@@ -245,14 +242,14 @@ impl Rewarder {
         let mut transaction = self.pool.begin().await?;
 
         // Clear the heartbeats of old heartbeats:
-        sqlx::query("DELETE FROM TABLE heartbeats WHERE truncated_timestamp >= $3 AND truncated_timestamp < $4")
-            .bind(reward_period.start)
+        sqlx::query("DELETE FROM TABLE heartbeats WHERE truncated_timestamp < $3")
             .bind(reward_period.end)
             .execute(&mut transaction)
             .await?;
 
+        let next_reward_period = reward_period.end + self.reward_period_duration;
         save_last_rewarded_end_time(&mut transaction, &reward_period.end).await?;
-        // save_next_rewarded_end_time(&mut transaction, &scheduler.next_reward_period().end).await?;
+        save_next_rewarded_end_time(&mut transaction, &next_reward_period).await?;
         transaction.commit().await?;
 
         // now that the db has been purged, safe to write out the manifest

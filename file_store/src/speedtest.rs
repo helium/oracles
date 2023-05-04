@@ -17,7 +17,7 @@ pub struct CellSpeedtest {
     pub latency: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CellSpeedtestIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: CellSpeedtest,

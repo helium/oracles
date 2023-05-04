@@ -14,13 +14,6 @@ pub struct Settings {
     /// Reward period in hours. (Default is 24)
     #[serde(default = "default_reward_period")]
     pub rewards: i64,
-    /// Verifications per rewards period. Default is 8
-    #[serde(default = "default_verifications")]
-    pub verifications: i32,
-    /// Verification offset in minutes, verification will occur at the end of
-    /// the verification period + verification_offset_minutes
-    #[serde(default = "default_verification_offset_minutes")]
-    pub verification_offset_minutes: i64,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
@@ -28,22 +21,20 @@ pub struct Settings {
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,
     pub config_client: mobile_config::ClientSettings,
+    #[serde(default = "default_start_after")]
+    pub start_after: u64,
 }
 
 pub fn default_log() -> String {
     "mobile_verifier=debug,poc_store=info".to_string()
 }
 
+pub fn default_start_after() -> u64 {
+    0
+}
+
 pub fn default_reward_period() -> i64 {
     24
-}
-
-fn default_verifications() -> i32 {
-    8
-}
-
-fn default_verification_offset_minutes() -> i64 {
-    30
 }
 
 impl Settings {
@@ -69,7 +60,9 @@ impl Settings {
             .and_then(|config| config.try_deserialize())
     }
 
-    pub fn verification_offset_duration(&self) -> Duration {
-        Duration::minutes(self.verification_offset_minutes)
+    pub fn start_after(&self) -> DateTime<Utc> {
+        Utc.timestamp_opt(self.start_after as i64, 0)
+            .single()
+            .unwrap()
     }
 }
