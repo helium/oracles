@@ -74,6 +74,14 @@ pub struct Settings {
     /// File store poll interval for incoming packets, in seconds. (Default is 900; 15 minutes)
     #[serde(default = "default_packet_interval")]
     pub packet_interval: i64,
+    /// the max number of times a beacon report will be retried
+    /// after this the report will be ignored and eventually be purged
+    #[serde(default = "default_beacon_max_retries")]
+    pub beacon_max_retries: u64,
+    /// the max number of times a witness report will be retried
+    /// after this the report will be ignored and eventually be purged
+    #[serde(default = "default_witness_max_retries")]
+    pub witness_max_retries: u64,
 }
 
 // Default: 60 minutes
@@ -149,6 +157,21 @@ pub fn default_max_witnesses_per_poc() -> u64 {
 
 fn default_packet_interval() -> i64 {
     900
+}
+
+// runner runs at 30 sec intervals
+// 60 permits retries for up to 30 mins
+fn default_beacon_max_retries() -> u64 {
+    60
+}
+
+// witnesses are processed per beacon
+// as such the retry can be much less as if the beacon fails
+// then the witnesses auto fail too
+// if the beacon is processed successfully, then any one witness
+// can only fail 5 times before we move on without it
+fn default_witness_max_retries() -> u64 {
+    5
 }
 
 impl Settings {

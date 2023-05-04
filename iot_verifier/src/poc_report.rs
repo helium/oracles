@@ -2,11 +2,6 @@ use crate::entropy::ENTROPY_LIFESPAN;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-/// the max number of attempts a failed beacon report will be retried
-const BEACON_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
-/// the max number of attempts a failed witness report will be retried
-const WITNESS_MAX_RETRY_ATTEMPTS: i16 = 5; //TODO: determine a sane value here
-
 const REPORT_INSERT_SQL: &str = "insert into poc_report (
     id,
     remote_entropy,
@@ -190,7 +185,10 @@ impl Report {
         Ok(())
     }
 
-    pub async fn get_next_beacons<'c, E>(executor: E) -> Result<Vec<Self>, ReportError>
+    pub async fn get_next_beacons<'c, E>(
+        executor: E,
+        max_retries: u64,
+    ) -> Result<Vec<Self>, ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -219,7 +217,7 @@ impl Report {
             "#,
         )
         .bind(entropy_min_time)
-        .bind(BEACON_MAX_RETRY_ATTEMPTS)
+        .bind(max_retries as i64)
         .fetch_all(executor)
         .await?)
     }
@@ -264,6 +262,7 @@ impl Report {
     pub async fn get_witnesses_for_beacon<'c, E>(
         executor: E,
         packet_data: &Vec<u8>,
+        max_retries: u64,
     ) -> Result<Vec<Self>, ReportError>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -278,7 +277,7 @@ impl Report {
             "#,
         )
         .bind(packet_data)
-        .bind(WITNESS_MAX_RETRY_ATTEMPTS)
+        .bind(max_retries as i64)
         .fetch_all(executor)
         .await?)
     }
