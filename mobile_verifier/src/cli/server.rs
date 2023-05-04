@@ -1,7 +1,11 @@
 use crate::{verifier::VerifierDaemon, Settings};
 use anyhow::{Error, Result};
 use chrono::Duration;
-use file_store::{file_sink, file_upload, FileStore, FileType, file_source, heartbeat::CellHeartbeatIngestReport, file_info_poller::LookbackBehavior, speedtest::CellSpeedtestIngestReport};
+use file_store::{
+    file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
+    heartbeat::CellHeartbeatIngestReport, speedtest::CellSpeedtestIngestReport, FileStore,
+    FileType,
+};
 use futures_util::TryFutureExt;
 use mobile_config::Client;
 use price::PriceTracker;
@@ -40,24 +44,24 @@ impl Cmd {
         // Heartbeats
         let (heartbeats, heartbeats_join_handle) =
             file_source::continuous_source::<CellHeartbeatIngestReport>()
-            .db(pool.clone())
-            .store(ingest.clone())
-            .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-            .file_type(FileType::CellHeartbeatIngestReport)
-            .build()?
-            .start(shutdown_listener.clone())
-            .await?;
+                .db(pool.clone())
+                .store(ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::CellHeartbeatIngestReport)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
 
         // Speedtests
         let (speedtests, speedtests_join_handle) =
             file_source::continuous_source::<CellSpeedtestIngestReport>()
-            .db(pool.clone())
-            .store(ingest.clone())
-            .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-            .file_type(FileType::CellSpeedtestIngestReport)
-            .build()?
-            .start(shutdown_listener.clone())
-            .await?;
+                .db(pool.clone())
+                .store(ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::CellSpeedtestIngestReport)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
 
         // Valid Heartbeats
         let (valid_heartbeats, mut valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
@@ -106,7 +110,6 @@ impl Cmd {
         .await?;
 
         let reward_period_hours = settings.rewards;
-        let verifications_per_period = settings.verifications;
         let config_client = Client::from_settings(&settings.config_client)?;
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
@@ -126,7 +129,7 @@ impl Cmd {
             data_transfer_ingest,
             config_client,
             heartbeats,
-            speedtests
+            speedtests,
         };
 
         tokio::try_join!(
@@ -146,6 +149,8 @@ impl Cmd {
                 .map_err(Error::from),
             verifier_daemon.run(&shutdown_listener),
             tracker_process.map_err(Error::from),
+            heartbeats_join_handle.map_err(Error::from),
+            speedtests_join_handle.map_err(Error::from),
         )?;
 
         tracing::info!("Shutting down verifier server");

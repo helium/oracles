@@ -1,5 +1,5 @@
 use crate::{
-    heartbeats::Heartbeats,
+    heartbeats::HeartbeatReward,
     reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares},
     speedtests::{Average, SpeedtestAverages},
     Settings,
@@ -7,6 +7,7 @@ use crate::{
 use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use helium_crypto::PublicKey;
+use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::collections::HashMap;
@@ -37,17 +38,24 @@ impl Cmd {
             .connect(env!("CARGO_PKG_NAME"), shutdown_listener)
             .await?;
 
-        let heartbeats = Heartbeats::validated(&pool);
+        let heartbeats = HeartbeatReward::validated(&pool, &epoch);
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let reward_shares = PocShares::aggregate(heartbeats, speedtests.clone()).await;
+        let reward_shares = PocShares::aggregate(heartbeats, speedtests.clone()).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
-        for (reward, _) in reward_shares.into_rewards(Decimal::ZERO, &epoch) {
-            total_rewards += reward.amount;
-            *owner_rewards
-                .entry(PublicKey::try_from(reward.owner_key)?)
-                .or_default() += reward.amount;
+        for reward in reward_shares.into_rewards(Decimal::ZERO, &epoch) {
+            if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
+                hotspot_key,
+                poc_reward,
+                ..
+            })) = reward.reward
+            {
+                total_rewards += poc_reward;
+                *owner_rewards
+                    .entry(PublicKey::try_from(hotspot_key)?)
+                    .or_default() += poc_reward;
+            }
         }
         let rewards: Vec<_> = owner_rewards.into_iter().collect();
         let mut multiplier_count = HashMap::<_, usize>::new();

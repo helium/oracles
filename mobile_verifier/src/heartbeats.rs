@@ -2,17 +2,14 @@
 
 use crate::cell_type::CellType;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
-use file_store::{
-    file_sink,
-    heartbeat::CellHeartbeatIngestReport,
-};
+use file_store::{file_sink, heartbeat::CellHeartbeatIngestReport};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
-use std:: ops::Range;
+use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
 pub struct HeartbeatKey {
@@ -51,8 +48,8 @@ impl HeartbeatReward {
             )
             .bind(&key.cbsd_id)
             .bind(&key.hotspot_key)
-            .bind(&epoch.start)
-            .bind(&epoch.end)
+            .bind(epoch.start)
+            .bind(epoch.end)
             .fetch_one(exec)
             .await?;
             Ok(

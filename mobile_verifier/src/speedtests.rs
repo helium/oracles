@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{file_sink, speedtest::CellSpeedtest, traits::TimestampEncode};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -10,11 +10,7 @@ use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
     FromRow, Postgres, Transaction, Type,
 };
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
-use tokio::sync::Mutex;
+use std::collections::{HashMap, VecDeque};
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 const SPEEDTEST_LAPSE: i64 = 48;
@@ -22,15 +18,16 @@ const SPEEDTEST_LAPSE: i64 = 48;
 #[derive(Debug, Clone, Type)]
 #[sqlx(type_name = "speedtest")]
 pub struct Speedtest {
-    pub timestamp: NaiveDateTime,
+    pub timestamp: DateTime<Utc>,
     pub upload_speed: i64,
     pub download_speed: i64,
     pub latency: i32,
 }
 
 impl Speedtest {
+    #[cfg(test)]
     pub fn new(
-        timestamp: NaiveDateTime,
+        timestamp: DateTime<Utc>,
         upload_speed: i64,
         download_speed: i64,
         latency: i32,
@@ -47,7 +44,7 @@ impl Speedtest {
 impl From<CellSpeedtest> for Speedtest {
     fn from(cell_speedtest: CellSpeedtest) -> Self {
         Self {
-            timestamp: cell_speedtest.timestamp.naive_utc(),
+            timestamp: cell_speedtest.timestamp,
             upload_speed: cell_speedtest.upload_speed as i64,
             download_speed: cell_speedtest.download_speed as i64,
             latency: cell_speedtest.latency as i32,
@@ -65,7 +62,7 @@ impl PgHasArrayType for Speedtest {
 pub struct SpeedtestRollingAverage {
     pub id: PublicKeyBinary,
     pub speedtests: Vec<Speedtest>,
-    pub latest_timestamp: NaiveDateTime,
+    pub latest_timestamp: DateTime<Utc>,
 }
 
 impl SpeedtestRollingAverage {
@@ -73,7 +70,7 @@ impl SpeedtestRollingAverage {
         Self {
             id,
             speedtests: Vec::new(),
-            latest_timestamp: NaiveDateTime::default(),
+            latest_timestamp: DateTime::<Utc>::default(),
         }
     }
 
@@ -225,7 +222,7 @@ impl SpeedtestAverages {
                 // latest timestamp to epoch.
                 latest_timestamp: window
                     .front()
-                    .map_or_else(NaiveDateTime::default, |st| st.timestamp),
+                    .map_or_else(DateTime::<Utc>::default, |st| st.timestamp),
                 speedtests: Vec::from(window),
             })
     }
@@ -483,10 +480,9 @@ mod test {
     use super::*;
     use chrono::TimeZone;
 
-    fn parse_dt(dt: &str) -> NaiveDateTime {
+    fn parse_dt(dt: &str) -> DateTime<Utc> {
         Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
             .expect("unable_to_parse")
-            .naive_utc()
     }
 
     fn bytes_per_s(mbps: i64) -> i64 {

@@ -209,32 +209,35 @@ impl PocShares {
         let poc_rewards_per_share = available_poc_rewards / total_shares;
         let start_period = epoch.start.encode_timestamp();
         let end_period = epoch.end.encode_timestamp();
-        self.hotspot_shares.into_iter().flat_map(
-            move |(hotspot_key, RadioShares { radio_shares })| {
-                radio_shares
-                    .into_iter()
-                    .map(move |(cbsd_id, amount)| {
-                        let poc_reward = poc_rewards_per_share * amount;
-                        let hotspot_key: Vec<u8> = hotspot_key.clone().into();
-                        proto::MobileRewardShare {
-                            start_period,
-                            end_period,
-                            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-                                proto::RadioReward {
-                                    hotspot_key,
-                                    cbsd_id,
-                                    poc_reward: poc_reward
-                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                        .to_u64()
-                                        .unwrap_or(0),
-                                    ..Default::default()
-                                },
-                            )),
-                        }
-                    })
-                    // .filter(|(radio_share, _)| radio_share.amount > 0)
-            },
-        )
+        self.hotspot_shares
+            .into_iter()
+            .flat_map(move |(hotspot_key, RadioShares { radio_shares })| {
+                radio_shares.into_iter().map(move |(cbsd_id, amount)| {
+                    let poc_reward = poc_rewards_per_share * amount;
+                    let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+                    proto::MobileRewardShare {
+                        start_period,
+                        end_period,
+                        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                            proto::RadioReward {
+                                hotspot_key,
+                                cbsd_id,
+                                poc_reward: poc_reward
+                                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                    .to_u64()
+                                    .unwrap_or(0),
+                                ..Default::default()
+                            },
+                        )),
+                    }
+                })
+            })
+            .filter(|mobile_reward| match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
+                    radio_reward.poc_reward > 0
+                }
+                _ => false,
+            })
     }
 }
 
@@ -252,12 +255,11 @@ mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
-        heartbeats::{Heartbeat, Heartbeats},
+        heartbeats::HeartbeatReward,
         speedtests::{Speedtest, SpeedtestAverages},
     };
-    use chrono::{Duration, NaiveDateTime, Utc};
+    use chrono::{Duration, Utc};
     use futures::stream;
-    use helium_proto::services::poc_mobile::HeartbeatValidity;
     use std::collections::{HashMap, VecDeque};
 
     fn valid_shares() -> RadioShares {
@@ -396,7 +398,7 @@ mod test {
             .reward_weight()
     }
 
-    fn acceptable_speedtest(timestamp: NaiveDateTime) -> Speedtest {
+    fn acceptable_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             timestamp,
             upload_speed: bytes_per_s(10),
@@ -405,7 +407,7 @@ mod test {
         }
     }
 
-    fn degraded_speedtest(timestamp: NaiveDateTime) -> Speedtest {
+    fn degraded_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             timestamp,
             upload_speed: bytes_per_s(5),
@@ -414,7 +416,7 @@ mod test {
         }
     }
 
-    fn failed_speedtest(timestamp: NaiveDateTime) -> Speedtest {
+    fn failed_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             timestamp,
             upload_speed: bytes_per_s(1),
@@ -423,7 +425,7 @@ mod test {
         }
     }
 
-    fn poor_speedtest(timestamp: NaiveDateTime) -> Speedtest {
+    fn poor_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             timestamp,
             upload_speed: bytes_per_s(2),
@@ -444,46 +446,30 @@ mod test {
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
 
-        let now = Utc::now();
-        let timestamp = now.naive_utc();
+        let timestamp = Utc::now();
 
         let heartbeats = vec![
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c1.clone(),
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c1),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c2.clone(),
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c2),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c1.clone(),
                 hotspot_key: g2.clone(),
                 reward_weight: cell_type_weight(&c1),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c1.clone(),
                 hotspot_key: g2.clone(),
                 reward_weight: cell_type_weight(&c1),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
         ];
-
-        let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
-
-        // Set all of the hours seen to true
-        for (_, hb) in heartbeats.heartbeats.iter_mut() {
-            hb.hours_seen = [true; 24];
-        }
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
@@ -499,7 +485,9 @@ mod test {
         speedtests.insert(g2.clone(), VecDeque::from(g2_speedtests));
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
-        let rewards = PocShares::aggregate(heartbeats, speedtest_avgs).await;
+        let rewards = PocShares::aggregate(stream::iter(heartbeats).map(Ok), speedtest_avgs)
+            .await
+            .unwrap();
 
         // The owner with two hotspots gets more rewards
         assert!(
@@ -586,115 +574,81 @@ mod test {
         let c14 = "2AG32PBS3101S1202000464223GY0157".to_string();
 
         let now = Utc::now();
-        let timestamp = (now - Duration::minutes(20)).naive_utc();
+        let timestamp = now - Duration::minutes(20);
 
         // setup heartbeats
         let heartbeats = vec![
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c1.clone(),
                 hotspot_key: gw1.clone(),
                 reward_weight: cell_type_weight(&c1),
-                validity: HeartbeatValidity::NotOperational,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c2.clone(),
                 hotspot_key: gw2.clone(),
                 reward_weight: cell_type_weight(&c2),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c3.clone(),
                 hotspot_key: gw2.clone(),
                 reward_weight: cell_type_weight(&c3),
-                validity: HeartbeatValidity::NotOperational,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c4.clone(),
                 hotspot_key: gw3.clone(),
                 reward_weight: cell_type_weight(&c4),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c5.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c5),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c6.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c6),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c7.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c7),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c8.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c8),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c9.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c9),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c10.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c10),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c11.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c11),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c12.clone(),
                 hotspot_key: gw5.clone(),
                 reward_weight: cell_type_weight(&c12),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c13.clone(),
                 hotspot_key: gw6.clone(),
                 reward_weight: cell_type_weight(&c13),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
-            Heartbeat {
+            HeartbeatReward {
                 cbsd_id: c14.clone(),
                 hotspot_key: gw7.clone(),
                 reward_weight: cell_type_weight(&c14),
-                validity: HeartbeatValidity::Valid,
-                timestamp,
             },
         ];
-        let mut heartbeats: Heartbeats = heartbeats.into_iter().collect();
-
-        // Set all of the hours seen to true
-        for (_, hb) in heartbeats.heartbeats.iter_mut() {
-            hb.hours_seen = [true; 24];
-        }
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -736,8 +690,9 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        for (_, mobile_reward) in PocShares::aggregate(heartbeats, speedtest_avgs)
+        for mobile_reward in PocShares::aggregate(stream::iter(heartbeats).map(Ok), speedtest_avgs)
             .await
+            .unwrap()
             .into_rewards(Decimal::ZERO, &epoch)
         {
             let radio_reward = match mobile_reward.reward {
@@ -818,9 +773,8 @@ mod test {
         // less than or equal to zero.
         let owner_shares = PocShares { hotspot_shares };
         let epoch = now - Duration::hours(1)..now;
-        let transfer_rewards = TransferRewards::empty();
         let expected_hotspot = gw1;
-        for (_, mobile_reward) in owner_shares.into_rewards(transfer_rewards.reward_sum(), &epoch) {
+        for mobile_reward in owner_shares.into_rewards(Decimal::ZERO, &epoch) {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
                 _ => unreachable!(),
