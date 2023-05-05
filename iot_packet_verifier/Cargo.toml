@@ -24,8 +24,10 @@ prost = {workspace = true}
 serde = {workspace = true}
 sqlx = {workspace = true}
 solana = {path = "../solana"}
+task-manager = { path = "../task_manager" }
 thiserror = {workspace = true}
 tokio = {workspace = true}
+tokio-util = { workspace = true }
 tonic = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
