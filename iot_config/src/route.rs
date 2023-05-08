@@ -1079,6 +1079,7 @@ impl From<Protocol> for proto::Protocol {
                 dedupe_timeout: http.dedupe_timeout,
                 path: http.path,
                 auth_header: http.auth_header,
+                receiver_nsid: http.receiver_nsid,
             }),
             Protocol::PacketRouter => {
                 proto::Protocol::PacketRouter(proto::ProtocolPacketRouterV1 {})
