@@ -945,12 +945,14 @@ impl Protocol {
         dedupe_timeout: u32,
         path: String,
         auth_header: String,
+        receiver_nsid: String,
     ) -> Self {
         Self::Http(Http {
             flow_type,
             dedupe_timeout,
             path,
             auth_header,
+            receiver_nsid,
         })
     }
 
@@ -998,6 +1000,7 @@ pub struct Http {
     dedupe_timeout: u32,
     path: String,
     auth_header: String,
+    receiver_nsid: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -1101,6 +1104,7 @@ impl From<proto::Protocol> for Protocol {
                 dedupe_timeout: http.dedupe_timeout,
                 path: http.path,
                 auth_header: http.auth_header,
+                receiver_nsid: http.receiver_nsid,
             }),
             proto::Protocol::PacketRouter(_args) => Protocol::PacketRouter,
         }
