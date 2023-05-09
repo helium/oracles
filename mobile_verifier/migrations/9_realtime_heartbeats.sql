@@ -16,3 +16,19 @@ CREATE TABLE heartbeats (
        truncated_timestamp TIMESTAMPTZ NOT NULL,
        PRIMARY KEY(cbsd_id, truncated_timestamp)
 );
+
+DROP TABLE speedtests;
+DROP TYPE speedtest;
+
+CREATE TYPE speedtest AS (
+       timestamp timestamptz,
+       upload_speed bigint,
+       download_speed bigint,
+       latency integer
+);
+
+CREATE TABLE speedtests (
+       id text primary key not null,
+       speedtests speedtest[] not null,
+       latest_timestamp timestamptz not null
+);

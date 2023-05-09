@@ -76,6 +76,8 @@ impl VerifierDaemon {
                     let Some(file) = heartbeats.recv().await else {
                         bail!("Heartbeat report file stream was dropped unexpectedly");
                     };
+                    tracing::info!("Validating heartbeat file: {}", file.file_info.key);
+
                     let epoch =
                         (file.file_info.timestamp - Duration::hours(1))..file.file_info.timestamp;
                     let mut transaction = heartbeat_pool.begin().await?;
@@ -109,6 +111,7 @@ impl VerifierDaemon {
                     let Some(file) = speedtests.recv().await else {
                         bail!("Speedtest report file stream was dropped unexpectedly");
                     };
+                    tracing::info!("Validating speedtest file: {}", file.file_info.key);
                     let mut transaction = speedtest_pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
 
@@ -197,6 +200,28 @@ impl Rewarder {
     }
 
     pub async fn reward(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
+        let heartbeats_passed_reward: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM heartbeats WHERE latest_timestamp >= $1")
+            .bind(reward_period.end)
+            .fetch_one(&self.pool)
+            .await?;
+
+        if heartbeats_passed_reward == 0 {
+            tracing::info!("No heartbeats passed reward period, skipping");
+            sleep(std::time::Duration::from_secs(60)).await;
+            return Ok(());
+        }
+
+        let speedtests_passed_reward: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM speedtests WHERE latest_timestamp >= $1")
+            .bind(reward_period.end)
+            .fetch_one(&self.pool)
+            .await?;
+
+        if speedtests_passed_reward == 0 {
+            tracing::info!("No heartbeats passed reward period, skipping");
+            sleep(std::time::Duration::from_secs(60)).await;
+            return Ok(());
+        }  
+        
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
         let speedtests = SpeedtestAverages::validated(&self.pool, reward_period.end).await?;
 
