@@ -38,6 +38,19 @@ impl Future for CancellableLocalFuture {
     }
 }
 
+impl<F, O> ManagedTask for F
+where
+    O: Future<Output = anyhow::Result<()>> + 'static,
+    F: FnOnce(CancellationToken) -> O,
+{
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self(token))
+    }
+}
+
 impl TaskManager {
     pub fn new() -> Self {
         Self { tasks: Vec::new() }
