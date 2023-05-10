@@ -4,7 +4,7 @@ use crate::{
     settings::Settings,
     verifier::{CachedOrgClient, ConfigServer, Verifier},
 };
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Result};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
     file_sink::FileSinkClient,
@@ -16,11 +16,9 @@ use futures_util::TryFutureExt;
 use solana::{balance_monitor::BalanceMonitor, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
-use task_manager::TaskManager;
-use tokio::{
-    signal,
-    sync::{mpsc::Receiver, Mutex},
-};
+use task_manager::{ManagedTask, TaskManager};
+use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio_util::sync::CancellationToken;
 
 struct Daemon {
     pool: Pool<Postgres>,
@@ -31,11 +29,20 @@ struct Daemon {
     minimum_allowed_balance: u64,
 }
 
+impl ManagedTask for Daemon {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
+}
+
 impl Daemon {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> Result<()> {
         loop {
             tokio::select! {
-                _ = shutdown.clone() => break,
+                _ = token.cancelled() => break,
                 file = self.report_files.recv() => {
                     if let Some(file) = file {
                         self.handle_file(file).await?
@@ -82,15 +89,6 @@ pub struct Cmd {}
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
-
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
 
         // Set up the postgres pool:
         let mut pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
@@ -171,6 +169,8 @@ impl Cmd {
             },
             minimum_allowed_balance: settings.minimum_allowed_balance,
         };
+        let minimum_allowed_balance = settings.minimum_allowed_balance;
+        let monitor_funds_period = settings.monitor_funds_period;
 
         TaskManager::builder()
             .add(file_upload_server)
@@ -178,35 +178,21 @@ impl Cmd {
             .add(invalid_packets_server)
             .add(report_files_server)
             .add(sol_balance_monitor)
+            .add(move |token| {
+                config_server
+                    .monitor_funds(
+                        solana,
+                        balance_store,
+                        minimum_allowed_balance,
+                        Duration::from_secs(60 * monitor_funds_period),
+                        token,
+                    )
+                    .map_err(anyhow::Error::from)
+                    .and_then(|result| async move { result.map_err(anyhow::Error::from) })
+            })
             .add(burner)
+            .add(verifier_daemon)
             .start()
             .await
-
-        // // Run the services:
-        // tokio::try_join!(
-        //     db_handle.map_err(Error::from),
-        //     burner.run(&shutdown_listener).map_err(Error::from),
-        //     file_upload.run(&shutdown_listener).map_err(Error::from),
-        //     verifier_daemon.run(&shutdown_listener).map_err(Error::from),
-        //     valid_packets_server
-        //         .run(&shutdown_listener)
-        //         .map_err(Error::from),
-        //     invalid_packets_server
-        //         .run(&shutdown_listener)
-        //         .map_err(Error::from),
-        //     config_server
-        //         .monitor_funds(
-        //             solana,
-        //             balance_store,
-        //             settings.minimum_allowed_balance,
-        //             Duration::from_secs(60 * settings.monitor_funds_period),
-        //             shutdown_listener.clone(),
-        //         )
-        //         .map_err(Error::from),
-        //     source_join_handle.map_err(Error::from),
-        //     sol_balance_monitor.map_err(Error::from),
-        // )?;
-
-        // Ok(())
     }
 }

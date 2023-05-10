@@ -27,8 +27,9 @@ use std::{
 use tokio::{
     sync::Mutex,
     task::JoinError,
-    time::{sleep_until, Duration, Instant},
+    time::{sleep, Duration},
 };
+use tokio_util::sync::CancellationToken;
 
 pub struct Verifier<D, C> {
     pub debiter: D,
@@ -187,53 +188,49 @@ pub trait ConfigServer: Sized + Send + Sync + 'static {
 
     async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error>;
 
-    async fn monitor_funds<S, B>(
+    fn monitor_funds<S, B>(
         self,
         solana: S,
         balances: B,
         minimum_allowed_balance: u64,
         monitor_period: Duration,
-        shutdown: triggered::Listener,
-    ) -> Result<(), MonitorError<S::Error, Self::Error>>
+        token: CancellationToken,
+    ) -> tokio::task::JoinHandle<Result<(), MonitorError<S::Error, Self::Error>>>
     where
         S: SolanaNetwork,
         B: BalanceStore,
     {
-        let join_handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
-                tracing::info!("Checking if any orgs need to be re-enabled");
-
-                for Org { locked, payer, oui } in self
-                    .list_orgs()
-                    .await
-                    .map_err(MonitorError::ConfigClientError)?
-                    .into_iter()
-                {
-                    if locked {
-                        let balance = solana
-                            .payer_balance(&payer)
+                tokio::select! {
+                    _ = token.cancelled() => break,
+                    _ = sleep(monitor_period) => {
+                        tracing::info!("Checking if any orgs need to be re-enabled");
+                        for Org { locked, payer, oui } in self
+                            .list_orgs()
                             .await
-                            .map_err(MonitorError::SolanaError)?;
-                        if balance >= minimum_allowed_balance {
-                            balances.set_balance(&payer, balance).await;
-                            self.enable_org(oui)
-                                .await
-                                .map_err(MonitorError::ConfigClientError)?;
+                            .map_err(MonitorError::ConfigClientError)?
+                            .into_iter()
+                        {
+                            if locked {
+                                let balance = solana
+                                    .payer_balance(&payer)
+                                    .await
+                                    .map_err(MonitorError::SolanaError)?;
+                                if balance >= minimum_allowed_balance {
+                                    balances.set_balance(&payer, balance).await;
+                                    self.enable_org(oui)
+                                        .await
+                                        .map_err(MonitorError::ConfigClientError)?;
+                                }
+                            }
                         }
                     }
                 }
-                // Sleep until we should re-check the monitor
-                sleep_until(Instant::now() + monitor_period).await;
             }
-        });
-        tokio::select! {
-            result = join_handle => match result {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(err)) => Err(err),
-                Err(err) => Err(MonitorError::from(err)),
-            },
-            _ = shutdown => Ok(())
-        }
+
+            Ok(())
+        })
     }
 }
 
