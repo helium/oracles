@@ -33,7 +33,7 @@ impl HeartbeatReward {
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
         sqlx::query_as::<_, HeartbeatKey>(
-            "SELECT DISTINCT hostpot_key, cbsd_id, cell_type FROM heartbeats",
+            "SELECT DISTINCT hotspot_key, cbsd_id, cell_type FROM heartbeats",
         )
         .fetch(exec)
         .try_filter_map(move |key| async move {
@@ -53,7 +53,7 @@ impl HeartbeatReward {
             .fetch_one(exec)
             .await?;
             Ok(
-                (count < MINIMUM_HEARTBEAT_COUNT).then(move || HeartbeatReward {
+                (count >= MINIMUM_HEARTBEAT_COUNT).then(move || HeartbeatReward {
                     hotspot_key: key.hotspot_key,
                     cbsd_id: key.cbsd_id,
                     reward_weight: key.cell_type.reward_weight(),

@@ -88,13 +88,17 @@ impl VerifierDaemon {
 
                     while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
                         heartbeat.write(&valid_heartbeats).await?;
+                        /*
                         let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?);
                         if heartbeat_cache.get(&key).await.is_none() {
-                            heartbeat.save(&mut transaction).await?;
+                        */
+                        heartbeat.save(&mut transaction).await?;
+                        /*
                             heartbeat_cache
                                 .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
                                 .await;
                         }
+                         */
                     }
 
                     transaction.commit().await?;
@@ -247,8 +251,8 @@ impl Rewarder {
         let mut transaction = self.pool.begin().await?;
 
         // Clear the heartbeats of old heartbeats:
-        sqlx::query("DELETE FROM TABLE heartbeats WHERE truncated_timestamp < $3")
-            .bind(reward_period.end)
+        sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $3")
+            .bind(reward_period.start)
             .execute(&mut transaction)
             .await?;
 
