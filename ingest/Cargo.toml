@@ -21,7 +21,9 @@ triggered = {workspace = true}
 futures = {workspace = true}
 futures-util = {workspace = true}
 prost = {workspace = true}
+task-manager = { path = "../task_manager" }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
