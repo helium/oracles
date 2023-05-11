@@ -13,6 +13,6 @@ CREATE TABLE heartbeats (
        hotspot_key TEXT NOT NULL,
        cell_type cell_type NOT NULL,
        latest_timestamp TIMESTAMPTZ NOT NULL,
-       truncated_timestamp TIMESTAMPTZ NOT NULL,
+       truncated_timestamp TIMESTAMPTZ NOT NULL CHECK (truncated_timestamp = date_trunc('hour', truncated_timestamp)),
        PRIMARY KEY(cbsd_id, truncated_timestamp)
 );
