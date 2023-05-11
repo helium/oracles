@@ -334,10 +334,19 @@ impl Runner {
                             VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
                         });
 
-                    let location = beacon_info.metadata.map(|metadata| metadata.location);
+                    // metadata at this point will always be Some...
+                    let (location, gain, elevation) = match beacon_info.metadata {
+                        Some(metadata) => {
+                            (Some(metadata.location), metadata.gain, metadata.elevation)
+                        }
+                        None => (None, 0, 0),
+                    };
+
                     let valid_beacon_report = IotValidBeaconReport {
                         received_timestamp: beacon_received_ts,
                         location,
+                        gain,
+                        elevation,
                         hex_scale: beacon_verify_result
                             .hex_scale
                             .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,
@@ -614,6 +623,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report: report.clone(),
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Valid,
@@ -625,6 +636,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report: report.clone(),
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
@@ -636,6 +649,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report: report.clone(),
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
@@ -647,6 +662,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report,
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
@@ -693,6 +710,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report,
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Valid,
