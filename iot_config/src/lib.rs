@@ -3,6 +3,7 @@ pub mod admin_service;
 pub mod client;
 pub mod gateway_info;
 pub mod gateway_service;
+mod helium_netids;
 pub mod lora_field;
 pub mod org;
 pub mod org_service;

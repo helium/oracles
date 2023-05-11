@@ -12,7 +12,7 @@ use helium_proto::{
     services::iot_config::{
         self, route_stream_res_v1, ActionV1, OrgCreateHeliumReqV1, OrgCreateRoamerReqV1,
         OrgDisableReqV1, OrgDisableResV1, OrgEnableReqV1, OrgEnableResV1, OrgGetReqV1,
-        OrgListReqV1, OrgListResV1, OrgResV1, OrgV1, RouteStreamResV1,
+        OrgListReqV1, OrgListResV1, OrgResV1, OrgV1, RouteStreamResV1, OrgUpdateReqV1,
     },
     Message,
 };
@@ -99,6 +99,10 @@ impl iot_config::Org for OrgService {
         Ok(Response::new(resp))
     }
 
+    async fn update(&self, _request: Request<OrgUpdateReqV1>) -> GrpcResult<OrgResV1> {
+        unimplemented!()
+    }
+
     async fn get(&self, request: Request<OrgGetReqV1>) -> GrpcResult<OrgResV1> {
         let request = request.into_inner();
         telemetry::count_request("org", "get");
@@ -168,7 +172,12 @@ impl iot_config::Org for OrgService {
 
         tracing::debug!("create helium org request: {request:?}");
 
-        let requested_addrs = request.devaddrs;
+        let net_id = request.net_id();
+        let requested_addrs = if request.devaddrs >= 8 {
+            request.devaddrs
+        } else {
+            return Err(Status::invalid_argument(format!("insufficient devaddr count {}", request.devaddrs)));
+        };
         let devaddr_constraint = org::next_helium_devaddr(&self.pool)
             .await
             .map_err(|err| {

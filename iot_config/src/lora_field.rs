@@ -59,8 +59,11 @@ impl DevAddrConstraint {
         start_addr: DevAddrField,
         end_addr: DevAddrField,
     ) -> Result<Self, DevAddrRangeError> {
-        if end_addr < start_addr {
+        if end_addr <= start_addr {
             return Err(DevAddrRangeError::EndLessThanStart);
+        }
+        if start_addr.0 % 2 != 0 || end_addr.0 % 2 == 0 {
+            return Err(DevAddrRangeError::RangeUneven);
         }
 
         Ok(Self {
@@ -167,6 +170,8 @@ pub enum DevAddrRangeError {
     EndLessThanStart,
     #[error("devaddr next addr failed")]
     NextStartUnavailable,
+    #[error("devaddr range uneven")]
+    RangeUneven,
 }
 
 impl<const WIDTH: usize> PartialOrd for LoraField<WIDTH> {
