@@ -65,6 +65,8 @@ impl GatewayCache {
                 Ok(hit.value().clone())
             }
             _ => {
+                tracing::debug!("cache miss: {:?}", address);
+                metrics::increment_counter!("oracles_iot_verifier_gateway_cache_miss");
                 match self
                     .iot_config_client
                     .clone()
@@ -72,13 +74,14 @@ impl GatewayCache {
                     .await
                 {
                     Ok(Some(res)) => {
-                        tracing::debug!("cache miss: {:?}", address);
-                        metrics::increment_counter!("oracles_iot_verifier_gateway_cache_miss");
                         _ = self.insert(res.clone()).await;
                         Ok(res)
                     }
                     Ok(None) => Err(GatewayCacheError::GatewayNotFound(address.clone())),
-                    Err(err) => Err(GatewayCacheError::IotConfigClient(err)),
+                    Err(err) => {
+                        metrics::increment_counter!("oracles_iot_verifier_config_service_error");
+                        Err(GatewayCacheError::IotConfigClient(err))
+                    }
                 }
             }
         }
