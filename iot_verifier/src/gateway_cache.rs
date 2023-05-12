@@ -4,6 +4,7 @@ use iot_config::{
     client::{Client as IotConfigClient, ClientError as IotConfigClientError},
     gateway_info::{GatewayInfo, GatewayInfoResolver},
 };
+use rand::{rngs::OsRng, Rng};
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
@@ -12,6 +13,13 @@ use tokio::task::JoinHandle;
 const CACHE_TTL: Duration = Duration::from_secs(12 * (60 * 60));
 /// how often to evict expired items from the cache ( every 1 hour)
 const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
+/// as the cache is prewarmed, this results in all entries to the cache
+/// being inserted in a short window of time
+/// jitter is added to CACHE_TTL per entry to the cache
+/// in order to avoid the potential for all items in the cache
+/// expiring close together and resulting in a thundering herd of requests
+/// to config service
+const CACHE_TTL_JITTER_PERCENT: u64 = 10;
 
 pub struct GatewayCache {
     pub iot_config_client: IotConfigClient,
@@ -88,8 +96,12 @@ impl GatewayCache {
     }
 
     pub async fn insert(&self, gateway: GatewayInfo) -> anyhow::Result<()> {
+        // add some jitter to the ttl
+        let max_jitter = (CACHE_TTL.as_secs() * CACHE_TTL_JITTER_PERCENT) / 100;
+        let jitter = OsRng.gen_range(0..=max_jitter);
+        let ttl = CACHE_TTL + Duration::from_secs(jitter);
         self.cache
-            .insert(gateway.address.clone(), gateway, CACHE_TTL)
+            .insert(gateway.address.clone(), gateway, ttl)
             .await;
         Ok(())
     }
