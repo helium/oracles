@@ -469,10 +469,19 @@ impl DevAddrField {
 }
 
 impl From<DevAddrConstraint> for proto::DevaddrConstraintV1 {
-    fn from(range: DevAddrConstraint) -> Self {
+    fn from(constraint: DevAddrConstraint) -> Self {
         Self {
-            start_addr: range.start_addr.into(),
-            end_addr: range.end_addr.into(),
+            start_addr: constraint.start_addr.into(),
+            end_addr: constraint.end_addr.into(),
+        }
+    }
+}
+
+impl From<&proto::DevaddrConstraintV1> for DevAddrConstraint {
+    fn from(constraint: &proto::DevaddrConstraintV1) -> Self {
+        Self {
+            start_addr: constraint.start_addr.into(),
+            end_addr: constraint.end_addr.into(),
         }
     }
 }

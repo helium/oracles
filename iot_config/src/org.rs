@@ -1,6 +1,7 @@
 use crate::{
-    lora_field::{DevAddrConstraint, DevAddrField, NetIdField},
-    HELIUM_NET_ID,
+    helium_netids::{self, AddressStore, HeliumNetId},
+    lora_field::{DevAddrConstraint, NetIdField},
+    org_service::UpdateAuthorizer,
 };
 use futures::stream::StreamExt;
 use helium_crypto::{PublicKey, PublicKeyBinary};
@@ -10,7 +11,10 @@ use std::collections::HashSet;
 use tokio::sync::watch;
 
 pub mod proto {
-    pub use helium_proto::services::iot_config::{OrgResV1, OrgV1};
+    pub use helium_proto::services::iot_config::{
+        org_update_req_v1::update_v1::Update, org_update_req_v1::UpdateV1, ActionV1, OrgResV1,
+        OrgV1,
+    };
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -76,8 +80,8 @@ pub async fn create_org(
     payer: PublicKeyBinary,
     delegate_keys: Vec<PublicKeyBinary>,
     net_id: NetIdField,
-    devaddr_range: &DevAddrConstraint,
-    db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+    devaddr_ranges: &[DevAddrConstraint],
+    db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres>,
 ) -> Result<Org, OrgStoreError> {
     let mut txn = db.begin().await?;
 
@@ -122,14 +126,23 @@ pub async fn create_org(
             .map(|_| ())?
     };
 
-    insert_constraints(oui as u64, net_id, devaddr_range, &mut txn)
-        .await
-        .map_err(|_| {
-            OrgStoreError::SaveConstraints(format!(
-                "{} - {}",
-                devaddr_range.start_addr, devaddr_range.end_addr
-            ))
-        })?;
+    if [
+        HeliumNetId::Type0.id(),
+        HeliumNetId::Type3.id(),
+        HeliumNetId::Type6.id(),
+    ]
+    .contains(&net_id)
+    {
+        insert_helium_constraints(oui as u64, net_id, devaddr_ranges, &mut txn).await
+    } else {
+        let constraint = devaddr_ranges
+            .first()
+            .ok_or(OrgStoreError::SaveConstraints(
+                "no devaddr constraints supplied".to_string(),
+            ))?;
+        insert_roamer_constraint(oui as u64, net_id, constraint, &mut txn).await
+    }
+    .map_err(|_| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}")))?;
 
     let org = get(oui as u64, &mut txn).await?;
 
@@ -138,7 +151,174 @@ pub async fn create_org(
     Ok(org)
 }
 
-async fn insert_constraints(
+pub async fn update_org(
+    oui: u64,
+    authorizer: UpdateAuthorizer,
+    updates: Vec<proto::UpdateV1>,
+    db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres>,
+) -> Result<Org, OrgStoreError> {
+    let mut txn = db.begin().await?;
+
+    let net_id = get_org_netid(oui, &mut txn).await?;
+    let is_helium_org = [
+        HeliumNetId::Type0.id(),
+        HeliumNetId::Type3.id(),
+        HeliumNetId::Type6.id(),
+    ]
+    .contains(&net_id);
+
+    for update in updates {
+        match update.update {
+            Some(proto::Update::Owner(pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
+                update_owner(oui, pubkeybin.into(), &mut txn).await?
+            }
+            Some(proto::Update::Devaddrs(addr_count))
+                if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
+            {
+                let helium_net_id: HeliumNetId = net_id
+                    .try_into()
+                    .map_err(|err: &'static str| OrgStoreError::InvalidUpdate(err.to_string()))?;
+                let constraints = helium_netids::checkout_devaddr_constraints(
+                    &mut txn,
+                    addr_count,
+                    helium_net_id,
+                )
+                .await
+                .map_err(|err| OrgStoreError::SaveConstraints(format!("{err}")))?;
+                insert_helium_constraints(oui, net_id, &constraints, &mut txn).await?
+            }
+            Some(proto::Update::Constraint(constraint_update))
+                if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
+            {
+                match (constraint_update.action(), &constraint_update.constraint) {
+                    (proto::ActionV1::Add, Some(ref constraint)) => helium_netids::checkout_specified_devaddr_constraint(&mut txn, &constraint.into()).await.map_err(|err| OrgStoreError::InvalidUpdate(format!("{err}")))?,
+                    (proto::ActionV1::Remove, Some(ref constraint)) => {
+                        let remove_range = (constraint.start_addr..=constraint.end_addr).collect::<Vec<u32>>();
+                        txn.release_addrs(&remove_range).await?;
+                    }
+                    _ => return Err(OrgStoreError::InvalidUpdate(format!("invalid action or missing devaddr constraint update: {constraint_update:?}")))
+                }
+            }
+            Some(proto::Update::Payer(pubkeybin)) => {
+                update_payer(oui, pubkeybin.into(), &mut txn).await?
+            }
+            Some(proto::Update::DelegateKey(delegate_key_update)) => {
+                match delegate_key_update.action() {
+                    proto::ActionV1::Add => {
+                        add_delegate_key(oui, delegate_key_update.delegate_key.into(), &mut txn)
+                            .await?
+                    }
+                    proto::ActionV1::Remove => {
+                        remove_delegate_key(oui, delegate_key_update.delegate_key.into(), &mut txn)
+                            .await?
+                    }
+                }
+            }
+            _ => {
+                return Err(OrgStoreError::InvalidUpdate(format!(
+                    "update: {update:?}, authorizer: {authorizer:?}"
+                )))
+            }
+        };
+    }
+
+    let org = get(oui, &mut txn).await?;
+
+    txn.commit().await?;
+
+    Ok(org)
+}
+
+pub async fn get_org_netid(
+    oui: u64,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<NetIdField, sqlx::Error> {
+    let netid = sqlx::query_scalar::<_, i32>(
+        " select net_id from organization_devaddr_constraints where oui = $1 limit 1 ",
+    )
+    .bind(oui as i64)
+    .fetch_one(db)
+    .await?;
+    Ok(netid.into())
+}
+
+async fn update_owner(
+    oui: u64,
+    owner_pubkey: PublicKeyBinary,
+    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(" update organizations set owner_pubkey = $1 where oui = $2 ")
+        .bind(oui as i64)
+        .bind(owner_pubkey)
+        .execute(db)
+        .await
+        .map(|_| ())
+}
+
+async fn update_payer(
+    oui: u64,
+    payer_pubkey: PublicKeyBinary,
+    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(" update organizations set payer_pubkey = $1 where oui = $2 ")
+        .bind(oui as i64)
+        .bind(payer_pubkey)
+        .execute(db)
+        .await
+        .map(|_| ())
+}
+
+async fn add_delegate_key(
+    oui: u64,
+    delegate_pubkey: PublicKeyBinary,
+    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(" insert into organization_delegate_keys (delegate_pubkey, oui) values ($1, $2) ")
+        .bind(delegate_pubkey)
+        .bind(oui as i64)
+        .execute(db)
+        .await
+        .map(|_| ())
+}
+
+async fn remove_delegate_key(
+    oui: u64,
+    delegate_pubkey: PublicKeyBinary,
+    db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(" delete from organization_delegate_keys where delegate_pubkey = $1 and oui = $2 ")
+        .bind(delegate_pubkey)
+        .bind(oui as i64)
+        .execute(db)
+        .await
+        .map(|_| ())
+}
+
+async fn insert_helium_constraints(
+    oui: u64,
+    net_id: NetIdField,
+    devaddr_ranges: &[DevAddrConstraint],
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), sqlx::Error> {
+    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
+        r#"
+        insert into organization_devaddr_constraints (oui, net_id, start_addr, end_addr)
+        "#,
+    );
+    query_builder
+        .push_values(devaddr_ranges, |mut builder, range| {
+            builder
+                .push_bind(oui as i64)
+                .push_bind(i32::from(net_id))
+                .push_bind(i32::from(range.start_addr))
+                .push_bind(i32::from(range.end_addr));
+        })
+        .push(" on conflict (start_addr, end_addr) do nothing");
+
+    query_builder.build().execute(db).await.map(|_| ())
+}
+
+async fn insert_roamer_constraint(
     oui: u64,
     net_id: NetIdField,
     devaddr_range: &DevAddrConstraint,
@@ -148,6 +328,7 @@ async fn insert_constraints(
         r#"
         insert into organization_devaddr_constraints (oui, net_id, start_addr, end_addr)
         values ($1, $2, $3, $4)
+        on conflict net_id do nothing
         "#,
     )
     .bind(oui as i64)
@@ -276,6 +457,8 @@ pub enum OrgStoreError {
     DecodeKey(#[from] helium_crypto::Error),
     #[error("Route Id parse error: {0}")]
     RouteIdParse(#[from] sqlx::types::uuid::Error),
+    #[error("Invalid or Unauthorized update: {0}")]
+    InvalidUpdate(String),
 }
 
 pub async fn get_org_pubkeys(
@@ -342,46 +525,6 @@ pub async fn get_org_pubkeys_by_route(
     }
 
     Ok(pubkeys)
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum NextHeliumDevAddrError {
-    #[error("error retrieving next available addr: {0}")]
-    DbError(#[from] sqlx::Error),
-    #[error("invalid devaddr from netid: {0}")]
-    InvalidNetId(#[from] crate::lora_field::InvalidNetId),
-}
-
-#[derive(sqlx::FromRow)]
-struct NextHeliumDevAddr {
-    coalesce: i32,
-}
-
-pub async fn next_helium_devaddr(
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<DevAddrField, NextHeliumDevAddrError> {
-    let helium_default_start: i32 = HELIUM_NET_ID.range_start()?.into();
-
-    let addr = sqlx::query_as::<_, NextHeliumDevAddr>(
-            r#"
-            select coalesce(max(end_addr), $1) from organization_devaddr_constraints where net_id = $2
-            "#,
-        )
-        .bind(helium_default_start)
-        .bind(i32::from(HELIUM_NET_ID))
-        .fetch_one(db)
-        .await?
-        .coalesce;
-
-    let next_addr = if addr == helium_default_start {
-        addr
-    } else {
-        addr + 1
-    };
-
-    tracing::info!("next helium devaddr start {addr}");
-
-    Ok(next_addr.into())
 }
 
 impl From<Org> for proto::OrgV1 {
