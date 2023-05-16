@@ -166,6 +166,7 @@ pub async fn update_org(
         HeliumNetId::Type6.id(),
     ]
     .contains(&net_id);
+    let current_org = get(oui, &mut txn).await?;
 
     for update in updates {
         match update.update {
@@ -193,8 +194,12 @@ pub async fn update_org(
                 match (constraint_update.action(), &constraint_update.constraint) {
                     (proto::ActionV1::Add, Some(ref constraint)) => helium_netids::checkout_specified_devaddr_constraint(&mut txn, &constraint.into()).await.map_err(|err| OrgStoreError::InvalidUpdate(format!("{err}")))?,
                     (proto::ActionV1::Remove, Some(ref constraint)) => {
-                        let remove_range = (constraint.start_addr..=constraint.end_addr).collect::<Vec<u32>>();
-                        txn.release_addrs(&remove_range).await?;
+                        if let Some(ref current_constraints) = current_org.constraints {
+                            if current_constraints.contains(&constraint.into()) {
+                                let remove_range = (constraint.start_addr..=constraint.end_addr).collect::<Vec<u32>>();
+                                txn.release_addrs(&remove_range).await?;
+                            } else { return Err(OrgStoreError::InvalidUpdate("remove not owned constraint".to_string())) }
+                        } else { return Err(OrgStoreError::InvalidUpdate("no org constraints defined".to_string())) }
                     }
                     _ => return Err(OrgStoreError::InvalidUpdate(format!("invalid action or missing devaddr constraint update: {constraint_update:?}")))
                 }
@@ -222,11 +227,11 @@ pub async fn update_org(
         };
     }
 
-    let org = get(oui, &mut txn).await?;
+    let updated_org = get(oui, &mut txn).await?;
 
     txn.commit().await?;
 
-    Ok(org)
+    Ok(updated_org)
 }
 
 pub async fn get_org_netid(

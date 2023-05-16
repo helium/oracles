@@ -75,7 +75,7 @@ impl OrgService {
         Ok(())
     }
 
-    async fn verify_update_request_signature<R>(
+    async fn verify_update_request_signature(
         &self,
         signer: &PublicKey,
         request: &OrgUpdateReqV1,
@@ -89,10 +89,11 @@ impl OrgService {
             return Ok(UpdateAuthorizer::Admin);
         }
 
-        let org_keys = org::get_org_pubkeys(request.oui, &self.pool)
+        let org_owner = org::get(request.oui, &self.pool)
             .await
+            .map(|org| org.owner)
             .map_err(|_| Status::internal("auth verification error"))?;
-        if org_keys.as_slice().contains(signer) && request.verify(signer).is_ok() {
+        if org_owner == signer.clone().into() && request.verify(signer).is_ok() {
             tracing::debug!(
                 signer = signer.to_string(),
                 "request authorized by delegate"
@@ -361,17 +362,46 @@ impl iot_config::Org for OrgService {
     }
 
     async fn update(&self, request: Request<OrgUpdateReqV1>) -> GrpcResult<OrgResV1> {
-        // let request = request.into_inner();
-        // telemetry::count_request("org", "update");
+        let request = request.into_inner();
+        telemetry::count_request("org", "update");
 
-        // let signer = verify_public_key(&request.signer)?;
-        // let authorizer = self.verify_update_request_signature(&signer, &request).await?;
+        let signer = verify_public_key(&request.signer)?;
+        let authorizer = self
+            .verify_update_request_signature(&signer, &request)
+            .await?;
 
-        // let mut resp = OrgResV1 {
-        //     org: Some(org.into()),
-        //
-        // };
-        unimplemented!();
+        let org = org::update_org(request.oui, authorizer, request.updates, &self.pool)
+            .await
+            .map_err(|err| {
+                tracing::error!("org update failed: {err}");
+                Status::internal("org update failed: {err}")
+            })?;
+
+        let net_id = org::get_org_netid(org.oui, &self.pool)
+            .await
+            .map_err(|err| {
+                tracing::error!(oui = org.oui, reason = ?err, "get org net id failed");
+                Status::not_found("invalid org; no valid devaddr constraints")
+            })?;
+
+        let devaddr_constraints = org
+            .constraints
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(DevaddrConstraintV1::from)
+            .collect();
+        let mut resp = OrgResV1 {
+            org: Some(org.into()),
+            net_id: net_id.into(),
+            devaddr_constraints,
+            timestamp: Utc::now().encode_timestamp(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        resp.signature = self.sign_response(&resp.encode_to_vec())?;
+
+        Ok(Response::new(resp))
     }
 
     async fn disable(&self, request: Request<OrgDisableReqV1>) -> GrpcResult<OrgDisableResV1> {

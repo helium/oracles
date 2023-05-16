@@ -95,14 +95,14 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
     type Error = sqlx::Error;
 
     async fn get_used_addrs(&mut self) -> Result<Vec<u32>, Self::Error> {
-        Ok(
-            sqlx::query_scalar::<_, i32>(" select devaddr from helium_used_devaddrs order by devaddr asc ")
-                .fetch_all(self)
-                .await?
-                .into_iter()
-                .map(|addr| addr as u32)
-                .collect::<Vec<u32>>(),
+        Ok(sqlx::query_scalar::<_, i32>(
+            " select devaddr from helium_used_devaddrs order by devaddr asc ",
         )
+        .fetch_all(self)
+        .await?
+        .into_iter()
+        .map(|addr| addr as u32)
+        .collect::<Vec<u32>>())
     }
 
     async fn claim_addrs(&mut self, new_addrs: &[u32]) -> Result<(), Self::Error> {
@@ -151,7 +151,9 @@ where
         .copied()
         .collect::<Vec<_>>();
     available_diff.sort();
-    let mut claimed_addrs = available_diff.drain(0..(count as usize).min(available_diff.len())).collect::<Vec<_>>();
+    let mut claimed_addrs = available_diff
+        .drain(0..(count as usize).min(available_diff.len()))
+        .collect::<Vec<_>>();
     let mut next_addr = last_used + 1;
     while claimed_addrs.len() < count as usize {
         if next_addr <= range_end {
@@ -364,12 +366,7 @@ mod test {
             .await
             .expect("allocate third round");
         // round 2 goes out of business, and their devaddrs are released back to the wild
-        let remove: Vec<u32> = used_addrs
-            .clone()
-            .into_iter()
-            .skip(8)
-            .take(32)
-            .collect();
+        let remove: Vec<u32> = used_addrs.clone().into_iter().skip(8).take(32).collect();
         assert_eq!(Ok(()), used_addrs.release_addrs(&remove).await);
         assert_eq!(8 + 8, used_addrs.len());
         checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type0)

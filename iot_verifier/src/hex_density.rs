@@ -226,7 +226,6 @@ fn get_res_tgt(res: u8) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
 
     #[test]
     fn simple_scale_check() {
