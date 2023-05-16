@@ -96,7 +96,7 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
 
     async fn get_used_addrs(&mut self) -> Result<Vec<u32>, Self::Error> {
         Ok(
-            sqlx::query_scalar::<_, i32>(" select devaddr from helium_used_devaddrs ")
+            sqlx::query_scalar::<_, i32>(" select devaddr from helium_used_devaddrs order by devaddr asc ")
                 .fetch_all(self)
                 .await?
                 .into_iter()
@@ -133,11 +133,10 @@ where
     S: AddressStore,
 {
     let addr_range = net_id.addr_range();
-    let mut used_addrs = addr_store
+    let used_addrs = addr_store
         .get_used_addrs()
         .await
         .map_err(DevAddrConstraintsError::AddressStore)?;
-    used_addrs.sort();
     let range_start = *addr_range.start();
     let range_end = *addr_range.end();
     let last_used = if let Some(last) = used_addrs.last() {
@@ -147,25 +146,26 @@ where
     };
     let used_range = (range_start..=last_used).collect::<HashSet<u32>>();
     let used_addrs = used_addrs.into_iter().collect::<HashSet<u32>>();
-    let mut diff = used_range
+    let mut available_diff = used_range
         .difference(&used_addrs)
         .copied()
         .collect::<Vec<_>>();
+    available_diff.sort();
+    let mut claimed_addrs = available_diff.drain(0..(count as usize).min(available_diff.len())).collect::<Vec<_>>();
     let mut next_addr = last_used + 1;
-    while diff.len() < count as usize {
+    while claimed_addrs.len() < count as usize {
         if next_addr <= range_end {
-            diff.push(next_addr);
+            claimed_addrs.push(next_addr);
             next_addr += 1
         } else {
             return Err(DevAddrConstraintsError::NoAvailableAddrs);
         }
     }
-    diff.sort();
     addr_store
-        .claim_addrs(&diff)
+        .claim_addrs(&claimed_addrs)
         .await
         .map_err(DevAddrConstraintsError::AddressStore)?;
-    let new_constraints = constraints_from_addrs(diff)?;
+    let new_constraints = constraints_from_addrs(claimed_addrs)?;
     Ok(new_constraints)
 }
 
@@ -267,16 +267,20 @@ mod test {
         type Error = std::convert::Infallible;
 
         async fn get_used_addrs(&mut self) -> Result<Vec<u32>, Self::Error> {
-            Ok(self.clone())
+            let mut result = self.clone();
+            result.sort();
+            Ok(result)
         }
 
         async fn claim_addrs(&mut self, new_addrs: &[u32]) -> Result<(), Self::Error> {
             new_addrs.iter().for_each(|addr| self.push(*addr));
+            self.sort();
             Ok(())
         }
 
         async fn release_addrs(&mut self, released_addrs: &[u32]) -> Result<(), Self::Error> {
             self.retain(|addr| !released_addrs.contains(addr));
+            self.sort();
             Ok(())
         }
     }
@@ -345,5 +349,32 @@ mod test {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn allocate_fewer_than_existing_gap() {
+        let mut used_addrs = vec![];
+        checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type0)
+            .await
+            .expect("allocate first round");
+        checkout_devaddr_constraints(&mut used_addrs, 32, HeliumNetId::Type0)
+            .await
+            .expect("allocate second round");
+        checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type0)
+            .await
+            .expect("allocate third round");
+        // round 2 goes out of business, and their devaddrs are released back to the wild
+        let remove: Vec<u32> = used_addrs
+            .clone()
+            .into_iter()
+            .skip(8)
+            .take(32)
+            .collect();
+        assert_eq!(Ok(()), used_addrs.release_addrs(&remove).await);
+        assert_eq!(8 + 8, used_addrs.len());
+        checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type0)
+            .await
+            .expect("allocate fourth round");
+        assert_eq!(8 + 8 + 8, used_addrs.len());
     }
 }
