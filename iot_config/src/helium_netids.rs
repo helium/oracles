@@ -57,40 +57,6 @@ pub trait AddressStore {
 }
 
 #[async_trait::async_trait]
-impl AddressStore for sqlx::Pool<sqlx::Postgres> {
-    type Error = sqlx::Error;
-
-    async fn get_used_addrs(&mut self) -> Result<Vec<u32>, Self::Error> {
-        Ok(
-            sqlx::query_scalar::<_, i32>(" select devaddr from helium_used_devaddrs ")
-                .fetch_all(&*self)
-                .await?
-                .into_iter()
-                .map(|addr| addr as u32)
-                .collect::<Vec<u32>>(),
-        )
-    }
-
-    async fn claim_addrs(&mut self, new_addrs: &[u32]) -> Result<(), Self::Error> {
-        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-            sqlx::QueryBuilder::new(" insert into helium_used_devaddrs (devaddr) ");
-        query_builder.push_values(new_addrs, |mut builder, addr| {
-            builder.push_bind(*addr as i32);
-        });
-        Ok(query_builder.build().execute(&*self).await.map(|_| ())?)
-    }
-
-    async fn release_addrs(&mut self, released_addrs: &[u32]) -> Result<(), Self::Error> {
-        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-            sqlx::QueryBuilder::new(" delete from helium_used_devaddrs where devaddr in ");
-        query_builder.push_values(released_addrs, |mut builder, addr| {
-            builder.push_bind(*addr as i32);
-        });
-        Ok(query_builder.build().execute(&*self).await.map(|_| ())?)
-    }
-}
-
-#[async_trait::async_trait]
 impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
     type Error = sqlx::Error;
 
