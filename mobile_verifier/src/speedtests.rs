@@ -80,25 +80,7 @@ impl SpeedtestDaemon {
             loop {
                 tokio::select! {
                     _ = shutdown.clone() => break,
-                    Some(file) = self.speedtests.recv() => {
-                        let mut transaction = self.pool.begin().await?;
-                        let reports = file.into_stream(&mut transaction).await?;
-
-                        let mut validated_speedtests = pin!(
-                            SpeedtestRollingAverage::validate_speedtests(
-                                &self.config_client,
-                                reports.map(|s| s.report),
-                                &mut transaction,
-                            )
-                            .await?
-                        );
-                        while let Some(speedtest) = validated_speedtests.next().await.transpose()? {
-                            speedtest.write(&self.file_sink).await?;
-                            speedtest.save(&mut transaction).await?;
-                        }
-
-                        transaction.commit().await?;
-                    }
+                    Some(file) = self.speedtests.recv() => self.process_file(file).await?,
                 }
             }
 
@@ -107,6 +89,31 @@ impl SpeedtestDaemon {
         .map_err(anyhow::Error::from)
         .and_then(|result| async move { result })
         .await
+    }
+
+    async fn process_file(
+        &self,
+        file: FileInfoStream<CellSpeedtestIngestReport>,
+    ) -> anyhow::Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        let mut validated_speedtests = pin!(
+            SpeedtestRollingAverage::validate_speedtests(
+                &self.config_client,
+                reports.map(|s| s.report),
+                &mut transaction,
+            )
+            .await?
+        );
+        while let Some(speedtest) = validated_speedtests.next().await.transpose()? {
+            speedtest.write(&self.file_sink).await?;
+            speedtest.save(&mut transaction).await?;
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
     }
 }
 

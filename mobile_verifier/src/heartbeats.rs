@@ -56,9 +56,9 @@ impl HeartbeatDaemon {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
-            let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+            let cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
 
-            let cache_clone = heartbeat_cache.clone();
+            let cache_clone = cache.clone();
             tokio::spawn(async move {
                 cache_clone
                     .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 3))
@@ -68,30 +68,7 @@ impl HeartbeatDaemon {
             loop {
                 tokio::select! {
                     _ = shutdown.clone() => break,
-                    Some(file) = self.heartbeats.recv() => {
-                        let epoch =
-                            (file.file_info.timestamp - Duration::hours(1))..file.file_info.timestamp;
-                        let mut transaction = self.pool.begin().await?;
-                        let reports = file.into_stream(&mut transaction).await?;
-
-                        let mut validated_heartbeats = pin!(
-                            Heartbeat::validate_heartbeats(&self.config_client, reports, &epoch).await
-                        );
-
-                        while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
-                            heartbeat.write(&self.file_sink).await?;
-                            let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?);
-
-                            if heartbeat_cache.get(&key).await.is_none() {
-                                heartbeat.save(&mut transaction).await?;
-                                heartbeat_cache
-                                    .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
-                                    .await;
-                            }
-                        }
-
-                        transaction.commit().await?;
-                    }
+                    Some(file) = self.heartbeats.recv() => self.process_file(file, &cache).await?,
                 }
             }
 
@@ -100,6 +77,35 @@ impl HeartbeatDaemon {
         .map_err(anyhow::Error::from)
         .and_then(|result| async move { result })
         .await
+    }
+
+    async fn process_file(
+        &self,
+        file: FileInfoStream<CellHeartbeatIngestReport>,
+        cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
+    ) -> anyhow::Result<()> {
+        let epoch = (file.file_info.timestamp - Duration::hours(1))..file.file_info.timestamp;
+        let mut transaction = self.pool.begin().await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        let mut validated_heartbeats =
+            pin!(Heartbeat::validate_heartbeats(&self.config_client, reports, &epoch).await);
+
+        while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
+            heartbeat.write(&self.file_sink).await?;
+            let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?);
+
+            if cache.get(&key).await.is_none() {
+                heartbeat.save(&mut transaction).await?;
+                cache
+                    .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
+                    .await;
+            }
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
     }
 }
 
