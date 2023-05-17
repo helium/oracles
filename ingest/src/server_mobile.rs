@@ -29,7 +29,6 @@ pub struct GrpcServer {
     data_transfer_session_sink: FileSinkClient,
     subscriber_location_report_sink: FileSinkClient,
     required_network: Network,
-    carrier_keys: Vec<PublicKey>,
 }
 impl GrpcServer {
     fn new(
@@ -38,7 +37,6 @@ impl GrpcServer {
         data_transfer_session_sink: FileSinkClient,
         subscriber_location_report_sink: FileSinkClient,
         required_network: Network,
-        carrier_keys: Vec<PublicKey>,
     ) -> Result<Self> {
         Ok(Self {
             heartbeat_report_sink,
@@ -46,7 +44,6 @@ impl GrpcServer {
             data_transfer_session_sink,
             subscriber_location_report_sink,
             required_network,
-            carrier_keys,
         })
     }
 
@@ -70,14 +67,6 @@ impl GrpcServer {
             .verify(&public_key)
             .map_err(|_| Status::invalid_argument("invalid signature"))?;
         Ok((public_key, event))
-    }
-
-    fn verify_known_carrier_key(&self, public_key: PublicKey) -> VerifyResult<PublicKey> {
-        if self.carrier_keys.contains(&public_key) {
-            Ok(public_key)
-        } else {
-            Err(Status::invalid_argument("unknown carrier key"))
-        }
     }
 }
 
@@ -160,7 +149,6 @@ impl poc_mobile::PocMobile for GrpcServer {
         let report = self
             .verify_public_key(event.pub_key.as_ref())
             .and_then(|public_key| self.verify_network(public_key))
-            .and_then(|public_key| self.verify_known_carrier_key(public_key))
             .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| SubscriberLocationIngestReportV1 {
                 received_timestamp: timestamp,
@@ -239,7 +227,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         data_transfer_session_sink,
         subscriber_location_report_sink,
         settings.network,
-        settings.carrier_keys()?,
     )?;
 
     let Some(api_token) = settings

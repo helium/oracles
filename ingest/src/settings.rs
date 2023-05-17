@@ -30,9 +30,6 @@ pub struct Settings {
     pub token: Option<String>,
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
-    /// comma separated b58 encoded pubkeys representing a list of valid carrier keys
-    /// TODO: confirm expected format of these keys
-    pub carrier_keys: String,
 }
 
 pub fn default_listen_addr() -> String {
@@ -81,14 +78,5 @@ impl Settings {
 
     pub fn listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
         SocketAddr::from_str(&self.listen)
-    }
-
-    pub fn carrier_keys(&self) -> Result<Vec<helium_crypto::PublicKey>, helium_crypto::Error> {
-        let pubkeys = self
-            .carrier_keys
-            .split(',')
-            .filter_map(|s| helium_crypto::PublicKey::from_str(s).ok())
-            .collect();
-        Ok(pubkeys)
     }
 }
