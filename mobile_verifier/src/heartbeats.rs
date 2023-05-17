@@ -2,14 +2,22 @@
 
 use crate::cell_type::CellType;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
-use file_store::{file_sink, heartbeat::CellHeartbeatIngestReport};
-use futures::stream::{Stream, StreamExt, TryStreamExt};
+use file_store::{
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient,
+    heartbeat::CellHeartbeatIngestReport,
+};
+use futures::{
+    stream::{Stream, StreamExt, TryStreamExt},
+    TryFutureExt,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
+use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
-use std::ops::Range;
+use std::{ops::Range, pin::pin, sync::Arc, time};
+use tokio::sync::mpsc::Receiver;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
 pub struct HeartbeatKey {
@@ -22,6 +30,77 @@ pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
     pub reward_weight: Decimal,
+}
+
+pub struct HeartbeatDaemon {
+    pool: sqlx::Pool<sqlx::Postgres>,
+    config_client: Client,
+    heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
+    file_sink: FileSinkClient,
+}
+
+impl HeartbeatDaemon {
+    pub fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        config_client: Client,
+        heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
+        file_sink: FileSinkClient,
+    ) -> Self {
+        Self {
+            pool,
+            config_client,
+            heartbeats,
+            file_sink,
+        }
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tokio::spawn(async move {
+            let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+
+            let cache_clone = heartbeat_cache.clone();
+            tokio::spawn(async move {
+                cache_clone
+                    .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 3))
+                    .await
+            });
+
+            loop {
+                tokio::select! {
+                    _ = shutdown.clone() => break,
+                    Some(file) = self.heartbeats.recv() => {
+                        let epoch =
+                            (file.file_info.timestamp - Duration::hours(1))..file.file_info.timestamp;
+                        let mut transaction = self.pool.begin().await?;
+                        let reports = file.into_stream(&mut transaction).await?;
+
+                        let mut validated_heartbeats = pin!(
+                            Heartbeat::validate_heartbeats(&self.config_client, reports, &epoch).await
+                        );
+
+                        while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
+                            heartbeat.write(&self.file_sink).await?;
+                            let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?);
+
+                            if heartbeat_cache.get(&key).await.is_none() {
+                                heartbeat.save(&mut transaction).await?;
+                                heartbeat_cache
+                                    .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
+                                    .await;
+                            }
+                        }
+
+                        transaction.commit().await?;
+                    }
+                }
+            }
+
+            Ok(())
+        })
+        .map_err(anyhow::Error::from)
+        .and_then(|result| async move { result })
+        .await
+    }
 }
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
@@ -111,7 +190,7 @@ impl Heartbeat {
         })
     }
 
-    pub async fn write(&self, heartbeats: &file_sink::FileSinkClient) -> file_store::Result {
+    pub async fn write(&self, heartbeats: &FileSinkClient) -> file_store::Result {
         heartbeats
             .write(
                 proto::Heartbeat {

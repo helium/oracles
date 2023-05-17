@@ -1,4 +1,6 @@
-use crate::{verifier::VerifierDaemon, Settings};
+use crate::{
+    heartbeats::HeartbeatDaemon, rewarder::Rewarder, speedtests::SpeedtestDaemon, Settings,
+};
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
@@ -116,21 +118,28 @@ impl Cmd {
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        // let verifier = Verifier::new(config_client, ingest);
-
-        let verifier_daemon = VerifierDaemon {
-            pool,
+        let heartbeat_daemon = HeartbeatDaemon::new(
+            pool.clone(),
+            config_client.clone(),
+            heartbeats,
             valid_heartbeats,
+        );
+
+        let speedtest_daemon = SpeedtestDaemon::new(
+            pool.clone(),
+            config_client.clone(),
+            speedtests,
             valid_speedtests,
+        );
+
+        let rewarder = Rewarder::new(
+            pool.clone(),
+            Duration::hours(reward_period_hours),
             mobile_rewards,
             reward_manifests,
-            reward_period_hours,
             price_tracker,
             data_transfer_ingest,
-            config_client,
-            heartbeats,
-            speedtests,
-        };
+        );
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
@@ -147,10 +156,12 @@ impl Cmd {
             reward_manifests_server
                 .run(&shutdown_listener)
                 .map_err(Error::from),
-            verifier_daemon.run(&shutdown_listener),
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
+            heartbeat_daemon.run(shutdown_listener.clone()),
+            speedtest_daemon.run(shutdown_listener.clone()),
+            rewarder.run(shutdown_listener.clone()),
         )?;
 
         tracing::info!("Shutting down verifier server");

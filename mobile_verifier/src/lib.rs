@@ -6,7 +6,7 @@ mod settings;
 mod speedtests;
 
 pub mod cli;
+pub mod rewarder;
 pub mod scheduler;
-pub mod verifier;
 
 pub use settings::Settings;

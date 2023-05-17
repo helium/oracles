@@ -1,6 +1,14 @@
 use chrono::{DateTime, Duration, Utc};
-use file_store::{file_sink, speedtest::CellSpeedtest, traits::TimestampEncode};
-use futures::stream::{Stream, StreamExt, TryStreamExt};
+use file_store::{
+    file_info_poller::FileInfoStream,
+    file_sink::{self, FileSinkClient},
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::TimestampEncode,
+};
+use futures::{
+    stream::{Stream, StreamExt, TryStreamExt},
+    TryFutureExt,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
@@ -10,7 +18,11 @@ use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
     FromRow, Postgres, Transaction, Type,
 };
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    pin::pin,
+};
+use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 const SPEEDTEST_LAPSE: i64 = 48;
@@ -38,6 +50,63 @@ impl Speedtest {
             download_speed,
             latency,
         }
+    }
+}
+
+pub struct SpeedtestDaemon {
+    pool: sqlx::Pool<sqlx::Postgres>,
+    config_client: Client,
+    speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
+    file_sink: FileSinkClient,
+}
+
+impl SpeedtestDaemon {
+    pub fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        config_client: Client,
+        speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
+        file_sink: FileSinkClient,
+    ) -> Self {
+        Self {
+            pool,
+            config_client,
+            speedtests,
+            file_sink,
+        }
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = shutdown.clone() => break,
+                    Some(file) = self.speedtests.recv() => {
+                        let mut transaction = self.pool.begin().await?;
+                        let reports = file.into_stream(&mut transaction).await?;
+
+                        let mut validated_speedtests = pin!(
+                            SpeedtestRollingAverage::validate_speedtests(
+                                &self.config_client,
+                                reports.map(|s| s.report),
+                                &mut transaction,
+                            )
+                            .await?
+                        );
+                        while let Some(speedtest) = validated_speedtests.next().await.transpose()? {
+                            speedtest.write(&self.file_sink).await?;
+                            speedtest.save(&mut transaction).await?;
+                        }
+
+                        transaction.commit().await?;
+                    }
+                }
+            }
+
+            Ok(())
+        })
+        .map_err(anyhow::Error::from)
+        .and_then(|result| async move { result })
+        .await
     }
 }
 
