@@ -4,7 +4,9 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{SubscriberLocationIngestReportV1, SubscriberLocationReqV1};
+use helium_proto::services::poc_mobile::{
+    SubscriberLocationIngestReportV1, SubscriberLocationReqV1,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
