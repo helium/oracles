@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubscriberLocationReq {
-    pub pubkey: PublicKeyBinary,
+    pub subscriber_id: Vec<u8>,
     pub timestamp: DateTime<Utc>,
+    pub pubkey: PublicKeyBinary,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -33,8 +34,9 @@ impl TryFrom<SubscriberLocationReqV1> for SubscriberLocationReq {
     type Error = Error;
     fn try_from(v: SubscriberLocationReqV1) -> Result<Self> {
         Ok(Self {
-            pubkey: v.pub_key.into(),
+            subscriber_id: v.subscriber_id,
             timestamp: v.timestamp.to_timestamp()?,
+            pubkey: v.pub_key.into(),
         })
     }
 }
