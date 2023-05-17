@@ -133,7 +133,7 @@ impl Rewarder {
         let mut transaction = self.pool.begin().await?;
 
         // Clear the heartbeats of old heartbeats:
-        sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $3")
+        sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
             .bind(reward_period.start)
             .execute(&mut transaction)
             .await?;
