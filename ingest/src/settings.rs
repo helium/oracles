@@ -87,7 +87,7 @@ impl Settings {
         let pubkeys = self
             .carrier_keys
             .split(',')
-            .map(|s| helium_crypto::PublicKey::from_str(s).unwrap())
+            .filter_map(|s| helium_crypto::PublicKey::from_str(s).ok())
             .collect();
         Ok(pubkeys)
     }
