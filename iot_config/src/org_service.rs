@@ -199,11 +199,11 @@ impl iot_config::Org for OrgService {
         tracing::debug!("create helium org request: {request:?}");
 
         let net_id = request.net_id();
-        let requested_addrs = if request.devaddrs >= 8 {
+        let requested_addrs = if request.devaddrs >= 8 && request.devaddrs % 2 == 0 {
             request.devaddrs
         } else {
             return Err(Status::invalid_argument(format!(
-                "insufficient devaddr count {}",
+                "{} devaddrs requested; minimum 8, even number required",
                 request.devaddrs
             )));
         };

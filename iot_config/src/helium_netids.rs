@@ -9,26 +9,27 @@ const TYPE_0_RANGE: RangeInclusive<u32> = 2_013_265_920..=2_046_820_351;
 const TYPE_3_RANGE: RangeInclusive<u32> = 3_763_994_624..=3_764_125_695;
 const TYPE_6_RANGE: RangeInclusive<u32> = 4_227_943_424..=4_227_944_447;
 
+#[derive(Clone, Copy)]
 pub enum HeliumNetId {
-    Type0,
-    Type3,
-    Type6,
+    Type0_0x00003c,
+    Type3_0x60002d,
+    Type6_0xc00053,
 }
 
 impl HeliumNetId {
     pub fn id(&self) -> NetIdField {
         match *self {
-            HeliumNetId::Type0 => TYPE_0_ID,
-            HeliumNetId::Type3 => TYPE_3_ID,
-            HeliumNetId::Type6 => TYPE_6_ID,
+            HeliumNetId::Type0_0x00003c => TYPE_0_ID,
+            HeliumNetId::Type3_0x60002d => TYPE_3_ID,
+            HeliumNetId::Type6_0xc00053 => TYPE_6_ID,
         }
     }
 
     pub fn addr_range(&self) -> RangeInclusive<u32> {
         match *self {
-            HeliumNetId::Type0 => TYPE_0_RANGE,
-            HeliumNetId::Type3 => TYPE_3_RANGE,
-            HeliumNetId::Type6 => TYPE_6_RANGE,
+            HeliumNetId::Type0_0x00003c => TYPE_0_RANGE,
+            HeliumNetId::Type3_0x60002d => TYPE_3_RANGE,
+            HeliumNetId::Type6_0xc00053 => TYPE_6_RANGE,
         }
     }
 }
@@ -38,9 +39,9 @@ impl TryFrom<NetIdField> for HeliumNetId {
 
     fn try_from(field: NetIdField) -> Result<Self, Self::Error> {
         let id = match field {
-            TYPE_0_ID => HeliumNetId::Type0,
-            TYPE_3_ID => HeliumNetId::Type3,
-            TYPE_6_ID => HeliumNetId::Type6,
+            TYPE_0_ID => HeliumNetId::Type0_0x00003c,
+            TYPE_3_ID => HeliumNetId::Type3_0x60002d,
+            TYPE_6_ID => HeliumNetId::Type6_0xc00053,
             _ => return Err("not a helium id"),
         };
         Ok(id)
@@ -51,19 +52,28 @@ impl TryFrom<NetIdField> for HeliumNetId {
 pub trait AddressStore {
     type Error;
 
-    async fn get_used_addrs(&mut self) -> Result<Vec<u32>, Self::Error>;
-    async fn claim_addrs(&mut self, new_addrs: &[u32]) -> Result<(), Self::Error>;
-    async fn release_addrs(&mut self, released_addrs: &[u32]) -> Result<(), Self::Error>;
+    async fn get_used_addrs(&mut self, net_id: HeliumNetId) -> Result<Vec<u32>, Self::Error>;
+    async fn claim_addrs(
+        &mut self,
+        net_id: HeliumNetId,
+        new_addrs: &[u32],
+    ) -> Result<(), Self::Error>;
+    async fn release_addrs(
+        &mut self,
+        net_id: HeliumNetId,
+        released_addrs: &[u32],
+    ) -> Result<(), Self::Error>;
 }
 
 #[async_trait::async_trait]
 impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
     type Error = sqlx::Error;
 
-    async fn get_used_addrs(&mut self) -> Result<Vec<u32>, Self::Error> {
+    async fn get_used_addrs(&mut self, net_id: HeliumNetId) -> Result<Vec<u32>, Self::Error> {
         Ok(sqlx::query_scalar::<_, i32>(
-            " select devaddr from helium_used_devaddrs order by devaddr asc ",
+            " select devaddr from helium_used_devaddrs where net_id = $1 order by devaddr asc ",
         )
+        .bind(i32::from(net_id.id()))
         .fetch_all(self)
         .await?
         .into_iter()
@@ -71,20 +81,33 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
         .collect::<Vec<u32>>())
     }
 
-    async fn claim_addrs(&mut self, new_addrs: &[u32]) -> Result<(), Self::Error> {
+    async fn claim_addrs(
+        &mut self,
+        net_id: HeliumNetId,
+        new_addrs: &[u32],
+    ) -> Result<(), Self::Error> {
         let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-            sqlx::QueryBuilder::new(" insert into helium_used_devaddrs (devaddr) ");
+            sqlx::QueryBuilder::new(" insert into helium_used_devaddrs (devaddr, net_id) ");
         query_builder.push_values(new_addrs, |mut builder, addr| {
-            builder.push_bind(*addr as i32);
+            builder
+                .push_bind(*addr as i32)
+                .push_bind(i32::from(net_id.id()));
         });
         Ok(query_builder.build().execute(self).await.map(|_| ())?)
     }
 
-    async fn release_addrs(&mut self, released_addrs: &[u32]) -> Result<(), Self::Error> {
-        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
-            sqlx::QueryBuilder::new(" delete from helium_used_devaddrs where devaddr in ");
+    async fn release_addrs(
+        &mut self,
+        net_id: HeliumNetId,
+        released_addrs: &[u32],
+    ) -> Result<(), Self::Error> {
+        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
+            " delete from helium_used_devaddrs where (devaddr, net_id) in ",
+        );
         query_builder.push_values(released_addrs, |mut builder, addr| {
-            builder.push_bind(*addr as i32);
+            builder
+                .push_bind(*addr as i32)
+                .push_bind(i32::from(net_id.id()));
         });
         Ok(query_builder.build().execute(self).await.map(|_| ())?)
     }
@@ -100,7 +123,7 @@ where
 {
     let addr_range = net_id.addr_range();
     let used_addrs = addr_store
-        .get_used_addrs()
+        .get_used_addrs(net_id)
         .await
         .map_err(DevAddrConstraintsError::AddressStore)?;
     let range_start = *addr_range.start();
@@ -130,7 +153,7 @@ where
         }
     }
     addr_store
-        .claim_addrs(&claimed_addrs)
+        .claim_addrs(net_id, &claimed_addrs)
         .await
         .map_err(DevAddrConstraintsError::AddressStore)?;
     let new_constraints = constraints_from_addrs(claimed_addrs)?;
@@ -139,13 +162,14 @@ where
 
 pub async fn checkout_specified_devaddr_constraint<S>(
     addr_store: &mut S,
+    net_id: HeliumNetId,
     requested_constraint: &DevAddrConstraint,
 ) -> Result<(), DevAddrConstraintsError<S::Error>>
 where
     S: AddressStore,
 {
     let used_addrs = addr_store
-        .get_used_addrs()
+        .get_used_addrs(net_id)
         .await
         .map_err(DevAddrConstraintsError::AddressStore)?;
     let request_addrs = (requested_constraint.start_addr.into()
@@ -157,7 +181,7 @@ where
         )));
     };
     addr_store
-        .claim_addrs(&request_addrs)
+        .claim_addrs(net_id, &request_addrs)
         .await
         .map_err(DevAddrConstraintsError::AddressStore)
 }
@@ -219,9 +243,9 @@ pub enum ConstraintsBuildError {
 impl From<ProtoNetId> for HeliumNetId {
     fn from(pni: ProtoNetId) -> Self {
         match pni {
-            ProtoNetId::Type00x00003c => Self::Type0,
-            ProtoNetId::Type30x60002d => Self::Type3,
-            ProtoNetId::Type60xc00053 => Self::Type6,
+            ProtoNetId::Type00x00003c => Self::Type0_0x00003c,
+            ProtoNetId::Type30x60002d => Self::Type3_0x60002d,
+            ProtoNetId::Type60xc00053 => Self::Type6_0xc00053,
         }
     }
 }
@@ -229,38 +253,52 @@ impl From<ProtoNetId> for HeliumNetId {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::collections::HashMap;
 
     #[async_trait::async_trait]
-    impl AddressStore for Vec<u32> {
-        type Error = std::convert::Infallible;
+    impl AddressStore for HashMap<NetIdField, Vec<u32>> {
+        type Error = &'static str;
 
-        async fn get_used_addrs(&mut self) -> Result<Vec<u32>, Self::Error> {
-            let mut result = self.clone();
+        async fn get_used_addrs(&mut self, net_id: HeliumNetId) -> Result<Vec<u32>, Self::Error> {
+            let mut result = self.get(&net_id.id()).cloned().unwrap_or_default();
             result.sort();
             Ok(result)
         }
 
-        async fn claim_addrs(&mut self, new_addrs: &[u32]) -> Result<(), Self::Error> {
-            new_addrs.iter().for_each(|addr| self.push(*addr));
-            self.sort();
+        async fn claim_addrs(
+            &mut self,
+            net_id: HeliumNetId,
+            new_addrs: &[u32],
+        ) -> Result<(), Self::Error> {
+            self.entry(net_id.id())
+                .and_modify(|addrs| new_addrs.iter().for_each(|addr| addrs.push(*addr)))
+                .or_insert(new_addrs.to_vec());
             Ok(())
         }
 
-        async fn release_addrs(&mut self, released_addrs: &[u32]) -> Result<(), Self::Error> {
-            self.retain(|addr| !released_addrs.contains(addr));
-            self.sort();
+        async fn release_addrs(
+            &mut self,
+            net_id: HeliumNetId,
+            released_addrs: &[u32],
+        ) -> Result<(), Self::Error> {
+            self.entry(net_id.id())
+                .and_modify(|addrs| addrs.retain(|addr| !released_addrs.contains(addr)));
             Ok(())
         }
     }
 
     #[tokio::test]
     async fn get_free_addrs_from_used_range() {
-        let mut used_addrs = vec![
-            2013265920, 2013265921, 2013265922, 2013265923, 2013265928, 2013265929, 2013265930,
-            2013265931, 2013265936, 2013265937,
-        ];
+        let mut addr_store = HashMap::new();
+        addr_store.insert(
+            HeliumNetId::Type0_0x00003c.id(),
+            vec![
+                2013265920, 2013265921, 2013265922, 2013265923, 2013265928, 2013265929, 2013265930,
+                2013265931, 2013265936, 2013265937,
+            ],
+        );
         let selected_constraints =
-            checkout_devaddr_constraints(&mut used_addrs, 10, HeliumNetId::Type0)
+            checkout_devaddr_constraints(&mut addr_store, 10, HeliumNetId::Type0_0x00003c)
                 .await
                 .expect("constraints selected from available addrs");
         let expected_constraints = vec![
@@ -269,29 +307,46 @@ mod test {
             DevAddrConstraint::new(2013265938.into(), 2013265939.into()).expect("new constraint 3"),
         ];
         assert_eq!(selected_constraints, expected_constraints);
-        used_addrs.sort();
+        addr_store
+            .entry(HeliumNetId::Type0_0x00003c.id())
+            .and_modify(|addrs| addrs.sort());
+        let used_addrs = addr_store
+            .get(&HeliumNetId::Type0_0x00003c.id())
+            .cloned()
+            .unwrap();
         assert_eq!(used_addrs, (2013265920..=2013265939).collect::<Vec<_>>());
     }
 
     #[tokio::test]
     async fn get_free_addrs_from_new_range() {
-        let mut used_addrs = Vec::new();
+        let mut addr_store = HashMap::new();
         let selected_constraints =
-            checkout_devaddr_constraints(&mut used_addrs, 10, HeliumNetId::Type0)
+            checkout_devaddr_constraints(&mut addr_store, 10, HeliumNetId::Type0_0x00003c)
                 .await
                 .expect("constraints selected from available addrs");
         let expected_constraints =
             vec![DevAddrConstraint::new(2013265920.into(), 2013265929.into())
                 .expect("new constraint")];
         assert_eq!(selected_constraints, expected_constraints);
+        addr_store
+            .entry(HeliumNetId::Type0_0x00003c.id())
+            .and_modify(|addrs| addrs.sort());
+        let used_addrs = addr_store
+            .get(&HeliumNetId::Type0_0x00003c.id())
+            .cloned()
+            .unwrap();
         assert_eq!(used_addrs, (2013265920..=2013265929).collect::<Vec<_>>());
     }
 
     #[tokio::test]
     async fn error_when_no_devaddrs_available() {
-        let mut used_addrs = (4227943424..4227944443).collect::<Vec<_>>();
+        let mut addr_store = HashMap::new();
+        addr_store.insert(
+            HeliumNetId::Type6_0xc00053.id(),
+            (4227943424..4227944443).collect::<Vec<_>>(),
+        );
         assert!(
-            checkout_devaddr_constraints(&mut used_addrs, 6, HeliumNetId::Type6)
+            checkout_devaddr_constraints(&mut addr_store, 6, HeliumNetId::Type6_0xc00053)
                 .await
                 .is_err()
         );
@@ -299,9 +354,9 @@ mod test {
 
     #[tokio::test]
     async fn error_when_odd_number_addrs_requested() {
-        let mut used_addrs = Vec::new();
+        let mut addr_store = HashMap::new();
         assert!(
-            checkout_devaddr_constraints(&mut used_addrs, 5, HeliumNetId::Type0)
+            checkout_devaddr_constraints(&mut addr_store, 5, HeliumNetId::Type0_0x00003c)
                 .await
                 .is_err()
         );
@@ -309,11 +364,15 @@ mod test {
 
     #[tokio::test]
     async fn error_when_addrs_uneven() {
-        let mut used_addrs = vec![
-            3763994627, 3763994628, 3763994629, 3763994630, 3763994631, 3763994632,
-        ];
+        let mut addr_store = HashMap::new();
+        addr_store.insert(
+            HeliumNetId::Type3_0x60002d.id(),
+            vec![
+                3763994627, 3763994628, 3763994629, 3763994630, 3763994631, 3763994632,
+            ],
+        );
         assert!(
-            checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type3)
+            checkout_devaddr_constraints(&mut addr_store, 8, HeliumNetId::Type3_0x60002d)
                 .await
                 .is_err()
         );
@@ -321,23 +380,66 @@ mod test {
 
     #[tokio::test]
     async fn allocate_fewer_than_existing_gap() {
-        let mut used_addrs = vec![];
-        checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type0)
+        let mut addr_store = HashMap::new();
+        checkout_devaddr_constraints(&mut addr_store, 8, HeliumNetId::Type0_0x00003c)
             .await
             .expect("allocate first round");
-        checkout_devaddr_constraints(&mut used_addrs, 32, HeliumNetId::Type0)
+        checkout_devaddr_constraints(&mut addr_store, 32, HeliumNetId::Type0_0x00003c)
             .await
             .expect("allocate second round");
-        checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type0)
+        checkout_devaddr_constraints(&mut addr_store, 8, HeliumNetId::Type0_0x00003c)
             .await
             .expect("allocate third round");
         // round 2 goes out of business, and their devaddrs are released back to the wild
-        let remove: Vec<u32> = used_addrs.clone().into_iter().skip(8).take(32).collect();
-        assert_eq!(Ok(()), used_addrs.release_addrs(&remove).await);
-        assert_eq!(8 + 8, used_addrs.len());
-        checkout_devaddr_constraints(&mut used_addrs, 8, HeliumNetId::Type0)
+        let remove: Vec<u32> = addr_store
+            .get(&HeliumNetId::Type0_0x00003c.id())
+            .cloned()
+            .unwrap()
+            .into_iter()
+            .skip(8)
+            .take(32)
+            .collect();
+        assert_eq!(
+            Ok(()),
+            addr_store
+                .release_addrs(HeliumNetId::Type0_0x00003c, &remove)
+                .await
+        );
+        assert_eq!(
+            8 + 8,
+            addr_store
+                .get(&HeliumNetId::Type0_0x00003c.id())
+                .unwrap()
+                .len()
+        );
+        checkout_devaddr_constraints(&mut addr_store, 8, HeliumNetId::Type0_0x00003c)
             .await
             .expect("allocate fourth round");
-        assert_eq!(8 + 8 + 8, used_addrs.len());
+        assert_eq!(
+            8 + 8 + 8,
+            addr_store
+                .get(&HeliumNetId::Type0_0x00003c.id())
+                .unwrap()
+                .len()
+        );
+    }
+
+    #[tokio::test]
+    async fn allocate_across_net_id() {
+        let mut addr_store = HashMap::new();
+        checkout_devaddr_constraints(&mut addr_store, 8, HeliumNetId::Type6_0xc00053)
+            .await
+            .expect("testing allocation");
+        checkout_devaddr_constraints(&mut addr_store, 8, HeliumNetId::Type3_0x60002d)
+            .await
+            .expect("special request allocation");
+        checkout_devaddr_constraints(&mut addr_store, 8, HeliumNetId::Type0_0x00003c)
+            .await
+            .expect("average allocation");
+
+        assert_eq!(
+            8 + 8 + 8,
+            addr_store.values().fold(0, |acc, elem| acc + elem.len())
+        );
     }
 }

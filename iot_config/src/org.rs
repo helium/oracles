@@ -127,9 +127,9 @@ pub async fn create_org(
     };
 
     if [
-        HeliumNetId::Type0.id(),
-        HeliumNetId::Type3.id(),
-        HeliumNetId::Type6.id(),
+        HeliumNetId::Type0_0x00003c.id(),
+        HeliumNetId::Type3_0x60002d.id(),
+        HeliumNetId::Type6_0xc00053.id(),
     ]
     .contains(&net_id)
     {
@@ -140,7 +140,13 @@ pub async fn create_org(
             .ok_or(OrgStoreError::SaveConstraints(
                 "no devaddr constraints supplied".to_string(),
             ))?;
-        insert_roamer_constraint(oui as u64, net_id, constraint, &mut txn).await
+        if check_roamer_constraint_count(net_id, &mut txn).await? == 0 {
+            insert_roamer_constraint(oui as u64, net_id, constraint, &mut txn).await
+        } else {
+            return Err(OrgStoreError::SaveConstraints(format!(
+                "constraint already in use {constraint:?}"
+            )));
+        }
     }
     .map_err(|_| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}")))?;
 
@@ -161,9 +167,9 @@ pub async fn update_org(
 
     let net_id = get_org_netid(oui, &mut txn).await?;
     let is_helium_org = [
-        HeliumNetId::Type0.id(),
-        HeliumNetId::Type3.id(),
-        HeliumNetId::Type6.id(),
+        HeliumNetId::Type0_0x00003c.id(),
+        HeliumNetId::Type3_0x60002d.id(),
+        HeliumNetId::Type6_0xc00053.id(),
     ]
     .contains(&net_id);
     let current_org = get(oui, &mut txn).await?;
@@ -191,13 +197,16 @@ pub async fn update_org(
             Some(proto::Update::Constraint(constraint_update))
                 if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
             {
+                let helium_net_id: HeliumNetId = net_id
+                    .try_into()
+                    .map_err(|err: &'static str| OrgStoreError::InvalidUpdate(err.to_string()))?;
                 match (constraint_update.action(), &constraint_update.constraint) {
-                    (proto::ActionV1::Add, Some(ref constraint)) => helium_netids::checkout_specified_devaddr_constraint(&mut txn, &constraint.into()).await.map_err(|err| OrgStoreError::InvalidUpdate(format!("{err}")))?,
+                    (proto::ActionV1::Add, Some(ref constraint)) => helium_netids::checkout_specified_devaddr_constraint(&mut txn, helium_net_id, &constraint.into()).await.map_err(|err| OrgStoreError::InvalidUpdate(format!("{err}")))?,
                     (proto::ActionV1::Remove, Some(ref constraint)) => {
                         if let Some(ref current_constraints) = current_org.constraints {
                             if current_constraints.contains(&constraint.into()) {
                                 let remove_range = (constraint.start_addr..=constraint.end_addr).collect::<Vec<u32>>();
-                                txn.release_addrs(&remove_range).await?;
+                                txn.release_addrs(helium_net_id, &remove_range).await?;
                             } else { return Err(OrgStoreError::InvalidUpdate("remove not owned constraint".to_string())) }
                         } else { return Err(OrgStoreError::InvalidUpdate("no org constraints defined".to_string())) }
                     }
@@ -310,17 +319,27 @@ async fn insert_helium_constraints(
         insert into organization_devaddr_constraints (oui, net_id, start_addr, end_addr)
         "#,
     );
-    query_builder
-        .push_values(devaddr_ranges, |mut builder, range| {
-            builder
-                .push_bind(oui as i64)
-                .push_bind(i32::from(net_id))
-                .push_bind(i32::from(range.start_addr))
-                .push_bind(i32::from(range.end_addr));
-        })
-        .push(" on conflict (start_addr, end_addr) do nothing");
+    query_builder.push_values(devaddr_ranges, |mut builder, range| {
+        builder
+            .push_bind(oui as i64)
+            .push_bind(i32::from(net_id))
+            .push_bind(i32::from(range.start_addr))
+            .push_bind(i32::from(range.end_addr));
+    });
 
     query_builder.build().execute(db).await.map(|_| ())
+}
+
+async fn check_roamer_constraint_count(
+    net_id: NetIdField,
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        " select count(net_id) from organization_devaddr_constraints where net_id = $1 ",
+    )
+    .bind(i32::from(net_id))
+    .fetch_one(db)
+    .await
 }
 
 async fn insert_roamer_constraint(
@@ -333,7 +352,6 @@ async fn insert_roamer_constraint(
         r#"
         insert into organization_devaddr_constraints (oui, net_id, start_addr, end_addr)
         values ($1, $2, $3, $4)
-        on conflict net_id do nothing
         "#,
     )
     .bind(oui as i64)
@@ -462,7 +480,7 @@ pub enum OrgStoreError {
     DecodeKey(#[from] helium_crypto::Error),
     #[error("Route Id parse error: {0}")]
     RouteIdParse(#[from] sqlx::types::uuid::Error),
-    #[error("Invalid or Unauthorized update: {0}")]
+    #[error("Invalid update: {0}")]
     InvalidUpdate(String),
 }
 
