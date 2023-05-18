@@ -4,6 +4,7 @@ mod ingest;
 mod reward_shares;
 mod settings;
 mod speedtests;
+mod subsciber_location;
 
 pub mod cli;
 pub mod scheduler;

@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::{Heartbeat, Heartbeats},
     ingest,
-    reward_shares::{PocShares, TransferRewards},
+    reward_shares::{PocShares, SubscriberLocationShares, TransferRewards},
     scheduler::Scheduler,
     speedtests::{FetchError, SpeedtestAverages, SpeedtestRollingAverage, SpeedtestStore},
 };
@@ -11,6 +11,8 @@ use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use futures::{stream::Stream, StreamExt};
 use helium_proto::RewardManifest;
+use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use mobile_config::{client::ClientError, Client};
 use price::PriceTracker;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -176,6 +178,27 @@ impl VerifierDaemon {
                 .await??;
         }
 
+        let subscriber_location_shares =
+            SubscriberLocationShares::aggregate(&self.pool, &scheduler.reward_period).await?;
+        // TODO: filter out any subscribers which havent transferred data
+        // accumulate total location rewards allocated, this will be deducted from the
+        // remaining pool for subscribers to cover mapping etc
+        let mut total_discovery_location_reward = 0_u64;
+        for subscriber_location_share in
+            subscriber_location_shares.into_rewards(&scheduler.reward_period)
+        {
+            self.mobile_rewards
+                .write(subscriber_location_share.clone(), [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+            match subscriber_location_share.reward {
+                Some(ProtoReward::SubscriberReward(subscriber_reward)) => {
+                    total_discovery_location_reward += subscriber_reward.discovery_location_amount;
+                }
+                _ => ()
+            }
+        }
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
@@ -183,6 +206,9 @@ impl VerifierDaemon {
         sqlx::query("TRUNCATE TABLE heartbeats;")
             .execute(&mut transaction)
             .await?;
+        // clear the subscriber location table
+        SubscriberLocationShares::clear_shares(&mut transaction, &scheduler.reward_period.end)
+            .await;
 
         save_last_rewarded_end_time(&mut transaction, &scheduler.reward_period.end).await?;
         save_next_rewarded_end_time(&mut transaction, &scheduler.next_reward_period().end).await?;

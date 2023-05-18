@@ -4,9 +4,10 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -24,6 +25,10 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
+
+/// Fixed reward in mobile rewarded to a subscriber
+/// sharing their location
+const DISCOVERY_LOCATION_REWARDS_FIXED: u64 = 30;
 
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -138,6 +143,83 @@ impl TransferRewards {
                             .unwrap_or(0),
                     },
                 )),
+            })
+    }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct SubscriberLocationShare {
+    pub subscriber_id: Vec<u8>,
+    pub hour_bucket: i8,
+}
+
+#[derive(Default)]
+pub struct SubscriberLocationShares {
+    pub shares: HashMap<Vec<u8>, Vec<i8>>,
+}
+
+impl SubscriberLocationShares {
+    pub async fn aggregate(
+        db: impl sqlx::PgExecutor<'_> + Copy,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> Result<Self, sqlx::Error> {
+        let mut shares = Self::default();
+        // get all the location shares, grouped by subscriber id and its assocaited filled hourly slots
+        shares.aggregate_shares(db, reward_period).await?;
+        Ok(shares)
+    }
+
+    pub async fn clear_shares(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        period_end: &DateTime<Utc>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("delete from subscriber_loc where reward_timestamp <= $1")
+            .bind(period_end)
+            .execute(&mut *tx)
+            .await
+            .map(|_| ())
+    }
+
+    async fn aggregate_shares(
+        &mut self,
+        db: impl sqlx::PgExecutor<'_> + Copy,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> Result<(), sqlx::Error> {
+        let mut rows = sqlx::query_as::<_, SubscriberLocationShare>(
+            "select subscriber_id, hour_bucket from subscriber_loc where reward_timestamp > $1 and reward_timestamp <= $2",
+        )
+        .bind(reward_period.start)
+        .bind(reward_period.end)
+        .fetch(db);
+        while let Some(share) = rows.try_next().await? {
+            self.shares
+                .entry(share.subscriber_id)
+                .or_insert_with(Vec::new)
+                .push(share.hour_bucket)
+        }
+        Ok(())
+    }
+
+    pub fn into_rewards(
+        self,
+        reward_period: &'_ Range<DateTime<Utc>>,
+    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+        self.shares
+            .into_iter()
+            .filter_map(move |(subscriber_id, populated_hour_bucket)| {
+                if rewardable(&populated_hour_bucket) {
+                    Some(proto::SubscriberReward {
+                        subscriber_id,
+                        discovery_location_amount: DISCOVERY_LOCATION_REWARDS_FIXED,
+                    })
+                } else {
+                    None
+                }
+            })
+            .map(|subscriber_reward| proto::MobileRewardShare {
+                start_period: reward_period.start.encode_timestamp(),
+                end_period: reward_period.end.encode_timestamp(),
+                reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
             })
     }
 }
@@ -263,6 +345,24 @@ pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
+pub fn rewardable(hour_bucket: &Vec<i8>) -> bool {
+    // TODO: simple first pass, revisit
+    // iterate over the vec and if we see 3 filled hours less than 8 hours apart
+    // then its rewardable
+    // let hour_bucket = hour_bucket.sort();
+    let bucket_len = hour_bucket.len();
+    if hour_bucket.len() >= 3 {
+        for n in 0..bucket_len - 2 {
+            let v1 = hour_bucket[n];
+            let v2 = hour_bucket[n + 2];
+            if v2 - v1 <= 8 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -280,6 +380,13 @@ mod test {
         let mut radio_shares: HashMap<String, Decimal> = Default::default();
         radio_shares.insert(String::new(), Decimal::ONE);
         RadioShares { radio_shares }
+    }
+
+    #[test]
+
+    fn test_rewardable() {
+        let mut vec: Vec<i8> = vec![1, 2, 11, 12, 13];
+        assert!(rewardable(&mut vec))
     }
 
     #[test]
