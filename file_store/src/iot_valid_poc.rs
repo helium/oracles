@@ -23,6 +23,8 @@ pub const SCALING_PRECISION: u32 = 4;
 pub struct IotValidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
     pub location: Option<u64>,
+    pub gain: i32,
+    pub elevation: i32,
     pub hex_scale: Decimal,
     pub report: IotBeaconReport,
     pub reward_unit: Decimal,
@@ -43,6 +45,8 @@ pub struct IotVerifiedWitnessReport {
     pub status: VerificationStatus,
     pub report: IotWitnessReport,
     pub location: Option<u64>,
+    pub gain: i32,
+    pub elevation: i32,
     pub hex_scale: Decimal,
     pub reward_unit: Decimal,
     pub invalid_reason: InvalidReason,
@@ -130,6 +134,8 @@ impl TryFrom<LoraValidBeaconReportV1> for IotValidBeaconReport {
         Ok(Self {
             received_timestamp: v.timestamp()?,
             location: v.location.parse().ok(),
+            gain: v.gain,
+            elevation: v.elevation,
             hex_scale: Decimal::new(v.hex_scale as i64, SCALING_PRECISION),
             report: v
                 .report
@@ -151,6 +157,8 @@ impl From<IotValidBeaconReport> for LoraValidBeaconReportV1 {
                 .location
                 .map(|l| l.to_string())
                 .unwrap_or_else(String::new),
+            gain: v.gain,
+            elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             report: Some(report),
             reward_unit: (v.reward_unit * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
@@ -187,6 +195,8 @@ impl TryFrom<LoraVerifiedWitnessReportV1> for IotVerifiedWitnessReport {
                 .ok_or_else(|| Error::not_found("iot valid witness port v1"))?
                 .try_into()?,
             location: v.location.parse().ok(),
+            gain: v.gain,
+            elevation: v.elevation,
             hex_scale: Decimal::new(v.hex_scale as i64, SCALING_PRECISION),
             reward_unit: Decimal::new(v.reward_unit as i64, SCALING_PRECISION),
             invalid_reason,
@@ -207,6 +217,8 @@ impl From<IotVerifiedWitnessReport> for LoraVerifiedWitnessReportV1 {
                 .location
                 .map(|l| l.to_string())
                 .unwrap_or_else(String::new),
+            gain: v.gain,
+            elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             reward_unit: (v.reward_unit * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             invalid_reason: v.invalid_reason as i32,
@@ -220,6 +232,8 @@ impl IotVerifiedWitnessReport {
         report: &IotWitnessReport,
         received_timestamp: DateTime<Utc>,
         location: Option<u64>,
+        gain: i32,
+        elevation: i32,
         hex_scale: Decimal,
     ) -> IotVerifiedWitnessReport {
         Self {
@@ -228,6 +242,8 @@ impl IotVerifiedWitnessReport {
             invalid_reason: InvalidReason::ReasonNone,
             report: report.clone(),
             location,
+            gain,
+            elevation,
             hex_scale,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
@@ -240,6 +256,8 @@ impl IotVerifiedWitnessReport {
         report: &IotWitnessReport,
         received_timestamp: DateTime<Utc>,
         location: Option<u64>,
+        gain: i32,
+        elevation: i32,
         participant_side: InvalidParticipantSide,
     ) -> IotVerifiedWitnessReport {
         Self {
@@ -248,6 +266,8 @@ impl IotVerifiedWitnessReport {
             invalid_reason,
             report: report.clone(),
             location,
+            gain,
+            elevation,
             hex_scale: Decimal::ZERO,
             // default reward units to zero until we've got the full count of
             // valid, non-failed witnesses for the final validated poc report
