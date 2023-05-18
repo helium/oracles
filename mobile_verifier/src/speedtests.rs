@@ -111,6 +111,7 @@ impl SpeedtestDaemon {
             speedtest.save(&mut transaction).await?;
         }
 
+        self.file_sink.commit().await?;
         transaction.commit().await?;
 
         Ok(())

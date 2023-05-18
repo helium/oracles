@@ -84,7 +84,8 @@ impl HeartbeatDaemon {
         file: FileInfoStream<CellHeartbeatIngestReport>,
         cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
     ) -> anyhow::Result<()> {
-        let epoch = (file.file_info.timestamp - Duration::hours(1))..file.file_info.timestamp;
+        let epoch = (file.file_info.timestamp - Duration::hours(1))
+            ..(file.file_info.timestamp + Duration::hours(1));
         let mut transaction = self.pool.begin().await?;
         let reports = file.into_stream(&mut transaction).await?;
 
@@ -103,6 +104,7 @@ impl HeartbeatDaemon {
             }
         }
 
+        self.file_sink.commit().await?;
         transaction.commit().await?;
 
         Ok(())
@@ -188,7 +190,7 @@ impl Heartbeat {
                 Ok(Heartbeat {
                     hotspot_key: heartbeat_report.report.pubkey,
                     cbsd_id: heartbeat_report.report.cbsd_id,
-                    timestamp: heartbeat_report.received_timestamp,
+                    timestamp: heartbeat_report.report.timestamp,
                     cell_type,
                     validity,
                 })
