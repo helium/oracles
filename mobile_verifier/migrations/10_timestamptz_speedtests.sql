@@ -1,5 +1,5 @@
-DROP TYPE speedtest;
 DROP TABLE speedtests;
+DROP TYPE speedtest;
 
 CREATE TYPE speedtest AS (
        timestamp TIMESTAMPTZ,
