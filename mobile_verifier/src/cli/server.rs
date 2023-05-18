@@ -1,18 +1,14 @@
 use crate::{
     heartbeats::HeartbeatDaemon, rewarder::Rewarder, speedtests::SpeedtestDaemon, Settings,
+    subsciber_location::SubscriberLocationLoader,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
     file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
-    heartbeat::CellHeartbeatIngestReport, speedtest::CellSpeedtestIngestReport, FileStore,
-    FileType,
-};
+    mobile_subscriber::SubscriberLocationIngestReport, FileStore, FileType,
 use futures_util::TryFutureExt;
 use mobile_config::Client;
-use price::PriceTracker;
-use tokio::signal;
-
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
 
@@ -125,6 +121,19 @@ impl Cmd {
         let heartbeat_daemon = HeartbeatDaemon::new(
             pool.clone(),
             config_client.clone(),
+        let verifier = Verifier::new(config_client, ingest);
+
+        let (subscriber_location, subscriber_location_join_handle) =
+            file_source::continuous_source::<SubscriberLocationIngestReport>()
+                .db(pool.clone())
+                .store(ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::SubscriberLocationIngestReport)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
+        let subscriber_location_loader =
+            SubscriberLocationLoader::new(pool.clone(), Vec::new(), subscriber_location);
             heartbeats,
             valid_heartbeats,
         );
@@ -146,13 +155,21 @@ impl Cmd {
             data_transfer_ingest,
         );
 
+        let subscriber_location_loader =
+            SubscriberLocationLoader::new(pool.clone(), Vec::new(), subscriber_location);
+
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
             valid_heartbeats_server.run().map_err(Error::from),
             valid_speedtests_server.run().map_err(Error::from),
             mobile_rewards_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
-            reward_manifests_server.run().map_err(Error::from),
+            reward_manifests_server
+                .run(&shutdown_listener)
+                .map_err(Error::from),
+            subscriber_location_loader
+                .run(&shutdown_listener)
+                .map_err(Error::from),
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
