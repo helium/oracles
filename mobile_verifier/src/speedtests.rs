@@ -79,7 +79,10 @@ impl SpeedtestDaemon {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = shutdown.clone() => break,
+                    _ = shutdown.clone() => {
+                        tracing::info!("SpeedtestDaemon shutting down");
+                        break;
+                    }
                     Some(file) = self.speedtests.recv() => self.process_file(file).await?,
                 }
             }

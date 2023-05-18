@@ -32,6 +32,16 @@ pub struct HeartbeatReward {
     pub reward_weight: Decimal,
 }
 
+impl From<HeartbeatKey> for HeartbeatReward {
+    fn from(value: HeartbeatKey) -> Self {
+        Self {
+            hotspot_key: value.hotspot_key,
+            cbsd_id: value.cbsd_id,
+            reward_weight: value.cell_type.reward_weight(),
+        }
+    }
+}
+
 pub struct HeartbeatDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
     config_client: Client,
@@ -67,7 +77,10 @@ impl HeartbeatDaemon {
 
             loop {
                 tokio::select! {
-                    _ = shutdown.clone() => break,
+                    _ = shutdown.clone() => {
+                        tracing::info!("HeartbeatDaemon shutting down");
+                        break;
+                    }
                     Some(file) = self.heartbeats.recv() => self.process_file(file, &cache).await?,
                 }
             }
@@ -120,33 +133,20 @@ impl HeartbeatReward {
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
         sqlx::query_as::<_, HeartbeatKey>(
-            "SELECT DISTINCT hotspot_key, cbsd_id, cell_type FROM heartbeats",
+            r#"
+            SELECT hotspot_key, cbsd_id, cell_type
+            FROM heartbeats
+            WHERE truncated_timestamp >= $1
+            	and truncated_timestamp < $2
+            GROUP BY cbsd_id, hotspot_key, cell_type
+            HAVING count(*) >= $3
+            "#,
         )
+        .bind(epoch.start)
+        .bind(epoch.end)
+        .bind(MINIMUM_HEARTBEAT_COUNT)
         .fetch(exec)
-        .try_filter_map(move |key| async move {
-            let count: i64 = sqlx::query_scalar(
-                r#"
-                SELECT COUNT(*) FROM heartbeats WHERE
-                  cbsd_id = $1 AND
-                  hotspot_key = $2 AND
-                  truncated_timestamp >= $3 AND
-                  truncated_timestamp < $4
-                "#,
-            )
-            .bind(&key.cbsd_id)
-            .bind(&key.hotspot_key)
-            .bind(epoch.start)
-            .bind(epoch.end)
-            .fetch_one(exec)
-            .await?;
-            Ok(
-                (count >= MINIMUM_HEARTBEAT_COUNT).then(move || HeartbeatReward {
-                    hotspot_key: key.hotspot_key,
-                    cbsd_id: key.cbsd_id,
-                    reward_weight: key.cell_type.reward_weight(),
-                }),
-            )
-        })
+        .map_ok(HeartbeatReward::from)
     }
 }
 
@@ -190,7 +190,7 @@ impl Heartbeat {
                 Ok(Heartbeat {
                     hotspot_key: heartbeat_report.report.pubkey,
                     cbsd_id: heartbeat_report.report.cbsd_id,
-                    timestamp: heartbeat_report.report.timestamp,
+                    timestamp: heartbeat_report.received_timestamp,
                     cell_type,
                     validity,
                 })
