@@ -46,6 +46,17 @@ entropy_lifespan = 180
 # File store poll interval for incoming entropy reports, in seconds
 entropy_interval = 300
 
+# runner runs at 30 sec intervals
+# 60 permits retries for up to 30 mins
+beacon_max_retries = 60
+
+# witnesses are processed per beacon
+# as such the retry can be much less as if the beacon fails
+# then the witnesses auto fail too
+# if the beacon is processed successfully, then any one witness
+# can only fail 5 times before we move on without it
+witness_max_retries = 5
+
 [database]
 
 # Postgres Connection Information
