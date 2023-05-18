@@ -73,7 +73,7 @@ impl GatewayCache {
                 Ok(hit.value().clone())
             }
             _ => {
-                tracing::debug!("cache miss: {:?}", address);
+                tracing::debug!(?address, "cache miss");
                 metrics::increment_counter!("oracles_iot_verifier_gateway_cache_miss");
                 match self
                     .iot_config_client
