@@ -13,6 +13,7 @@ use helium_proto::{
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
+use std::str;
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::mpsc::Receiver;
 
@@ -29,6 +30,7 @@ pub enum RewardType {
     MobileGateway,
     IotGateway,
     IotOperational,
+    MobileSubscriber,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -144,7 +146,20 @@ impl Indexer {
                         },
                         r.dc_transfer_reward,
                     )),
-                    _ => bail!("got an invalid mobile reward share"),
+                    Some(MobileReward::SubscriberReward(r)) => {
+                        let key = match str::from_utf8(&r.subscriber_id) {
+                            Ok(k) => k.to_string(),
+                            Err(_e) => bail!("got an invalid subscriber id"),
+                        };
+                        Ok((
+                            RewardKey {
+                                key,
+                                reward_type: RewardType::MobileSubscriber,
+                            },
+                            r.discovery_location_amount,
+                        ))
+                    }
+                    _ => bail!("got an invalid reward share"),
                 }
             }
             settings::Mode::Iot => {

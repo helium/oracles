@@ -1,12 +1,16 @@
 use crate::{
+    data_session::HotspotMap,
     heartbeats::HeartbeatReward,
     speedtests::{Average, SpeedtestAverages},
+    subscriber_location::SubscriberValidatedLocations,
 };
+
 use chrono::{DateTime, Duration, Utc};
-use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
+use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -24,6 +28,12 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
+
+// Percent of total emissions allocated for mapper rewards
+const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
+
+/// shares of the mappers pool allocated per eligble subscriber for discovery mapping
+const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -47,28 +57,17 @@ impl TransferRewards {
 
     pub async fn from_transfer_sessions(
         mobile_bone_price: Decimal,
-        transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
+        transfer_sessions: HotspotMap,
         hotspots: &PocShares,
         epoch: &Range<DateTime<Utc>>,
     ) -> Self {
-        tokio::pin!(transfer_sessions);
-
         let mut reward_sum = Decimal::ZERO;
         let rewards = transfer_sessions
-            // Accumulate bytes per hotspot
-            .fold(
-                HashMap::<PublicKeyBinary, Decimal>::new(),
-                |mut entries, session| async move {
-                    *entries.entry(session.pub_key).or_default() += Decimal::from(session.num_dcs);
-                    entries
-                },
-            )
-            .await
             .into_iter()
             .filter(|(pub_key, _)| hotspots.is_valid(pub_key))
             // Calculate rewards per hotspot
             .map(|(pub_key, dc_amount)| {
-                let bones = dc_to_mobile_bones(dc_amount, mobile_bone_price);
+                let bones = dc_to_mobile_bones(Decimal::from(dc_amount), mobile_bone_price);
                 reward_sum += bones;
                 (pub_key, bones)
             })
@@ -130,6 +129,66 @@ impl TransferRewards {
                             .unwrap_or(0),
                     },
                 )),
+            })
+    }
+}
+
+#[derive(Default)]
+pub struct MapperShares {
+    pub discovery_mapping_shares: SubscriberValidatedLocations,
+}
+
+impl MapperShares {
+    pub fn new(discovery_mapping_shares: SubscriberValidatedLocations) -> Self {
+        Self {
+            discovery_mapping_shares,
+        }
+    }
+
+    pub fn rewards_per_share(
+        &self,
+        reward_period: &'_ Range<DateTime<Utc>>,
+    ) -> anyhow::Result<Decimal> {
+        // note: currently rewards_per_share calculation only takes into
+        // consideration discovery mapping shares
+        // in the future it will also need to take into account
+        // verification mapping shares
+        let duration: Duration = reward_period.end - reward_period.start;
+        let total_mappers_pool = get_scheduled_tokens_for_mappers(duration);
+
+        // the number of subscribers eligible for discovery location rewards hihofe
+        let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
+
+        // calculate the total eligible mapping shares for the epoch
+        // this could be simplified as every subscriber is awarded the same share
+        // however the fuction is setup to allow the verification mapper shares to be easily
+        // added without impacting code structure ( the per share value for those will be different )
+        let total_mapper_shares = discovery_mappers_count * DISCOVERY_MAPPING_SHARES;
+        let res = total_mappers_pool
+            .checked_div(total_mapper_shares)
+            .unwrap_or(Decimal::ZERO);
+        Ok(res)
+    }
+
+    pub fn into_subscriber_rewards(
+        self,
+        reward_period: &'_ Range<DateTime<Utc>>,
+        reward_per_share: Decimal,
+    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+        self.discovery_mapping_shares
+            .into_iter()
+            .map(move |subscriber_id| proto::SubscriberReward {
+                subscriber_id,
+                discovery_location_amount: (DISCOVERY_MAPPING_SHARES * reward_per_share)
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0),
+            })
+            .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
+            .map(|subscriber_reward| proto::MobileRewardShare {
+                start_period: reward_period.start.encode_timestamp(),
+                end_period: reward_period.end.encode_timestamp(),
+                reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
             })
     }
 }
@@ -250,16 +309,25 @@ pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
+pub fn get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
+    get_total_scheduled_tokens(duration) * MAPPERS_REWARDS_PERCENT
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
+        data_session,
+        data_session::HotspotDataSession,
         heartbeats::HeartbeatReward,
         speedtests::{Speedtest, SpeedtestAverages},
+        subscriber_location::SubscriberValidatedLocations,
     };
     use chrono::{Duration, Utc};
     use futures::stream;
+    use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
+    use prost::Message;
     use std::collections::{HashMap, VecDeque};
 
     fn valid_shares() -> RadioShares {
@@ -281,6 +349,64 @@ mod test {
     }
 
     #[tokio::test]
+    async fn discover_mapping_amount() {
+        // test based on example defined at https://github.com/helium/oracles/issues/422
+        // NOTE: the example defined above lists values in mobile tokens, whereas
+        //       this test uses mobile bones
+
+        const NUM_SUBSCRIBERS: u64 = 10_000;
+
+        // simulate 10k subscriber location shares
+        let mut location_shares = SubscriberValidatedLocations::new();
+        for n in 0..NUM_SUBSCRIBERS {
+            location_shares.push(n.encode_to_vec());
+        }
+
+        // calculate discovery mapping rewards for a 24hr period
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(24))..now;
+
+        // translate location shares into discovery mapping shares
+        let mapping_shares = MapperShares::new(location_shares);
+        let rewards_per_share = mapping_shares.rewards_per_share(&epoch).unwrap();
+
+        // verify total rewards for the epoch
+        let total_epoch_rewards = get_total_scheduled_tokens(epoch.end - epoch.start)
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0);
+        assert_eq!(164_383_561_643_835, total_epoch_rewards);
+
+        // verify total rewards allocated to mappers the epoch
+        let total_mapper_rewards = get_scheduled_tokens_for_mappers(epoch.end - epoch.start)
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0);
+        assert_eq!(32_876_712_328_767, total_mapper_rewards);
+
+        let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
+
+        // get the summed rewards allocated to subscribers for discovery location
+        let mut total_discovery_mapping_rewards = 0_u64;
+        for subscriber_share in mapping_shares.into_subscriber_rewards(&epoch, rewards_per_share) {
+            if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
+                total_discovery_mapping_rewards += r.discovery_location_amount;
+                assert_eq!(expected_reward_per_subscriber, r.discovery_location_amount);
+            }
+        }
+
+        // verify the total rewards awared for discovery mapping
+        assert_eq!(32_876_712_320_000, total_discovery_mapping_rewards);
+
+        // the sum of rewards distributed should not exceed the epoch amount
+        // but due to rounding whilst going to u64 for each subscriber,
+        // we will be some bones short of the full epoch amount
+        // the difference in bones cannot be more than the total number of subscribers ( 10 k)
+        let diff = total_mapper_rewards - total_discovery_mapping_rewards;
+        assert!(diff < NUM_SUBSCRIBERS);
+    }
+
+    #[tokio::test]
     async fn transfer_reward_amount() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -289,15 +415,20 @@ mod test {
             .parse()
             .expect("failed payer parse");
 
-        let data_transfer_sessions = stream::iter(vec![ValidDataTransferSession {
+        let data_transfer_session = HotspotDataSession {
             pub_key: owner.clone(),
             payer,
             upload_bytes: 0,   // Unused
             download_bytes: 0, // Unused
             num_dcs: 2,
-            first_timestamp: DateTime::default(),
-            last_timestamp: DateTime::default(),
-        }]);
+            received_timestamp: DateTime::default(),
+        };
+
+        let mut data_transfer_map = HotspotMap::new();
+        data_transfer_map.insert(
+            data_transfer_session.pub_key,
+            data_transfer_session.num_dcs as u64,
+        );
 
         let mut hotspot_shares = HashMap::default();
         hotspot_shares.insert(owner.clone(), valid_shares());
@@ -316,7 +447,7 @@ mod test {
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
-            data_transfer_sessions,
+            data_transfer_map,
             &poc_shares,
             &epoch,
         )
@@ -342,21 +473,23 @@ mod test {
             .parse()
             .expect("failed payer parse");
 
-        // Just an absurdly large amount of DC
         let mut transfer_sessions = Vec::new();
+        // Just an absurdly large amount of DC
         for _ in 0..3_003 {
-            transfer_sessions.push(ValidDataTransferSession {
+            transfer_sessions.push(Ok(HotspotDataSession {
                 pub_key: owner.clone(),
                 payer: payer.clone(),
                 upload_bytes: 0,
                 download_bytes: 0,
                 num_dcs: 4444444444444445,
-                first_timestamp: DateTime::default(),
-                last_timestamp: DateTime::default(),
-            });
+                received_timestamp: DateTime::default(),
+            }));
         }
-
         let data_transfer_sessions = stream::iter(transfer_sessions);
+        let aggregated_data_transfer_sessions =
+            data_session::data_sessions_to_dc(data_transfer_sessions)
+                .await
+                .unwrap();
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
@@ -367,7 +500,7 @@ mod test {
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
-            data_transfer_sessions,
+            aggregated_data_transfer_sessions,
             &poc_shares,
             &epoch,
         )

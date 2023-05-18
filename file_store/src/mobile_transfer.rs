@@ -24,7 +24,6 @@ impl MsgDecode for ValidDataTransferSession {
 
 impl TryFrom<proto::ValidDataTransferSession> for ValidDataTransferSession {
     type Error = Error;
-
     fn try_from(v: proto::ValidDataTransferSession) -> Result<Self> {
         Ok(Self {
             payer: v.payer.into(),

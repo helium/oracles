@@ -97,6 +97,7 @@ impl FileInfo {
 
 pub const SUBSCRIBER_LOCATION_REQ: &str = "subscriber_location_req";
 pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report";
+pub const VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "verified_subscriber_location_report";
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
@@ -155,6 +156,7 @@ pub enum FileType {
     MobileRewardShare,
     SubscriberLocationReq,
     SubscriberLocationIngestReport,
+    VerifiedSubscriberLocationIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -162,6 +164,9 @@ impl fmt::Display for FileType {
         let s = match self {
             Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
             Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
+            Self::VerifiedSubscriberLocationIngestReport => {
+                VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
+            }
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
@@ -198,6 +203,9 @@ impl FileType {
         match self {
             Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
             Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
+            Self::VerifiedSubscriberLocationIngestReport => {
+                VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
+            }
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
@@ -232,6 +240,11 @@ impl FromStr for FileType {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let result = match s {
+            SUBSCRIBER_LOCATION_REQ => Self::SubscriberLocationReq,
+            SUBSCRIBER_LOCATION_INGEST_REPORT => Self::SubscriberLocationIngestReport,
+            VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT => {
+                Self::VerifiedSubscriberLocationIngestReport
+            }
             CELL_HEARTBEAT => Self::CellHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
             CELL_HEARTBEAT_INGEST_REPORT => Self::CellHeartbeatIngestReport,
