@@ -162,7 +162,7 @@ pub struct FileSinkClient {
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
 const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
-const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl FileSinkClient {
     pub async fn write<T: prost::Message>(
