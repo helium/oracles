@@ -101,6 +101,7 @@ impl Server {
             FileType::IotRewardShare,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_gateway_reward_shares"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -112,6 +113,7 @@ impl Server {
             FileType::RewardManifest,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_iot_reward_manifest"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -170,8 +172,8 @@ impl Server {
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
-            gateway_rewards_server.run(&shutdown).map_err(Error::from),
-            reward_manifests_server.run(&shutdown).map_err(Error::from),
+            gateway_rewards_server.run().map_err(Error::from),
+            reward_manifests_server.run().map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),
             runner.run(
                 file_upload_tx.clone(),

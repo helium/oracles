@@ -82,6 +82,7 @@ impl Server {
             FileType::EntropyReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
@@ -99,7 +100,7 @@ impl Server {
             entropy_generator
                 .run(entropy_sink, &shutdown)
                 .map_err(Error::from),
-            entropy_sink_server.run(&shutdown).map_err(Error::from),
+            entropy_sink_server.run().map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),
         )
         .map(|_| ())

@@ -125,6 +125,7 @@ impl Cmd {
             FileType::ValidDataTransferSession,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
+            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(true)
@@ -154,9 +155,7 @@ impl Cmd {
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),
-            valid_sessions_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
+            valid_sessions_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
             conn_handler.map_err(Error::from),
