@@ -109,7 +109,6 @@ impl Loader {
             }
         }
         tracing::info!("stopping verifier loader");
-        gateway_cache.cache_monitor.abort();
         Ok(())
     }
 

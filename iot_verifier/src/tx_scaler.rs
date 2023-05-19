@@ -1,35 +1,27 @@
 use crate::{
+    gateway_updater::MessageReceiver,
     hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap, SharedHexDensityMap},
     last_beacon::LastBeacon,
     Settings,
 };
 use chrono::{DateTime, Duration, Utc};
-use futures::stream::StreamExt;
-use iot_config::{
-    client::{Client as IotConfigClient, ClientError as IotConfigClientError},
-    gateway_info::GatewayInfoResolver,
-};
-
+use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
 use std::collections::HashMap;
-use tokio::time;
 
 // The number in minutes within which the gateway has registered a beacon
 // to the oracle for inclusion in transmit scaling density calculations
 const HIP_17_INTERACTIVITY_LIMIT: i64 = 3600;
 
 pub struct Server {
-    iot_config_client: IotConfigClient,
     hex_density_map: SharedHexDensityMap,
     pool: PgPool,
-    trigger_interval: Duration,
     refresh_offset: Duration,
+    gateway_cache_receiver: MessageReceiver,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum TxScalerError {
-    #[error("error querying iot config service")]
-    IotConfigClient(#[from] IotConfigClientError),
     #[error("tx scaler db connect error")]
     DbConnect(#[from] db_store::Error),
     #[error("txn scaler error retrieving recent activity")]
@@ -40,14 +32,13 @@ impl Server {
     pub async fn from_settings(
         settings: &Settings,
         pool: PgPool,
-        iot_config_client: IotConfigClient,
+        gateway_cache_receiver: MessageReceiver,
     ) -> Result<Self, TxScalerError> {
         let mut server = Self {
-            iot_config_client,
             hex_density_map: SharedHexDensityMap::new(),
             pool,
-            trigger_interval: Duration::seconds(settings.transmit_scale_interval),
             refresh_offset: settings.loader_window_max_lookback_age(),
+            gateway_cache_receiver,
         };
 
         server.refresh_scaling_map().await?;
@@ -62,12 +53,6 @@ impl Server {
     pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result<(), TxScalerError> {
         tracing::info!("density_scaler: starting transmit scaler process");
 
-        let mut trigger_timer = time::interval(
-            self.trigger_interval
-                .to_std()
-                .expect("valid interval in seconds"),
-        );
-
         loop {
             if shutdown.is_triggered() {
                 tracing::info!("density_scaler: stopping transmit scaler");
@@ -75,7 +60,7 @@ impl Server {
             }
 
             tokio::select! {
-                _ = trigger_timer.tick() => self.refresh_scaling_map().await?,
+                _ = self.gateway_cache_receiver.changed() => self.refresh_scaling_map().await?,
                 _ = shutdown.clone() => return Ok(()),
             }
         }
@@ -89,10 +74,10 @@ impl Server {
             .gateways_recent_activity(refresh_start)
             .await
             .map_err(sqlx::Error::from)?;
-        let mut gw_stream = self.iot_config_client.stream_gateways_info().await?;
-        while let Some(gateway_info) = gw_stream.next().await {
-            if let Some(metadata) = gateway_info.metadata {
-                if active_gateways.contains_key(&gateway_info.address.as_ref().to_vec()) {
+        for k in active_gateways.keys() {
+            let pubkey = PublicKeyBinary::from(k.clone());
+            if let Some(gateway_info) = self.gateway_cache_receiver.borrow().get(&pubkey) {
+                if let Some(metadata) = &gateway_info.metadata {
                     global_map.increment_unclipped(metadata.location)
                 }
             }
