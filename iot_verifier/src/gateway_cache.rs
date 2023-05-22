@@ -25,11 +25,11 @@ impl GatewayCache {
     ) -> Result<GatewayInfo, GatewayCacheError> {
         match self.gateway_cache_receiver.borrow().get(address) {
             Some(hit) => {
-                metrics::increment_counter!("oracles_iot_verifier_gateway_found");
+                metrics::increment_counter!("oracles_iot_verifier_gateway_cache_hit");
                 Ok(hit.clone())
             }
-            _ => {
-                metrics::increment_counter!("oracles_iot_verifier_gateway_not_found");
+            None => {
+                metrics::increment_counter!("oracles_iot_verifier_gateway_cache_miss");
                 Err(GatewayCacheError::GatewayNotFound(address.clone()))
             }
         }
