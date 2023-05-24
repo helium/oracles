@@ -46,7 +46,7 @@ where
         let burn_service = task::spawn(async move {
             loop {
                 if let Err(e) = self.burn().await {
-                    tracing::error!("{e:?}");
+                    tracing::error!("Failed to burn: {e:?}");
                 }
                 tokio::time::sleep(self.burn_period).await;
             }
