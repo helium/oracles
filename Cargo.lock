@@ -1111,7 +1111,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -2014,7 +2014,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "structopt",
  "thiserror",
  "tracing",
@@ -2424,7 +2424,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "strum",
  "strum_macros",
@@ -2839,7 +2839,7 @@ dependencies = [
  "p256",
  "rand_core 0.6.4",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "signature",
  "solana-sdk",
  "sqlx",
@@ -2849,7 +2849,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#2f4727866968b044d4663847f46c0d57c4f25038"
+source = "git+https://github.com/helium/proto?branch=master#7a137324fc41b415a9df44558954683233a95239"
 dependencies = [
  "bytes",
  "prost",
@@ -3170,7 +3170,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",
@@ -3305,7 +3305,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3844,7 +3844,7 @@ dependencies = [
  "poc-metrics",
  "prost",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "solana",
  "sqlx",
  "thiserror",
@@ -3886,7 +3886,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -5078,7 +5078,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -5697,7 +5697,7 @@ dependencies = [
  "helium-sub-daos",
  "metrics",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "solana-client",
  "solana-program",
  "solana-sdk",

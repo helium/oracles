@@ -95,6 +95,8 @@ impl FileInfo {
     }
 }
 
+pub const SUBSCRIBER_LOCATION_REQ: &str = "subscriber_location_req";
+pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report";
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
@@ -149,11 +151,15 @@ pub enum FileType {
     ValidDataTransferSession,
     PriceReport,
     MobileRewardShare,
+    SubscriberLocationReq,
+    SubscriberLocationIngestReport,
 }
 
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
+            Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
@@ -187,6 +193,8 @@ impl fmt::Display for FileType {
 impl FileType {
     pub fn to_str(&self) -> &'static str {
         match self {
+            Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
+            Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,

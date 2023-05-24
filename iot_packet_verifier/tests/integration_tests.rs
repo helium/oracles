@@ -136,7 +136,7 @@ fn packet_report(
     payload_hash: Vec<u8>,
 ) -> PacketRouterPacketReport {
     PacketRouterPacketReport {
-        gateway_timestamp: Utc.timestamp_opt(timestamp as i64, 0).unwrap(),
+        gateway_tmst: Utc.timestamp_opt(timestamp as i64, 0).unwrap(),
         oui,
         net_id: 0,
         rssi: 0,
