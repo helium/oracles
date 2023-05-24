@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::HeartbeatReward,
     ingest,
-    reward_shares::{PocShares, TransferRewards},
+    reward_shares::{PocShares, TransferRewards, SubscriberLocationShares},
     speedtests::SpeedtestAverages,
 };
 use anyhow::bail;
@@ -9,6 +9,8 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use helium_proto::RewardManifest;
+use helium_proto::services::poc_mobile as proto;
+use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -201,6 +203,29 @@ impl Rewarder {
                 .await??;
         }
 
+        let subscriber_location_shares =
+        SubscriberLocationShares::aggregate(&self.pool, &scheduler.reward_period).await?;
+    // TODO: filter out any subscribers which havent transferred data
+    // accumulate total location rewards allocated, this will be deducted from the
+    // remaining pool for subscribers to cover mapping etc
+    let mut total_discovery_location_reward = 0_u64;
+    for subscriber_location_share in
+        subscriber_location_shares.into_rewards(&scheduler.reward_period)
+    {
+        self.mobile_rewards
+            .write(subscriber_location_share.clone(), [])
+            .await?
+            // Await the returned one shot to ensure that we wrote the file
+            .await??;
+        match subscriber_location_share.reward {
+            Some(ProtoReward::SubscriberReward(subscriber_reward)) => {
+                total_discovery_location_reward += subscriber_reward.discovery_location_amount;
+            }
+            _ => ()
+        }
+    }
+
+
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
@@ -210,6 +235,10 @@ impl Rewarder {
             .bind(reward_period.start)
             .execute(&mut transaction)
             .await?;
+
+        // clear the subscriber location table
+        SubscriberLocationShares::clear_shares(&mut transaction, &scheduler.reward_period.end)
+        .await;
 
         let next_reward_period = scheduler.next_reward_period();
         save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;
