@@ -1,16 +1,15 @@
 use crate::{
+    data_session,
     heartbeats::HeartbeatReward,
-    ingest,
-    reward_shares::{PocShares, TransferRewards, SubscriberLocationShares},
+    reward_shares::{PocShares, SubscriberLocationShares, TransferRewards},
     speedtests::SpeedtestAverages,
 };
 use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
-use helium_proto::RewardManifest;
-use helium_proto::services::poc_mobile as proto;
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
+use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -28,7 +27,6 @@ pub struct Rewarder {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
-    data_transfer_ingest: FileStore,
 }
 
 impl Rewarder {
@@ -39,7 +37,6 @@ impl Rewarder {
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
-        data_transfer_ingest: FileStore,
     ) -> Self {
         Self {
             pool,
@@ -48,7 +45,6 @@ impl Rewarder {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            data_transfer_ingest,
         }
     }
 
@@ -172,11 +168,12 @@ impl Rewarder {
                 / dec!(1_000_000); // Per Bone
         let transfer_rewards = TransferRewards::from_transfer_sessions(
             mobile_bone_price,
-            ingest::ingest_valid_data_transfers(&self.data_transfer_ingest, reward_period).await,
+            data_session::aggregate_mobile_hotspot_data_sessions_to_dc(&self.pool, reward_period)
+                .await?,
             &poc_rewards,
             reward_period,
         )
-        .await;
+        .await?;
 
         // It's important to gauge the scale metric. If this value is < 1.0, we are in
         // big trouble.
@@ -203,28 +200,44 @@ impl Rewarder {
                 .await??;
         }
 
-        let subscriber_location_shares =
-        SubscriberLocationShares::aggregate(&self.pool, &scheduler.reward_period).await?;
-    // TODO: filter out any subscribers which havent transferred data
-    // accumulate total location rewards allocated, this will be deducted from the
-    // remaining pool for subscribers to cover mapping etc
-    let mut total_discovery_location_reward = 0_u64;
-    for subscriber_location_share in
-        subscriber_location_shares.into_rewards(&scheduler.reward_period)
-    {
-        self.mobile_rewards
-            .write(subscriber_location_share.clone(), [])
-            .await?
-            // Await the returned one shot to ensure that we wrote the file
-            .await??;
-        match subscriber_location_share.reward {
-            Some(ProtoReward::SubscriberReward(subscriber_reward)) => {
-                total_discovery_location_reward += subscriber_reward.discovery_location_amount;
-            }
-            _ => ()
-        }
-    }
+        // *
+        // rewards for subscriber location sharing
+        // to be eligable a subscriber must have shared his location
+        // across a minimum of 3 hours in any 8 hours within the epoch ( 24 hrs)
+        // AND also have transferred data
+        // TODO: confirm transferred data is within the same 8 hour windows or across 24 hours
+        // *
 
+        // get all subscribers this epoch which have transferred data
+        let active_subscribers = data_session::aggregate_mobile_subscriber_data_sessions_to_bytes(
+            &self.pool,
+            reward_period,
+        )
+        .await?;
+        // determine location shares per subscriber for the epoch
+        // location shares at this point will be a vec of each hour within the epoch
+        // the subscriber has shared their location
+        let subscriber_location_shares =
+            SubscriberLocationShares::aggregate(&self.pool, reward_period).await?;
+        // translate eligble shares into rewards
+        // & accumulate total location rewards allocated,
+        // this will be deducted from the remaining pool for subscribers to cover mapping etc
+        let mut _total_discovery_location_reward = dec!(0);
+        for subscriber_location_share in
+            subscriber_location_shares.into_rewards(reward_period, active_subscribers)
+        {
+            self.mobile_rewards
+                .write(subscriber_location_share.clone(), [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+            if let Some(ProtoReward::SubscriberReward(subscriber_reward)) =
+                subscriber_location_share.reward
+            {
+                _total_discovery_location_reward +=
+                    Decimal::from(subscriber_reward.discovery_location_amount);
+            }
+        }
 
         let written_files = self.mobile_rewards.commit().await?.await??;
 
@@ -237,8 +250,7 @@ impl Rewarder {
             .await?;
 
         // clear the subscriber location table
-        SubscriberLocationShares::clear_shares(&mut transaction, &scheduler.reward_period.end)
-        .await;
+        SubscriberLocationShares::clear_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
         save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;

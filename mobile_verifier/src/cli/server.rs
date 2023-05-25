@@ -1,14 +1,21 @@
 use crate::{
-    heartbeats::HeartbeatDaemon, rewarder::Rewarder, speedtests::SpeedtestDaemon, Settings,
-    subsciber_location::SubscriberLocationLoader,
+    data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
+    speedtests::SpeedtestDaemon, subsciber_location::SubscriberLocationIngestor, Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
     file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
-    mobile_subscriber::SubscriberLocationIngestReport, FileStore, FileType,
+    heartbeat::CellHeartbeatIngestReport, mobile_subscriber::SubscriberLocationIngestReport,
+    mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport, FileStore,
+    FileType,
+};
+
 use futures_util::TryFutureExt;
 use mobile_config::Client;
+use price::PriceTracker;
+use tokio::signal;
+
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
 
@@ -38,6 +45,7 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         let ingest = FileStore::from_settings(&settings.ingest).await?;
+        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
         // Heartbeats
         let (heartbeats, heartbeats_join_handle) =
@@ -113,7 +121,6 @@ impl Cmd {
 
         let reward_period_hours = settings.rewards;
         let config_client = Client::from_settings(&settings.config_client)?;
-        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
@@ -121,9 +128,11 @@ impl Cmd {
         let heartbeat_daemon = HeartbeatDaemon::new(
             pool.clone(),
             config_client.clone(),
-        let verifier = Verifier::new(config_client, ingest);
+            heartbeats,
+            valid_heartbeats,
+        );
 
-        let (subscriber_location, subscriber_location_join_handle) =
+        let (subscriber_location_ingest, subscriber_location_ingest_join_handle) =
             file_source::continuous_source::<SubscriberLocationIngestReport>()
                 .db(pool.clone())
                 .store(ingest.clone())
@@ -132,11 +141,16 @@ impl Cmd {
                 .build()?
                 .start(shutdown_listener.clone())
                 .await?;
-        let subscriber_location_loader =
-            SubscriberLocationLoader::new(pool.clone(), Vec::new(), subscriber_location);
-            heartbeats,
-            valid_heartbeats,
-        );
+
+        let (data_session_ingest, data_session_ingest_join_handle) =
+            file_source::continuous_source::<ValidDataTransferSession>()
+                .db(pool.clone())
+                .store(data_transfer_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::ValidDataTransferSession)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
 
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
@@ -152,11 +166,13 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            data_transfer_ingest,
         );
 
-        let subscriber_location_loader =
-            SubscriberLocationLoader::new(pool.clone(), Vec::new(), subscriber_location);
+        // TODO: retrieve initial carrier keys from config service
+        let subscriber_location_ingestor =
+            SubscriberLocationIngestor::new(pool.clone(), Vec::new(), subscriber_location_ingest);
+
+        let data_session_ingestor = DataSessionIngestor { pool: pool.clone() };
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
@@ -165,10 +181,13 @@ impl Cmd {
             mobile_rewards_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             reward_manifests_server
+                .run()
+                .map_err(Error::from),
+            subscriber_location_ingestor
                 .run(&shutdown_listener)
                 .map_err(Error::from),
-            subscriber_location_loader
-                .run(&shutdown_listener)
+            data_session_ingestor
+                .run(data_session_ingest, shutdown_listener.clone())
                 .map_err(Error::from),
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
@@ -176,6 +195,8 @@ impl Cmd {
             heartbeat_daemon.run(shutdown_listener.clone()),
             speedtest_daemon.run(shutdown_listener.clone()),
             rewarder.run(shutdown_listener.clone()),
+            subscriber_location_ingest_join_handle.map_err(anyhow::Error::from),
+            data_session_ingest_join_handle.map_err(anyhow::Error::from),
         )?;
 
         tracing::info!("Shutting down verifier server");

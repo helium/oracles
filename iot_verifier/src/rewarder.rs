@@ -88,8 +88,6 @@ impl Rewarder {
             .await??;
         let written_files = self.rewards_sink.commit().await?.await??;
 
-        let subscriber_reward_shares = SubscriberShares::aggregate(&self.pool, &scheduler.reward_period);
-
         let mut transaction = self.pool.begin().await?;
         // Clear gateway shares table period to end of reward period
         GatewayShares::clear_rewarded_shares(&mut transaction, scheduler.reward_period.end).await?;

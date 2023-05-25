@@ -1,9 +1,11 @@
 use crate::{
+    data_session::{HotspotMap, SubscriberMap},
     heartbeats::HeartbeatReward,
     speedtests::{Average, SpeedtestAverages},
 };
+
 use chrono::{DateTime, Duration, Utc};
-use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
+use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
@@ -26,9 +28,13 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
 
-/// Fixed reward in mobile rewarded to a subscriber
+/// Fixed reward in mobile bones rewarded to a subscriber
 /// sharing their location
-const DISCOVERY_LOCATION_REWARDS_FIXED: u64 = 30;
+/// 30 mobile = 30_000000 mobile bones
+const DISCOVERY_LOCATION_REWARDS_FIXED: u64 = 30_000000;
+
+// Percent of total emissions allocated for mapper rewards
+const _MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
 
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -52,23 +58,12 @@ impl TransferRewards {
 
     pub async fn from_transfer_sessions(
         mobile_bone_price: Decimal,
-        transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
+        transfer_sessions: HotspotMap,
         hotspots: &PocShares,
         epoch: &Range<DateTime<Utc>>,
-    ) -> Self {
-        tokio::pin!(transfer_sessions);
-
+    ) -> Result<Self, sqlx::Error> {
         let mut reward_sum = Decimal::ZERO;
         let rewards = transfer_sessions
-            // Accumulate bytes per hotspot
-            .fold(
-                HashMap::<PublicKeyBinary, Decimal>::new(),
-                |mut entries, session| async move {
-                    *entries.entry(session.pub_key).or_default() += Decimal::from(session.num_dcs);
-                    entries
-                },
-            )
-            .await
             .into_iter()
             .filter(|(pub_key, _)| hotspots.is_valid(pub_key))
             // Calculate rewards per hotspot
@@ -103,11 +98,11 @@ impl TransferRewards {
             Decimal::ONE
         };
 
-        Self {
+        Ok(Self {
             reward_scale,
             rewards,
             reward_sum: reward_sum * reward_scale,
-        }
+        })
     }
 
     pub fn into_rewards(
@@ -141,13 +136,13 @@ impl TransferRewards {
 
 #[derive(sqlx::FromRow)]
 pub struct SubscriberLocationShare {
-    pub subscriber_id: Vec<u8>,
-    pub hour_bucket: i8,
+    pub subscriber_id: String,
+    pub hour_bucket: Decimal,
 }
 
 #[derive(Default)]
 pub struct SubscriberLocationShares {
-    pub shares: HashMap<Vec<u8>, Vec<i8>>,
+    pub shares: HashMap<String, Vec<Decimal>>,
 }
 
 impl SubscriberLocationShares {
@@ -178,7 +173,7 @@ impl SubscriberLocationShares {
         reward_period: &Range<DateTime<Utc>>,
     ) -> Result<(), sqlx::Error> {
         let mut rows = sqlx::query_as::<_, SubscriberLocationShare>(
-            "select subscriber_id, hour_bucket from subscriber_loc where reward_timestamp > $1 and reward_timestamp <= $2",
+            "select subscriber_id, hour_bucket::numeric from subscriber_loc where reward_timestamp > $1 and reward_timestamp <= $2",
         )
         .bind(reward_period.start)
         .bind(reward_period.end)
@@ -195,11 +190,14 @@ impl SubscriberLocationShares {
     pub fn into_rewards(
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
+        active_subscribers: SubscriberMap,
     ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
         self.shares
             .into_iter()
             .filter_map(move |(subscriber_id, populated_hour_bucket)| {
-                if rewardable(&populated_hour_bucket) {
+                if rewardable(&populated_hour_bucket)
+                    && active_subscribers.contains_key(&subscriber_id)
+                {
                     Some(proto::SubscriberReward {
                         subscriber_id,
                         discovery_location_amount: DISCOVERY_LOCATION_REWARDS_FIXED,
@@ -332,7 +330,7 @@ pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
-pub fn rewardable(hour_bucket: &Vec<i8>) -> bool {
+pub fn rewardable(hour_bucket: &Vec<Decimal>) -> bool {
     // TODO: simple first pass, revisit
     // iterate over the vec and if we see 3 filled hours less than 8 hours apart
     // then its rewardable
@@ -342,7 +340,7 @@ pub fn rewardable(hour_bucket: &Vec<i8>) -> bool {
         for n in 0..bucket_len - 2 {
             let v1 = hour_bucket[n];
             let v2 = hour_bucket[n + 2];
-            if v2 - v1 <= 8 {
+            if v2 - v1 <= dec!(8) {
                 return true;
             }
         }
@@ -355,6 +353,7 @@ mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
+        data_session::HotspotDataSession,
         heartbeats::HeartbeatReward,
         speedtests::{Speedtest, SpeedtestAverages},
     };
@@ -371,7 +370,7 @@ mod test {
     #[test]
 
     fn test_rewardable() {
-        let mut vec: Vec<i8> = vec![1, 2, 11, 12, 13];
+        let mut vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(12), dec!(13)];
         assert!(rewardable(&mut vec))
     }
 
@@ -396,15 +395,20 @@ mod test {
             .parse()
             .expect("failed payer parse");
 
-        let data_transfer_sessions = stream::iter(vec![ValidDataTransferSession {
+        let data_transfer_session = HotspotDataSession {
             pub_key: owner.clone(),
             payer,
             upload_bytes: 0,   // Unused
             download_bytes: 0, // Unused
             num_dcs: 2,
-            first_timestamp: DateTime::default(),
-            last_timestamp: DateTime::default(),
-        }]);
+            reward_timestamp: DateTime::default(),
+        };
+
+        let mut data_transfer_map = HotspotMap::new();
+        data_transfer_map.insert(
+            data_transfer_session.pub_key,
+            Decimal::from(data_transfer_session.num_dcs),
+        );
 
         let mut hotspot_shares = HashMap::default();
         hotspot_shares.insert(owner.clone(), valid_shares());
@@ -423,11 +427,12 @@ mod test {
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
-            data_transfer_sessions,
+            data_transfer_map,
             &poc_shares,
             &epoch,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
         assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
@@ -445,25 +450,15 @@ mod test {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
-        let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let _payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed payer parse");
 
         // Just an absurdly large amount of DC
-        let mut transfer_sessions = Vec::new();
+        let mut transfer_sessions = HotspotMap::new();
         for _ in 0..3_003 {
-            transfer_sessions.push(ValidDataTransferSession {
-                pub_key: owner.clone(),
-                payer: payer.clone(),
-                upload_bytes: 0,
-                download_bytes: 0,
-                num_dcs: 4444444444444445,
-                first_timestamp: DateTime::default(),
-                last_timestamp: DateTime::default(),
-            });
+            transfer_sessions.insert(owner.clone(), dec!(4444444444444445));
         }
-
-        let data_transfer_sessions = stream::iter(transfer_sessions);
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
@@ -474,11 +469,12 @@ mod test {
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
-            data_transfer_sessions,
+            transfer_sessions,
             &poc_shares,
             &epoch,
         )
-        .await;
+        .await
+        .unwrap();
 
         // We have constructed the data transfer in such a way that they easily exceed the maximum
         // allotted reward amount for data transfer, which is 40% of the daily tokens. We check to

@@ -7,13 +7,13 @@ use helium_crypto::PublicKeyBinary;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Receiver;
 
-pub struct SubscriberLocationLoader {
+pub struct SubscriberLocationIngestor {
     pub pool: PgPool,
     pub carrier_keys: Vec<PublicKeyBinary>,
     reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
 }
 
-impl SubscriberLocationLoader {
+impl SubscriberLocationIngestor {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         carrier_keys: Vec<PublicKeyBinary>,
@@ -25,7 +25,7 @@ impl SubscriberLocationLoader {
             reports_receiver,
         }
     }
-    pub async fn run(&mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         // TODO: add tick to periodaclly refresh the carrier keys from mobile config service
         loop {
             if shutdown.is_triggered() {
@@ -77,13 +77,13 @@ impl SubscriberLocationLoader {
 
     pub async fn save(
         &self,
-        subscriber_id: Vec<u8>,
+        subscriber_id: String,
         timestamp: DateTime<Utc>,
         db: &mut Transaction<'_, Postgres>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
-                INSERT INTO subscriber_loc (subscriber_id, date_bucket, hour_bucket, recv_timestamp)
+                INSERT INTO subscriber_loc (subscriber_id, date_bucket, hour_bucket, reward_timestamp)
                 VALUES ($1, DATE_TRUNC('hour', $2), DATE_PART('hour', $2), $2)
                 ON CONFLICT DO NOTHING;
                 "#,
@@ -95,12 +95,14 @@ impl SubscriberLocationLoader {
         Ok(())
     }
 
-    fn verify_known_carrier_key(&self, public_key: &PublicKeyBinary) -> bool {
-        self.carrier_keys.contains(public_key)
+    //TODO: reinstate check when keys are available
+    fn verify_known_carrier_key(&self, _public_key: &PublicKeyBinary) -> bool {
+        // self.carrier_keys.contains(public_key)
+        true
     }
 
-    // TODO: finish this
-    fn refresh_carrier_keys(&mut self) -> anyhow::Result<()> {
+    // TODO: fix this when API is available
+    fn _refresh_carrier_keys(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 }

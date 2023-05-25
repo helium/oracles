@@ -15,8 +15,8 @@ use helium_proto::{
     services::{
         poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
-            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, RadioRewardShare,
-            SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
+            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, MobileRewardShare,
+            RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -185,6 +185,12 @@ impl Cmd {
                         "num_dcs": manifest.num_dcs,
                         "packet_timestamp": manifest.packet_timestamp,
                     }))?;
+                }
+                FileType::MobileRewardShare => {
+                    // This just outputs a binary of the txns instead of the typical decode.
+                    // This is to make ingesting the output of these transactions simpler on chain.
+                    let msg = MobileRewardShare::decode(msg)?;
+                    print_json(&msg)?;
                 }
                 _ => (),
             }
