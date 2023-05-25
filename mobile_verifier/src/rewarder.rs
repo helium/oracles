@@ -50,20 +50,19 @@ impl Rewarder {
             let next_rewarded_end_time = self.next_rewarded_end_time().await?;
             let now = Utc::now();
             let next_reward = if now > next_rewarded_end_time {
-                Duration::zero()
+                Duration::zero().to_std()?
             } else {
-                next_rewarded_end_time - Utc::now()
-            }
-            .to_std()?;
-            tracing::info!(
-                "Next reward will be given in {}",
-                humantime::format_duration(next_reward)
-            );
+                let next_reward = (next_rewarded_end_time - Utc::now()).to_std()?;
+                tracing::info!(
+                    "Next reward will be given in {}",
+                    humantime::format_duration(next_reward)
+                );
+                next_reward
+            };
             tokio::select! {
                 _ = shutdown.clone() => break,
                 _ = sleep(next_reward) =>
                     self.reward(&(last_rewarded_end_time..next_rewarded_end_time)).await?,
-
             }
         }
 
@@ -83,6 +82,37 @@ impl Rewarder {
     }
 
     pub async fn reward(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
+        tracing::info!(
+            "Rewarding for period: {} to {}",
+            reward_period.start,
+            reward_period.end
+        );
+
+        // Check if we have heartbeats and speedtests past the end of the reward period
+        if sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM heartbeats WHERE latest_timestamp >= $1",
+        )
+        .bind(reward_period.end)
+        .fetch_one(&self.pool)
+        .await?
+            == 0
+        {
+            tracing::info!("No heartbeats found past reward period, sleeping for five minutes");
+            sleep(Duration::minutes(5).to_std()?).await;
+        }
+
+        if sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM speedtests WHERE latest_timestamp >= $1",
+        )
+        .bind(reward_period.end)
+        .fetch_one(&self.pool)
+        .await?
+            == 0
+        {
+            tracing::info!("No speedtests found past reward period, sleeping for five minutes");
+            sleep(Duration::minutes(5).to_std()?).await;
+        }
+
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
         let speedtests = SpeedtestAverages::validated(&self.pool, reward_period.end).await?;
 
@@ -91,6 +121,7 @@ impl Rewarder {
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
             .await?;
+
         // Mobile prices are supplied in 10^6, so we must convert them to Decimal
         let mobile_bone_price = Decimal::from(mobile_price)
                 / dec!(1_000_000)  // Per Mobile token
