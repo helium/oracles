@@ -19,6 +19,7 @@ use tokio::time::sleep;
 pub struct Rewarder {
     pool: Pool<Postgres>,
     reward_period_duration: Duration,
+    reward_offset: Duration,
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
@@ -29,6 +30,7 @@ impl Rewarder {
     pub fn new(
         pool: Pool<Postgres>,
         reward_period_duration: Duration,
+        reward_offset: Duration,
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
@@ -37,6 +39,7 @@ impl Rewarder {
         Self {
             pool,
             reward_period_duration,
+            reward_offset,
             mobile_rewards,
             reward_manifests,
             price_tracker,
@@ -49,10 +52,11 @@ impl Rewarder {
             let last_rewarded_end_time = self.last_rewarded_end_time().await?;
             let next_rewarded_end_time = self.next_rewarded_end_time().await?;
             let now = Utc::now();
-            let next_reward = if now > next_rewarded_end_time {
+            let next_reward = if now > (next_rewarded_end_time + self.reward_offset) {
                 Duration::zero().to_std()?
             } else {
-                let next_reward = (next_rewarded_end_time - Utc::now()).to_std()?;
+                let next_reward =
+                    (next_rewarded_end_time - Utc::now() + self.reward_offset).to_std()?;
                 tracing::info!(
                     "Next reward will be given in {}",
                     humantime::format_duration(next_reward)

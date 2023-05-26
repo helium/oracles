@@ -14,6 +14,8 @@ pub struct Settings {
     /// Reward period in hours. (Default is 24)
     #[serde(default = "default_reward_period")]
     pub rewards: i64,
+    #[serde(default = "default_reward_offset_minutes")]
+    pub reward_offset_minutes: i64,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub data_transfer_ingest: file_store::Settings,
@@ -35,6 +37,10 @@ pub fn default_start_after() -> u64 {
 
 pub fn default_reward_period() -> i64 {
     24
+}
+
+pub fn default_reward_offset_minutes() -> i64 {
+    30
 }
 
 impl Settings {

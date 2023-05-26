@@ -135,6 +135,7 @@ impl Cmd {
         let rewarder = Rewarder::new(
             pool.clone(),
             Duration::hours(reward_period_hours),
+            Duration::minutes(settings.reward_offset_minutes),
             mobile_rewards,
             reward_manifests,
             price_tracker,
