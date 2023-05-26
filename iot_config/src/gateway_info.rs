@@ -31,24 +31,13 @@ impl GatewayInfo {
         meta: db::IotMetadata,
         region_map: &region_map::RegionMapReader,
     ) -> Self {
-        let metadata = if let (Some(location), Some(elevation), Some(gain)) =
-            (meta.location, meta.elevation, meta.gain)
-        {
-            if let Ok(region) = h3index_to_region(location, region_map) {
-                Some(GatewayMetadata {
-                    location,
-                    elevation,
-                    gain,
-                    region,
-                })
-            } else {
-                tracing::debug!(
-                    pubkey = meta.address.to_string(),
-                    location,
-                    "gateway region lookup failed for asserted location"
-                );
-                None
-            }
+        let metadata = if let Some(location) = meta.location {
+            Some(GatewayMetadata {
+                location,
+                elevation: meta.elevation,
+                gain: meta.gain,
+                region: h3index_to_region(location, region_map).unwrap_or(Region::Unknown),
+            })
         } else {
             None
         };
@@ -135,8 +124,8 @@ pub(crate) mod db {
     pub struct IotMetadata {
         pub address: PublicKeyBinary,
         pub location: Option<u64>,
-        pub elevation: Option<i32>,
-        pub gain: Option<i32>,
+        pub elevation: i32,
+        pub gain: i32,
         pub is_full_hotspot: bool,
     }
 
@@ -178,8 +167,8 @@ pub(crate) mod db {
                 )
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 location: row.get::<Option<i64>, &str>("location").map(|v| v as u64),
-                elevation: row.get::<Option<i32>, &str>("elevation"),
-                gain: row.get::<Option<i32>, &str>("gain"),
+                elevation: row.get::<Option<i32>, &str>("elevation").unwrap_or(0),
+                gain: row.get::<Option<i32>, &str>("gain").unwrap_or(12),
                 is_full_hotspot: row.get("is_full_hotspot"),
             })
         }
