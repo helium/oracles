@@ -17,14 +17,15 @@ use helium_proto::{
     Message,
 };
 use sqlx::{Pool, Postgres};
-use tokio::sync::broadcast::Sender;
+use tokio::sync::{broadcast, watch};
 use tonic::{Request, Response, Status};
 
 pub struct OrgService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
-    route_update_tx: Sender<RouteStreamResV1>,
+    route_update_tx: broadcast::Sender<RouteStreamResV1>,
     signing_key: Keypair,
+    delegate_updater: watch::Sender<org::DelegateCache>,
 }
 
 impl OrgService {
@@ -32,13 +33,15 @@ impl OrgService {
         settings: &Settings,
         auth_cache: AuthCache,
         pool: Pool<Postgres>,
-        route_update_tx: Sender<RouteStreamResV1>,
+        route_update_tx: broadcast::Sender<RouteStreamResV1>,
+        delegate_updater: watch::Sender<org::DelegateCache>,
     ) -> Result<Self> {
         Ok(Self {
             auth_cache,
             pool,
             route_update_tx,
             signing_key: settings.signing_keypair()?,
+            delegate_updater,
         })
     }
 
@@ -100,32 +103,36 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
         telemetry::count_request("org", "get");
 
-        let org = org::get_with_constraints(request.oui, &self.pool)
-            .await
-            .map_err(|err| {
-                tracing::error!("get org {} request failed {err:?}", request.oui);
-                Status::internal("org get failed")
-            })?;
-        let net_id = org
+        let org = org::get(request.oui, &self.pool).await.map_err(|err| {
+            tracing::error!("get org {} request failed {err:?}", request.oui);
+            Status::internal("org get failed")
+        })?;
+        let net_id = if let Some(ref constraints) = org.constraints {
+            constraints
+                .first()
+                .map(|constraint| constraint.start_addr.to_net_id())
+                .ok_or(Status::not_found("no org devaddr constraints"))?
+                .map_err(|_| Status::invalid_argument("invalid net id"))?
+        } else {
+            return Err(Status::not_found(
+                "invalid org; no valid devaddr constraints",
+            ));
+        };
+
+        let devaddr_constraints = org
             .constraints
-            .first()
-            .ok_or("not found")
-            .and_then(|constraint| {
-                constraint
-                    .start_addr
-                    .to_net_id()
-                    .map_err(|_| "invalid net id")
-            })
-            .map_err(|err| Status::internal(format!("net id error: {err}")))?;
+            .as_ref()
+            .map_or_else(Vec::new, |constraints| {
+                constraints
+                    .iter()
+                    .map(|constraint| constraint.clone().into())
+                    .collect()
+            });
 
         let mut resp = OrgResV1 {
-            org: Some(org.org.into()),
+            org: Some(org.into()),
             net_id: net_id.into(),
-            devaddr_constraints: org
-                .constraints
-                .into_iter()
-                .map(|constraint| constraint.into())
-                .collect(),
+            devaddr_constraints,
             timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
@@ -178,20 +185,30 @@ impl iot_config::Org for OrgService {
                 .into_iter()
                 .map(|key| key.into())
                 .collect(),
+            HELIUM_NET_ID,
+            &devaddr_constraint,
             &self.pool,
         )
         .await
         .map_err(|err| {
-            tracing::error!("org save failed: {err:?}");
-            Status::internal("org save failed")
+            tracing::error!("org save failed: {err}");
+            Status::internal("org save failed: {err}")
         })?;
 
-        org::insert_constraints(org.oui, HELIUM_NET_ID, &devaddr_constraint, &self.pool)
-            .await
-            .map_err(|err| {
-                tracing::error!("org constraints save failed: {err:?}");
-                Status::internal("org constraints save failed")
-            })?;
+        org.delegate_keys.as_ref().map(|keys| {
+            self.delegate_updater.send_if_modified(|cache| {
+                keys.iter().fold(
+                    false,
+                    |acc, key| {
+                        if cache.insert(key.clone()) {
+                            true
+                        } else {
+                            acc
+                        }
+                    },
+                )
+            })
+        });
 
         let mut resp = OrgResV1 {
             org: Some(org.into()),
@@ -244,20 +261,30 @@ impl iot_config::Org for OrgService {
                 .into_iter()
                 .map(|key| key.into())
                 .collect(),
+            net_id,
+            &devaddr_range,
             &self.pool,
         )
         .await
         .map_err(|err| {
-            tracing::error!("failed to create org {err:?}");
-            Status::internal("org save failed")
+            tracing::error!("failed to create org {err}");
+            Status::internal("org save failed: {err}")
         })?;
 
-        org::insert_constraints(org.oui, net_id, &devaddr_range, &self.pool)
-            .await
-            .map_err(|err| {
-                tracing::error!("failed to save org constraints {err:?}");
-                Status::internal("org constraints save failed")
-            })?;
+        org.delegate_keys.as_ref().map(|keys| {
+            self.delegate_updater.send_if_modified(|cache| {
+                keys.iter().fold(
+                    false,
+                    |acc, key| {
+                        if cache.insert(key.clone()) {
+                            true
+                        } else {
+                            acc
+                        }
+                    },
+                )
+            })
+        });
 
         let mut resp = OrgResV1 {
             org: Some(org.into()),

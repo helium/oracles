@@ -1,6 +1,7 @@
 use crate::{
     admin::AuthCache,
     gateway_info::{self, GatewayInfo},
+    org,
     region_map::RegionMapReader,
     telemetry, verify_public_key, GrpcResult, GrpcStreamResult, Settings,
 };
@@ -21,6 +22,7 @@ use hextree::Cell;
 use retainer::Cache;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
+use tokio::sync::watch;
 use tonic::{Request, Response, Status};
 
 const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 60);
@@ -32,6 +34,7 @@ pub struct GatewayService {
     metadata_pool: Pool<Postgres>,
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
+    delegate_cache: watch::Receiver<org::DelegateCache>,
 }
 
 impl GatewayService {
@@ -40,6 +43,7 @@ impl GatewayService {
         metadata_pool: Pool<Postgres>,
         region_map: RegionMapReader,
         auth_cache: AuthCache,
+        delegate_cache: watch::Receiver<org::DelegateCache>,
     ) -> Result<Self> {
         let gateway_cache = Arc::new(Cache::new());
         let cache_clone = gateway_cache.clone();
@@ -51,6 +55,7 @@ impl GatewayService {
             metadata_pool,
             region_map,
             signing_key: Arc::new(settings.signing_keypair()?),
+            delegate_cache,
         })
     }
 
@@ -68,6 +73,20 @@ impl GatewayService {
             .verify_signature(signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
         Ok(())
+    }
+
+    fn verify_location_request(&self, request: &GatewayLocationReqV1) -> Result<(), Status> {
+        let signature_bytes = request.signer.clone();
+        self.delegate_cache
+            .borrow()
+            .contains(&signature_bytes.clone().into())
+            .then(|| {
+                let signer_pubkey = verify_public_key(&signature_bytes)?;
+                request
+                    .verify(&signer_pubkey)
+                    .map_err(|_| Status::invalid_argument("bad request signature"))
+            })
+            .ok_or_else(|| Status::permission_denied("unauthorized request signature"))?
     }
 
     async fn resolve_gateway_info(&self, pubkey: &PublicKeyBinary) -> Result<GatewayInfo, Status> {
@@ -105,10 +124,7 @@ impl iot_config::Gateway for GatewayService {
         let request = request.into_inner();
         telemetry::count_request("gateway", "location");
 
-        let signer = verify_public_key(&request.signer)?;
-        request
-            .verify(&signer)
-            .map_err(|_| Status::permission_denied("invalid request signature"))?;
+        self.verify_location_request(&request)?;
 
         let address: &PublicKeyBinary = &request.gateway.into();
 

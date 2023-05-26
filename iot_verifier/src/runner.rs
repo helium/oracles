@@ -42,6 +42,8 @@ pub struct Runner {
     beacon_interval: ChronoDuration,
     beacon_interval_tolerance: ChronoDuration,
     max_witnesses_per_poc: u64,
+    beacon_max_retries: u64,
+    witness_max_retries: u64,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -64,12 +66,16 @@ impl Runner {
         let beacon_interval = settings.beacon_interval();
         let beacon_interval_tolerance = settings.beacon_interval_tolerance();
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
+        let beacon_max_retries = settings.beacon_max_retries;
+        let witness_max_retries = settings.witness_max_retries;
         Ok(Self {
             pool,
             cache,
             beacon_interval,
             beacon_interval_tolerance,
             max_witnesses_per_poc,
+            beacon_max_retries,
+            witness_max_retries,
         })
     }
 
@@ -166,7 +172,8 @@ impl Runner {
         hex_density_map: impl HexDensityMap,
     ) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
-        let db_beacon_reports = Report::get_next_beacons(&self.pool).await?;
+        let db_beacon_reports =
+            Report::get_next_beacons(&self.pool, self.beacon_max_retries).await?;
         tracing::info!("completed query get_next_beacons");
         if db_beacon_reports.is_empty() {
             tracing::info!("no beacons ready for verification");
@@ -236,7 +243,9 @@ impl Runner {
         let beacon = &beacon_report.report;
         let beacon_received_ts = beacon_report.received_timestamp;
 
-        let db_witnesses = Report::get_witnesses_for_beacon(&self.pool, packet_data).await?;
+        let db_witnesses =
+            Report::get_witnesses_for_beacon(&self.pool, packet_data, self.witness_max_retries)
+                .await?;
         let witness_len = db_witnesses.len();
         tracing::debug!("found {witness_len} witness for beacon");
 
@@ -334,10 +343,19 @@ impl Runner {
                             VerificationStatus::Invalid => witness.reward_unit = Decimal::ZERO,
                         });
 
-                    let location = beacon_info.metadata.map(|metadata| metadata.location);
+                    // metadata at this point will always be Some...
+                    let (location, gain, elevation) = match beacon_info.metadata {
+                        Some(metadata) => {
+                            (Some(metadata.location), metadata.gain, metadata.elevation)
+                        }
+                        None => (None, 0, 0),
+                    };
+
                     let valid_beacon_report = IotValidBeaconReport {
                         received_timestamp: beacon_received_ts,
                         location,
+                        gain,
+                        elevation,
                         hex_scale: beacon_verify_result
                             .hex_scale
                             .ok_or(RunnerError::NotFound("invalid hex scaling factor"))?,
@@ -614,6 +632,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report: report.clone(),
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Valid,
@@ -625,6 +645,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report: report.clone(),
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
@@ -636,6 +658,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report: report.clone(),
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
@@ -647,6 +671,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report,
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
@@ -693,6 +719,8 @@ mod tests {
             received_timestamp: Utc::now(),
             report,
             location: Some(631252734740306943),
+            gain: 20,
+            elevation: 100,
             hex_scale: Decimal::ZERO,
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Valid,

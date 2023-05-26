@@ -199,6 +199,9 @@ impl Poc {
                     &witness_report.report,
                     witness_report.received_timestamp,
                     None,
+                    // if location is None, default gain and elevation to zero
+                    0,
+                    0,
                     InvalidParticipantSide::Witness,
                 );
                 verified_witnesses.push(dup_witness)
@@ -229,8 +232,11 @@ impl Poc {
                     &witness_report.report,
                     witness_report.received_timestamp,
                     None,
+                    // if location is None, default gain and elevation to zero
+                    0,
+                    0,
                     InvalidParticipantSide::Witness,
-                ))
+                ));
             }
             Err(err) => return Err(VerificationError::GatewayCache(err)),
         };
@@ -242,8 +248,11 @@ impl Poc {
                     &witness_report.report,
                     witness_report.received_timestamp,
                     None,
+                    // if location is None, default gain and elevation to zero
+                    0,
+                    0,
                     InvalidParticipantSide::Witness,
-                ))
+                ));
             }
         };
         // to avoid assuming beaconer location is set and to avoid unwrap
@@ -254,6 +263,9 @@ impl Poc {
                 &witness_report.report,
                 witness_report.received_timestamp,
                 None,
+                // if location is None, default gain and elevation to zero
+                0,
+                0,
                 InvalidParticipantSide::Beaconer,
             ))
         };
@@ -275,6 +287,8 @@ impl Poc {
                     &witness_report.report,
                     witness_report.received_timestamp,
                     Some(witness_metadata.location),
+                    witness_metadata.gain,
+                    witness_metadata.elevation,
                     tx_scale,
                 ))
             }
@@ -282,7 +296,9 @@ impl Poc {
                 invalid_reason,
                 &witness_report.report,
                 witness_report.received_timestamp,
-                None,
+                Some(beaconer_metadata.location),
+                beaconer_metadata.gain,
+                beaconer_metadata.elevation,
                 InvalidParticipantSide::Witness,
             )),
         }

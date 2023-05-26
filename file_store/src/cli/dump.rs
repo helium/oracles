@@ -166,7 +166,7 @@ impl Cmd {
                     let packet_report = PacketRouterPacketReportV1::decode(msg)?;
                     print_json(&json!({
                         "oui": packet_report.oui,
-                        "timestamp": packet_report.gateway_timestamp_ms}))?;
+                        "timestamp": packet_report.gateway_tmst}))?;
                 }
                 FileType::PriceReport => {
                     let manifest = PriceReportV1::decode(msg)?;

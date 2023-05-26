@@ -1,27 +1,26 @@
-use futures::stream::StreamExt;
-use helium_crypto::{PublicKey, PublicKeyBinary};
-use serde::Serialize;
-use sqlx::{types::Uuid, Row};
-
 use crate::{
     lora_field::{DevAddrConstraint, DevAddrField, NetIdField},
     HELIUM_NET_ID,
 };
+use futures::stream::StreamExt;
+use helium_crypto::{PublicKey, PublicKeyBinary};
+use serde::Serialize;
+use sqlx::{postgres::PgRow, types::Uuid, FromRow, Row};
+use std::collections::HashSet;
+use tokio::sync::watch;
 
 pub mod proto {
     pub use helium_proto::services::iot_config::{OrgResV1, OrgV1};
 }
 
-#[derive(Clone, Debug, Serialize, sqlx::FromRow)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Org {
-    #[sqlx(try_from = "i64")]
     pub oui: u64,
-    #[sqlx(rename = "owner_pubkey")]
     pub owner: PublicKeyBinary,
-    #[sqlx(rename = "payer_pubkey")]
     pub payer: PublicKeyBinary,
-    pub delegate_keys: Vec<PublicKeyBinary>,
     pub locked: bool,
+    pub delegate_keys: Option<Vec<PublicKeyBinary>>,
+    pub constraints: Option<Vec<DevAddrConstraint>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,35 +28,117 @@ pub struct OrgList {
     orgs: Vec<Org>,
 }
 
-#[derive(Debug)]
-pub struct OrgWithConstraints {
-    pub org: Org,
-    pub constraints: Vec<DevAddrConstraint>,
+impl FromRow<'_, PgRow> for Org {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        let delegate_keys = row
+            .get::<Vec<PublicKeyBinary>, &str>("delegate_keys")
+            .into_iter()
+            .map(Some)
+            .collect();
+        let constraints = row
+            .get::<Vec<(i32, i32)>, &str>("constraints")
+            .into_iter()
+            .map(|(start, end)| {
+                Some(DevAddrConstraint {
+                    start_addr: start.into(),
+                    end_addr: end.into(),
+                })
+            })
+            .collect();
+        Ok(Self {
+            oui: row.get::<i64, &str>("oui") as u64,
+            owner: row.get("owner_pubkey"),
+            payer: row.get("payer_pubkey"),
+            locked: row.get("locked"),
+            delegate_keys,
+            constraints,
+        })
+    }
+}
+
+pub type DelegateCache = HashSet<PublicKeyBinary>;
+
+pub async fn delegate_keys_cache(
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(watch::Sender<DelegateCache>, watch::Receiver<DelegateCache>), sqlx::Error> {
+    let key_set = sqlx::query(r#" select delegate_pubkey from organization_delegate_keys "#)
+        .fetch(db)
+        .filter_map(|row| async move { row.ok() })
+        .map(|row| row.get("delegate_pubkey"))
+        .collect::<HashSet<PublicKeyBinary>>()
+        .await;
+
+    Ok(watch::channel(key_set))
 }
 
 pub async fn create_org(
     owner: PublicKeyBinary,
     payer: PublicKeyBinary,
     delegate_keys: Vec<PublicKeyBinary>,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<Org, sqlx::Error> {
-    let org = sqlx::query_as::<_, Org>(
+    net_id: NetIdField,
+    devaddr_range: &DevAddrConstraint,
+    db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
+) -> Result<Org, OrgStoreError> {
+    let mut txn = db.begin().await?;
+
+    let oui = sqlx::query(
         r#"
-        insert into organizations (owner_pubkey, payer_pubkey, delegate_keys)
-        values ($1, $2, $3)
-        returning *
+        insert into organizations (owner_pubkey, payer_pubkey)
+        values ($1, $2)
+        returning oui
         "#,
     )
     .bind(&owner)
     .bind(&payer)
-    .bind(&delegate_keys)
-    .fetch_one(db)
-    .await?;
+    .fetch_one(&mut txn)
+    .await
+    .map_err(|_| {
+        OrgStoreError::SaveOrg(format!("owner: {owner}, payer: {payer}, net_id: {net_id}"))
+    })?
+    .get::<i64, &str>("oui");
+
+    if !delegate_keys.is_empty() {
+        let delegate_keys = delegate_keys
+            .into_iter()
+            .map(|key| (key, oui))
+            .collect::<Vec<(PublicKeyBinary, i64)>>();
+        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
+            " insert into organization_delegate_keys (delegate_pubkey, oui) ",
+        );
+        query_builder
+            .push_values(delegate_keys, |mut builder, (key, oui)| {
+                builder.push_bind(key).push_bind(oui);
+            })
+            .push(" on conflict delegate_pubkey do nothing ");
+        query_builder
+            .build()
+            .execute(&mut txn)
+            .await
+            .map_err(|_| {
+                OrgStoreError::SaveDelegates(format!(
+                    "owner: {owner}, payer: {payer}, net_id: {net_id}"
+                ))
+            })
+            .map(|_| ())?
+    };
+
+    insert_constraints(oui as u64, net_id, devaddr_range, &mut txn)
+        .await
+        .map_err(|_| {
+            OrgStoreError::SaveConstraints(format!(
+                "{} - {}",
+                devaddr_range.start_addr, devaddr_range.end_addr
+            ))
+        })?;
+
+    let org = get(oui as u64, &mut txn).await?;
+
+    txn.commit().await?;
 
     Ok(org)
 }
 
-pub async fn insert_constraints(
+async fn insert_constraints(
     oui: u64,
     net_id: NetIdField,
     devaddr_range: &DevAddrConstraint,
@@ -78,70 +159,35 @@ pub async fn insert_constraints(
     .map(|_| ())
 }
 
+const GET_ORG_SQL: &str = r#"
+        select org.oui, org.owner_pubkey, org.payer_pubkey, org.locked,
+            array(select (start_addr, end_addr) from organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
+            array(select delegate_pubkey from organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
+        from organizations org
+        "#;
+
 pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error> {
-    Ok(sqlx::query_as::<_, Org>(
-        r#"
-        select * from organizations
-        "#,
-    )
-    .fetch(db)
-    .filter_map(|row| async move { row.ok() })
-    .collect::<Vec<Org>>()
-    .await)
+    Ok(sqlx::query_as::<_, Org>(GET_ORG_SQL)
+        .fetch(db)
+        .filter_map(|row| async move { row.ok() })
+        .collect::<Vec<Org>>()
+        .await)
 }
 
 pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Org, sqlx::Error> {
-    sqlx::query_as::<_, Org>(
-        r#"
-        select * from organizations where oui = $1
-        "#,
-    )
-    .bind(oui as i64)
-    .fetch_one(db)
-    .await
-}
-
-pub async fn get_with_constraints(
-    oui: u64,
-    db: impl sqlx::PgExecutor<'_>,
-) -> Result<OrgWithConstraints, sqlx::Error> {
-    let row = sqlx::query(
-        r#"
-        select org.owner_pubkey, org.payer_pubkey, org.delegate_keys, org.locked,
-            array(select (start_addr, end_addr) from organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints
-        from organizations org
-        where org.oui = $1
-        "#,
-    )
-    .bind(oui as i64)
-    .fetch_one(db)
-    .await?;
-
-    let constraints = row
-        .get::<Vec<(i32, i32)>, &str>("constraints")
-        .into_iter()
-        .map(|(start, end)| DevAddrConstraint {
-            start_addr: start.into(),
-            end_addr: end.into(),
-        })
-        .collect();
-
-    Ok(OrgWithConstraints {
-        org: Org {
-            oui,
-            owner: row.get("owner_pubkey"),
-            payer: row.get("payer_pubkey"),
-            delegate_keys: row.get("delegate_keys"),
-            locked: row.get("locked"),
-        },
-        constraints,
-    })
+    let mut query: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(GET_ORG_SQL);
+    query.push(" where org.oui = $1 ");
+    query
+        .build_query_as::<Org>()
+        .bind(oui as i64)
+        .fetch_one(db)
+        .await
 }
 
 pub async fn get_constraints_by_route(
     route_id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<DevAddrConstraint>, DbOrgError> {
+) -> Result<Vec<DevAddrConstraint>, OrgStoreError> {
     let uuid = Uuid::try_parse(route_id)?;
 
     let constraints = sqlx::query(
@@ -167,7 +213,7 @@ pub async fn get_constraints_by_route(
 pub async fn get_route_ids_by_route(
     route_id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<String>, DbOrgError> {
+) -> Result<Vec<String>, OrgStoreError> {
     let uuid = Uuid::try_parse(route_id)?;
 
     let route_ids = sqlx::query(
@@ -217,9 +263,15 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum DbOrgError {
+pub enum OrgStoreError {
     #[error("error retrieving saved org row: {0}")]
-    DbStore(#[from] sqlx::Error),
+    FetchOrg(#[from] sqlx::Error),
+    #[error("error saving org: {0}")]
+    SaveOrg(String),
+    #[error("error saving delegate keys: {0}")]
+    SaveDelegates(String),
+    #[error("error saving devaddr constraints: {0}")]
+    SaveConstraints(String),
     #[error("unable to deserialize pubkey: {0}")]
     DecodeKey(#[from] helium_crypto::Error),
     #[error("Route Id parse error: {0}")]
@@ -229,7 +281,7 @@ pub enum DbOrgError {
 pub async fn get_org_pubkeys(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, DbOrgError> {
+) -> Result<Vec<PublicKey>, OrgStoreError> {
     let org = get(oui, db).await?;
 
     let mut pubkeys: Vec<PublicKey> = vec![
@@ -237,13 +289,17 @@ pub async fn get_org_pubkeys(
         PublicKey::try_from(org.payer)?,
     ];
 
-    let mut delegate_pubkeys: Vec<PublicKey> = org
+    if let Some(ref mut delegate_pubkeys) = org
         .delegate_keys
-        .into_iter()
-        .map(PublicKey::try_from)
-        .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()?;
-
-    pubkeys.append(&mut delegate_pubkeys);
+        .map(|keys| {
+            keys.into_iter()
+                .map(PublicKey::try_from)
+                .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()
+        })
+        .transpose()?
+    {
+        pubkeys.append(delegate_pubkeys);
+    }
 
     Ok(pubkeys)
 }
@@ -251,13 +307,16 @@ pub async fn get_org_pubkeys(
 pub async fn get_org_pubkeys_by_route(
     route_id: &str,
     db: impl sqlx::PgExecutor<'_>,
-) -> Result<Vec<PublicKey>, DbOrgError> {
+) -> Result<Vec<PublicKey>, OrgStoreError> {
     let uuid = Uuid::try_parse(route_id)?;
 
     let org = sqlx::query_as::<_, Org>(
         r#"
-        select * from organizations
-        join routes on organizations.oui = routes.oui
+        select org.oui, org.owner_pubkey, org.payer_pubkey, org.locked,
+            array(select (start_addr, end_addr) from organization_devaddr_constraints org_const where org_const.oui = org.oui) as constraints,
+            array(select delegate_pubkey from organization_delegate_keys org_delegates where org_delegates.oui = org.oui) as delegate_keys
+        from organizations org
+        join routes on org.oui = routes.oui
         where routes.id = $1
         "#,
     )
@@ -270,13 +329,17 @@ pub async fn get_org_pubkeys_by_route(
         PublicKey::try_from(org.payer)?,
     ];
 
-    let mut delegate_keys: Vec<PublicKey> = org
+    if let Some(ref mut delegate_keys) = org
         .delegate_keys
-        .into_iter()
-        .map(PublicKey::try_from)
-        .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()?;
-
-    pubkeys.append(&mut delegate_keys);
+        .map(|keys| {
+            keys.into_iter()
+                .map(PublicKey::try_from)
+                .collect::<Result<Vec<PublicKey>, helium_crypto::Error>>()
+        })
+        .transpose()?
+    {
+        pubkeys.append(delegate_keys);
+    }
 
     Ok(pubkeys)
 }
@@ -321,34 +384,16 @@ pub async fn next_helium_devaddr(
     Ok(next_addr.into())
 }
 
-impl From<proto::OrgV1> for Org {
-    fn from(org: proto::OrgV1) -> Self {
-        Self {
-            oui: org.oui,
-            owner: org.owner.into(),
-            payer: org.payer.into(),
-            delegate_keys: org
-                .delegate_keys
-                .into_iter()
-                .map(|key| key.into())
-                .collect(),
-            locked: org.locked,
-        }
-    }
-}
-
 impl From<Org> for proto::OrgV1 {
     fn from(org: Org) -> Self {
         Self {
             oui: org.oui,
             owner: org.owner.into(),
             payer: org.payer.into(),
-            delegate_keys: org
-                .delegate_keys
-                .iter()
-                .map(|key| key.as_ref().into())
-                .collect(),
             locked: org.locked,
+            delegate_keys: org.delegate_keys.map_or_else(Vec::new, |keys| {
+                keys.iter().map(|key| key.as_ref().into()).collect()
+            }),
         }
     }
 }
