@@ -81,6 +81,15 @@ impl Rewarder {
             .ok_or(db_store::Error::DecodeError)
     }
 
+    async fn disable_complete_data_checks_until(&self) -> db_store::Result<DateTime<Utc>> {
+        Utc.timestamp_opt(
+            meta::fetch(&self.pool, "disable_complete_data_checks_until").await?,
+            0,
+        )
+        .single()
+        .ok_or(db_store::Error::DecodeError)
+    }
+
     pub async fn reward(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
         tracing::info!(
             "Rewarding for period: {} to {}",
@@ -89,28 +98,32 @@ impl Rewarder {
         );
 
         // Check if we have heartbeats and speedtests past the end of the reward period
-        if sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM heartbeats WHERE latest_timestamp >= $1",
-        )
-        .bind(reward_period.end)
-        .fetch_one(&self.pool)
-        .await?
-            == 0
-        {
-            tracing::info!("No heartbeats found past reward period, sleeping for five minutes");
-            sleep(Duration::minutes(5).to_std()?).await;
-        }
+        if reward_period.end >= self.disable_complete_data_checks_until().await? {
+            if sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM heartbeats WHERE latest_timestamp >= $1",
+            )
+            .bind(reward_period.end)
+            .fetch_one(&self.pool)
+            .await?
+                == 0
+            {
+                tracing::info!("No heartbeats found past reward period, sleeping for five minutes");
+                sleep(Duration::minutes(5).to_std()?).await;
+            }
 
-        if sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM speedtests WHERE latest_timestamp >= $1",
-        )
-        .bind(reward_period.end)
-        .fetch_one(&self.pool)
-        .await?
-            == 0
-        {
-            tracing::info!("No speedtests found past reward period, sleeping for five minutes");
-            sleep(Duration::minutes(5).to_std()?).await;
+            if sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM speedtests WHERE latest_timestamp >= $1",
+            )
+            .bind(reward_period.end)
+            .fetch_one(&self.pool)
+            .await?
+                == 0
+            {
+                tracing::info!("No speedtests found past reward period, sleeping for five minutes");
+                sleep(Duration::minutes(5).to_std()?).await;
+            }
+        } else {
+            tracing::info!("Complete data checks are disabled for this reward period");
         }
 
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
