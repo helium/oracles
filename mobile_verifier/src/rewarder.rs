@@ -229,8 +229,6 @@ impl Rewarder {
         };
 
         // translate subscriber shares into subscriber rewards
-
-        // this will be deducted from the remaining pool for subscribers to cover mapping etc
         let mut _total_discovery_location_reward = dec!(0);
         for subscriber_share in subscriber_shares.into_rewards(reward_period) {
             self.mobile_rewards
@@ -238,11 +236,6 @@ impl Rewarder {
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
-            if let Some(ProtoReward::SubscriberReward(subscriber_reward)) = subscriber_share.reward
-            {
-                _total_discovery_location_reward +=
-                    Decimal::from(subscriber_reward.discovery_location_amount);
-            }
         }
 
         let written_files = self.mobile_rewards.commit().await?.await??;
