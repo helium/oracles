@@ -32,12 +32,21 @@ impl GatewayInfo {
         region_map: &region_map::RegionMapReader,
     ) -> Self {
         let metadata = if let Some(location) = meta.location {
-            Some(GatewayMetadata {
-                location,
-                elevation: meta.elevation,
-                gain: meta.gain,
-                region: h3index_to_region(location, region_map).unwrap_or(Region::Unknown),
-            })
+            if let Ok(region) = h3index_to_region(location, region_map) {
+                Some(GatewayMetadata {
+                    location,
+                    elevation: meta.elevation,
+                    gain: meta.gain,
+                    region,
+                })
+            } else {
+                tracing::debug!(
+                    pubkey = meta.address.to_string(),
+                    location,
+                    "gateway region lookup failed for asserted location"
+                );
+                None
+            }
         } else {
             None
         };
