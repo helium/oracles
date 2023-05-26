@@ -9,7 +9,6 @@ use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
-use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
