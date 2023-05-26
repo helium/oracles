@@ -130,6 +130,11 @@ pub(crate) mod db {
     use sqlx::{PgExecutor, Row};
     use std::str::FromStr;
 
+    // Hotspot gain default; dbi * 10
+    const DEFAULT_GAIN: i32 = 12;
+    // Hotspot elevation default; meters above sea level
+    const DEFAULT_ELEVATION: i32 = 0;
+
     pub struct IotMetadata {
         pub address: PublicKeyBinary,
         pub location: Option<u64>,
@@ -176,8 +181,10 @@ pub(crate) mod db {
                 )
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 location: row.get::<Option<i64>, &str>("location").map(|v| v as u64),
-                elevation: row.get::<Option<i32>, &str>("elevation").unwrap_or(0),
-                gain: row.get::<Option<i32>, &str>("gain").unwrap_or(12),
+                elevation: row
+                    .get::<Option<i32>, &str>("elevation")
+                    .unwrap_or(DEFAULT_ELEVATION),
+                gain: row.get::<Option<i32>, &str>("gain").unwrap_or(DEFAULT_GAIN),
                 is_full_hotspot: row.get("is_full_hotspot"),
             })
         }
