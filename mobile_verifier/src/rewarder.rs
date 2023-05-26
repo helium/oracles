@@ -1,8 +1,9 @@
 use crate::{
     data_session,
     heartbeats::HeartbeatReward,
-    reward_shares::{PocShares, SubscriberLocationShares, TransferRewards},
+    reward_shares::{PocShares, SubscriberShares, TransferRewards},
     speedtests::SpeedtestAverages,
+    subsciber_location,
 };
 use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -201,8 +202,10 @@ impl Rewarder {
         }
 
         // *
-        // rewards for subscriber location sharing
-        // to be eligable a subscriber must have shared his location
+        // Subscriber rewards
+        // currently only includes rewards for subscriber location sharing
+        // but others will follow
+        // to be eligable for location sharing rewards a subscriber must have shared his location
         // across a minimum of 3 hours in any 8 hours within the epoch ( 24 hrs)
         // AND also have transferred data
         // TODO: confirm transferred data is within the same 8 hour windows or across 24 hours
@@ -217,22 +220,25 @@ impl Rewarder {
         // determine location shares per subscriber for the epoch
         // location shares at this point will be a vec of each hour within the epoch
         // the subscriber has shared their location
-        let subscriber_location_shares =
-            SubscriberLocationShares::aggregate(&self.pool, reward_period).await?;
-        // translate eligble shares into rewards
-        // & accumulate total location rewards allocated,
+        let location_shares =
+            subsciber_location::aggregate_location_shares(&self.pool, reward_period).await?;
+
+        let subscriber_shares = SubscriberShares {
+            active_subscribers,
+            location_shares,
+        };
+
+        // translate subscriber shares into subscriber rewards
+
         // this will be deducted from the remaining pool for subscribers to cover mapping etc
         let mut _total_discovery_location_reward = dec!(0);
-        for subscriber_location_share in
-            subscriber_location_shares.into_rewards(reward_period, active_subscribers)
-        {
+        for subscriber_share in subscriber_shares.into_rewards(reward_period) {
             self.mobile_rewards
-                .write(subscriber_location_share.clone(), [])
+                .write(subscriber_share.clone(), [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
-            if let Some(ProtoReward::SubscriberReward(subscriber_reward)) =
-                subscriber_location_share.reward
+            if let Some(ProtoReward::SubscriberReward(subscriber_reward)) = subscriber_share.reward
             {
                 _total_discovery_location_reward +=
                     Decimal::from(subscriber_reward.discovery_location_amount);
@@ -249,8 +255,9 @@ impl Rewarder {
             .execute(&mut transaction)
             .await?;
 
-        // clear the subscriber location table
-        SubscriberLocationShares::clear_shares(&mut transaction, &reward_period.end).await?;
+        // clear the subscriber location and data sessions data
+        data_session::clear_subscriber_data_sessions(&mut transaction, reward_period).await?;
+        subsciber_location::clear_location_shares(&mut transaction, reward_period).await?;
 
         let next_reward_period = scheduler.next_reward_period();
         save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;

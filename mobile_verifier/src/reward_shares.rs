@@ -6,7 +6,7 @@ use crate::{
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
@@ -134,83 +134,51 @@ impl TransferRewards {
     }
 }
 
-#[derive(sqlx::FromRow)]
-pub struct SubscriberLocationShare {
-    pub subscriber_id: String,
-    pub hour_bucket: Decimal,
-}
-
 #[derive(Default)]
-pub struct SubscriberLocationShares {
-    pub shares: HashMap<String, Vec<Decimal>>,
+pub struct SubscriberShares {
+    pub active_subscribers: SubscriberMap,
+    pub location_shares: HashMap<String, Vec<Decimal>>,
 }
 
-impl SubscriberLocationShares {
-    pub async fn aggregate(
-        db: impl sqlx::PgExecutor<'_> + Copy,
-        reward_period: &Range<DateTime<Utc>>,
-    ) -> Result<Self, sqlx::Error> {
-        let mut shares = Self::default();
-        // get all the location shares, grouped by subscriber id and its assocaited filled hourly slots
-        shares.aggregate_shares(db, reward_period).await?;
-        Ok(shares)
-    }
-
-    pub async fn clear_shares(
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        period_end: &DateTime<Utc>,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query("delete from subscriber_loc where reward_timestamp <= $1")
-            .bind(period_end)
-            .execute(&mut *tx)
-            .await
-            .map(|_| ())
-    }
-
-    async fn aggregate_shares(
-        &mut self,
-        db: impl sqlx::PgExecutor<'_> + Copy,
-        reward_period: &Range<DateTime<Utc>>,
-    ) -> Result<(), sqlx::Error> {
-        let mut rows = sqlx::query_as::<_, SubscriberLocationShare>(
-            "select subscriber_id, hour_bucket::numeric from subscriber_loc where reward_timestamp > $1 and reward_timestamp <= $2",
-        )
-        .bind(reward_period.start)
-        .bind(reward_period.end)
-        .fetch(db);
-        while let Some(share) = rows.try_next().await? {
-            self.shares
-                .entry(share.subscriber_id)
-                .or_insert_with(Vec::new)
-                .push(share.hour_bucket)
-        }
-        Ok(())
-    }
-
+impl SubscriberShares {
     pub fn into_rewards(
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
-        active_subscribers: SubscriberMap,
     ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
-        self.shares
+        // TODO: eliminate this cloning
+        self.active_subscribers
+            .clone()
             .into_iter()
-            .filter_map(move |(subscriber_id, populated_hour_bucket)| {
-                if rewardable(&populated_hour_bucket)
-                    && active_subscribers.contains_key(&subscriber_id)
-                {
-                    Some(proto::SubscriberReward {
-                        subscriber_id,
-                        discovery_location_amount: DISCOVERY_LOCATION_REWARDS_FIXED,
-                    })
-                } else {
-                    None
-                }
-            })
+            .map(
+                move |(subscriber_id, data_transferred)| proto::SubscriberReward {
+                    subscriber_id: subscriber_id.clone(),
+                    discovery_location_amount: self
+                        .compute_discovery_location_amount(&subscriber_id, data_transferred),
+                },
+            )
+            .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
             .map(|subscriber_reward| proto::MobileRewardShare {
                 start_period: reward_period.start.encode_timestamp(),
                 end_period: reward_period.end.encode_timestamp(),
                 reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
             })
+    }
+
+    pub fn compute_discovery_location_amount(
+        &self,
+        subscriber_id: &String,
+        data_transferred: Decimal,
+    ) -> u64 {
+        match self.location_shares.get(subscriber_id) {
+            Some(populated_hour_bucket) => {
+                if rewardable(populated_hour_bucket) && data_transferred > Decimal::ZERO {
+                    DISCOVERY_LOCATION_REWARDS_FIXED
+                } else {
+                    0
+                }
+            }
+            None => 0,
+        }
     }
 }
 

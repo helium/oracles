@@ -4,8 +4,13 @@ use file_store::{
 };
 use futures::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
+use rust_decimal::prelude::*;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashMap;
+use std::ops::Range;
 use tokio::sync::mpsc::Receiver;
+
+pub type LocationSharingMap = HashMap<String, Vec<Decimal>>;
 
 pub struct SubscriberLocationIngestor {
     pub pool: PgPool,
@@ -105,4 +110,41 @@ impl SubscriberLocationIngestor {
     fn _refresh_carrier_keys(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct SubscriberLocationShare {
+    pub subscriber_id: String,
+    pub hour_bucket: Decimal,
+}
+
+pub async fn aggregate_location_shares(
+    db: impl sqlx::PgExecutor<'_> + Copy,
+    reward_period: &Range<DateTime<Utc>>,
+) -> Result<LocationSharingMap, sqlx::Error> {
+    let mut rows = sqlx::query_as::<_, SubscriberLocationShare>(
+        "select subscriber_id, hour_bucket::numeric from subscriber_loc where reward_timestamp > $1 and reward_timestamp <= $2",
+    )
+    .bind(reward_period.start)
+    .bind(reward_period.end)
+    .fetch(db);
+    let mut location_shares = LocationSharingMap::new();
+    while let Some(share) = rows.try_next().await? {
+        location_shares
+            .entry(share.subscriber_id)
+            .or_insert_with(Vec::new)
+            .push(share.hour_bucket)
+    }
+    Ok(location_shares)
+}
+
+pub async fn clear_location_shares(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    reward_period: &Range<DateTime<Utc>>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("delete from subscriber_loc where reward_timestamp <= $1")
+        .bind(reward_period.end)
+        .execute(&mut *tx)
+        .await
+        .map(|_| ())
 }

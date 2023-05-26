@@ -226,3 +226,14 @@ pub async fn aggregate_mobile_subscriber_data_sessions_to_bytes<'a>(
     }
     Ok(active_subscribers)
 }
+
+pub async fn clear_subscriber_data_sessions(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    reward_period: &Range<DateTime<Utc>>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("delete from subscriber_data_transfer_sessions where reward_timestamp <= $1")
+        .bind(reward_period.end)
+        .execute(&mut *tx)
+        .await
+        .map(|_| ())
+}
