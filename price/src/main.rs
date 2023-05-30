@@ -60,9 +60,9 @@ pub struct Check {
 impl From<&Check> for check::Mode {
     fn from(value: &Check) -> Self {
         if value.mobile {
-            check::Mode::MOBILE
+            check::Mode::Mobile
         } else {
-            check::Mode::IOT
+            check::Mode::Iot
         }
     }
 }
