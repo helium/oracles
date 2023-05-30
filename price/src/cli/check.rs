@@ -18,8 +18,8 @@ pub async fn run(mode: Mode) -> Result<()> {
     let client = RpcClient::new("https://api.mainnet-beta.solana.com".to_string());
 
     let pubkey = match mode {
-        Mode::IOT => SolPubkey::from_str("iortGU2NMgWc256XDBz2mQnmjPfKUMezJ4BWfayEZY3")?,
-        Mode::MOBILE => SolPubkey::from_str("moraMdsjyPFz8Lp1RJGoW4bQriSF5mHE7Evxt7hytSF")?,
+        Mode::Iot => SolPubkey::from_str("iortGU2NMgWc256XDBz2mQnmjPfKUMezJ4BWfayEZY3")?,
+        Mode::Mobile => SolPubkey::from_str("moraMdsjyPFz8Lp1RJGoW4bQriSF5mHE7Evxt7hytSF")?,
     };
 
     let price_oracle_v0_data = client.get_account_data(&pubkey).await?;
