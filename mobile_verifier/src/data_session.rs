@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, mobile_transfer::ValidDataTransferSession};
 use futures::{
-    stream::{StreamExt, TryStreamExt},
+    stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
@@ -182,7 +182,7 @@ pub async fn aggregate_mobile_hotspot_data_sessions_to_dc<'a>(
     exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
     epoch: &'a Range<DateTime<Utc>>,
 ) -> Result<HotspotMap, sqlx::Error> {
-    let mut stream = sqlx::query_as::<_, HotspotDataSession>(
+    let stream = sqlx::query_as::<_, HotspotDataSession>(
         r#"
         SELECT *
         FROM hotspot_data_transfer_sessions
@@ -191,11 +191,17 @@ pub async fn aggregate_mobile_hotspot_data_sessions_to_dc<'a>(
     )
     .bind(epoch.start)
     .bind(epoch.end)
-    .fetch(exec)
-    .map_ok(HotspotDataSession::from);
+    .fetch(exec);
+    data_sessions_to_dc(stream).await
+}
 
+pub async fn data_sessions_to_dc<'a>(
+    stream: impl Stream<Item = Result<HotspotDataSession, sqlx::Error>>,
+) -> Result<HotspotMap, sqlx::Error> {
+    tokio::pin!(stream);
     let mut map = HotspotMap::new();
     while let Some(session) = stream.try_next().await? {
+        tracing::info!("found hotspot data session ");
         *map.entry(session.pub_key).or_default() += Decimal::from(session.num_dcs)
     }
     Ok(map)
@@ -208,7 +214,7 @@ pub async fn aggregate_mobile_subscriber_data_sessions_to_bytes<'a>(
     // TODO: to determine if a mobile subscriber has transferred data
     // confirm it is downloaded data we are interested in and not
     // either uploaded data or a sum of both
-    let mut stream = sqlx::query_as::<_, SubscriberDataSession>(
+    let stream = sqlx::query_as::<_, SubscriberDataSession>(
         r#"
             SELECT *
             FROM subscriber_data_transfer_sessions
@@ -217,15 +223,19 @@ pub async fn aggregate_mobile_subscriber_data_sessions_to_bytes<'a>(
     )
     .bind(epoch.start)
     .bind(epoch.end)
-    .fetch(exec)
-    .map_ok(SubscriberDataSession::from);
+    .fetch(exec);
+    data_sessions_to_bytes(stream).await
+}
 
-    let mut active_subscribers = SubscriberMap::new();
+pub async fn data_sessions_to_bytes<'a>(
+    stream: impl Stream<Item = Result<SubscriberDataSession, sqlx::Error>>,
+) -> Result<SubscriberMap, sqlx::Error> {
+    tokio::pin!(stream);
+    let mut map = SubscriberMap::new();
     while let Some(session) = stream.try_next().await? {
-        *active_subscribers.entry(session.subscriber_id).or_default() +=
-            Decimal::from(session.download_bytes)
+        *map.entry(session.subscriber_id).or_default() += Decimal::from(session.download_bytes)
     }
-    Ok(active_subscribers)
+    Ok(map)
 }
 
 pub async fn clear_subscriber_data_sessions(

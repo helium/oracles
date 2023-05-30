@@ -321,6 +321,7 @@ mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
+        data_session,
         data_session::HotspotDataSession,
         heartbeats::HeartbeatReward,
         speedtests::{Speedtest, SpeedtestAverages},
@@ -340,7 +341,7 @@ mod test {
     fn test_rewardable() {
         let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(12), dec!(13)];
         assert!(rewardable(&vec));
-        let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(13), dec!(15)];
+        let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(13), dec!(22)];
         assert!(!rewardable(&vec))
     }
 
@@ -420,15 +421,27 @@ mod test {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
-        let _payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+        let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed payer parse");
 
+        let mut transfer_sessions = Vec::new();
         // Just an absurdly large amount of DC
-        let mut transfer_sessions = HotspotMap::new();
         for _ in 0..3_003 {
-            transfer_sessions.insert(owner.clone(), dec!(4444444444444445));
+            transfer_sessions.push(Ok(HotspotDataSession {
+                pub_key: owner.clone(),
+                payer: payer.clone(),
+                upload_bytes: 0,
+                download_bytes: 0,
+                num_dcs: 4444444444444445,
+                reward_timestamp: DateTime::default(),
+            }));
         }
+        let data_transfer_sessions = stream::iter(transfer_sessions);
+        let aggregated_data_transfer_sessions =
+            data_session::data_sessions_to_dc(data_transfer_sessions)
+                .await
+                .unwrap();
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
@@ -439,7 +452,7 @@ mod test {
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
-            transfer_sessions,
+            aggregated_data_transfer_sessions,
             &poc_shares,
             &epoch,
         )
