@@ -15,7 +15,7 @@ pub struct DataSessionIngestor {
     pub pool: PgPool,
 }
 
-pub type SubscriberMap = HashMap<String, Decimal>;
+pub type SubscriberMap = HashMap<Vec<u8>, Decimal>;
 pub type HotspotMap = HashMap<PublicKeyBinary, Decimal>;
 
 impl DataSessionIngestor {
@@ -90,7 +90,7 @@ impl DataSessionIngestor {
 pub struct SubscriberDataSession {
     pub pub_key: PublicKeyBinary,
     pub payer: PublicKeyBinary,
-    pub subscriber_id: String,
+    pub subscriber_id: Vec<u8>,
     pub upload_bytes: i64,
     pub download_bytes: i64,
     pub reward_timestamp: DateTime<Utc>,
@@ -120,6 +120,7 @@ impl SubscriberDataSession {
         )
         .bind(self.pub_key)
         .bind(self.subscriber_id)
+        // .bind("subscriber_x".to_string().as_bytes().to_vec())  // TODO: used for local debugging, remove when done
         .bind(self.payer)
         .bind(self.upload_bytes)
         .bind(self.download_bytes)
@@ -130,7 +131,7 @@ impl SubscriberDataSession {
     }
     fn from_valid_data_session(
         v: ValidDataTransferSession,
-        subscriber_id: String,
+        subscriber_id: Vec<u8>,
         reward_timestamp: DateTime<Utc>,
     ) -> SubscriberDataSession {
         Self {
@@ -234,6 +235,6 @@ pub async fn clear_subscriber_data_sessions(
     sqlx::query("delete from subscriber_data_transfer_sessions where reward_timestamp <= $1")
         .bind(reward_period.end)
         .execute(&mut *tx)
-        .await
-        .map(|_| ())
+        .await?;
+    Ok(())
 }

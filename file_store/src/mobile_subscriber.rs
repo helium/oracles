@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubscriberLocationReq {
-    pub subscriber_id: String,
+    pub subscriber_id: Vec<u8>,
     pub timestamp: DateTime<Utc>,
     pub pubkey: PublicKeyBinary,
 }

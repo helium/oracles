@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use tokio::sync::mpsc::Receiver;
 
-pub type LocationSharingMap = HashMap<String, Vec<Decimal>>;
+pub type LocationSharingMap = HashMap<Vec<u8>, Vec<Decimal>>;
 
 pub struct SubscriberLocationIngestor {
     pub pool: PgPool,
@@ -39,7 +39,7 @@ impl SubscriberLocationIngestor {
             tokio::select! {
                 _ = shutdown.clone() => break,
                 msg = self.reports_receiver.recv() => if let Some(stream) =  msg {
-                    self.handle_report(stream).await?;
+                    self.process_file(stream).await?;
                 }
             }
         }
@@ -47,7 +47,7 @@ impl SubscriberLocationIngestor {
         Ok(())
     }
 
-    async fn handle_report(
+    async fn process_file(
         &self,
         file_info_stream: FileInfoStream<SubscriberLocationIngestReport>,
     ) -> anyhow::Result<()> {
@@ -60,7 +60,7 @@ impl SubscriberLocationIngestor {
                 if self.verify_known_carrier_key(&report.report.pubkey) {
                     self.save(
                         report.report.subscriber_id.clone(),
-                        report.received_timestamp, // TODO: we want the recv timestamp or the location report timestamp ?
+                        report.received_timestamp,
                         &mut transaction,
                     )
                     .await?;
@@ -82,7 +82,7 @@ impl SubscriberLocationIngestor {
 
     pub async fn save(
         &self,
-        subscriber_id: String,
+        subscriber_id: Vec<u8>,
         timestamp: DateTime<Utc>,
         db: &mut Transaction<'_, Postgres>,
     ) -> Result<(), sqlx::Error> {
@@ -114,7 +114,7 @@ impl SubscriberLocationIngestor {
 
 #[derive(sqlx::FromRow)]
 pub struct SubscriberLocationShare {
-    pub subscriber_id: String,
+    pub subscriber_id: Vec<u8>,
     pub hour_bucket: Decimal,
 }
 
@@ -145,6 +145,6 @@ pub async fn clear_location_shares(
     sqlx::query("delete from subscriber_loc where reward_timestamp <= $1")
         .bind(reward_period.end)
         .execute(&mut *tx)
-        .await
-        .map(|_| ())
+        .await?;
+    Ok(())
 }

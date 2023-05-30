@@ -1,7 +1,7 @@
 create table subscriber_data_transfer_sessions (
     pub_key TEXT NOT NULL,
     payer TEXT NOT NULL,
-    subscriber_id TEXT NOT NULL,
+    subscriber_id BYTEA NOT NULL,
     upload_bytes BIGINT NOT NULL,
     download_bytes BIGINT NOT NULL,
     reward_timestamp TIMESTAMPTZ not null,

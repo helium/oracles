@@ -10,7 +10,7 @@ use serde::Serialize;
 #[derive(Serialize, Clone)]
 pub struct ValidDataTransferSession {
     pub pub_key: PublicKeyBinary,
-    pub subscriber_id: Option<String>,
+    pub subscriber_id: Option<Vec<u8>>,
     pub payer: PublicKeyBinary,
     pub upload_bytes: u64,
     pub download_bytes: u64,
@@ -25,11 +25,11 @@ impl MsgDecode for ValidDataTransferSession {
 
 impl TryFrom<proto::ValidDataTransferSession> for ValidDataTransferSession {
     type Error = Error;
-
     fn try_from(v: proto::ValidDataTransferSession) -> Result<Self> {
         Ok(Self {
             payer: v.payer.into(),
             subscriber_id: (!v.subscriber_id.is_empty()).then_some(v.subscriber_id),
+            // subscriber_id: Some("subscriber_x".to_string().as_bytes().to_vec()), // TODO: used for local debugging, remove when done
             pub_key: v.pub_key.into(),
             upload_bytes: v.upload_bytes,
             download_bytes: v.download_bytes,

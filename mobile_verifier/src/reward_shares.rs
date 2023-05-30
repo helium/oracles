@@ -137,7 +137,7 @@ impl TransferRewards {
 #[derive(Default)]
 pub struct SubscriberShares {
     pub active_subscribers: SubscriberMap,
-    pub location_shares: HashMap<String, Vec<Decimal>>,
+    pub location_shares: HashMap<Vec<u8>, Vec<Decimal>>,
 }
 
 impl SubscriberShares {
@@ -166,7 +166,7 @@ impl SubscriberShares {
 
     pub fn compute_discovery_location_amount(
         &self,
-        subscriber_id: &String,
+        subscriber_id: &Vec<u8>,
         data_transferred: Decimal,
     ) -> u64 {
         match self.location_shares.get(subscriber_id) {
@@ -338,8 +338,10 @@ mod test {
     #[test]
 
     fn test_rewardable() {
-        let mut vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(12), dec!(13)];
-        assert!(rewardable(&mut vec))
+        let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(12), dec!(13)];
+        assert!(rewardable(&vec));
+        let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(13), dec!(15)];
+        assert!(!rewardable(&vec))
     }
 
     #[test]
