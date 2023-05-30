@@ -28,6 +28,10 @@ pub enum Error {
     DbError(#[from] sqlx::Error),
     #[error("tokio join error")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("send timeout")]
+    SendTimeout,
+    #[error("shutting down")]
+    Shutdown,
 }
 
 #[derive(Error, Debug)]

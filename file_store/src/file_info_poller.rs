@@ -4,7 +4,7 @@ use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt};
 use retainer::Cache;
 use std::marker::PhantomData;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{error::TrySendError, Receiver, Sender};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -87,10 +87,9 @@ where
         loop {
             let after = self.after(latest_ts);
             let before = Utc::now();
-            let shutdown = shutdown.clone();
 
             tokio::select! {
-                _ = shutdown => {
+                _ = shutdown.clone() => {
                     tracing::info!("FileInfoPoller shutting down");
                     break;
                 }
@@ -99,9 +98,13 @@ where
                     let files = self.store.list_all(self.file_type, after, before).await?;
                     for file in files {
                         if !is_already_processed(&self.db, &cache, &file).await? {
-                            latest_ts = Some(file.timestamp);
-                            cache_file(&cache, &file).await;
-                            send_stream(&sender, &self.store, file).await?;
+                            if send_stream(&sender, &self.store, file.clone()).await? {
+                                latest_ts = Some(file.timestamp);
+                                cache_file(&cache, &file).await;
+                            } else {
+                                tracing::info!("FileInfoPoller: channel full");
+                                break;
+                            }
                         }
                     }
                 }
@@ -136,7 +139,7 @@ async fn send_stream<T>(
     sender: &Sender<FileInfoStream<T>>,
     store: &FileStore,
     file: FileInfo,
-) -> Result
+) -> Result<bool>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
@@ -171,8 +174,11 @@ where
         stream,
     };
 
-    let _ = sender.send(incoming_data_stream).await;
-    Ok(())
+    match sender.try_send(incoming_data_stream) {
+        Ok(_) => Ok(true),
+        Err(TrySendError::Full(_)) => Ok(false),
+        Err(TrySendError::Closed(_)) => Err(Error::channel()),
+    }
 }
 
 fn create_cache() -> MemoryFileCache {

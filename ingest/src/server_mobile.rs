@@ -178,6 +178,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
             FileType::CellHeartbeatIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
@@ -190,6 +191,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
             FileType::CellSpeedtestIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
@@ -204,6 +206,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
                 env!("CARGO_PKG_NAME"),
                 "_mobile_data_transfer_session_report"
             ),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
@@ -215,6 +218,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
             FileType::SubscriberLocationIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_subscriber_location_report"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
@@ -261,17 +265,11 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     tokio::try_join!(
         server,
-        heartbeat_report_sink_server
-            .run(&shutdown)
-            .map_err(Error::from),
-        speedtest_report_sink_server
-            .run(&shutdown)
-            .map_err(Error::from),
-        data_transfer_session_sink_server
-            .run(&shutdown)
-            .map_err(Error::from),
+        heartbeat_report_sink_server.run().map_err(Error::from),
+        speedtest_report_sink_server.run().map_err(Error::from),
+        data_transfer_session_sink_server.run().map_err(Error::from),
         subscriber_location_report_sink_server
-            .run(&shutdown)
+            .run()
             .map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
     )

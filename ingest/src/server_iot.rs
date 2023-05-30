@@ -123,6 +123,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         FileType::IotBeaconIngestReport,
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_beacon_report"),
+        shutdown.clone(),
     )
     .deposits(Some(file_upload_tx.clone()))
     .roll_time(Duration::minutes(5))
@@ -134,6 +135,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         FileType::IotWitnessIngestReport,
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_witness_report"),
+        shutdown.clone(),
     )
     .deposits(Some(file_upload_tx.clone()))
     .roll_time(Duration::minutes(5))
@@ -155,12 +157,8 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     tokio::try_join!(
         server,
-        beacon_report_sink_server
-            .run(&shutdown)
-            .map_err(Error::from),
-        witness_report_sink_server
-            .run(&shutdown)
-            .map_err(Error::from),
+        beacon_report_sink_server.run().map_err(Error::from),
+        witness_report_sink_server.run().map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
     )
     .map(|_| ())

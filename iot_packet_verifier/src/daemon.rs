@@ -137,6 +137,7 @@ impl Cmd {
             FileType::IotValidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
+            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -147,6 +148,7 @@ impl Cmd {
             FileType::InvalidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
+            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -188,12 +190,8 @@ impl Cmd {
             burner.run(&shutdown_listener).map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             verifier_daemon.run(&shutdown_listener).map_err(Error::from),
-            valid_packets_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
-            invalid_packets_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
+            valid_packets_server.run().map_err(Error::from),
+            invalid_packets_server.run().map_err(Error::from),
             config_server
                 .monitor_funds(
                     solana,

@@ -74,6 +74,7 @@ impl Purger {
                 FileType::IotInvalidBeaconReport,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon"),
+                shutdown.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .auto_commit(false)
@@ -85,19 +86,17 @@ impl Purger {
                 FileType::IotInvalidWitnessReport,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
+                shutdown.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .auto_commit(false)
             .create()
             .await?;
 
-        // spawn off the file sinks
-        let shutdown2 = shutdown.clone();
-        let shutdown3 = shutdown.clone();
-        let shutdown4 = shutdown.clone();
-        tokio::spawn(async move { invalid_beacon_sink_server.run(&shutdown2).await });
-        tokio::spawn(async move { invalid_witness_sink_server.run(&shutdown3).await });
-        tokio::spawn(async move { file_upload.run(&shutdown4).await });
+        let upload_shutdown = shutdown.clone();
+        tokio::spawn(async move { invalid_beacon_sink_server.run().await });
+        tokio::spawn(async move { invalid_witness_sink_server.run().await });
+        tokio::spawn(async move { file_upload.run(&upload_shutdown).await });
 
         loop {
             if shutdown.is_triggered() {
