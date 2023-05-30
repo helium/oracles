@@ -10,8 +10,8 @@ const SECONDS_PER_DAY: i64 = 24 * 60 * 60;
 
 #[derive(Debug)]
 pub enum Mode {
-    IOT,
-    MOBILE,
+    Iot,
+    Mobile,
 }
 
 pub async fn run(mode: Mode) -> Result<()> {
