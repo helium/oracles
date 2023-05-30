@@ -218,6 +218,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
             FileType::SubscriberLocationIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_subscriber_location_report"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
