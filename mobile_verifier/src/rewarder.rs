@@ -113,6 +113,7 @@ impl Rewarder {
             {
                 tracing::info!("No heartbeats found past reward period, sleeping for five minutes");
                 sleep(Duration::minutes(5).to_std()?).await;
+                return Ok(());
             }
 
             if sqlx::query_scalar::<_, i64>(
@@ -125,6 +126,7 @@ impl Rewarder {
             {
                 tracing::info!("No speedtests found past reward period, sleeping for five minutes");
                 sleep(Duration::minutes(5).to_std()?).await;
+                return Ok(());
             }
         } else {
             tracing::info!("Complete data checks are disabled for this reward period");
