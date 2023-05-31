@@ -334,9 +334,7 @@ mod test {
     };
     use chrono::{Duration, Utc};
     use futures::stream;
-    use helium_proto::services::poc_mobile::{
-        mobile_reward_share::Reward as MobileReward,
-    };
+    use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
     use std::collections::{HashMap, VecDeque};
 
     fn valid_shares() -> RadioShares {
@@ -374,9 +372,10 @@ mod test {
         let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
             .parse()
             .expect("failed payer parse");
-        let subscriber1 = "subscriber_x".to_string().as_bytes().to_vec();
-        let subscriber2 = "subscriber_y".to_string().as_bytes().to_vec();
-        let subscriber3 = "subscriber_z".to_string().as_bytes().to_vec();
+        let subscriber1 = "subscriber_1".to_string().as_bytes().to_vec();
+        let subscriber2 = "subscriber_2".to_string().as_bytes().to_vec();
+        let subscriber3 = "subscriber_3".to_string().as_bytes().to_vec();
+        let subscriber4 = "subscriber_4".to_string().as_bytes().to_vec();
 
         // setup some data transfer sessions from two subscribers
         let transfer_sessions = vec![
@@ -390,6 +389,14 @@ mod test {
             }),
             Ok(SubscriberDataSession {
                 subscriber_id: subscriber2.clone(),
+                pub_key: owner.clone(),
+                payer: payer.clone(),
+                upload_bytes: 1000,
+                download_bytes: 10000,
+                reward_timestamp: DateTime::default(),
+            }),
+            Ok(SubscriberDataSession {
+                subscriber_id: subscriber4.clone(),
                 pub_key: owner.clone(),
                 payer,
                 upload_bytes: 1000,
@@ -406,6 +413,7 @@ mod test {
         location_shares.insert(subscriber1, vec![dec!(1), dec!(2), dec!(3)]);
         location_shares.insert(subscriber2, vec![dec!(1), dec!(2), dec!(3)]);
         location_shares.insert(subscriber3, vec![dec!(1), dec!(2), dec!(3)]);
+        location_shares.insert(subscriber4, vec![dec!(1), dec!(9), dec!(18)]);
 
         let data_transfer_sessions = stream::iter(transfer_sessions);
         let aggregated_data_transfer_sessions =
@@ -430,7 +438,12 @@ mod test {
         }
 
         // confirm the total subscriber location rewards allocated
-        // only two subscribers will be awarded as the third had zero data transfer
+        // only two subscribers will be awarded
+        // -- subscriber_1 had data transfer and valid location shares
+        // -- subscriber_2 had data transfer and valid location shares
+        // -- subscriber_3 had valid shares but no data transfers
+        // -- subscriber_4 had data transfer but no valid location shares
+        //    ( did not share location a min of 3 times in any 8 hour period )
         assert_eq!(
             DISCOVERY_LOCATION_REWARDS_FIXED * 2,
             total_subscriber_location_rewards
