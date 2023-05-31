@@ -4,8 +4,8 @@ use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
 use helium_proto::BlockchainTokenTypeV1;
-use price::{PriceGenerator, Settings};
-use std::path;
+use price::{cli::check, PriceGenerator, Settings};
+use std::path::{self, PathBuf};
 use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -27,20 +27,42 @@ pub struct Cli {
 
 impl Cli {
     pub async fn run(self) -> Result<()> {
-        let settings = Settings::new(self.config)?;
-        self.cmd.run(settings).await
+        self.cmd.run(self.config).await
     }
 }
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Cmd {
     Server(Server),
+    Check(Check),
 }
 
 impl Cmd {
-    pub async fn run(&self, settings: Settings) -> Result<()> {
+    pub async fn run(&self, config: Option<PathBuf>) -> Result<()> {
         match self {
-            Self::Server(cmd) => cmd.run(&settings).await,
+            Self::Server(cmd) => {
+                let settings = Settings::new(config)?;
+                cmd.run(&settings).await
+            }
+            Self::Check(options) => check::run(options.into()).await,
+        }
+    }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct Check {
+    #[clap(short, long)]
+    iot: bool,
+    #[clap(short, long)]
+    mobile: bool,
+}
+
+impl From<&Check> for check::Mode {
+    fn from(value: &Check) -> Self {
+        if value.mobile {
+            check::Mode::Mobile
+        } else {
+            check::Mode::Iot
         }
     }
 }
