@@ -28,9 +28,13 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
 
+// Percent of total emissions allocated for mapper rewards
+const _MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
+
 /// Fixed reward in mobile bones rewarded to a subscriber
 /// sharing their location
 /// 30 mobile = 30_000000 mobile bones
+/// discovery location rewards are part of the MAPPERS_REWARDS_PERCENT pot
 const DISCOVERY_LOCATION_REWARDS_FIXED: u64 = 30_000000;
 
 pub struct TransferRewards {
@@ -168,7 +172,9 @@ impl SubscriberShares {
     ) -> u64 {
         match self.location_shares.get(subscriber_id) {
             Some(subscriber_location_shares) => {
-                if rewardable(subscriber_location_shares) && data_transferred > Decimal::ZERO {
+                if check_subscriber_location_shares_rewardable(subscriber_location_shares)
+                    && data_transferred > Decimal::ZERO
+                {
                     DISCOVERY_LOCATION_REWARDS_FIXED
                 } else {
                     0
@@ -295,14 +301,18 @@ pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
-pub fn rewardable(subscriber_location_shares: &Vec<Decimal>) -> bool {
+pub fn _get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
+    get_total_scheduled_tokens(duration) * _MAPPERS_REWARDS_PERCENT
+}
+
+pub fn check_subscriber_location_shares_rewardable(shares: &Vec<Decimal>) -> bool {
     // iterate over the vec and if we have 3 filled hours less than 8 hours apart
     // then its rewardable
-    let bucket_len = subscriber_location_shares.len();
+    let bucket_len = shares.len();
     if bucket_len >= 3 {
         for n in 0..bucket_len - 2 {
-            let v1 = subscriber_location_shares[n];
-            let v2 = subscriber_location_shares[n + 2];
+            let v1 = shares[n];
+            let v2 = shares[n + 2];
             if v2 - v1 <= dec!(8) {
                 return true;
             }
@@ -317,12 +327,16 @@ mod test {
     use crate::{
         cell_type::CellType,
         data_session,
-        data_session::HotspotDataSession,
+        data_session::{HotspotDataSession, SubscriberDataSession},
         heartbeats::HeartbeatReward,
         speedtests::{Speedtest, SpeedtestAverages},
+        subsciber_location::LocationSharingMap,
     };
     use chrono::{Duration, Utc};
     use futures::stream;
+    use helium_proto::services::poc_mobile::{
+        mobile_reward_share::Reward as MobileReward,
+    };
     use std::collections::{HashMap, VecDeque};
 
     fn valid_shares() -> RadioShares {
@@ -333,11 +347,11 @@ mod test {
 
     #[test]
 
-    fn test_rewardable() {
+    fn test_subscriber_location_shares_rewardable() {
         let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(12), dec!(13)];
-        assert!(rewardable(&vec));
+        assert!(check_subscriber_location_shares_rewardable(&vec));
         let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(13), dec!(22)];
-        assert!(!rewardable(&vec))
+        assert!(!check_subscriber_location_shares_rewardable(&vec))
     }
 
     #[test]
@@ -349,6 +363,84 @@ mod test {
         assert_eq!(
             dc_to_mobile_bones(Decimal::from(2), dec!(1.0)),
             dec!(0.00002)
+        );
+    }
+
+    #[tokio::test]
+    async fn subscriber_location_amount() {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let payer: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed payer parse");
+        let subscriber1 = "subscriber_x".to_string().as_bytes().to_vec();
+        let subscriber2 = "subscriber_y".to_string().as_bytes().to_vec();
+        let subscriber3 = "subscriber_z".to_string().as_bytes().to_vec();
+
+        // setup some data transfer sessions from two subscribers
+        let transfer_sessions = vec![
+            Ok(SubscriberDataSession {
+                subscriber_id: subscriber1.clone(),
+                pub_key: owner.clone(),
+                payer: payer.clone(),
+                upload_bytes: 1000,
+                download_bytes: 10000,
+                reward_timestamp: DateTime::default(),
+            }),
+            Ok(SubscriberDataSession {
+                subscriber_id: subscriber2.clone(),
+                pub_key: owner.clone(),
+                payer,
+                upload_bytes: 1000,
+                download_bytes: 10000,
+                reward_timestamp: DateTime::default(),
+            }),
+        ];
+
+        // setup location shares from same two subscribers
+        // and a third share from a subscriber with no data transfer
+        // the vecs below represent a list of hours in which the subscriber
+        // has shared its location
+        let mut location_shares = LocationSharingMap::new();
+        location_shares.insert(subscriber1, vec![dec!(1), dec!(2), dec!(3)]);
+        location_shares.insert(subscriber2, vec![dec!(1), dec!(2), dec!(3)]);
+        location_shares.insert(subscriber3, vec![dec!(1), dec!(2), dec!(3)]);
+
+        let data_transfer_sessions = stream::iter(transfer_sessions);
+        let aggregated_data_transfer_sessions =
+            data_session::data_sessions_to_bytes(data_transfer_sessions)
+                .await
+                .unwrap();
+
+        let subscriber_shares = SubscriberShares {
+            active_subscribers: aggregated_data_transfer_sessions,
+            location_shares,
+        };
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+        let total_subscriber_rewards = _get_scheduled_tokens_for_mappers(epoch.end - epoch.start);
+
+        let mut total_subscriber_location_rewards = 0_u64;
+        for subscriber_share in subscriber_shares.into_rewards(&epoch) {
+            if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
+                total_subscriber_location_rewards += r.discovery_location_amount
+            }
+        }
+
+        // confirm the total subscriber location rewards allocated
+        // only two subscribers will be awarded as the third had zero data transfer
+        assert_eq!(
+            DISCOVERY_LOCATION_REWARDS_FIXED * 2,
+            total_subscriber_location_rewards
+        );
+
+        // confirm our hourly rewards add up to expected 24hr amount
+        // total_rewards will be in bones
+        assert_eq!(
+            (total_subscriber_rewards / dec!(1_000_000) * dec!(24)).trunc(),
+            dec!(32_876_712)
         );
     }
 
