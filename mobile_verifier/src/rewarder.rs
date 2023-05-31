@@ -10,10 +10,10 @@ use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
 use helium_proto::RewardManifest;
 use price::PriceTracker;
+use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::ops::Range;
 use tokio::time::sleep;
 
 pub struct Rewarder {
@@ -51,22 +51,16 @@ impl Rewarder {
         loop {
             let last_rewarded_end_time = self.last_rewarded_end_time().await?;
             let next_rewarded_end_time = self.next_rewarded_end_time().await?;
-            let now = Utc::now();
-            let next_reward = if now > (next_rewarded_end_time + self.reward_offset) {
-                Duration::zero().to_std()?
-            } else {
-                let next_reward =
-                    (next_rewarded_end_time - Utc::now() + self.reward_offset).to_std()?;
-                tracing::info!(
-                    "Next reward will be given in {}",
-                    humantime::format_duration(next_reward)
-                );
-                next_reward
-            };
+            let scheduler = Scheduler::new(
+                self.reward_period_duration,
+                last_rewarded_end_time,
+                next_rewarded_end_time,
+                self.reward_offset,
+            );
+            let next_reward = scheduler.sleep_duration(Utc::now())?;
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = sleep(next_reward) =>
-                    self.reward(&(last_rewarded_end_time..next_rewarded_end_time)).await?,
+                _ = sleep(next_reward) => self.reward(&scheduler).await?,
             }
         }
 
@@ -94,7 +88,9 @@ impl Rewarder {
         .ok_or(db_store::Error::DecodeError)
     }
 
-    pub async fn reward(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
+    pub async fn reward(&self, scheduler: &Scheduler) -> anyhow::Result<()> {
+        let reward_period = &scheduler.reward_period;
+
         tracing::info!(
             "Rewarding for period: {} to {}",
             reward_period.start,
@@ -182,15 +178,15 @@ impl Rewarder {
 
         let mut transaction = self.pool.begin().await?;
 
-        // Clear the heartbeats of old heartbeats:
+        // Clear the heartbeats table of old heartbeats:
         sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
             .bind(reward_period.start)
             .execute(&mut transaction)
             .await?;
 
-        let next_reward_period = reward_period.end + self.reward_period_duration;
-        save_last_rewarded_end_time(&mut transaction, &reward_period.end).await?;
-        save_next_rewarded_end_time(&mut transaction, &next_reward_period).await?;
+        let next_reward_period = scheduler.next_reward_period();
+        save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;
+        save_next_rewarded_end_time(&mut transaction, &next_reward_period.end).await?;
         transaction.commit().await?;
 
         // now that the db has been purged, safe to write out the manifest

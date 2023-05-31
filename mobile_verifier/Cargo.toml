@@ -39,6 +39,7 @@ mobile-config = {path = "../mobile_config"}
 file-store = {path = "../file_store"}
 db-store = {path = "../db_store"}
 poc-metrics = {path = "../metrics"}
+reward-scheduler = {path = "../reward_scheduler"}
 price = {path = "../price"}
 rand = {workspace = true}
 async-trait = {workspace = true}

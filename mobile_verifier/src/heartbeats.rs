@@ -98,7 +98,7 @@ impl HeartbeatDaemon {
         cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
     ) -> anyhow::Result<()> {
         let epoch = (file.file_info.timestamp - Duration::hours(3))
-            ..(file.file_info.timestamp + Duration::hours(30));
+            ..(file.file_info.timestamp + Duration::minutes(30));
         let mut transaction = self.pool.begin().await?;
         let reports = file.into_stream(&mut transaction).await?;
 

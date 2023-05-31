@@ -558,9 +558,7 @@ mod test {
         owners.insert(gw8.clone(), owner4.clone());
 
         // init cells and cell_types
-        // let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "P27-SCE4255W2107CW5000015".to_string();
-        // let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
         let c4 = "2AG32PBS3101S1202000464223GY0154".to_string();
         let c5 = "P27-SCE4255W2107CW5000016".to_string();
         let c6 = "2AG32PBS3101S1202000464223GY0155".to_string();
