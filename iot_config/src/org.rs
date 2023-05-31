@@ -1,5 +1,5 @@
 use crate::{
-    helium_netids::{self, AddressStore, HeliumNetId},
+    helium_netids::{self, is_helium_netid, AddressStore, HeliumNetId},
     lora_field::{DevAddrConstraint, NetIdField},
     org_service::UpdateAuthorizer,
 };
@@ -109,11 +109,9 @@ pub async fn create_org(
         let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
             " insert into organization_delegate_keys (delegate_pubkey, oui) ",
         );
-        query_builder
-            .push_values(delegate_keys, |mut builder, (key, oui)| {
-                builder.push_bind(key).push_bind(oui);
-            })
-            .push(" on conflict delegate_pubkey do nothing ");
+        query_builder.push_values(delegate_keys, |mut builder, (key, oui)| {
+            builder.push_bind(key).push_bind(oui);
+        });
         query_builder
             .build()
             .execute(&mut txn)
@@ -126,13 +124,7 @@ pub async fn create_org(
             .map(|_| ())?
     };
 
-    if [
-        HeliumNetId::Type0_0x00003c.id(),
-        HeliumNetId::Type3_0x60002d.id(),
-        HeliumNetId::Type6_0xc00053.id(),
-    ]
-    .contains(&net_id)
-    {
+    if is_helium_netid(&net_id) {
         insert_helium_constraints(oui as u64, net_id, devaddr_ranges, &mut txn).await
     } else {
         let constraint = devaddr_ranges

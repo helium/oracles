@@ -113,6 +113,10 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
     }
 }
 
+pub fn is_helium_netid(net_id: &NetIdField) -> bool {
+    [TYPE_0_ID, TYPE_3_ID, TYPE_6_ID].contains(net_id)
+}
+
 pub async fn checkout_devaddr_constraints<S>(
     addr_store: &mut S,
     count: u64,
@@ -126,23 +130,23 @@ where
         .get_used_addrs(net_id)
         .await
         .map_err(DevAddrConstraintsError::AddressStore)?;
+
     let range_start = *addr_range.start();
     let range_end = *addr_range.end();
-    let last_used = if let Some(last) = used_addrs.last() {
-        *last
-    } else {
-        range_start
-    };
+    let last_used = used_addrs.last().copied().unwrap_or(range_start);
     let used_range = (range_start..=last_used).collect::<HashSet<u32>>();
     let used_addrs = used_addrs.into_iter().collect::<HashSet<u32>>();
+
     let mut available_diff = used_range
         .difference(&used_addrs)
         .copied()
         .collect::<Vec<_>>();
     available_diff.sort();
+
     let mut claimed_addrs = available_diff
         .drain(0..(count as usize).min(available_diff.len()))
         .collect::<Vec<_>>();
+
     let mut next_addr = last_used + 1;
     while claimed_addrs.len() < count as usize {
         if next_addr <= range_end {
@@ -152,10 +156,12 @@ where
             return Err(DevAddrConstraintsError::NoAvailableAddrs);
         }
     }
+
     addr_store
         .claim_addrs(net_id, &claimed_addrs)
         .await
         .map_err(DevAddrConstraintsError::AddressStore)?;
+
     let new_constraints = constraints_from_addrs(claimed_addrs)?;
     Ok(new_constraints)
 }
