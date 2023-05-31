@@ -502,59 +502,6 @@ impl SpeedtestTier {
     }
 }
 
-// This should probably be abstracted and used elsewhere, but for now all
-// we need is fetch from an actual database and mock fetch that returns
-// nothing.
-
-/*
-#[derive(thiserror::Error, Debug)]
-pub enum FetchError {
-    #[error("Config client error: {0}")]
-    ConfigClientError(#[from] ClientError),
-    #[error("Sql error: {0}")]
-    SqlError(#[from] sqlx::Error),
-}
-
-#[async_trait::async_trait]
-pub trait SpeedtestStore {
-    async fn fetch(
-        &mut self,
-        id: &PublicKeyBinary,
-    ) -> Result<Option<SpeedtestRollingAverage>, FetchError>;
-}
-
-#[async_trait::async_trait]
-impl<E> SpeedtestStore for E
-where
-    for<'a> E: sqlx::PgExecutor<'a>,
-{
-    async fn fetch(
-        &mut self,
-        id: &PublicKeyBinary,
-    ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
-        Ok(
-            sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
-                .bind(id)
-                .fetch_optional(*self)
-                .await?,
-        )
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct EmptyDatabase;
-
-#[async_trait::async_trait]
-impl SpeedtestStore for EmptyDatabase {
-    async fn fetch(
-        &mut self,
-        _id: &PublicKeyBinary,
-    ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
-        Ok(None)
-    }
-}
-*/
-
 #[cfg(test)]
 mod test {
     use super::*;
