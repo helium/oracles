@@ -99,6 +99,7 @@ impl Runner {
                 FileType::IotInvalidBeaconReport,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon_report"),
+                shutdown.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .roll_time(ChronoDuration::minutes(5))
@@ -110,6 +111,7 @@ impl Runner {
                 FileType::IotInvalidWitnessReport,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
+                shutdown.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .roll_time(ChronoDuration::minutes(5))
@@ -120,20 +122,16 @@ impl Runner {
             FileType::IotPoc,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
+            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(ChronoDuration::minutes(2))
         .create()
         .await?;
 
-        // spawn off the file sinks
-        // TODO: how to avoid all da cloning?
-        let shutdown2 = shutdown.clone();
-        let shutdown3 = shutdown.clone();
-        let shutdown4 = shutdown.clone();
-        tokio::spawn(async move { iot_invalid_beacon_sink_server.run(&shutdown2).await });
-        tokio::spawn(async move { iot_invalid_witness_sink_server.run(&shutdown3).await });
-        tokio::spawn(async move { iot_poc_sink_server.run(&shutdown4).await });
+        tokio::spawn(async move { iot_invalid_beacon_sink_server.run().await });
+        tokio::spawn(async move { iot_invalid_witness_sink_server.run().await });
+        tokio::spawn(async move { iot_poc_sink_server.run().await });
 
         loop {
             if shutdown.is_triggered() {

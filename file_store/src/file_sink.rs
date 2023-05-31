@@ -11,7 +11,10 @@ use std::{
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncWriteExt, BufWriter},
-    sync::{mpsc, oneshot},
+    sync::{
+        mpsc::{self, error::SendTimeoutError},
+        oneshot,
+    },
     time,
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
@@ -62,10 +65,16 @@ pub struct FileSinkBuilder {
     deposits: Option<file_upload::MessageSender>,
     auto_commit: bool,
     metric: &'static str,
+    shutdown_listener: triggered::Listener,
 }
 
 impl FileSinkBuilder {
-    pub fn new(file_type: FileType, target_path: &Path, metric: &'static str) -> Self {
+    pub fn new(
+        file_type: FileType,
+        target_path: &Path,
+        metric: &'static str,
+        shutdown_listener: triggered::Listener,
+    ) -> Self {
         Self {
             prefix: file_type.to_string(),
             target_path: target_path.to_path_buf(),
@@ -75,6 +84,7 @@ impl FileSinkBuilder {
             deposits: None,
             auto_commit: true,
             metric,
+            shutdown_listener,
         }
     }
 
@@ -120,6 +130,7 @@ impl FileSinkBuilder {
         let client = FileSinkClient {
             sender: tx,
             metric: self.metric,
+            shutdown_listener: self.shutdown_listener.clone(),
         };
 
         metrics::register_counter!(client.metric, vec![OK_LABEL]);
@@ -135,6 +146,7 @@ impl FileSinkBuilder {
             staged_files: Vec::new(),
             auto_commit: self.auto_commit,
             active_sink: None,
+            shutdown_listener: self.shutdown_listener,
         };
         sink.init().await?;
         Ok((client, sink))
@@ -145,10 +157,12 @@ impl FileSinkBuilder {
 pub struct FileSinkClient {
     sender: MessageSender,
     metric: &'static str,
+    shutdown_listener: triggered::Listener,
 }
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
 const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
+const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl FileSinkClient {
     pub async fn write<T: prost::Message>(
@@ -160,27 +174,36 @@ impl FileSinkClient {
         let bytes = item.encode_to_vec();
         let labels = labels.into_iter().map(Label::from);
 
-        match self.sender.send(Message::Data(on_write_tx, bytes)).await {
-            Ok(_) => {
-                metrics::increment_counter!(
-                    self.metric,
-                    labels
-                        .chain(std::iter::once(OK_LABEL))
-                        .collect::<Vec<Label>>()
-                );
-                tracing::debug!("file_sink write succeeded for {:?}", self.metric);
-                Ok(on_write_rx)
+        tokio::select! {
+            _ = self.shutdown_listener.clone() => {
+                Err(Error::Shutdown)
             }
-            Err(e) => {
-                metrics::increment_counter!(
-                    self.metric,
-                    labels
-                        .chain(std::iter::once(ERROR_LABEL))
-                        .collect::<Vec<Label>>()
-                );
-                tracing::error!("file_sink write failed for {:?} with {e:?}", self.metric);
-                Err(Error::channel())
-            }
+            result = self.sender.send_timeout(Message::Data(on_write_tx, bytes), SEND_TIMEOUT) => match result {
+                Ok(_) => {
+                    metrics::increment_counter!(
+                        self.metric,
+                        labels
+                            .chain(std::iter::once(OK_LABEL))
+                            .collect::<Vec<Label>>()
+                    );
+                    tracing::debug!("file_sink write succeeded for {:?}", self.metric);
+                    Ok(on_write_rx)
+                }
+                Err(SendTimeoutError::Closed(_)) => {
+                    metrics::increment_counter!(
+                        self.metric,
+                        labels
+                            .chain(std::iter::once(ERROR_LABEL))
+                            .collect::<Vec<Label>>()
+                    );
+                    tracing::error!("file_sink write failed for {:?} channel closed", self.metric);
+                    Err(Error::channel())
+                }
+                Err(SendTimeoutError::Timeout(_)) => {
+                    tracing::error!("file_sink write failed due to send timeout");
+                    Err(Error::SendTimeout)
+                }
+            },
         }
     }
 
@@ -223,6 +246,7 @@ pub struct FileSink {
     auto_commit: bool,
 
     active_sink: Option<ActiveSink>,
+    shutdown_listener: triggered::Listener,
 }
 
 #[derive(Debug)]
@@ -285,7 +309,7 @@ impl FileSink {
         Ok(())
     }
 
-    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result {
+    pub async fn run(&mut self) -> Result {
         tracing::info!(
             "starting file sink {} in {}",
             self.prefix,
@@ -301,7 +325,7 @@ impl FileSink {
 
         loop {
             tokio::select! {
-                _ = shutdown.clone() => break,
+                _ = self.shutdown_listener.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
                     Some(Message::Data(on_write_tx, bytes)) => {
@@ -490,16 +514,20 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
-        let (file_sink_client, mut file_sink_server) =
-            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
-                .roll_time(chrono::Duration::milliseconds(100))
-                .create()
-                .await
-                .expect("failed to create file sink");
+        let (file_sink_client, mut file_sink_server) = FileSinkBuilder::new(
+            FileType::EntropyReport,
+            tmp_dir.path(),
+            "fake_metric",
+            shutdown_listener.clone(),
+        )
+        .roll_time(chrono::Duration::milliseconds(100))
+        .create()
+        .await
+        .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server
-                .run(&shutdown_listener)
+                .run()
                 .await
                 .expect("failed to complete file sink");
         });
@@ -531,18 +559,22 @@ mod tests {
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (file_upload_tx, mut file_upload_rx) = file_upload::message_channel();
 
-        let (file_sink_client, mut file_sink_server) =
-            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
-                .roll_time(chrono::Duration::milliseconds(100))
-                .auto_commit(false)
-                .deposits(Some(file_upload_tx))
-                .create()
-                .await
-                .expect("failed to create file sink");
+        let (file_sink_client, mut file_sink_server) = FileSinkBuilder::new(
+            FileType::EntropyReport,
+            tmp_dir.path(),
+            "fake_metric",
+            shutdown_listener.clone(),
+        )
+        .roll_time(chrono::Duration::milliseconds(100))
+        .auto_commit(false)
+        .deposits(Some(file_upload_tx))
+        .create()
+        .await
+        .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server
-                .run(&shutdown_listener)
+                .run()
                 .await
                 .expect("failed to complete file sink");
         });

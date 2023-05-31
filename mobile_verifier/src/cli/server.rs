@@ -70,6 +70,7 @@ impl Cmd {
             FileType::ValidatedHeartbeat,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
+            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -82,6 +83,7 @@ impl Cmd {
             FileType::SpeedtestAvg,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
+            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -94,6 +96,7 @@ impl Cmd {
             FileType::MobileRewardShare,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
+            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -105,6 +108,7 @@ impl Cmd {
             FileType::RewardManifest,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
+            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -144,19 +148,11 @@ impl Cmd {
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
-            valid_heartbeats_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
-            valid_speedtests_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
-            mobile_rewards_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
+            valid_heartbeats_server.run().map_err(Error::from),
+            valid_speedtests_server.run().map_err(Error::from),
+            mobile_rewards_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
-            reward_manifests_server
-                .run(&shutdown_listener)
-                .map_err(Error::from),
+            reward_manifests_server.run().map_err(Error::from),
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
