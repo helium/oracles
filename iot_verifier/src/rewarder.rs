@@ -7,7 +7,10 @@ use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
 use sqlx::{PgExecutor, Pool, Postgres};
+use std::ops::Range;
 use tokio::time::sleep;
+
+const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder {
     pub pool: Pool<Postgres>,
@@ -37,7 +40,7 @@ impl Rewarder {
                 self.reward_offset,
             );
 
-            if scheduler.should_reward(now) {
+            let sleep_duration = if scheduler.should_reward(now) {
                 let iot_price = price_tracker
                     .price(&helium_proto::BlockchainTokenTypeV1::Iot)
                     .await?;
@@ -45,10 +48,18 @@ impl Rewarder {
                     "Rewarding for period: {:?} with iot_price: {iot_price}",
                     scheduler.reward_period
                 );
-                self.reward(&scheduler, Decimal::from(iot_price)).await?
-            }
-
-            let sleep_duration = scheduler.sleep_duration(Utc::now())?;
+                if self.data_current_check(&scheduler.reward_period).await? {
+                    self.reward(&scheduler, Decimal::from(iot_price)).await?;
+                    scheduler.sleep_duration(Utc::now())?
+                } else {
+                    tracing::info!(
+                        "rewards will be retried in {REWARDS_NOT_CURRENT_DELAY_PERIOD} minutes:"
+                    );
+                    Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
+                }
+            } else {
+                scheduler.sleep_duration(Utc::now())?
+            };
 
             tracing::info!(
                 "Sleeping for {}",
@@ -120,6 +131,50 @@ impl Rewarder {
         self.reward_manifests_sink.commit().await?;
 
         Ok(())
+    }
+
+    async fn data_current_check(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<bool> {
+        // Check if we have gateway shares past the end of the reward period
+        if reward_period.end >= self.disable_complete_data_checks_until().await? {
+            if sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM gateway_shares WHERE reward_timestamp >= $1",
+            )
+            .bind(reward_period.end)
+            .fetch_one(&self.pool)
+            .await?
+                == 0
+            {
+                tracing::info!("No gateway_shares found past reward period");
+                return Ok(false);
+            }
+
+            if sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM gateway_dc_shares WHERE reward_timestamp >= $1",
+            )
+            .bind(reward_period.end)
+            .fetch_one(&self.pool)
+            .await?
+                == 0
+            {
+                tracing::info!("No gateway_dc_shares found past reward period");
+                return Ok(false);
+            }
+        } else {
+            tracing::info!("data validity checks are disabled for this reward period");
+        }
+        Ok(true)
+    }
+
+    async fn disable_complete_data_checks_until(&self) -> db_store::Result<DateTime<Utc>> {
+        Utc.timestamp_opt(
+            meta::fetch(&self.pool, "disable_complete_data_checks_until").await?,
+            0,
+        )
+        .single()
+        .ok_or(db_store::Error::DecodeError)
     }
 }
 
