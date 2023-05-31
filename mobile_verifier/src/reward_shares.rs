@@ -699,20 +699,20 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            983_491_394_449 // 997_150_997_150
+            983_491_394_449
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            2_950_474_183_346 // 2_991_452_991_450
+            2_950_474_183_346
         );
 
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            175_623_463_294 // 178_062_678_062
+            175_623_463_294
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
