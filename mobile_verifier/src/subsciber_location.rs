@@ -1,43 +1,62 @@
+use crate::Settings;
 use chrono::{DateTime, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, mobile_subscriber::SubscriberLocationIngestReport,
 };
 use futures::{StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
+use mobile_config::Client;
 use rust_decimal::prelude::*;
 use sqlx::{PgPool, Postgres, Transaction};
-use std::collections::HashMap;
-use std::ops::Range;
-use tokio::sync::mpsc::Receiver;
+use std::{collections::HashMap, ops::Range, time::Duration};
+use tokio::{
+    sync::mpsc::Receiver,
+    time::{self, MissedTickBehavior},
+};
 
 pub type LocationSharingMap = HashMap<Vec<u8>, Vec<Decimal>>;
 
 pub struct SubscriberLocationIngestor {
     pub pool: PgPool,
     pub carrier_keys: Vec<PublicKeyBinary>,
+    pub carrier_keys_refresh_interval: Duration,
+    _config_client: Client,
     reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
 }
 
 impl SubscriberLocationIngestor {
-    pub fn new(
+    pub fn from_settings(
+        settings: &Settings,
         pool: sqlx::Pool<sqlx::Postgres>,
+        config_client: Client,
         carrier_keys: Vec<PublicKeyBinary>,
         reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
     ) -> Self {
         Self {
             pool,
+            carrier_keys_refresh_interval: settings.carrier_keys_refresh_interval(),
             carrier_keys,
+            _config_client: config_client,
             reports_receiver,
         }
     }
     pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
-        // TODO: add tick to periodaclly refresh the carrier keys from mobile config service
+        let mut refresh_carrier_keys_timer = time::interval(self.carrier_keys_refresh_interval);
+        refresh_carrier_keys_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             if shutdown.is_triggered() {
                 break;
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
+                _ = refresh_carrier_keys_timer.tick() =>
+                match self.refresh_carrier_keys().await {
+                Ok(()) => (),
+                Err(err) => {
+                    tracing::error!("error whilst refreshing carrier keys: {err:?}");
+                }
+                },
+
                 msg = self.reports_receiver.recv() => if let Some(stream) =  msg {
                     self.process_file(stream).await?;
                 }
@@ -106,8 +125,19 @@ impl SubscriberLocationIngestor {
         true
     }
 
-    // TODO: fix this when API is available
-    fn _refresh_carrier_keys(&mut self) -> anyhow::Result<()> {
+    // TODO: update when actual API is available
+    async fn refresh_carrier_keys(&mut self) -> anyhow::Result<()> {
+        // match self
+        // .config_client
+        // .clone()
+        // .resolve_carrier_keys()
+        // .await
+        // {
+        //     Ok(res) => {
+        //         self.carrier_keys = res;
+        //     }
+        //     Err(err) => (),
+        // }
         Ok(())
     }
 }

@@ -169,8 +169,13 @@ impl Cmd {
         );
 
         // TODO: retrieve initial carrier keys from config service
-        let subscriber_location_ingestor =
-            SubscriberLocationIngestor::new(pool.clone(), Vec::new(), subscriber_location_ingest);
+        let subscriber_location_ingestor = SubscriberLocationIngestor::from_settings(
+            settings,
+            pool.clone(),
+            config_client.clone(),
+            Vec::new(),
+            subscriber_location_ingest,
+        );
 
         let data_session_ingestor = DataSessionIngestor { pool: pool.clone() };
 

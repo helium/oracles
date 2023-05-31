@@ -2,6 +2,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
+use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -25,6 +26,9 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
+    /// Cadence at which we poll for an updated denylist (secs)
+    #[serde(default = "default_carrier_keys_refresh_interval")]
+    pub carrier_keys_refresh_interval: u64,
 }
 
 pub fn default_log() -> String {
@@ -43,6 +47,9 @@ pub fn default_reward_offset_minutes() -> i64 {
     30
 }
 
+pub fn default_carrier_keys_refresh_interval() -> u64 {
+    60 * 60
+}
 impl Settings {
     /// Load Settings from a given path. Settings are loaded from a given
     /// optional path and can be overriden with environment variables.
@@ -70,5 +77,9 @@ impl Settings {
         Utc.timestamp_opt(self.start_after as i64, 0)
             .single()
             .unwrap()
+    }
+
+    pub fn carrier_keys_refresh_interval(&self) -> Duration {
+        Duration::from_secs(self.carrier_keys_refresh_interval)
     }
 }
