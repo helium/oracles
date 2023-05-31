@@ -187,8 +187,6 @@ impl Cmd {
                     }))?;
                 }
                 FileType::MobileRewardShare => {
-                    // This just outputs a binary of the txns instead of the typical decode.
-                    // This is to make ingesting the output of these transactions simpler on chain.
                     let msg = MobileRewardShare::decode(msg)?;
                     print_json(&msg)?;
                 }

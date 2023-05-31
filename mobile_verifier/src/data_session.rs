@@ -67,16 +67,22 @@ impl DataSessionIngestor {
                             subscriber_id,
                             file_ts,
                         );
-                        data_session.save(&mut transaction).await?
+                        data_session.save(&mut transaction).await?;
+                        metrics::increment_counter!(
+                            "oracles_mobile_verifier_ingest_subscriber_data_session"
+                        )
                     }
 
                     None => {
                         let data_session =
                             HotspotDataSession::from_valid_data_session(report, file_ts);
-                        data_session.save(&mut transaction).await?
+                        data_session.save(&mut transaction).await?;
+                        metrics::increment_counter!(
+                            "oracles_mobile_verifier_ingest_hotspot_data_session"
+                        )
                     }
                 }
-                metrics::increment_counter!("oracles_mobile_verifier_loader_data_session");
+
                 Ok(transaction)
             })
             .await?
@@ -201,7 +207,6 @@ pub async fn data_sessions_to_dc<'a>(
     tokio::pin!(stream);
     let mut map = HotspotMap::new();
     while let Some(session) = stream.try_next().await? {
-        tracing::info!("found hotspot data session ");
         *map.entry(session.pub_key).or_default() += Decimal::from(session.num_dcs)
     }
     Ok(map)

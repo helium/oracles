@@ -33,9 +33,6 @@ const DEFAULT_PREC: u32 = 15;
 /// 30 mobile = 30_000000 mobile bones
 const DISCOVERY_LOCATION_REWARDS_FIXED: u64 = 30_000000;
 
-// Percent of total emissions allocated for mapper rewards
-const _MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
-
 pub struct TransferRewards {
     reward_scale: Decimal,
     rewards: HashMap<PublicKeyBinary, Decimal>,
@@ -170,8 +167,8 @@ impl SubscriberShares {
         data_transferred: Decimal,
     ) -> u64 {
         match self.location_shares.get(subscriber_id) {
-            Some(populated_hour_bucket) => {
-                if rewardable(populated_hour_bucket) && data_transferred > Decimal::ZERO {
+            Some(subscriber_location_shares) => {
+                if rewardable(subscriber_location_shares) && data_transferred > Decimal::ZERO {
                     DISCOVERY_LOCATION_REWARDS_FIXED
                 } else {
                     0
@@ -298,16 +295,14 @@ pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
-pub fn rewardable(hour_bucket: &Vec<Decimal>) -> bool {
-    // TODO: simple first pass, revisit
-    // iterate over the vec and if we see 3 filled hours less than 8 hours apart
+pub fn rewardable(subscriber_location_shares: &Vec<Decimal>) -> bool {
+    // iterate over the vec and if we have 3 filled hours less than 8 hours apart
     // then its rewardable
-    // let hour_bucket = hour_bucket.sort();
-    let bucket_len = hour_bucket.len();
-    if hour_bucket.len() >= 3 {
+    let bucket_len = subscriber_location_shares.len();
+    if bucket_len >= 3 {
         for n in 0..bucket_len - 2 {
-            let v1 = hour_bucket[n];
-            let v2 = hour_bucket[n + 2];
+            let v1 = subscriber_location_shares[n];
+            let v2 = subscriber_location_shares[n + 2];
             if v2 - v1 <= dec!(8) {
                 return true;
             }
