@@ -94,8 +94,8 @@ impl DataSessionIngestor {
 
 #[derive(sqlx::FromRow)]
 pub struct SubscriberDataSession {
-    pub pub_key: PublicKeyBinary,
-    pub payer: PublicKeyBinary,
+    pub pub_key: PublicKeyBinary, // todo: is this field requried for subscriber data sessions ?
+    pub payer: PublicKeyBinary,   // todo: is this field requried for subscriber data sessions ?
     pub subscriber_id: Vec<u8>,
     pub upload_bytes: i64,
     pub download_bytes: i64,
@@ -184,7 +184,7 @@ impl HotspotDataSession {
     }
 }
 
-pub async fn aggregate_mobile_hotspot_data_sessions_to_dc<'a>(
+pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
     epoch: &'a Range<DateTime<Utc>>,
 ) -> Result<HotspotMap, sqlx::Error> {
@@ -212,7 +212,7 @@ pub async fn data_sessions_to_dc<'a>(
     Ok(map)
 }
 
-pub async fn aggregate_mobile_subscriber_data_sessions_to_bytes<'a>(
+pub async fn aggregate_subscriber_data_sessions_to_bytes<'a>(
     exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
     epoch: &Range<DateTime<Utc>>,
 ) -> Result<SubscriberMap, sqlx::Error> {

@@ -2,6 +2,7 @@ use crate::{
     data_session::{HotspotMap, SubscriberMap},
     heartbeats::HeartbeatReward,
     speedtests::{Average, SpeedtestAverages},
+    subsciber_location::LocationSharingMap,
 };
 
 use chrono::{DateTime, Duration, Utc};
@@ -142,6 +143,15 @@ pub struct SubscriberShares {
 }
 
 impl SubscriberShares {
+    // todo: dont like this new function having a dep on db data
+
+    pub fn new(active_subscribers: SubscriberMap, location_shares: LocationSharingMap) -> Self {
+        Self {
+            active_subscribers,
+            location_shares,
+        }
+    }
+
     pub fn into_rewards(
         self,
         reward_period: &'_ Range<DateTime<Utc>>,

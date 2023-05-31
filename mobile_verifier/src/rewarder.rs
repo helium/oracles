@@ -168,8 +168,7 @@ impl Rewarder {
                 / dec!(1_000_000); // Per Bone
         let transfer_rewards = TransferRewards::from_transfer_sessions(
             mobile_bone_price,
-            data_session::aggregate_mobile_hotspot_data_sessions_to_dc(&self.pool, reward_period)
-                .await?,
+            data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
             &poc_rewards,
             reward_period,
         )
@@ -211,21 +210,16 @@ impl Rewarder {
         // *
 
         // get all subscribers this epoch which have transferred data
-        let active_subscribers = data_session::aggregate_mobile_subscriber_data_sessions_to_bytes(
-            &self.pool,
-            reward_period,
-        )
-        .await?;
+        let active_subscribers =
+            data_session::aggregate_subscriber_data_sessions_to_bytes(&self.pool, reward_period)
+                .await?;
         // determine location shares per subscriber for the epoch
         // location shares at this point will be a vec of each hour within the epoch
         // the subscriber has shared their location
         let location_shares =
             subsciber_location::aggregate_location_shares(&self.pool, reward_period).await?;
 
-        let subscriber_shares = SubscriberShares {
-            active_subscribers,
-            location_shares,
-        };
+        let subscriber_shares = SubscriberShares::new(active_subscribers, location_shares);
 
         // translate subscriber shares into subscriber rewards
         let mut _total_discovery_location_reward = dec!(0);
@@ -247,7 +241,7 @@ impl Rewarder {
             .execute(&mut transaction)
             .await?;
 
-        // clear the subscriber location and data sessions data
+        // clear the db of subscriber location and data sessions data for the epoch
         data_session::clear_subscriber_data_sessions(&mut transaction, reward_period).await?;
         subsciber_location::clear_location_shares(&mut transaction, reward_period).await?;
 
