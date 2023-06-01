@@ -1,16 +1,19 @@
+use crate::Settings;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::Region as ProtoRegion;
 use iot_config::client::{
     Client as IotConfigClient, ClientError as IotConfigClientError, RegionParamsInfo,
 };
 use retainer::Cache;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-const CACHE_TTL: u64 = 10_800;
+/// how often to evict expired items from the cache ( every 5 mins)
+const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 5);
 
 pub struct RegionCache {
     pub iot_config_client: IotConfigClient,
-    pub cache: Cache<ProtoRegion, RegionParamsInfo>,
+    pub cache: Arc<Cache<ProtoRegion, RegionParamsInfo>>,
+    refresh_interval: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -24,11 +27,18 @@ pub enum RegionCacheError {
 }
 
 impl RegionCache {
-    pub fn from_settings(iot_config_client: IotConfigClient) -> Result<Self, RegionCacheError> {
-        let cache = Cache::<ProtoRegion, RegionParamsInfo>::new();
+    pub fn from_settings(
+        settings: &Settings,
+        iot_config_client: IotConfigClient,
+    ) -> Result<Self, RegionCacheError> {
+        let cache = Arc::new(Cache::<ProtoRegion, RegionParamsInfo>::new());
+        let clone = cache.clone();
+        // monitor cache to handle evictions
+        tokio::spawn(async move { clone.monitor(4, 0.25, CACHE_EVICTION_FREQUENCY).await });
         Ok(Self {
             iot_config_client,
             cache,
+            refresh_interval: settings.region_params_refresh_interval(),
         })
     }
 
@@ -53,7 +63,7 @@ impl RegionCache {
                             "oracles_iot_verifier_region_params_cache_miss"
                         );
                         self.cache
-                            .insert(region, res.clone(), Duration::from_secs(CACHE_TTL))
+                            .insert(region, res.clone(), self.refresh_interval)
                             .await;
                         Ok(res)
                     }
