@@ -22,10 +22,10 @@ pub struct GatewayUpdater {
 
 #[derive(Debug, thiserror::Error)]
 pub enum GatewayUpdaterError {
-    #[error("gateway not found: {0}")]
-    GatewayNotFound(PublicKeyBinary),
     #[error("error querying iot config service")]
     IotConfigClient(#[from] IotConfigClientError),
+    #[error("error sending on channel")]
+    SendError(#[from] watch::error::SendError<GatewayMap>),
 }
 
 impl GatewayUpdater {
@@ -70,7 +70,7 @@ impl GatewayUpdater {
     async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError> {
         tracing::info!("handling refresh tick");
         let updated_gateway_map = refresh_gateways(&mut self.iot_config_client).await?;
-        _ = self.sender.send(updated_gateway_map);
+        self.sender.send(updated_gateway_map)?;
         Ok(())
     }
 }
