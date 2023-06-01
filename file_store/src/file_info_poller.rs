@@ -48,7 +48,7 @@ pub struct FileInfoPoller<T> {
     lookback: LookbackBehavior,
     #[builder(default = "Duration::minutes(10)")]
     offset: Duration,
-    #[builder(default = "4")]
+    #[builder(default = "20")]
     queue_size: usize,
     #[builder(setter(skip))]
     p: PhantomData<T>,
