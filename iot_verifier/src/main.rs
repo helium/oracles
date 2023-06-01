@@ -87,9 +87,9 @@ impl Server {
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
 
-        let gateway_updater =
+        let (gateway_updater_receiver, gateway_updater) =
             GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
-        let gateway_cache = GatewayCache::new(gateway_updater.receiver.clone());
+        let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
 
         let region_cache = RegionCache::from_settings(iot_config_client.clone())?;
 
@@ -168,7 +168,7 @@ impl Server {
         let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
         let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
         let mut density_scaler =
-            DensityScaler::from_settings(settings, pool, gateway_updater.receiver.clone()).await?;
+            DensityScaler::from_settings(settings, pool, gateway_updater_receiver.clone()).await?;
         let (price_tracker, price_receiver) =
             PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
 

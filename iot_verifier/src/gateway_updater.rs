@@ -17,7 +17,6 @@ pub type MessageReceiver = watch::Receiver<GatewayMap>;
 pub struct GatewayUpdater {
     iot_config_client: IotConfigClient,
     refresh_interval: Duration,
-    pub receiver: MessageReceiver,
     sender: MessageSender,
 }
 
@@ -33,15 +32,17 @@ impl GatewayUpdater {
     pub async fn from_settings(
         settings: &Settings,
         iot_config_client: IotConfigClient,
-    ) -> Result<Self, GatewayUpdaterError> {
+    ) -> Result<(MessageReceiver, Self), GatewayUpdaterError> {
         let gateway_map = refresh_gateways(iot_config_client.clone()).await?;
         let (sender, receiver) = watch::channel(gateway_map);
-        Ok(Self {
-            iot_config_client,
-            refresh_interval: settings.gateway_refresh_interval(),
+        Ok((
             receiver,
-            sender,
-        })
+            Self {
+                iot_config_client,
+                refresh_interval: settings.gateway_refresh_interval(),
+                sender,
+            },
+        ))
     }
 
     pub async fn run(&self, shutdown: &triggered::Listener) -> Result<(), GatewayUpdaterError> {
