@@ -31,9 +31,9 @@ pub enum GatewayUpdaterError {
 impl GatewayUpdater {
     pub async fn from_settings(
         settings: &Settings,
-        iot_config_client: IotConfigClient,
+        mut iot_config_client: IotConfigClient,
     ) -> Result<(MessageReceiver, Self), GatewayUpdaterError> {
-        let gateway_map = refresh_gateways(iot_config_client.clone()).await?;
+        let gateway_map = refresh_gateways(&mut iot_config_client).await?;
         let (sender, receiver) = watch::channel(gateway_map);
         Ok((
             receiver,
@@ -45,7 +45,7 @@ impl GatewayUpdater {
         ))
     }
 
-    pub async fn run(&self, shutdown: &triggered::Listener) -> Result<(), GatewayUpdaterError> {
+    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), GatewayUpdaterError> {
         tracing::info!("starting gateway_updater");
 
         let mut trigger_timer = time::interval(
@@ -67,20 +67,20 @@ impl GatewayUpdater {
         }
     }
 
-    async fn handle_refresh_tick(&self) -> Result<(), GatewayUpdaterError> {
+    async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError> {
         tracing::info!("handling refresh tick");
-        let updated_gateway_map = refresh_gateways(self.iot_config_client.clone()).await?;
+        let updated_gateway_map = refresh_gateways(&mut self.iot_config_client).await?;
         _ = self.sender.send(updated_gateway_map);
         Ok(())
     }
 }
 
 pub async fn refresh_gateways(
-    iot_config_client: IotConfigClient,
+    iot_config_client: &mut IotConfigClient,
 ) -> Result<GatewayMap, GatewayUpdaterError> {
     tracing::info!("refreshing gateways");
     let mut gateways = GatewayMap::new();
-    let mut gw_stream = iot_config_client.clone().stream_gateways_info().await?;
+    let mut gw_stream = iot_config_client.stream_gateways_info().await?;
     while let Some(gateway_info) = gw_stream.next().await {
         gateways.insert(gateway_info.address.clone(), gateway_info);
     }
