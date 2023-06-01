@@ -12,7 +12,6 @@ use serde::Serialize;
 
 #[derive(Serialize, Clone)]
 pub struct PacketRouterPacketReport {
-    pub gateway_tmst: DateTime<Utc>,
     pub oui: u64,
     pub net_id: u32,
     pub rssi: i32,
@@ -24,7 +23,9 @@ pub struct PacketRouterPacketReport {
     pub gateway: PublicKeyBinary,
     pub payload_hash: Vec<u8>,
     pub payload_size: u32,
+    pub received_timestamp: DateTime<Utc>,
 }
+
 #[derive(Serialize, Clone)]
 pub struct IotValidPacket {
     pub payload_size: u32,
@@ -36,13 +37,13 @@ pub struct IotValidPacket {
 
 impl MsgTimestamp<u64> for PacketRouterPacketReport {
     fn timestamp(&self) -> u64 {
-        self.gateway_tmst.encode_timestamp_millis()
+        self.received_timestamp.encode_timestamp_millis()
     }
 }
 
 impl MsgTimestamp<Result<DateTime<Utc>>> for PacketRouterPacketReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        self.gateway_tmst.to_timestamp_millis()
+        self.received_timestamp.to_timestamp_millis()
     }
 }
 
@@ -76,9 +77,9 @@ impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
         let region = Region::from_i32(v.region).ok_or_else(|| {
             DecodeError::unsupported_region("iot_packet_router_packet_report_v1", v.region)
         })?;
-        let gateway_tmst = v.timestamp()?;
+        let received_timestamp = v.timestamp()?;
         Ok(Self {
-            gateway_tmst,
+            received_timestamp,
             oui: v.oui,
             net_id: v.net_id,
             rssi: v.rssi,
