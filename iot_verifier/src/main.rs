@@ -8,9 +8,9 @@ use file_store::{
 use futures::TryFutureExt;
 use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
-    entropy_loader, gateway_cache::GatewayCache, loader, metrics::Metrics, packet_loader,
-    poc_report::Report, purger, region_cache::RegionCache, rewarder::Rewarder, runner,
-    tx_scaler::Server as DensityScaler, Settings,
+    entropy_loader, gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, loader,
+    metrics::Metrics, packet_loader, poc_report::Report, purger, region_cache::RegionCache,
+    rewarder::Rewarder, runner, tx_scaler::Server as DensityScaler, Settings,
 };
 use price::PriceTracker;
 use std::path;
@@ -87,8 +87,10 @@ impl Server {
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
 
-        let gateway_cache = GatewayCache::from_settings(iot_config_client.clone());
-        _ = gateway_cache.prewarm().await;
+        let (gateway_updater_receiver, gateway_updater) =
+            GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
+        let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
+
         let region_cache = RegionCache::from_settings(iot_config_client.clone())?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
@@ -166,12 +168,13 @@ impl Server {
         let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
         let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
         let mut density_scaler =
-            DensityScaler::from_settings(settings, pool, iot_config_client).await?;
+            DensityScaler::from_settings(settings, pool, gateway_updater_receiver.clone()).await?;
         let (price_tracker, price_receiver) =
             PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
+            gateway_updater.run(&shutdown).map_err(Error::from),
             gateway_rewards_server.run().map_err(Error::from),
             reward_manifests_server.run().map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),

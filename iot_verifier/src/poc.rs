@@ -118,7 +118,6 @@ impl Poc {
             Err(GatewayCacheError::GatewayNotFound(_)) => {
                 return Ok(VerifyBeaconResult::gateway_not_found())
             }
-            Err(err) => return Err(VerificationError::GatewayCache(err)),
         };
         let beaconer_metadata = match beaconer_info.metadata {
             Some(ref metadata) => metadata,
@@ -238,7 +237,6 @@ impl Poc {
                     InvalidParticipantSide::Witness,
                 ));
             }
-            Err(err) => return Err(VerificationError::GatewayCache(err)),
         };
         let witness_metadata = match witness_info.metadata {
             Some(ref metadata) => metadata,

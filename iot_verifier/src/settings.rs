@@ -82,6 +82,14 @@ pub struct Settings {
     /// after this the report will be ignored and eventually be purged
     #[serde(default = "default_witness_max_retries")]
     pub witness_max_retries: u64,
+    /// interval at which gateways are refreshed
+    #[serde(default = "default_gateway_refresh_interval")]
+    pub gateway_refresh_interval: i64,
+}
+
+// Default: 30 minutes
+fn default_gateway_refresh_interval() -> i64 {
+    30 * 60
 }
 
 // Default: 60 minutes
@@ -238,5 +246,8 @@ impl Settings {
     }
     pub fn packet_interval(&self) -> Duration {
         Duration::seconds(self.packet_interval)
+    }
+    pub fn gateway_refresh_interval(&self) -> Duration {
+        Duration::seconds(self.gateway_refresh_interval)
     }
 }
