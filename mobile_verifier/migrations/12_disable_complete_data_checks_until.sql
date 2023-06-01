@@ -1,1 +1,1 @@
-INSERT INTO meta VALUES ('disable_complete_data_checks_until', '0');
+INSERT INTO meta VALUES ('disable_complete_data_checks_until', '0') ON CONFLICT DO NOTHING;
