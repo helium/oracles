@@ -35,7 +35,7 @@ const _MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
 /// Fixed reward in mobile bones rewarded to a subscriber
 /// sharing their location
 /// 30 mobile = 30_000000 mobile bones
-/// discovery location rewards are part of the MAPPERS_REWARDS_PERCENT pot
+/// discovery location rewards come out of the MAPPERS_REWARDS_PERCENT pot
 const DISCOVERY_LOCATION_REWARDS_FIXED: u64 = 30_000000;
 
 pub struct TransferRewards {
@@ -143,8 +143,6 @@ pub struct SubscriberShares {
 }
 
 impl SubscriberShares {
-    // todo: dont like this new function having a dep on db data
-
     pub fn new(active_subscribers: SubscriberMap, location_shares: LocationSharingMap) -> Self {
         Self {
             active_subscribers,
@@ -387,7 +385,8 @@ mod test {
         let subscriber3 = "subscriber_3".to_string().as_bytes().to_vec();
         let subscriber4 = "subscriber_4".to_string().as_bytes().to_vec();
 
-        // setup some data transfer sessions from two subscribers
+        // setup some data transfer sessions from subscribers 1, 2 and 4
+        // subscriber 3 has no data transfer
         let transfer_sessions = vec![
             Ok(SubscriberDataSession {
                 subscriber_id: subscriber1.clone(),
@@ -415,10 +414,11 @@ mod test {
             }),
         ];
 
-        // setup location shares from same two subscribers
-        // and a third share from a subscriber with no data transfer
-        // the vecs below represent a list of hours in which the subscriber
-        // has shared its location
+        // setup location shares from each subscribers
+        // subscriber 1 has 3 shares within an 8 hour window
+        // subscriber 2 has 3 shares within an 8 hour window
+        // subscriber 3 has 3 shares within an 8 hour window
+        // subscriber 4 does not have 3 shares within an 8 hour window
         let mut location_shares = LocationSharingMap::new();
         location_shares.insert(subscriber1, vec![dec!(1), dec!(2), dec!(3)]);
         location_shares.insert(subscriber2, vec![dec!(1), dec!(2), dec!(3)]);

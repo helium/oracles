@@ -203,9 +203,8 @@ impl Rewarder {
         // Subscriber rewards
         // currently only includes rewards for subscriber location sharing
         // but others will follow
-        // to be eligable for location sharing rewards a subscriber must have shared his location
-        // across a minimum of 3 hours in any 8 hours within the epoch ( 24 hrs)
-        // AND also have transferred data
+        // to be eligable for location sharing rewards a subscriber must have shared its location
+        // across a minimum of 3 hours in any 8 hour window within the epoch ( 24 hrs) AND also have transferred data
         // TODO: confirm transferred data is within the same 8 hour windows or across 24 hours
         // *
 

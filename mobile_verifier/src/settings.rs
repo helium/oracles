@@ -26,7 +26,7 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
-    /// Cadence at which we poll for an updated denylist (secs)
+    /// Cadence at which we poll config service for updates to carrier keys ( in secs)
     #[serde(default = "default_carrier_keys_refresh_interval")]
     pub carrier_keys_refresh_interval: u64,
 }
