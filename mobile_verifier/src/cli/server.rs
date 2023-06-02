@@ -185,9 +185,7 @@ impl Cmd {
             valid_speedtests_server.run().map_err(Error::from),
             mobile_rewards_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
-            reward_manifests_server
-                .run()
-                .map_err(Error::from),
+            reward_manifests_server.run().map_err(Error::from),
             subscriber_location_ingestor
                 .run(&shutdown_listener)
                 .map_err(Error::from),
