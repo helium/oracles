@@ -1,6 +1,6 @@
 use crate::{
     helium_netids::{self, is_helium_netid, AddressStore, HeliumNetId},
-    lora_field::{DevAddrConstraint, NetIdField},
+    lora_field::{DevAddrConstraint, NetIdField, DevAddrField},
     org_service::UpdateAuthorizer,
 };
 use futures::stream::StreamExt;
@@ -158,12 +158,7 @@ pub async fn update_org(
     let mut txn = db.begin().await?;
 
     let net_id = get_org_netid(oui, &mut txn).await?;
-    let is_helium_org = [
-        HeliumNetId::Type0_0x00003c.id(),
-        HeliumNetId::Type3_0x60002d.id(),
-        HeliumNetId::Type6_0xc00053.id(),
-    ]
-    .contains(&net_id);
+    let is_helium_org = is_helium_netid(&net_id);
     let current_org = get(oui, &mut txn).await?;
 
     for update in updates {
@@ -183,7 +178,7 @@ pub async fn update_org(
                     helium_net_id,
                 )
                 .await
-                .map_err(|err| OrgStoreError::SaveConstraints(format!("{err}")))?;
+                .map_err(|err| OrgStoreError::SaveConstraints(format!("{err:?}")))?;
                 insert_helium_constraints(oui, net_id, &constraints, &mut txn).await?
             }
             Some(proto::Update::Constraint(constraint_update))
@@ -193,12 +188,19 @@ pub async fn update_org(
                     .try_into()
                     .map_err(|err: &'static str| OrgStoreError::InvalidUpdate(err.to_string()))?;
                 match (constraint_update.action(), &constraint_update.constraint) {
-                    (proto::ActionV1::Add, Some(ref constraint)) => helium_netids::checkout_specified_devaddr_constraint(&mut txn, helium_net_id, &constraint.into()).await.map_err(|err| OrgStoreError::InvalidUpdate(format!("{err}")))?,
+                    (proto::ActionV1::Add, Some(ref constraint)) => {
+                            let constraint: DevAddrConstraint = constraint.into();
+                            helium_netids::checkout_specified_devaddr_constraint(&mut txn, helium_net_id, &constraint).await.map_err(|err| OrgStoreError::InvalidUpdate(format!("{err:?}")))?;
+                            insert_helium_constraints(oui, net_id, &[constraint], &mut txn).await?
+                        }
                     (proto::ActionV1::Remove, Some(ref constraint)) => {
                         if let Some(ref current_constraints) = current_org.constraints {
-                            if current_constraints.contains(&constraint.into()) {
+                            if current_constraints.contains(&constraint.into()) && current_constraints.len() > 1 {
                                 let remove_range = (constraint.start_addr..=constraint.end_addr).collect::<Vec<u32>>();
                                 txn.release_addrs(helium_net_id, &remove_range).await?;
+                                remove_helium_constraints(oui, &[constraint.into()], &mut txn).await?
+                            } else if current_constraints.len() == 1 {
+                                return Err(OrgStoreError::InvalidUpdate("org must have at least one constraint range".to_string()))
                             } else { return Err(OrgStoreError::InvalidUpdate("remove not owned constraint".to_string())) }
                         } else { return Err(OrgStoreError::InvalidUpdate("no org constraints defined".to_string())) }
                     }
@@ -254,8 +256,8 @@ async fn update_owner(
     db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(" update organizations set owner_pubkey = $1 where oui = $2 ")
-        .bind(oui as i64)
         .bind(owner_pubkey)
+        .bind(oui as i64)
         .execute(db)
         .await
         .map(|_| ())
@@ -267,8 +269,8 @@ async fn update_payer(
     db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(" update organizations set payer_pubkey = $1 where oui = $2 ")
-        .bind(oui as i64)
         .bind(payer_pubkey)
+        .bind(oui as i64)
         .execute(db)
         .await
         .map(|_| ())
@@ -317,6 +319,22 @@ async fn insert_helium_constraints(
             .push_bind(i32::from(net_id))
             .push_bind(i32::from(range.start_addr))
             .push_bind(i32::from(range.end_addr));
+    });
+
+    query_builder.build().execute(db).await.map(|_| ())
+}
+
+async fn remove_helium_constraints(
+    oui: u64,
+    devaddr_ranges: &[DevAddrConstraint],
+    db: impl sqlx::PgExecutor<'_>,
+) -> Result<(), sqlx::Error> {
+    let constraints = devaddr_ranges.iter().map(|constraint| (oui, constraint.start_addr, constraint.end_addr)).collect::<Vec<(u64, DevAddrField, DevAddrField)>>();
+    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
+        "delete from organization_devaddr_constraints where (oui, start_addr, end_addr) in "
+    );
+    query_builder.push_tuples(constraints, |mut builder, (oui, start_addr, end_addr)| {
+        builder.push_bind(oui as i64).push_bind(i32::from(start_addr)).push_bind(i32::from(end_addr));
     });
 
     query_builder.build().execute(db).await.map(|_| ())

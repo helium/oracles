@@ -101,13 +101,16 @@ impl AddressStore for sqlx::Transaction<'_, sqlx::Postgres> {
         net_id: HeliumNetId,
         released_addrs: &[u32],
     ) -> Result<(), Self::Error> {
+        let net_id = i32::from(net_id.id());
+        let released_addrs = released_addrs
+            .iter()
+            .map(|addr| (*addr, net_id))
+            .collect::<Vec<(u32, i32)>>();
         let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
             " delete from helium_used_devaddrs where (devaddr, net_id) in ",
         );
-        query_builder.push_values(released_addrs, |mut builder, addr| {
-            builder
-                .push_bind(*addr as i32)
-                .push_bind(i32::from(net_id.id()));
+        query_builder.push_tuples(released_addrs, |mut builder, (addr, id)| {
+            builder.push_bind(addr as i32).push_bind(id);
         });
         Ok(query_builder.build().execute(self).await.map(|_| ())?)
     }
