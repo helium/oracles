@@ -14,7 +14,10 @@ use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
+use std::ops::Range;
 use tokio::time::sleep;
+
+const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder {
     pool: Pool<Postgres>,
@@ -57,10 +60,29 @@ impl Rewarder {
                 next_rewarded_end_time,
                 self.reward_offset,
             );
-            let next_reward = scheduler.sleep_duration(Utc::now())?;
+            let now = Utc::now();
+            let sleep_duration = if scheduler.should_reward(now) {
+                if self.is_data_current(&scheduler.reward_period).await? {
+                    self.reward(&scheduler).await?;
+                    continue;
+                } else {
+                    tracing::info!(
+                        "rewards will be retried in {REWARDS_NOT_CURRENT_DELAY_PERIOD} minutes:"
+                    );
+                    Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
+                }
+            } else {
+                scheduler.sleep_duration(now)?
+            };
+
+            tracing::info!(
+                "Sleeping for {}",
+                humantime::format_duration(sleep_duration)
+            );
+
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = sleep(next_reward) => self.reward(&scheduler).await?,
+                _ = sleep(sleep_duration) => (),
             }
         }
 
@@ -88,15 +110,10 @@ impl Rewarder {
         .ok_or(db_store::Error::DecodeError)
     }
 
-    pub async fn reward(&self, scheduler: &Scheduler) -> anyhow::Result<()> {
-        let reward_period = &scheduler.reward_period;
-
-        tracing::info!(
-            "Rewarding for period: {} to {}",
-            reward_period.start,
-            reward_period.end
-        );
-
+    pub async fn is_data_current(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<bool> {
         // Check if we have heartbeats and speedtests past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
             if sqlx::query_scalar::<_, i64>(
@@ -107,9 +124,8 @@ impl Rewarder {
             .await?
                 == 0
             {
-                tracing::info!("No heartbeats found past reward period, sleeping for five minutes");
-                sleep(Duration::minutes(5).to_std()?).await;
-                return Ok(());
+                tracing::info!("No heartbeats found past reward period");
+                return Ok(false);
             }
 
             if sqlx::query_scalar::<_, i64>(
@@ -120,13 +136,24 @@ impl Rewarder {
             .await?
                 == 0
             {
-                tracing::info!("No speedtests found past reward period, sleeping for five minutes");
-                sleep(Duration::minutes(5).to_std()?).await;
-                return Ok(());
+                tracing::info!("No speedtests found past reward period");
+                return Ok(false);
             }
         } else {
             tracing::info!("Complete data checks are disabled for this reward period");
         }
+
+        Ok(true)
+    }
+
+    pub async fn reward(&self, scheduler: &Scheduler) -> anyhow::Result<()> {
+        let reward_period = &scheduler.reward_period;
+
+        tracing::info!(
+            "Rewarding for period: {} to {}",
+            reward_period.start,
+            reward_period.end
+        );
 
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
         let speedtests = SpeedtestAverages::validated(&self.pool, reward_period.end).await?;

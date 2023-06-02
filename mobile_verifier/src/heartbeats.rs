@@ -97,6 +97,8 @@ impl HeartbeatDaemon {
         file: FileInfoStream<CellHeartbeatIngestReport>,
         cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
     ) -> anyhow::Result<()> {
+        tracing::info!("Processing heartbeat file {}", file.file_info.key);
+
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
         let mut transaction = self.pool.begin().await?;

@@ -98,6 +98,8 @@ impl SpeedtestDaemon {
         &self,
         file: FileInfoStream<CellSpeedtestIngestReport>,
     ) -> anyhow::Result<()> {
+        tracing::info!("Processing speedtest file {}", file.file_info.key);
+
         let mut transaction = self.pool.begin().await?;
         let reports = file.into_stream(&mut transaction).await?;
 
