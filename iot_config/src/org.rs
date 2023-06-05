@@ -140,7 +140,7 @@ pub async fn create_org(
             )));
         }
     }
-    .map_err(|_| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}")))?;
+    .map_err(|err| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}: {err:?}")))?;
 
     let org = get(oui as u64, &mut txn).await?;
 
