@@ -354,8 +354,10 @@ mod test {
     #[test]
 
     fn test_subscriber_location_shares_rewardable() {
+        // rewardable list, has 3 shares across an 8 hour window,
         let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(12), dec!(13)];
         assert!(check_subscriber_location_shares_rewardable(&vec));
+        // non rewardable list, does not have 3 shares across an 8 hour window,
         let vec: Vec<Decimal> = vec![dec!(1), dec!(2), dec!(11), dec!(13), dec!(22)];
         assert!(!check_subscriber_location_shares_rewardable(&vec))
     }
@@ -385,36 +387,27 @@ mod test {
         let subscriber3 = "subscriber_3".to_string().as_bytes().to_vec();
         let subscriber4 = "subscriber_4".to_string().as_bytes().to_vec();
 
-        // setup some data transfer sessions from subscribers 1, 2 and 4
+        // setup data transfer sessions from subscribers 1, 2 and 4
         // subscriber 3 has no data transfer
         let transfer_sessions = vec![
             Ok(SubscriberDataSession {
                 subscriber_id: subscriber1.clone(),
-                pub_key: owner.clone(),
-                payer: payer.clone(),
-                upload_bytes: 1000,
                 download_bytes: 10000,
                 reward_timestamp: DateTime::default(),
             }),
             Ok(SubscriberDataSession {
                 subscriber_id: subscriber2.clone(),
-                pub_key: owner.clone(),
-                payer: payer.clone(),
-                upload_bytes: 1000,
                 download_bytes: 10000,
                 reward_timestamp: DateTime::default(),
             }),
             Ok(SubscriberDataSession {
                 subscriber_id: subscriber4.clone(),
-                pub_key: owner.clone(),
-                payer,
-                upload_bytes: 1000,
                 download_bytes: 10000,
                 reward_timestamp: DateTime::default(),
             }),
         ];
 
-        // setup location shares from each subscribers
+        // setup location shares from each subscriber
         // subscriber 1 has 3 shares within an 8 hour window
         // subscriber 2 has 3 shares within an 8 hour window
         // subscriber 3 has 3 shares within an 8 hour window
@@ -449,10 +442,10 @@ mod test {
 
         // confirm the total subscriber location rewards allocated
         // only two subscribers will be awarded
-        // -- subscriber_1 had data transfer and valid location shares
-        // -- subscriber_2 had data transfer and valid location shares
-        // -- subscriber_3 had valid shares but no data transfers
-        // -- subscriber_4 had data transfer but no valid location shares
+        // -- subscriber_1 had data transfer and valid location shares, and thus rewarded
+        // -- subscriber_2 had data transfer and valid location shares, and thus rewarded
+        // -- subscriber_3 had valid shares but no data transfers, not rewarded
+        // -- subscriber_4 had data transfer but no valid location shares, not rewarded
         //    ( did not share location a min of 3 times in any 8 hour period )
         assert_eq!(
             DISCOVERY_LOCATION_REWARDS_FIXED * 2,

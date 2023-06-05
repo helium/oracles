@@ -94,10 +94,7 @@ impl DataSessionIngestor {
 
 #[derive(sqlx::FromRow)]
 pub struct SubscriberDataSession {
-    pub pub_key: PublicKeyBinary, // todo: is this field requried for subscriber data sessions ?
-    pub payer: PublicKeyBinary,   // todo: is this field requried for subscriber data sessions ?
     pub subscriber_id: Vec<u8>,
-    pub upload_bytes: i64,
     pub download_bytes: i64,
     pub reward_timestamp: DateTime<Utc>,
 }
@@ -120,15 +117,12 @@ impl SubscriberDataSession {
     pub async fn save(self, db: &mut Transaction<'_, Postgres>) -> Result<(), DataSessionError> {
         sqlx::query(
             r#"
-            INSERT INTO subscriber_data_transfer_sessions (pub_key, subscriber_id, payer, upload_bytes, download_bytes, reward_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO subscriber_data_transfer_sessions (subscriber_id, download_bytes, reward_timestamp)
+            VALUES ($1, $2, $3)
             "#,
         )
-        .bind(self.pub_key)
         .bind(self.subscriber_id)
         // .bind("subscriber_x".to_string().as_bytes().to_vec())  // TODO: used for local debugging, remove when done
-        .bind(self.payer)
-        .bind(self.upload_bytes)
         .bind(self.download_bytes)
         .bind(self.reward_timestamp)
         .execute(&mut *db)
@@ -141,10 +135,7 @@ impl SubscriberDataSession {
         reward_timestamp: DateTime<Utc>,
     ) -> SubscriberDataSession {
         Self {
-            pub_key: v.pub_key,
-            payer: v.payer,
             subscriber_id,
-            upload_bytes: v.upload_bytes as i64,
             download_bytes: v.download_bytes as i64,
             reward_timestamp,
         }
@@ -216,14 +207,12 @@ pub async fn aggregate_subscriber_data_sessions_to_bytes<'a>(
     exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
     epoch: &Range<DateTime<Utc>>,
 ) -> Result<SubscriberMap, sqlx::Error> {
-    // TODO: to determine if a mobile subscriber has transferred data
-    // confirm it is downloaded data we are interested in and not
-    // either uploaded data or a sum of both
     let stream = sqlx::query_as::<_, SubscriberDataSession>(
         r#"
             SELECT *
             FROM subscriber_data_transfer_sessions
-            WHERE reward_timestamp >= $1 and reward_timestamp < $2
+            WHERE download_bytes > 0
+            AND reward_timestamp >= $1 AND reward_timestamp < $2
             "#,
     )
     .bind(epoch.start)
