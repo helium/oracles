@@ -36,6 +36,7 @@ impl_msg_verify!(LoraWitnessReportReqV1, signature);
 impl_msg_verify!(DataTransferSessionReqV1, signature);
 impl_msg_verify!(iot_config::OrgCreateHeliumReqV1, signature);
 impl_msg_verify!(iot_config::OrgCreateRoamerReqV1, signature);
+impl_msg_verify!(iot_config::OrgUpdateReqV1, signature);
 impl_msg_verify!(iot_config::OrgDisableReqV1, signature);
 impl_msg_verify!(iot_config::OrgEnableReqV1, signature);
 impl_msg_verify!(iot_config::RouteStreamReqV1, signature);

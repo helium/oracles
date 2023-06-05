@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sqlx::{postgres::PgRow, FromRow, Row};
 use std::{fmt::Display, str::FromStr};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct LoraField<const WIDTH: usize>(pub u64);
 
 pub type NetIdField = LoraField<6>;
@@ -59,8 +59,11 @@ impl DevAddrConstraint {
         start_addr: DevAddrField,
         end_addr: DevAddrField,
     ) -> Result<Self, DevAddrRangeError> {
-        if end_addr < start_addr {
+        if end_addr <= start_addr {
             return Err(DevAddrRangeError::EndLessThanStart);
+        }
+        if start_addr.0 % 2 != 0 || end_addr.0 % 2 == 0 {
+            return Err(DevAddrRangeError::RangeUneven);
         }
 
         Ok(Self {
@@ -167,6 +170,8 @@ pub enum DevAddrRangeError {
     EndLessThanStart,
     #[error("devaddr next addr failed")]
     NextStartUnavailable,
+    #[error("devaddr range uneven")]
+    RangeUneven,
 }
 
 impl<const WIDTH: usize> PartialOrd for LoraField<WIDTH> {
@@ -464,10 +469,19 @@ impl DevAddrField {
 }
 
 impl From<DevAddrConstraint> for proto::DevaddrConstraintV1 {
-    fn from(range: DevAddrConstraint) -> Self {
+    fn from(constraint: DevAddrConstraint) -> Self {
         Self {
-            start_addr: range.start_addr.into(),
-            end_addr: range.end_addr.into(),
+            start_addr: constraint.start_addr.into(),
+            end_addr: constraint.end_addr.into(),
+        }
+    }
+}
+
+impl From<&proto::DevaddrConstraintV1> for DevAddrConstraint {
+    fn from(constraint: &proto::DevaddrConstraintV1) -> Self {
+        Self {
+            start_addr: constraint.start_addr.into(),
+            end_addr: constraint.end_addr.into(),
         }
     }
 }

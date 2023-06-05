@@ -93,13 +93,19 @@ impl GatewayService {
         match self.gateway_cache.get(pubkey).await {
             Some(gateway) => Ok(gateway.value().clone()),
             None => {
-                let metadata = gateway_info::db::get_info(&self.metadata_pool, pubkey)
-                    .await
-                    .map_err(|_| Status::internal("error fetching gateway info"))?
-                    .ok_or_else(|| {
-                        telemetry::count_gateway_info_lookup("not-found");
-                        Status::not_found(format!("gateway not found: pubkey = {pubkey:}"))
-                    })?;
+                let metadata = tokio::select! {
+                    query_result = gateway_info::db::get_info(&self.metadata_pool, pubkey) => {
+                        query_result.map_err(|_| Status::internal("error fetching gateway info"))?
+                            .ok_or_else(|| {
+                                telemetry::count_gateway_info_lookup("not-found");
+                                Status::not_found(format!("gateway not found: pubkey = {pubkey:}"))
+                            })?
+                    }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(3)) => {
+                        tracing::warn!("gateway info request query timed out");
+                        return Err(Status::deadline_exceeded("query timed out requesting info"))
+                    }
+                };
                 let gateway = GatewayInfo::chain_metadata_to_info(metadata, &self.region_map);
                 self.gateway_cache
                     .insert(pubkey.clone(), gateway.clone(), CACHE_TTL)
