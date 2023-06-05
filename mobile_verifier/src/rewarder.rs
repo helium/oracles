@@ -66,9 +66,6 @@ impl Rewarder {
                     self.reward(&scheduler).await?;
                     continue;
                 } else {
-                    tracing::info!(
-                        "rewards will be retried in {REWARDS_NOT_CURRENT_DELAY_PERIOD} minutes:"
-                    );
                     Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
                 }
             } else {
