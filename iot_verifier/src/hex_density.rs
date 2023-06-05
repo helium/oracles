@@ -26,8 +26,27 @@ impl HexResConfig {
 type HexMap = HashMap<CellIndex, u64>;
 
 const MAX_RES: Resolution = Resolution::Eleven;
-const USED_RES: [Resolution; 7] = [Resolution::Ten, Resolution::Nine, Resolution::Eight, Resolution::Seven, Resolution::Six, Resolution::Five, Resolution::Four];
-const SCALING_RES: [Resolution; 10] = [Resolution::Thirteen, Resolution::Twelve, Resolution::Eleven, Resolution::Ten, Resolution::Nine, Resolution::Eight, Resolution::Seven, Resolution::Six, Resolution::Five, Resolution::Four];
+const USED_RES: [Resolution; 7] = [
+    Resolution::Ten,
+    Resolution::Nine,
+    Resolution::Eight,
+    Resolution::Seven,
+    Resolution::Six,
+    Resolution::Five,
+    Resolution::Four,
+];
+const SCALING_RES: [Resolution; 10] = [
+    Resolution::Thirteen,
+    Resolution::Twelve,
+    Resolution::Eleven,
+    Resolution::Ten,
+    Resolution::Nine,
+    Resolution::Eight,
+    Resolution::Seven,
+    Resolution::Six,
+    Resolution::Five,
+    Resolution::Four,
+];
 
 lazy_static! {
     static ref HIP17_RES_CONFIG: HashMap<Resolution, HexResConfig> = {
@@ -179,9 +198,7 @@ fn occupied_count(cell_map: &HexMap, hex: &CellIndex, density_tgt: u64) -> u64 {
 }
 
 fn limit(res: &h3o::Resolution, occupied_count: u64) -> u64 {
-    let res_config = HIP17_RES_CONFIG
-        .get(res)
-        .unwrap();
+    let res_config = HIP17_RES_CONFIG.get(res).unwrap();
     let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
     let max = cmp::max((occupied_neighbor_diff) + 1, 1);
     cmp::min(res_config.max, res_config.target * max)

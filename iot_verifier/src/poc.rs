@@ -571,9 +571,7 @@ fn verify_witness_region(
 fn verify_witness_distance(beacon_loc: u64, witness_loc: u64) -> GenericVerifyResult {
     let witness_distance = match calc_distance(beacon_loc, witness_loc) {
         Ok(d) => d,
-        Err(_) => {
-            return Err(InvalidReason::MaxDistanceExceeded)
-        }
+        Err(_) => return Err(InvalidReason::MaxDistanceExceeded),
     };
     if witness_distance / 1000 > POC_DISTANCE_LIMIT {
         tracing::debug!(
@@ -684,8 +682,12 @@ pub enum CalcDistanceError {
 fn calc_cell_distance(p1: u64, p2: u64) -> Result<u32, CalcDistanceError> {
     let p1_cell = CellIndex::try_from(p1)?;
     let p2_cell = CellIndex::try_from(p2)?;
-    let source_parent = p1_cell.parent(POC_CELL_PARENT_RES).ok_or(CalcDistanceError::H3ParentError)?;
-    let dest_parent = p2_cell.parent(POC_CELL_PARENT_RES).ok_or(CalcDistanceError::H3ParentError)?;
+    let source_parent = p1_cell
+        .parent(POC_CELL_PARENT_RES)
+        .ok_or(CalcDistanceError::H3ParentError)?;
+    let dest_parent = p2_cell
+        .parent(POC_CELL_PARENT_RES)
+        .ok_or(CalcDistanceError::H3ParentError)?;
     let cell_distance = source_parent.grid_distance(dest_parent)? as u32;
     Ok(cell_distance)
 }
@@ -711,8 +713,7 @@ fn hex_adjustment(loc: &CellIndex) -> f64 {
     let res = loc.resolution();
     // Distance from hex center to edge, sqrt(3)*edge_length/2.
     let edge_length = res.edge_length_m();
-    edge_length * (f64::round(f64::sqrt(3.0) * f64::powf(10.0, 3.0)) / f64::powf(10.0, 3.0))
-        / 2.0
+    edge_length * (f64::round(f64::sqrt(3.0) * f64::powf(10.0, 3.0)) / f64::powf(10.0, 3.0)) / 2.0
 }
 
 fn generate_beacon(
