@@ -22,7 +22,7 @@ pub async fn start(
             let handle = tokio::spawn(async move {
                 run(app_metric_name, rpc_client, keypair.pubkey(), shutdown).await
             });
-            Box::pin(async move { handle.await })
+            Box::pin(handle)
         }
     })
 }

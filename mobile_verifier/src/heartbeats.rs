@@ -95,7 +95,7 @@ impl HeartbeatDaemon {
     async fn process_file(
         &self,
         file: FileInfoStream<CellHeartbeatIngestReport>,
-        cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
+        cache: &Cache<(String, DateTime<Utc>), ()>,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing heartbeat file {}", file.file_info.key);
 
