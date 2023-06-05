@@ -10,10 +10,10 @@ use serde::Serialize;
 #[derive(Serialize, Clone)]
 pub struct ValidDataTransferSession {
     pub pub_key: PublicKeyBinary,
-    pub subscriber_id: Option<Vec<u8>>,
     pub payer: PublicKeyBinary,
     pub upload_bytes: u64,
     pub download_bytes: u64,
+    pub subscriber_id: Option<Vec<u8>>,
     pub num_dcs: u64,
     pub first_timestamp: DateTime<Utc>,
     pub last_timestamp: DateTime<Utc>,

@@ -41,8 +41,8 @@ pub async fn accumulate_sessions(
         }
         sqlx::query(
             r#"
-            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, first_timestamp, last_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $5)
+            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, subscriber_id, first_timestamp, last_timestamp)
+            VALUES ($1, $2, $3, $4, $5, $6, $6)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
             uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
             downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
@@ -53,6 +53,7 @@ pub async fn accumulate_sessions(
             .bind(event.payer)
             .bind(event.upload_bytes as i64)
             .bind(event.download_bytes as i64)
+            .bind(event.subscriber_id)
             .bind(curr_file_ts)
             .execute(&mut *conn)
             .await?;

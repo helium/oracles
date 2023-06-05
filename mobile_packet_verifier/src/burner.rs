@@ -10,9 +10,9 @@ use std::collections::HashMap;
 pub struct DataTransferSession {
     pub_key: PublicKeyBinary,
     payer: PublicKeyBinary,
-    subscriber_id: Vec<u8>,
     uploaded_bytes: i64,
     downloaded_bytes: i64,
+    subscriber_id: Vec<u8>,
     first_timestamp: DateTime<Utc>,
     last_timestamp: DateTime<Utc>,
 }
@@ -114,9 +114,9 @@ where
                         ValidDataTransferSession {
                             pub_key: session.pub_key.into(),
                             payer: session.payer.into(),
-                            subscriber_id: session.subscriber_id,
                             upload_bytes: session.uploaded_bytes as u64,
                             download_bytes: session.downloaded_bytes as u64,
+                            subscriber_id: session.subscriber_id,
                             num_dcs,
                             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
                             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
