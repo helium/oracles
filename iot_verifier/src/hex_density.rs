@@ -1,9 +1,10 @@
 use file_store::SCALING_PRECISION;
-use h3ron::{FromH3Index, H3Cell, Index};
+use h3o::{CellIndex, Resolution};
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::{cmp, collections::HashMap, ops::Range, sync::Arc};
+use std::{cmp, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 pub struct HexResConfig {
@@ -22,28 +23,27 @@ impl HexResConfig {
     }
 }
 
-type HexMap = HashMap<H3Cell, u64>;
+type HexMap = HashMap<CellIndex, u64>;
 
-const DENSITY_TGT_RES: u8 = 4;
-const MAX_RES: u8 = 11;
-const USED_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES;
-const SCALING_RES: Range<u8> = DENSITY_TGT_RES..MAX_RES + 2;
+const MAX_RES: Resolution = Resolution::Eleven;
+const USED_RES: [Resolution; 7] = [Resolution::Ten, Resolution::Nine, Resolution::Eight, Resolution::Seven, Resolution::Six, Resolution::Five, Resolution::Four];
+const SCALING_RES: [Resolution; 10] = [Resolution::Thirteen, Resolution::Twelve, Resolution::Eleven, Resolution::Ten, Resolution::Nine, Resolution::Eight, Resolution::Seven, Resolution::Six, Resolution::Five, Resolution::Four];
 
-static HIP17_RES_CONFIG: [Option<HexResConfig>; 11] = [
-    // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
-    // For completeness sake their on-chain settings are N=2, TGT=100_000, MAX=100_000
-    None,                                 // 0
-    None,                                 // 1
-    None,                                 // 2
-    None,                                 // 3
-    Some(HexResConfig::new(1, 250, 800)), // 4
-    Some(HexResConfig::new(1, 100, 400)), // 5
-    Some(HexResConfig::new(1, 25, 100)),  // 6
-    Some(HexResConfig::new(2, 5, 20)),    // 7
-    Some(HexResConfig::new(2, 1, 4)),     // 8
-    Some(HexResConfig::new(2, 1, 2)),     // 9
-    Some(HexResConfig::new(2, 1, 1)),     // 10
-];
+lazy_static! {
+    static ref HIP17_RES_CONFIG: HashMap<Resolution, HexResConfig> = {
+        // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
+        // For completeness sake their on-chain settings are N=2, TGT=100_000, MAX=100_000
+        let mut configs = HashMap::new();
+        configs.insert(Resolution::Four, HexResConfig::new(1, 250, 800));
+        configs.insert(Resolution::Five, HexResConfig::new(1, 100, 400));
+        configs.insert(Resolution::Six, HexResConfig::new(1, 25, 100));
+        configs.insert(Resolution::Seven, HexResConfig::new(2, 5, 20));
+        configs.insert(Resolution::Eight, HexResConfig::new(2, 1, 4));
+        configs.insert(Resolution::Nine, HexResConfig::new(2, 1, 2));
+        configs.insert(Resolution::Ten, HexResConfig::new(2, 1, 1));
+        configs
+    };
+}
 
 #[async_trait::async_trait]
 pub trait HexDensityMap: Clone {
@@ -75,7 +75,7 @@ impl HexDensityMap for SharedHexDensityMap {
 pub struct GlobalHexMap {
     clipped_hexes: HexMap,
     unclipped_hexes: HexMap,
-    asserted_hexes: Vec<H3Cell>,
+    asserted_hexes: Vec<CellIndex>,
 }
 
 impl GlobalHexMap {
@@ -88,24 +88,25 @@ impl GlobalHexMap {
     }
 
     pub fn increment_unclipped(&mut self, index: u64) {
-        let cell = H3Cell::from_h3index(index);
-        if let Ok(parent) = cell.get_parent(MAX_RES) {
-            self.unclipped_hexes
-                .entry(parent)
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-            self.clipped_hexes
-                .entry(parent)
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-            self.asserted_hexes.push(cell);
+        if let Ok(cell) = CellIndex::try_from(index) {
+            if let Some(parent) = cell.parent(MAX_RES) {
+                self.unclipped_hexes
+                    .entry(parent)
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+                self.clipped_hexes
+                    .entry(parent)
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+                self.asserted_hexes.push(cell);
+            }
         }
     }
 
     pub fn reduce_global(&mut self) {
         // At the point this reduce is triggered the only keys present in the unclipped
         // hexmap are the res 11 parent keys
-        let starting_hexes: Vec<H3Cell> =
+        let starting_hexes: Vec<CellIndex> =
             self.unclipped_hexes.clone().into_keys().unique().collect();
         reduce_hex_res(
             &mut self.unclipped_hexes,
@@ -118,8 +119,8 @@ impl GlobalHexMap {
 fn rollup_child_count(
     unclipped_map: &mut HexMap,
     clipped_map: &mut HexMap,
-    cell: H3Cell,
-    parent: H3Cell,
+    cell: CellIndex,
+    parent: CellIndex,
 ) {
     let cell_count = clipped_map.get(&cell).map_or(0, |count| *count);
 
@@ -136,24 +137,24 @@ fn rollup_child_count(
         .or_insert(cell_count);
 }
 
-fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<H3Cell>) {
-    let mut hexes_at_res: Vec<H3Cell> = hex_list;
-    for res in USED_RES.rev() {
+fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<CellIndex>) {
+    let mut hexes_at_res: Vec<CellIndex> = hex_list;
+    for res in USED_RES {
         std::mem::take(&mut hexes_at_res)
             .into_iter()
             .for_each(|cell| {
-                if let Ok(parent) = cell.get_parent(res) {
+                if let Some(parent) = cell.parent(res) {
                     rollup_child_count(unclipped, clipped, cell, parent);
                     hexes_at_res.push(parent);
                 }
             });
-        let density_tgt = get_res_tgt(res);
+        let density_tgt = get_res_tgt(&res);
         hexes_at_res = hexes_at_res
             .into_iter()
             .unique()
             .map(|parent_cell| {
                 let occupied_count = occupied_count(clipped, &parent_cell, density_tgt);
-                let limit = limit(res, occupied_count);
+                let limit = limit(&res, occupied_count);
                 if let Some(count) = unclipped.get(&parent_cell) {
                     let actual = cmp::min(limit, *count);
                     clipped.insert(parent_cell, actual);
@@ -164,26 +165,22 @@ fn reduce_hex_res(unclipped: &mut HexMap, clipped: &mut HexMap, hex_list: Vec<H3
     }
 }
 
-fn occupied_count(cell_map: &HexMap, hex: &H3Cell, density_tgt: u64) -> u64 {
-    match hex.grid_disk(1) {
-        Ok(k_ring) => k_ring.into_iter().fold(0, |count, cell| {
-            cell_map.get(&cell).map_or(count, |population| {
-                if *population >= density_tgt {
-                    count + 1
-                } else {
-                    count
-                }
-            })
-        }),
-        Err(_) => 0,
-    }
+fn occupied_count(cell_map: &HexMap, hex: &CellIndex, density_tgt: u64) -> u64 {
+    let k_ring = hex.grid_disk::<Vec<_>>(1);
+    k_ring.into_iter().fold(0, |count, cell| {
+        cell_map.get(&cell).map_or(count, |population| {
+            if *population >= density_tgt {
+                count + 1
+            } else {
+                count
+            }
+        })
+    })
 }
 
-fn limit(res: u8, occupied_count: u64) -> u64 {
+fn limit(res: &h3o::Resolution, occupied_count: u64) -> u64 {
     let res_config = HIP17_RES_CONFIG
-        .get(res as usize)
-        .unwrap()
-        .as_ref()
+        .get(res)
         .unwrap();
     let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
     let max = cmp::max((occupied_neighbor_diff) + 1, 1);
@@ -193,8 +190,8 @@ fn limit(res: u8, occupied_count: u64) -> u64 {
 pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<u64, Decimal> {
     let mut map: HashMap<u64, Decimal> = HashMap::new();
     for hex in &global_map.asserted_hexes {
-        let scale: Decimal = SCALING_RES.rev().fold(dec!(1.0), |scale, res| {
-            hex.get_parent(res).map_or(scale, |parent| {
+        let scale: Decimal = SCALING_RES.iter().fold(dec!(1.0), |scale, res| {
+            hex.parent(*res).map_or(scale, |parent| {
                 match (
                     global_map.unclipped_hexes.get(&parent),
                     global_map.clipped_hexes.get(&parent),
@@ -209,16 +206,14 @@ pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<u64, Decima
             })
         });
         let trunc_scale = scale.round_dp(SCALING_PRECISION);
-        map.insert(hex.h3index(), trunc_scale);
+        map.insert(u64::from(*hex), trunc_scale);
     }
     map
 }
 
-fn get_res_tgt(res: u8) -> u64 {
+fn get_res_tgt(res: &Resolution) -> u64 {
     HIP17_RES_CONFIG
-        .get(res as usize)
-        .unwrap()
-        .as_ref()
+        .get(res)
         .map(|config| config.target)
         .unwrap()
 }

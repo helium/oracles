@@ -82,7 +82,7 @@ prost = "*"
 once_cell = "1"
 lazy_static = "1"
 config = {version="0", default-features=false, features=["toml"]}
-h3ron = "*"
+h3o = "0"
 xorf = {version = "0", features = ["serde"] }
 bytes = "*"
 structopt = "0"
