@@ -1,0 +1,11 @@
+[package]
+name = "reward-scheduler"
+version = "0.1.0"
+description = "Reward period scheduler for verifiers"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono = {workspace = true}
+thiserror = {workspace = true}

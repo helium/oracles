@@ -3301,6 +3301,7 @@ dependencies = [
  "prost",
  "rand 0.8.5",
  "retainer",
+ "reward-scheduler",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3882,6 +3883,8 @@ dependencies = [
  "price",
  "prost",
  "rand 0.8.5",
+ "retainer",
+ "reward-scheduler",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -5086,6 +5089,14 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+]
+
+[[package]]
+name = "reward-scheduler"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "thiserror",
 ]
 
 [[package]]

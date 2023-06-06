@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use mobile_verifier::{
-    cli::{generate, reward_from_db, server},
+    cli::{reward_from_db, server},
     Settings,
 };
 use std::path;
@@ -34,7 +34,6 @@ impl Cli {
 
 #[derive(clap::Subcommand)]
 pub enum Cmd {
-    Generate(generate::Cmd),
     Server(server::Cmd),
     RewardFromDb(reward_from_db::Cmd),
 }
@@ -42,7 +41,6 @@ pub enum Cmd {
 impl Cmd {
     pub async fn run(self, settings: Settings) -> Result<()> {
         match self {
-            Self::Generate(cmd) => cmd.run(&settings).await,
             Self::Server(cmd) => cmd.run(&settings).await,
             Self::RewardFromDb(cmd) => cmd.run(&settings).await,
         }

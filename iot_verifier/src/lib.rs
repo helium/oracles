@@ -15,7 +15,6 @@ pub mod region_cache;
 pub mod reward_share;
 pub mod rewarder;
 pub mod runner;
-pub mod scheduler;
 mod settings;
 pub mod tx_scaler;
 pub use settings::Settings;

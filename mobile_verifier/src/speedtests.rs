@@ -1,6 +1,14 @@
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use file_store::{file_sink, speedtest::CellSpeedtest, traits::TimestampEncode};
-use futures::stream::{Stream, StreamExt, TryStreamExt};
+use chrono::{DateTime, Duration, Utc};
+use file_store::{
+    file_info_poller::FileInfoStream,
+    file_sink::{self, FileSinkClient},
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
+    traits::TimestampEncode,
+};
+use futures::{
+    stream::{Stream, StreamExt, TryStreamExt},
+    TryFutureExt,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
@@ -8,9 +16,13 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{
     postgres::{types::PgHasArrayType, PgTypeInfo},
-    FromRow, Type,
+    FromRow, Postgres, Transaction, Type,
 };
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    pin::pin,
+};
+use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 const SPEEDTEST_LAPSE: i64 = 48;
@@ -18,15 +30,16 @@ const SPEEDTEST_LAPSE: i64 = 48;
 #[derive(Debug, Clone, Type)]
 #[sqlx(type_name = "speedtest")]
 pub struct Speedtest {
-    pub timestamp: NaiveDateTime,
+    pub timestamp: DateTime<Utc>,
     pub upload_speed: i64,
     pub download_speed: i64,
     pub latency: i32,
 }
 
 impl Speedtest {
+    #[cfg(test)]
     pub fn new(
-        timestamp: NaiveDateTime,
+        timestamp: DateTime<Utc>,
         upload_speed: i64,
         download_speed: i64,
         latency: i32,
@@ -40,10 +53,80 @@ impl Speedtest {
     }
 }
 
+pub struct SpeedtestDaemon {
+    pool: sqlx::Pool<sqlx::Postgres>,
+    config_client: Client,
+    speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
+    file_sink: FileSinkClient,
+}
+
+impl SpeedtestDaemon {
+    pub fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        config_client: Client,
+        speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
+        file_sink: FileSinkClient,
+    ) -> Self {
+        Self {
+            pool,
+            config_client,
+            speedtests,
+            file_sink,
+        }
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = shutdown.clone() => {
+                        tracing::info!("SpeedtestDaemon shutting down");
+                        break;
+                    }
+                    Some(file) = self.speedtests.recv() => self.process_file(file).await?,
+                }
+            }
+
+            Ok(())
+        })
+        .map_err(anyhow::Error::from)
+        .and_then(|result| async move { result })
+        .await
+    }
+
+    async fn process_file(
+        &self,
+        file: FileInfoStream<CellSpeedtestIngestReport>,
+    ) -> anyhow::Result<()> {
+        tracing::info!("Processing speedtest file {}", file.file_info.key);
+
+        let mut transaction = self.pool.begin().await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        let mut validated_speedtests = pin!(
+            SpeedtestRollingAverage::validate_speedtests(
+                &self.config_client,
+                reports.map(|s| s.report),
+                &mut transaction,
+            )
+            .await?
+        );
+        while let Some(speedtest) = validated_speedtests.next().await.transpose()? {
+            speedtest.write(&self.file_sink).await?;
+            speedtest.save(&mut transaction).await?;
+        }
+
+        self.file_sink.commit().await?;
+        transaction.commit().await?;
+
+        Ok(())
+    }
+}
+
 impl From<CellSpeedtest> for Speedtest {
     fn from(cell_speedtest: CellSpeedtest) -> Self {
         Self {
-            timestamp: cell_speedtest.timestamp.naive_utc(),
+            timestamp: cell_speedtest.timestamp,
             upload_speed: cell_speedtest.upload_speed as i64,
             download_speed: cell_speedtest.download_speed as i64,
             latency: cell_speedtest.latency as i32,
@@ -61,7 +144,7 @@ impl PgHasArrayType for Speedtest {
 pub struct SpeedtestRollingAverage {
     pub id: PublicKeyBinary,
     pub speedtests: Vec<Speedtest>,
-    pub latest_timestamp: NaiveDateTime,
+    pub latest_timestamp: DateTime<Utc>,
 }
 
 impl SpeedtestRollingAverage {
@@ -69,15 +152,15 @@ impl SpeedtestRollingAverage {
         Self {
             id,
             speedtests: Vec::new(),
-            latest_timestamp: NaiveDateTime::default(),
+            latest_timestamp: DateTime::<Utc>::default(),
         }
     }
 
     pub async fn validate_speedtests<'a>(
         config_client: &'a Client,
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
-        exec: impl SpeedtestStore + Copy + 'a,
-    ) -> impl Stream<Item = Result<Self, FetchError>> + 'a {
+        exec: &mut Transaction<'_, Postgres>,
+    ) -> Result<impl Stream<Item = Result<Self, ClientError>> + 'a, sqlx::Error> {
         let tests_by_publickey = speedtests
             .fold(
                 HashMap::<PublicKeyBinary, Vec<CellSpeedtest>>::new(),
@@ -90,18 +173,31 @@ impl SpeedtestRollingAverage {
             )
             .await;
 
-        futures::stream::iter(tests_by_publickey.into_iter())
-            .then(move |(pubkey, cell_speedtests)| {
+        let mut speedtests = Vec::new();
+        for (pubkey, cell_speedtests) in tests_by_publickey.into_iter() {
+            let rolling_average: SpeedtestRollingAverage =
+                sqlx::query_as::<_, SpeedtestRollingAverage>(
+                    "SELECT * FROM speedtests WHERE id = $1",
+                )
+                .bind(&pubkey)
+                .fetch_optional(&mut *exec)
+                .await?
+                .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
+            speedtests.push((rolling_average, cell_speedtests));
+        }
+
+        Ok(futures::stream::iter(speedtests.into_iter())
+            .then(move |(rolling_average, cell_speedtests)| {
                 let mut config_client = config_client.clone();
                 async move {
                     // If we get back some gateway info for the given address, it's a valid address
-                    if config_client.resolve_gateway_info(&pubkey).await?.is_none() {
+                    if config_client
+                        .resolve_gateway_info(&rolling_average.id)
+                        .await?
+                        .is_none()
+                    {
                         return Ok(None);
                     }
-                    let rolling_average = exec
-                        .fetch(&pubkey)
-                        .await?
-                        .unwrap_or_else(|| SpeedtestRollingAverage::new(pubkey.clone()));
                     Ok(Some((rolling_average, cell_speedtests)))
                 }
             })
@@ -119,7 +215,7 @@ impl SpeedtestRollingAverage {
                     latest_timestamp: speedtests[0].timestamp,
                     speedtests,
                 }
-            })
+            }))
     }
 
     pub async fn save(self, exec: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
@@ -208,7 +304,7 @@ impl SpeedtestAverages {
                 // latest timestamp to epoch.
                 latest_timestamp: window
                     .front()
-                    .map_or_else(NaiveDateTime::default, |st| st.timestamp),
+                    .map_or_else(DateTime::<Utc>::default, |st| st.timestamp),
                 speedtests: Vec::from(window),
             })
     }
@@ -408,66 +504,14 @@ impl SpeedtestTier {
     }
 }
 
-// This should probably be abstracted and used elsewhere, but for now all
-// we need is fetch from an actual database and mock fetch that returns
-// nothing.
-
-#[derive(thiserror::Error, Debug)]
-pub enum FetchError {
-    #[error("Config client error: {0}")]
-    ConfigClientError(#[from] ClientError),
-    #[error("Sql error: {0}")]
-    SqlError(#[from] sqlx::Error),
-}
-
-#[async_trait::async_trait]
-pub trait SpeedtestStore {
-    async fn fetch(
-        self,
-        id: &PublicKeyBinary,
-    ) -> Result<Option<SpeedtestRollingAverage>, FetchError>;
-}
-
-#[async_trait::async_trait]
-impl<E> SpeedtestStore for E
-where
-    for<'a> E: sqlx::PgExecutor<'a>,
-{
-    async fn fetch(
-        self,
-        id: &PublicKeyBinary,
-    ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
-        Ok(
-            sqlx::query_as::<_, SpeedtestRollingAverage>("SELECT * FROM speedtests WHERE id = $1")
-                .bind(id)
-                .fetch_optional(self)
-                .await?,
-        )
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct EmptyDatabase;
-
-#[async_trait::async_trait]
-impl SpeedtestStore for EmptyDatabase {
-    async fn fetch(
-        self,
-        _id: &PublicKeyBinary,
-    ) -> Result<Option<SpeedtestRollingAverage>, FetchError> {
-        Ok(None)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use chrono::TimeZone;
 
-    fn parse_dt(dt: &str) -> NaiveDateTime {
+    fn parse_dt(dt: &str) -> DateTime<Utc> {
         Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
             .expect("unable_to_parse")
-            .naive_utc()
     }
 
     fn bytes_per_s(mbps: i64) -> i64 {

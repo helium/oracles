@@ -1,12 +1,10 @@
-use crate::{
-    reward_share::{operational_rewards, GatewayShares},
-    scheduler::Scheduler,
-};
+use crate::reward_share::{operational_rewards, GatewayShares};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use helium_proto::RewardManifest;
 use price::PriceTracker;
+use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
 use sqlx::{PgExecutor, Pool, Postgres};
 use tokio::time::sleep;

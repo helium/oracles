@@ -18,6 +18,7 @@ members = [
     "price",
     "mobile_config",
     "solana",
+    "reward_scheduler",
 ]
 
 [workspace.package]

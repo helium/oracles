@@ -7,7 +7,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CellHeartbeat {
     pub pubkey: PublicKeyBinary,
     pub hotspot_type: String,
@@ -20,7 +20,7 @@ pub struct CellHeartbeat {
     pub cbsd_id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CellHeartbeatIngestReport {
     pub received_timestamp: DateTime<Utc>,
     pub report: CellHeartbeat,

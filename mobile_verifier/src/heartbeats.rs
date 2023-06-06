@@ -1,49 +1,29 @@
 //! Heartbeat storage
 
 use crate::cell_type::CellType;
-use chrono::{DateTime, Duration, NaiveDateTime, Timelike, Utc};
-use file_store::{file_sink, heartbeat::CellHeartbeat};
-use futures::stream::{Stream, StreamExt};
+use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
+use file_store::{
+    file_info_poller::FileInfoStream, file_sink::FileSinkClient,
+    heartbeat::CellHeartbeatIngestReport,
+};
+use futures::{
+    stream::{Stream, StreamExt, TryStreamExt},
+    TryFutureExt,
+};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use lazy_static::lazy_static;
 use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
+use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
-use rust_decimal_macros::dec;
 use sqlx::{Postgres, Transaction};
-use std::{collections::HashMap, ops::Range};
+use std::{ops::Range, pin::pin, sync::Arc, time};
+use tokio::sync::mpsc::Receiver;
 
-lazy_static! {
-    static ref MOBILE_INGEST_ROLL_TIME: Duration = Duration::minutes(15);
-}
-
-#[derive(Clone)]
-pub struct Heartbeat {
-    pub hotspot_key: PublicKeyBinary,
-    pub cbsd_id: String,
-    pub reward_weight: Decimal,
-    pub timestamp: NaiveDateTime,
-    pub validity: proto::HeartbeatValidity,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
 pub struct HeartbeatKey {
     hotspot_key: PublicKeyBinary,
     cbsd_id: String,
-}
-
-#[derive(Default)]
-pub struct HeartbeatValue {
-    pub reward_weight: Decimal,
-    pub hours_seen: [bool; 24],
-}
-
-impl HeartbeatValue {
-    fn heartbeat_count(&self) -> usize {
-        self.hours_seen
-            .iter()
-            .fold(0, |hbs, seen| *seen as usize + hbs)
-    }
+    cell_type: CellType,
 }
 
 pub struct HeartbeatReward {
@@ -52,87 +32,133 @@ pub struct HeartbeatReward {
     pub reward_weight: Decimal,
 }
 
-#[derive(Default)]
-pub struct Heartbeats {
-    pub heartbeats: HashMap<HeartbeatKey, HeartbeatValue>,
+impl From<HeartbeatKey> for HeartbeatReward {
+    fn from(value: HeartbeatKey) -> Self {
+        Self {
+            hotspot_key: value.hotspot_key,
+            cbsd_id: value.cbsd_id,
+            reward_weight: value.cell_type.reward_weight(),
+        }
+    }
+}
+
+pub struct HeartbeatDaemon {
+    pool: sqlx::Pool<sqlx::Postgres>,
+    config_client: Client,
+    heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
+    file_sink: FileSinkClient,
+}
+
+impl HeartbeatDaemon {
+    pub fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        config_client: Client,
+        heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
+        file_sink: FileSinkClient,
+    ) -> Self {
+        Self {
+            pool,
+            config_client,
+            heartbeats,
+            file_sink,
+        }
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tokio::spawn(async move {
+            let cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+
+            let cache_clone = cache.clone();
+            tokio::spawn(async move {
+                cache_clone
+                    .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 3))
+                    .await
+            });
+
+            loop {
+                tokio::select! {
+                    _ = shutdown.clone() => {
+                        tracing::info!("HeartbeatDaemon shutting down");
+                        break;
+                    }
+                    Some(file) = self.heartbeats.recv() => self.process_file(file, &cache).await?,
+                }
+            }
+
+            Ok(())
+        })
+        .map_err(anyhow::Error::from)
+        .and_then(|result| async move { result })
+        .await
+    }
+
+    async fn process_file(
+        &self,
+        file: FileInfoStream<CellHeartbeatIngestReport>,
+        cache: &Cache<(String, DateTime<Utc>), ()>,
+    ) -> anyhow::Result<()> {
+        tracing::info!("Processing heartbeat file {}", file.file_info.key);
+
+        let epoch = (file.file_info.timestamp - Duration::hours(3))
+            ..(file.file_info.timestamp + Duration::minutes(30));
+        let mut transaction = self.pool.begin().await?;
+        let reports = file.into_stream(&mut transaction).await?;
+
+        let mut validated_heartbeats =
+            pin!(Heartbeat::validate_heartbeats(&self.config_client, reports, &epoch).await);
+
+        while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
+            heartbeat.write(&self.file_sink).await?;
+            let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?);
+
+            if cache.get(&key).await.is_none() {
+                heartbeat.save(&mut transaction).await?;
+                cache
+                    .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
+                    .await;
+            }
+        }
+
+        self.file_sink.commit().await?;
+        transaction.commit().await?;
+
+        Ok(())
+    }
 }
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
-pub const MINIMUM_HEARTBEAT_COUNT: usize = 12;
+pub const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
-impl Heartbeats {
-    pub async fn validated(exec: impl sqlx::PgExecutor<'_>) -> Result<Self, sqlx::Error> {
-        #[derive(sqlx::FromRow)]
-        pub struct HeartbeatRow {
-            hotspot_key: PublicKeyBinary,
-            cbsd_id: String,
-            reward_weight: Decimal,
-            hours_seen: [bool; 24],
-        }
-
-        let heartbeats = sqlx::query_as::<_, HeartbeatRow>("SELECT * FROM heartbeats")
-            .fetch_all(exec)
-            .await?
-            .into_iter()
-            .map(|hb| {
-                (
-                    HeartbeatKey {
-                        hotspot_key: hb.hotspot_key,
-                        cbsd_id: hb.cbsd_id,
-                    },
-                    HeartbeatValue {
-                        reward_weight: hb.reward_weight,
-                        hours_seen: hb.hours_seen,
-                    },
-                )
-            })
-            .collect();
-        Ok(Self { heartbeats })
-    }
-
-    pub fn into_rewardables(self) -> impl Iterator<Item = HeartbeatReward> + Send {
-        self.heartbeats
-            .into_iter()
-            .filter(|(_, value)| value.heartbeat_count() >= MINIMUM_HEARTBEAT_COUNT)
-            .map(|(key, value)| HeartbeatReward {
-                hotspot_key: key.hotspot_key,
-                cbsd_id: key.cbsd_id,
-                reward_weight: value.reward_weight,
-            })
+impl HeartbeatReward {
+    pub fn validated<'a>(
+        exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
+        epoch: &'a Range<DateTime<Utc>>,
+    ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
+        sqlx::query_as::<_, HeartbeatKey>(
+            r#"
+            SELECT hotspot_key, cbsd_id, cell_type
+            FROM heartbeats
+            WHERE truncated_timestamp >= $1
+            	and truncated_timestamp < $2
+            GROUP BY cbsd_id, hotspot_key, cell_type
+            HAVING count(*) >= $3
+            "#,
+        )
+        .bind(epoch.start)
+        .bind(epoch.end)
+        .bind(MINIMUM_HEARTBEAT_COUNT)
+        .fetch(exec)
+        .map_ok(HeartbeatReward::from)
     }
 }
 
-impl Extend<Heartbeat> for Heartbeats {
-    fn extend<T>(&mut self, iter: T)
-    where
-        T: IntoIterator<Item = Heartbeat>,
-    {
-        for heartbeat in iter.into_iter() {
-            if heartbeat.validity != proto::HeartbeatValidity::Valid {
-                continue;
-            }
-            let entry = self
-                .heartbeats
-                .entry(HeartbeatKey {
-                    hotspot_key: heartbeat.hotspot_key,
-                    cbsd_id: heartbeat.cbsd_id,
-                })
-                .or_default();
-            entry.reward_weight = heartbeat.reward_weight;
-            entry.hours_seen[heartbeat.timestamp.hour() as usize] = true;
-        }
-    }
-}
-
-impl FromIterator<Heartbeat> for Heartbeats {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = Heartbeat>,
-    {
-        let mut heartbeats = Self::default();
-        heartbeats.extend(iter);
-        heartbeats
-    }
+#[derive(Clone)]
+pub struct Heartbeat {
+    pub cbsd_id: String,
+    pub cell_type: Option<CellType>,
+    pub hotspot_key: PublicKeyBinary,
+    pub timestamp: DateTime<Utc>,
+    pub validity: proto::HeartbeatValidity,
 }
 
 #[derive(sqlx::FromRow)]
@@ -141,61 +167,49 @@ struct HeartbeatSaveResult {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error(transparent)]
-pub struct SaveHeartbeatError(#[from] sqlx::Error);
+pub enum SaveHeartbeatError {
+    #[error("rounding error: {0}")]
+    RoundingError(#[from] RoundingError),
+    #[error("sql error: {0}")]
+    SqlError(#[from] sqlx::Error),
+}
 
 impl Heartbeat {
-    pub async fn validate_heartbeats<'a>(
-        config_client: &'a Client,
-        heartbeats: impl Stream<Item = CellHeartbeat> + 'a,
-        epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
-        let valid_epoch = epoch.start..(epoch.end + *MOBILE_INGEST_ROLL_TIME);
-        heartbeats
-            .map(move |heartbeat_report| {
-                let (reward_weight, validity) =
-                    match validate_heartbeat(&heartbeat_report, &valid_epoch) {
-                        Ok(cell_type) => {
-                            let reward_weight = cell_type.reward_weight();
-                            (reward_weight, proto::HeartbeatValidity::Valid)
-                        }
-                        Err(validity) => (dec!(0), validity),
-                    };
-                Heartbeat {
-                    hotspot_key: heartbeat_report.pubkey.clone(),
-                    reward_weight,
-                    cbsd_id: heartbeat_report.cbsd_id.clone(),
-                    timestamp: heartbeat_report.timestamp.naive_utc(),
-                    validity,
-                }
-            })
-            .then(|mut heartbeat| {
-                let mut config_client = config_client.clone();
-                async move {
-                    // If we get back some gateway info for the given address, it's a valid address
-                    heartbeat.validity = if config_client
-                        .resolve_gateway_info(&heartbeat.hotspot_key)
-                        .await?
-                        .is_some()
-                    {
-                        proto::HeartbeatValidity::Valid
-                    } else {
-                        proto::HeartbeatValidity::GatewayNotFound
-                    };
-                    Ok(heartbeat)
-                }
-            })
+    pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
+        self.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub async fn write(&self, heartbeats: &file_sink::FileSinkClient) -> file_store::Result {
-        let cell_type = CellType::from_cbsd_id(&self.cbsd_id).unwrap_or(CellType::Nova436H) as i32;
+    pub async fn validate_heartbeats<'a>(
+        config_client: &'a Client,
+        heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
+        epoch: &'a Range<DateTime<Utc>>,
+    ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
+        heartbeats.then(move |heartbeat_report| {
+            let mut config_client = config_client.clone();
+            async move {
+                let (cell_type, validity) =
+                    validate_heartbeat(&heartbeat_report, &mut config_client, epoch).await?;
+                Ok(Heartbeat {
+                    hotspot_key: heartbeat_report.report.pubkey,
+                    cbsd_id: heartbeat_report.report.cbsd_id,
+                    timestamp: heartbeat_report.received_timestamp,
+                    cell_type,
+                    validity,
+                })
+            }
+        })
+    }
+
+    pub async fn write(&self, heartbeats: &FileSinkClient) -> file_store::Result {
         heartbeats
             .write(
                 proto::Heartbeat {
                     cbsd_id: self.cbsd_id.clone(),
                     pub_key: self.hotspot_key.clone().into(),
-                    reward_multiplier: self.reward_weight.to_f32().unwrap_or(0.0),
-                    cell_type,
+                    reward_multiplier: self
+                        .cell_type
+                        .map_or(0.0, |ct| ct.reward_weight().to_f32().unwrap_or(0.0)),
+                    cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
                     validity: self.validity as i32,
                     timestamp: self.timestamp.timestamp() as u64,
                 },
@@ -213,68 +227,55 @@ impl Heartbeat {
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);
         }
-
-        Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
-            r#"
-            INSERT INTO heartbeats (hotspot_key, cbsd_id, reward_weight, latest_timestamp, hours_seen)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (cbsd_id) DO UPDATE SET
-            hours_seen = CASE
-                             WHEN heartbeats.hotspot_key = EXCLUDED.hotspot_key THEN
-                                 heartbeats.hours_seen[1:$6] || TRUE || heartbeats.hours_seen[($6 + 2):]
-                             WHEN heartbeats.latest_timestamp > EXCLUDED.latest_timestamp THEN
-                                 -- If we've already reset the heartbeats after a changed hotspot, don't
-                                 -- reset the heartbeats again for old timestamps
-                                 heartbeats.hours_seen
-                             ELSE
-                                 $5
-                         END,
-            latest_timestamp = GREATEST(heartbeats.latest_timestamp, EXCLUDED.latest_timestamp),
-            hotspot_key = CASE
-                              WHEN heartbeats.latest_timestamp < EXCLUDED.latest_timestamp THEN
-                                  EXCLUDED.hotspot_key
-                              ELSE
-                                  heartbeats.hotspot_key
-                          END,
-            reward_weight = EXCLUDED.reward_weight
-            RETURNING (xmax = 0) as inserted;
-            "#,
+        let truncated_timestamp = self.truncated_timestamp()?;
+        Ok(
+            sqlx::query_as::<_, HeartbeatSaveResult>(
+                r#"
+                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
+                latest_timestamp = EXCLUDED.latest_timestamp
+                RETURNING (xmax = 0) as inserted
+                "#
+            )
+            .bind(self.cbsd_id)
+            .bind(self.hotspot_key)
+            .bind(self.cell_type.unwrap())
+            .bind(self.timestamp)
+            .bind(truncated_timestamp)
+            .fetch_one(&mut *exec)
+            .await?
+            .inserted
         )
-        .bind(self.hotspot_key)
-        .bind(self.cbsd_id)
-        .bind(self.reward_weight)
-        .bind(self.timestamp)
-        .bind(new_hours_seen(&self.timestamp))
-        .bind(self.timestamp.hour() as i32)
-        .fetch_one(&mut *exec)
-        .await?
-        .inserted)
     }
-}
-
-fn new_hours_seen(timestamp: &NaiveDateTime) -> [bool; 24] {
-    let mut hours_seen = [false; 24];
-    hours_seen[timestamp.hour() as usize] = true;
-    hours_seen
 }
 
 /// Validate a heartbeat in the given epoch.
-fn validate_heartbeat(
-    heartbeat: &CellHeartbeat,
+async fn validate_heartbeat(
+    heartbeat: &CellHeartbeatIngestReport,
+    config_client: &mut Client,
     epoch: &Range<DateTime<Utc>>,
-) -> Result<CellType, proto::HeartbeatValidity> {
-    let cell_type = match CellType::from_cbsd_id(&heartbeat.cbsd_id) {
-        Some(ty) => ty,
-        _ => return Err(proto::HeartbeatValidity::BadCbsdId),
+) -> Result<(Option<CellType>, proto::HeartbeatValidity), ClientError> {
+    let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
+        Some(ty) => Some(ty),
+        _ => return Ok((None, proto::HeartbeatValidity::BadCbsdId)),
     };
 
-    if !heartbeat.operation_mode {
-        return Err(proto::HeartbeatValidity::NotOperational);
+    if !heartbeat.report.operation_mode {
+        return Ok((cell_type, proto::HeartbeatValidity::NotOperational));
     }
 
-    if !epoch.contains(&heartbeat.timestamp) {
-        return Err(proto::HeartbeatValidity::HeartbeatOutsideRange);
+    if !epoch.contains(&heartbeat.received_timestamp) {
+        return Ok((cell_type, proto::HeartbeatValidity::HeartbeatOutsideRange));
     }
 
-    Ok(cell_type)
+    if config_client
+        .resolve_gateway_info(&heartbeat.report.pubkey)
+        .await?
+        .is_none()
+    {
+        return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
+    }
+
+    Ok((cell_type, proto::HeartbeatValidity::Valid))
 }
