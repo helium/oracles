@@ -32,7 +32,7 @@ chrono = { workspace = true }
 helium-proto = { workspace = true }
 helium-crypto = {workspace = true }
 async-trait = {workspace = true}
-h3ron = {workspace = true}
+h3o = {workspace = true, features = ["geo"]}
 geo-types = {workspace = true}
 geo = {workspace = true}
 xorf = {workspace = true}

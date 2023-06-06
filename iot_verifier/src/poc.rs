@@ -13,8 +13,8 @@ use file_store::{
     iot_valid_poc::IotVerifiedWitnessReport,
     iot_witness_report::IotWitnessIngestReport,
 };
-use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError};
-use h3ron::{to_geo::ToCoordinate, H3Cell, H3DirectedEdge, Index};
+use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError, Coord};
+use h3o::{CellIndex, LatLng, Resolution};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
@@ -38,7 +38,7 @@ const POC_DISTANCE_LIMIT: u32 = 100;
 /// the minimum distance in cells between a beaconer and witness
 const POC_CELL_DISTANCE_MINIMUM: u32 = 8;
 /// the resolution at which parent cell distance is derived
-const POC_CELL_PARENT_RES: u8 = 11;
+const POC_CELL_PARENT_RES: Resolution = Resolution::Eleven;
 
 lazy_static! {
     /// Scaling factor when inactive gateway is not found in the tx scaling map (20%).
@@ -671,42 +671,49 @@ fn calc_fpsl(freq: u64, distance_mtrs: u32) -> f64 {
 pub enum CalcDistanceError {
     #[error("convergence error: {0}")]
     ConvergenceError(#[from] FailedToConvergeError),
-    #[error("h3ron error: {0}")]
-    H3ronError(#[from] h3ron::Error),
+    #[error("h3 invalid cell: {0}")]
+    H3CellError(#[from] h3o::error::InvalidCellIndex),
+    #[error("h3 invalid parent")]
+    H3ParentError,
+    #[error("uncomputable hex grid distance")]
+    H3DistanceError(#[from] h3o::error::LocalIjError),
 }
 
 fn calc_cell_distance(p1: u64, p2: u64) -> Result<u32, CalcDistanceError> {
-    let p1_cell = H3Cell::new(p1);
-    let p2_cell = H3Cell::new(p2);
-    let source_parent = H3Cell::get_parent(&p1_cell, POC_CELL_PARENT_RES)?;
-    let dest_parent = H3Cell::get_parent(&p2_cell, POC_CELL_PARENT_RES)?;
-    let cell_distance = H3Cell::grid_distance_to(&source_parent, dest_parent)? as u32;
+    let p1_cell = CellIndex::try_from(p1)?;
+    let p2_cell = CellIndex::try_from(p2)?;
+    let source_parent = p1_cell
+        .parent(POC_CELL_PARENT_RES)
+        .ok_or(CalcDistanceError::H3ParentError)?;
+    let dest_parent = p2_cell
+        .parent(POC_CELL_PARENT_RES)
+        .ok_or(CalcDistanceError::H3ParentError)?;
+    let cell_distance = source_parent.grid_distance(dest_parent)? as u32;
     Ok(cell_distance)
 }
 
 fn calc_distance(p1: u64, p2: u64) -> Result<u32, CalcDistanceError> {
-    let p1_cell = H3Cell::new(p1);
-    let p2_cell = H3Cell::new(p2);
-    let p1_coord = H3Cell::to_coordinate(&p1_cell)?;
-    let p2_coord = H3Cell::to_coordinate(&p2_cell)?;
+    let p1_cell = CellIndex::try_from(p1)?;
+    let p2_cell = CellIndex::try_from(p2)?;
+    let p1_latlng: LatLng = p1_cell.into();
+    let p2_latlng: LatLng = p2_cell.into();
+    let p1_coord: Coord = p1_latlng.into();
+    let p2_coord: Coord = p2_latlng.into();
 
     let (p1_x, p1_y) = p1_coord.x_y();
     let (p2_x, p2_y) = p2_coord.x_y();
     let p1_geo = point!(x: p1_x, y: p1_y);
     let p2_geo = point!(x: p2_x, y: p2_y);
     let distance = p1_geo.vincenty_distance(&p2_geo)?;
-    let adj_distance = distance - hex_adjustment(&p1_cell)? - hex_adjustment(&p2_cell)?;
+    let adj_distance = distance - hex_adjustment(&p1_cell) - hex_adjustment(&p2_cell);
     Ok(adj_distance.round() as u32)
 }
 
-fn hex_adjustment(loc: &H3Cell) -> Result<f64, h3ron::Error> {
-    // Distance from hex center to edge, sqrt(3)*edge_length/2.
+fn hex_adjustment(loc: &CellIndex) -> f64 {
     let res = loc.resolution();
-    let edge_length = H3DirectedEdge::edge_length_avg_m(res)?;
-    Ok(
-        edge_length * (f64::round(f64::sqrt(3.0) * f64::powf(10.0, 3.0)) / f64::powf(10.0, 3.0))
-            / 2.0,
-    )
+    // Distance from hex center to edge, sqrt(3)*edge_length/2.
+    let edge_length = res.edge_length_m();
+    edge_length * (f64::round(f64::sqrt(3.0) * f64::powf(10.0, 3.0)) / f64::powf(10.0, 3.0)) / 2.0
 }
 
 fn generate_beacon(
@@ -802,7 +809,7 @@ mod tests {
 
     const BEACONER_GAIN: u64 = 20;
     const LOC0: u64 = 631615575095659519; // malta
-    const LOC1: u64 = 631615575095699519; // malta but a lil out from LOC0
+    const LOC1: u64 = 631615576056478207; // malta but a lil out from LOC0
     const LOC2: u64 = 631278052025960447; // armenia
     const LOC3: u64 = 627111975468974079; // 7 cells away from beaconer
     const LOC4: u64 = 627111975465463807; // 28 cells away from beaconer
