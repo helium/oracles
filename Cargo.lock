@@ -3299,8 +3299,6 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "geo",
- "geo-types",
  "h3o",
  "helium-crypto",
  "helium-proto",

@@ -13,7 +13,6 @@ use file_store::{
     iot_valid_poc::IotVerifiedWitnessReport,
     iot_witness_report::IotWitnessIngestReport,
 };
-use geo::{point, prelude::*, vincenty_distance::FailedToConvergeError, Coord};
 use h3o::{CellIndex, LatLng, Resolution};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
@@ -669,8 +668,6 @@ fn calc_fpsl(freq: u64, distance_mtrs: u32) -> f64 {
 
 #[derive(thiserror::Error, Debug)]
 pub enum CalcDistanceError {
-    #[error("convergence error: {0}")]
-    ConvergenceError(#[from] FailedToConvergeError),
     #[error("h3 invalid cell: {0}")]
     H3CellError(#[from] h3o::error::InvalidCellIndex),
     #[error("h3 invalid parent")]
@@ -697,23 +694,7 @@ fn calc_distance(p1: u64, p2: u64) -> Result<u32, CalcDistanceError> {
     let p2_cell = CellIndex::try_from(p2)?;
     let p1_latlng: LatLng = p1_cell.into();
     let p2_latlng: LatLng = p2_cell.into();
-    let p1_coord: Coord = p1_latlng.into();
-    let p2_coord: Coord = p2_latlng.into();
-
-    let (p1_x, p1_y) = p1_coord.x_y();
-    let (p2_x, p2_y) = p2_coord.x_y();
-    let p1_geo = point!(x: p1_x, y: p1_y);
-    let p2_geo = point!(x: p2_x, y: p2_y);
-    let distance = p1_geo.vincenty_distance(&p2_geo)?;
-    let adj_distance = distance - hex_adjustment(&p1_cell) - hex_adjustment(&p2_cell);
-    Ok(adj_distance.round() as u32)
-}
-
-fn hex_adjustment(loc: &CellIndex) -> f64 {
-    let res = loc.resolution();
-    // Distance from hex center to edge, sqrt(3)*edge_length/2.
-    let edge_length = res.edge_length_m();
-    edge_length * (f64::round(f64::sqrt(3.0) * f64::powf(10.0, 3.0)) / f64::powf(10.0, 3.0)) / 2.0
+    Ok(p1_latlng.distance_m(p2_latlng).round() as u32)
 }
 
 fn generate_beacon(
@@ -840,10 +821,9 @@ mod tests {
         let loc1 = 644459695463521437;
         let loc2 = 644460986971331488;
         // get distance in meters between loc1 and loc2
-        let gmaps_dist: u32 = 14320;
+        // for reference the google maps distance is ~14320m
         let dist = calc_distance(loc1, loc2).unwrap();
-        // verify the calculated distance is within 100m of the google maps distance
-        assert!(100 > (gmaps_dist.abs_diff(dist)));
+        assert_eq!(14318, dist);
     }
 
     #[test]
