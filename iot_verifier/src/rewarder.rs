@@ -118,7 +118,10 @@ impl Rewarder {
             .await?
             .await??;
         self.reward_manifests_sink.commit().await?;
-
+        metrics::gauge!(
+            "last_rewarded_end_time",
+            scheduler.reward_period.end.timestamp() as f64
+        );
         Ok(())
     }
 }
