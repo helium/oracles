@@ -70,7 +70,13 @@ impl GatewayUpdater {
     async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError> {
         tracing::info!("handling refresh tick");
         let updated_gateway_map = refresh_gateways(&mut self.iot_config_client).await?;
-        self.sender.send(updated_gateway_map)?;
+        let gateway_count = updated_gateway_map.len();
+        if gateway_count > 0 {
+            tracing::info!("completed refreshing gateways, total gateways: {gateway_count}");
+            self.sender.send(updated_gateway_map)?;
+        } else {
+            tracing::warn!("failed to refresh gateways, empty map...");
+        }
         Ok(())
     }
 }
@@ -84,7 +90,5 @@ pub async fn refresh_gateways(
     while let Some(gateway_info) = gw_stream.next().await {
         gateways.insert(gateway_info.address.clone(), gateway_info);
     }
-    let gateway_count = gateways.len();
-    tracing::info!("completed refreshing gateways, total gateways: {gateway_count}");
     Ok(gateways)
 }
