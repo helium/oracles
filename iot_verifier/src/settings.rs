@@ -85,10 +85,18 @@ pub struct Settings {
     /// interval at which gateways are refreshed
     #[serde(default = "default_gateway_refresh_interval")]
     pub gateway_refresh_interval: i64,
+    /// interval at which region params in the cache are refreshed
+    #[serde(default = "default_region_params_refresh_interval")]
+    pub region_params_refresh_interval: u64,
 }
 
 // Default: 30 minutes
 fn default_gateway_refresh_interval() -> i64 {
+    30 * 60
+}
+
+// Default: 30 minutes
+fn default_region_params_refresh_interval() -> u64 {
     30 * 60
 }
 
@@ -249,5 +257,8 @@ impl Settings {
     }
     pub fn gateway_refresh_interval(&self) -> Duration {
         Duration::seconds(self.gateway_refresh_interval)
+    }
+    pub fn region_params_refresh_interval(&self) -> time::Duration {
+        time::Duration::from_secs(self.region_params_refresh_interval)
     }
 }

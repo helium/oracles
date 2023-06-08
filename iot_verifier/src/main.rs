@@ -91,7 +91,7 @@ impl Server {
             GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
         let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
 
-        let region_cache = RegionCache::from_settings(iot_config_client.clone())?;
+        let region_cache = RegionCache::from_settings(settings, iot_config_client.clone())?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
