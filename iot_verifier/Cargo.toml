@@ -33,8 +33,6 @@ helium-proto = { workspace = true }
 helium-crypto = {workspace = true }
 async-trait = {workspace = true}
 h3o = {workspace = true, features = ["geo"]}
-geo-types = {workspace = true}
-geo = {workspace = true}
 xorf = {workspace = true}
 lazy_static = {workspace = true}
 once_cell = {workspace = true}
