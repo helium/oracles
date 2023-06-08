@@ -15,8 +15,9 @@ use helium_proto::{
     services::{
         poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
-            CellHeartbeatIngestReportV1, CellHeartbeatReqV1, Heartbeat, RadioRewardShare,
-            SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
+            mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
+            Heartbeat, MobileRewardShare, RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1,
+            SpeedtestReqV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -136,6 +137,20 @@ impl Cmd {
                         "cell_type": heartbeat.cell_type,
                         "validity": heartbeat.validity,
                     }))?;
+                }
+                FileType::MobileRewardShare => {
+                    let reward = MobileRewardShare::decode(msg)?;
+                    match reward.reward {
+                        Some(Reward::GatewayReward(reward)) => print_json(&json!({
+                            "hotspot_key": PublicKey::try_from(reward.hotspot_key)?,
+                            "dc_transfer_reward": reward.dc_transfer_reward,
+                        }))?,
+                        Some(Reward::RadioReward(reward)) => print_json(&json!({
+                            "cbsd_id": reward.cbsd_id,
+                            "poc_reward": reward.poc_reward,
+                        }))?,
+                        _ => (),
+                    }
                 }
                 FileType::RadioRewardShare => {
                     let reward = RadioRewardShare::decode(msg)?;
