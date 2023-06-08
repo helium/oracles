@@ -39,6 +39,8 @@ pub struct Cmd {
 impl Cmd {
     pub async fn run(&self, _settings: &Settings) -> Result {
         let mut file_stream = file_source::source([&self.in_path]);
+        let mut total_poc_rewards = 0;
+        let mut total_dc_rewards = 0;
 
         let mut wtr = Writer::from_writer(io::stdout());
         while let Some(result) = file_stream.next().await {
@@ -141,14 +143,20 @@ impl Cmd {
                 FileType::MobileRewardShare => {
                     let reward = MobileRewardShare::decode(msg)?;
                     match reward.reward {
-                        Some(Reward::GatewayReward(reward)) => print_json(&json!({
-                            "hotspot_key": PublicKey::try_from(reward.hotspot_key)?,
-                            "dc_transfer_reward": reward.dc_transfer_reward,
-                        }))?,
-                        Some(Reward::RadioReward(reward)) => print_json(&json!({
+                        Some(Reward::GatewayReward(reward)) => {
+                            total_dc_rewards += reward.dc_transfer_reward;
+                            print_json(&json!({
+                                "hotspot_key": PublicKey::try_from(reward.hotspot_key)?,
+                                "dc_transfer_reward": reward.dc_transfer_reward,
+                            }))?
+                        }
+                        Some(Reward::RadioReward(reward)) => {
+                            total_poc_rewards += reward.poc_reward;
+                            print_json(&json!({
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
-                        }))?,
+                            }))?
+                        }
                         _ => (),
                     }
                 }
@@ -206,6 +214,10 @@ impl Cmd {
         }
 
         wtr.flush()?;
+
+        println!("total_poc_rewards = {total_poc_rewards}");
+        println!("total_dc_rewards = {total_dc_rewards}");
+        println!("total_rewards = {}", total_poc_rewards + total_dc_rewards);
 
         Ok(())
     }
