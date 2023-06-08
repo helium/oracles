@@ -1,4 +1,4 @@
-use crate::{entropy_loader::EntropyLoader, packet_loader::PacketLoader};
+use crate::entropy_loader::EntropyLoader;
 use anyhow::{Error, Result};
 use clap::Parser;
 use file_store::{
@@ -148,7 +148,7 @@ impl Server {
                 .await?;
 
         // setup the packet loader continious source
-        let mut packet_loader = PacketLoader { pool: pool.clone() };
+        let packet_loader = packet_loader::PacketLoader::from_settings(settings, pool.clone());
         let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
         let packet_interval = settings.packet_interval();
         let (pk_loader_receiver, pk_loader_source_join_handle) =
@@ -187,7 +187,12 @@ impl Server {
             ),
             entropy_loader.run(entropy_loader_receiver, &shutdown),
             loader.run(&shutdown, &gateway_cache),
-            packet_loader.run(pk_loader_receiver, &shutdown, &gateway_cache),
+            packet_loader.run(
+                pk_loader_receiver,
+                &shutdown,
+                &gateway_cache,
+                file_upload_tx.clone()
+            ),
             purger.run(&shutdown),
             rewarder.run(price_tracker, &shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
