@@ -26,12 +26,14 @@ sqlx = {workspace = true}
 solana = {path = "../solana"}
 thiserror = {workspace = true}
 tokio = {workspace = true}
+tokio-util = { workspace = true }
 tonic = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
+task-manager = { path = "../task_manager" }
 
 
 

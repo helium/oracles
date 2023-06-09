@@ -1,11 +1,11 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use chrono::Duration;
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
 use futures_util::TryFutureExt;
 use poc_entropy::{entropy_generator::EntropyGenerator, server::ApiServer, Settings};
 use std::{net::SocketAddr, path};
-use tokio::{self, signal};
+use task_manager::TaskManager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const ENTROPY_SINK_ROLL_MINS: i64 = 2;
@@ -57,37 +57,25 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        // configure shutdown trigger
-        let (shutdown_trigger, shutdown) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Initialize uploader
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings(&settings.output).await?;
 
         let store_base_path = path::Path::new(&settings.cache);
 
         // entropy
-        let mut entropy_generator = EntropyGenerator::new(&settings.source).await?;
-        let entropy_watch = entropy_generator.receiver();
-
-        let (entropy_sink, mut entropy_sink_server) = file_sink::FileSinkBuilder::new(
+        let (entropy_sink, entropy_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::EntropyReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
-            shutdown.clone(),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload))
         .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
         .create()
         .await?;
+
+        let entropy_generator = EntropyGenerator::new(&settings.source, entropy_sink).await?;
+        let entropy_watch = entropy_generator.receiver();
 
         // server
         let socket_addr: SocketAddr = settings.listen.parse()?;
@@ -95,15 +83,13 @@ impl Server {
 
         tracing::info!("api listening on {}", api_server.socket_addr);
 
-        tokio::try_join!(
-            api_server.run(&shutdown),
-            entropy_generator
-                .run(entropy_sink, &shutdown)
-                .map_err(Error::from),
-            entropy_sink_server.run().map_err(Error::from),
-            file_upload.run(&shutdown).map_err(Error::from),
-        )
-        .map(|_| ())
+        TaskManager::builder()
+            .add(file_upload_server)
+            .add(entropy_sink_server)
+            .add(entropy_generator)
+            .add(api_server)
+            .start()
+            .await
     }
 }
 

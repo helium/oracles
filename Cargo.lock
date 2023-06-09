@@ -2405,6 +2405,7 @@ dependencies = [
 name = "file-store"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-compression",
  "async-trait",
  "aws-config",
@@ -2439,6 +2440,7 @@ dependencies = [
  "sqlx",
  "strum",
  "strum_macros",
+ "task-manager",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3185,8 +3187,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.6",
+ "task-manager",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tonic",
  "tracing",
  "tracing-subscriber",
@@ -3272,8 +3276,10 @@ dependencies = [
  "serde",
  "solana",
  "sqlx",
+ "task-manager",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tonic",
  "tracing",
  "tracing-subscriber",
@@ -3880,8 +3886,10 @@ dependencies = [
  "sha2 0.10.6",
  "solana",
  "sqlx",
+ "task-manager",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tonic",
  "tracing",
  "tracing-subscriber",
@@ -4507,8 +4515,10 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
+ "task-manager",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tonic",
  "tower",
  "tracing",
@@ -4584,8 +4594,10 @@ dependencies = [
  "serde_json",
  "solana-client",
  "solana-sdk",
+ "task-manager",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "triggered",
@@ -5732,6 +5744,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-client",
  "anchor-lang",
+ "anyhow",
  "async-trait",
  "clap 3.2.23",
  "data-credits",
@@ -5745,8 +5758,10 @@ dependencies = [
  "solana-program",
  "solana-sdk",
  "spl-token",
+ "task-manager",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "triggered",
 ]
@@ -6810,6 +6825,17 @@ dependencies = [
  "quote 1.0.21",
  "syn 1.0.104",
  "unicode-xid 0.2.4",
+]
+
+[[package]]
+name = "task-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "futures-util",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

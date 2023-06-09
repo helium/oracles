@@ -2,9 +2,12 @@ use crate::{
     balances::{BalanceCache, BalanceStore},
     pending_burns::{Burn, PendingBurns},
 };
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use solana::SolanaNetwork;
 use std::time::Duration;
+use task_manager::ManagedTask;
 use tokio::task;
+use tokio_util::sync::CancellationToken;
 
 pub struct Burner<P, S> {
     pending_burns: P,
@@ -12,6 +15,7 @@ pub struct Burner<P, S> {
     burn_period: Duration,
     solana: S,
 }
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum BurnError<P, S> {
@@ -34,6 +38,19 @@ impl<P, S> Burner<P, S> {
     }
 }
 
+impl<P, S> ManagedTask for Burner<P, S>
+where
+    P: PendingBurns + Send + Sync + 'static,
+    S: SolanaNetwork,
+{
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token).map_err(anyhow::Error::from))
+    }
+}
+
 impl<P, S> Burner<P, S>
 where
     P: PendingBurns + Send + Sync + 'static,
@@ -41,7 +58,7 @@ where
 {
     pub async fn run(
         mut self,
-        shutdown: &triggered::Listener,
+        token: CancellationToken,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
         let burn_service = task::spawn(async move {
             loop {
@@ -53,7 +70,7 @@ where
         });
 
         tokio::select! {
-            _ = shutdown.clone() => Ok(()),
+            _ = token.cancelled() => Ok(()),
             service_result = burn_service => service_result?,
         }
     }

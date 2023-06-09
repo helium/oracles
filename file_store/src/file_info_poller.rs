@@ -1,10 +1,12 @@
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use derive_builder::Builder;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt, TryFutureExt};
 use retainer::Cache;
 use std::marker::PhantomData;
 use tokio::sync::mpsc::{error::TrySendError, Receiver, Sender};
+use task_manager::ManagedTask;
+use tokio_util::sync::CancellationToken;
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -39,7 +41,8 @@ pub enum LookbackBehavior {
 }
 
 #[derive(Debug, Clone, Builder)]
-pub struct FileInfoPoller<T> {
+#[builder(pattern = "owned")]
+pub struct FileInfoPollerConfig<T> {
     #[builder(default = "Duration::seconds(DEFAULT_POLL_DURATION_SECS)")]
     poll_duration: Duration,
     db: sqlx::Pool<sqlx::Postgres>,
@@ -54,51 +57,67 @@ pub struct FileInfoPoller<T> {
     p: PhantomData<T>,
 }
 
-impl<T> FileInfoPoller<T>
+pub struct FileInfoPollerServer<T> {
+    config: FileInfoPollerConfig<T>,
+    sender: Sender<FileInfoStream<T>>,
+}
+
+impl<T> FileInfoPollerConfigBuilder<T>
+where
+    T: Clone,
+{
+    pub fn create(self) -> Result<(Receiver<FileInfoStream<T>>, FileInfoPollerServer<T>)> {
+        let config = self.build()?;
+        let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
+
+        Ok((receiver, FileInfoPollerServer { config, sender }))
+    }
+}
+
+impl<T> ManagedTask for FileInfoPollerServer<T>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
-    pub async fn start(
-        self,
-        shutdown: triggered::Listener,
-    ) -> Result<(
-        Receiver<FileInfoStream<T>>,
-        impl std::future::Future<Output = Result>,
-    )> {
-        let (sender, receiver) = tokio::sync::mpsc::channel(self.queue_size);
-        let join_handle = tokio::spawn(async move { self.run(shutdown, sender).await });
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(token));
 
-        Ok((receiver, async move {
-            match join_handle.await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(err)) => Err(err),
-                Err(err) => Err(Error::from(err)),
-            }
-        }))
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
+}
 
-    async fn run(self, shutdown: triggered::Listener, sender: Sender<FileInfoStream<T>>) -> Result {
+impl<T> FileInfoPollerServer<T>
+where
+    T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
+{
+    async fn run(self, token: CancellationToken) -> Result {
         let cache = create_cache();
         let mut poll_trigger = tokio::time::interval(self.poll_duration());
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
 
-        let mut latest_ts = db::latest_ts(&self.db, self.file_type).await?;
+        let mut latest_ts = db::latest_ts(&self.config.db, self.config.file_type).await?;
 
         loop {
             let after = self.after(latest_ts);
             let before = Utc::now();
 
             tokio::select! {
-                _ = shutdown.clone() => {
+                _ = token.cancelled() => {
                     tracing::info!("FileInfoPoller shutting down");
                     break;
                 }
                 _ = cleanup_trigger.tick() => self.clean(&cache).await?,
                 _ = poll_trigger.tick() => {
-                    let files = self.store.list_all(self.file_type, after, before).await?;
+                    let files = self.config.store.list_all(self.config.file_type, after, before).await?;
                     for file in files {
-                        if !is_already_processed(&self.db, &cache, &file).await? {
-                            if send_stream(&sender, &self.store, file.clone()).await? {
+                        if !is_already_processed(&self.config.db, &cache, &file).await? {
+                            if send_stream(&self.sender, &self.config.store, file.clone()).await? {
                                 latest_ts = Some(file.timestamp);
                                 cache_file(&cache, &file).await;
                             } else {
@@ -114,8 +133,8 @@ where
     }
 
     fn after(&self, latest: Option<DateTime<Utc>>) -> DateTime<Utc> {
-        let latest_offset = latest.map(|lt| lt - self.offset);
-        match self.lookback {
+        let latest_offset = latest.map(|lt| lt - self.config.offset);
+        match self.config.lookback {
             LookbackBehavior::StartAfter(start_after) => latest_offset.unwrap_or(start_after),
             LookbackBehavior::Max(max_lookback) => {
                 let max_ts = Utc::now() - max_lookback;
@@ -126,12 +145,15 @@ where
 
     async fn clean(&self, cache: &MemoryFileCache) -> Result {
         cache.purge(4, 0.25).await;
-        db::clean(&self.db, &self.file_type).await?;
+        db::clean(&self.config.db, &self.config.file_type).await?;
         Ok(())
     }
 
     fn poll_duration(&self) -> std::time::Duration {
-        self.poll_duration.to_std().unwrap_or(DEFAULT_POLL_DURATION)
+        self.config
+            .poll_duration
+            .to_std()
+            .unwrap_or(DEFAULT_POLL_DURATION)
     }
 }
 
@@ -263,7 +285,7 @@ mod db {
             FROM files_processed
             WHERE file_type = $1
             ORDER BY file_timestamp DESC
-            OFFSET 100 
+            OFFSET 100
         )
         "#,
         )

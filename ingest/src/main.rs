@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use ingest::{server_iot, server_mobile, Mode, Settings};
 use std::path;
-use tokio::{self, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
@@ -50,19 +49,11 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
 
         // run the grpc server in either iot or mobile 5g mode
         match settings.mode {
-            Mode::Iot => server_iot::grpc_server(shutdown_listener, settings).await,
-            Mode::Mobile => server_mobile::grpc_server(shutdown_listener, settings).await,
+            Mode::Iot => server_iot::grpc_server(settings).await,
+            Mode::Mobile => server_mobile::grpc_server(settings).await,
         }
     }
 }
