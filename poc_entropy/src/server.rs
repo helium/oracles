@@ -7,8 +7,8 @@ use helium_proto::{
 use std::net::SocketAddr;
 use task_manager::ManagedTask;
 use tokio::time::Duration;
-use tonic::transport;
 use tokio_util::sync::CancellationToken;
+use tonic::transport;
 
 struct EntropyServer {
     entropy_watch: MessageReceiver,
@@ -22,7 +22,6 @@ impl ManagedTask for ApiServer {
         Box::pin(self.run(token))
     }
 }
-
 
 #[tonic::async_trait]
 impl PocEntropy for EntropyServer {
@@ -60,9 +59,9 @@ impl ApiServer {
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(self.service);
-            // TODO: fix this!
-            // .serve_with_shutdown(self.socket_addr, token)
-            // .await?;
+        // TODO: fix this!
+        // .serve_with_shutdown(self.socket_addr, token)
+        // .await?;
         tracing::info!("stopping api server");
         Ok(())
     }

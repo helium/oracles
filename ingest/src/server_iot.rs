@@ -175,11 +175,10 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     );
 
     TaskManager::builder()
-    .add(file_upload_server)
-    .add(beacon_report_sink_server)
-    .add(witness_report_sink_server)
-    .add(grpc_server)
-    .start()
-    .await
-
+        .add(file_upload_server)
+        .add(beacon_report_sink_server)
+        .add(witness_report_sink_server)
+        .add(grpc_server)
+        .start()
+        .await
 }

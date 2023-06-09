@@ -72,11 +72,7 @@ pub struct FileSinkBuilder {
 }
 
 impl FileSinkBuilder {
-    pub fn new(
-        file_type: FileType,
-        target_path: &Path,
-        metric: &'static str,
-    ) -> Self {
+    pub fn new(file_type: FileType, target_path: &Path, metric: &'static str) -> Self {
         Self {
             prefix: file_type.to_string(),
             target_path: target_path.to_path_buf(),
@@ -530,15 +526,12 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
-        let (file_sink_client, mut file_sink_server) = FileSinkBuilder::new(
-            FileType::EntropyReport,
-            tmp_dir.path(),
-            "fake_metric",
-        )
-        .roll_time(chrono::Duration::milliseconds(100))
-        .create()
-        .await
-        .expect("failed to create file sink");
+        let (file_sink_client, mut file_sink_server) =
+            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
+                .roll_time(chrono::Duration::milliseconds(100))
+                .create()
+                .await
+                .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server

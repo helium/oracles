@@ -126,7 +126,7 @@ impl EntropyGenerator {
             client,
             receiver,
             sender,
-            file_sink
+            file_sink,
         })
     }
 

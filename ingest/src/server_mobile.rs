@@ -282,13 +282,12 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     );
 
     TaskManager::builder()
-    .add(file_upload_server)
-    .add(heartbeat_report_sink_server)
-    .add(speedtest_report_sink_server)
-    .add(data_transfer_session_sink_server)
-    .add(subscriber_location_report_sink_server)
-    .add(grpc_server)
-    .start()
-    .await
-
+        .add(file_upload_server)
+        .add(heartbeat_report_sink_server)
+        .add(speedtest_report_sink_server)
+        .add(data_transfer_session_sink_server)
+        .add(subscriber_location_report_sink_server)
+        .add(grpc_server)
+        .start()
+        .await
 }

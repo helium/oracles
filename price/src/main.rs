@@ -80,7 +80,6 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-
         // Initialize uploader
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings(&settings.output).await?;
@@ -117,7 +116,6 @@ impl Server {
             .add(hst_price_generator)
             .start()
             .await
-
     }
 }
 

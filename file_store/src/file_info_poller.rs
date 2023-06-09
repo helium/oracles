@@ -4,8 +4,8 @@ use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt, TryFutureExt};
 use retainer::Cache;
 use std::marker::PhantomData;
-use tokio::sync::mpsc::{error::TrySendError, Receiver, Sender};
 use task_manager::ManagedTask;
+use tokio::sync::mpsc::{error::TrySendError, Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;

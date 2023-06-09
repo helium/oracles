@@ -16,7 +16,6 @@ pub struct Burner<P, S> {
     solana: S,
 }
 
-
 #[derive(thiserror::Error, Debug)]
 pub enum BurnError<P, S> {
     #[error("Join error: {0}")]

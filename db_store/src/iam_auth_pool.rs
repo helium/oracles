@@ -39,7 +39,6 @@ async fn run(
         - Duration::from_secs(120);
 
     loop {
-
         tokio::select! {
             _ = tokio::time::sleep(duration) => {
                 let connect_options = connect_parameters.connect_options(&client).await?;

@@ -152,6 +152,5 @@ impl Cmd {
             .add(daemon)
             .start()
             .await
-
     }
 }

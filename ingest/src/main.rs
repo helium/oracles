@@ -49,7 +49,6 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-
         // run the grpc server in either iot or mobile 5g mode
         match settings.mode {
             Mode::Iot => server_iot::grpc_server(settings).await,
