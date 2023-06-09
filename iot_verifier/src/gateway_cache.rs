@@ -2,6 +2,7 @@ use crate::gateway_updater::MessageReceiver;
 use helium_crypto::PublicKeyBinary;
 use iot_config::gateway_info::GatewayInfo;
 
+#[derive(Debug, Clone)]
 pub struct GatewayCache {
     gateway_cache_receiver: MessageReceiver,
 }
@@ -33,5 +34,9 @@ impl GatewayCache {
                 Err(GatewayCacheError::GatewayNotFound(address.clone()))
             }
         }
+    }
+
+    pub fn receiver(&self) -> MessageReceiver {
+        self.receiver.clone()
     }
 }

@@ -102,8 +102,8 @@ impl Poc {
     pub async fn verify_beacon(
         &mut self,
         hex_density_map: impl HexDensityMap,
-        gateway_cache: &GatewayCache,
-        region_cache: &RegionCache,
+        gateway_cache: GatewayCache,
+        region_cache: RegionCache,
         pool: &PgPool,
         beacon_interval: Duration,
         beacon_interval_tolerance: Duration,
@@ -162,7 +162,7 @@ impl Poc {
         &mut self,
         beacon_info: &GatewayInfo,
         hex_density_map: impl HexDensityMap,
-        gateway_cache: &GatewayCache,
+        gateway_cache: GatewayCache,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<IotWitnessIngestReport> = Vec::new();
@@ -178,8 +178,8 @@ impl Poc {
                     .verify_witness(
                         &witness_report,
                         beacon_info,
-                        gateway_cache,
-                        &hex_density_map,
+                        gateway_cache.clone(),
+                        hex_density_map.clone(),
                     )
                     .await
                 {
@@ -216,8 +216,8 @@ impl Poc {
         &mut self,
         witness_report: &IotWitnessIngestReport,
         beaconer_info: &GatewayInfo,
-        gateway_cache: &GatewayCache,
-        hex_density_map: &impl HexDensityMap,
+        gateway_cache: GatewayCache,
+        hex_density_map: impl HexDensityMap,
     ) -> Result<IotVerifiedWitnessReport, VerificationError> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
@@ -277,6 +277,7 @@ impl Poc {
         ) {
             Ok(()) => {
                 let tx_scale = hex_density_map
+                    .clone()
                     .get(beaconer_metadata.location)
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);

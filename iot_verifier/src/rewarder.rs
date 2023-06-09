@@ -2,13 +2,16 @@ use crate::reward_share::{operational_rewards, GatewayShares};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
+use futures::future::LocalBoxFuture;
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
+use task_manager::ManagedTask;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
@@ -18,14 +21,20 @@ pub struct Rewarder {
     pub reward_manifests_sink: file_sink::FileSinkClient,
     pub reward_period_hours: i64,
     pub reward_offset: Duration,
+    price_tracker: PriceTracker,
+}
+
+impl ManagedTask for Rewarder {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
 }
 
 impl Rewarder {
-    pub async fn run(
-        mut self,
-        price_tracker: PriceTracker,
-        shutdown: &triggered::Listener,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {
         tracing::info!("Starting iot verifier rewarder");
 
         let reward_period_length = Duration::hours(self.reward_period_hours);
@@ -41,7 +50,8 @@ impl Rewarder {
             );
 
             let sleep_duration = if scheduler.should_reward(now) {
-                let iot_price = price_tracker
+                let iot_price = self
+                    .price_tracker
                     .price(&helium_proto::BlockchainTokenTypeV1::Iot)
                     .await?;
                 tracing::info!(
@@ -66,9 +76,8 @@ impl Rewarder {
                 humantime::format_duration(sleep_duration)
             );
 
-            let shutdown = shutdown.clone();
             tokio::select! {
-                _ = shutdown => return Ok(()),
+                _ = token.cancelled() => return Ok(()),
                 _ = sleep(sleep_duration) => (),
             }
         }

@@ -1,12 +1,15 @@
 use crate::entropy::Entropy;
 use blake3::hash;
 use file_store::{entropy_report::EntropyReport, file_info_poller::FileInfoStream};
-use futures::{StreamExt, TryStreamExt};
+use futures::{future::LocalBoxFuture, StreamExt, TryStreamExt};
 use sqlx::PgPool;
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
+use tokio_util::sync::CancellationToken;
 
 pub struct EntropyLoader {
     pub pool: PgPool,
+    file_receiver: Receiver<FileInfoStream<EntropyReport>>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -17,19 +20,21 @@ pub enum NewLoaderError {
     DbStoreError(#[from] db_store::Error),
 }
 
+impl ManagedTask for EntropyLoader {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
+}
+
 impl EntropyLoader {
-    pub async fn run(
-        &mut self,
-        mut receiver: Receiver<FileInfoStream<EntropyReport>>,
-        shutdown: &triggered::Listener,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
-                _ = shutdown.clone() => break,
-                msg = receiver.recv() => if let Some(stream) =  msg {
+                _ = token.cancelled() => break,
+                msg = self.file_receiver.recv() => if let Some(stream) =  msg {
                     self.handle_report(stream).await?;
                 }
             }

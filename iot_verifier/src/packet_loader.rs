@@ -2,21 +2,23 @@ use crate::{
     gateway_cache::GatewayCache, metrics::LoaderMetricTracker, reward_share::GatewayDCShare,
     Settings,
 };
-use chrono::{Duration as ChronoDuration, Utc};
-use file_store::{
-    file_info_poller::FileInfoStream, file_sink, file_sink::FileSinkClient,
-    file_upload::MessageSender as FileUploadSender, iot_packet::IotValidPacket, FileType,
-};
-use futures::{StreamExt, TryStreamExt};
+use chrono::Utc;
+use file_store::{file_info_poller::FileInfoStream, file_sink, iot_packet::IotValidPacket};
+use futures::{future::LocalBoxFuture, StreamExt, TryStreamExt};
 use helium_proto::services::packet_verifier::ValidPacket;
 use helium_proto::services::poc_lora::{NonRewardablePacket, NonRewardablePacketReason};
 use sqlx::PgPool;
 use std::path::Path;
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
+use tokio_util::sync::CancellationToken;
 
 pub struct PacketLoader {
     pub pool: PgPool,
     pub cache: String,
+    gateway_cache: GatewayCache,
+    file_receiver: Receiver<FileInfoStream<IotValidPacket>>,
+    file_sink: file_sink::FileSinkClient,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -27,49 +29,47 @@ pub enum NewLoaderError {
     DbStoreError(#[from] db_store::Error),
 }
 
+impl ManagedTask for PacketLoader {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
+}
+
 impl PacketLoader {
-    pub fn from_settings(settings: &Settings, pool: PgPool) -> Self {
+    pub fn from_settings(
+        settings: &Settings,
+        pool: PgPool,
+        gateway_cache: GatewayCache,
+        file_receiver: Receiver<FileInfoStream<IotValidPacket>>,
+        file_sink: file_sink::FileSinkClient,
+    ) -> Self {
         tracing::info!("from_settings packet loader");
         let cache = settings.cache.clone();
-        Self { pool, cache }
+        Self {
+            pool,
+            cache,
+            gateway_cache,
+            file_receiver,
+            file_sink,
+        }
     }
 
-    pub async fn run(
-        &self,
-        mut receiver: Receiver<FileInfoStream<IotValidPacket>>,
-        shutdown: &triggered::Listener,
-        gateway_cache: &GatewayCache,
-        file_upload_tx: FileUploadSender,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {
         tracing::info!("starting verifier iot packet loader");
         let store_base_path = Path::new(&self.cache);
-        let (non_rewardable_packet_sink, mut non_rewardable_packet_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::NonRewardablePacket,
-                store_base_path,
-                concat!(env!("CARGO_PKG_NAME"), "_non_rewardable_packet"),
-                shutdown.clone(),
-            )
-            .deposits(Some(file_upload_tx.clone()))
-            .roll_time(ChronoDuration::minutes(5))
-            .create()
-            .await?;
-        tokio::spawn(async move { non_rewardable_packet_server.run().await });
 
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
-                _ = shutdown.clone() => break,
-                msg = receiver.recv() => if let Some(stream) =  msg {
+                _ = token.cancelled() => break,
+                msg = self.file_receiver.recv() => if let Some(stream) =  msg {
                     let metrics = LoaderMetricTracker::new();
-                    match self.handle_packet_file(stream, gateway_cache, &non_rewardable_packet_sink, &metrics).await {
+                    match self.handle_packet_file(stream, &metrics).await {
                         Ok(()) => {
-                            // todo: maybe two actions below can occur in handle_packet
-                            // but wasnt able to get it to work ?
                             metrics.record_metrics();
-                            non_rewardable_packet_sink.commit().await?;
+                            self.file_sink.commit().await?;
 
                         },
                         Err(err) => { return Err(err)}
@@ -84,8 +84,6 @@ impl PacketLoader {
     async fn handle_packet_file(
         &self,
         file_info_stream: FileInfoStream<IotValidPacket>,
-        gateway_cache: &GatewayCache,
-        non_rewardable_packet_sink: &FileSinkClient,
         metrics: &LoaderMetricTracker,
     ) -> anyhow::Result<()> {
         let mut transaction = self.pool.begin().await?;
@@ -103,7 +101,8 @@ impl PacketLoader {
             .try_fold(
                 transaction,
                 |mut transaction, (valid_packet, reward_share)| async move {
-                    if gateway_cache
+                    if self
+                        .gateway_cache
                         .resolve_gateway_info(&reward_share.hotspot_key)
                         .await
                         .is_ok()
@@ -120,7 +119,7 @@ impl PacketLoader {
                             reason: reason as i32,
                             timestamp,
                         };
-                        non_rewardable_packet_sink
+                        self.file_sink
                             .write(
                                 non_rewardable_packet_proto,
                                 &[("reason", reason.as_str_name())],

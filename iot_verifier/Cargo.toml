@@ -19,6 +19,7 @@ serde_json = {workspace = true}
 http-serde = {workspace = true}
 sqlx = {workspace = true}
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 base64 = {workspace = true}
@@ -53,3 +54,4 @@ itertools = {workspace = true}
 rand = {workspace = true}
 beacon = {workspace = true}
 price = { path = "../price" }
+task-manager = { path = "../task_manager" }
