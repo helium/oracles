@@ -145,6 +145,8 @@ impl poc_mobile::PocMobile for GrpcServer {
     ) -> GrpcResult<SubscriberLocationRespV1> {
         let timestamp = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
+        let subscriber_id = event.subscriber_id.clone();
+        let timestamp_millis = event.timestamp;
 
         let report = self
             .verify_public_key(event.carrier_pub_key.as_ref())
@@ -153,6 +155,14 @@ impl poc_mobile::PocMobile for GrpcServer {
             .map(|(_, event)| SubscriberLocationIngestReportV1 {
                 received_timestamp: timestamp,
                 report: Some(event),
+            })
+            .map_err(|status| {
+                tracing::debug!(
+                    subscriber_id = ?subscriber_id,
+                    timestamp = %timestamp_millis,
+                    status = %status
+                );
+                status
             })?;
 
         _ = self.subscriber_location_report_sink.write(report, []).await;
