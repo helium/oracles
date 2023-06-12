@@ -7,8 +7,10 @@ use iot_config::{
     gateway_info::{GatewayInfo, GatewayInfoResolver},
 };
 use std::collections::HashMap;
+use task_manager::ManagedTask;
 use tokio::sync::watch;
 use tokio::time;
+use tokio_util::sync::CancellationToken;
 
 pub type GatewayMap = HashMap<PublicKeyBinary, GatewayInfo>;
 pub type MessageSender = watch::Sender<GatewayMap>;
@@ -28,6 +30,16 @@ pub enum GatewayUpdaterError {
     SendError(#[from] watch::error::SendError<GatewayMap>),
 }
 
+
+impl ManagedTask for GatewayUpdater {
+    fn start_task(
+        self: Box<Self>,
+        token: CancellationToken,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(token))
+    }
+}
+
 impl GatewayUpdater {
     pub async fn from_settings(
         settings: &Settings,
@@ -45,7 +57,7 @@ impl GatewayUpdater {
         ))
     }
 
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), GatewayUpdaterError> {
+    pub async fn run(mut self, token: CancellationToken) -> Result<(), GatewayUpdaterError> {
         tracing::info!("starting gateway_updater");
 
         let mut trigger_timer = time::interval(
@@ -55,14 +67,9 @@ impl GatewayUpdater {
         );
 
         loop {
-            if shutdown.is_triggered() {
-                tracing::info!("stopping gateway_updater");
-                return Ok(());
-            }
-
             tokio::select! {
+                _ = token.cancelled() => break,
                 _ = trigger_timer.tick() => self.handle_refresh_tick().await?,
-                _ = shutdown.clone() => return Ok(()),
             }
         }
     }
