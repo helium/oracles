@@ -1,6 +1,6 @@
 use crate::{
     gateway_cache::GatewayCache,
-    hex_density::{HexDensityMap, SharedHexDensityMap},
+    hex_density::HexDensityMap,
     last_beacon::LastBeacon,
     metrics::Metrics,
     poc::Poc,
@@ -29,7 +29,6 @@ use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use std::path::Path;
 use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
@@ -44,7 +43,6 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 pub struct Runner {
     pool: PgPool,
-    cache: String,
     beacon_interval: ChronoDuration,
     beacon_interval_tolerance: ChronoDuration,
     max_witnesses_per_poc: u64,
@@ -91,9 +89,8 @@ impl Runner {
         invalid_beacon_sink: FileSinkClient,
         invalid_witness_sink: FileSinkClient,
         poc_sink: FileSinkClient,
-        hex_density_map: impl HexDensityMap,
+        hex_density_map: HexDensityMap,
     ) -> Result<Self, NewRunnerError> {
-        let cache = settings.cache.clone();
         let beacon_interval = settings.beacon_interval();
         let beacon_interval_tolerance = settings.beacon_interval_tolerance();
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
@@ -101,7 +98,6 @@ impl Runner {
         let witness_max_retries = settings.witness_max_retries;
         Ok(Self {
             pool,
-            cache,
             beacon_interval,
             beacon_interval_tolerance,
             max_witnesses_per_poc,
@@ -116,13 +112,11 @@ impl Runner {
         })
     }
 
-    pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {
+    pub async fn run(self, token: CancellationToken) -> anyhow::Result<()> {
         tracing::info!("starting runner");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        let store_base_path = Path::new(&self.cache);
 
         loop {
             tokio::select! {

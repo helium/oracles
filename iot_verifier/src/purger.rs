@@ -39,8 +39,6 @@ lazy_static! {
 
 pub struct Purger {
     pool: PgPool,
-    cache: String,
-    output: file_store::Settings,
     base_stale_period: Duration,
     invalid_beacon_sink: FileSinkClient,
     invalid_witness_sink: FileSinkClient,
@@ -66,20 +64,16 @@ impl Purger {
         invalid_beacon_sink: FileSinkClient,
         invalid_witness_sink: FileSinkClient,
     ) -> Result<Self, NewPurgerError> {
-        let cache = settings.cache.clone();
-        let output = settings.output.clone();
         let base_stale_period = settings.base_stale_period();
         Ok(Self {
             pool,
-            cache,
-            output,
             base_stale_period,
             invalid_beacon_sink,
             invalid_witness_sink,
         })
     }
 
-    pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {
+    pub async fn run(self, token: CancellationToken) -> anyhow::Result<()> {
         tracing::info!("starting purger");
 
         let mut db_timer = time::interval(DB_POLL_TIME);

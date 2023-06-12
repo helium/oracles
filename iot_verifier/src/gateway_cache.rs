@@ -37,6 +37,6 @@ impl GatewayCache {
     }
 
     pub fn receiver(&self) -> MessageReceiver {
-        self.receiver.clone()
+        self.gateway_cache_receiver.clone()
     }
 }

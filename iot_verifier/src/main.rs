@@ -1,11 +1,11 @@
 use crate::entropy_loader::EntropyLoader;
-use anyhow::{Error, Result};
+use anyhow::Result;
 use clap::Parser;
+use chrono::Duration as ChronoDuration;
 use file_store::{
     entropy_report::EntropyReport, file_info_poller::LookbackBehavior, file_sink, file_source,
     file_upload, iot_packet::IotValidPacket, FileStore, FileType,
 };
-use futures::{future::LocalBoxFuture, TryFutureExt};
 use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, loader,
@@ -14,9 +14,7 @@ use iot_verifier::{
 };
 use price::PriceTracker;
 use std::path;
-use task_manager::ManagedTask;
-use tokio::signal;
-use tokio_util::sync::CancellationToken;
+use task_manager::TaskManager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
@@ -68,7 +66,7 @@ impl Server {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool and run migrations
-        let (pool, db_join_handle) = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
         let count_all_beacons = Report::count_all_beacons(&pool).await?;
@@ -86,6 +84,24 @@ impl Server {
             file_upload::FileUpload::from_settings(&settings.output).await?;
 
         let store_base_path = std::path::Path::new(&settings.cache);
+
+        // *
+        // setup the price tracker requirements
+        // *
+        let (price_tracker, price_receiver) =
+            PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
+
+        // *
+        // setup the loader requirements
+        // *
+        let mut loader =
+            loader::Loader::from_settings(settings,  gateway_cache.clone(), pool.clone()).await?;
+
+        // *
+        // setup the density scaler requirements
+        // *
+        let mut density_scaler =
+            DensityScaler::from_settings(settings, pool, gateway_updater_receiver.clone()).await?;
 
         // *
         // setup the rewarder requirements
@@ -137,9 +153,7 @@ impl Server {
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(entropy_interval)
                 .offset(entropy_interval * 2)
-                .build()?
-                .start(shutdown.clone())
-                .await?;
+                .create()?;
         let mut entropy_loader = EntropyLoader {
             pool: pool.clone(),
             file_receiver: entropy_loader_receiver,
@@ -169,9 +183,8 @@ impl Server {
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(packet_interval)
                 .offset(packet_interval * 2)
-                .build()?
-                .start(shutdown.clone())
-                .await?;
+                .create()?;
+
         let packet_loader = packet_loader::PacketLoader::from_settings(
             settings,
             pool.clone(),
@@ -250,32 +263,16 @@ impl Server {
         let mut runner = runner::Runner::from_settings(
             settings,
             pool.clone(),
-            gateway_cache.clone(), // TODO: fix this
-            region_cache.clone(),  // TODO: fix this
+            gateway_cache.clone(),
+            region_cache.clone(),
             runner_invalid_beacon_sink,
             runner_invalid_witness_sink,
             runner_poc_sink,
-            density_scaler.hex_density_map(), // TODO: fix this
+            density_scaler.hex_density_map,
         )
         .await?;
 
-        // *
-        // setup the loader requirements
-        // *
-        let mut loader =
-            loader::Loader::from_settings(settings, pool.clone(), gateway_cache.clone()).await?;
 
-        // *
-        // setup the density scaler requirements
-        // *
-        let mut density_scaler =
-            DensityScaler::from_settings(settings, pool, gateway_updater_receiver.clone()).await?;
-
-        // *
-        // setup the price tracker requirements
-        // *
-        let (price_tracker, price_receiver) =
-            PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
 
         TaskManager::builder()
             .add(file_upload_server)

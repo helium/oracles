@@ -1,6 +1,6 @@
 use crate::{
     gateway_updater::MessageReceiver,
-    hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap, SharedHexDensityMap},
+    hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap},
     last_beacon::LastBeacon,
     Settings,
 };
@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 const HIP_17_INTERACTIVITY_LIMIT: i64 = 3600;
 
 pub struct Server {
-    hex_density_map: SharedHexDensityMap,
+    pub hex_density_map: HexDensityMap,
     pool: PgPool,
     refresh_offset: Duration,
     gateway_cache_receiver: MessageReceiver,
@@ -47,7 +47,7 @@ impl Server {
         gateway_cache_receiver: MessageReceiver,
     ) -> anyhow::Result<Self> {
         let mut server = Self {
-            hex_density_map: SharedHexDensityMap::new(),
+            hex_density_map: HexDensityMap::new(),
             pool,
             refresh_offset: settings.loader_window_max_lookback_age(),
             gateway_cache_receiver,
@@ -56,14 +56,6 @@ impl Server {
         server.refresh_scaling_map().await?;
 
         Ok(server)
-    }
-
-    pub fn hex_density_map(&self) -> impl HexDensityMap {
-        self.hex_density_map.clone()
-    }
-
-    pub fn shared_hex_density_map(&self) -> SharedHexDensityMap {
-        self.shared_hex_density_map().clone()
     }
 
     pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {

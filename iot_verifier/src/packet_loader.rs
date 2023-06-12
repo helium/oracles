@@ -8,7 +8,6 @@ use futures::{future::LocalBoxFuture, StreamExt, TryStreamExt};
 use helium_proto::services::packet_verifier::ValidPacket;
 use helium_proto::services::poc_lora::{NonRewardablePacket, NonRewardablePacketReason};
 use sqlx::PgPool;
-use std::path::Path;
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
@@ -59,8 +58,6 @@ impl PacketLoader {
 
     pub async fn run(mut self, token: CancellationToken) -> anyhow::Result<()> {
         tracing::info!("starting verifier iot packet loader");
-        let store_base_path = Path::new(&self.cache);
-
         loop {
             tokio::select! {
                 _ = token.cancelled() => break,
