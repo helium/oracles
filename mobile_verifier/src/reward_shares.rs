@@ -294,6 +294,7 @@ mod test {
             payer,
             upload_bytes: 0,   // Unused
             download_bytes: 0, // Unused
+            subscriber_id: None,
             num_dcs: 2,
             first_timestamp: DateTime::default(),
             last_timestamp: DateTime::default(),
@@ -350,6 +351,7 @@ mod test {
                 payer: payer.clone(),
                 upload_bytes: 0,
                 download_bytes: 0,
+                subscriber_id: None,
                 num_dcs: 4444444444444445,
                 first_timestamp: DateTime::default(),
                 last_timestamp: DateTime::default(),

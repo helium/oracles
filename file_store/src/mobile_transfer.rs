@@ -13,6 +13,7 @@ pub struct ValidDataTransferSession {
     pub payer: PublicKeyBinary,
     pub upload_bytes: u64,
     pub download_bytes: u64,
+    pub subscriber_id: Option<Vec<u8>>,
     pub num_dcs: u64,
     pub first_timestamp: DateTime<Utc>,
     pub last_timestamp: DateTime<Utc>,
@@ -28,6 +29,7 @@ impl TryFrom<proto::ValidDataTransferSession> for ValidDataTransferSession {
     fn try_from(v: proto::ValidDataTransferSession) -> Result<Self> {
         Ok(Self {
             payer: v.payer.into(),
+            subscriber_id: (!v.subscriber_id.is_empty()).then_some(v.subscriber_id),
             pub_key: v.pub_key.into(),
             upload_bytes: v.upload_bytes,
             download_bytes: v.download_bytes,
