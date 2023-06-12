@@ -1,5 +1,6 @@
 use crate::{reward_index, settings, Settings};
 use anyhow::{anyhow, bail, Result};
+use chrono::Utc;
 use file_store::{
     file_info_poller::FileInfoStream, reward_manifest::RewardManifest, FileInfo, FileStore,
 };
@@ -78,6 +79,10 @@ impl Indexer {
                     }
                     txn.commit().await?;
                     tracing::info!(file = %key, "Completed processing reward file");
+                    metrics::gauge!(
+                        "last_reward_processed_time",
+                        Utc::now().timestamp() as f64,
+                    );
                 }
             }
         }
