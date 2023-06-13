@@ -296,7 +296,7 @@ impl iot_config::Route for RouteService {
         );
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::Oui(route.oui))
+        self.verify_request_signature(&signer, &request, OrgId::RouteId(route.id))
             .await?;
 
         let updated_route = route::update_route(
