@@ -565,7 +565,7 @@ pub fn devaddr_range_stream<'a>(
 pub fn skf_stream<'a>(db: impl sqlx::PgExecutor<'a> + 'a + Copy) -> impl Stream<Item = Skf> + 'a {
     sqlx::query_as::<_, Skf>(
         r#"
-        select skf.route_id, skf.devaddr, skf.session_key
+        select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies
         from route_session_key_filters skf
         "#,
     )
@@ -663,7 +663,7 @@ pub fn list_skfs_for_route<'a>(
 ) -> Result<impl Stream<Item = Result<Skf, sqlx::Error>> + 'a, RouteStorageError> {
     let id = Uuid::try_parse(id)?;
     const SKF_SELECT_SQL: &str = r#"
-        select skf.route_id, skf.devaddr, skf.session_key
+        select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies
             from route_session_key_filters skf
             where skf.route_id = $1
     "#;
@@ -683,7 +683,7 @@ pub fn list_skfs_for_route_and_devaddr<'a>(
 
     Ok(sqlx::query_as::<_, Skf>(
         r#"
-        select skf.route_id, skf.devaddr, skf.session_key
+        select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies
         from route_session_key_filters skf
         where skf.route_id = $1 and devaddr = $2
         "#,
@@ -752,22 +752,26 @@ async fn insert_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
     let skfs = skfs
         .iter()
         .map(|filter| filter.try_into())
-        .collect::<Result<Vec<(Uuid, i32, String)>, _>>()?;
+        .collect::<Result<Vec<(Uuid, i32, String, i32)>, _>>()?;
 
     const SKF_INSERT_VALS: &str =
-        " insert into route_session_key_filters (route_id, devaddr, session_key) ";
+        " insert into route_session_key_filters (route_id, devaddr, session_key, max_copies) ";
     const SKF_INSERT_CONFLICT: &str =
         " on conflict (route_id, devaddr, session_key) do nothing returning * ";
 
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SKF_INSERT_VALS);
     query_builder
-        .push_values(skfs, |mut builder, (route_id, devaddr, session_key)| {
-            builder
-                .push_bind(route_id)
-                .push_bind(devaddr)
-                .push_bind(session_key);
-        })
+        .push_values(
+            skfs,
+            |mut builder, (route_id, devaddr, session_key, max_copies)| {
+                builder
+                    .push_bind(route_id)
+                    .push_bind(devaddr)
+                    .push_bind(session_key)
+                    .push_bind(max_copies);
+            },
+        )
         .push(SKF_INSERT_CONFLICT);
 
     Ok(query_builder.build_query_as::<Skf>().fetch_all(db).await?)
@@ -781,7 +785,7 @@ async fn remove_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
     let skfs = skfs
         .iter()
         .map(|filter| filter.try_into())
-        .collect::<Result<Vec<(Uuid, i32, String)>, _>>()?;
+        .collect::<Result<Vec<(Uuid, i32, String, i32)>, _>>()?;
 
     const SKF_DELETE_VALS: &str =
         " delete from route_session_key_filters where (route_id, devaddr, session_key) in ";
@@ -789,12 +793,15 @@ async fn remove_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SKF_DELETE_VALS);
     query_builder
-        .push_tuples(skfs, |mut builder, (route_id, devaddr, session_key)| {
-            builder
-                .push_bind(route_id)
-                .push_bind(devaddr)
-                .push_bind(session_key);
-        })
+        .push_tuples(
+            skfs,
+            |mut builder, (route_id, devaddr, session_key, _max_copies)| {
+                builder
+                    .push_bind(route_id)
+                    .push_bind(devaddr)
+                    .push_bind(session_key);
+            },
+        )
         .push(SKF_DELETE_RETURN);
 
     Ok(query_builder.build_query_as::<Skf>().fetch_all(db).await?)
@@ -862,12 +869,17 @@ impl TryFrom<&DevAddrRange> for (Uuid, i32, i32) {
     }
 }
 
-impl TryFrom<&Skf> for (Uuid, i32, String) {
+impl TryFrom<&Skf> for (Uuid, i32, String, i32) {
     type Error = sqlx::types::uuid::Error;
 
-    fn try_from(skf: &Skf) -> Result<(Uuid, i32, String), Self::Error> {
+    fn try_from(skf: &Skf) -> Result<(Uuid, i32, String, i32), Self::Error> {
         let uuid = Uuid::try_parse(&skf.route_id)?;
-        Ok((uuid, i32::from(skf.devaddr), skf.session_key.clone()))
+        Ok((
+            uuid,
+            i32::from(skf.devaddr),
+            skf.session_key.clone(),
+            skf.max_copies as i32,
+        ))
     }
 }
 

@@ -852,6 +852,7 @@ impl iot_config::Route for RouteService {
                         request.route_id.clone(),
                         update.devaddr.into(),
                         update.session_key,
+                        update.max_copies,
                     ),
                 )
             })
