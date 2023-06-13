@@ -116,14 +116,21 @@ pub struct Skf {
     pub route_id: String,
     pub devaddr: DevAddrField,
     pub session_key: String,
+    pub max_copies: u32,
 }
 
 impl Skf {
-    pub fn new(route_id: String, devaddr: DevAddrField, session_key: String) -> Self {
+    pub fn new(
+        route_id: String,
+        devaddr: DevAddrField,
+        session_key: String,
+        max_copies: u32,
+    ) -> Self {
         Self {
             route_id,
             devaddr,
             session_key,
+            max_copies,
         }
     }
 }
@@ -136,6 +143,7 @@ impl FromRow<'_, PgRow> for Skf {
                 .to_string(),
             devaddr: row.get::<i32, &str>("devaddr").into(),
             session_key: row.get::<String, &str>("session_key"),
+            max_copies: row.get::<i32, &str>("max_copies") as u32,
         })
     }
 }
@@ -572,6 +580,7 @@ impl From<proto::SkfV1> for Skf {
             route_id: filter.route_id,
             devaddr: filter.devaddr.into(),
             session_key: filter.session_key,
+            max_copies: filter.max_copies,
         }
     }
 }
@@ -582,6 +591,7 @@ impl From<&proto::SkfV1> for Skf {
             route_id: filter.route_id.to_owned(),
             devaddr: filter.devaddr.into(),
             session_key: filter.session_key.to_owned(),
+            max_copies: filter.max_copies,
         }
     }
 }
@@ -592,6 +602,7 @@ impl From<Skf> for proto::SkfV1 {
             route_id: filter.route_id,
             devaddr: filter.devaddr.into(),
             session_key: filter.session_key,
+            max_copies: filter.max_copies,
         }
     }
 }
@@ -602,6 +613,7 @@ impl From<&Skf> for proto::SkfV1 {
             route_id: filter.route_id.to_owned(),
             devaddr: filter.devaddr.into(),
             session_key: filter.session_key.to_owned(),
+            max_copies: filter.max_copies,
         }
     }
 }
