@@ -1,10 +1,10 @@
 use anyhow::{Error, Result};
 use clap::Parser;
 use futures_util::TryFutureExt;
-use helium_proto::services::mobile_config::{AdminServer, GatewayServer, RouterServer};
+use helium_proto::services::mobile_config::{AdminServer, GatewayServer, AuthorizationServer};
 use mobile_config::{
     admin_service::AdminService, gateway_service::GatewayService, key_cache::KeyCache,
-    router_service::RouterService, settings::Settings,
+    authorization_service::AuthorizationService, settings::Settings,
 };
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;
@@ -92,14 +92,14 @@ impl Daemon {
             metadata_pool.clone(),
             settings.signing_keypair()?,
         );
-        let router_svc = RouterService::new(key_cache.clone(), settings.signing_keypair()?);
+        let auth_svc = AuthorizationService::new(key_cache.clone(), settings.signing_keypair()?);
 
         let server = transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(AdminServer::new(admin_svc))
             .add_service(GatewayServer::new(gateway_svc))
-            .add_service(RouterServer::new(router_svc))
+            .add_service(AuthorizationServer::new(auth_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from);
 

@@ -1,5 +1,5 @@
 use crate::{
-    key_cache::{self, CacheKeys, KeyCache, KeyType},
+    key_cache::{self, CacheKeys, KeyCache, KeyRole},
     settings::Settings,
     telemetry, verify_public_key, GrpcResult,
 };
@@ -47,7 +47,7 @@ impl AdminService {
         R: MsgVerify,
     {
         self.key_cache
-            .verify_signature_with_type(KeyType::Administrator, signer, request)
+            .verify_signature_with_role(KeyRole::Administrator, signer, request)
             .map_err(|_| Status::permission_denied("invalid admin signature"))?;
         Ok(())
     }
@@ -68,19 +68,12 @@ impl mobile_config::Admin for AdminService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
-        let key_type = request.key_type().into();
+        let key_role = request.role().into();
         let pubkey = verify_public_key(request.pubkey.as_ref())?;
 
-        key_cache::db::insert_key(request.pubkey.clone().into(), key_type, &self.pool)
+        key_cache::db::insert_key(request.pubkey.clone().into(), key_role, &self.pool)
             .and_then(|_| async move {
-                if self.key_cache_updater.send_if_modified(|cache| {
-                    if let std::collections::hash_map::Entry::Vacant(key) = cache.entry(pubkey) {
-                        key.insert(key_type);
-                        true
-                    } else {
-                        false
-                    }
-                }) {
+                if self.key_cache_updater.send_if_modified(|cache| cache.insert((pubkey, key_role))) {
                     Ok(())
                 } else {
                     Err(anyhow!("key already registered"))
@@ -88,7 +81,7 @@ impl mobile_config::Admin for AdminService {
             })
             .map_err(|err| {
                 let pubkey: PublicKeyBinary = request.pubkey.into();
-                tracing::error!(pubkey = pubkey.to_string(), "pubkey add failed");
+                tracing::error!(pubkey = pubkey.to_string(), role = %key_role, "pubkey add failed");
                 Status::internal(format!("error saving request key: {pubkey}, {err:?}"))
             })
             .await?;
@@ -109,12 +102,14 @@ impl mobile_config::Admin for AdminService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_admin_request_signature(&signer, &request)?;
 
-        key_cache::db::remove_key(request.pubkey.clone().into(), &self.pool)
+        let key_role = request.role().into();
+
+        key_cache::db::remove_key(request.pubkey.clone().into(), key_role, &self.pool)
             .and_then(|deleted| async move {
                 match deleted {
-                    Some((pubkey, _key_type)) => {
+                    Some((pubkey, key_role)) => {
                         self.key_cache_updater.send_modify(|cache| {
-                            cache.remove(&pubkey);
+                            cache.remove(&(pubkey, key_role));
                         });
                         Ok(())
                     }
@@ -123,7 +118,7 @@ impl mobile_config::Admin for AdminService {
             })
             .map_err(|_| {
                 let pubkey: PublicKeyBinary = request.pubkey.into();
-                tracing::error!(pubkey = pubkey.to_string(), "pubkey remove failed");
+                tracing::error!(pubkey = pubkey.to_string(), role = %key_role, "pubkey remove failed");
                 Status::internal(format!("error removing request key: {pubkey}"))
             })
             .await?;
