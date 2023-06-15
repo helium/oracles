@@ -3,15 +3,16 @@ use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
-    services::mobile_config::{self, EntityVerifyReqV1, EntityVerifyResV1}, Message,
+    services::mobile_config::{self, EntityVerifyReqV1, EntityVerifyResV1},
+    Message,
 };
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Row};
 use tonic::{Request, Response, Status};
 
 pub struct EntityService {
     key_cache: KeyCache,
     metadata_pool: Pool<Postgres>,
-    signing_key: Arc<Keypair>,
+    signing_key: Keypair,
 }
 
 impl EntityService {
@@ -35,16 +36,18 @@ impl EntityService {
     }
 
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
-        self.signing_key.sign(response).map_err(|_| Status::internal("response signing error"))
+        self.signing_key
+            .sign(response)
+            .map_err(|_| Status::internal("response signing error"))
     }
 
     async fn verify_entity(&self, entity_id: &[u8]) -> Result<bool, Status> {
-        sqlx::query(" select exists(select 1 from key_to_assets where entity_key = $1) ")
+        let row = sqlx::query(" select exists(select 1 from key_to_assets where entity_key = $1) ")
             .bind(entity_id)
             .fetch_one(&self.metadata_pool)
             .await
-            .map_err(|_| Status::internal("error verifying entity on-chain"))
-        
+            .map_err(|_| Status::internal("error verifying entity on-chain"))?;
+        Ok(row.get("exists"))
     }
 }
 
@@ -59,7 +62,7 @@ impl mobile_config::Entity for EntityService {
 
         tracing::debug!("verifying rewardable entity on-chain");
 
-        if self.verify_entity(request.entity_id).await? {
+        if self.verify_entity(&request.entity_id).await? {
             let mut response = EntityVerifyResV1 {
                 timestamp: Utc::now().encode_timestamp(),
                 signer: self.signing_key.public_key().into(),

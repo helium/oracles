@@ -1,10 +1,13 @@
 use anyhow::{Error, Result};
 use clap::Parser;
 use futures_util::TryFutureExt;
-use helium_proto::services::mobile_config::{AdminServer, AuthorizationServer, GatewayServer};
+use helium_proto::services::mobile_config::{
+    AdminServer, AuthorizationServer, EntityServer, GatewayServer,
+};
 use mobile_config::{
     admin_service::AdminService, authorization_service::AuthorizationService,
-    gateway_service::GatewayService, key_cache::KeyCache, settings::Settings,
+    entity_service::EntityService, gateway_service::GatewayService, key_cache::KeyCache,
+    settings::Settings,
 };
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;
@@ -93,6 +96,11 @@ impl Daemon {
             settings.signing_keypair()?,
         );
         let auth_svc = AuthorizationService::new(key_cache.clone(), settings.signing_keypair()?);
+        let entity_svc = EntityService::new(
+            key_cache.clone(),
+            metadata_pool.clone(),
+            settings.signing_keypair()?,
+        );
 
         let server = transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
@@ -100,6 +108,7 @@ impl Daemon {
             .add_service(AdminServer::new(admin_svc))
             .add_service(GatewayServer::new(gateway_svc))
             .add_service(AuthorizationServer::new(auth_svc))
+            .add_service(EntityServer::new(entity_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
             .map_err(Error::from);
 

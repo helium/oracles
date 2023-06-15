@@ -5,6 +5,7 @@ use tonic::{Response, Status};
 pub mod admin_service;
 pub mod authorization_service;
 pub mod client;
+pub mod entity_service;
 pub mod gateway_info;
 pub mod gateway_service;
 pub mod key_cache;
