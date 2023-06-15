@@ -34,7 +34,10 @@ impl KeyCache {
         R: MsgVerify,
     {
         let cached_keys = self.cache_receiver.borrow();
-        if (cached_keys.contains(&(signer.clone(), KeyRole::Administrator)) || cached_keys.contains(&(signer.clone(), KeyRole::Oracle))) && request.verify(signer).is_ok() {
+        if (cached_keys.contains(&(signer.clone(), KeyRole::Administrator))
+            || cached_keys.contains(&(signer.clone(), KeyRole::Oracle)))
+            && request.verify(signer).is_ok()
+        {
             tracing::debug!(pubkey = signer.to_string(), "request authorized");
             Ok(())
         } else {
@@ -52,7 +55,11 @@ impl KeyCache {
         R: MsgVerify,
     {
         let cached_signer = signer.clone();
-        if self.cache_receiver.borrow().contains(&(cached_signer, key_role)) && request.verify(signer).is_ok()
+        if self
+            .cache_receiver
+            .borrow()
+            .contains(&(cached_signer, key_role))
+            && request.verify(signer).is_ok()
         {
             tracing::debug!(pubkey = signer.to_string(), "request authorized");
             Ok(())
@@ -67,6 +74,12 @@ impl KeyCache {
             .iter()
             .map(|(k, t)| (k.clone(), *t))
             .collect()
+    }
+
+    pub fn verify_key_by_role(&self, pubkey: &PublicKey, key_role: KeyRole) -> bool {
+        self.cache_receiver
+            .borrow()
+            .contains(&(pubkey.clone(), key_role))
     }
 
     pub fn get_keys_by_role(&self, key_role: KeyRole) -> Vec<PublicKey> {

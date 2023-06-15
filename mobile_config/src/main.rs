@@ -1,10 +1,10 @@
 use anyhow::{Error, Result};
 use clap::Parser;
 use futures_util::TryFutureExt;
-use helium_proto::services::mobile_config::{AdminServer, GatewayServer, AuthorizationServer};
+use helium_proto::services::mobile_config::{AdminServer, AuthorizationServer, GatewayServer};
 use mobile_config::{
-    admin_service::AdminService, gateway_service::GatewayService, key_cache::KeyCache,
-    authorization_service::AuthorizationService, settings::Settings,
+    admin_service::AdminService, authorization_service::AuthorizationService,
+    gateway_service::GatewayService, key_cache::KeyCache, settings::Settings,
 };
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;

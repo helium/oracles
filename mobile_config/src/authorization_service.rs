@@ -6,7 +6,10 @@ use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
-    services::mobile_config::{self, AuthorizationListReqV1, AuthorizationListResV1, authorization_list_req_v1::NetworkKeyRole},
+    services::mobile_config::{
+        self, AuthorizationListReqV1, AuthorizationListResV1, AuthorizationVerifyReqV1,
+        AuthorizationVerifyResV1, NetworkKeyRole,
+    },
     Message,
 };
 use tonic::{Request, Response, Status};
@@ -44,20 +47,55 @@ impl AuthorizationService {
 
 #[tonic::async_trait]
 impl mobile_config::Authorization for AuthorizationService {
-    async fn list(&self, request: Request<AuthorizationListReqV1>) -> GrpcResult<AuthorizationListResV1> {
+    async fn verify(
+        &self,
+        request: Request<AuthorizationVerifyReqV1>,
+    ) -> GrpcResult<AuthorizationVerifyResV1> {
+        let request = request.into_inner();
+        telemetry::count_request("authorization", "verify");
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        let requested_role: KeyRole = request.role().into();
+        let requested_key = verify_public_key(&request.pubkey)?;
+        tracing::debug!(key = %requested_key, role = %requested_role, "verifying authorized key with role");
+
+        if self
+            .key_cache
+            .verify_key_by_role(&requested_key, requested_role)
+        {
+            let mut response = AuthorizationVerifyResV1 {
+                timestamp: Utc::now().encode_timestamp(),
+                signer: self.signing_key.public_key().into(),
+                signature: vec![],
+            };
+            response.signature = self.sign_response(&response.encode_to_vec())?;
+            Ok(Response::new(response))
+        } else {
+            Err(Status::not_found(format!(
+                "Requested key/role not registered {requested_key}: {requested_role}"
+            )))
+        }
+    }
+
+    async fn list(
+        &self,
+        request: Request<AuthorizationListReqV1>,
+    ) -> GrpcResult<AuthorizationListResV1> {
         let request = request.into_inner();
         telemetry::count_request("authorization", "list");
 
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        tracing::debug!("listing registered router keys");
+        tracing::debug!("listing registered authorized network keys");
 
-        let requested_role: NetworkKeyRole = request.role().into();
+        let requested_role: KeyRole = request.role().into();
 
         let registered_keys_by_role = self
             .key_cache
-            .get_keys_by_role(requested_role.into())
+            .get_keys_by_role(requested_role)
             .into_iter()
             .map(|key| key.into())
             .collect();
@@ -76,8 +114,8 @@ impl mobile_config::Authorization for AuthorizationService {
 impl From<NetworkKeyRole> for KeyRole {
     fn from(role: NetworkKeyRole) -> Self {
         match role {
-            NetworkKeyRole::Router => KeyRole::Router,
-            NetworkKeyRole::Carrier => KeyRole::Carrier,
+            NetworkKeyRole::MobileRouter => KeyRole::Router,
+            NetworkKeyRole::MobileCarrier => KeyRole::Carrier,
         }
     }
 }

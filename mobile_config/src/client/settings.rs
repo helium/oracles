@@ -41,12 +41,19 @@ pub fn default_cache_ttl_in_secs() -> u64 {
 }
 
 impl Settings {
-    pub fn connect(&self) -> mobile_config::GatewayClient<Channel> {
-        let channel = Endpoint::from(self.url.clone())
-            .connect_timeout(Duration::from_secs(self.connect_timeout))
-            .timeout(Duration::from_secs(self.rpc_timeout))
-            .connect_lazy();
+    pub fn connect_gateway_client(&self) -> mobile_config::GatewayClient<Channel> {
+        let channel = connect_channel(self);
         mobile_config::GatewayClient::new(channel)
+    }
+
+    pub fn connect_authorization_client(&self) -> mobile_config::AuthorizationClient<Channel> {
+        let channel = connect_channel(self);
+        mobile_config::AuthorizationClient::new(channel)
+    }
+
+    pub fn connect_entity_client(&self) -> mobile_config::EntityClient<Channel> {
+        let channel = connect_channel(self);
+        mobile_config::EntityClient::new(channel)
     }
 
     pub fn signing_keypair(
@@ -63,4 +70,11 @@ impl Settings {
     pub fn cache_ttl(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.cache_ttl_in_secs)
     }
+}
+
+fn connect_channel(settings: &Settings) -> Channel {
+    Endpoint::from(settings.url.clone())
+        .connect_timeout(Duration::from_secs(settings.connect_timeout))
+        .timeout(Duration::from_secs(settings.rpc_timeout))
+        .connect_lazy()
 }

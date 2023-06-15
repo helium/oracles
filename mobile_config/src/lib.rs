@@ -11,7 +11,7 @@ pub mod key_cache;
 pub mod settings;
 pub mod telemetry;
 
-pub use client::{Client, Settings as ClientSettings};
+pub use client::{GatewayClient, Settings as ClientSettings};
 
 pub type GrpcResult<T> = Result<Response<T>, Status>;
 pub type GrpcStreamResult<T> = ReceiverStream<Result<T, Status>>;

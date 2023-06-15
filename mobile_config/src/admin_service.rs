@@ -73,7 +73,10 @@ impl mobile_config::Admin for AdminService {
 
         key_cache::db::insert_key(request.pubkey.clone().into(), key_role, &self.pool)
             .and_then(|_| async move {
-                if self.key_cache_updater.send_if_modified(|cache| cache.insert((pubkey, key_role))) {
+                if self
+                    .key_cache_updater
+                    .send_if_modified(|cache| cache.insert((pubkey, key_role)))
+                {
                     Ok(())
                 } else {
                     Err(anyhow!("key already registered"))
