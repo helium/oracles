@@ -115,7 +115,6 @@ where
                             payer: session.payer.into(),
                             upload_bytes: session.uploaded_bytes as u64,
                             download_bytes: session.downloaded_bytes as u64,
-                            subscriber_id: vec![],
                             num_dcs,
                             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
                             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
