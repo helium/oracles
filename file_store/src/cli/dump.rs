@@ -3,6 +3,7 @@ use crate::{
     file_source,
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
     iot_packet::IotValidPacket,
+    mobile_session::DataTransferSessionIngestReport,
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
     FileType, Result, Settings,
@@ -61,6 +62,20 @@ impl Cmd {
                     let dec_msg = SpeedtestIngestReportV1::decode(msg)?;
                     let ingest_report = CellSpeedtestIngestReport::try_from(dec_msg)?;
                     print_json(&ingest_report)?;
+                }
+                FileType::DataTransferSessionIngestReport => {
+                    let dtr = DataTransferSessionIngestReport::decode(msg)?;
+                    print_json(&json!({
+                        "received_timestamp": dtr.received_timestamp,
+                        "reward_cancelled": dtr.report.reward_cancelled,
+                        "pub_key": dtr.report.data_transfer_usage.pub_key,
+                        "upload_bytes": dtr.report.data_transfer_usage.upload_bytes,
+                        "download_bytes": dtr.report.data_transfer_usage.download_bytes,
+                        "radio_access_technology": dtr.report.data_transfer_usage.radio_access_technology,
+                        "event_id": dtr.report.data_transfer_usage.event_id,
+                        "payer": dtr.report.data_transfer_usage.payer,
+                        "timestamp": dtr.report.data_transfer_usage.timestamp,
+                    }))?;
                 }
                 FileType::IotBeaconIngestReport => {
                     let dec_msg = LoraBeaconIngestReportV1::decode(msg)?;
