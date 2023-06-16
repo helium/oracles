@@ -8,7 +8,7 @@ use file_store::{
     FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_config::Client;
+use mobile_config::GatewayClient;
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use tokio::{
@@ -22,7 +22,7 @@ pub struct Daemon<S> {
     burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
-    config_client: Client,
+    config_client: GatewayClient,
 }
 
 impl<S> Daemon<S> {
@@ -31,7 +31,7 @@ impl<S> Daemon<S> {
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         burner: Burner<S>,
-        config_client: Client,
+        config_client: GatewayClient,
     ) -> Self {
         Self {
             pool,
@@ -149,7 +149,7 @@ impl Cmd {
                 .start(shutdown_listener.clone())
                 .await?;
 
-        let config_client = Client::from_settings(&settings.config_client)?;
+        let config_client = GatewayClient::from_settings(&settings.config_client)?;
 
         let daemon = Daemon::new(settings, pool, reports, burner, config_client);
 

@@ -12,7 +12,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
+use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, GatewayClient};
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
@@ -44,7 +44,7 @@ impl From<HeartbeatKey> for HeartbeatReward {
 
 pub struct HeartbeatDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
-    config_client: Client,
+    config_client: GatewayClient,
     heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
     file_sink: FileSinkClient,
 }
@@ -52,7 +52,7 @@ pub struct HeartbeatDaemon {
 impl HeartbeatDaemon {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        config_client: Client,
+        config_client: GatewayClient,
         heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
         file_sink: FileSinkClient,
     ) -> Self {
@@ -180,7 +180,7 @@ impl Heartbeat {
     }
 
     pub async fn validate_heartbeats<'a>(
-        config_client: &'a Client,
+        config_client: &'a GatewayClient,
         heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
@@ -253,7 +253,7 @@ impl Heartbeat {
 /// Validate a heartbeat in the given epoch.
 async fn validate_heartbeat(
     heartbeat: &CellHeartbeatIngestReport,
-    config_client: &mut Client,
+    config_client: &mut GatewayClient,
     epoch: &Range<DateTime<Utc>>,
 ) -> Result<(Option<CellType>, proto::HeartbeatValidity), ClientError> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {

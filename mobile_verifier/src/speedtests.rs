@@ -11,7 +11,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
+use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, GatewayClient};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{
@@ -55,7 +55,7 @@ impl Speedtest {
 
 pub struct SpeedtestDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
-    config_client: Client,
+    config_client: GatewayClient,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     file_sink: FileSinkClient,
 }
@@ -63,7 +63,7 @@ pub struct SpeedtestDaemon {
 impl SpeedtestDaemon {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        config_client: Client,
+        config_client: GatewayClient,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
         file_sink: FileSinkClient,
     ) -> Self {
@@ -157,7 +157,7 @@ impl SpeedtestRollingAverage {
     }
 
     pub async fn validate_speedtests<'a>(
-        config_client: &'a Client,
+        config_client: &'a GatewayClient,
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<impl Stream<Item = Result<Self, ClientError>> + 'a, sqlx::Error> {

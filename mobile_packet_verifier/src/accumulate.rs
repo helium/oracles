@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use file_store::mobile_session::DataTransferSessionIngestReport;
 use futures::{Stream, StreamExt};
 use mobile_config::{
-    client::{Client, ClientError},
+    client::{ClientError, GatewayClient},
     gateway_info::GatewayInfoResolver,
 };
 use sqlx::{Postgres, Transaction};
@@ -20,7 +20,7 @@ pub enum AccumulationError {
 }
 
 pub async fn accumulate_sessions(
-    config_client: &mut Client,
+    config_client: &mut GatewayClient,
     conn: &mut Transaction<'_, Postgres>,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,

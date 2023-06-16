@@ -9,7 +9,7 @@ use file_store::{
     FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_config::Client;
+use mobile_config::GatewayClient;
 use price::PriceTracker;
 use tokio::signal;
 
@@ -116,7 +116,7 @@ impl Cmd {
         .await?;
 
         let reward_period_hours = settings.rewards;
-        let config_client = Client::from_settings(&settings.config_client)?;
+        let config_client = GatewayClient::from_settings(&settings.config_client)?;
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
         let (price_tracker, tracker_process) =
