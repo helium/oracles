@@ -1,7 +1,12 @@
-use super::{iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message, MsgVerify, PublicKey, Settings, Sign};
+use super::{
+    iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message, MsgVerify,
+    PublicKey, Settings, Sign,
+};
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
-use helium_proto::services::iot_config::{OrgEnableReqV1, OrgDisableReqV1, OrgResV1, OrgGetReqV1, OrgV1, OrgListReqV1};
+use helium_proto::services::iot_config::{
+    OrgDisableReqV1, OrgEnableReqV1, OrgGetReqV1, OrgListReqV1, OrgResV1, OrgV1,
+};
 
 #[derive(Clone)]
 pub struct OrgClient {

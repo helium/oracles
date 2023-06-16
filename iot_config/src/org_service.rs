@@ -140,10 +140,13 @@ impl iot_config::Org for OrgService {
         let request = request.into_inner();
         telemetry::count_request("org", "get");
 
-        let org = org::get(request.oui, &self.pool).await.map_err(|err| {
-            tracing::error!(oui = request.oui, reason = ?err, "get org request failed");
-            Status::internal("org get failed")
-        })?.ok_or_else(|| Status::not_found(format!("oui: {}", request.oui)))?;
+        let org = org::get(request.oui, &self.pool)
+            .await
+            .map_err(|err| {
+                tracing::error!(oui = request.oui, reason = ?err, "get org request failed");
+                Status::internal("org get failed")
+            })?
+            .ok_or_else(|| Status::not_found(format!("oui: {}", request.oui)))?;
         let net_id = org::get_org_netid(org.oui, &self.pool)
             .await
             .map_err(|err| {

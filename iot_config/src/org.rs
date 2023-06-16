@@ -142,7 +142,9 @@ pub async fn create_org(
     }
     .map_err(|err| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}: {err:?}")))?;
 
-    let org = get(oui as u64, &mut txn).await?.ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
+    let org = get(oui as u64, &mut txn)
+        .await?
+        .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
 
     txn.commit().await?;
 
@@ -157,7 +159,9 @@ pub async fn update_org(
 ) -> Result<Org, OrgStoreError> {
     let mut txn = db.begin().await?;
 
-    let current_org = get(oui, &mut txn).await?.ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
+    let current_org = get(oui, &mut txn)
+        .await?
+        .ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
     let net_id = get_org_netid(oui, &mut txn).await?;
     let is_helium_org = is_helium_netid(&net_id);
 
@@ -203,7 +207,9 @@ pub async fn update_org(
         };
     }
 
-    let updated_org = get(oui, &mut txn).await?.ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
+    let updated_org = get(oui, &mut txn)
+        .await?
+        .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
 
     txn.commit().await?;
 
@@ -545,7 +551,9 @@ pub async fn get_org_pubkeys(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<Vec<PublicKey>, OrgStoreError> {
-    let org = get(oui, db).await?.ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
+    let org = get(oui, db)
+        .await?
+        .ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
 
     let mut pubkeys: Vec<PublicKey> = vec![
         PublicKey::try_from(org.owner)?,
