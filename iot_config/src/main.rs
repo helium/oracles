@@ -5,7 +5,7 @@ use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, 
 use iot_config::{
     admin::AuthCache, admin_service::AdminService, gateway_service::GatewayService, org,
     org_service::OrgService, region_map::RegionMapReader, route_service::RouteService,
-    settings::Settings,
+    settings::Settings, telemetry,
 };
 use std::{path::PathBuf, time::Duration};
 use tokio::signal;
@@ -58,6 +58,7 @@ impl Daemon {
 
         // Install prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
+        telemetry::initialize();
 
         // Configure shutdown trigger
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
