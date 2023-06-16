@@ -44,7 +44,7 @@ impl From<HeartbeatKey> for HeartbeatReward {
 
 pub struct HeartbeatDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
-    config_client: GatewayClient,
+    gateway_client: GatewayClient,
     heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
     file_sink: FileSinkClient,
 }
@@ -52,13 +52,13 @@ pub struct HeartbeatDaemon {
 impl HeartbeatDaemon {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        config_client: GatewayClient,
+        gateway_client: GatewayClient,
         heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
         file_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
-            config_client,
+            gateway_client,
             heartbeats,
             file_sink,
         }
@@ -105,7 +105,7 @@ impl HeartbeatDaemon {
         let reports = file.into_stream(&mut transaction).await?;
 
         let mut validated_heartbeats =
-            pin!(Heartbeat::validate_heartbeats(&self.config_client, reports, &epoch).await);
+            pin!(Heartbeat::validate_heartbeats(&self.gateway_client, reports, &epoch).await);
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             heartbeat.write(&self.file_sink).await?;
@@ -180,15 +180,15 @@ impl Heartbeat {
     }
 
     pub async fn validate_heartbeats<'a>(
-        config_client: &'a GatewayClient,
+        gateway_client: &'a GatewayClient,
         heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
         heartbeats.then(move |heartbeat_report| {
-            let mut config_client = config_client.clone();
+            let mut gateway_client = gateway_client.clone();
             async move {
                 let (cell_type, validity) =
-                    validate_heartbeat(&heartbeat_report, &mut config_client, epoch).await?;
+                    validate_heartbeat(&heartbeat_report, &mut gateway_client, epoch).await?;
                 Ok(Heartbeat {
                     hotspot_key: heartbeat_report.report.pubkey,
                     cbsd_id: heartbeat_report.report.cbsd_id,
@@ -253,7 +253,7 @@ impl Heartbeat {
 /// Validate a heartbeat in the given epoch.
 async fn validate_heartbeat(
     heartbeat: &CellHeartbeatIngestReport,
-    config_client: &mut GatewayClient,
+    gateway_client: &mut GatewayClient,
     epoch: &Range<DateTime<Utc>>,
 ) -> Result<(Option<CellType>, proto::HeartbeatValidity), ClientError> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
@@ -269,7 +269,7 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::HeartbeatOutsideRange));
     }
 
-    if config_client
+    if gateway_client
         .resolve_gateway_info(&heartbeat.report.pubkey)
         .await?
         .is_none()
