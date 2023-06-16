@@ -142,7 +142,7 @@ pub async fn create_org(
     }
     .map_err(|err| OrgStoreError::SaveConstraints(format!("{devaddr_ranges:?}: {err:?}")))?;
 
-    let org = get(oui as u64, &mut txn).await?;
+    let org = get(oui as u64, &mut txn).await?.ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
 
     txn.commit().await?;
 
@@ -157,9 +157,9 @@ pub async fn update_org(
 ) -> Result<Org, OrgStoreError> {
     let mut txn = db.begin().await?;
 
+    let current_org = get(oui, &mut txn).await?.ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
     let net_id = get_org_netid(oui, &mut txn).await?;
     let is_helium_org = is_helium_netid(&net_id);
-    let current_org = get(oui, &mut txn).await?;
 
     for update in updates {
         match update.update {
@@ -203,7 +203,7 @@ pub async fn update_org(
         };
     }
 
-    let updated_org = get(oui, &mut txn).await?;
+    let updated_org = get(oui, &mut txn).await?.ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
 
     txn.commit().await?;
 
@@ -433,13 +433,13 @@ pub async fn list(db: impl sqlx::PgExecutor<'_>) -> Result<Vec<Org>, sqlx::Error
         .await)
 }
 
-pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Org, sqlx::Error> {
+pub async fn get(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<Option<Org>, sqlx::Error> {
     let mut query: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(GET_ORG_SQL);
     query.push(" where org.oui = $1 ");
     query
         .build_query_as::<Org>()
         .bind(oui as i64)
-        .fetch_one(db)
+        .fetch_optional(db)
         .await
 }
 
@@ -525,6 +525,8 @@ pub async fn toggle_locked(oui: u64, db: impl sqlx::PgExecutor<'_>) -> Result<()
 pub enum OrgStoreError {
     #[error("error retrieving saved org row: {0}")]
     FetchOrg(#[from] sqlx::Error),
+    #[error("org not found: {0}")]
+    NotFound(String),
     #[error("error saving org: {0}")]
     SaveOrg(String),
     #[error("error saving delegate keys: {0}")]
@@ -543,7 +545,7 @@ pub async fn get_org_pubkeys(
     oui: u64,
     db: impl sqlx::PgExecutor<'_>,
 ) -> Result<Vec<PublicKey>, OrgStoreError> {
-    let org = get(oui, db).await?;
+    let org = get(oui, db).await?.ok_or_else(|| OrgStoreError::NotFound(format!("{oui}")))?;
 
     let mut pubkeys: Vec<PublicKey> = vec![
         PublicKey::try_from(org.owner)?,

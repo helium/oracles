@@ -1,22 +1,12 @@
 use crate::pending_burns::PendingBurns;
 use async_trait::async_trait;
-use chrono::Utc;
 use file_store::{
     file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport, traits::MsgTimestamp,
 };
 use futures::{Stream, StreamExt};
-use helium_crypto::{Keypair, PublicKeyBinary, Sign};
-use helium_proto::services::{
-    iot_config::OrgGetReqV1,
-    packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
-};
-use helium_proto::{
-    services::{
-        iot_config::{config_org_client::OrgClient, OrgDisableReqV1, OrgEnableReqV1, OrgListReqV1},
-        Channel,
-    },
-    Message,
-};
+use helium_crypto::PublicKeyBinary;
+use helium_proto::services::packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket};
+use iot_config::client::{ClientError, OrgClient};
 use solana::SolanaNetwork;
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -267,62 +257,17 @@ pub enum MonitorError<S, E> {
     SolanaError(S),
 }
 
-// Probably should change name to something like OrgClientCache to be more
-// consistent with BalanceCache
-pub struct CachedOrgClient {
-    pub keypair: Keypair,
-    pub client: OrgClient<Channel>,
-}
-
-impl CachedOrgClient {
-    pub fn new(client: OrgClient<Channel>, keypair: Keypair) -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(CachedOrgClient { keypair, client }))
-    }
-
-    async fn enable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
-        tracing::info!(%oui, "enabling org");
-
-        let mut req = OrgEnableReqV1 {
-            oui,
-            timestamp: Utc::now().timestamp_millis() as u64,
-            signer: self.keypair.public_key().into(),
-            signature: vec![],
-        };
-        let signature = self.keypair.sign(&req.encode_to_vec())?;
-        req.signature = signature;
-        let _ = self.client.enable(req).await?;
-        Ok(())
-    }
-
-    async fn disable_org(&mut self, oui: u64) -> Result<(), OrgClientError> {
-        tracing::info!(%oui, "disabling org");
-
-        let mut req = OrgDisableReqV1 {
-            oui,
-            timestamp: Utc::now().timestamp_millis() as u64,
-            signer: self.keypair.public_key().into(),
-            signature: vec![],
-        };
-        let signature = self.keypair.sign(&req.encode_to_vec())?;
-        req.signature = signature;
-        let _ = self.client.disable(req).await?;
-        Ok(())
-    }
-}
-
 #[derive(thiserror::Error, Debug)]
-pub enum OrgClientError {
-    #[error("Rpc error: {0}")]
-    RpcError(#[from] tonic::Status),
-    #[error("Crypto error: {0}")]
-    CryptoError(#[from] helium_crypto::Error),
-    #[error("No org")]
-    NoOrg,
+pub enum ConfigServerError {
+    #[error("org client error: {0}")]
+    Client(#[from] ClientError),
+    #[error("not found: {0}")]
+    NotFound(u64),
 }
 
 #[async_trait]
-impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
-    type Error = OrgClientError;
+impl ConfigServer for Arc<Mutex<OrgClient>> {
+    type Error = ConfigServerError;
 
     async fn fetch_org(
         &self,
@@ -330,16 +275,13 @@ impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
         cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, Self::Error> {
         if let Entry::Vacant(e) = cache.entry(oui) {
-            let req = OrgGetReqV1 { oui };
             let pubkey = PublicKeyBinary::from(
                 self.lock()
                     .await
-                    .client
-                    .get(req)
+                    .get(oui)
                     .await?
-                    .into_inner()
                     .org
-                    .ok_or(OrgClientError::NoOrg)?
+                    .ok_or(ConfigServerError::NotFound(oui))?
                     .payer,
             );
             e.insert(pubkey);
@@ -348,23 +290,21 @@ impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
     }
 
     async fn disable_org(&self, oui: u64) -> Result<(), Self::Error> {
-        self.lock().await.disable_org(oui).await
+        self.lock().await.disable(oui).await?;
+        Ok(())
     }
 
     async fn enable_org(&self, oui: u64) -> Result<(), Self::Error> {
-        self.lock().await.enable_org(oui).await
+        self.lock().await.enable(oui).await?;
+        Ok(())
     }
 
     async fn list_orgs(&self) -> Result<Vec<Org>, Self::Error> {
         Ok(self
             .lock()
             .await
-            .client
-            .list(OrgListReqV1 {})
-            .await
-            .map_err(OrgClientError::RpcError)?
-            .into_inner()
-            .orgs
+            .list()
+            .await?
             .into_iter()
             .map(|org| Org {
                 oui: org.oui,

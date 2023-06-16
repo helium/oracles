@@ -8,7 +8,10 @@ use helium_proto::{
 };
 use std::{sync::Arc, time::Duration};
 
+pub mod org_client;
 mod settings;
+
+pub use org_client::OrgClient;
 pub use settings::Settings;
 
 #[derive(thiserror::Error, Debug)]

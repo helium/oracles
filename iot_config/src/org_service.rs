@@ -91,6 +91,8 @@ impl OrgService {
 
         let org_owner = org::get(request.oui, &self.pool)
             .await
+            .transpose()
+            .ok_or_else(|| Status::not_found(format!("oui: {}", request.oui)))?
             .map(|org| org.owner)
             .map_err(|_| Status::internal("auth verification error"))?;
         if org_owner == signer.clone().into() && request.verify(signer).is_ok() {
@@ -141,7 +143,7 @@ impl iot_config::Org for OrgService {
         let org = org::get(request.oui, &self.pool).await.map_err(|err| {
             tracing::error!(oui = request.oui, reason = ?err, "get org request failed");
             Status::internal("org get failed")
-        })?;
+        })?.ok_or_else(|| Status::not_found(format!("oui: {}", request.oui)))?;
         let net_id = org::get_org_netid(org.oui, &self.pool)
             .await
             .map_err(|err| {

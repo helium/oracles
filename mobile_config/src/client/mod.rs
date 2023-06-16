@@ -5,6 +5,8 @@ mod settings;
 
 use std::time::Duration;
 
+pub use authorization_client::AuthorizationClient;
+pub use entity_client::EntityClient;
 pub use gateway_client::GatewayClient;
 pub use settings::Settings;
 
