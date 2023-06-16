@@ -9,7 +9,7 @@ use file_store::{
     FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_config::Client;
+use mobile_config::GatewayClient;
 use price::PriceTracker;
 use tokio::signal;
 
@@ -116,7 +116,7 @@ impl Cmd {
         .await?;
 
         let reward_period_hours = settings.rewards;
-        let config_client = Client::from_settings(&settings.config_client)?;
+        let gateway_client = GatewayClient::from_settings(&settings.config_client_settings)?;
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
         let (price_tracker, tracker_process) =
@@ -124,14 +124,14 @@ impl Cmd {
 
         let heartbeat_daemon = HeartbeatDaemon::new(
             pool.clone(),
-            config_client.clone(),
+            gateway_client.clone(),
             heartbeats,
             valid_heartbeats,
         );
 
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
-            config_client.clone(),
+            gateway_client.clone(),
             speedtests,
             valid_speedtests,
         );

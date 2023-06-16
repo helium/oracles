@@ -2,7 +2,7 @@ use crate::{
     balances::BalanceCache,
     burner::Burner,
     settings::Settings,
-    verifier::{CachedOrgClient, ConfigServer, Verifier},
+    verifier::{ConfigServer, Verifier},
 };
 use anyhow::{bail, Error, Result};
 use file_store::{
@@ -13,6 +13,7 @@ use file_store::{
     FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
+use iot_config::client::OrgClient;
 use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
@@ -23,7 +24,7 @@ use tokio::{
 
 struct Daemon {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<CachedOrgClient>>>,
+    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<OrgClient>>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
@@ -155,7 +156,9 @@ impl Cmd {
         .create()
         .await?;
 
-        let org_client = settings.connect_org();
+        let org_client = Arc::new(Mutex::new(OrgClient::from_settings(
+            &settings.iot_config_client,
+        )?));
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
@@ -169,8 +172,6 @@ impl Cmd {
                 .start(shutdown_listener.clone())
                 .await?;
 
-        let config_keypair = settings.config_keypair()?;
-        let config_server = CachedOrgClient::new(org_client, config_keypair);
         let balance_store = balances.balances();
         let verifier_daemon = Daemon {
             pool,
@@ -179,7 +180,7 @@ impl Cmd {
             invalid_packets,
             verifier: Verifier {
                 debiter: balances,
-                config_server: config_server.clone(),
+                config_server: org_client.clone(),
             },
             minimum_allowed_balance: settings.minimum_allowed_balance,
         };
@@ -192,7 +193,7 @@ impl Cmd {
             verifier_daemon.run(&shutdown_listener).map_err(Error::from),
             valid_packets_server.run().map_err(Error::from),
             invalid_packets_server.run().map_err(Error::from),
-            config_server
+            org_client
                 .monitor_funds(
                     solana,
                     balance_store,

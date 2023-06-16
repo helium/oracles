@@ -1,8 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
-use helium_proto::services::{iot_config::config_org_client::OrgClient, Channel, Endpoint};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
@@ -12,17 +11,14 @@ pub struct Settings {
     pub log: String,
     /// Cache location for generated verified reports
     pub cache: String,
-    /// Path to the keypair for signing config changes
-    pub config_keypair: PathBuf,
     /// Data credit burn period in minutes. Default is 1.
     #[serde(default = "default_burn_period")]
     pub burn_period: u64,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
+    pub iot_config_client: iot_config::client::Settings,
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
-    #[serde(with = "http_serde::uri")]
-    pub org_url: http::Uri,
     #[serde(default)]
     pub enable_solana_integration: bool,
     /// Minimum data credit balance required for a payer before we disable them
@@ -78,15 +74,6 @@ impl Settings {
             .add_source(Environment::with_prefix("PACKET_VERIFY").separator("_"))
             .build()
             .and_then(|config| config.try_deserialize())
-    }
-
-    pub fn connect_org(&self) -> OrgClient<Channel> {
-        OrgClient::new(Endpoint::from(self.org_url.clone()).connect_lazy())
-    }
-
-    pub fn config_keypair(&self) -> Result<helium_crypto::Keypair, Box<helium_crypto::Error>> {
-        let data = std::fs::read(&self.config_keypair).map_err(helium_crypto::Error::from)?;
-        Ok(helium_crypto::Keypair::try_from(&data[..])?)
     }
 
     pub fn start_after(&self) -> DateTime<Utc> {

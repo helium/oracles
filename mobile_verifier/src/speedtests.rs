@@ -11,7 +11,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, Client};
+use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, GatewayClient};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{
@@ -55,7 +55,7 @@ impl Speedtest {
 
 pub struct SpeedtestDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
-    config_client: Client,
+    gateway_client: GatewayClient,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     file_sink: FileSinkClient,
 }
@@ -63,13 +63,13 @@ pub struct SpeedtestDaemon {
 impl SpeedtestDaemon {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        config_client: Client,
+        gateway_client: GatewayClient,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
         file_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
-            config_client,
+            gateway_client,
             speedtests,
             file_sink,
         }
@@ -105,7 +105,7 @@ impl SpeedtestDaemon {
 
         let mut validated_speedtests = pin!(
             SpeedtestRollingAverage::validate_speedtests(
-                &self.config_client,
+                &self.gateway_client,
                 reports.map(|s| s.report),
                 &mut transaction,
             )
@@ -157,7 +157,7 @@ impl SpeedtestRollingAverage {
     }
 
     pub async fn validate_speedtests<'a>(
-        config_client: &'a Client,
+        gateway_client: &'a GatewayClient,
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<impl Stream<Item = Result<Self, ClientError>> + 'a, sqlx::Error> {
@@ -188,10 +188,10 @@ impl SpeedtestRollingAverage {
 
         Ok(futures::stream::iter(speedtests.into_iter())
             .then(move |(rolling_average, cell_speedtests)| {
-                let mut config_client = config_client.clone();
+                let mut gateway_client = gateway_client.clone();
                 async move {
                     // If we get back some gateway info for the given address, it's a valid address
-                    if config_client
+                    if gateway_client
                         .resolve_gateway_info(&rolling_average.id)
                         .await?
                         .is_none()
