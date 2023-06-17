@@ -1,4 +1,4 @@
-use crate::{cmds::gateway::GatewayInfo, current_timestamp, KeyRole, Result};
+use crate::{cmds::gateway::GatewayInfo, current_timestamp, KeyRole, NetworkKeyRole, Result};
 use base64::Engine;
 use helium_crypto::{Keypair, PublicKey, Sign, Verify};
 use helium_proto::{
@@ -94,12 +94,12 @@ impl AuthClient {
     pub async fn verify(
         &mut self,
         pubkey: &PublicKey,
-        role: KeyRole,
+        role: NetworkKeyRole,
         keypair: &Keypair,
     ) -> Result<bool> {
         let mut request = AuthorizationVerifyReqV1 {
             pubkey: pubkey.into(),
-            role: role.try_into()?,
+            role: role as i32,
             signer: keypair.public_key().into(),
             signature: vec![],
         };
@@ -115,7 +115,11 @@ impl AuthClient {
         }
     }
 
-    pub async fn list(&mut self, role: KeyRole, keypair: &Keypair) -> Result<Vec<PublicKey>> {
+    pub async fn list(
+        &mut self,
+        role: NetworkKeyRole,
+        keypair: &Keypair,
+    ) -> Result<Vec<PublicKey>> {
         let mut request = AuthorizationListReqV1 {
             role: role.try_into()?,
             signer: keypair.public_key().into(),

@@ -98,19 +98,6 @@ impl From<KeyRole> for i32 {
     }
 }
 
-impl TryFrom<KeyRole> for proto::NetworkKeyRole {
-    type Error = &'static str;
-
-    fn try_from(value: KeyRole) -> Result<Self, Self::Error> {
-        let role = match value {
-            KeyRole::Carrier => proto::NetworkKeyRole::MobileCarrier,
-            KeyRole::Router => proto::NetworkKeyRole::MobileRouter,
-            _ => Err("invalid mobile network authorizing key role")?,
-        };
-        Ok(role)
-    }
-}
-
 impl Display for KeyRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -118,6 +105,38 @@ impl Display for KeyRole {
             KeyRole::Carrier => write!(f, "Carrier"),
             KeyRole::Oracle => write!(f, "Oracle"),
             KeyRole::Router => write!(f, "Router"),
+        }
+    }
+}
+
+#[derive(Debug, clap::ValueEnum, Clone, Copy, Serialize)]
+pub enum NetworkKeyRole {
+    #[value(alias("carrier"))]
+    MobileCarrier,
+    #[value(alias("router"))]
+    MobileRouter,
+}
+
+impl From<NetworkKeyRole> for proto::NetworkKeyRole {
+    fn from(value: NetworkKeyRole) -> Self {
+        match value {
+            NetworkKeyRole::MobileRouter => Self::MobileRouter,
+            NetworkKeyRole::MobileCarrier => Self::MobileCarrier,
+        }
+    }
+}
+
+impl From<NetworkKeyRole> for i32 {
+    fn from(value: NetworkKeyRole) -> Self {
+        proto::NetworkKeyRole::from(value) as i32
+    }
+}
+
+impl Display for NetworkKeyRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NetworkKeyRole::MobileCarrier => write!(f, "Carrier"),
+            NetworkKeyRole::MobileRouter => write!(f, "Router"),
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::{cmds::env::NetworkArg, KeyRole, Result};
+use crate::{cmds::env::NetworkArg, KeyRole, NetworkKeyRole, Result};
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 use helium_crypto::PublicKey;
@@ -88,8 +88,9 @@ pub enum AuthCommands {
 
 #[derive(Debug, Args)]
 pub struct VerifyNetKey {
-    #[arg(value_enum)]
-    pub key_role: KeyRole,
+    #[arg(long, value_enum)]
+    pub key_role: NetworkKeyRole,
+    #[arg(long)]
     pub pubkey: PublicKey,
     #[arg(from_global)]
     pub keypair: PathBuf,
@@ -101,8 +102,8 @@ pub struct VerifyNetKey {
 
 #[derive(Debug, Args)]
 pub struct ListNetKeys {
-    #[arg(value_enum)]
-    pub key_role: KeyRole,
+    #[arg(long, value_enum)]
+    pub key_role: NetworkKeyRole,
     #[arg(from_global)]
     pub keypair: PathBuf,
     #[arg(from_global)]
@@ -189,8 +190,9 @@ pub enum AdminCommands {
 
 #[derive(Debug, Args)]
 pub struct AdminKeyArgs {
-    #[arg(value_enum)]
+    #[arg(long, value_enum)]
     pub key_role: KeyRole,
+    #[arg(long)]
     pub pubkey: PublicKey,
     #[arg(from_global)]
     pub keypair: PathBuf,
