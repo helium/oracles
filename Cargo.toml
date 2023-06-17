@@ -3,22 +3,23 @@ debug = true
 
 [workspace]
 members = [
-    "ingest",
     "db_store",
+    "denylist",
     "file_store",
+    "ingest",
+    "iot_config",
+    "iot_packet_verifier",
+    "iot_verifier",
+    "metrics",
+    "mobile_config",
+    "mobile_config_cli",
+    "mobile_packet_verifier",
     "mobile_verifier",
     "poc_entropy",
-    "iot_verifier",
-    "reward_index",
-    "metrics",
-    "denylist",
-    "mobile_packet_verifier",
-    "iot_packet_verifier",
-    "iot_config",
     "price",
-    "mobile_config",
-    "solana",
+    "reward_index",
     "reward_scheduler",
+    "solana",
 ]
 
 [workspace.package]
@@ -46,6 +47,7 @@ tokio = { version = "1", default-features = false, features = [
   "process",
   "time"
 ] }
+tokio-stream = "0"
 sqlx = {version = "0", features = [
   "postgres",
   "uuid",
@@ -57,14 +59,14 @@ sqlx = {version = "0", features = [
 ]}
 
 helium-crypto = {version = "0.6.8", features=["sqlx-postgres", "multisig"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "andymck/add-carrier-key-support", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 hextree = "*"
 solana-client = "1.14"
 solana-sdk = "1.14"
 solana-program = "1.11"
 spl-token = "3.5.0"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
-beacon = { git = "https://github.com/helium/proto", branch = "andymck/add-carrier-key-support" }
+beacon = { git = "https://github.com/helium/proto", branch = "master" }
 humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"

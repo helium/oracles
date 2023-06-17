@@ -34,7 +34,7 @@ serde_json = {workspace = true}
 sqlx = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
-tokio-stream = "0"
+tokio-stream = {workspace = true}
 tonic = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
