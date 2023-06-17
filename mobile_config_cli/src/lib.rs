@@ -1,10 +1,12 @@
 pub mod client;
 pub mod cmds;
 
-use anyhow::{anyhow, Error};
-use helium_crypto::PublicKey;
-use serde::{Deserialize, Serialize};
-use std::{fmt::Display, time::{SystemTime, UNIX_EPOCH}};
+use anyhow::Error;
+use serde::Serialize;
+use std::{
+    fmt::Display,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub mod proto {
     pub use helium_proto::services::mobile_config::{AdminKeyRole, NetworkKeyRole};
@@ -71,15 +73,7 @@ impl<S: ?Sized + serde::Serialize> PrettyJson for S {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub enum UpdateAction {
-    #[serde(alias = "add")]
-    Add,
-    #[serde(alias = "remove")]
-    Remove,
-}
-
-#[derive(Debug, clap::ValueEnum, Clone, Copy)]
+#[derive(Debug, clap::ValueEnum, Clone, Copy, Serialize)]
 pub enum KeyRole {
     Administrator,
     Carrier,

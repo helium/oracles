@@ -1,17 +1,14 @@
-use crate::{
-    cmds::env::NetworkArg,
-    KeyRole, Msg, PrettyJson, Result
-};
+use crate::{cmds::env::NetworkArg, KeyRole, Result};
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 use helium_crypto::PublicKey;
 use std::path::PathBuf;
 
 pub mod admin;
-pub mod env;
-pub mod gateway;
 pub mod authorization;
 pub mod entity;
+pub mod env;
+pub mod gateway;
 
 pub const ENV_CONFIG_HOST: &str = "HELIUM_CONFIG_HOST";
 pub const ENV_CONFIG_PUBKEY: &str = "HELIUM_CONFIG_PUBKEY";
@@ -84,9 +81,9 @@ pub enum Commands {
 #[derive(Debug, Subcommand)]
 pub enum AuthCommands {
     /// Verify the pubkey/role is registered
-    Verify(VerifyNetKey),
+    VerifyKey(VerifyNetKey),
     /// List registered keys by role
-    List(ListNetKeys),
+    ListKeys(ListNetKeys),
 }
 
 #[derive(Debug, Args)]
@@ -117,7 +114,7 @@ pub struct ListNetKeys {
 #[derive(Debug, Subcommand)]
 pub enum EntityCommands {
     /// Verify the rewardable entity on-chain
-    Verify(VerifyRewardableEntity),
+    VerifyEntity(VerifyRewardableEntity),
 }
 
 #[derive(Debug, Args)]

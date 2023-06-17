@@ -1,14 +1,12 @@
-use crate::{
-    current_timestamp,
-    cmds::gateway::GatewayInfo, KeyRole, Result,
-};
+use crate::{cmds::gateway::GatewayInfo, current_timestamp, KeyRole, Result};
+use base64::Engine;
 use helium_crypto::{Keypair, PublicKey, Sign, Verify};
 use helium_proto::{
     services::mobile_config::{
-        admin_client, authorization_client, entity_client, gateway_client,
-        AdminAddKeyReqV1, AdminKeyResV1, AdminRemoveKeyReqV1, AuthorizationVerifyReqV1,
-        AuthorizationVerifyResV1, AuthorizationListReqV1, AuthorizationListResV1,
-        EntityVerifyReqV1, EntityVerifyResV1, GatewayInfoReqV1, GatewayInfoResV1,
+        admin_client, authorization_client, entity_client, gateway_client, AdminAddKeyReqV1,
+        AdminKeyResV1, AdminRemoveKeyReqV1, AuthorizationListReqV1, AuthorizationListResV1,
+        AuthorizationVerifyReqV1, AuthorizationVerifyResV1, EntityVerifyReqV1, EntityVerifyResV1,
+        GatewayInfoReqV1, GatewayInfoResV1,
     },
     Message,
 };
@@ -56,7 +54,11 @@ impl AdminClient {
             timestamp: current_timestamp()?,
         };
         request.signature = request.sign(keypair)?;
-        self.client.add_key(request).await?.into_inner().verify(&self.server_pubkey)
+        self.client
+            .add_key(request)
+            .await?
+            .into_inner()
+            .verify(&self.server_pubkey)
     }
 
     pub async fn remove_key(
@@ -73,7 +75,11 @@ impl AdminClient {
             timestamp: current_timestamp()?,
         };
         request.signature = request.sign(keypair)?;
-        self.client.remove_key(request).await?.into_inner().verify(&self.server_pubkey)
+        self.client
+            .remove_key(request)
+            .await?
+            .into_inner()
+            .verify(&self.server_pubkey)
     }
 }
 
@@ -85,16 +91,24 @@ impl AuthClient {
         })
     }
 
-    pub async fn verify(&mut self, pubkey: &PublicKey, role: KeyRole, keypair: &Keypair) -> Result<bool> {
+    pub async fn verify(
+        &mut self,
+        pubkey: &PublicKey,
+        role: KeyRole,
+        keypair: &Keypair,
+    ) -> Result<bool> {
         let mut request = AuthorizationVerifyReqV1 {
-            pubkey,
+            pubkey: pubkey.into(),
             role: role.try_into()?,
             signer: keypair.public_key().into(),
             signature: vec![],
         };
         request.signature = request.sign(keypair)?;
         if let Ok(response) = self.client.verify(request).await {
-            response.into_inner().verify(&self.server_pubkey).map_err(|_| anyhow::anyhow!("invalid response signature"))?;
+            response
+                .into_inner()
+                .verify(&self.server_pubkey)
+                .map_err(|_| anyhow::anyhow!("invalid response signature"))?;
             Ok(true)
         } else {
             Ok(false)
@@ -108,9 +122,13 @@ impl AuthClient {
             signature: vec![],
         };
         request.signature = request.sign(keypair)?;
-        let response = self.client.verify(request).await?.into_inner();
+        let response = self.client.list(request).await?.into_inner();
         response.verify(&self.server_pubkey)?;
-        Ok(response.pubkeys.into_iter().map(|pubkeybin| PublicKey::try_from).collect())
+        Ok(response
+            .pubkeys
+            .into_iter()
+            .map(PublicKey::try_from)
+            .collect::<Result<Vec<PublicKey>, _>>()?)
     }
 }
 
@@ -122,10 +140,10 @@ impl EntityClient {
         })
     }
 
-    pub async fn verify(&mut self, entity: &str) -> Result<bool> {
+    pub async fn verify(&mut self, entity: &str, keypair: &Keypair) -> Result<bool> {
         let mut request = EntityVerifyReqV1 {
             entity_id: base64::engine::general_purpose::STANDARD.decode(entity)?,
-            signer: Keypair.public_key().into(),
+            signer: keypair.public_key().into(),
             signature: vec![],
         };
         request.signature = request.sign(keypair)?;
@@ -135,7 +153,7 @@ impl EntityClient {
                 Ok(true)
             }
             Err(status) if status.code() == tonic::Code::NotFound => Ok(false),
-            Err(error) => Err(error)?
+            Err(error) => Err(error)?,
         }
     }
 }
@@ -157,7 +175,9 @@ impl GatewayClient {
         request.signature = request.sign(keypair)?;
         let response = self.client.info(request).await?.into_inner();
         response.verify(&self.server_pubkey)?;
-        let info = response.info.ok_or_else(|| anyhow::anyhow!("gateway not found"))?;
+        let info = response
+            .info
+            .ok_or_else(|| anyhow::anyhow!("gateway not found"))?;
         info.try_into()
     }
 }
@@ -201,8 +221,9 @@ macro_rules! impl_verify {
                 let mut msg = self.clone();
                 msg.$sig = vec![];
                 msg.encode(&mut buf)?;
-                verifier.verify(&buf, &self.$sig)
-                        .map_err(anyhow::Error::from)
+                verifier
+                    .verify(&buf, &self.$sig)
+                    .map_err(anyhow::Error::from)
             }
         }
     };

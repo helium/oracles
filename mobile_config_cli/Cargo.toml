@@ -18,6 +18,7 @@ helium-proto = {workspace = true}
 h3o = {workspace = true}
 mobile-config = {path = "../mobile_config"}
 prost = {workspace = true}
+rand = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 tokio = {workspace = true, features = ["macros", "rt-multi-thread"]}

@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 
-use super::{
-    EnvInfo, GenerateKeypair, ENV_CONFIG_HOST, ENV_KEYPAIR_BIN
-};
+use super::{EnvInfo, GenerateKeypair, ENV_CONFIG_HOST, ENV_CONFIG_PUBKEY, ENV_KEYPAIR_BIN};
 use crate::{Msg, PrettyJson, Result};
 use anyhow::Context;
 use dialoguer::Input;
@@ -60,7 +58,7 @@ pub fn env_info(args: EnvInfo) -> Result<Msg> {
         "arguments": {
             "config_host": args.config_host,
             "config_pubkey": args.config_pubkey,
-            "keypair": args_keypair_location,
+            "keypair": arg_keypair_location,
             "public_key_from_keypair": arg_public_key
         }
     });
@@ -77,8 +75,8 @@ pub enum NetworkArg {
 
 pub fn generate_keypair(args: GenerateKeypair) -> Result<Msg> {
     let network: helium_crypto::Network = match args.network {
-        NetworkArg::Mainnet => helium_crypto::Network::Mainnet,
-        NetworkArg::Testnet => helium_crypto::Network::Testnet,
+        NetworkArg::Mainnet => helium_crypto::Network::MainNet,
+        NetworkArg::Testnet => helium_crypto::Network::TestNet,
     };
     let key = helium_crypto::Keypair::generate(
         helium_crypto::KeyTag {
@@ -107,7 +105,7 @@ pub fn get_public_key_from_path(path: Option<PathBuf>) -> (String, String) {
                 Ok(data) => match Keypair::try_from(&data[..]) {
                     Err(e) => (display_path, e.to_string()),
                     Ok(keypair) => (display_path, keypair.public_key().to_string()),
-                }
+                },
             }
         }
     }
