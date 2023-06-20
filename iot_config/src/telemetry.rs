@@ -13,6 +13,10 @@ const GATEWAY_CHAIN_LOOKUP_METRIC: &str =
 const GATEWAY_CHAIN_LOOKUP_DURATION_METRIC: &str =
     concat!(env!("CARGO_PKG_NAME"), "-", "gateway-info-lookup-duration");
 
+pub fn initialize() {
+    metrics::gauge!(STREAM_METRIC, 0.0);
+}
+
 pub fn count_request(service: &'static str, rpc: &'static str) {
     metrics::increment_counter!(RPC_METRIC, "service" => service, "rpc" => rpc);
 }
