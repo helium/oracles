@@ -29,10 +29,9 @@ helium-proto = {workspace = true}
 helium-crypto = {workspace = true}
 csv = "*"
 http = {workspace = true}
-aws-config = "0.55"
-aws-sdk-s3 = "0.28"
-# aws-types = { version = "0.55", features = ["hardcoded-credentials"], optional = true}
-aws-credential-types = { version = "0.55", features = ["hardcoded-credentials"], optional = true}
+aws-config = "0"
+aws-sdk-s3 = "0"
+aws-credential-types = { version = "0", features = ["hardcoded-credentials"], optional = true}
 strum = {version = "0", features = ["derive"]}
 strum_macros = "0"
 sha2 = {workspace = true}
