@@ -11,6 +11,7 @@ use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
+    CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,
@@ -28,22 +29,29 @@ pub struct GrpcServer {
     speedtest_report_sink: FileSinkClient,
     data_transfer_session_sink: FileSinkClient,
     subscriber_location_report_sink: FileSinkClient,
+    coverage_object_report_sink: FileSinkClient,
+    pcs_pubkey: PublicKey,
     required_network: Network,
 }
+
 impl GrpcServer {
     fn new(
         heartbeat_report_sink: FileSinkClient,
         speedtest_report_sink: FileSinkClient,
         data_transfer_session_sink: FileSinkClient,
         subscriber_location_report_sink: FileSinkClient,
+        coverage_object_report_sink: FileSinkClient,
         required_network: Network,
+        pcs_pubkey: PublicKey,
     ) -> Result<Self> {
         Ok(Self {
             heartbeat_report_sink,
             speedtest_report_sink,
             data_transfer_session_sink,
             subscriber_location_report_sink,
+            coverage_object_report_sink,
             required_network,
+            pcs_pubkey,
         })
     }
 
@@ -72,6 +80,25 @@ impl GrpcServer {
 
 #[tonic::async_trait]
 impl poc_mobile::PocMobile for GrpcServer {
+    async fn submit_coverage_object(
+        &self,
+        request: Request<CoverageObjectReqV1>,
+    ) -> GrpcResult<CoverageObjectRespV1> {
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+        let report = self
+            .verify_signature(self.pcs_pubkey.clone(), event)
+            .map(|(_, event)| CoverageObjectIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
+
+        _ = self.coverage_object_report_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(CoverageObjectRespV1 { id }))
+    }
+
     async fn submit_speedtest(
         &self,
         request: Request<SpeedtestReqV1>,
@@ -235,12 +262,26 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         .create()
         .await?;
 
+    let (coverage_object_report_sink, mut coverage_object_report_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::CoverageObjectIngestReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_coverage_object_report"),
+            shutdown.clone(),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .create()
+        .await?;
+
     let grpc_server = GrpcServer::new(
         heartbeat_report_sink,
         speedtest_report_sink,
         data_transfer_session_sink,
         subscriber_location_report_sink,
+        coverage_object_report_sink,
         settings.network,
+        settings.pcs_pubkey.clone(),
     )?;
 
     let Some(api_token) = settings
@@ -279,6 +320,9 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         speedtest_report_sink_server.run().map_err(Error::from),
         data_transfer_session_sink_server.run().map_err(Error::from),
         subscriber_location_report_sink_server
+            .run()
+            .map_err(Error::from),
+        coverage_object_report_sink_server
             .run()
             .map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),

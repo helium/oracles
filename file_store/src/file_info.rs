@@ -123,6 +123,7 @@ pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ing
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
+pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -155,6 +156,7 @@ pub enum FileType {
     MobileRewardShare,
     SubscriberLocationReq,
     SubscriberLocationIngestReport,
+    CoverageObjectIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -188,6 +190,7 @@ impl fmt::Display for FileType {
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
+            Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
         };
         f.write_str(s)
     }
@@ -224,6 +227,7 @@ impl FileType {
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
+            Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
         }
     }
 }
@@ -258,6 +262,7 @@ impl FromStr for FileType {
             VALID_DATA_TRANSFER_SESSION => Self::ValidDataTransferSession,
             PRICE_REPORT => Self::PriceReport,
             MOBILE_REWARD_SHARE => Self::MobileRewardShare,
+            COVERAGE_OBJECT_INGEST_REPORT => Self::CoverageObjectIngestReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

@@ -1,5 +1,5 @@
 use config::{Config, Environment, File};
-use helium_crypto::Network;
+use helium_crypto::{Network, PublicKey};
 use serde::Deserialize;
 use std::{
     net::{AddrParseError, SocketAddr},
@@ -30,6 +30,8 @@ pub struct Settings {
     pub token: Option<String>,
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
+    /// PCS public key:
+    pub pcs_pubkey: PublicKey,
 }
 
 pub fn default_listen_addr() -> String {
