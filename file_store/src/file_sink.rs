@@ -1,4 +1,4 @@
-use crate::{file_upload, Error, FileType, Result};
+use crate::{file_upload, Error, Result};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
@@ -69,14 +69,17 @@ pub struct FileSinkBuilder {
 }
 
 impl FileSinkBuilder {
-    pub fn new(
-        file_type: FileType,
+    pub fn new<P>(
+        prefix: P,
         target_path: &Path,
         metric: &'static str,
         shutdown_listener: triggered::Listener,
-    ) -> Self {
+    ) -> Self
+    where
+        P: ToString,
+    {
         Self {
-            prefix: file_type.to_string(),
+            prefix: prefix.to_string(),
             target_path: target_path.to_path_buf(),
             tmp_path: target_path.join("tmp"),
             max_size: 50_000_000,
@@ -503,7 +506,7 @@ fn file_name(path_buf: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{file_source, FileInfo};
+    use crate::{file_source, FileInfo, FileType};
     use futures::stream::StreamExt;
     use std::str::FromStr;
     use tempfile::TempDir;
