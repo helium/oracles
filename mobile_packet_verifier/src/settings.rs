@@ -22,6 +22,7 @@ pub struct Settings {
     pub enable_solana_integration: bool,
     pub solana: Option<solana::Settings>,
     pub config_client: mobile_config::ClientSettings,
+    pub auth_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
 }
