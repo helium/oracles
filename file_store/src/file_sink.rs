@@ -69,15 +69,12 @@ pub struct FileSinkBuilder {
 }
 
 impl FileSinkBuilder {
-    pub fn new<P>(
-        prefix: P,
+    pub fn new(
+        prefix: impl ToString,
         target_path: &Path,
         metric: &'static str,
         shutdown_listener: triggered::Listener,
-    ) -> Self
-    where
-        P: ToString,
-    {
+    ) -> Self {
         Self {
             prefix: prefix.to_string(),
             target_path: target_path.to_path_buf(),
