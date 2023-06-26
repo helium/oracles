@@ -30,8 +30,6 @@ pub struct Settings {
     pub token: Option<String>,
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
-    /// PCS public key:
-    pub pcs_pubkey: PublicKey,
 }
 
 pub fn default_listen_addr() -> String {

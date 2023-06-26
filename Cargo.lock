@@ -2421,6 +2421,7 @@ dependencies = [
  "derive_builder",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
  "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
  "hex-literal",
@@ -2446,6 +2447,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "triggered",
+ "uuid",
 ]
 
 [[package]]
@@ -2769,6 +2771,8 @@ dependencies = [
  "geo",
  "geojson",
  "konst",
+ "serde",
+ "serde_repr",
 ]
 
 [[package]]
@@ -2863,7 +2867,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=map/modeled-coverage#6831554b282810e7250e7c8c7c292468ab508b62"
+source = "git+https://github.com/helium/proto?branch=map/modeled-coverage#985a7e8c91e7e8b2c30e69cb313b4d78ebcc9fd3"
 dependencies = [
  "bytes",
  "prost",
@@ -3917,6 +3921,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
  "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
  "http-serde",
@@ -3944,6 +3949,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "uuid",
 ]
 
 [[package]]
@@ -5525,6 +5531,17 @@ dependencies = [
  "itoa 1.0.4",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "395627de918015623b32e7669714206363a7fc00382bf477e72c1f7533e8eafc"
+dependencies = [
+ "proc-macro2 1.0.47",
+ "quote 1.0.21",
+ "syn 1.0.104",
 ]
 
 [[package]]
@@ -7276,7 +7293,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -7412,9 +7429,12 @@ checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "uuid"
-version = "1.2.2"
+version = "1.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "422ee0de9031b5b948b97a8fc04e3aa35230001a722ddd27943e0be31564ce4c"
+checksum = "0fa2982af2eec27de306107c027578ff7f423d65f7250e40ce0fea8f45248b81"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "vcell"

@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod coverage;
 pub mod entropy_report;
 mod error;
 mod file_info;

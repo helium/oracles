@@ -30,7 +30,6 @@ pub struct GrpcServer {
     data_transfer_session_sink: FileSinkClient,
     subscriber_location_report_sink: FileSinkClient,
     coverage_object_report_sink: FileSinkClient,
-    pcs_pubkey: PublicKey,
     required_network: Network,
 }
 
@@ -42,7 +41,6 @@ impl GrpcServer {
         subscriber_location_report_sink: FileSinkClient,
         coverage_object_report_sink: FileSinkClient,
         required_network: Network,
-        pcs_pubkey: PublicKey,
     ) -> Result<Self> {
         Ok(Self {
             heartbeat_report_sink,
@@ -51,7 +49,6 @@ impl GrpcServer {
             subscriber_location_report_sink,
             coverage_object_report_sink,
             required_network,
-            pcs_pubkey,
         })
     }
 
@@ -87,7 +84,9 @@ impl poc_mobile::PocMobile for GrpcServer {
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let event = request.into_inner();
         let report = self
-            .verify_signature(self.pcs_pubkey.clone(), event)
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
             .map(|(_, event)| CoverageObjectIngestReportV1 {
                 received_timestamp: timestamp,
                 report: Some(event),
@@ -281,7 +280,6 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         subscriber_location_report_sink,
         coverage_object_report_sink,
         settings.network,
-        settings.pcs_pubkey.clone(),
     )?;
 
     let Some(api_token) = settings

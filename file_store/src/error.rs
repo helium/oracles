@@ -54,8 +54,14 @@ pub enum DecodeError {
     UnsupportedParticipantSide(String, i32),
     #[error("unsupported verification status, type: {0}, value: {1}")]
     UnsupportedStatusReason(String, i32),
+    #[error("unsupported signal level, type: {0}, value: {1}")]
+    UnsupportedSignalLevel(String, i32),
     #[error("invalid unix timestamp {0}")]
     InvalidTimestamp(u64),
+    #[error("Uuid error: {0}")]
+    UuidError(#[from] uuid::Error),
+    #[error("Ivalid cell index error: {0}")]
+    InvalidCellIndexError(#[from] h3o::error::InvalidCellIndex),
 }
 
 #[derive(Error, Debug)]
@@ -127,6 +133,10 @@ impl DecodeError {
     pub fn unsupported_status_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
     }
+
+    pub fn unsupported_signal_level(msg1: impl ToString, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedSignalLevel(msg1.to_string(), msg2))
+    }                 
 }
 
 impl From<helium_crypto::Error> for Error {
