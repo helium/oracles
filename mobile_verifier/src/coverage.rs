@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::heartbeats::HeartbeatReward;
 
-#[derive(PartialOrd, Ord, PartialEq, Eq, Type)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Type)]
 pub enum SignalLevel {
     No,
     Low,
@@ -67,18 +67,13 @@ struct CoverageLevel {
 
 impl PartialEq for CoverageLevel {
     fn eq(&self, other: &Self) -> bool {
-        self.signal_level == other.signal_level
-            && self.coverage_claim_time == other.coverage_claim_time
+        self.coverage_claim_time == other.coverage_claim_time
     }
 }
 
 impl PartialOrd for CoverageLevel {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(
-            self.signal_level
-                .cmp(&other.signal_level)
-                .then_with(|| self.coverage_claim_time.cmp(&other.coverage_claim_time)),
-        )
+        Some(self.coverage_claim_time.cmp(&other.coverage_claim_time))
     }
 }
 
@@ -104,7 +99,7 @@ pub struct CoverageReward {
 pub const MAX_RADIOS_PER_HEX: usize = 5;
 
 pub struct CoveredHexes {
-    hexes: HashMap<CellIndex, BinaryHeap<CoverageLevel>>,
+    hexes: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>>,
 }
 
 impl CoveredHexes {
@@ -132,6 +127,8 @@ impl CoveredHexes {
             self.hexes
                 .entry(CellIndex::try_from(hex as u64).unwrap())
                 .or_default()
+                .entry(signal_level)
+                .or_default()
                 .push(CoverageLevel {
                     coverage_claim_time,
                     indoor,
@@ -146,17 +143,20 @@ impl CoveredHexes {
     pub fn into_iter(self) -> impl Iterator<Item = CoverageReward> {
         self.hexes
             .into_values()
-            .map(|radios| {
-                radios
-                    .into_sorted_vec()
-                    .into_iter()
-                    .rev()
-                    .take(MAX_RADIOS_PER_HEX)
-                    .map(|cl| CoverageReward {
-                        points: cl.coverage_points().unwrap(),
-                        hotspot: cl.hotspot,
-                    })
+            .map(|mut radios| {
+                radios.pop_last().map(|(_, radios)| {
+                    radios
+                        .into_sorted_vec()
+                        .into_iter()
+                        .rev()
+                        .take(MAX_RADIOS_PER_HEX)
+                        .map(|cl| CoverageReward {
+                            points: cl.coverage_points().unwrap(),
+                            hotspot: cl.hotspot,
+                        })
+                })
             })
+            .flatten()
             .flatten()
     }
 }
