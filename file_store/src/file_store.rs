@@ -1,14 +1,10 @@
-use crate::{
-    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings,
-};
+use crate::{BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings};
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
+use aws_sdk_s3::{config::Region, primitives::ByteStream, Client};
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
-use http::Uri;
 use std::path::Path;
-use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct FileStore {
@@ -23,19 +19,12 @@ pub struct FileData {
 
 impl FileStore {
     pub async fn from_settings(settings: &Settings) -> Result<Self> {
-        let endpoint: Option<Endpoint> = match &settings.endpoint {
-            Some(endpoint) => Uri::from_str(endpoint)
-                .map(Endpoint::immutable)
-                .map(Some)
-                .map_err(DecodeError::from)?,
-            _ => None,
-        };
         let region = Region::new(settings.region.clone());
         let region_provider = RegionProviderChain::first_try(region).or_default_provider();
 
         let mut config = aws_config::from_env().region(region_provider);
-        if let Some(endpoint) = endpoint {
-            config = config.endpoint_resolver(endpoint);
+        if let Some(endpoint) = &settings.endpoint {
+            config = config.endpoint_url(endpoint);
         }
 
         #[cfg(feature = "local")]
