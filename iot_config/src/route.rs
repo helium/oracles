@@ -37,6 +37,7 @@ pub struct Route {
     pub max_copies: u32,
     pub active: bool,
     pub locked: bool,
+    pub ignore_empty_skf: bool,
 }
 
 impl Route {
@@ -49,6 +50,7 @@ impl Route {
             max_copies,
             active: true,
             locked: false,
+            ignore_empty_skf: false,
         }
     }
 
@@ -63,6 +65,10 @@ impl Route {
     pub fn http_update(&mut self, http: Http) -> Result<(), RouteServerError> {
         self.server.http_update(http)
     }
+
+    pub fn set_ignore_empty_skf(&mut self, ignore: bool) {
+        self.ignore_empty_skf = ignore;
+    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -76,6 +82,7 @@ pub struct StorageRoute {
     pub server_protocol_opts: serde_json::Value,
     pub active: bool,
     pub locked: bool,
+    pub ignore_empty_skf: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -108,8 +115,8 @@ pub async fn create_route(
 
     let row = sqlx::query(
             r#"
-            insert into routes (oui, net_id, max_copies, server_host, server_port, server_protocol_opts, active)
-            values ($1, $2, $3, $4, $5, $6, $7)
+            insert into routes (oui, net_id, max_copies, server_host, server_port, server_protocol_opts, active, ignore_empty_skf)
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
             returning id
             "#,
         )
@@ -120,6 +127,7 @@ pub async fn create_route(
         .bind(route.server.port as i32)
         .bind(json!(&protocol_opts))
         .bind(route.active)
+        .bind(route.ignore_empty_skf)
         .fetch_one(&mut transaction)
         .await?;
 
@@ -175,7 +183,7 @@ pub async fn update_route(
     sqlx::query(
         r#"
         update routes
-        set max_copies = $2, server_host = $3, server_port = $4, server_protocol_opts = $5, active = $6
+        set max_copies = $2, server_host = $3, server_port = $4, server_protocol_opts = $5, active = $6, ignore_empty_skf = $7
         where id = $1
         "#,
     )
@@ -185,6 +193,7 @@ pub async fn update_route(
     .bind(route.server.port as i32)
     .bind(json!(&protocol_opts))
     .bind(route.active)
+    .bind(route.ignore_empty_skf)
     .execute(&mut transaction)
     .await?;
 
@@ -447,7 +456,7 @@ pub async fn update_devaddr_ranges(
 pub async fn list_routes(oui: u64, db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Vec<Route>> {
     Ok(sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
             from routes r
             join organizations o on r.oui = o.oui
             where o.oui = $1
@@ -465,6 +474,7 @@ pub async fn list_routes(oui: u64, db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
             max_copies: route.max_copies as u32,
             active: route.active,
             locked: route.locked,
+            ignore_empty_skf: route.ignore_empty_skf,
         })})
     .filter_map(|route| async move { route.ok() })
     .collect::<Vec<Route>>()
@@ -510,7 +520,7 @@ pub fn active_route_stream<'a>(
 ) -> impl Stream<Item = Route> + 'a {
     sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
             from routes r
             join organizations o on r.oui = o.oui
             where o.locked = false and r.active = true
@@ -527,6 +537,7 @@ pub fn active_route_stream<'a>(
             max_copies: route.max_copies as u32,
             active: route.active,
             locked: route.locked,
+            ignore_empty_skf: route.ignore_empty_skf,
         })})
     .filter_map(|route| async move { route.ok() })
     .boxed()
@@ -576,9 +587,9 @@ pub fn skf_stream<'a>(db: impl sqlx::PgExecutor<'a> + 'a + Copy) -> impl Stream<
 
 pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Result<Route> {
     let uuid = Uuid::try_parse(id)?;
-    let route_row = sqlx::query_as::<_, StorageRoute>(
+    let route = sqlx::query_as::<_, StorageRoute>(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, o.locked
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
             from routes r
             join organizations o on r.oui = o.oui
             where r.id = $1
@@ -587,10 +598,7 @@ pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Resul
     )
     .bind(uuid)
     .fetch_one(db)
-    .await;
-
-    tracing::debug!("Result Route Row: {route_row:?}");
-    let route = route_row?;
+    .await?;
 
     let server = RouteServer::new(
         route.server_host,
@@ -606,6 +614,7 @@ pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Resul
         max_copies: route.max_copies as u32,
         active: route.active,
         locked: route.locked,
+        ignore_empty_skf: route.ignore_empty_skf,
     })
 }
 
@@ -829,6 +838,7 @@ impl From<proto::RouteV1> for Route {
             max_copies: route.max_copies,
             active: route.active,
             locked: route.locked,
+            ignore_empty_skf: route.ignore_empty_skf,
         }
     }
 }
@@ -843,6 +853,7 @@ impl From<Route> for proto::RouteV1 {
             max_copies: route.max_copies,
             active: route.active,
             locked: route.locked,
+            ignore_empty_skf: route.ignore_empty_skf,
         }
     }
 }
