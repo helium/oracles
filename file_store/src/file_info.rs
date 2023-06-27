@@ -121,6 +121,8 @@ pub const INVALID_PACKET: &str = "invalid_packet";
 pub const NON_REWARDABLE_PACKET: &str = "non_rewardable_packet";
 pub const IOT_REWARD_SHARE: &str = "iot_reward_share";
 pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
+pub const INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT: &str =
+    "invalid_data_transfer_session_ingest_report";
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
@@ -151,6 +153,7 @@ pub enum FileType {
     NonRewardablePacket,
     IotRewardShare,
     DataTransferSessionIngestReport,
+    InvalidDataTransferSessionIngestReport,
     ValidDataTransferSession,
     PriceReport,
     MobileRewardShare,
@@ -190,6 +193,9 @@ impl fmt::Display for FileType {
             Self::NonRewardablePacket => NON_REWARDABLE_PACKET,
             Self::IotRewardShare => IOT_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
+            Self::InvalidDataTransferSessionIngestReport => {
+                INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
+            }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
@@ -229,6 +235,9 @@ impl FileType {
             Self::NonRewardablePacket => NON_REWARDABLE_PACKET,
             Self::IotRewardShare => IOT_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
+            Self::InvalidDataTransferSessionIngestReport => {
+                INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
+            }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
@@ -268,6 +277,9 @@ impl FromStr for FileType {
             NON_REWARDABLE_PACKET => Self::NonRewardablePacket,
             IOT_REWARD_SHARE => Self::IotRewardShare,
             DATA_TRANSFER_SESSION_INGEST_REPORT => Self::DataTransferSessionIngestReport,
+            INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT => {
+                Self::InvalidDataTransferSessionIngestReport
+            }
             VALID_DATA_TRANSFER_SESSION => Self::ValidDataTransferSession,
             PRICE_REPORT => Self::PriceReport,
             MOBILE_REWARD_SHARE => Self::MobileRewardShare,

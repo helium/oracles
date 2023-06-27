@@ -3,12 +3,13 @@ use anyhow::{bail, Error, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::FileSinkClient,
     file_source, file_upload,
     mobile_session::DataTransferSessionIngestReport,
     FileSinkBuilder, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_config::GatewayClient;
+use mobile_config::{client::AuthorizationClient, GatewayClient};
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use tokio::{
@@ -22,7 +23,9 @@ pub struct Daemon<S> {
     burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
-    config_client: GatewayClient,
+    gateway_client: GatewayClient,
+    auth_client: AuthorizationClient,
+    invalid_data_session_report_sink: FileSinkClient,
 }
 
 impl<S> Daemon<S> {
@@ -31,14 +34,18 @@ impl<S> Daemon<S> {
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         burner: Burner<S>,
-        config_client: GatewayClient,
+        gateway_client: GatewayClient,
+        auth_client: AuthorizationClient,
+        invalid_data_session_report_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
             burner,
             reports,
             burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
-            config_client,
+            gateway_client,
+            auth_client,
+            invalid_data_session_report_sink,
         }
     }
 }
@@ -60,8 +67,9 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&mut self.config_client, &mut transaction, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&self.gateway_client, &self.auth_client, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
                     transaction.commit().await?;
+                    self.invalid_data_session_report_sink.commit().await?;
                 },
                 _ = sleep_until(burn_time) => {
                     // It's time to burn
@@ -124,11 +132,22 @@ impl Cmd {
         let (valid_sessions, mut valid_sessions_server) = FileSinkBuilder::new(
             FileType::ValidDataTransferSession,
             store_base_path,
-            concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
+            concat!(env!("CARGO_PKG_NAME"), "_valid_data_transfer_session"),
             shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(true)
+        .create()
+        .await?;
+
+        let (invalid_sessions, mut invalid_sessions_server) = FileSinkBuilder::new(
+            FileType::InvalidDataTransferSessionIngestReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_invalid_data_transfer_session"),
+            shutdown_listener.clone(),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
         .create()
         .await?;
 
@@ -149,13 +168,23 @@ impl Cmd {
                 .start(shutdown_listener.clone())
                 .await?;
 
-        let config_client = GatewayClient::from_settings(&settings.config_client)?;
+        let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
+        let auth_client = AuthorizationClient::from_settings(&settings.auth_client)?;
 
-        let daemon = Daemon::new(settings, pool, reports, burner, config_client);
+        let daemon = Daemon::new(
+            settings,
+            pool,
+            reports,
+            burner,
+            gateway_client,
+            auth_client,
+            invalid_sessions,
+        );
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),
             valid_sessions_server.run().map_err(Error::from),
+            invalid_sessions_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
             conn_handler.map_err(Error::from),

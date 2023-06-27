@@ -3,7 +3,7 @@ use crate::{
     file_source,
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
     iot_packet::IotValidPacket,
-    mobile_session::DataTransferSessionIngestReport,
+    mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
@@ -15,11 +15,12 @@ use futures::stream::StreamExt;
 use helium_crypto::PublicKey;
 use helium_proto::{
     services::{
+        packet_verifier::ValidDataTransferSession as ValidDataTransferSessionProto,
         poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
         poc_mobile::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
-            Heartbeat, MobileRewardShare, RadioRewardShare, SpeedtestAvg, SpeedtestIngestReportV1,
-            SpeedtestReqV1,
+            Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare, RadioRewardShare,
+            SpeedtestAvg, SpeedtestIngestReportV1, SpeedtestReqV1,
         },
         router::PacketRouterPacketReportV1,
     },
@@ -76,6 +77,36 @@ impl Cmd {
                         "event_id": dtr.report.data_transfer_usage.event_id,
                         "payer": dtr.report.data_transfer_usage.payer,
                         "timestamp": dtr.report.data_transfer_usage.timestamp,
+                    }))?;
+                }
+                FileType::InvalidDataTransferSessionIngestReport => {
+                    let msg: InvalidDataTransferIngestReport =
+                        InvalidDataTransferIngestReportV1::decode(msg)?.try_into()?;
+                    print_json(&json!({
+                        "invalid_reason": msg.reason,
+                        "invalid_timestamp": msg.timestamp,
+                        "received_timestamp": msg.report.received_timestamp,
+                        "reward_cancelled": msg.report.report.reward_cancelled,
+                        "hotspot_key": PublicKey::try_from(msg.report.report.data_transfer_usage.pub_key)?,
+                        "upload_bytes": msg.report.report.data_transfer_usage.upload_bytes,
+                        "download_bytes": msg.report.report.data_transfer_usage.download_bytes,
+                        "radio_access_technology": msg.report.report.data_transfer_usage.radio_access_technology,
+                        "event_id": msg.report.report.data_transfer_usage.event_id,
+                        "payer":  PublicKey::try_from(msg.report.report.data_transfer_usage.payer)?,
+                        "event_timestamp": msg.report.report.data_transfer_usage.timestamp,
+                    }))?;
+                }
+                FileType::ValidDataTransferSession => {
+                    let msg = ValidDataTransferSessionProto::decode(msg)?;
+                    print_json(&json!({
+                        "pub_key": PublicKey::try_from(msg.pub_key)?,
+                        "upload_bytes": msg.upload_bytes,
+                        "download_bytes": msg.download_bytes,
+                        "num_dcs": msg.num_dcs,
+                        "upload_bytes": msg.upload_bytes,
+                        "payer": PublicKey::try_from(msg.payer)?,
+                        "first_timestamp": msg.first_timestamp,
+                        "last_timestamp": msg.last_timestamp,
                     }))?;
                 }
                 FileType::IotBeaconIngestReport => {
