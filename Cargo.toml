@@ -3,22 +3,23 @@ debug = true
 
 [workspace]
 members = [
-    "ingest",
     "db_store",
+    "denylist",
     "file_store",
+    "ingest",
+    "iot_config",
+    "iot_packet_verifier",
+    "iot_verifier",
+    "metrics",
+    "mobile_config",
+    "mobile_config_cli",
+    "mobile_packet_verifier",
     "mobile_verifier",
     "poc_entropy",
-    "iot_verifier",
-    "reward_index",
-    "metrics",
-    "denylist",
-    "mobile_packet_verifier",
-    "iot_packet_verifier",
-    "iot_config",
     "price",
-    "mobile_config",
-    "solana",
+    "reward_index",
     "reward_scheduler",
+    "solana",
 ]
 
 [workspace.package]
@@ -32,7 +33,7 @@ anchor-client = "0.26"
 anyhow = {version = "1", features = ["backtrace"]}
 bs58 = {version = "0.4", features=["check"]}
 thiserror = "1"
-clap = {version = "3", features = ["derive"]}
+clap = {version = "4", features = ["derive"]}
 serde =  {version = "1", features=["derive"]}
 serde_json = "1"
 http-serde = "1"
@@ -46,6 +47,7 @@ tokio = { version = "1", default-features = false, features = [
   "process",
   "time"
 ] }
+tokio-stream = "0"
 sqlx = {version = "0", features = [
   "postgres",
   "uuid",
