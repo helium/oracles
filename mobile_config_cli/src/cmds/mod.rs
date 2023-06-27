@@ -33,7 +33,7 @@ pub struct Cli {
         global = true,
         long,
         env = ENV_CONFIG_PUBKEY,
-        default_value = "137oJzq1qZpSbzHawaysTGGsRCYTXG1MiTMQNxYSsQJp4YMDdN8"
+        default_value = "138DPEU3WyKQryVUuy3b7bLxRM7KAdQYGvDvS9cGZQHnRSWMkew"
     )]
     pub config_pubkey: String,
 
