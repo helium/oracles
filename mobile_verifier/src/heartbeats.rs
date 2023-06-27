@@ -18,15 +18,18 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
 use std::{ops::Range, pin::pin, sync::Arc, time};
 use tokio::sync::mpsc::Receiver;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
 pub struct HeartbeatKey {
+    coverage_object: Uuid, 
     hotspot_key: PublicKeyBinary,
     cbsd_id: String,
     cell_type: CellType,
 }
 
 pub struct HeartbeatReward {
+    pub coverage_object: Uuid,
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
     pub reward_weight: Decimal,
@@ -35,6 +38,7 @@ pub struct HeartbeatReward {
 impl From<HeartbeatKey> for HeartbeatReward {
     fn from(value: HeartbeatKey) -> Self {
         Self {
+            coverage_object: value.coverage_object,
             hotspot_key: value.hotspot_key,
             cbsd_id: value.cbsd_id,
             reward_weight: value.cell_type.reward_weight(),
@@ -66,7 +70,7 @@ impl HeartbeatDaemon {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
-            let cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+            let cache = Arc::new(Cache::<(String, DateTime<Utc>, Uuid), ()>::new());
 
             let cache_clone = cache.clone();
             tokio::spawn(async move {
@@ -95,7 +99,7 @@ impl HeartbeatDaemon {
     async fn process_file(
         &self,
         file: FileInfoStream<CellHeartbeatIngestReport>,
-        cache: &Cache<(String, DateTime<Utc>), ()>,
+        cache: &Cache<(String, DateTime<Utc>, Uuid), ()>,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing heartbeat file {}", file.file_info.key);
 
@@ -109,7 +113,7 @@ impl HeartbeatDaemon {
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             heartbeat.write(&self.file_sink).await?;
-            let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?);
+            let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?, heartbeat.coverage_object);
 
             if cache.get(&key).await.is_none() {
                 heartbeat.save(&mut transaction).await?;
@@ -136,11 +140,20 @@ impl HeartbeatReward {
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
         sqlx::query_as::<_, HeartbeatKey>(
             r#"
-            SELECT hotspot_key, cbsd_id, cell_type
-            FROM heartbeats
+            WITH coverage_objs AS (
+              SELECT t1.cbsd_id, t1.coverage_object
+              FROM heartbeats t1
+              WHERE t1.latest_timestamp = (
+                SELECT MAX(t2.latest_timestamp)
+                FROM heartbeats t2
+                WHERE t2.cbsd_id = t1.cbsd_id
+              )
+            )
+            SELECT hotspot_key, heartbeats.cbsd_id, cell_type, coverage_objs.coverage_object
+            FROM heartbeats JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id
             WHERE truncated_timestamp >= $1
             	and truncated_timestamp < $2
-            GROUP BY cbsd_id, hotspot_key, cell_type
+            GROUP BY heartbeats.cbsd_id, hotspot_key, cell_type, coverage_objs.coverage_object
             HAVING count(*) >= $3
             "#,
         )
@@ -158,6 +171,7 @@ pub struct Heartbeat {
     pub cell_type: Option<CellType>,
     pub hotspot_key: PublicKeyBinary,
     pub timestamp: DateTime<Utc>,
+    pub coverage_object: Uuid,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -195,6 +209,8 @@ impl Heartbeat {
                     timestamp: heartbeat_report.received_timestamp,
                     cell_type,
                     validity,
+                    // TODO: Validate coverage object
+                    coverage_object: heartbeat_report.report.coverage_object,
                 })
             }
         })
@@ -212,6 +228,7 @@ impl Heartbeat {
                     cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
                     validity: self.validity as i32,
                     timestamp: self.timestamp.timestamp() as u64,
+                    coverage_object: Vec::from(self.coverage_object.into_bytes()),
                 },
                 [],
             )
@@ -231,10 +248,11 @@ impl Heartbeat {
         Ok(
             sqlx::query_as::<_, HeartbeatSaveResult>(
                 r#"
-                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
                 latest_timestamp = EXCLUDED.latest_timestamp
+                coverage_object = EXCLUDED.coverage_object
                 RETURNING (xmax = 0) as inserted
                 "#
             )
@@ -243,6 +261,7 @@ impl Heartbeat {
             .bind(self.cell_type.unwrap())
             .bind(self.timestamp)
             .bind(truncated_timestamp)
+            .bind(self.coverage_object)
             .fetch_one(&mut *exec)
             .await?
             .inserted

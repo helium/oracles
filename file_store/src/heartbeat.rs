@@ -1,4 +1,5 @@
 use crate::{
+    error::DecodeError,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode},
     Error, Result,
 };
@@ -6,6 +7,7 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CellHeartbeat {
@@ -18,6 +20,7 @@ pub struct CellHeartbeat {
     pub operation_mode: bool,
     pub cbsd_category: String,
     pub cbsd_id: String,
+    pub coverage_object: Uuid,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -47,6 +50,7 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
             operation_mode: v.operation_mode,
             cbsd_category: v.cbsd_category,
             cbsd_id: v.cbsd_id,
+            coverage_object: Uuid::from_slice(&v.coverage_object).map_err(DecodeError::from)?,
         })
     }
 }

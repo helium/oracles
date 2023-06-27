@@ -5,11 +5,22 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use file_store::{coverage::CoverageObjectIngestReport, file_info_poller::FileInfoStream};
-use futures::stream::{StreamExt, TryStreamExt};
+use file_store::{
+    coverage::{CoverageObject, CoverageObjectIngestReport},
+    file_info_poller::FileInfoStream,
+    file_sink::FileSinkClient,
+    traits::TimestampEncode,
+};
+use futures::{
+    stream::{BoxStream, Stream, StreamExt, TryStreamExt},
+    TryFutureExt,
+};
 use h3o::CellIndex;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::SignalLevel as SignalLevelProto;
+use helium_proto::services::{
+    mobile_config::NetworkKeyRole,
+    poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
+};
 use mobile_config::client::AuthorizationClient;
 use retainer::{entry::CacheReadGuard, Cache};
 use rust_decimal::Decimal;
@@ -18,14 +29,25 @@ use sqlx::{FromRow, Pool, Postgres, Type};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
-use crate::heartbeats::HeartbeatReward;
-
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Type)]
+#[sqlx(type_name = "signal_level")]
+#[sqlx(rename_all = "lowercase")]
 pub enum SignalLevel {
     No,
     Low,
     Medium,
     High,
+}
+
+impl From<SignalLevelProto> for SignalLevel {
+    fn from(level: SignalLevelProto) -> Self {
+        match level {
+            SignalLevelProto::High => Self::High,
+            SignalLevelProto::Medium => Self::Medium,
+            SignalLevelProto::Low => Self::Low,
+            SignalLevelProto::No => Self::Low,
+        }
+    }
 }
 /*
 pub struct CoverageCache {
@@ -44,7 +66,118 @@ pub struct CoverageDaemon {
     pool: Pool<Postgres>,
     //    cache: CoverageCache,
     auth_client: AuthorizationClient,
-    coverages_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
+    coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
+    file_sink: FileSinkClient,
+}
+
+impl CoverageDaemon {
+    pub fn new(
+        pool: Pool<Postgres>,
+        auth_client: AuthorizationClient,
+        coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
+        file_sink: FileSinkClient
+    ) -> Self {
+        Self {
+            pool,
+            auth_client,
+            coverage_objs,
+            file_sink,
+        }
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = shutdown.clone() => {
+                        tracing::info!("CoverageDaemon shutting down");
+                        break;
+                    }
+                    Some(file) = self.coverage_objs.recv() => self.process_file(file).await?,
+                }
+            }
+
+            Ok(())
+        })
+        .map_err(anyhow::Error::from)
+        .and_then(|result| async move { result })
+        .await
+    }
+
+    async fn process_file(
+        &mut self,
+        file: FileInfoStream<CoverageObjectIngestReport>,
+    ) -> anyhow::Result<()> {
+        tracing::info!("Processing coverage object file {}", file.file_info.key);
+
+        let mut transaction = self.pool.begin().await?;
+        let mut reports = file.into_stream(&mut transaction).await?;
+
+        while let Some(CoverageObjectIngestReport { report, .. }) = reports.next().await {
+            let CoverageObject {
+                pub_key,
+                uuid,
+                cbsd_id,
+                coverage_claim_time,
+                indoor,
+                coverage,
+            } = report;
+
+            // TODO: Validate pub key is authorized
+            let validity = if self
+                .auth_client
+                .verify_authorized_key(&pub_key, NetworkKeyRole::MobilePcs)
+                .await?
+            {
+                CoverageObjectValidity::Valid
+            } else {
+                CoverageObjectValidity::InvalidPubKey
+            };
+
+            self.file_sink
+                .write(
+                    proto::CoverageObject {
+                        pub_key: pub_key.into(),
+                        uuid: Vec::from(uuid.into_bytes()),
+                        cbsd_id: cbsd_id.clone(),
+                        coverage_claim_time: coverage_claim_time.encode_timestamp(),
+                        indoor,
+                        // It's pretty weird that we have to convert these back and forth, but it
+                        // shouldn't be too inefficient
+                        coverage: coverage.clone().into_iter().map(Into::into).collect(),
+                        validity: validity as i32,
+                    },
+                    [],
+                )
+                .await?;
+
+            if !matches!(validity, CoverageObjectValidity::Valid) {
+                continue;
+            }
+
+            for hex in coverage {
+                let location: u64 = hex.location.into();
+                sqlx::query(
+                    r#"
+                    INSERT INTO coverage_objects
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    "#,
+                )
+                .bind(uuid)
+                .bind(location as i64)
+                .bind(indoor)
+                .bind(cbsd_id.clone())
+                .bind(SignalLevel::from(hex.signal_level))
+                .bind(coverage_claim_time)
+                .execute(&mut transaction)
+                .await?;
+            }
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
+    }
 }
 
 #[derive(FromRow)]
@@ -59,6 +192,7 @@ pub struct HexCoverage {
 
 #[derive(Eq, Ord)]
 struct CoverageLevel {
+    cbsd_id: String,
     coverage_claim_time: DateTime<Utc>,
     hotspot: PublicKeyBinary,
     indoor: bool,
@@ -91,36 +225,45 @@ impl CoverageLevel {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct CoverageReward {
+    cbsd_id: String,
     points: Decimal,
     hotspot: PublicKeyBinary,
 }
 
 pub const MAX_RADIOS_PER_HEX: usize = 5;
 
+#[derive(Default)]
 pub struct CoveredHexes {
     hexes: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>>,
 }
 
+pub fn covered_hex_stream<'a>(
+    pool: &'a Pool<Postgres>,
+    cbsd_id: &str,
+    coverage_obj: &Uuid,
+) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
+    sqlx::query_as("SELECT * FROM coverage WHERE cbsd_id = $1 AND uuid = $2")
+        .bind(cbsd_id.to_string())
+        .bind(coverage_obj.clone())
+        .fetch(pool)
+}
+
 impl CoveredHexes {
-    pub async fn fetch_heartbeat_coverage(
+    pub async fn aggregate_coverage<E>(
         &mut self,
-        pool: &Pool<Postgres>,
         hotspot: &PublicKeyBinary,
-        cbsd_id: &str,
-        coverage_obj: &Uuid,
-    ) -> Result<(), sqlx::Error> {
-        let mut covered_hexes =
-            sqlx::query_as("SELECT * FROM coverage WHERE cbsd_id = $1 AND uuid = $2")
-                .bind(cbsd_id)
-                .bind(coverage_obj)
-                .fetch(pool);
+        covered_hexes: impl Stream<Item = Result<HexCoverage, E>>,
+    ) -> Result<(), E> {
+        let mut covered_hexes = std::pin::pin!(covered_hexes);
 
         while let Some(HexCoverage {
             hex,
             indoor,
             signal_level,
             coverage_claim_time,
+            cbsd_id,
             ..
         }) = covered_hexes.next().await.transpose()?
         {
@@ -130,6 +273,7 @@ impl CoveredHexes {
                 .entry(signal_level)
                 .or_default()
                 .push(CoverageLevel {
+                    cbsd_id,
                     coverage_claim_time,
                     indoor,
                     signal_level,
@@ -148,15 +292,187 @@ impl CoveredHexes {
                     radios
                         .into_sorted_vec()
                         .into_iter()
-                        .rev()
                         .take(MAX_RADIOS_PER_HEX)
                         .map(|cl| CoverageReward {
                             points: cl.coverage_points().unwrap(),
                             hotspot: cl.hotspot,
+                            cbsd_id: cl.cbsd_id,
                         })
                 })
             })
             .flatten()
             .flatten()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use chrono::NaiveDate;
+    use futures::stream::iter;
+
+    fn default_hex_coverage(cbsd_id: &str, signal_level: SignalLevel) -> HexCoverage {
+        HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: 0x8a1fb46622dffff_u64 as i64,
+            indoor: false,
+            cbsd_id: cbsd_id.to_string(),
+            signal_level,
+            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_max_signal_level_selected() {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let mut covered_hexes = CoveredHexes::default();
+        covered_hexes
+            .aggregate_coverage(
+                &owner,
+                iter(vec![
+                    anyhow::Ok(default_hex_coverage("1", SignalLevel::No)),
+                    anyhow::Ok(default_hex_coverage("2", SignalLevel::Low)),
+                    anyhow::Ok(default_hex_coverage("3", SignalLevel::Medium)),
+                    anyhow::Ok(default_hex_coverage("4", SignalLevel::High)),
+                    anyhow::Ok(default_hex_coverage("5", SignalLevel::Medium)),
+                    anyhow::Ok(default_hex_coverage("6", SignalLevel::Low)),
+                    anyhow::Ok(default_hex_coverage("7", SignalLevel::No)),
+                ]),
+            )
+            .await
+            .unwrap();
+        let rewards: Vec<_> = covered_hexes.into_iter().collect();
+        assert_eq!(
+            rewards,
+            vec![CoverageReward {
+                cbsd_id: "4".to_string(),
+                hotspot: owner,
+                points: dec!(16)
+            }]
+        );
+    }
+
+    fn date(year: i32, month: u32, day: u32) -> DateTime<Utc> {
+        DateTime::<Utc>::from_utc(
+            NaiveDate::from_ymd_opt(year, month, day)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            Utc,
+        )
+    }
+
+    fn hex_coverage_with_date(
+        cbsd_id: &str,
+        signal_level: SignalLevel,
+        coverage_claim_time: DateTime<Utc>,
+    ) -> HexCoverage {
+        HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: 0x8a1fb46622dffff_u64 as i64,
+            indoor: false,
+            cbsd_id: cbsd_id.to_string(),
+            signal_level,
+            coverage_claim_time,
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_oldest_five_radios_selected() {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let mut covered_hexes = CoveredHexes::default();
+        covered_hexes
+            .aggregate_coverage(
+                &owner,
+                iter(vec![
+                    anyhow::Ok(hex_coverage_with_date(
+                        "1",
+                        SignalLevel::High,
+                        date(1980, 1, 1),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "2",
+                        SignalLevel::High,
+                        date(1970, 1, 5),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "3",
+                        SignalLevel::High,
+                        date(1990, 2, 2),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "4",
+                        SignalLevel::High,
+                        date(1970, 1, 4),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "5",
+                        SignalLevel::High,
+                        date(1975, 3, 3),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "6",
+                        SignalLevel::High,
+                        date(1970, 1, 3),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "7",
+                        SignalLevel::High,
+                        date(1974, 2, 2),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "8",
+                        SignalLevel::High,
+                        date(1970, 1, 2),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "9",
+                        SignalLevel::High,
+                        date(1976, 5, 2),
+                    )),
+                    anyhow::Ok(hex_coverage_with_date(
+                        "10",
+                        SignalLevel::High,
+                        date(1970, 1, 1),
+                    )),
+                ]),
+            )
+            .await
+            .unwrap();
+        let rewards: Vec<_> = covered_hexes.into_iter().collect();
+        assert_eq!(
+            rewards,
+            vec![
+                CoverageReward {
+                    cbsd_id: "10".to_string(),
+                    hotspot: owner.clone(),
+                    points: dec!(16)
+                },
+                CoverageReward {
+                    cbsd_id: "8".to_string(),
+                    hotspot: owner.clone(),
+                    points: dec!(16)
+                },
+                CoverageReward {
+                    cbsd_id: "6".to_string(),
+                    hotspot: owner.clone(),
+                    points: dec!(16)
+                },
+                CoverageReward {
+                    cbsd_id: "4".to_string(),
+                    hotspot: owner.clone(),
+                    points: dec!(16)
+                },
+                CoverageReward {
+                    cbsd_id: "2".to_string(),
+                    hotspot: owner.clone(),
+                    points: dec!(16)
+                }
+            ]
+        );
     }
 }

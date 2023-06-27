@@ -1,15 +1,15 @@
 use crate::{
-    heartbeats::HeartbeatDaemon, rewarder::Rewarder, speedtests::SpeedtestDaemon, Settings,
+    heartbeats::HeartbeatDaemon, rewarder::Rewarder, speedtests::SpeedtestDaemon, Settings, coverage::CoverageDaemon,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
     file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
     heartbeat::CellHeartbeatIngestReport, speedtest::CellSpeedtestIngestReport, FileStore,
-    FileType,
+    FileType, coverage::CoverageObjectIngestReport,
 };
 use futures_util::TryFutureExt;
-use mobile_config::GatewayClient;
+use mobile_config::{GatewayClient, client::AuthorizationClient};
 use price::PriceTracker;
 use tokio::signal;
 
@@ -65,6 +65,16 @@ impl Cmd {
                 .start(shutdown_listener.clone())
                 .await?;
 
+        let (coverage_objs, coverage_objs_join_handle) =
+            file_source::continuous_source::<CoverageObjectIngestReport>()
+                .db(pool.clone())
+                .store(ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::CoverageObjectIngestReport)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
+
         // Valid Heartbeats
         let (valid_heartbeats, mut valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
@@ -83,6 +93,19 @@ impl Cmd {
             FileType::SpeedtestAvg,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
+            shutdown_listener.clone(),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
+        // Coverage objects
+        let (valid_coverage_objs, mut valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
+            FileType::CoverageObject,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
             shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
@@ -117,6 +140,7 @@ impl Cmd {
 
         let reward_period_hours = settings.rewards;
         let gateway_client = GatewayClient::from_settings(&settings.config_client_settings)?;
+        let auth_client = AuthorizationClient::from_settings(&settings.config_client_settings)?;
         let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
 
         let (price_tracker, tracker_process) =
@@ -136,6 +160,13 @@ impl Cmd {
             valid_speedtests,
         );
 
+        let coverage_daemon = CoverageDaemon::new(
+            pool.clone(),
+            auth_client,
+            coverage_objs,
+            valid_coverage_objs,
+        );
+
         let rewarder = Rewarder::new(
             pool.clone(),
             Duration::hours(reward_period_hours),
@@ -150,14 +181,17 @@ impl Cmd {
             db_join_handle.map_err(Error::from),
             valid_heartbeats_server.run().map_err(Error::from),
             valid_speedtests_server.run().map_err(Error::from),
+            valid_coverage_objs_server.run().map_err(Error::from),
             mobile_rewards_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             reward_manifests_server.run().map_err(Error::from),
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
+            coverage_objs_join_handle.map_err(Error::from),
             heartbeat_daemon.run(shutdown_listener.clone()),
             speedtest_daemon.run(shutdown_listener.clone()),
+            coverage_daemon.run(shutdown_listener.clone()),
             rewarder.run(shutdown_listener.clone()),
         )?;
 

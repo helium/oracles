@@ -43,6 +43,20 @@ impl MsgDecode for CoverageObjectIngestReport {
     type Msg = CoverageObjectIngestReportV1;
 }
 
+impl TryFrom<CoverageObjectIngestReportV1> for CoverageObjectIngestReport {
+    type Error = Error;
+
+    fn try_from(v: CoverageObjectIngestReportV1) -> Result<Self> {
+        Ok(Self {
+            received_timestamp: v.received_timestamp.to_timestamp_millis()?,
+            report: v
+                .report
+                .ok_or_else(|| Error::not_found("ingest coverage object report"))?
+                .try_into()?,
+        })
+    }
+}
+
 impl TryFrom<CoverageObjectReqV1> for CoverageObject {
     type Error = Error;
 
@@ -74,5 +88,15 @@ impl TryFrom<RadioHexSignalLevelProto> for RadioHexSignalLevel {
             signal_power: v.signal_power,
             location: v.location.parse().map_err(DecodeError::from)?,
         })
+    }
+}
+
+impl Into<RadioHexSignalLevelProto> for RadioHexSignalLevel {
+    fn into(self) -> RadioHexSignalLevelProto {
+        RadioHexSignalLevelProto {
+            signal_level: self.signal_level as i32,
+            signal_power: self.signal_power,
+            location: self.location.to_string(),
+        }
     }
 }
