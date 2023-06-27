@@ -136,7 +136,7 @@ impl DecodeError {
 
     pub fn unsupported_signal_level(msg1: impl ToString, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedSignalLevel(msg1.to_string(), msg2))
-    }                 
+    }
 }
 
 impl From<helium_crypto::Error> for Error {

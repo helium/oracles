@@ -1,15 +1,16 @@
 use crate::{
-    heartbeats::HeartbeatDaemon, rewarder::Rewarder, speedtests::SpeedtestDaemon, Settings, coverage::CoverageDaemon,
+    coverage::CoverageDaemon, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
+    speedtests::SpeedtestDaemon, Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
-    file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
-    heartbeat::CellHeartbeatIngestReport, speedtest::CellSpeedtestIngestReport, FileStore,
-    FileType, coverage::CoverageObjectIngestReport,
+    coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
+    file_source, file_upload, heartbeat::CellHeartbeatIngestReport,
+    speedtest::CellSpeedtestIngestReport, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_config::{GatewayClient, client::AuthorizationClient};
+use mobile_config::{client::AuthorizationClient, GatewayClient};
 use price::PriceTracker;
 use tokio::signal;
 
@@ -102,17 +103,18 @@ impl Cmd {
         .await?;
 
         // Coverage objects
-        let (valid_coverage_objs, mut valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
-            FileType::CoverageObject,
-            store_base_path,
-            concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
-            shutdown_listener.clone(),
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .auto_commit(false)
-        .roll_time(Duration::minutes(15))
-        .create()
-        .await?;
+        let (valid_coverage_objs, mut valid_coverage_objs_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::CoverageObject,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
+                shutdown_listener.clone(),
+            )
+            .deposits(Some(file_upload_tx.clone()))
+            .auto_commit(false)
+            .roll_time(Duration::minutes(15))
+            .create()
+            .await?;
 
         // Mobile rewards
         let (mobile_rewards, mut mobile_rewards_server) = file_sink::FileSinkBuilder::new(

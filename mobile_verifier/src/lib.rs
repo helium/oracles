@@ -1,10 +1,10 @@
 mod cell_type;
+mod coverage;
 mod heartbeats;
 mod ingest;
 mod reward_shares;
 mod settings;
 mod speedtests;
-mod coverage;
 
 pub mod cli;
 pub mod rewarder;

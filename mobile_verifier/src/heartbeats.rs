@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
 pub struct HeartbeatKey {
-    coverage_object: Uuid, 
+    coverage_object: Uuid,
     hotspot_key: PublicKeyBinary,
     cbsd_id: String,
     cell_type: CellType,
@@ -113,7 +113,11 @@ impl HeartbeatDaemon {
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             heartbeat.write(&self.file_sink).await?;
-            let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?, heartbeat.coverage_object);
+            let key = (
+                heartbeat.cbsd_id.clone(),
+                heartbeat.truncated_timestamp()?,
+                heartbeat.coverage_object,
+            );
 
             if cache.get(&key).await.is_none() {
                 heartbeat.save(&mut transaction).await?;

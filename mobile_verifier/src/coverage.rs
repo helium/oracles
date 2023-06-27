@@ -75,7 +75,7 @@ impl CoverageDaemon {
         pool: Pool<Postgres>,
         auth_client: AuthorizationClient,
         coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
-        file_sink: FileSinkClient
+        file_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
