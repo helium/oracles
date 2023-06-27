@@ -4,6 +4,7 @@ use crate::{
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
     iot_packet::IotValidPacket,
     mobile_session::DataTransferSessionIngestReport,
+    mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
     FileType, Result, Settings,
@@ -164,6 +165,10 @@ impl Cmd {
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
                         }))?,
+                        Some(Reward::SubscriberReward(reward)) => print_json(&json!({
+                            "subscriber_id": reward.subscriber_id,
+                            "discovery_location_amount": reward.discovery_location_amount,
+                        }))?,
                         _ => (),
                     }
                 }
@@ -215,6 +220,21 @@ impl Cmd {
                         "num_dcs": manifest.num_dcs,
                         "packet_timestamp": manifest.packet_timestamp,
                     }))?;
+                }
+                FileType::SubscriberLocationIngestReport => {
+                    let report = SubscriberLocationIngestReport::decode(msg)?;
+                    print_json(&json!({
+                        "subscriber_id": report.report.subscriber_id,
+                        "carrier_pub_key": report.report.carrier_pub_key,
+                        "recv_timestamp": report.received_timestamp}))?;
+                }
+                FileType::VerifiedSubscriberLocationIngestReport => {
+                    let report = VerifiedSubscriberLocationIngestReport::decode(msg)?;
+                    print_json(&json!({
+                        "subscriber_id": report.report.report.subscriber_id,
+                        "carrier_pub_key": report.report.report.carrier_pub_key,
+                        "status": report.status,
+                        "recv_timestamp": report.report.received_timestamp}))?;
                 }
                 _ => (),
             }

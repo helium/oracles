@@ -36,10 +36,7 @@ impl EntityClient {
         })
     }
 
-    pub async fn verify_rewardable_entity(
-        &mut self,
-        entity_id: &Vec<u8>,
-    ) -> Result<bool, ClientError> {
+    pub async fn verify_rewardable_entity(&self, entity_id: &Vec<u8>) -> Result<bool, ClientError> {
         if let Some(entity_found) = self.cache.get(entity_id).await {
             return Ok(*entity_found.value());
         }
@@ -51,7 +48,7 @@ impl EntityClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(?entity_id, "verifying entity on-chain");
-        let response = match self.client.verify(request).await {
+        let response = match self.client.clone().verify(request).await {
             Ok(verify_res) => {
                 let response = verify_res.into_inner();
                 response.verify(&self.config_pubkey)?;
