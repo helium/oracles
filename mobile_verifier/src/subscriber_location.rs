@@ -176,7 +176,7 @@ pub async fn aggregate_location_shares(
     reward_period: &Range<DateTime<Utc>>,
 ) -> Result<SubscriberValidatedLocations, sqlx::Error> {
     let mut rows = sqlx::query_as::<_, SubscriberLocationShare>(
-        "select distinct(subscriber_id) from subscriber_loc where received_timestamp >= $1 and received_timestamp < $2",
+        "select distinct(subscriber_id) from subscriber_loc_verified where received_timestamp >= $1 and received_timestamp < $2",
     )
     .bind(reward_period.start)
     .bind(reward_period.end)
