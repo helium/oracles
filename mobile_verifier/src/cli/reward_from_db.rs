@@ -1,6 +1,6 @@
 use crate::{
     heartbeats::HeartbeatReward,
-    reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares},
+    reward_shares::{get_scheduled_tokens_for_poc_and_dc, CoveragePoints},
     speedtests::{Average, SpeedtestAverages},
     Settings,
 };
@@ -40,7 +40,8 @@ impl Cmd {
 
         let heartbeats = HeartbeatReward::validated(&pool, &epoch);
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let reward_shares = PocShares::aggregate(heartbeats, speedtests.clone()).await?;
+        let reward_shares =
+            CoveragePoints::aggregate_points(&pool, heartbeats, speedtests.clone()).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();

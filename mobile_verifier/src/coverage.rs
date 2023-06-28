@@ -49,22 +49,9 @@ impl From<SignalLevelProto> for SignalLevel {
         }
     }
 }
-/*
-pub struct CoverageCache {
-    pool: Pool<Postgres>,
-    objs: Arc<Cache<Uuid, CoverageObject>>,
-}
-
-impl CoverageCache {
-    pub fn get(&self, key: &Uuid) -> CacheReadGuard<'_, CoverageObject> {
-        todo!()
-    }
-}
-*/
 
 pub struct CoverageDaemon {
     pool: Pool<Postgres>,
-    //    cache: CoverageCache,
     auth_client: AuthorizationClient,
     coverage_objs: Receiver<FileInfoStream<CoverageObjectIngestReport>>,
     file_sink: FileSinkClient,
@@ -182,12 +169,12 @@ impl CoverageDaemon {
 
 #[derive(FromRow)]
 pub struct HexCoverage {
-    uuid: Uuid,
-    hex: i64,
-    indoor: bool,
-    cbsd_id: String,
-    signal_level: SignalLevel,
-    coverage_claim_time: DateTime<Utc>,
+    pub uuid: Uuid,
+    pub hex: i64,
+    pub indoor: bool,
+    pub cbsd_id: String,
+    pub signal_level: SignalLevel,
+    pub coverage_claim_time: DateTime<Utc>,
 }
 
 #[derive(Eq, Ord)]
@@ -227,9 +214,9 @@ impl CoverageLevel {
 
 #[derive(PartialEq, Debug)]
 pub struct CoverageReward {
-    cbsd_id: String,
-    points: Decimal,
-    hotspot: PublicKeyBinary,
+    pub cbsd_id: String,
+    pub points: Decimal,
+    pub hotspot: PublicKeyBinary,
 }
 
 pub const MAX_RADIOS_PER_HEX: usize = 5;
@@ -302,6 +289,7 @@ impl CoveredHexes {
             })
             .flatten()
             .flatten()
+            .filter(|r| r.points > Decimal::ZERO)
     }
 }
 

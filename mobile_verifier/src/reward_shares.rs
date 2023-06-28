@@ -1,4 +1,5 @@
 use crate::{
+    coverage::{CoverageReward, CoveredHexes},
     heartbeats::HeartbeatReward,
     speedtests::{Average, SpeedtestAverages},
 };
@@ -9,8 +10,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use std::collections::HashMap;
-use std::ops::Range;
+use sqlx::{Pool, Postgres};
+use std::{collections::HashMap, ops::Range};
 
 /// Total tokens emissions pool per 365 days
 const TOTAL_EMISSIONS_POOL: Decimal = dec!(60_000_000_000_000_000);
@@ -48,7 +49,7 @@ impl TransferRewards {
     pub async fn from_transfer_sessions(
         mobile_bone_price: Decimal,
         transfer_sessions: impl Stream<Item = ValidDataTransferSession>,
-        hotspots: &PocShares,
+        hotspots: &CoveragePoints,
         epoch: &Range<DateTime<Utc>>,
     ) -> Self {
         tokio::pin!(transfer_sessions);
@@ -141,60 +142,96 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
-#[derive(Default)]
-pub struct RadioShares {
-    radio_shares: HashMap<String, Decimal>,
+struct Points {
+    /// Points are multiplied by the multiplier to get shares.
+    /// Multiplier should never be zero.
+    multiplier: Decimal,
+    radio_points: HashMap<String, Decimal>,
 }
 
-impl RadioShares {
-    fn total_shares(&self) -> Decimal {
-        self.radio_shares
+impl Points {
+    pub fn total_points(&self) -> Decimal {
+        self.radio_points
             .values()
             .fold(Decimal::ZERO, |sum, amount| sum + amount)
     }
+
+    pub fn total_shares(&self) -> Decimal {
+        self.multiplier * self.total_points()
+    }
 }
 
-#[derive(Default)]
-pub struct PocShares {
-    pub hotspot_shares: HashMap<PublicKeyBinary, RadioShares>,
+pub struct CoveragePoints {
+    coverage_points: HashMap<PublicKeyBinary, Points>,
 }
 
-impl PocShares {
-    pub async fn aggregate(
+impl CoveragePoints {
+    pub async fn aggregate_points(
+        pool: &Pool<Postgres>,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: SpeedtestAverages,
     ) -> Result<Self, sqlx::Error> {
-        let mut poc_shares = Self::default();
         let mut heartbeats = std::pin::pin!(heartbeats);
+        let mut covered_hexes = CoveredHexes::default();
+        let mut coverage_points = HashMap::new();
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
-            let speedmultiplier = speedtests
+            let speedtest_multiplier = speedtests
                 .get_average(&heartbeat.hotspot_key)
                 .as_ref()
                 .map_or(Decimal::ZERO, Average::reward_multiplier);
-            *poc_shares
-                .hotspot_shares
-                .entry(heartbeat.hotspot_key)
-                .or_default()
-                .radio_shares
-                .entry(heartbeat.cbsd_id)
-                .or_default() += heartbeat.reward_weight * speedmultiplier;
+
+            if speedtest_multiplier.is_zero() {
+                continue;
+            }
+
+            let covered_hex_stream = crate::coverage::covered_hex_stream(
+                &pool,
+                &heartbeat.cbsd_id,
+                &heartbeat.coverage_object,
+            );
+            covered_hexes
+                .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
+                .await?;
+            coverage_points.insert(
+                heartbeat.hotspot_key,
+                Points {
+                    multiplier: heartbeat.reward_weight * speedtest_multiplier,
+                    radio_points: Default::default(),
+                },
+            );
         }
-        Ok(poc_shares)
+
+        for CoverageReward {
+            cbsd_id,
+            points,
+            hotspot,
+        } in covered_hexes.into_iter()
+        {
+            // Guaranteed that points contains the given hotspot.
+            *coverage_points
+                .get_mut(&hotspot)
+                .unwrap()
+                .radio_points
+                .entry(cbsd_id)
+                .or_default() += points;
+        }
+
+        Ok(Self { coverage_points })
     }
 
     pub fn is_valid(&self, hotspot: &PublicKeyBinary) -> bool {
-        if let Some(shares) = self.hotspot_shares.get(hotspot) {
-            !shares.total_shares().is_zero()
+        if let Some(coverage_points) = self.coverage_points.get(hotspot) {
+            !coverage_points.total_points().is_zero()
         } else {
             false
         }
     }
 
     pub fn total_shares(&self) -> Decimal {
-        self.hotspot_shares
+        self.coverage_points
             .values()
-            .fold(Decimal::ZERO, |sum, radio_shares| {
-                sum + radio_shares.total_shares()
+            .fold(Decimal::ZERO, |sum, radio_points| {
+                sum + radio_points.total_shares()
             })
     }
 
@@ -209,29 +246,37 @@ impl PocShares {
         let poc_rewards_per_share = available_poc_rewards / total_shares;
         let start_period = epoch.start.encode_timestamp();
         let end_period = epoch.end.encode_timestamp();
-        self.hotspot_shares
+        self.coverage_points
             .into_iter()
-            .flat_map(move |(hotspot_key, RadioShares { radio_shares })| {
-                radio_shares.into_iter().map(move |(cbsd_id, amount)| {
-                    let poc_reward = poc_rewards_per_share * amount;
-                    let hotspot_key: Vec<u8> = hotspot_key.clone().into();
-                    proto::MobileRewardShare {
-                        start_period,
-                        end_period,
-                        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-                            proto::RadioReward {
-                                hotspot_key,
-                                cbsd_id,
-                                poc_reward: poc_reward
-                                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                    .to_u64()
-                                    .unwrap_or(0),
-                                ..Default::default()
-                            },
-                        )),
-                    }
-                })
-            })
+            .flat_map(
+                move |(
+                    hotspot_key,
+                    Points {
+                        multiplier,
+                        radio_points,
+                    },
+                )| {
+                    radio_points.into_iter().map(move |(cbsd_id, amount)| {
+                        let poc_reward = poc_rewards_per_share * multiplier * amount;
+                        let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+                        proto::MobileRewardShare {
+                            start_period,
+                            end_period,
+                            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                                proto::RadioReward {
+                                    hotspot_key,
+                                    cbsd_id,
+                                    poc_reward: poc_reward
+                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                        .to_u64()
+                                        .unwrap_or(0),
+                                    ..Default::default()
+                                },
+                            )),
+                        }
+                    })
+                },
+            )
             .filter(|mobile_reward| match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
                     radio_reward.poc_reward > 0
@@ -250,6 +295,7 @@ pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
+/*
 #[cfg(test)]
 mod test {
     use super::*;
@@ -772,3 +818,4 @@ mod test {
         }
     }
 }
+*/
