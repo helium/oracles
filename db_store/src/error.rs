@@ -13,9 +13,7 @@ pub enum Error {
     #[error("invalid configuration: {0}")]
     InvalidConfiguration(String),
     #[error("Aws Assume Role Error")]
-    AwsStsError(
-        #[from] aws_sdk_sts::error::SdkError<aws_sdk_sts::operation::assume_role::AssumeRoleError>,
-    ),
+    AwsStsError(#[from] aws_sdk_sts::types::SdkError<aws_sdk_sts::error::AssumeRoleError>),
     #[error("Assumed Credentials were invalid: {0}")]
     InvalidAssumedCredentials(String),
     #[error("Aws Signing Error")]

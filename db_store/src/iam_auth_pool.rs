@@ -166,7 +166,7 @@ impl ConnectParameters {
     async fn assume_role(
         &self,
         client: &aws_sdk_sts::Client,
-    ) -> Result<aws_sdk_sts::operation::assume_role::AssumeRoleOutput> {
+    ) -> Result<aws_sdk_sts::output::AssumeRoleOutput> {
         client
             .assume_role()
             .role_arn(self.iam_role_arn.clone())
