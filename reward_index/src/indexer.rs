@@ -146,19 +146,13 @@ impl Indexer {
                         },
                         r.dc_transfer_reward,
                     )),
-                    Some(MobileReward::SubscriberReward(r)) => {
-                        let key = match str::from_utf8(&r.subscriber_id) {
-                            Ok(k) => k.to_string(),
-                            Err(_e) => bail!("got an invalid subscriber id"),
-                        };
-                        Ok((
-                            RewardKey {
-                                key,
-                                reward_type: RewardType::MobileSubscriber,
-                            },
-                            r.discovery_location_amount,
-                        ))
-                    }
+                    Some(MobileReward::SubscriberReward(r)) => Ok((
+                        RewardKey {
+                            key: bs58::encode(&r.subscriber_id).into_string(),
+                            reward_type: RewardType::MobileSubscriber,
+                        },
+                        r.discovery_location_amount,
+                    )),
                     _ => bail!("got an invalid reward share"),
                 }
             }
