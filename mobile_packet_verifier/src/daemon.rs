@@ -169,7 +169,7 @@ impl Cmd {
                 .await?;
 
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
-        let auth_client = AuthorizationClient::from_settings(&settings.auth_client)?;
+        let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
 
         let daemon = Daemon::new(
             settings,
