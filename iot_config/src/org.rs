@@ -170,6 +170,9 @@ pub async fn update_org(
             Some(proto::Update::Owner(pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
                 update_owner(oui, pubkeybin.into(), &mut txn).await?
             }
+            Some(proto::Update::Payer(pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
+                update_payer(oui, pubkeybin.into(), &mut txn).await?
+            }
             Some(proto::Update::Devaddrs(addr_count))
                 if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
             {
@@ -183,9 +186,6 @@ pub async fn update_org(
                     (proto::ActionV1::Remove, Some(ref constraint)) => remove_constraint_update(oui, net_id, current_org.constraints.as_ref(), constraint.into(), &mut txn).await?,
                     _ => return Err(OrgStoreError::InvalidUpdate(format!("invalid action or missing devaddr constraint update: {constraint_update:?}")))
                 }
-            }
-            Some(proto::Update::Payer(pubkeybin)) => {
-                update_payer(oui, pubkeybin.into(), &mut txn).await?
             }
             Some(proto::Update::DelegateKey(delegate_key_update)) => {
                 match delegate_key_update.action() {
