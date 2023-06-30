@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = {workspace = true}
+bs58 = {workspace = true}
 config = {workspace = true}
 clap = {workspace = true}
 thiserror = {workspace = true}
