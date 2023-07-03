@@ -1,7 +1,6 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BinaryHeap, HashMap},
-    sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
@@ -12,7 +11,7 @@ use file_store::{
     traits::TimestampEncode,
 };
 use futures::{
-    stream::{BoxStream, Stream, StreamExt, TryStreamExt},
+    stream::{BoxStream, Stream, StreamExt},
     TryFutureExt,
 };
 use h3o::CellIndex;
@@ -22,7 +21,6 @@ use helium_proto::services::{
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
 use mobile_config::client::AuthorizationClient;
-use retainer::{entry::CacheReadGuard, Cache};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, Pool, Postgres, Type};
@@ -167,7 +165,7 @@ impl CoverageDaemon {
     }
 }
 
-#[derive(FromRow)]
+#[derive(Clone, FromRow)]
 pub struct HexCoverage {
     pub uuid: Uuid,
     pub hex: i64,

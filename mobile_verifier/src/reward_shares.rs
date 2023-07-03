@@ -1,17 +1,18 @@
 use crate::{
-    coverage::{CoverageReward, CoveredHexes},
+    coverage::{CoverageReward, CoveredHexes, HexCoverage},
     heartbeats::HeartbeatReward,
     speedtests::{Average, SpeedtestAverages},
 };
 use chrono::{DateTime, Duration, Utc};
 use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
-use futures::{Stream, StreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, ops::Range};
+use uuid::Uuid;
 
 /// Total tokens emissions pool per 365 days
 const TOTAL_EMISSIONS_POOL: Decimal = dec!(60_000_000_000_000_000);
@@ -142,32 +143,78 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
-struct Points {
+#[derive(Debug)]
+struct RadioPoints {
+    heartbeat_multiplier: Decimal,
+    points: Decimal,
+}
+
+impl RadioPoints {
+    fn new(heartbeat_multiplier: Decimal) -> Self {
+        Self {
+            heartbeat_multiplier,
+            points: Decimal::ZERO,
+        }
+    }
+
+    fn points(&self) -> Decimal {
+        self.heartbeat_multiplier * self.points
+    }
+}
+
+#[derive(Debug, Default)]
+struct HotspotPoints {
     /// Points are multiplied by the multiplier to get shares.
     /// Multiplier should never be zero.
-    multiplier: Decimal,
-    radio_points: HashMap<String, Decimal>,
+    speedtest_multiplier: Decimal,
+    radio_points: HashMap<String, RadioPoints>,
 }
 
-impl Points {
+impl HotspotPoints {
+    pub fn new(speedtest_multiplier: Decimal) -> Self {
+        Self {
+            speedtest_multiplier,
+            radio_points: HashMap::new(),
+        }
+    }
+}
+
+impl HotspotPoints {
     pub fn total_points(&self) -> Decimal {
-        self.radio_points
-            .values()
-            .fold(Decimal::ZERO, |sum, amount| sum + amount)
-    }
-
-    pub fn total_shares(&self) -> Decimal {
-        self.multiplier * self.total_points()
+        self.speedtest_multiplier
+            * self
+                .radio_points
+                .values()
+                .fold(Decimal::ZERO, |sum, radio| sum + radio.points())
     }
 }
 
+#[derive(Debug)]
 pub struct CoveragePoints {
-    coverage_points: HashMap<PublicKeyBinary, Points>,
+    coverage_points: HashMap<PublicKeyBinary, HotspotPoints>,
+}
+
+pub trait CoveredHexStream {
+    fn covered_hex_stream<'a>(
+        &'a self,
+        cbsd_id: &str,
+        coverage_obj: &Uuid,
+    ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>>;
+}
+
+impl CoveredHexStream for Pool<Postgres> {
+    fn covered_hex_stream<'a>(
+        &'a self,
+        cbsd_id: &str,
+        coverage_obj: &Uuid,
+    ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
+        crate::coverage::covered_hex_stream(self, cbsd_id, coverage_obj)
+    }
 }
 
 impl CoveragePoints {
     pub async fn aggregate_points(
-        pool: &Pool<Postgres>,
+        hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: SpeedtestAverages,
     ) -> Result<Self, sqlx::Error> {
@@ -184,21 +231,16 @@ impl CoveragePoints {
                 continue;
             }
 
-            let covered_hex_stream = crate::coverage::covered_hex_stream(
-                &pool,
-                &heartbeat.cbsd_id,
-                &heartbeat.coverage_object,
-            );
+            let covered_hex_stream =
+                hex_streams.covered_hex_stream(&heartbeat.cbsd_id, &heartbeat.coverage_object);
             covered_hexes
                 .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
                 .await?;
-            coverage_points.insert(
-                heartbeat.hotspot_key,
-                Points {
-                    multiplier: heartbeat.reward_weight * speedtest_multiplier,
-                    radio_points: Default::default(),
-                },
-            );
+            coverage_points
+                .entry(heartbeat.hotspot_key)
+                .or_insert_with(|| HotspotPoints::new(speedtest_multiplier))
+                .radio_points
+                .insert(heartbeat.cbsd_id, RadioPoints::new(heartbeat.reward_weight));
         }
 
         for CoverageReward {
@@ -208,12 +250,13 @@ impl CoveragePoints {
         } in covered_hexes.into_iter()
         {
             // Guaranteed that points contains the given hotspot.
-            *coverage_points
+            coverage_points
                 .get_mut(&hotspot)
                 .unwrap()
                 .radio_points
-                .entry(cbsd_id)
-                .or_default() += points;
+                .get_mut(&cbsd_id)
+                .unwrap()
+                .points += points;
         }
 
         Ok(Self { coverage_points })
@@ -231,7 +274,7 @@ impl CoveragePoints {
         self.coverage_points
             .values()
             .fold(Decimal::ZERO, |sum, radio_points| {
-                sum + radio_points.total_shares()
+                sum + radio_points.total_points()
             })
     }
 
@@ -251,30 +294,41 @@ impl CoveragePoints {
             .flat_map(
                 move |(
                     hotspot_key,
-                    Points {
-                        multiplier,
+                    HotspotPoints {
+                        speedtest_multiplier,
                         radio_points,
                     },
                 )| {
-                    radio_points.into_iter().map(move |(cbsd_id, amount)| {
-                        let poc_reward = poc_rewards_per_share * multiplier * amount;
-                        let hotspot_key: Vec<u8> = hotspot_key.clone().into();
-                        proto::MobileRewardShare {
-                            start_period,
-                            end_period,
-                            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-                                proto::RadioReward {
-                                    hotspot_key,
-                                    cbsd_id,
-                                    poc_reward: poc_reward
-                                        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                        .to_u64()
-                                        .unwrap_or(0),
-                                    ..Default::default()
-                                },
-                            )),
-                        }
-                    })
+                    radio_points.into_iter().map(
+                        move |(
+                            cbsd_id,
+                            RadioPoints {
+                                heartbeat_multiplier,
+                                points,
+                            },
+                        )| {
+                            let poc_reward = poc_rewards_per_share
+                                * speedtest_multiplier
+                                * heartbeat_multiplier
+                                * points;
+                            let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+                            proto::MobileRewardShare {
+                                start_period,
+                                end_period,
+                                reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                                    proto::RadioReward {
+                                        hotspot_key,
+                                        cbsd_id,
+                                        poc_reward: poc_reward
+                                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                                            .to_u64()
+                                            .unwrap_or(0),
+                                        ..Default::default()
+                                    },
+                                )),
+                            }
+                        },
+                    )
                 },
             )
             .filter(|mobile_reward| match mobile_reward.reward {
@@ -295,7 +349,6 @@ pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
-/*
 #[cfg(test)]
 mod test {
     use super::*;
@@ -308,14 +361,8 @@ mod test {
     use futures::stream;
     use std::collections::{HashMap, VecDeque};
 
-    fn valid_shares() -> RadioShares {
-        let mut radio_shares: HashMap<String, Decimal> = Default::default();
-        radio_shares.insert(String::new(), Decimal::ONE);
-        RadioShares { radio_shares }
-    }
-
     #[test]
-    fn bytes_to_bones() {
+    fn ensure_correct_conversion_of_bytes_to_bones() {
         assert_eq!(
             dc_to_mobile_bones(Decimal::from(1), dec!(1.0)),
             dec!(0.00001)
@@ -326,8 +373,23 @@ mod test {
         );
     }
 
+    fn valid_points() -> HotspotPoints {
+        let mut radio_points: HashMap<String, RadioPoints> = Default::default();
+        radio_points.insert(
+            String::new(),
+            RadioPoints {
+                heartbeat_multiplier: Decimal::ONE,
+                points: Decimal::ONE,
+            },
+        );
+        HotspotPoints {
+            speedtest_multiplier: Decimal::ONE,
+            radio_points,
+        }
+    }
+
     #[tokio::test]
-    async fn transfer_reward_amount() {
+    async fn ensure_data_correct_transfer_reward_amount() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
@@ -345,9 +407,9 @@ mod test {
             last_timestamp: DateTime::default(),
         }]);
 
-        let mut hotspot_shares = HashMap::default();
-        hotspot_shares.insert(owner.clone(), valid_shares());
-        let poc_shares = PocShares { hotspot_shares };
+        let mut coverage_points = HashMap::default();
+        coverage_points.insert(owner.clone(), valid_points());
+        let coverage_points = CoveragePoints { coverage_points };
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
@@ -363,7 +425,7 @@ mod test {
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
             data_transfer_sessions,
-            &poc_shares,
+            &coverage_points,
             &epoch,
         )
         .await;
@@ -380,7 +442,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn transfer_reward_scale() {
+    async fn ensure_excess_transfer_rewards_scale() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
@@ -407,14 +469,14 @@ mod test {
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
 
-        let mut hotspot_shares = HashMap::default();
-        hotspot_shares.insert(owner.clone(), valid_shares());
-        let poc_shares = PocShares { hotspot_shares };
+        let mut coverage_points = HashMap::default();
+        coverage_points.insert(owner.clone(), valid_points());
+        let coverage_points = CoveragePoints { coverage_points };
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
             data_transfer_sessions,
-            &poc_shares,
+            &coverage_points,
             &epoch,
         )
         .await;
@@ -480,8 +542,25 @@ mod test {
         }
     }
 
+    impl CoveredHexStream for HashMap<(String, Uuid), Vec<HexCoverage>> {
+        fn covered_hex_stream<'a>(
+            &'a self,
+            cbsd_id: &str,
+            coverage_obj: &Uuid,
+        ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
+            stream::iter(
+                self.get(&(cbsd_id.to_string(), coverage_obj.clone()))
+                    .unwrap()
+                    .clone(),
+            )
+            .map(Ok)
+            .boxed()
+        }
+    }
+
+    /*
     #[tokio::test]
-    async fn test_radio_weights() {
+    async fn ensure_correct_radio_weights() {
         let g1: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
             .parse()
             .expect("unable to construct pubkey");
@@ -492,6 +571,11 @@ mod test {
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
 
+        let cov_obj_1 = Uuid::new_v4();
+        let cov_obj_2 = Uuid::new_v4();
+        let cov_obj_3 = Uuid::new_v4();
+        let cov_obj_4 = Uuid::new_v4();
+
         let timestamp = Utc::now();
 
         let heartbeats = vec![
@@ -499,23 +583,29 @@ mod test {
                 cbsd_id: c1.clone(),
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c1),
+                coverage_object: cov_obj_1,
             },
             HeartbeatReward {
                 cbsd_id: c2.clone(),
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c2),
+                coverage_object: cov_obj_2,
             },
             HeartbeatReward {
                 cbsd_id: c1.clone(),
                 hotspot_key: g2.clone(),
                 reward_weight: cell_type_weight(&c1),
+                coverage_object: cov_obj_3,
             },
             HeartbeatReward {
                 cbsd_id: c1.clone(),
                 hotspot_key: g2.clone(),
                 reward_weight: cell_type_weight(&c1),
+                coverage_object: cov_obj_4,
             },
         ];
+
+        let mut coverage_objects = HashMap::new();
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
@@ -548,6 +638,18 @@ mod test {
                     .expect("Could not fetch gateway2 shares")
                     .total_shares()
         );
+    }
+     */
+
+    fn simple_hex_coverage(cbsd_id: &str, hex: u64) -> Vec<HexCoverage> {
+        vec![HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: hex as i64,
+            indoor: false,
+            cbsd_id: cbsd_id.to_string(),
+            signal_level: crate::coverage::SignalLevel::Low,
+            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+        }]
     }
 
     #[tokio::test]
@@ -617,6 +719,19 @@ mod test {
         let c13 = "P27-SCE4255W2107CW5000022".to_string();
         let c14 = "2AG32PBS3101S1202000464223GY0157".to_string();
 
+        let cov_obj_2 = Uuid::new_v4();
+        let cov_obj_4 = Uuid::new_v4();
+        let cov_obj_5 = Uuid::new_v4();
+        let cov_obj_6 = Uuid::new_v4();
+        let cov_obj_7 = Uuid::new_v4();
+        let cov_obj_8 = Uuid::new_v4();
+        let cov_obj_9 = Uuid::new_v4();
+        let cov_obj_10 = Uuid::new_v4();
+        let cov_obj_11 = Uuid::new_v4();
+        let cov_obj_12 = Uuid::new_v4();
+        let cov_obj_13 = Uuid::new_v4();
+        let cov_obj_14 = Uuid::new_v4();
+
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
 
@@ -626,63 +741,126 @@ mod test {
                 cbsd_id: c2.clone(),
                 hotspot_key: gw2.clone(),
                 reward_weight: cell_type_weight(&c2),
+                coverage_object: cov_obj_2,
             },
             HeartbeatReward {
                 cbsd_id: c4.clone(),
                 hotspot_key: gw3.clone(),
                 reward_weight: cell_type_weight(&c4),
+                coverage_object: cov_obj_4,
             },
             HeartbeatReward {
                 cbsd_id: c5.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c5),
+                coverage_object: cov_obj_5,
             },
             HeartbeatReward {
                 cbsd_id: c6.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c6),
+                coverage_object: cov_obj_6,
             },
             HeartbeatReward {
                 cbsd_id: c7.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c7),
+                coverage_object: cov_obj_7,
             },
             HeartbeatReward {
                 cbsd_id: c8.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c8),
+                coverage_object: cov_obj_8,
             },
             HeartbeatReward {
                 cbsd_id: c9.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c9),
+                coverage_object: cov_obj_9,
             },
             HeartbeatReward {
                 cbsd_id: c10.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c10),
+                coverage_object: cov_obj_10,
             },
             HeartbeatReward {
                 cbsd_id: c11.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c11),
+                coverage_object: cov_obj_11,
             },
             HeartbeatReward {
                 cbsd_id: c12.clone(),
                 hotspot_key: gw5.clone(),
                 reward_weight: cell_type_weight(&c12),
+                coverage_object: cov_obj_12,
             },
             HeartbeatReward {
                 cbsd_id: c13.clone(),
                 hotspot_key: gw6.clone(),
                 reward_weight: cell_type_weight(&c13),
+                coverage_object: cov_obj_13,
             },
             HeartbeatReward {
                 cbsd_id: c14.clone(),
                 hotspot_key: gw7.clone(),
                 reward_weight: cell_type_weight(&c14),
+                coverage_object: cov_obj_14,
             },
         ];
+
+        // Setup hex coverages
+        let mut hex_coverage = HashMap::new();
+        hex_coverage.insert(
+            (c2.clone(), cov_obj_2),
+            simple_hex_coverage(&c2, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (c4.clone(), cov_obj_4),
+            simple_hex_coverage(&c4, 0x8a1fb46632dffff),
+        );
+        hex_coverage.insert(
+            (c5.clone(), cov_obj_5),
+            simple_hex_coverage(&c5, 0x8a1fb46642dffff),
+        );
+        hex_coverage.insert(
+            (c6.clone(), cov_obj_6),
+            simple_hex_coverage(&c6, 0x8a1fb46652dffff),
+        );
+        hex_coverage.insert(
+            (c7.clone(), cov_obj_7),
+            simple_hex_coverage(&c7, 0x8a1fb46662dffff),
+        );
+        hex_coverage.insert(
+            (c8.clone(), cov_obj_8),
+            simple_hex_coverage(&c8, 0x8a1fb46522dffff),
+        );
+        hex_coverage.insert(
+            (c9.clone(), cov_obj_9),
+            simple_hex_coverage(&c9, 0x8a1fb46682dffff),
+        );
+        hex_coverage.insert(
+            (c10.clone(), cov_obj_10),
+            simple_hex_coverage(&c10, 0x8a1fb46692dffff),
+        );
+        hex_coverage.insert(
+            (c11.clone(), cov_obj_11),
+            simple_hex_coverage(&c11, 0x8a1fb466a2dffff),
+        );
+        hex_coverage.insert(
+            (c12.clone(), cov_obj_12),
+            simple_hex_coverage(&c12, 0x8a1fb466b2dffff),
+        );
+        hex_coverage.insert(
+            (c13.clone(), cov_obj_13),
+            simple_hex_coverage(&c13, 0x8a1fb466c2dffff),
+        );
+        hex_coverage.insert(
+            (c14.clone(), cov_obj_14),
+            simple_hex_coverage(&c14, 0x8a1fb466d2dffff),
+        );
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -724,10 +902,14 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        for mobile_reward in PocShares::aggregate(stream::iter(heartbeats).map(Ok), speedtest_avgs)
-            .await
-            .unwrap()
-            .into_rewards(Decimal::ZERO, &epoch)
+        for mobile_reward in CoveragePoints::aggregate_points(
+            &hex_coverage,
+            stream::iter(heartbeats).map(Ok),
+            speedtest_avgs,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -753,7 +935,6 @@ mod test {
                 .expect("Could not fetch owner2 rewards"),
             2_950_474_183_346
         );
-
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
@@ -770,52 +951,53 @@ mod test {
         assert_eq!(total, 4_109_589_041_089); // total emissions for 1 hour
     }
 
-    #[tokio::test]
-    async fn dont_write_zero_rewards() {
-        use rust_decimal_macros::dec;
+    /*
+        #[tokio::test]
+        async fn dont_write_zero_rewards() {
+            use rust_decimal_macros::dec;
 
-        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed gw1 parse");
-        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
-            .parse()
-            .expect("failed gw2 parse");
+            let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+                .parse()
+                .expect("failed gw1 parse");
+            let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+                .parse()
+                .expect("failed gw2 parse");
 
-        let c1 = "P27-SCE4255W2107CW5000014".to_string();
-        let c2 = "P27-SCE4255W2107CW5000015".to_string();
-        let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
+            let c1 = "P27-SCE4255W2107CW5000014".to_string();
+            let c2 = "P27-SCE4255W2107CW5000015".to_string();
+            let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
 
-        let mut hotspot_shares = HashMap::new();
+            let mut hotspot_shares = HashMap::new();
 
-        hotspot_shares.insert(
-            gw1.clone(),
-            RadioShares {
-                radio_shares: vec![(c1, dec!(10.0))].into_iter().collect(),
-            },
-        );
-        hotspot_shares.insert(
-            gw2,
-            RadioShares {
-                radio_shares: vec![(c2, dec!(-1.0)), (c3, dec!(0.0))]
-                    .into_iter()
-                    .collect(),
-            },
-        );
+            hotspot_shares.insert(
+                gw1.clone(),
+                RadioShares {
+                    radio_shares: vec![(c1, dec!(10.0))].into_iter().collect(),
+                },
+            );
+            hotspot_shares.insert(
+                gw2,
+                RadioShares {
+                    radio_shares: vec![(c2, dec!(-1.0)), (c3, dec!(0.0))]
+                        .into_iter()
+                        .collect(),
+                },
+            );
 
-        let now = Utc::now();
-        // We should never see any radio shares from owner2, since all of them are
-        // less than or equal to zero.
-        let owner_shares = PocShares { hotspot_shares };
-        let epoch = now - Duration::hours(1)..now;
-        let expected_hotspot = gw1;
-        for mobile_reward in owner_shares.into_rewards(Decimal::ZERO, &epoch) {
-            let radio_reward = match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
-                _ => unreachable!(),
-            };
-            let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
-            assert_eq!(actual_hotspot, expected_hotspot);
+            let now = Utc::now();
+            // We should never see any radio shares from owner2, since all of them are
+            // less than or equal to zero.
+            let owner_shares = PocShares { hotspot_shares };
+            let epoch = now - Duration::hours(1)..now;
+            let expected_hotspot = gw1;
+            for mobile_reward in owner_shares.into_rewards(Decimal::ZERO, &epoch) {
+                let radio_reward = match mobile_reward.reward {
+                    Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                    _ => unreachable!(),
+                };
+                let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
+                assert_eq!(actual_hotspot, expected_hotspot);
+            }
         }
-    }
+    */
 }
-*/
