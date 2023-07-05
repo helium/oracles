@@ -158,7 +158,7 @@ impl RadioPoints {
     }
 
     fn points(&self) -> Decimal {
-        self.heartbeat_multiplier * self.points
+        (self.heartbeat_multiplier * self.points).max(Decimal::ZERO)
     }
 }
 
@@ -653,7 +653,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn reward_shares_with_speed_multiplier() {
+    async fn ensure_speedtest_averages_affect_reward_shares() {
         // init owners
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -951,53 +951,76 @@ mod test {
         assert_eq!(total, 4_109_589_041_089); // total emissions for 1 hour
     }
 
-    /*
-        #[tokio::test]
-        async fn dont_write_zero_rewards() {
-            use rust_decimal_macros::dec;
+    #[tokio::test]
+    async fn ensure_zeroed_rewards_are_not_written() {
+        use rust_decimal_macros::dec;
 
-            let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-                .parse()
-                .expect("failed gw1 parse");
-            let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
-                .parse()
-                .expect("failed gw2 parse");
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
 
-            let c1 = "P27-SCE4255W2107CW5000014".to_string();
-            let c2 = "P27-SCE4255W2107CW5000015".to_string();
-            let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
+        let c1 = "P27-SCE4255W2107CW5000014".to_string();
+        let c2 = "P27-SCE4255W2107CW5000015".to_string();
+        let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
 
-            let mut hotspot_shares = HashMap::new();
+        let mut coverage_points = HashMap::new();
 
-            hotspot_shares.insert(
-                gw1.clone(),
-                RadioShares {
-                    radio_shares: vec![(c1, dec!(10.0))].into_iter().collect(),
-                },
-            );
-            hotspot_shares.insert(
-                gw2,
-                RadioShares {
-                    radio_shares: vec![(c2, dec!(-1.0)), (c3, dec!(0.0))]
-                        .into_iter()
-                        .collect(),
-                },
-            );
+        coverage_points.insert(
+            gw1.clone(),
+            HotspotPoints {
+                speedtest_multiplier: dec!(1.0),
+                radio_points: vec![(
+                    c1,
+                    RadioPoints {
+                        heartbeat_multiplier: dec!(1.0),
+                        points: dec!(10.0),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            },
+        );
+        coverage_points.insert(
+            gw2,
+            HotspotPoints {
+                speedtest_multiplier: dec!(1.0),
+                radio_points: vec![
+                    (
+                        c2,
+                        RadioPoints {
+                            heartbeat_multiplier: dec!(1.0),
+                            points: dec!(-1.0),
+                        },
+                    ),
+                    (
+                        c3,
+                        RadioPoints {
+                            heartbeat_multiplier: dec!(1.0),
+                            points: dec!(0.0),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            },
+        );
 
-            let now = Utc::now();
-            // We should never see any radio shares from owner2, since all of them are
-            // less than or equal to zero.
-            let owner_shares = PocShares { hotspot_shares };
-            let epoch = now - Duration::hours(1)..now;
-            let expected_hotspot = gw1;
-            for mobile_reward in owner_shares.into_rewards(Decimal::ZERO, &epoch) {
-                let radio_reward = match mobile_reward.reward {
-                    Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
-                    _ => unreachable!(),
-                };
-                let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
-                assert_eq!(actual_hotspot, expected_hotspot);
-            }
+        let now = Utc::now();
+        // We should never see any radio shares from owner2, since all of them are
+        // less than or equal to zero.
+        let coverage_points = CoveragePoints { coverage_points };
+        let epoch = now - Duration::hours(1)..now;
+        let expected_hotspot = gw1;
+        for mobile_reward in coverage_points.into_rewards(Decimal::ZERO, &epoch) {
+            let radio_reward = match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
+            assert_eq!(actual_hotspot, expected_hotspot);
         }
-    */
+    }
 }
