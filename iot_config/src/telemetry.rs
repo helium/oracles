@@ -31,13 +31,15 @@ pub fn gauge_hexes(cells: usize) {
 
 pub fn count_region_lookup(
     default_region: helium_proto::Region,
-    reported_region: helium_proto::Region,
+    reported_region: Option<helium_proto::Region>,
 ) {
+    let reported_region =
+        reported_region.map_or_else(|| "LOOKUP_FAILED".to_string(), |region| region.to_string());
     metrics::increment_counter!(
         REGION_LOOKUP_METRIC,
         // per metrics docs, &str should be preferred for performance; should the regions be
         // mapped through a match of region => &'static str of the name?
-        "default_region" => default_region.to_string(), "reported_region" => reported_region.to_string()
+        "default_region" => default_region.to_string(), "reported_region" => reported_region
     );
 }
 
