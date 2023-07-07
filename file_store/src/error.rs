@@ -60,7 +60,7 @@ pub enum DecodeError {
     InvalidTimestamp(u64),
     #[error("Uuid error: {0}")]
     UuidError(#[from] uuid::Error),
-    #[error("Ivalid cell index error: {0}")]
+    #[error("Invalid cell index error: {0}")]
     InvalidCellIndexError(#[from] h3o::error::InvalidCellIndex),
 }
 
