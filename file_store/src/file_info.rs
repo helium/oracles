@@ -126,6 +126,7 @@ pub const INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT: &str =
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
+pub const MAPPER_MSG: &str = "mapper_msg";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -160,6 +161,7 @@ pub enum FileType {
     SubscriberLocationReq,
     SubscriberLocationIngestReport,
     VerifiedSubscriberLocationIngestReport,
+    MapperMsg,
 }
 
 impl fmt::Display for FileType {
@@ -199,6 +201,7 @@ impl fmt::Display for FileType {
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
+            Self::MapperMsg => MAPPER_MSG,
         };
         f.write_str(s)
     }
@@ -241,6 +244,7 @@ impl FileType {
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
+            Self::MapperMsg => MAPPER_MSG,
         }
     }
 }
@@ -283,6 +287,7 @@ impl FromStr for FileType {
             VALID_DATA_TRANSFER_SESSION => Self::ValidDataTransferSession,
             PRICE_REPORT => Self::PriceReport,
             MOBILE_REWARD_SHARE => Self::MobileRewardShare,
+            MAPPER_MSG => Self::MapperMsg,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
