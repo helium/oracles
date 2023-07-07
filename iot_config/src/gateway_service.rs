@@ -184,13 +184,22 @@ impl iot_config::Gateway for GatewayService {
         })?;
 
         let (region, gain) = match self.resolve_gateway_info(address).await {
-            Err(_) => {
+            Err(status) if status.code() == tonic::Code::NotFound => {
                 tracing::debug!(
                     pubkey = %address,
                     %default_region,
                     "unable to retrieve gateway from chain"
                 );
                 (default_region, 0)
+            }
+            Err(status) => {
+                tracing::error!(
+                    pubkey = %address,
+                    %default_region,
+                    "gateway lookup failed"
+                );
+                telemetry::count_region_lookup(default_region, None);
+                return Err(Status::internal(status.message().to_string()));
             }
             Ok(GatewayInfo { metadata, .. }) => match metadata {
                 None => {
@@ -204,7 +213,7 @@ impl iot_config::Gateway for GatewayService {
                 Some(metadata) => (metadata.region, metadata.gain),
             },
         };
-        telemetry::count_region_lookup(default_region, region);
+        telemetry::count_region_lookup(default_region, Some(region));
 
         let params = self.region_map.get_params(&region);
 
