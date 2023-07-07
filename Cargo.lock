@@ -1106,17 +1106,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#9208f4f93afa9741f4bd52a1ea12073c6905d0a0"
+source = "git+https://github.com/helium/proto?branch=master#0d8b72128746773f34257f60d21edafb780de5a2"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
+ "helium-proto",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -2025,7 +2025,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "structopt",
  "thiserror",
  "tracing",
@@ -2423,7 +2423,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "hex-literal",
  "http",
  "lazy_static",
@@ -2436,7 +2436,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "strum",
  "strum_macros",
@@ -2857,7 +2857,7 @@ dependencies = [
  "p256",
  "rand_core 0.6.4",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "signature",
  "solana-sdk",
  "sqlx",
@@ -2867,21 +2867,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=map/modeled-coverage#985a7e8c91e7e8b2c30e69cb313b4d78ebcc9fd3"
-dependencies = [
- "bytes",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "helium-proto"
-version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#9208f4f93afa9741f4bd52a1ea12073c6905d0a0"
+source = "git+https://github.com/helium/proto?branch=master#0d8b72128746773f34257f60d21edafb780de5a2"
 dependencies = [
  "bytes",
  "prost",
@@ -3194,7 +3180,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "http",
  "metrics",
  "metrics-exporter-prometheus",
@@ -3202,7 +3188,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "tokio",
  "tonic",
@@ -3245,7 +3231,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "hextree",
  "http",
  "http-serde",
@@ -3281,7 +3267,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "http",
  "http-serde",
  "iot-config",
@@ -3319,7 +3305,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "http-serde",
  "humantime",
  "iot-config",
@@ -3337,7 +3323,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -3853,7 +3839,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "hextree",
  "http",
  "http-serde",
@@ -3888,7 +3874,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "http",
  "http-serde",
  "metrics",
@@ -3896,7 +3882,7 @@ dependencies = [
  "poc-metrics",
  "prost",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "solana",
  "sqlx",
  "thiserror",
@@ -3923,7 +3909,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "http-serde",
  "humantime",
  "lazy_static",
@@ -3941,7 +3927,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -4518,7 +4504,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "http",
  "hyper",
  "jsonrpsee",
@@ -4595,7 +4581,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
@@ -5121,7 +5107,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage)",
+ "helium-proto",
  "http-serde",
  "lazy_static",
  "metrics",
@@ -5134,7 +5120,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -5772,7 +5758,7 @@ dependencies = [
  "helium-sub-daos",
  "metrics",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "solana-client",
  "solana-program",
  "solana-sdk",
@@ -7293,7 +7279,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 

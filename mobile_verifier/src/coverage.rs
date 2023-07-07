@@ -1,6 +1,7 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BinaryHeap, HashMap},
+    sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
@@ -12,15 +13,16 @@ use file_store::{
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
-    TryFutureExt,
+    TryFutureExt, TryStreamExt,
 };
-use h3o::CellIndex;
+use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
 use mobile_config::client::AuthorizationClient;
+use retainer::Cache;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, Pool, Postgres, Type};
@@ -31,7 +33,7 @@ use uuid::Uuid;
 #[sqlx(type_name = "signal_level")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SignalLevel {
-    No,
+    None,
     Low,
     Medium,
     High,
@@ -43,7 +45,7 @@ impl From<SignalLevelProto> for SignalLevel {
             SignalLevelProto::High => Self::High,
             SignalLevelProto::Medium => Self::Medium,
             SignalLevelProto::Low => Self::Low,
-            SignalLevelProto::No => Self::Low,
+            SignalLevelProto::None => Self::None,
         }
     }
 }
@@ -106,6 +108,7 @@ impl CoverageDaemon {
                 coverage_claim_time,
                 indoor,
                 coverage,
+                signature,
             } = report;
 
             // TODO: Validate pub key is authorized
@@ -121,15 +124,18 @@ impl CoverageDaemon {
 
             self.file_sink
                 .write(
-                    proto::CoverageObject {
-                        pub_key: pub_key.into(),
-                        uuid: Vec::from(uuid.into_bytes()),
-                        cbsd_id: cbsd_id.clone(),
-                        coverage_claim_time: coverage_claim_time.encode_timestamp(),
-                        indoor,
-                        // It's pretty weird that we have to convert these back and forth, but it
-                        // shouldn't be too inefficient
-                        coverage: coverage.clone().into_iter().map(Into::into).collect(),
+                    proto::CoverageObjectV1 {
+                        coverage_object: Some(proto::CoverageObjectReqV1 {
+                            pub_key: pub_key.into(),
+                            uuid: Vec::from(uuid.into_bytes()),
+                            cbsd_id: cbsd_id.clone(),
+                            coverage_claim_time: coverage_claim_time.encode_timestamp(),
+                            indoor,
+                            // It's pretty weird that we have to convert these back and forth, but it
+                            // shouldn't be too inefficient
+                            coverage: coverage.clone().into_iter().map(Into::into).collect(),
+                            signature,
+                        }),
                         validity: validity as i32,
                     },
                     [],
@@ -175,7 +181,7 @@ pub struct HexCoverage {
     pub coverage_claim_time: DateTime<Utc>,
 }
 
-#[derive(Eq, Ord)]
+#[derive(Eq)]
 struct CoverageLevel {
     cbsd_id: String,
     coverage_claim_time: DateTime<Utc>,
@@ -196,6 +202,12 @@ impl PartialOrd for CoverageLevel {
     }
 }
 
+impl Ord for CoverageLevel {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.coverage_claim_time.cmp(&other.coverage_claim_time)
+    }
+}
+
 impl CoverageLevel {
     fn coverage_points(&self) -> anyhow::Result<Decimal> {
         Ok(match (self.indoor, self.signal_level) {
@@ -204,7 +216,7 @@ impl CoverageLevel {
             (false, SignalLevel::High) => dec!(16),
             (false, SignalLevel::Medium) => dec!(8),
             (false, SignalLevel::Low) => dec!(4),
-            (_, SignalLevel::No) => dec!(0),
+            (_, SignalLevel::None) => dec!(0),
             _ => anyhow::bail!("Indoor radio cannot have a signal level of medium"),
         })
     }
@@ -221,18 +233,47 @@ pub const MAX_RADIOS_PER_HEX: usize = 5;
 
 #[derive(Default)]
 pub struct CoveredHexes {
-    hexes: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>>,
+    hexes: HashMap<CellIndex, [BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>; 2]>,
 }
 
 pub fn covered_hex_stream<'a>(
     pool: &'a Pool<Postgres>,
-    cbsd_id: &str,
-    coverage_obj: &Uuid,
+    cbsd_id: &'a str,
+    coverage_obj: &'a Uuid,
+    latest_timestamp: &'a DateTime<Utc>,
 ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
+    #[derive(FromRow)]
+    struct AdjustedClaimTime {
+        coverage_claim_time: DateTime<Utc>,
+    }
+
     sqlx::query_as("SELECT * FROM coverage WHERE cbsd_id = $1 AND uuid = $2")
         .bind(cbsd_id.to_string())
-        .bind(coverage_obj.clone())
+        .bind(*coverage_obj)
         .fetch(pool)
+        .and_then(move |mut hc: HexCoverage| async move {
+            let AdjustedClaimTime { coverage_claim_time: adjusted_claim_time } = sqlx::query_as(
+                r#"
+                INSERT INTO coverage_claim_time VALUES ($1, $2, $3, $4)
+                ON CONFLICT (cbsd_id)
+                DO UPDATE SET
+                coverage_claim_time =
+                    CASE WHEN EXCLUDED.last_heartbeat - coverage_claim_time.last_heartbeat > INTERVAL '72:00:00' THEN EXCLUDED.last_heartbeat ELSE heartbeat.coverage_claim_time END,
+                last_heartbeat = EXCLUDED.last_heartbeat,
+                uuid = EXCLUDED.uuid
+                RETURNING coverage_claim_time
+                "#
+            ).bind(cbsd_id)
+            .bind(coverage_obj)
+                .bind(hc.coverage_claim_time)
+                .bind(latest_timestamp)
+                .fetch_one(pool)
+                .await
+                .unwrap(); // TODO: Fix
+            hc.coverage_claim_time = adjusted_claim_time;
+            Ok(hc)
+        })
+        .boxed()
 }
 
 impl CoveredHexes {
@@ -254,7 +295,7 @@ impl CoveredHexes {
         {
             self.hexes
                 .entry(CellIndex::try_from(hex as u64).unwrap())
-                .or_default()
+                .or_default()[indoor as usize]
                 .entry(signal_level)
                 .or_default()
                 .push(CoverageLevel {
@@ -272,22 +313,90 @@ impl CoveredHexes {
     pub fn into_iter(self) -> impl Iterator<Item = CoverageReward> {
         self.hexes
             .into_values()
-            .map(|mut radios| {
-                radios.pop_last().map(|(_, radios)| {
-                    radios
-                        .into_sorted_vec()
-                        .into_iter()
-                        .take(MAX_RADIOS_PER_HEX)
-                        .map(|cl| CoverageReward {
-                            points: cl.coverage_points().unwrap(),
-                            hotspot: cl.hotspot,
-                            cbsd_id: cl.cbsd_id,
-                        })
+            .flat_map(|radios| {
+                radios.into_iter().map(|mut radios| {
+                    radios.pop_last().map(|(_, radios)| {
+                        radios
+                            .into_sorted_vec()
+                            .into_iter()
+                            .take(MAX_RADIOS_PER_HEX)
+                            .map(|cl| CoverageReward {
+                                points: cl.coverage_points().unwrap(),
+                                hotspot: cl.hotspot,
+                                cbsd_id: cl.cbsd_id,
+                            })
+                    })
                 })
             })
             .flatten()
             .flatten()
             .filter(|r| r.points > Decimal::ZERO)
+    }
+}
+
+pub struct CoveredHexCache {
+    pool: Pool<Postgres>,
+    covered_hexes: Arc<Cache<Uuid, CachedCoverage>>,
+}
+
+impl CoveredHexCache {
+    pub fn new(pool: &Pool<Postgres>) -> Self {
+        let cache = Arc::new(Cache::new());
+        let cache_clone = cache.clone();
+        tokio::spawn(async move {
+            cache_clone
+                .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 24 * 2))
+                .await
+        });
+
+        Self {
+            covered_hexes: cache,
+            pool: pool.clone(),
+        }
+    }
+
+    pub async fn fetch_coverage(&self, uuid: &Uuid) -> Result<Option<CachedCoverage>, sqlx::Error> {
+        if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
+            return Ok(Some(covered_hexes.clone()));
+        }
+        let Some(cbsd_id) = sqlx::query_scalar("SELECT cbsd_id FROM coverage_claim_time WHERE uuid = $1")
+            .bind(uuid)
+            .fetch_optional(&self.pool)
+            .await? else {
+                return Ok(None);
+            };
+        let coverage: Vec<_> = sqlx::query_as("SELECT * FROM hex_coverage WHERE uuid = $1")
+            .bind(uuid)
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|HexCoverage { hex, .. }| CellIndex::try_from(hex as u64).unwrap())
+            .collect();
+        let cached_coverage = CachedCoverage { cbsd_id, coverage };
+        let _ = self
+            .covered_hexes
+            .insert(
+                *uuid,
+                cached_coverage.clone(),
+                std::time::Duration::from_secs(60 * 60 * 24),
+            )
+            .await;
+        Ok(Some(cached_coverage))
+    }
+}
+
+#[derive(Clone)]
+pub struct CachedCoverage {
+    pub cbsd_id: String,
+    coverage: Vec<CellIndex>,
+}
+
+impl CachedCoverage {
+    pub fn max_distance_km(&self, latlng: LatLng) -> f64 {
+        self.coverage.iter().fold(0.0, |curr_max, curr_cov| {
+            let cov = LatLng::from(*curr_cov);
+            curr_max.max(cov.distance_km(latlng))
+        })
     }
 }
 
@@ -318,13 +427,13 @@ mod test {
             .aggregate_coverage(
                 &owner,
                 iter(vec![
-                    anyhow::Ok(default_hex_coverage("1", SignalLevel::No)),
+                    anyhow::Ok(default_hex_coverage("1", SignalLevel::None)),
                     anyhow::Ok(default_hex_coverage("2", SignalLevel::Low)),
                     anyhow::Ok(default_hex_coverage("3", SignalLevel::Medium)),
                     anyhow::Ok(default_hex_coverage("4", SignalLevel::High)),
                     anyhow::Ok(default_hex_coverage("5", SignalLevel::Medium)),
                     anyhow::Ok(default_hex_coverage("6", SignalLevel::Low)),
-                    anyhow::Ok(default_hex_coverage("7", SignalLevel::No)),
+                    anyhow::Ok(default_hex_coverage("7", SignalLevel::None)),
                 ]),
             )
             .await

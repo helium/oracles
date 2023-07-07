@@ -197,18 +197,20 @@ pub struct CoveragePoints {
 pub trait CoveredHexStream {
     fn covered_hex_stream<'a>(
         &'a self,
-        cbsd_id: &str,
-        coverage_obj: &Uuid,
+        cbsd_id: &'a str,
+        coverage_obj: &'a Uuid,
+        latest_timestamp: &'a DateTime<Utc>,
     ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>>;
 }
 
 impl CoveredHexStream for Pool<Postgres> {
     fn covered_hex_stream<'a>(
         &'a self,
-        cbsd_id: &str,
-        coverage_obj: &Uuid,
+        cbsd_id: &'a str,
+        coverage_obj: &'a Uuid,
+        latest_timestamp: &'a DateTime<Utc>,
     ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
-        crate::coverage::covered_hex_stream(self, cbsd_id, coverage_obj)
+        crate::coverage::covered_hex_stream(self, cbsd_id, coverage_obj, latest_timestamp)
     }
 }
 
@@ -231,8 +233,11 @@ impl CoveragePoints {
                 continue;
             }
 
-            let covered_hex_stream =
-                hex_streams.covered_hex_stream(&heartbeat.cbsd_id, &heartbeat.coverage_object);
+            let covered_hex_stream = hex_streams.covered_hex_stream(
+                &heartbeat.cbsd_id,
+                &heartbeat.coverage_object,
+                &heartbeat.latest_timestamp,
+            );
             covered_hexes
                 .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
                 .await?;

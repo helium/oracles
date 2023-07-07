@@ -16,7 +16,7 @@ use uuid::Uuid;
 pub struct RadioHexSignalLevel {
     pub location: h3o::CellIndex,
     pub signal_level: SignalLevel,
-    pub signal_power: f64,
+    pub signal_power: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -27,6 +27,7 @@ pub struct CoverageObject {
     pub coverage_claim_time: DateTime<Utc>,
     pub indoor: bool,
     pub coverage: Vec<RadioHexSignalLevel>,
+    pub signature: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -73,6 +74,7 @@ impl TryFrom<CoverageObjectReqV1> for CoverageObject {
             coverage_claim_time: v.coverage_claim_time.to_timestamp()?,
             indoor: v.indoor,
             coverage: coverage?,
+            signature: v.signature,
         })
     }
 }
@@ -91,12 +93,12 @@ impl TryFrom<RadioHexSignalLevelProto> for RadioHexSignalLevel {
     }
 }
 
-impl Into<RadioHexSignalLevelProto> for RadioHexSignalLevel {
-    fn into(self) -> RadioHexSignalLevelProto {
+impl From<RadioHexSignalLevel> for RadioHexSignalLevelProto {
+    fn from(rhsl: RadioHexSignalLevel) -> RadioHexSignalLevelProto {
         RadioHexSignalLevelProto {
-            signal_level: self.signal_level as i32,
-            signal_power: self.signal_power,
-            location: self.location.to_string(),
+            signal_level: rhsl.signal_level as i32,
+            signal_power: rhsl.signal_power,
+            location: rhsl.location.to_string(),
         }
     }
 }

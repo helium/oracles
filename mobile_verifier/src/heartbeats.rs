@@ -1,6 +1,6 @@
 //! Heartbeat storage
 
-use crate::cell_type::CellType;
+use crate::{cell_type::CellType, coverage::CoveredHexCache};
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient,
@@ -10,9 +10,10 @@ use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
+use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
@@ -26,6 +27,7 @@ pub struct HeartbeatKey {
     hotspot_key: PublicKeyBinary,
     cbsd_id: String,
     cell_type: CellType,
+    latest_timestamp: DateTime<Utc>,
 }
 
 pub struct HeartbeatReward {
@@ -33,6 +35,7 @@ pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
     pub reward_weight: Decimal,
+    pub latest_timestamp: DateTime<Utc>,
 }
 
 impl From<HeartbeatKey> for HeartbeatReward {
@@ -42,6 +45,7 @@ impl From<HeartbeatKey> for HeartbeatReward {
             hotspot_key: value.hotspot_key,
             cbsd_id: value.cbsd_id,
             reward_weight: value.cell_type.reward_weight(),
+            latest_timestamp: value.latest_timestamp,
         }
     }
 }
@@ -79,13 +83,15 @@ impl HeartbeatDaemon {
                     .await
             });
 
+            let covered_hex_cache = CoveredHexCache::new(&self.pool);
+
             loop {
                 tokio::select! {
                     _ = shutdown.clone() => {
                         tracing::info!("HeartbeatDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.heartbeats.recv() => self.process_file(file, &cache).await?,
+                    Some(file) = self.heartbeats.recv() => self.process_file(file, &cache, &covered_hex_cache).await?,
                 }
             }
 
@@ -99,7 +105,8 @@ impl HeartbeatDaemon {
     async fn process_file(
         &self,
         file: FileInfoStream<CellHeartbeatIngestReport>,
-        cache: &Cache<(String, DateTime<Utc>, Uuid), ()>,
+        heartbeat_cache: &Cache<(String, DateTime<Utc>, Uuid), ()>,
+        covered_hex_cache: &CoveredHexCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing heartbeat file {}", file.file_info.key);
 
@@ -108,8 +115,15 @@ impl HeartbeatDaemon {
         let mut transaction = self.pool.begin().await?;
         let reports = file.into_stream(&mut transaction).await?;
 
-        let mut validated_heartbeats =
-            pin!(Heartbeat::validate_heartbeats(&self.gateway_client, reports, &epoch).await);
+        let mut validated_heartbeats = pin!(
+            Heartbeat::validate_heartbeats(
+                &self.gateway_client,
+                covered_hex_cache,
+                reports,
+                &epoch
+            )
+            .await
+        );
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             heartbeat.write(&self.file_sink).await?;
@@ -119,9 +133,9 @@ impl HeartbeatDaemon {
                 heartbeat.coverage_object,
             );
 
-            if cache.get(&key).await.is_none() {
+            if heartbeat_cache.get(&key).await.is_none() {
                 heartbeat.save(&mut transaction).await?;
-                cache
+                heartbeat_cache
                     .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
                     .await;
             }
@@ -145,7 +159,7 @@ impl HeartbeatReward {
         sqlx::query_as::<_, HeartbeatKey>(
             r#"
             WITH coverage_objs AS (
-              SELECT t1.cbsd_id, t1.coverage_object
+              SELECT t1.cbsd_id, t1.coverage_object, t1.latest_timestamp
               FROM heartbeats t1
               WHERE t1.latest_timestamp = (
                 SELECT MAX(t2.latest_timestamp)
@@ -153,11 +167,11 @@ impl HeartbeatReward {
                 WHERE t2.cbsd_id = t1.cbsd_id
               )
             )
-            SELECT hotspot_key, heartbeats.cbsd_id, cell_type, coverage_objs.coverage_object
+            SELECT hotspot_key, heartbeats.cbsd_id, cell_type, coverage_objs.coverage_object, coverage_objs.latest_timestamp
             FROM heartbeats JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id
             WHERE truncated_timestamp >= $1
             	and truncated_timestamp < $2
-            GROUP BY heartbeats.cbsd_id, hotspot_key, cell_type, coverage_objs.coverage_object
+            GROUP BY heartbeats.cbsd_id, hotspot_key, cell_type, coverage_objs.coverage_object, coverage_objs.latest_timestamp
             HAVING count(*) >= $3
             "#,
         )
@@ -199,14 +213,21 @@ impl Heartbeat {
 
     pub async fn validate_heartbeats<'a>(
         gateway_client: &'a GatewayClient,
+        covered_hex_cache: &'a CoveredHexCache,
         heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat_report| {
             let mut gateway_client = gateway_client.clone();
             async move {
-                let (cell_type, validity) =
-                    validate_heartbeat(&heartbeat_report, &mut gateway_client, epoch).await?;
+                let (cell_type, validity) = validate_heartbeat(
+                    &heartbeat_report,
+                    &mut gateway_client,
+                    covered_hex_cache,
+                    epoch,
+                    2.5,
+                )
+                .await?;
                 Ok(Heartbeat {
                     hotspot_key: heartbeat_report.report.pubkey,
                     cbsd_id: heartbeat_report.report.cbsd_id,
@@ -277,8 +298,10 @@ impl Heartbeat {
 async fn validate_heartbeat(
     heartbeat: &CellHeartbeatIngestReport,
     gateway_client: &mut GatewayClient,
+    coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
-) -> Result<(Option<CellType>, proto::HeartbeatValidity), ClientError> {
+    max_distance: f64,
+) -> anyhow::Result<(Option<CellType>, proto::HeartbeatValidity)> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
         Some(ty) => Some(ty),
         _ => return Ok((None, proto::HeartbeatValidity::BadCbsdId)),
@@ -298,6 +321,23 @@ async fn validate_heartbeat(
         .is_none()
     {
         return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
+    }
+
+    let Some(coverage) = coverage_cache.fetch_coverage(&heartbeat.report.coverage_object).await?
+        else {
+            return Ok((cell_type, proto::HeartbeatValidity::NoSuchCoverageObject));
+        };
+
+    if coverage.cbsd_id != heartbeat.report.cbsd_id {
+        return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
+    }
+
+    let Ok(latlng) = LatLng::new(heartbeat.report.lat, heartbeat.report.lon) else {
+        return Ok((cell_type, proto::HeartbeatValidity::InvalidLatLon));
+    };
+
+    if coverage.max_distance_km(latlng) > max_distance {
+        return Ok((cell_type, proto::HeartbeatValidity::TooFarFromCoverage));
     }
 
     Ok((cell_type, proto::HeartbeatValidity::Valid))
