@@ -1,7 +1,8 @@
-use crate::{cmds::env::NetworkArg, KeyRole, NetworkKeyRole, Result};
+use crate::{cmds::env::NetworkArg, NetworkKeyRole, Result};
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 use helium_crypto::PublicKey;
+use mobile_config::KeyRole;
 use std::path::PathBuf;
 
 pub mod admin;

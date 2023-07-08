@@ -212,6 +212,7 @@ impl Heartbeat {
                     cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
                     validity: self.validity as i32,
                     timestamp: self.timestamp.timestamp() as u64,
+                    coverage_object: Vec::with_capacity(0), // Placeholder so the project compiles
                 },
                 [],
             )

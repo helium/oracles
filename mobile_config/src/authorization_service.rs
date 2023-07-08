@@ -1,7 +1,4 @@
-use crate::{
-    key_cache::{KeyCache, KeyRole},
-    telemetry, verify_public_key, GrpcResult,
-};
+use crate::{key_cache::KeyCache, telemetry, verify_public_key, GrpcResult, KeyRole};
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use helium_crypto::{Keypair, PublicKey, Sign};
@@ -116,6 +113,7 @@ impl From<NetworkKeyRole> for KeyRole {
         match role {
             NetworkKeyRole::MobileRouter => KeyRole::Router,
             NetworkKeyRole::MobileCarrier => KeyRole::Carrier,
+            NetworkKeyRole::MobilePcs => KeyRole::Pcs,
         }
     }
 }

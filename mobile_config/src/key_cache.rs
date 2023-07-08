@@ -1,9 +1,7 @@
-use crate::settings::Settings;
+use crate::{settings::Settings, KeyRole};
 use anyhow::anyhow;
 use file_store::traits::MsgVerify;
 use helium_crypto::{PublicKey, PublicKeyBinary};
-use helium_proto::services::mobile_config::AdminKeyRole as ProtoKeyRole;
-use serde::Serialize;
 use std::collections::HashSet;
 use tokio::sync::watch;
 
@@ -94,63 +92,6 @@ impl KeyCache {
                 }
             })
             .collect()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, sqlx::Type)]
-#[sqlx(type_name = "key_role", rename_all = "snake_case")]
-pub enum KeyRole {
-    Administrator,
-    Carrier,
-    Oracle,
-    Router,
-}
-
-impl KeyRole {
-    pub fn from_i32(v: i32) -> anyhow::Result<Self> {
-        ProtoKeyRole::from_i32(v)
-            .map(|kr| kr.into())
-            .ok_or_else(|| anyhow!("unsupported key role {}", v))
-    }
-}
-
-impl From<KeyRole> for ProtoKeyRole {
-    fn from(key_role: KeyRole) -> Self {
-        ProtoKeyRole::from(&key_role)
-    }
-}
-
-impl From<&KeyRole> for ProtoKeyRole {
-    fn from(skr: &KeyRole) -> Self {
-        match skr {
-            KeyRole::Administrator => ProtoKeyRole::Administrator,
-            KeyRole::Carrier => ProtoKeyRole::Carrier,
-            KeyRole::Oracle => ProtoKeyRole::Oracle,
-            KeyRole::Router => ProtoKeyRole::Router,
-        }
-    }
-}
-
-impl From<ProtoKeyRole> for KeyRole {
-    fn from(kt: ProtoKeyRole) -> Self {
-        match kt {
-            ProtoKeyRole::Administrator => KeyRole::Administrator,
-            ProtoKeyRole::Carrier => KeyRole::Carrier,
-            ProtoKeyRole::Oracle => KeyRole::Oracle,
-            ProtoKeyRole::Router => KeyRole::Router,
-        }
-    }
-}
-
-impl std::fmt::Display for KeyRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Self::Administrator => "administrator",
-            Self::Carrier => "carrier",
-            Self::Oracle => "oracle",
-            Self::Router => "router",
-        };
-        f.write_str(s)
     }
 }
 
