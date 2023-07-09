@@ -102,9 +102,9 @@ impl From<NetworkKeyRole> for i32 {
 impl Display for NetworkKeyRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NetworkKeyRole::MobileCarrier => write!(f, "Carrier"),
-            NetworkKeyRole::MobileRouter => write!(f, "Router"),
-            NetworkKeyRole::MobilePcs => write!(f, "PCS"),
+            NetworkKeyRole::MobileCarrier => write!(f, "carrier"),
+            NetworkKeyRole::MobileRouter => write!(f, "router"),
+            NetworkKeyRole::MobilePcs => write!(f, "pcs"),
         }
     }
 }

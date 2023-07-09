@@ -80,11 +80,11 @@ impl From<ProtoKeyRole> for KeyRole {
 impl std::fmt::Display for KeyRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::Administrator => "Administrator",
-            Self::Carrier => "Carrier",
-            Self::Oracle => "Oracle",
-            Self::Router => "Router",
-            Self::Pcs => "PCS",
+            Self::Administrator => "administrator",
+            Self::Carrier => "carrier",
+            Self::Oracle => "oracle",
+            Self::Router => "router",
+            Self::Pcs => "pcs",
         };
         f.write_str(s)
     }
