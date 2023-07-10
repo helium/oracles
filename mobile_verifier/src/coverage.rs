@@ -258,7 +258,7 @@ pub fn covered_hex_stream<'a>(
                 ON CONFLICT (cbsd_id)
                 DO UPDATE SET
                 coverage_claim_time =
-                    CASE WHEN EXCLUDED.last_heartbeat - coverage_claim_time.last_heartbeat > INTERVAL '72:00:00' THEN EXCLUDED.last_heartbeat ELSE heartbeat.coverage_claim_time END,
+                    CASE WHEN EXCLUDED.last_heartbeat - coverage_claim_time.last_heartbeat > INTERVAL '3 days' THEN EXCLUDED.last_heartbeat ELSE heartbeat.coverage_claim_time END,
                 last_heartbeat = EXCLUDED.last_heartbeat,
                 uuid = EXCLUDED.uuid
                 RETURNING coverage_claim_time
