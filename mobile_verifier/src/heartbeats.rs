@@ -55,6 +55,7 @@ pub struct HeartbeatDaemon {
     gateway_client: GatewayClient,
     heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
     file_sink: FileSinkClient,
+    max_distance: f64,
 }
 
 impl HeartbeatDaemon {
@@ -63,12 +64,14 @@ impl HeartbeatDaemon {
         gateway_client: GatewayClient,
         heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
         file_sink: FileSinkClient,
+        max_distance: f64,
     ) -> Self {
         Self {
             pool,
             gateway_client,
             heartbeats,
             file_sink,
+            max_distance,
         }
     }
 
@@ -120,7 +123,8 @@ impl HeartbeatDaemon {
                 &self.gateway_client,
                 covered_hex_cache,
                 reports,
-                &epoch
+                &epoch,
+                self.max_distance,
             )
             .await
         );
@@ -216,6 +220,7 @@ impl Heartbeat {
         covered_hex_cache: &'a CoveredHexCache,
         heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
+        max_distance: f64,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat_report| {
             let mut gateway_client = gateway_client.clone();
@@ -225,7 +230,7 @@ impl Heartbeat {
                     &mut gateway_client,
                     covered_hex_cache,
                     epoch,
-                    2.5,
+                    max_distance,
                 )
                 .await?;
                 Ok(Heartbeat {

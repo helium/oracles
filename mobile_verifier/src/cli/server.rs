@@ -153,6 +153,7 @@ impl Cmd {
             gateway_client.clone(),
             heartbeats,
             valid_heartbeats,
+            settings.max_heartbeat_distance_from_coverage_km,
         );
 
         let speedtest_daemon = SpeedtestDaemon::new(

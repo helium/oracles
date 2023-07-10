@@ -242,17 +242,16 @@ pub fn covered_hex_stream<'a>(
     coverage_obj: &'a Uuid,
     latest_timestamp: &'a DateTime<Utc>,
 ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
-    #[derive(FromRow)]
-    struct AdjustedClaimTime {
-        coverage_claim_time: DateTime<Utc>,
-    }
-
     sqlx::query_as("SELECT * FROM coverage WHERE cbsd_id = $1 AND uuid = $2")
-        .bind(cbsd_id.to_string())
+        .bind(cbsd_id)
         .bind(*coverage_obj)
         .fetch(pool)
         .and_then(move |mut hc: HexCoverage| async move {
-            let AdjustedClaimTime { coverage_claim_time: adjusted_claim_time } = sqlx::query_as(
+            // For a given reward cycle, this operation should be idempotent.
+            // That means if we were to shutdown in the middle of calculating rewards,
+            // restarting should produce the same results. Therefore, there is no need
+            // to put these operations behind a transaction.
+            let adjusted_claim_time: DateTime<Utc> = sqlx::query_scalar(
                 r#"
                 INSERT INTO coverage_claim_time VALUES ($1, $2, $3, $4)
                 ON CONFLICT (cbsd_id)
@@ -263,13 +262,13 @@ pub fn covered_hex_stream<'a>(
                 uuid = EXCLUDED.uuid
                 RETURNING coverage_claim_time
                 "#
-            ).bind(cbsd_id)
+            )
+            .bind(cbsd_id)
             .bind(coverage_obj)
-                .bind(hc.coverage_claim_time)
-                .bind(latest_timestamp)
-                .fetch_one(pool)
-                .await
-                .unwrap(); // TODO: Fix
+            .bind(hc.coverage_claim_time)
+            .bind(latest_timestamp)
+            .fetch_one(pool)
+            .await?;
             hc.coverage_claim_time = adjusted_claim_time;
             Ok(hc)
         })
@@ -417,6 +416,8 @@ mod test {
         }
     }
 
+    /// Test to ensure that if there are multiple radios with different signal levels
+    /// in a given hex, that the one with the highest signal level is chosen.
     #[tokio::test]
     async fn ensure_max_signal_level_selected() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -474,6 +475,8 @@ mod test {
         }
     }
 
+    /// Test to ensure that if there are more than five radios with the highest signal
+    /// level in a given hex, that the five oldest radios are chosen.
     #[tokio::test]
     async fn ensure_oldest_five_radios_selected() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"

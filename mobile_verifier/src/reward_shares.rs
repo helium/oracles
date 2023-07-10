@@ -393,6 +393,7 @@ mod test {
         }
     }
 
+    /// Test to ensure that the correct data transfer amount is rewarded.
     #[tokio::test]
     async fn ensure_data_correct_transfer_reward_amount() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -446,6 +447,7 @@ mod test {
         );
     }
 
+    /// Test to ensure that excess transfer rewards are properly scaled down.
     #[tokio::test]
     async fn ensure_excess_transfer_rewards_scale() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -550,8 +552,9 @@ mod test {
     impl CoveredHexStream for HashMap<(String, Uuid), Vec<HexCoverage>> {
         fn covered_hex_stream<'a>(
             &'a self,
-            cbsd_id: &str,
-            coverage_obj: &Uuid,
+            cbsd_id: &'a str,
+            coverage_obj: &'a Uuid,
+            _latest_timestamp: &'a DateTime<Utc>,
         ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
             stream::iter(
                 self.get(&(cbsd_id.to_string(), coverage_obj.clone()))
@@ -563,7 +566,8 @@ mod test {
         }
     }
 
-    /*
+    /// Test to ensure that a hotspot with radios that have higher heartbeat multipliers
+    /// will receive more rewards than a hotspot with a lower heartbeat multiplier.
     #[tokio::test]
     async fn ensure_correct_radio_weights() {
         let g1: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
@@ -575,6 +579,8 @@ mod test {
 
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
+        let c3 = "P27-SCE4255W2107CW5000016".to_string();
+        let c4 = "P27-SCE4255W2107CW5000018".to_string();
 
         let cov_obj_1 = Uuid::new_v4();
         let cov_obj_2 = Uuid::new_v4();
@@ -589,28 +595,48 @@ mod test {
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c1),
                 coverage_object: cov_obj_1,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c2.clone(),
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c2),
                 coverage_object: cov_obj_2,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
-                cbsd_id: c1.clone(),
+                cbsd_id: c3.clone(),
                 hotspot_key: g2.clone(),
-                reward_weight: cell_type_weight(&c1),
+                reward_weight: cell_type_weight(&c3),
                 coverage_object: cov_obj_3,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
-                cbsd_id: c1.clone(),
+                cbsd_id: c4.clone(),
                 hotspot_key: g2.clone(),
-                reward_weight: cell_type_weight(&c1),
+                reward_weight: cell_type_weight(&c4),
                 coverage_object: cov_obj_4,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
         ];
 
-        let mut coverage_objects = HashMap::new();
+        let mut hex_coverage = HashMap::new();
+        hex_coverage.insert(
+            (c1.clone(), cov_obj_1),
+            simple_hex_coverage(&c1, 0x8a1fb46692dffff),
+        );
+        hex_coverage.insert(
+            (c2.clone(), cov_obj_2),
+            simple_hex_coverage(&c2, 0x8a1fb46522dffff),
+        );
+        hex_coverage.insert(
+            (c3.clone(), cov_obj_3),
+            simple_hex_coverage(&c3, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (c4.clone(), cov_obj_4),
+            simple_hex_coverage(&c4, 0x8a1fb46632dffff),
+        );
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
@@ -626,25 +652,27 @@ mod test {
         speedtests.insert(g2.clone(), VecDeque::from(g2_speedtests));
         let speedtest_avgs = SpeedtestAverages { speedtests };
 
-        let rewards = PocShares::aggregate(stream::iter(heartbeats).map(Ok), speedtest_avgs)
-            .await
-            .unwrap();
+        let rewards = CoveragePoints::aggregate_points(
+            &hex_coverage,
+            stream::iter(heartbeats).map(Ok),
+            speedtest_avgs,
+        )
+        .await
+        .unwrap();
 
-        // The owner with two hotspots gets more rewards
         assert!(
             rewards
-                .hotspot_shares
+                .coverage_points
                 .get(&g1)
                 .expect("Could not fetch gateway1 shares")
-                .total_shares()
+                .total_points()
                 > rewards
-                    .hotspot_shares
+                    .coverage_points
                     .get(&g2)
                     .expect("Could not fetch gateway2 shares")
-                    .total_shares()
+                    .total_points()
         );
     }
-     */
 
     fn simple_hex_coverage(cbsd_id: &str, hex: u64) -> Vec<HexCoverage> {
         vec![HexCoverage {
@@ -657,6 +685,7 @@ mod test {
         }]
     }
 
+    /// Test to ensure that different speedtest averages correctly afferct reward shares.
     #[tokio::test]
     async fn ensure_speedtest_averages_affect_reward_shares() {
         // init owners
@@ -747,72 +776,84 @@ mod test {
                 hotspot_key: gw2.clone(),
                 reward_weight: cell_type_weight(&c2),
                 coverage_object: cov_obj_2,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c4.clone(),
                 hotspot_key: gw3.clone(),
                 reward_weight: cell_type_weight(&c4),
                 coverage_object: cov_obj_4,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c5.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c5),
                 coverage_object: cov_obj_5,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c6.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c6),
                 coverage_object: cov_obj_6,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c7.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c7),
                 coverage_object: cov_obj_7,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c8.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c8),
                 coverage_object: cov_obj_8,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c9.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c9),
                 coverage_object: cov_obj_9,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c10.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c10),
                 coverage_object: cov_obj_10,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c11.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c11),
                 coverage_object: cov_obj_11,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c12.clone(),
                 hotspot_key: gw5.clone(),
                 reward_weight: cell_type_weight(&c12),
                 coverage_object: cov_obj_12,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c13.clone(),
                 hotspot_key: gw6.clone(),
                 reward_weight: cell_type_weight(&c13),
                 coverage_object: cov_obj_13,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c14.clone(),
                 hotspot_key: gw7.clone(),
                 reward_weight: cell_type_weight(&c14),
                 coverage_object: cov_obj_14,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
         ];
 
@@ -956,6 +997,7 @@ mod test {
         assert_eq!(total, 4_109_589_041_089); // total emissions for 1 hour
     }
 
+    /// Test to ensure that rewards that are zeroed are not written out.
     #[tokio::test]
     async fn ensure_zeroed_rewards_are_not_written() {
         use rust_decimal_macros::dec;
