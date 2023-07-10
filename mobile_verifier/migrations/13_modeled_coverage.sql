@@ -1,5 +1,5 @@
 CREATE TYPE signal_level as ENUM (
-       'no',
+       'none',
        'low',
        'medium',
        'high'
