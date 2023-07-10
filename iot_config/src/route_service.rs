@@ -423,6 +423,7 @@ impl iot_config::Route for RouteService {
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let shutdown_listener = self.shutdown.clone();
 
         tracing::debug!(route_id = request.route_id, "listing eui pairs");
 
@@ -447,6 +448,10 @@ impl iot_config::Route for RouteService {
             };
 
             while let Some(eui) = eui_stream.next().await {
+                if shutdown_listener.is_triggered() {
+                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
+                    return
+                }
                 let message = match eui {
                     Ok(eui) => Ok(eui.into()),
                     Err(bad_eui) => Err(Status::internal(format!("invalid eui: {:?}", bad_eui))),
@@ -514,35 +519,41 @@ impl iot_config::Route for RouteService {
                     )
                     .collect::<Result<Vec<(ActionV1, EuiPairV1)>, Status>>()
             })
-            .try_for_each(|batch: Vec<(ActionV1, EuiPairV1)>| async move {
-                let (to_add, to_remove): (Vec<(ActionV1, EuiPairV1)>, Vec<(ActionV1, EuiPairV1)>) =
-                    batch
+            .try_for_each(move |batch: Vec<(ActionV1, EuiPairV1)>| {
+                let shutdown_listener = self.shutdown.clone();
+                async move {
+                    if shutdown_listener.is_triggered() {
+                        return Err(Status::unavailable("service shutting down"));
+                    }
+                    let (to_add, to_remove): (Vec<(ActionV1, EuiPairV1)>, Vec<(ActionV1, EuiPairV1)>) =
+                        batch
+                            .into_iter()
+                            .partition(|(action, _update)| action == &ActionV1::Add);
+                    telemetry::count_eui_updates(to_add.len(), to_remove.len());
+                    tracing::debug!(
+                        adding = to_add.len(),
+                        removing = to_remove.len(),
+                        "updating eui pairs"
+                    );
+                    let adds_update: Vec<EuiPair> =
+                        to_add.into_iter().map(|(_, add)| add.into()).collect();
+                    let removes_update: Vec<EuiPair> = to_remove
                         .into_iter()
-                        .partition(|(action, _update)| action == &ActionV1::Add);
-                telemetry::count_eui_updates(to_add.len(), to_remove.len());
-                tracing::debug!(
-                    adding = to_add.len(),
-                    removing = to_remove.len(),
-                    "updating eui pairs"
-                );
-                let adds_update: Vec<EuiPair> =
-                    to_add.into_iter().map(|(_, add)| add.into()).collect();
-                let removes_update: Vec<EuiPair> = to_remove
-                    .into_iter()
-                    .map(|(_, remove)| remove.into())
-                    .collect();
-                route::update_euis(
-                    &adds_update,
-                    &removes_update,
-                    &self.pool,
-                    self.signing_key.clone(),
-                    self.clone_update_channel(),
-                )
-                .await
-                .map_err(|err| {
-                    tracing::error!("eui pair update failed: {err:?}");
-                    Status::internal(format!("eui pair update failed: {err:?}"))
-                })
+                        .map(|(_, remove)| remove.into())
+                        .collect();
+                    route::update_euis(
+                        &adds_update,
+                        &removes_update,
+                        &self.pool,
+                        self.signing_key.clone(),
+                        self.clone_update_channel(),
+                    )
+                    .await
+                    .map_err(|err| {
+                        tracing::error!("eui pair update failed: {err:?}");
+                        Status::internal(format!("eui pair update failed: {err:?}"))
+                    })
+                }
             })
             .await?;
 
@@ -570,6 +581,7 @@ impl iot_config::Route for RouteService {
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
         let pool = self.pool.clone();
+        let shutdown_listener = self.shutdown.clone();
 
         tracing::debug!(route_id = request.route_id, "listing devaddr ranges");
 
@@ -592,6 +604,10 @@ impl iot_config::Route for RouteService {
             };
 
             while let Some(devaddr) = devaddrs.next().await {
+                if shutdown_listener.is_triggered() {
+                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
+                    return
+                }
                 let message = match devaddr {
                     Ok(devaddr) => Ok(devaddr.into()),
                     Err(bad_devaddr) => Err(Status::internal(format!(
@@ -666,37 +682,43 @@ impl iot_config::Route for RouteService {
                     })
                     .collect::<Result<Vec<(ActionV1, DevaddrRangeV1)>, Status>>()
             })
-            .try_for_each(|batch: Vec<(ActionV1, DevaddrRangeV1)>| async move {
-                let (to_add, to_remove): (
-                    Vec<(ActionV1, DevaddrRangeV1)>,
-                    Vec<(ActionV1, DevaddrRangeV1)>,
-                ) = batch
-                    .into_iter()
-                    .partition(|(action, _update)| action == &ActionV1::Add);
-                telemetry::count_devaddr_updates(to_add.len(), to_remove.len());
-                tracing::debug!(
-                    adding = to_add.len(),
-                    removing = to_remove.len(),
-                    "updating devaddr ranges"
-                );
-                let adds_update: Vec<DevAddrRange> =
-                    to_add.into_iter().map(|(_, add)| add.into()).collect();
-                let removes_update: Vec<DevAddrRange> = to_remove
-                    .into_iter()
-                    .map(|(_, remove)| remove.into())
-                    .collect();
-                route::update_devaddr_ranges(
-                    &adds_update,
-                    &removes_update,
-                    &self.pool,
-                    self.signing_key.clone(),
-                    self.clone_update_channel(),
-                )
-                .await
-                .map_err(|err| {
-                    tracing::error!("devaddr range update failed: {err:?}");
-                    Status::internal("devaddr range update failed")
-                })
+            .try_for_each(move |batch: Vec<(ActionV1, DevaddrRangeV1)>| {
+                let shutdown_listener = self.shutdown.clone();
+                async move {
+                    if shutdown_listener.is_triggered() {
+                        return Err(Status::unavailable("service shutting down"))
+                    }
+                    let (to_add, to_remove): (
+                        Vec<(ActionV1, DevaddrRangeV1)>,
+                        Vec<(ActionV1, DevaddrRangeV1)>,
+                    ) = batch
+                        .into_iter()
+                        .partition(|(action, _update)| action == &ActionV1::Add);
+                    telemetry::count_devaddr_updates(to_add.len(), to_remove.len());
+                    tracing::debug!(
+                        adding = to_add.len(),
+                        removing = to_remove.len(),
+                        "updating devaddr ranges"
+                    );
+                    let adds_update: Vec<DevAddrRange> =
+                        to_add.into_iter().map(|(_, add)| add.into()).collect();
+                    let removes_update: Vec<DevAddrRange> = to_remove
+                        .into_iter()
+                        .map(|(_, remove)| remove.into())
+                        .collect();
+                    route::update_devaddr_ranges(
+                        &adds_update,
+                        &removes_update,
+                        &self.pool,
+                        self.signing_key.clone(),
+                        self.clone_update_channel(),
+                    )
+                    .await
+                    .map_err(|err| {
+                        tracing::error!("devaddr range update failed: {err:?}");
+                        Status::internal("devaddr range update failed")
+                    })
+                }
             })
             .await?;
 
@@ -724,6 +746,7 @@ impl iot_config::Route for RouteService {
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let shutdown_listener = self.shutdown.clone();
 
         tracing::debug!(
             route_id = request.route_id,
@@ -751,6 +774,10 @@ impl iot_config::Route for RouteService {
             };
 
             while let Some(skf) = skf_stream.next().await {
+                if shutdown_listener.is_triggered() {
+                    _ = tx.send(Err(Status::unavailable("service shutting down")));
+                    return
+                }
                 let message = match skf {
                     Ok(skf) => Ok(skf.into()),
                     Err(bad_skf) => Err(Status::internal(format!("invalid skf: {:?}", bad_skf))),
@@ -778,6 +805,7 @@ impl iot_config::Route for RouteService {
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
+        let shutdown_listener = self.shutdown.clone();
 
         tracing::debug!(
             route_id = request.route_id,
@@ -809,6 +837,10 @@ impl iot_config::Route for RouteService {
             };
 
             while let Some(skf) = skf_stream.next().await {
+                if shutdown_listener.is_triggered() {
+                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
+                    return
+                }
                 let message = match skf {
                     Ok(skf) => Ok(skf.into()),
                     Err(bad_skf) => Err(Status::internal(format!("invalid skf: {:?}", bad_skf))),
@@ -1048,6 +1080,7 @@ async fn stream_existing_routes(
     pool: &Pool<Postgres>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+    shutdown_listener: triggered::Listener,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
@@ -1069,6 +1102,13 @@ async fn stream_existing_routes(
             }
         })
         .map_err(|err| anyhow!(err))
+        .map(move |send_result| {
+            if shutdown_listener.is_triggered() {
+                Err(anyhow!("service shutting down"))
+            } else {
+                send_result
+            }
+        })
         .try_fold((), |acc, _| async move { Ok(acc) })
         .await
 }

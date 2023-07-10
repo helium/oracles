@@ -35,6 +35,7 @@ pub struct GatewayService {
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
     delegate_cache: watch::Receiver<org::DelegateCache>,
+    shutdown: triggered::Listener,
 }
 
 impl GatewayService {
@@ -44,6 +45,7 @@ impl GatewayService {
         region_map: RegionMapReader,
         auth_cache: AuthCache,
         delegate_cache: watch::Receiver<org::DelegateCache>,
+        shutdown: triggered::Listener,
     ) -> Result<Self> {
         let gateway_cache = Arc::new(Cache::new());
         let cache_clone = gateway_cache.clone();
@@ -56,6 +58,7 @@ impl GatewayService {
             region_map,
             signing_key: Arc::new(settings.signing_keypair()?),
             delegate_cache,
+            shutdown,
         })
     }
 
@@ -275,6 +278,7 @@ impl iot_config::Gateway for GatewayService {
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let region_map = self.region_map.clone();
+        let shutdown_listener = self.shutdown.clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
@@ -285,6 +289,7 @@ impl iot_config::Gateway for GatewayService {
                 &signing_key,
                 region_map.clone(),
                 batch_size,
+                shutdown_listener,
             )
             .await
         });
@@ -299,11 +304,15 @@ async fn stream_all_gateways_info(
     signing_key: &Keypair,
     region_map: RegionMapReader,
     batch_size: u32,
+    shutdown_listener: triggered::Listener,
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let mut stream = gateway_info::db::all_info_stream(pool).chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
+        if shutdown_listener.is_triggered() {
+            break;
+        }
         let gateway_infos = infos
             .into_iter()
             .filter_map(|info| {
@@ -313,24 +322,24 @@ async fn stream_all_gateways_info(
             })
             .collect();
 
-        let mut response = GatewayInfoStreamResV1 {
+        let mut gateway = GatewayInfoStreamResV1 {
             gateways: gateway_infos,
             timestamp,
             signer: signer.clone(),
             signature: vec![],
         };
 
-        response = match signing_key.sign(&response.encode_to_vec()) {
+        gateway = match signing_key.sign(&gateway.encode_to_vec()) {
             Ok(signature) => GatewayInfoStreamResV1 {
                 signature,
-                ..response
+                ..gateway
             },
             Err(_) => {
                 continue;
             }
         };
 
-        tx.send(Ok(response)).await?;
+        tx.send(Ok(gateway)).await?;
     }
     Ok(())
 }

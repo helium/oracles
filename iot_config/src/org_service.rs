@@ -1,5 +1,6 @@
 use crate::{
     admin::{AuthCache, KeyType},
+    broadcast_update,
     helium_netids, lora_field, org,
     route::list_routes,
     telemetry, verify_public_key, GrpcResult, Settings,
@@ -26,6 +27,7 @@ pub struct OrgService {
     route_update_tx: broadcast::Sender<RouteStreamResV1>,
     signing_key: Keypair,
     delegate_updater: watch::Sender<org::DelegateCache>,
+    shutdown: triggered::Listener,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,6 +43,7 @@ impl OrgService {
         pool: Pool<Postgres>,
         route_update_tx: broadcast::Sender<RouteStreamResV1>,
         delegate_updater: watch::Sender<org::DelegateCache>,
+        shutdown: triggered::Listener,
     ) -> Result<Self> {
         Ok(Self {
             auth_cache,
@@ -48,6 +51,7 @@ impl OrgService {
             route_update_tx,
             signing_key: settings.signing_keypair()?,
             delegate_updater,
+            shutdown,
         })
     }
 
@@ -446,6 +450,9 @@ impl iot_config::Org for OrgService {
             let timestamp = Utc::now().encode_timestamp();
             let signer: Vec<u8> = self.signing_key.public_key().into();
             for route in org_routes {
+                if self.shutdown.is_triggered() {
+                    break;
+                }
                 let route_id = route.id.clone();
                 let mut update = RouteStreamResV1 {
                     action: ActionV1::Add.into(),
@@ -455,7 +462,7 @@ impl iot_config::Org for OrgService {
                     signature: vec![],
                 };
                 update.signature = self.sign_response(&update.encode_to_vec())?;
-                if self.route_update_tx.send(update).is_err() {
+                if broadcast_update(update, self.route_update_tx.clone()).await.is_err() {
                     tracing::info!(
                         route_id = route_id,
                         "all subscribers disconnected; route disable incomplete"
@@ -514,6 +521,9 @@ impl iot_config::Org for OrgService {
             let timestamp = Utc::now().encode_timestamp();
             let signer: Vec<u8> = self.signing_key.public_key().into();
             for route in org_routes {
+                if self.shutdown.is_triggered() {
+                    break;
+                }
                 let route_id = route.id.clone();
                 let mut update = RouteStreamResV1 {
                     action: ActionV1::Add.into(),
@@ -523,7 +533,7 @@ impl iot_config::Org for OrgService {
                     signature: vec![],
                 };
                 update.signature = self.sign_response(&update.encode_to_vec())?;
-                if self.route_update_tx.send(update).is_err() {
+                if broadcast_update(update, self.route_update_tx.clone()).await.is_err() {
                     tracing::info!(
                         route_id = route_id,
                         "all subscribers disconnected; route enable incomplete"
