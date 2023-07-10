@@ -1,4 +1,5 @@
-use crate::{cmds::gateway::GatewayInfo, current_timestamp, KeyRole, NetworkKeyRole, Result};
+use crate::{cmds::gateway::GatewayInfo, current_timestamp, NetworkKeyRole, Result};
+
 use base64::Engine;
 use helium_crypto::{Keypair, PublicKey, Sign, Verify};
 use helium_proto::{
@@ -10,6 +11,7 @@ use helium_proto::{
     },
     Message,
 };
+use mobile_config::KeyRole;
 use std::str::FromStr;
 
 pub struct AdminClient {

@@ -9,7 +9,7 @@ use std::{
 };
 
 pub mod proto {
-    pub use helium_proto::services::mobile_config::{AdminKeyRole, NetworkKeyRole};
+    pub use helium_proto::services::mobile_config::NetworkKeyRole;
 }
 
 pub type Result<T = (), E = Error> = anyhow::Result<T, E>;
@@ -74,47 +74,13 @@ impl<S: ?Sized + serde::Serialize> PrettyJson for S {
 }
 
 #[derive(Debug, clap::ValueEnum, Clone, Copy, Serialize)]
-pub enum KeyRole {
-    Administrator,
-    Carrier,
-    Router,
-    Oracle,
-}
-
-impl From<KeyRole> for proto::AdminKeyRole {
-    fn from(value: KeyRole) -> Self {
-        match value {
-            KeyRole::Administrator => Self::Administrator,
-            KeyRole::Carrier => Self::Carrier,
-            KeyRole::Router => Self::Router,
-            KeyRole::Oracle => Self::Oracle,
-        }
-    }
-}
-
-impl From<KeyRole> for i32 {
-    fn from(value: KeyRole) -> Self {
-        proto::AdminKeyRole::from(value) as i32
-    }
-}
-
-impl Display for KeyRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            KeyRole::Administrator => write!(f, "Administrator"),
-            KeyRole::Carrier => write!(f, "Carrier"),
-            KeyRole::Oracle => write!(f, "Oracle"),
-            KeyRole::Router => write!(f, "Router"),
-        }
-    }
-}
-
-#[derive(Debug, clap::ValueEnum, Clone, Copy, Serialize)]
 pub enum NetworkKeyRole {
     #[value(alias("carrier"))]
     MobileCarrier,
     #[value(alias("router"))]
     MobileRouter,
+    #[value(alias("pcs"))]
+    MobilePcs,
 }
 
 impl From<NetworkKeyRole> for proto::NetworkKeyRole {
@@ -122,6 +88,7 @@ impl From<NetworkKeyRole> for proto::NetworkKeyRole {
         match value {
             NetworkKeyRole::MobileRouter => Self::MobileRouter,
             NetworkKeyRole::MobileCarrier => Self::MobileCarrier,
+            NetworkKeyRole::MobilePcs => Self::MobilePcs,
         }
     }
 }
@@ -135,8 +102,9 @@ impl From<NetworkKeyRole> for i32 {
 impl Display for NetworkKeyRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NetworkKeyRole::MobileCarrier => write!(f, "Carrier"),
-            NetworkKeyRole::MobileRouter => write!(f, "Router"),
+            NetworkKeyRole::MobileCarrier => write!(f, "carrier"),
+            NetworkKeyRole::MobileRouter => write!(f, "router"),
+            NetworkKeyRole::MobilePcs => write!(f, "pcs"),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
-    key_cache::{self, CacheKeys, KeyCache, KeyRole},
+    key_cache::{self, CacheKeys, KeyCache},
     settings::Settings,
-    telemetry, verify_public_key, GrpcResult,
+    telemetry, verify_public_key, GrpcResult, KeyRole,
 };
 use anyhow::{anyhow, Result};
 use chrono::Utc;

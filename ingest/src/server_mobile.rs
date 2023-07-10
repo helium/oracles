@@ -11,9 +11,10 @@ use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
-    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
-    SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
-    SubscriberLocationReqV1, SubscriberLocationRespV1,
+    CoverageObjectReqV1, CoverageObjectRespV1, DataTransferSessionIngestReportV1,
+    DataTransferSessionReqV1, DataTransferSessionRespV1, SpeedtestIngestReportV1, SpeedtestReqV1,
+    SpeedtestRespV1, SubscriberLocationIngestReportV1, SubscriberLocationReqV1,
+    SubscriberLocationRespV1,
 };
 use std::path::Path;
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
@@ -170,6 +171,13 @@ impl poc_mobile::PocMobile for GrpcServer {
         Ok(Response::new(SubscriberLocationRespV1 {
             id: timestamp.to_string(),
         }))
+    }
+
+    async fn submit_coverage_object(
+        &self,
+        _request: Request<CoverageObjectReqV1>,
+    ) -> GrpcResult<CoverageObjectRespV1> {
+        unimplemented!()
     }
 }
 
