@@ -21,3 +21,5 @@ CREATE TABLE coverage_claim_time (
        last_heartbeat TIMESTAMPTZ NOT NULL,
        coverage_claim_time TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE heartbeats ADD COLUMN coverage_object UUID;
