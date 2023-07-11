@@ -376,10 +376,21 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            if stream_existing_routes(&pool, &signing_key, tx.clone())
-                .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
-                .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
-                .and_then(|_| stream_existing_skfs(&pool, &signing_key, tx.clone()))
+            if stream_existing_routes(&pool, &signing_key, tx.clone(), shutdown_listener.clone())
+                .and_then(|_| {
+                    stream_existing_euis(&pool, &signing_key, tx.clone(), shutdown_listener.clone())
+                })
+                .and_then(|_| {
+                    stream_existing_devaddrs(
+                        &pool,
+                        &signing_key,
+                        tx.clone(),
+                        shutdown_listener.clone(),
+                    )
+                })
+                .and_then(|_| {
+                    stream_existing_skfs(&pool, &signing_key, tx.clone(), shutdown_listener.clone())
+                })
                 .await
                 .is_err()
             {
@@ -449,8 +460,10 @@ impl iot_config::Route for RouteService {
 
             while let Some(eui) = eui_stream.next().await {
                 if shutdown_listener.is_triggered() {
-                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
-                    return
+                    _ = tx
+                        .send(Err(Status::unavailable("service shutting down")))
+                        .await;
+                    return;
                 }
                 let message = match eui {
                     Ok(eui) => Ok(eui.into()),
@@ -525,10 +538,12 @@ impl iot_config::Route for RouteService {
                     if shutdown_listener.is_triggered() {
                         return Err(Status::unavailable("service shutting down"));
                     }
-                    let (to_add, to_remove): (Vec<(ActionV1, EuiPairV1)>, Vec<(ActionV1, EuiPairV1)>) =
-                        batch
-                            .into_iter()
-                            .partition(|(action, _update)| action == &ActionV1::Add);
+                    let (to_add, to_remove): (
+                        Vec<(ActionV1, EuiPairV1)>,
+                        Vec<(ActionV1, EuiPairV1)>,
+                    ) = batch
+                        .into_iter()
+                        .partition(|(action, _update)| action == &ActionV1::Add);
                     telemetry::count_eui_updates(to_add.len(), to_remove.len());
                     tracing::debug!(
                         adding = to_add.len(),
@@ -605,8 +620,10 @@ impl iot_config::Route for RouteService {
 
             while let Some(devaddr) = devaddrs.next().await {
                 if shutdown_listener.is_triggered() {
-                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
-                    return
+                    _ = tx
+                        .send(Err(Status::unavailable("service shutting down")))
+                        .await;
+                    return;
                 }
                 let message = match devaddr {
                     Ok(devaddr) => Ok(devaddr.into()),
@@ -686,7 +703,7 @@ impl iot_config::Route for RouteService {
                 let shutdown_listener = self.shutdown.clone();
                 async move {
                     if shutdown_listener.is_triggered() {
-                        return Err(Status::unavailable("service shutting down"))
+                        return Err(Status::unavailable("service shutting down"));
                     }
                     let (to_add, to_remove): (
                         Vec<(ActionV1, DevaddrRangeV1)>,
@@ -775,8 +792,10 @@ impl iot_config::Route for RouteService {
 
             while let Some(skf) = skf_stream.next().await {
                 if shutdown_listener.is_triggered() {
-                    _ = tx.send(Err(Status::unavailable("service shutting down")));
-                    return
+                    _ = tx
+                        .send(Err(Status::unavailable("service shutting down")))
+                        .await;
+                    return;
                 }
                 let message = match skf {
                     Ok(skf) => Ok(skf.into()),
@@ -838,8 +857,10 @@ impl iot_config::Route for RouteService {
 
             while let Some(skf) = skf_stream.next().await {
                 if shutdown_listener.is_triggered() {
-                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
-                    return
+                    _ = tx
+                        .send(Err(Status::unavailable("service shutting down")))
+                        .await;
+                    return;
                 }
                 let message = match skf {
                     Ok(skf) => Ok(skf.into()),
@@ -1117,6 +1138,7 @@ async fn stream_existing_euis(
     pool: &Pool<Postgres>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+    shutdown_listener: triggered::Listener,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
@@ -1138,6 +1160,13 @@ async fn stream_existing_euis(
             }
         })
         .map_err(|err| anyhow!(err))
+        .map(move |send_result| {
+            if shutdown_listener.is_triggered() {
+                Err(anyhow!("service shutting down"))
+            } else {
+                send_result
+            }
+        })
         .try_fold((), |acc, _| async move { Ok(acc) })
         .await
 }
@@ -1146,6 +1175,7 @@ async fn stream_existing_devaddrs(
     pool: &Pool<Postgres>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+    shutdown_listener: triggered::Listener,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
@@ -1169,6 +1199,13 @@ async fn stream_existing_devaddrs(
             }
         })
         .map_err(|err| anyhow!(err))
+        .map(move |send_result| {
+            if shutdown_listener.is_triggered() {
+                Err(anyhow!("service shutting down"))
+            } else {
+                send_result
+            }
+        })
         .try_fold((), |acc, _| async move { Ok(acc) })
         .await
 }
@@ -1177,6 +1214,7 @@ async fn stream_existing_skfs(
     pool: &Pool<Postgres>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
+    shutdown_listener: triggered::Listener,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
@@ -1197,6 +1235,13 @@ async fn stream_existing_skfs(
             }
         })
         .map_err(|err| anyhow!(err))
+        .map(move |send_result| {
+            if shutdown_listener.is_triggered() {
+                Err(anyhow!("service shutting down"))
+            } else {
+                send_result
+            }
+        })
         .try_fold((), |acc, _| async move { Ok(acc) })
         .await
 }

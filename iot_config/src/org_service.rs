@@ -1,7 +1,6 @@
 use crate::{
     admin::{AuthCache, KeyType},
-    broadcast_update,
-    helium_netids, lora_field, org,
+    broadcast_update, helium_netids, lora_field, org,
     route::list_routes,
     telemetry, verify_public_key, GrpcResult, Settings,
 };
@@ -462,7 +461,10 @@ impl iot_config::Org for OrgService {
                     signature: vec![],
                 };
                 update.signature = self.sign_response(&update.encode_to_vec())?;
-                if broadcast_update(update, self.route_update_tx.clone()).await.is_err() {
+                if broadcast_update(update, self.route_update_tx.clone())
+                    .await
+                    .is_err()
+                {
                     tracing::info!(
                         route_id = route_id,
                         "all subscribers disconnected; route disable incomplete"
@@ -533,7 +535,10 @@ impl iot_config::Org for OrgService {
                     signature: vec![],
                 };
                 update.signature = self.sign_response(&update.encode_to_vec())?;
-                if broadcast_update(update, self.route_update_tx.clone()).await.is_err() {
+                if broadcast_update(update, self.route_update_tx.clone())
+                    .await
+                    .is_err()
+                {
                     tracing::info!(
                         route_id = route_id,
                         "all subscribers disconnected; route enable incomplete"

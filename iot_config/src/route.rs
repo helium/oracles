@@ -155,7 +155,8 @@ pub async fn create_route(
         })
         .and_then(|signature| {
             update.signature = signature;
-            broadcast_update(update, update_tx).map_err(|_| anyhow!("failed broadcasting route create"))
+            broadcast_update(update, update_tx)
+                .map_err(|_| anyhow!("failed broadcasting route create"))
         })
         .await;
 
@@ -219,7 +220,8 @@ pub async fn update_route(
         })
         .and_then(|signature| {
             update_res.signature = signature;
-            broadcast_update(update_res, update_tx).map_err(|_| anyhow!("failed broadcasting route update"))
+            broadcast_update(update_res, update_tx)
+                .map_err(|_| anyhow!("failed broadcasting route update"))
         })
         .await;
 
