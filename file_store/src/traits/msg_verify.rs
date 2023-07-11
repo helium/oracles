@@ -6,8 +6,8 @@ use helium_proto::services::{
 };
 use helium_proto::{
     services::poc_mobile::{
-        CellHeartbeatReqV1, DataTransferSessionReqV1, SpeedtestReqV1, SubscriberLocationReqV1,
-        CoverageObjectReqV1
+        CellHeartbeatReqV1, CoverageObjectReqV1, DataTransferSessionReqV1, SpeedtestReqV1,
+        SubscriberLocationReqV1,
     },
     Message,
 };
