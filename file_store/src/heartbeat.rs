@@ -106,6 +106,7 @@ mod tests {
                 cbsd_category: "category".to_string(),
                 cbsd_id: "id".to_string(),
                 signature: vec![],
+                coverage_object: vec![],
             }),
         };
 

@@ -1,16 +1,18 @@
 use crate::{
-    coverage::CoverageDaemon, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, Settings,
+    coverage::CoverageDaemon, data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
+    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
-    coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
-    file_source, file_upload, heartbeat::CellHeartbeatIngestReport,
-    speedtest::CellSpeedtestIngestReport, FileStore, FileType,
+    coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
+    heartbeat::CellHeartbeatIngestReport, mobile_subscriber::SubscriberLocationIngestReport,
+    mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport, FileStore,
+    FileType,
 };
+
 use futures_util::TryFutureExt;
-use mobile_config::{client::AuthorizationClient, GatewayClient};
+use mobile_config::client::{AuthorizationClient, EntityClient, GatewayClient};
 use price::PriceTracker;
 use tokio::signal;
 
@@ -42,41 +44,29 @@ impl Cmd {
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
-        let ingest = FileStore::from_settings(&settings.ingest).await?;
+        let report_ingest = FileStore::from_settings(&settings.ingest).await?;
+        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
+
+        // mobile config clients
+        let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
+        let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
+        let entity_client = EntityClient::from_settings(&settings.config_client)?;
+
+        // price tracker
+        let (price_tracker, tracker_process) =
+            PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
         // Heartbeats
         let (heartbeats, heartbeats_join_handle) =
             file_source::continuous_source::<CellHeartbeatIngestReport>()
                 .db(pool.clone())
-                .store(ingest.clone())
+                .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .file_type(FileType::CellHeartbeatIngestReport)
                 .build()?
                 .start(shutdown_listener.clone())
                 .await?;
 
-        // Speedtests
-        let (speedtests, speedtests_join_handle) =
-            file_source::continuous_source::<CellSpeedtestIngestReport>()
-                .db(pool.clone())
-                .store(ingest.clone())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CellSpeedtestIngestReport)
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
-
-        let (coverage_objs, coverage_objs_join_handle) =
-            file_source::continuous_source::<CoverageObjectIngestReport>()
-                .db(pool.clone())
-                .store(ingest.clone())
-                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CoverageObjectIngestReport)
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
-
-        // Valid Heartbeats
         let (valid_heartbeats, mut valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
             store_base_path,
@@ -89,7 +79,24 @@ impl Cmd {
         .create()
         .await?;
 
-        // Valid Speedtests
+        let heartbeat_daemon = HeartbeatDaemon::new(
+            pool.clone(),
+            gateway_client.clone(),
+            heartbeats,
+            valid_heartbeats,
+        );
+
+        // Speedtests
+        let (speedtests, speedtests_join_handle) =
+            file_source::continuous_source::<CellSpeedtestIngestReport>()
+                .db(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::CellSpeedtestIngestReport)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
+
         let (valid_speedtests, mut valid_speedtests_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
             store_base_path,
@@ -102,7 +109,24 @@ impl Cmd {
         .create()
         .await?;
 
+        let speedtest_daemon = SpeedtestDaemon::new(
+            pool.clone(),
+            gateway_client.clone(),
+            speedtests,
+            valid_speedtests,
+        );
+
         // Coverage objects
+        let (coverage_objs, coverage_objs_join_handle) =
+            file_source::continuous_source::<CoverageObjectIngestReport>()
+                .db(pool.clone())
+                .store(ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::CoverageObjectIngestReport)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
+
         let (valid_coverage_objs, mut valid_coverage_objs_server) =
             file_sink::FileSinkBuilder::new(
                 FileType::CoverageObject,
@@ -116,7 +140,15 @@ impl Cmd {
             .create()
             .await?;
 
+        let coverage_daemon = CoverageDaemon::new(
+            pool.clone(),
+            auth_client.clone(),
+            coverage_objs,
+            valid_coverage_objs,
+        );
+
         // Mobile rewards
+        let reward_period_hours = settings.rewards;
         let (mobile_rewards, mut mobile_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::MobileRewardShare,
             store_base_path,
@@ -128,7 +160,6 @@ impl Cmd {
         .create()
         .await?;
 
-        // Reward manifest
         let (reward_manifests, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
@@ -140,36 +171,6 @@ impl Cmd {
         .create()
         .await?;
 
-        let reward_period_hours = settings.rewards;
-        let gateway_client = GatewayClient::from_settings(&settings.config_client_settings)?;
-        let auth_client = AuthorizationClient::from_settings(&settings.config_client_settings)?;
-        let data_transfer_ingest = FileStore::from_settings(&settings.data_transfer_ingest).await?;
-
-        let (price_tracker, tracker_process) =
-            PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
-
-        let heartbeat_daemon = HeartbeatDaemon::new(
-            pool.clone(),
-            gateway_client.clone(),
-            heartbeats,
-            valid_heartbeats,
-            settings.max_heartbeat_distance_from_coverage_km,
-        );
-
-        let speedtest_daemon = SpeedtestDaemon::new(
-            pool.clone(),
-            gateway_client.clone(),
-            speedtests,
-            valid_speedtests,
-        );
-
-        let coverage_daemon = CoverageDaemon::new(
-            pool.clone(),
-            auth_client,
-            coverage_objs,
-            valid_coverage_objs,
-        );
-
         let rewarder = Rewarder::new(
             pool.clone(),
             Duration::hours(reward_period_hours),
@@ -177,8 +178,52 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            data_transfer_ingest,
+            settings.disable_discovery_loc_rewards_to_s3,
         );
+
+        // subscriber location
+        let (subscriber_location_ingest, subscriber_location_ingest_join_handle) =
+            file_source::continuous_source::<SubscriberLocationIngestReport>()
+                .db(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::SubscriberLocationIngestReport)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
+
+        let (verified_subscriber_location, mut verified_subscriber_location_server) =
+            file_sink::FileSinkBuilder::new(
+                FileType::VerifiedSubscriberLocationIngestReport,
+                store_base_path,
+                concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_location"),
+                shutdown_listener.clone(),
+            )
+            .deposits(Some(file_upload_tx.clone()))
+            .auto_commit(false)
+            .create()
+            .await?;
+
+        let subscriber_location_ingestor = SubscriberLocationIngestor::new(
+            pool.clone(),
+            auth_client.clone(),
+            entity_client.clone(),
+            subscriber_location_ingest,
+            verified_subscriber_location,
+        );
+
+        // data transfers
+        let (data_session_ingest, data_session_ingest_join_handle) =
+            file_source::continuous_source::<ValidDataTransferSession>()
+                .db(pool.clone())
+                .store(data_transfer_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::ValidDataTransferSession)
+                .build()?
+                .start(shutdown_listener.clone())
+                .await?;
+
+        let data_session_ingestor = DataSessionIngestor::new(pool.clone());
 
         tokio::try_join!(
             db_join_handle.map_err(Error::from),
@@ -188,6 +233,15 @@ impl Cmd {
             mobile_rewards_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             reward_manifests_server.run().map_err(Error::from),
+            verified_subscriber_location_server
+                .run()
+                .map_err(Error::from),
+            subscriber_location_ingestor
+                .run(&shutdown_listener)
+                .map_err(Error::from),
+            data_session_ingestor
+                .run(data_session_ingest, shutdown_listener.clone())
+                .map_err(Error::from),
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
@@ -196,6 +250,8 @@ impl Cmd {
             speedtest_daemon.run(shutdown_listener.clone()),
             coverage_daemon.run(shutdown_listener.clone()),
             rewarder.run(shutdown_listener.clone()),
+            subscriber_location_ingest_join_handle.map_err(anyhow::Error::from),
+            data_session_ingest_join_handle.map_err(anyhow::Error::from),
         )?;
 
         tracing::info!("Shutting down verifier server");

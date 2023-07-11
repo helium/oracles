@@ -97,6 +97,7 @@ impl FileInfo {
 
 pub const SUBSCRIBER_LOCATION_REQ: &str = "subscriber_location_req";
 pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report";
+pub const VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "verified_subscriber_location_report";
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
@@ -120,10 +121,13 @@ pub const INVALID_PACKET: &str = "invalid_packet";
 pub const NON_REWARDABLE_PACKET: &str = "non_rewardable_packet";
 pub const IOT_REWARD_SHARE: &str = "iot_reward_share";
 pub const DATA_TRANSFER_SESSION_INGEST_REPORT: &str = "data_transfer_session_ingest_report";
+pub const INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT: &str =
+    "invalid_data_transfer_session_ingest_report";
 pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
 pub const COVERAGE_OBJECT: &str = "coverage_object";
+pub const MAPPER_MSG: &str = "mapper_msg";
 pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
@@ -152,12 +156,15 @@ pub enum FileType {
     NonRewardablePacket,
     IotRewardShare,
     DataTransferSessionIngestReport,
+    InvalidDataTransferSessionIngestReport,
     ValidDataTransferSession,
     PriceReport,
     MobileRewardShare,
     SubscriberLocationReq,
     SubscriberLocationIngestReport,
     CoverageObject,
+    VerifiedSubscriberLocationIngestReport,
+    MapperMsg,
     CoverageObjectIngestReport,
 }
 
@@ -166,6 +173,9 @@ impl fmt::Display for FileType {
         let s = match self {
             Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
             Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
+            Self::VerifiedSubscriberLocationIngestReport => {
+                VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
+            }
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
@@ -189,10 +199,14 @@ impl fmt::Display for FileType {
             Self::NonRewardablePacket => NON_REWARDABLE_PACKET,
             Self::IotRewardShare => IOT_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
+            Self::InvalidDataTransferSessionIngestReport => {
+                INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
+            }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::CoverageObject => COVERAGE_OBJECT,
+            Self::MapperMsg => MAPPER_MSG,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
         };
         f.write_str(s)
@@ -204,6 +218,9 @@ impl FileType {
         match self {
             Self::SubscriberLocationReq => SUBSCRIBER_LOCATION_REQ,
             Self::SubscriberLocationIngestReport => SUBSCRIBER_LOCATION_INGEST_REPORT,
+            Self::VerifiedSubscriberLocationIngestReport => {
+                VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
+            }
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
@@ -227,10 +244,14 @@ impl FileType {
             Self::NonRewardablePacket => NON_REWARDABLE_PACKET,
             Self::IotRewardShare => IOT_REWARD_SHARE,
             Self::DataTransferSessionIngestReport => DATA_TRANSFER_SESSION_INGEST_REPORT,
+            Self::InvalidDataTransferSessionIngestReport => {
+                INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT
+            }
             Self::ValidDataTransferSession => VALID_DATA_TRANSFER_SESSION,
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::CoverageObject => COVERAGE_OBJECT,
+            Self::MapperMsg => MAPPER_MSG,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
         }
     }
@@ -240,6 +261,11 @@ impl FromStr for FileType {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let result = match s {
+            SUBSCRIBER_LOCATION_REQ => Self::SubscriberLocationReq,
+            SUBSCRIBER_LOCATION_INGEST_REPORT => Self::SubscriberLocationIngestReport,
+            VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT => {
+                Self::VerifiedSubscriberLocationIngestReport
+            }
             CELL_HEARTBEAT => Self::CellHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
             CELL_HEARTBEAT_INGEST_REPORT => Self::CellHeartbeatIngestReport,
@@ -263,10 +289,14 @@ impl FromStr for FileType {
             NON_REWARDABLE_PACKET => Self::NonRewardablePacket,
             IOT_REWARD_SHARE => Self::IotRewardShare,
             DATA_TRANSFER_SESSION_INGEST_REPORT => Self::DataTransferSessionIngestReport,
+            INVALID_DATA_TRANSFER_SESSION_INGEST_REPORT => {
+                Self::InvalidDataTransferSessionIngestReport
+            }
             VALID_DATA_TRANSFER_SESSION => Self::ValidDataTransferSession,
             PRICE_REPORT => Self::PriceReport,
             MOBILE_REWARD_SHARE => Self::MobileRewardShare,
             COVERAGE_OBJECT => Self::CoverageObject,
+            MAPPER_MSG => Self::MapperMsg,
             COVERAGE_OBJECT_INGEST_REPORT => Self::CoverageObjectIngestReport,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };

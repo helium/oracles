@@ -1,13 +1,15 @@
 use crate::{
+    data_session,
     heartbeats::HeartbeatReward,
-    ingest,
-    reward_shares::{CoveragePoints, TransferRewards},
+    reward_shares::{CoveragePoints, MapperShares, TransferRewards},
     speedtests::SpeedtestAverages,
+    subscriber_location,
 };
 use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode, FileStore};
+use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -26,7 +28,7 @@ pub struct Rewarder {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
-    data_transfer_ingest: FileStore,
+    disable_discovery_loc_rewards_to_s3: bool,
 }
 
 impl Rewarder {
@@ -37,7 +39,7 @@ impl Rewarder {
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
-        data_transfer_ingest: FileStore,
+        disable_discovery_loc_rewards_to_s3: bool,
     ) -> Self {
         Self {
             pool,
@@ -46,7 +48,7 @@ impl Rewarder {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            data_transfer_ingest,
+            disable_discovery_loc_rewards_to_s3,
         }
     }
 
@@ -168,7 +170,7 @@ impl Rewarder {
                 / dec!(1_000_000); // Per Bone
         let transfer_rewards = TransferRewards::from_transfer_sessions(
             mobile_bone_price,
-            ingest::ingest_valid_data_transfers(&self.data_transfer_ingest, reward_period).await,
+            data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
             &coverage_points,
             reward_period,
         )
@@ -199,6 +201,43 @@ impl Rewarder {
                 .await??;
         }
 
+        // Mapper rewards currently include rewards for discovery mapping only.
+        // Verification mapping rewards to be added
+        // Any subscriber for which the carrier has submitted a location sharing report
+        // during the epoch will be eligible for discovery mapping rewards
+
+        // get subscriber location shares this epoch
+        let location_shares =
+            subscriber_location::aggregate_location_shares(&self.pool, reward_period).await?;
+
+        // determine mapping shares based on location shares and data transferred
+        let mapping_shares = MapperShares::new(location_shares);
+        let rewards_per_share = mapping_shares.rewards_per_share(reward_period)?;
+
+        // translate discovery mapping shares into subscriber rewards
+        for mapping_share in
+            mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
+        {
+            if self.disable_discovery_loc_rewards_to_s3 {
+                tracing::info!(
+                    "discovery location rewards output to s3 is disabled, outputting to logs only"
+                );
+                if let Some(ProtoReward::SubscriberReward(reward)) = mapping_share.reward {
+                    tracing::info!(
+                        "subscriber_id: {:?}, discovery_location_amount: {}",
+                        reward.subscriber_id,
+                        reward.discovery_location_amount
+                    )
+                }
+            } else {
+                self.mobile_rewards
+                    .write(mapping_share.clone(), [])
+                    .await?
+                    // Await the returned one shot to ensure that we wrote the file
+                    .await??;
+            }
+        }
+
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
@@ -208,6 +247,10 @@ impl Rewarder {
             .bind(reward_period.start)
             .execute(&mut transaction)
             .await?;
+
+        // clear the db of data sessions data & subscriber location data for the epoch
+        data_session::clear_hotspot_data_sessions(&mut transaction, reward_period).await?;
+        subscriber_location::clear_location_shares(&mut transaction, reward_period).await?;
 
         let next_reward_period = scheduler.next_reward_period();
         save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;

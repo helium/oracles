@@ -274,6 +274,13 @@ impl Heartbeat {
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);
         }
+
+        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
+            .bind(&self.cbsd_id)
+            .bind(&self.hotspot_key)
+            .execute(&mut *exec)
+            .await?;
+
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(
             sqlx::query_as::<_, HeartbeatSaveResult>(

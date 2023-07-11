@@ -22,11 +22,17 @@ pub struct Settings {
     pub output: file_store::Settings,
     pub metrics: poc_metrics::Settings,
     pub price_tracker: price::price_tracker::Settings,
-    pub config_client_settings: mobile_config::ClientSettings,
+    pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
     #[serde(default = "default_max_heartbeat_distance_from_coverage_km")]
     pub max_heartbeat_distance_from_coverage_km: f64,
+    #[serde(default = "default_disable_discovery_loc_rewards_to_s3")]
+    pub disable_discovery_loc_rewards_to_s3: bool,
+}
+
+pub fn default_disable_discovery_loc_rewards_to_s3() -> bool {
+    true
 }
 
 pub fn default_log() -> String {

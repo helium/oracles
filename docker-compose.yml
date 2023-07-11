@@ -1,6 +1,28 @@
 version: "2.4"
 services:
 
+  mobile-config:
+    image: mobile-config:latest
+    build:
+      context: .
+      dockerfile: mobile_config.Dockerfile
+    depends_on:
+      - postgres
+    ports:
+      - 8090:8090
+    environment:
+      CFG__DATABASE__URL: postgres://postgres:postgres@postgres:5432/mobile_config_db
+      CFG__DATABASE__MAX_CONNECTIONS: 50
+      CFG__METADATA__URL: postgres://postgres:postgres@postgres:5432/mobile_metadata_db
+      CFG__METADATA__MAX_CONNECTIONS: 50
+      CFG__LISTEN: 0.0.0.0:8090
+      CFG__METRICS__ENDPOINT: 0.0.0.0:19010
+      CFG__ADMIN_PUBKEY: ${CONFIG_ADMIN_PUBKEY}
+      CFG__SIGNING_KEYPAIR: /config-signing-key.bin
+      CFG__LOG: debug
+    volumes:
+      - ${CONFIG_SIGNING_KEY}:/config-signing-key.bin:ro
+
   iot-config:
     image: iot-config:latest
     build:

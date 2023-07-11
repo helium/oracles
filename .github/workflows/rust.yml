@@ -47,6 +47,10 @@ jobs:
       - name: Run tests
         run: cargo test -r
 
+        ## free up disk space if we are packaging a release from a tag
+      - uses: jlumbroso/free-disk-space@main
+        if: contains(github.ref, 'refs/tags/')
+
       - name: Debian packaging
         if: contains(github.ref, 'refs/tags/')
         env:

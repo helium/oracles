@@ -188,7 +188,6 @@ impl SpeedtestRollingAverage {
 
         Ok(futures::stream::iter(speedtests.into_iter())
             .then(move |(rolling_average, cell_speedtests)| {
-                let mut gateway_client = gateway_client.clone();
                 async move {
                     // If we get back some gateway info for the given address, it's a valid address
                     if gateway_client

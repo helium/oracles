@@ -22,7 +22,7 @@ pub trait GatewayInfoResolver {
     type Error;
 
     async fn resolve_gateway_info(
-        &mut self,
+        &self,
         address: &PublicKeyBinary,
     ) -> Result<Option<GatewayInfo>, Self::Error>;
 

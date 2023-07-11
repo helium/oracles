@@ -14,7 +14,7 @@ serde_json = {workspace = true}
 thiserror = {workspace = true}
 tokio = { workspace = true }
 tokio-util = "0"
-tokio-stream = "0"
+tokio-stream = {workspace = true}
 triggered = {workspace = true}
 async-compression = {version = "0", features = ["tokio", "gzip"]}
 futures = {workspace = true}

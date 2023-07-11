@@ -46,7 +46,7 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
     type Error = ClientError;
 
     async fn resolve_gateway_info(
-        &mut self,
+        &self,
         address: &PublicKeyBinary,
     ) -> Result<Option<gateway_info::GatewayInfo>, Self::Error> {
         if let Some(cached_response) = self.cache.get(address).await {
@@ -60,7 +60,7 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
-        let response = match self.client.info(request).await {
+        let response = match self.client.clone().info(request).await {
             Ok(info_res) => {
                 let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;

@@ -37,7 +37,7 @@ impl AuthorizationClient {
     }
 
     pub async fn verify_authorized_key(
-        &mut self,
+        &self,
         pubkey: &PublicKeyBinary,
         role: mobile_config::NetworkKeyRole,
     ) -> Result<bool, ClientError> {
@@ -53,7 +53,7 @@ impl AuthorizationClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = pubkey.to_string(), role = ?role, "verifying authorized key registered");
-        let response = match self.client.verify(request).await {
+        let response = match self.client.clone().verify(request).await {
             Ok(verify_res) => {
                 let response = verify_res.into_inner();
                 response.verify(&self.config_pubkey)?;
