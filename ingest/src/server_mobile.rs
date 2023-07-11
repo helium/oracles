@@ -11,10 +11,10 @@ use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_mobile::{
     self, CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellHeartbeatRespV1,
-    CoverageObjectReqV1, CoverageObjectRespV1, DataTransferSessionIngestReportV1,
-    DataTransferSessionReqV1, DataTransferSessionRespV1, SpeedtestIngestReportV1, SpeedtestReqV1,
-    SpeedtestRespV1, SubscriberLocationIngestReportV1, SubscriberLocationReqV1,
-    SubscriberLocationRespV1,
+    CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
+    DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
+    SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
+    SubscriberLocationReqV1, SubscriberLocationRespV1,
 };
 use std::path::Path;
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
@@ -29,14 +29,17 @@ pub struct GrpcServer {
     speedtest_report_sink: FileSinkClient,
     data_transfer_session_sink: FileSinkClient,
     subscriber_location_report_sink: FileSinkClient,
+    coverage_object_report_sink: FileSinkClient,
     required_network: Network,
 }
+
 impl GrpcServer {
     fn new(
         heartbeat_report_sink: FileSinkClient,
         speedtest_report_sink: FileSinkClient,
         data_transfer_session_sink: FileSinkClient,
         subscriber_location_report_sink: FileSinkClient,
+        coverage_object_report_sink: FileSinkClient,
         required_network: Network,
     ) -> Result<Self> {
         Ok(Self {
@@ -44,6 +47,7 @@ impl GrpcServer {
             speedtest_report_sink,
             data_transfer_session_sink,
             subscriber_location_report_sink,
+            coverage_object_report_sink,
             required_network,
         })
     }
@@ -175,9 +179,24 @@ impl poc_mobile::PocMobile for GrpcServer {
 
     async fn submit_coverage_object(
         &self,
-        _request: Request<CoverageObjectReqV1>,
+        request: Request<CoverageObjectReqV1>,
     ) -> GrpcResult<CoverageObjectRespV1> {
-        unimplemented!()
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| CoverageObjectIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
+
+        _ = self.coverage_object_report_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(CoverageObjectRespV1 { id }))
     }
 }
 
@@ -243,11 +262,24 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         .create()
         .await?;
 
+    let (coverage_object_report_sink, mut coverage_object_report_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::CoverageObjectIngestReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_coverage_object_report"),
+            shutdown.clone(),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .create()
+        .await?;
+
     let grpc_server = GrpcServer::new(
         heartbeat_report_sink,
         speedtest_report_sink,
         data_transfer_session_sink,
         subscriber_location_report_sink,
+        coverage_object_report_sink,
         settings.network,
     )?;
 
@@ -287,6 +319,9 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         speedtest_report_sink_server.run().map_err(Error::from),
         data_transfer_session_sink_server.run().map_err(Error::from),
         subscriber_location_report_sink_server
+            .run()
+            .map_err(Error::from),
+        coverage_object_report_sink_server
             .run()
             .map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),

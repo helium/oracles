@@ -6,7 +6,8 @@ use helium_proto::services::{
 };
 use helium_proto::{
     services::poc_mobile::{
-        CellHeartbeatReqV1, DataTransferSessionReqV1, SpeedtestReqV1, SubscriberLocationReqV1,
+        CellHeartbeatReqV1, CoverageObjectReqV1, DataTransferSessionReqV1, SpeedtestReqV1,
+        SubscriberLocationReqV1,
     },
     Message,
 };
@@ -34,6 +35,7 @@ impl_msg_verify!(SpeedtestReqV1, signature);
 impl_msg_verify!(LoraBeaconReportReqV1, signature);
 impl_msg_verify!(LoraWitnessReportReqV1, signature);
 impl_msg_verify!(DataTransferSessionReqV1, signature);
+impl_msg_verify!(CoverageObjectReqV1, signature);
 impl_msg_verify!(iot_config::OrgCreateHeliumReqV1, signature);
 impl_msg_verify!(iot_config::OrgCreateRoamerReqV1, signature);
 impl_msg_verify!(iot_config::OrgUpdateReqV1, signature);
