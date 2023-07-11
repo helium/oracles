@@ -1,5 +1,5 @@
 use config::{Config, Environment, File};
-use helium_crypto::{Network, PublicKey};
+use helium_crypto::Network;
 use serde::Deserialize;
 use std::{
     net::{AddrParseError, SocketAddr},

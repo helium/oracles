@@ -1,14 +1,15 @@
 use crate::{
-    coverage::CoverageDaemon, data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, Settings,
+    coverage::CoverageDaemon, data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon,
+    rewarder::Rewarder, speedtests::SpeedtestDaemon,
+    subscriber_location::SubscriberLocationIngestor, Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
-    coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
-    heartbeat::CellHeartbeatIngestReport, mobile_subscriber::SubscriberLocationIngestReport,
-    mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport, FileStore,
-    FileType,
+    coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
+    file_source, file_upload, heartbeat::CellHeartbeatIngestReport,
+    mobile_subscriber::SubscriberLocationIngestReport, mobile_transfer::ValidDataTransferSession,
+    speedtest::CellSpeedtestIngestReport, FileStore, FileType,
 };
 
 use futures_util::TryFutureExt;
@@ -84,6 +85,7 @@ impl Cmd {
             gateway_client.clone(),
             heartbeats,
             valid_heartbeats,
+            settings.max_heartbeat_distance_from_coverage_km,
         );
 
         // Speedtests
@@ -120,7 +122,7 @@ impl Cmd {
         let (coverage_objs, coverage_objs_join_handle) =
             file_source::continuous_source::<CoverageObjectIngestReport>()
                 .db(pool.clone())
-                .store(ingest.clone())
+                .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .file_type(FileType::CoverageObjectIngestReport)
                 .build()?

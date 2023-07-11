@@ -7,7 +7,7 @@ use crate::{
 };
 
 use chrono::{DateTime, Duration, Utc};
-use file_store::{mobile_transfer::ValidDataTransferSession, traits::TimestampEncode};
+use file_store::traits::TimestampEncode;
 use futures::{stream::BoxStream, Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
