@@ -9,8 +9,8 @@ use futures::TryFutureExt;
 use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, loader,
-    metrics::Metrics, packet_loader, poc_report::Report, purger, region_cache::RegionCache,
-    rewarder::Rewarder, runner, tx_scaler::Server as DensityScaler, Settings,
+    packet_loader, purger, region_cache::RegionCache, rewarder::Rewarder, runner, telemetry,
+    tx_scaler::Server as DensityScaler, Settings,
 };
 use price::PriceTracker;
 use std::path;
@@ -82,8 +82,7 @@ impl Server {
             .await?;
         sqlx::migrate!().run(&pool).await?;
 
-        let count_all_beacons = Report::count_all_beacons(&pool).await?;
-        Metrics::num_beacons(count_all_beacons);
+        telemetry::initialize(&pool).await?;
 
         let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
 

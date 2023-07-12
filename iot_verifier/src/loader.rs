@@ -1,8 +1,8 @@
 use crate::{
     gateway_cache::GatewayCache,
     meta::Meta,
-    metrics::LoaderMetricTracker,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
+    telemetry::LoaderMetricTracker,
     Settings,
 };
 use chrono::DateTime;
