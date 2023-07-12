@@ -690,7 +690,7 @@ mod test {
             _latest_timestamp: &'a DateTime<Utc>,
         ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
             stream::iter(
-                self.get(&(cbsd_id.to_string(), coverage_obj.clone()))
+                self.get(&(cbsd_id.to_string(), *coverage_obj))
                     .unwrap()
                     .clone(),
             )
