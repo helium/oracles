@@ -77,7 +77,7 @@ impl HeartbeatDaemon {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
-            let cache = Arc::new(Cache::<(String, DateTime<Utc>, Uuid), ()>::new());
+            let cache = Arc::new(Cache::<(String, DateTime<Utc>, Option<Uuid>), ()>::new());
 
             let cache_clone = cache.clone();
             tokio::spawn(async move {
@@ -108,7 +108,7 @@ impl HeartbeatDaemon {
     async fn process_file(
         &self,
         file: FileInfoStream<CellHeartbeatIngestReport>,
-        heartbeat_cache: &Cache<(String, DateTime<Utc>, Uuid), ()>,
+        heartbeat_cache: &Cache<(String, DateTime<Utc>, Option<Uuid>), ()>,
         covered_hex_cache: &CoveredHexCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing heartbeat file {}", file.file_info.key);
@@ -193,7 +193,7 @@ pub struct Heartbeat {
     pub cell_type: Option<CellType>,
     pub hotspot_key: PublicKeyBinary,
     pub timestamp: DateTime<Utc>,
-    pub coverage_object: Uuid,
+    pub coverage_object: Option<Uuid>,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -234,13 +234,12 @@ impl Heartbeat {
                 )
                 .await?;
                 Ok(Heartbeat {
+                    coverage_object: heartbeat_report.report.coverage_object(),
                     hotspot_key: heartbeat_report.report.pubkey,
                     cbsd_id: heartbeat_report.report.cbsd_id,
                     timestamp: heartbeat_report.received_timestamp,
                     cell_type,
                     validity,
-                    // TODO: Validate coverage object
-                    coverage_object: heartbeat_report.report.coverage_object,
                 })
             }
         })
@@ -258,7 +257,10 @@ impl Heartbeat {
                     cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
                     validity: self.validity as i32,
                     timestamp: self.timestamp.timestamp() as u64,
-                    coverage_object: Vec::from(self.coverage_object.into_bytes()),
+                    coverage_object: self
+                        .coverage_object
+                        .map(|x| Vec::from(x.into_bytes()))
+                        .unwrap_or_default(),
                 },
                 [],
             )
@@ -335,7 +337,11 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
     }
 
-    let Some(coverage) = coverage_cache.fetch_coverage(&heartbeat.report.coverage_object).await?
+    let Some(coverage_object) = heartbeat.report.coverage_object() else {
+        return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
+    };
+
+    let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await?
         else {
             return Ok((cell_type, proto::HeartbeatValidity::NoSuchCoverageObject));
         };

@@ -1,5 +1,4 @@
 use crate::{
-    error::DecodeError,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode},
     Error, Result,
 };
@@ -20,7 +19,13 @@ pub struct CellHeartbeat {
     pub operation_mode: bool,
     pub cbsd_category: String,
     pub cbsd_id: String,
-    pub coverage_object: Uuid,
+    pub coverage_object: Vec<u8>,
+}
+
+impl CellHeartbeat {
+    pub fn coverage_object(&self) -> Option<Uuid> {
+        Uuid::from_slice(&self.coverage_object).ok()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -50,7 +55,7 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
             operation_mode: v.operation_mode,
             cbsd_category: v.cbsd_category,
             cbsd_id: v.cbsd_id,
-            coverage_object: Uuid::from_slice(&v.coverage_object).map_err(DecodeError::from)?,
+            coverage_object: v.coverage_object,
         })
     }
 }
