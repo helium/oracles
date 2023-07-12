@@ -240,6 +240,7 @@ pub fn covered_hex_stream<'a>(
     pool: &'a Pool<Postgres>,
     cbsd_id: &'a str,
     coverage_obj: &'a Uuid,
+    first_timestamp: &'a DateTime<Utc>,
     latest_timestamp: &'a DateTime<Utc>,
 ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
     sqlx::query_as("SELECT * FROM coverage WHERE cbsd_id = $1 AND uuid = $2")
@@ -257,16 +258,23 @@ pub fn covered_hex_stream<'a>(
                 ON CONFLICT (cbsd_id)
                 DO UPDATE SET
                 coverage_claim_time =
-                    CASE WHEN EXCLUDED.last_heartbeat - coverage_claim_time.last_heartbeat > INTERVAL '3 days' THEN EXCLUDED.last_heartbeat ELSE heartbeat.coverage_claim_time END,
+                    CASE WHEN
+                      $5 - coverage_claim_time.last_heartbeat > INTERVAL '3 days'
+                    THEN
+                      $5
+                    ELSE
+                      coverage_claim_time.coverage_claim_time
+                    END,
                 last_heartbeat = EXCLUDED.last_heartbeat,
                 uuid = EXCLUDED.uuid
                 RETURNING coverage_claim_time
-                "#
+                "#,
             )
             .bind(cbsd_id)
             .bind(coverage_obj)
             .bind(hc.coverage_claim_time)
             .bind(latest_timestamp)
+            .bind(first_timestamp)
             .fetch_one(pool)
             .await?;
             hc.coverage_claim_time = adjusted_claim_time;

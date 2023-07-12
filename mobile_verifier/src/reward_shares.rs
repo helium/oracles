@@ -258,6 +258,7 @@ pub trait CoveredHexStream {
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
+        first_timestamp: &'a DateTime<Utc>,
         latest_timestamp: &'a DateTime<Utc>,
     ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>>;
 }
@@ -267,9 +268,16 @@ impl CoveredHexStream for Pool<Postgres> {
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
+        first_timestamp: &'a DateTime<Utc>,
         latest_timestamp: &'a DateTime<Utc>,
     ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
-        crate::coverage::covered_hex_stream(self, cbsd_id, coverage_obj, latest_timestamp)
+        crate::coverage::covered_hex_stream(
+            self,
+            cbsd_id,
+            coverage_obj,
+            first_timestamp,
+            latest_timestamp,
+        )
     }
 }
 
@@ -295,6 +303,7 @@ impl CoveragePoints {
             let covered_hex_stream = hex_streams.covered_hex_stream(
                 &heartbeat.cbsd_id,
                 &heartbeat.coverage_object,
+                &heartbeat.first_timestamp,
                 &heartbeat.latest_timestamp,
             );
             covered_hexes
@@ -687,6 +696,7 @@ mod test {
             &'a self,
             cbsd_id: &'a str,
             coverage_obj: &'a Uuid,
+            _first_timestamp: &'a DateTime<Utc>,
             _latest_timestamp: &'a DateTime<Utc>,
         ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
             stream::iter(
@@ -728,6 +738,7 @@ mod test {
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c1),
                 coverage_object: cov_obj_1,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -735,6 +746,7 @@ mod test {
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c2),
                 coverage_object: cov_obj_2,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -742,6 +754,7 @@ mod test {
                 hotspot_key: g2.clone(),
                 reward_weight: cell_type_weight(&c3),
                 coverage_object: cov_obj_3,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -749,6 +762,7 @@ mod test {
                 hotspot_key: g2.clone(),
                 reward_weight: cell_type_weight(&c4),
                 coverage_object: cov_obj_4,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
         ];
@@ -909,6 +923,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 reward_weight: cell_type_weight(&c2),
                 coverage_object: cov_obj_2,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -916,6 +931,7 @@ mod test {
                 hotspot_key: gw3.clone(),
                 reward_weight: cell_type_weight(&c4),
                 coverage_object: cov_obj_4,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -923,6 +939,7 @@ mod test {
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c5),
                 coverage_object: cov_obj_5,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -930,6 +947,7 @@ mod test {
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c6),
                 coverage_object: cov_obj_6,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -937,6 +955,7 @@ mod test {
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c7),
                 coverage_object: cov_obj_7,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -944,6 +963,7 @@ mod test {
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c8),
                 coverage_object: cov_obj_8,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -951,6 +971,7 @@ mod test {
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c9),
                 coverage_object: cov_obj_9,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -958,6 +979,7 @@ mod test {
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c10),
                 coverage_object: cov_obj_10,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -965,6 +987,7 @@ mod test {
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c11),
                 coverage_object: cov_obj_11,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -972,6 +995,7 @@ mod test {
                 hotspot_key: gw5.clone(),
                 reward_weight: cell_type_weight(&c12),
                 coverage_object: cov_obj_12,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -979,6 +1003,7 @@ mod test {
                 hotspot_key: gw6.clone(),
                 reward_weight: cell_type_weight(&c13),
                 coverage_object: cov_obj_13,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
@@ -986,6 +1011,7 @@ mod test {
                 hotspot_key: gw7.clone(),
                 reward_weight: cell_type_weight(&c14),
                 coverage_object: cov_obj_14,
+                first_timestamp: DateTime::<Utc>::MIN_UTC,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
         ];
