@@ -1,6 +1,7 @@
 use crate::{
     data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, Settings,
+    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
+    Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
@@ -37,6 +38,8 @@ impl Cmd {
             .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
             .await?;
         sqlx::migrate!().run(&pool).await?;
+
+        telemetry::initialize(&pool).await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =

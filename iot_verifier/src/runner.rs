@@ -1,7 +1,7 @@
 use crate::{
-    gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon,
-    metrics::Metrics, poc::Poc, poc_report::Report, region_cache::RegionCache,
-    reward_share::GatewayPocShare, Settings,
+    gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon, poc::Poc,
+    poc_report::Report, region_cache::RegionCache, reward_share::GatewayPocShare, telemetry,
+    Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use file_store::{
@@ -447,7 +447,7 @@ impl Runner {
         }
         // done with these poc reports, purge em from the db
         Report::delete_poc(&self.pool, &beacon_id).await?;
-        Metrics::decrement_num_beacons();
+        telemetry::decrement_num_beacons();
         Ok(())
     }
 
@@ -498,7 +498,7 @@ impl Runner {
         // update timestamp of last beacon for the beaconer
         LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
         Report::delete_poc(&self.pool, &packet_data).await?;
-        Metrics::decrement_num_beacons();
+        telemetry::decrement_num_beacons();
         Ok(())
     }
 }
@@ -592,7 +592,7 @@ fn fire_invalid_witness_metric(witnesses: &[IotVerifiedWitnessReport]) {
         .iter()
         .filter(|witness| !matches!(witness.invalid_reason, InvalidReason::ReasonNone))
         .for_each(|witness| {
-            Metrics::increment_invalid_witnesses(&[(
+            telemetry::increment_invalid_witnesses(&[(
                 "reason",
                 witness.invalid_reason.clone().as_str_name(),
             )])

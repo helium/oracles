@@ -1,4 +1,7 @@
-use crate::reward_share::{operational_rewards, GatewayShares};
+use crate::{
+    reward_share::{operational_rewards, GatewayShares},
+    telemetry,
+};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
@@ -129,10 +132,7 @@ impl Rewarder {
             .await?
             .await??;
         self.reward_manifests_sink.commit().await?;
-        metrics::gauge!(
-            "last_rewarded_end_time",
-            scheduler.reward_period.end.timestamp() as f64
-        );
+        telemetry::last_rewarded_end_time(scheduler.reward_period.end);
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl Rewarder {
     }
 }
 
-async fn fetch_rewarded_timestamp(
+pub async fn fetch_rewarded_timestamp(
     timestamp_key: &str,
     db: impl PgExecutor<'_>,
 ) -> db_store::Result<DateTime<Utc>> {
