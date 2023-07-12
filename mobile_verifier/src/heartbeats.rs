@@ -214,7 +214,7 @@ impl Heartbeat {
                     timestamp: self.timestamp.timestamp() as u64,
                     coverage_object: Vec::with_capacity(0), // Placeholder so the project compiles
                 },
-                [],
+                &[("validity", self.validity.as_str_name())],
             )
             .await?;
         Ok(())
