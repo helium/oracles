@@ -1,4 +1,4 @@
-use crate::{reward_index, settings, Settings};
+use crate::{reward_index, settings, telemetry, Settings};
 use anyhow::{anyhow, bail, Result};
 use chrono::Utc;
 use file_store::{
@@ -13,7 +13,6 @@ use helium_proto::{
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
-use std::str;
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::mpsc::Receiver;
 
@@ -81,10 +80,7 @@ impl Indexer {
                     }
                     txn.commit().await?;
                     tracing::info!(file = %key, "Completed processing reward file");
-                    metrics::gauge!(
-                        "last_reward_processed_time",
-                        Utc::now().timestamp() as f64,
-                    );
+                    telemetry::last_reward_processed_time(&self.pool, Utc::now()).await?;
                 }
             }
         }
