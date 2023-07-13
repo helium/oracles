@@ -76,12 +76,12 @@ where
     ) -> Result<Option<u64>, S::Error> {
         let mut balances = self.balances.lock().await;
 
-        let mut balance = if !balances.contains_key(payer) {
+        let balance = if !balances.contains_key(payer) {
             let new_balance = self.solana.payer_balance(payer).await?;
             balances.insert(payer.clone(), Balance::new(new_balance));
             balances.get_mut(payer).unwrap()
         } else {
-            let mut balance = balances.get_mut(payer).unwrap();
+            let balance = balances.get_mut(payer).unwrap();
 
             // If the balance is not sufficient, check to see if it has been increased
             if balance.balance < amount + balance.burned {
