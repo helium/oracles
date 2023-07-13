@@ -111,7 +111,6 @@ impl CoverageDaemon {
                 signature,
             } = report;
 
-            // TODO: Validate pub key is authorized
             let validity = if self
                 .auth_client
                 .verify_authorized_key(&pub_key, NetworkKeyRole::MobilePcs)
@@ -150,7 +149,7 @@ impl CoverageDaemon {
                 let location: u64 = hex.location.into();
                 sqlx::query(
                     r#"
-                    INSERT INTO coverage_objects
+                    INSERT INTO hex_coverage
                     VALUES ($1, $2, $3, $4, $5, $6)
                     "#,
                 )
@@ -165,6 +164,7 @@ impl CoverageDaemon {
             }
         }
 
+        self.file_sink.commit().await?;
         transaction.commit().await?;
 
         Ok(())
@@ -243,11 +243,12 @@ pub fn covered_hex_stream<'a>(
     first_timestamp: &'a DateTime<Utc>,
     latest_timestamp: &'a DateTime<Utc>,
 ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
-    sqlx::query_as("SELECT * FROM coverage WHERE cbsd_id = $1 AND uuid = $2")
+    sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")
         .bind(cbsd_id)
         .bind(*coverage_obj)
         .fetch(pool)
         .and_then(move |mut hc: HexCoverage| async move {
+            // TODO: Move this elsewhere so that we don't do this per coverage object
             // For a given reward cycle, this operation should be idempotent.
             // That means if we were to shutdown in the middle of calculating rewards,
             // restarting should produce the same results. Therefore, there is no need

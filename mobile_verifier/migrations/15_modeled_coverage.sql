@@ -11,7 +11,7 @@ CREATE TABLE hex_coverage (
        indoor BOOLEAN NOT NULL,
        cbsd_id TEXT NOT NULL,
        signal_level signal_level NOT NULL,
-       coverage_claim_time TIMESTAMPTZ NOT NULL
+       coverage_claim_time TIMESTAMPTZ NOT NULL,
        PRIMARY KEY (uuid, hex)
 );
 
