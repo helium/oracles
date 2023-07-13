@@ -27,7 +27,6 @@ pub struct HeartbeatKey {
     hotspot_key: PublicKeyBinary,
     cbsd_id: String,
     cell_type: CellType,
-    first_timestamp: DateTime<Utc>,
     latest_timestamp: DateTime<Utc>,
 }
 
@@ -36,7 +35,6 @@ pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
     pub reward_weight: Decimal,
-    pub first_timestamp: DateTime<Utc>,
     pub latest_timestamp: DateTime<Utc>,
 }
 
@@ -47,7 +45,6 @@ impl From<HeartbeatKey> for HeartbeatReward {
             hotspot_key: value.hotspot_key,
             cbsd_id: value.cbsd_id,
             reward_weight: value.cell_type.reward_weight(),
-            first_timestamp: value.first_timestamp,
             latest_timestamp: value.latest_timestamp,
         }
     }
@@ -173,14 +170,6 @@ impl HeartbeatReward {
                 FROM heartbeats t2
                 WHERE t2.cbsd_id = t1.cbsd_id
               )
-            ), first_timestamps AS (
-              SELECT t1.cbsd_id, t1.first_timestamp
-              FROM heartbeats t1
-              WHERE t1.first_timestamp = (
-                SELECT MIN(t2.first_timestamp)
-                FROM heartbeats t2
-                WHERE t2.cbsd_id = t1.cbsd_id
-              )
             )
             SELECT
               hotspot_key,
@@ -188,19 +177,16 @@ impl HeartbeatReward {
               cell_type,
               coverage_objs.coverage_object,
               coverage_objs.latest_timestamp,
-              first_timestamps.first_timestamp
             FROM heartbeats
               JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id
-              JOIN first_timestamps ON heartbeats.cbsd_id = first_timestamps.cbsd_id
             WHERE truncated_timestamp >= $1
-            	and truncated_timestamp < $2
+            	AND truncated_timestamp < $2
             GROUP BY
               heartbeats.cbsd_id,
               hotspot_key,
               cell_type,
               coverage_objs.coverage_object,
               coverage_objs.latest_timestamp,
-              first_timestamps.first_timestamp
             HAVING count(*) >= $3
             "#,
         )
@@ -302,6 +288,44 @@ impl Heartbeat {
             .bind(&self.hotspot_key)
             .execute(&mut *exec)
             .await?;
+
+        // Update coverage claim time
+        // This probably needs to be moved into another function; there will be a discrepancy
+        // of a little bit less than an extra hour in pathological cases.
+        let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
+            r#"
+            SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2
+            "#,
+        )
+        .bind(&self.cbsd_id)
+        .bind(self.coverage_object)
+        .fetch_one(&mut *exec)
+        .await?;
+
+        // TODO: Write updates coverage claim times to S3
+        sqlx::query(
+            r#"
+            INSERT INTO coverage_claim_time VALUES ($1, $2, $3, $4)
+            ON CONFLICT (cbsd_id)
+            DO UPDATE SET
+            coverage_claim_time =
+                CASE WHEN
+                  $4 - coverage_claim_time.last_heartbeat > INTERVAL '3 days'
+                THEN
+                  $4
+                ELSE
+                  coverage_claim_time.coverage_claim_time
+                END,
+            last_heartbeat = EXCLUDED.last_heartbeat,
+            uuid = EXCLUDED.uuid
+            "#,
+        )
+        .bind(&self.cbsd_id)
+        .bind(self.coverage_object)
+        .bind(coverage_claim_time)
+        .bind(self.timestamp)
+        .execute(&mut *exec)
+        .await?;
 
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(

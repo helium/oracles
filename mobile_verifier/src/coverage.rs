@@ -242,24 +242,18 @@ pub trait CoveredHexStream {
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
-        first_timestamp: &'a DateTime<Utc>,
-        latest_timestamp: &'a DateTime<Utc>,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
 }
 
-// TODO: Make this an impl on an object that includes a file sink so we can write out
-// updated coverage claim times
 #[async_trait::async_trait]
 impl CoveredHexStream for Pool<Postgres> {
     async fn covered_hex_stream<'a>(
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
-        first_timestamp: &'a DateTime<Utc>,
-        latest_timestamp: &'a DateTime<Utc>,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
         // Adjust the coverage
-        let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
+        let adjusted_coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
             r#"
             SELECT coverage_claim_time FROM coverage_claim_time WHERE cbsd_id = $1 AND uuid = $2
             "#,
@@ -268,42 +262,13 @@ impl CoveredHexStream for Pool<Postgres> {
         .bind(*coverage_obj)
         .fetch_one(self)
         .await?;
-        // For a given reward cycle, this operation should be idempotent.
-        // That means if we were to shutdown in the middle of calculating rewards,
-        // restarting should produce the same results. Therefore, there is no need
-        // to put these operations behind a transaction.
-        let adjusted_claim_time: DateTime<Utc> = sqlx::query_scalar(
-            r#"
-            INSERT INTO coverage_claim_time VALUES ($1, $2, $3, $4)
-            ON CONFLICT (cbsd_id)
-            DO UPDATE SET
-            coverage_claim_time =
-                CASE WHEN
-                  $5 - coverage_claim_time.last_heartbeat > INTERVAL '3 days'
-                THEN
-                  $5
-                ELSE
-                  coverage_claim_time.coverage_claim_time
-                END,
-            last_heartbeat = EXCLUDED.last_heartbeat,
-            uuid = EXCLUDED.uuid
-            RETURNING coverage_claim_time
-            "#,
-        )
-        .bind(cbsd_id)
-        .bind(*coverage_obj)
-        .bind(coverage_claim_time)
-        .bind(latest_timestamp)
-        .bind(first_timestamp)
-        .fetch_one(self)
-        .await?;
         Ok(
             sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")
                 .bind(cbsd_id)
                 .bind(*coverage_obj)
                 .fetch(self)
                 .map_ok(move |hc| HexCoverage {
-                    coverage_claim_time: adjusted_claim_time,
+                    coverage_claim_time: adjusted_coverage_claim_time,
                     ..hc
                 })
                 .boxed(),

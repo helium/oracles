@@ -23,8 +23,3 @@ CREATE TABLE coverage_claim_time (
 );
 
 ALTER TABLE heartbeats ADD COLUMN coverage_object UUID;
-ALTER TABLE heartbeats ADD COLUMN first_timestamp TIMESTAMPTZ;
-
--- first_timestamp is only useful for the next reward period, so this
--- is completely fine
-UPDATE heartbeats SET first_timestamp = latest_timestamp;
