@@ -1,5 +1,5 @@
 use crate::{
-    coverage::{CoverageReward, CoveredHexes, HexCoverage},
+    coverage::{CoverageReward, CoveredHexStream, CoveredHexes},
     data_session::HotspotMap,
     heartbeats::HeartbeatReward,
     speedtests::{Average, SpeedtestAverages},
@@ -8,15 +8,13 @@ use crate::{
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, ops::Range};
-use uuid::Uuid;
 
 /// Total tokens emissions pool per 365 days
 const TOTAL_EMISSIONS_POOL: Decimal = dec!(60_000_000_000_000_000);
@@ -31,7 +29,7 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
 
-// Percent of total emissions allocated for mapper rewards
+/// Percent of total emissions allocated for mapper rewards
 const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
 
 /// shares of the mappers pool allocated per eligble subscriber for discovery mapping
@@ -253,34 +251,6 @@ pub struct CoveragePoints {
     coverage_points: HashMap<PublicKeyBinary, HotspotPoints>,
 }
 
-pub trait CoveredHexStream {
-    fn covered_hex_stream<'a>(
-        &'a self,
-        cbsd_id: &'a str,
-        coverage_obj: &'a Uuid,
-        first_timestamp: &'a DateTime<Utc>,
-        latest_timestamp: &'a DateTime<Utc>,
-    ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>>;
-}
-
-impl CoveredHexStream for Pool<Postgres> {
-    fn covered_hex_stream<'a>(
-        &'a self,
-        cbsd_id: &'a str,
-        coverage_obj: &'a Uuid,
-        first_timestamp: &'a DateTime<Utc>,
-        latest_timestamp: &'a DateTime<Utc>,
-    ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
-        crate::coverage::covered_hex_stream(
-            self,
-            cbsd_id,
-            coverage_obj,
-            first_timestamp,
-            latest_timestamp,
-        )
-    }
-}
-
 impl CoveragePoints {
     pub async fn aggregate_points(
         hex_streams: &impl CoveredHexStream,
@@ -300,12 +270,14 @@ impl CoveragePoints {
                 continue;
             }
 
-            let covered_hex_stream = hex_streams.covered_hex_stream(
-                &heartbeat.cbsd_id,
-                &heartbeat.coverage_object,
-                &heartbeat.first_timestamp,
-                &heartbeat.latest_timestamp,
-            );
+            let covered_hex_stream = hex_streams
+                .covered_hex_stream(
+                    &heartbeat.cbsd_id,
+                    &heartbeat.coverage_object,
+                    &heartbeat.first_timestamp,
+                    &heartbeat.latest_timestamp,
+                )
+                .await?;
             covered_hexes
                 .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
                 .await?;
@@ -431,6 +403,7 @@ mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
+        coverage::CoveredHexStream,
         data_session,
         data_session::HotspotDataSession,
         heartbeats::HeartbeatReward,
@@ -691,21 +664,22 @@ mod test {
         }
     }
 
+    #[async_trait::async_trait]
     impl CoveredHexStream for HashMap<(String, Uuid), Vec<HexCoverage>> {
-        fn covered_hex_stream<'a>(
+        async fn covered_hex_stream<'a>(
             &'a self,
             cbsd_id: &'a str,
             coverage_obj: &'a Uuid,
             _first_timestamp: &'a DateTime<Utc>,
             _latest_timestamp: &'a DateTime<Utc>,
-        ) -> BoxStream<'a, Result<HexCoverage, sqlx::Error>> {
-            stream::iter(
+        ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
+            Ok(stream::iter(
                 self.get(&(cbsd_id.to_string(), *coverage_obj))
                     .unwrap()
                     .clone(),
             )
             .map(Ok)
-            .boxed()
+            .boxed())
         }
     }
 
