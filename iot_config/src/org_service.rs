@@ -114,6 +114,38 @@ impl OrgService {
             .sign(response)
             .map_err(|_| Status::internal("response signing error"))
     }
+
+    async fn stream_org_routes_enable_disable(&self, oui: u64) -> Result<(), Status> {
+        let routes = list_routes(oui, &self.pool).await.map_err(|err| {
+            tracing::error!(org = oui, reason = ?err, "failed to list org routes for streaming update");
+            Status::internal(format!("error retrieving routes for updated org: {}", oui))
+        })?;
+        let timestamp = Utc::now().encode_timestamp();
+        let signer: Vec<u8> = self.signing_key.public_key().into();
+        for route in routes {
+            let route_id = route.id.clone();
+            let mut update = RouteStreamResV1 {
+                action: ActionV1::Add.into(),
+                data: Some(route_stream_res_v1::Data::Route(route.into())),
+                timestamp,
+                signer: signer.clone(),
+                signature: vec![],
+            };
+            update.signature = self.sign_response(&update.encode_to_vec())?;
+            if broadcast_update(update, self.route_update_tx.clone())
+                .await
+                .is_err()
+            {
+                tracing::info!(
+                    route_id,
+                    "all subscribers disconnected; org routes update incomplete"
+                );
+                break;
+            };
+            tracing::debug!(route_id, "route updated");
+        }
+        Ok(())
+    }
 }
 
 #[tonic::async_trait]
@@ -434,44 +466,9 @@ impl iot_config::Org for OrgService {
                     Status::internal(format!("org disable failed for: {}", request.oui))
                 })?;
 
-            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|err| {
-                tracing::error!(
-                    org = request.oui,
-                    reason = ?err,
-                    "failed to list org routes for streaming disable update"
-                );
-                Status::internal(format!(
-                    "error retrieving routes for disabled org: {}",
-                    request.oui
-                ))
-            })?;
-
-            let timestamp = Utc::now().encode_timestamp();
-            let signer: Vec<u8> = self.signing_key.public_key().into();
-            for route in org_routes {
-                if self.shutdown.is_triggered() {
-                    break;
-                }
-                let route_id = route.id.clone();
-                let mut update = RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::Route(route.into())),
-                    timestamp,
-                    signer: signer.clone(),
-                    signature: vec![],
-                };
-                update.signature = self.sign_response(&update.encode_to_vec())?;
-                if broadcast_update(update, self.route_update_tx.clone())
-                    .await
-                    .is_err()
-                {
-                    tracing::info!(
-                        route_id = route_id,
-                        "all subscribers disconnected; route disable incomplete"
-                    );
-                    break;
-                };
-                tracing::debug!(route_id = route_id, "route disabled");
+            tokio::select! {
+                _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
+                result = self.stream_org_routes_enable_disable(request.oui) => result?
             }
         }
 
@@ -508,44 +505,9 @@ impl iot_config::Org for OrgService {
                     Status::internal(format!("org enable failed for: {}", request.oui))
                 })?;
 
-            let org_routes = list_routes(request.oui, &self.pool).await.map_err(|err| {
-                tracing::error!(
-                    org = request.oui,
-                    reason = ?err,
-                    "failed to list routes for streaming enable update"
-                );
-                Status::internal(format!(
-                    "error retrieving routes for enabled org: {}",
-                    request.oui
-                ))
-            })?;
-
-            let timestamp = Utc::now().encode_timestamp();
-            let signer: Vec<u8> = self.signing_key.public_key().into();
-            for route in org_routes {
-                if self.shutdown.is_triggered() {
-                    break;
-                }
-                let route_id = route.id.clone();
-                let mut update = RouteStreamResV1 {
-                    action: ActionV1::Add.into(),
-                    data: Some(route_stream_res_v1::Data::Route(route.into())),
-                    timestamp,
-                    signer: signer.clone(),
-                    signature: vec![],
-                };
-                update.signature = self.sign_response(&update.encode_to_vec())?;
-                if broadcast_update(update, self.route_update_tx.clone())
-                    .await
-                    .is_err()
-                {
-                    tracing::info!(
-                        route_id = route_id,
-                        "all subscribers disconnected; route enable incomplete"
-                    );
-                    break;
-                };
-                tracing::debug!(route_id = route_id, "route enabled");
+            tokio::select! {
+                _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
+                result = self.stream_org_routes_enable_disable(request.oui) => result?
             }
         }
 

@@ -283,15 +283,16 @@ impl iot_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
-            stream_all_gateways_info(
-                &pool,
-                tx.clone(),
-                &signing_key,
-                region_map.clone(),
-                batch_size,
-                shutdown_listener,
-            )
-            .await
+            tokio::select! {
+                _ = shutdown_listener => (),
+                _ = stream_all_gateways_info(
+                    &pool,
+                    tx.clone(),
+                    &signing_key,
+                    region_map.clone(),
+                    batch_size,
+                ) => (),
+            }
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
@@ -304,15 +305,11 @@ async fn stream_all_gateways_info(
     signing_key: &Keypair,
     region_map: RegionMapReader,
     batch_size: u32,
-    shutdown_listener: triggered::Listener,
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let mut stream = gateway_info::db::all_info_stream(pool).chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
-        if shutdown_listener.is_triggered() {
-            break;
-        }
         let gateway_infos = infos
             .into_iter()
             .filter_map(|info| {
