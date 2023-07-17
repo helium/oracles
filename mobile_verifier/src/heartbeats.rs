@@ -351,6 +351,8 @@ impl Heartbeat {
         .execute(&mut *exec)
         .await?;
 
+        // TODO: Write out seniority report
+
         Ok(())
     }
 
