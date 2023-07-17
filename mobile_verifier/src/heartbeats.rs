@@ -305,25 +305,27 @@ impl Heartbeat {
         // TODO: Write updates coverage claim times to S3
         sqlx::query(
             r#"
-            INSERT INTO coverage_claim_time VALUES ($1, $2, $3, $4)
+            INSERT INTO seniority
+              (cbsd_id, last_heartbeat, coverage_claim_time)
+            VALUES
+              ($1, $2, $3)
             ON CONFLICT (cbsd_id)
             DO UPDATE SET
             coverage_claim_time =
                 CASE WHEN
-                  $4 - coverage_claim_time.last_heartbeat > INTERVAL '3 days'
+                  $2 - coverage_claim_time.last_heartbeat > INTERVAL '3 days'
                 THEN
-                  $4
+                  $2
                 ELSE
-                  coverage_claim_time.coverage_claim_time
+                  MAX(seniority.coverage_claim_time, EXCLUDED.coverage_claim_time)
                 END,
             last_heartbeat = EXCLUDED.last_heartbeat,
             uuid = EXCLUDED.uuid
             "#,
         )
         .bind(&self.cbsd_id)
-        .bind(self.coverage_object)
-        .bind(coverage_claim_time)
         .bind(self.timestamp)
+        .bind(coverage_claim_time)
         .execute(&mut *exec)
         .await?;
 
