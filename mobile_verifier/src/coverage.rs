@@ -255,7 +255,7 @@ impl CoveredHexStream for Pool<Postgres> {
         // Adjust the coverage
         let adjusted_coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
             r#"
-            SELECT coverage_claim_time FROM coverage_claim_time WHERE cbsd_id = $1 AND uuid = $2
+            SELECT coverage_claim_time FROM seniority WHERE cbsd_id = $1 AND uuid = $2
             "#,
         )
         .bind(cbsd_id)
@@ -359,12 +359,13 @@ impl CoveredHexCache {
         if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
             return Ok(Some(covered_hexes.clone()));
         }
-        let Some(cbsd_id) = sqlx::query_scalar("SELECT cbsd_id FROM coverage_claim_time WHERE uuid = $1")
+        let Some(cbsd_id) = sqlx::query_scalar("SELECT cbsd_id FROM hex_coverage WHERE uuid = $1")
             .bind(uuid)
             .fetch_optional(&self.pool)
-            .await? else {
-                return Ok(None);
-            };
+            .await?
+        else {
+            return Ok(None);
+        };
         let coverage: Vec<_> = sqlx::query_as("SELECT * FROM hex_coverage WHERE uuid = $1")
             .bind(uuid)
             .fetch_all(&self.pool)

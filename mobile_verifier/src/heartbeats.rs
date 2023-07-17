@@ -77,12 +77,22 @@ impl HeartbeatDaemon {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
-            let cache = Arc::new(Cache::<(String, DateTime<Utc>, Option<Uuid>), ()>::new());
+            let heartbeat_cache =
+                Arc::new(Cache::<(String, DateTime<Utc>, Option<Uuid>), ()>::new());
+            let coverage_claim_time_cache =
+                Arc::new(Cache::<(String, Option<Uuid>), DateTime<Utc>>::new());
 
-            let cache_clone = cache.clone();
+            let heartbeat_cache_clone = heartbeat_cache.clone();
             tokio::spawn(async move {
-                cache_clone
+                heartbeat_cache_clone
                     .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 3))
+                    .await
+            });
+
+            let coverage_claim_time_cache_clone = coverage_claim_time_cache.clone();
+            tokio::spawn(async move {
+                coverage_claim_time_cache_clone
+                    .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 24 * 5))
                     .await
             });
 
@@ -94,7 +104,14 @@ impl HeartbeatDaemon {
                         tracing::info!("HeartbeatDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.heartbeats.recv() => self.process_file(file, &cache, &covered_hex_cache).await?,
+                    Some(file) = self.heartbeats.recv() => {
+                        self.process_file(
+                            file,
+                            &heartbeat_cache,
+                            &coverage_claim_time_cache,
+                            &covered_hex_cache
+                        ).await?;
+                    }
                 }
             }
 
@@ -109,6 +126,7 @@ impl HeartbeatDaemon {
         &self,
         file: FileInfoStream<CellHeartbeatIngestReport>,
         heartbeat_cache: &Cache<(String, DateTime<Utc>, Option<Uuid>), ()>,
+        coverage_claim_time_cache: &Cache<(String, Option<Uuid>), DateTime<Utc>>,
         covered_hex_cache: &CoveredHexCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing heartbeat file {}", file.file_info.key);
@@ -131,12 +149,15 @@ impl HeartbeatDaemon {
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             heartbeat.write(&self.file_sink).await?;
+            heartbeat
+                .update_seniority(coverage_claim_time_cache, &mut transaction)
+                .await?;
+
             let key = (
                 heartbeat.cbsd_id.clone(),
                 heartbeat.truncated_timestamp()?,
                 heartbeat.coverage_object,
             );
-
             if heartbeat_cache.get(&key).await.is_none() {
                 heartbeat.save(&mut transaction).await?;
                 heartbeat_cache
@@ -274,35 +295,36 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn save(
-        self,
+    pub async fn update_seniority(
+        &self,
+        coverage_claim_time_cache: &Cache<(String, Option<Uuid>), DateTime<Utc>>,
         exec: &mut Transaction<'_, Postgres>,
-    ) -> Result<bool, SaveHeartbeatError> {
-        // If the heartbeat is not valid, do not save it
-        if self.validity != proto::HeartbeatValidity::Valid {
-            return Ok(false);
-        }
+        /* seniorities: &FileSinkClient, */
+    ) -> anyhow::Result<()> {
+        let key = (self.cbsd_id.to_string(), self.coverage_object);
+        let coverage_claim_time =
+            if let Some(coverage_claim_time) = coverage_claim_time_cache.get(&key).await {
+                *coverage_claim_time
+            } else {
+                let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
+                    r#"
+                    SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2
+                    "#,
+                )
+                .bind(&self.cbsd_id)
+                .bind(self.coverage_object)
+                .fetch_one(&mut *exec)
+                .await?;
+                coverage_claim_time_cache
+                    .insert(
+                        key,
+                        coverage_claim_time,
+                        time::Duration::from_secs(60 * 60 * 24),
+                    )
+                    .await;
+                coverage_claim_time
+            };
 
-        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
-            .bind(&self.cbsd_id)
-            .bind(&self.hotspot_key)
-            .execute(&mut *exec)
-            .await?;
-
-        // Update coverage claim time
-        // This probably needs to be moved into another function; there will be a discrepancy
-        // of a little bit less than an extra hour in pathological cases.
-        let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
-            r#"
-            SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2
-            "#,
-        )
-        .bind(&self.cbsd_id)
-        .bind(self.coverage_object)
-        .fetch_one(&mut *exec)
-        .await?;
-
-        // TODO: Write updates coverage claim times to S3
         sqlx::query(
             r#"
             INSERT INTO seniority
@@ -313,7 +335,7 @@ impl Heartbeat {
             DO UPDATE SET
             coverage_claim_time =
                 CASE WHEN
-                  $2 - coverage_claim_time.last_heartbeat > INTERVAL '3 days'
+                  $2 - seniority.last_heartbeat > INTERVAL '3 days'
                 THEN
                   $2
                 ELSE
@@ -328,6 +350,24 @@ impl Heartbeat {
         .bind(coverage_claim_time)
         .execute(&mut *exec)
         .await?;
+
+        Ok(())
+    }
+
+    pub async fn save(
+        self,
+        exec: &mut Transaction<'_, Postgres>,
+    ) -> Result<bool, SaveHeartbeatError> {
+        // If the heartbeat is not valid, do not save it
+        if self.validity != proto::HeartbeatValidity::Valid {
+            return Ok(false);
+        }
+
+        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
+            .bind(&self.cbsd_id)
+            .bind(&self.hotspot_key)
+            .execute(&mut *exec)
+            .await?;
 
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(
@@ -387,10 +427,9 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
     };
 
-    let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await?
-        else {
-            return Ok((cell_type, proto::HeartbeatValidity::NoSuchCoverageObject));
-        };
+    let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await? else {
+        return Ok((cell_type, proto::HeartbeatValidity::NoSuchCoverageObject));
+    };
 
     if coverage.cbsd_id != heartbeat.report.cbsd_id {
         return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
