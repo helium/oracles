@@ -95,6 +95,7 @@ impl Daemon {
             region_map.clone(),
             auth_cache.clone(),
             delegate_key_cache,
+            shutdown_listener.clone(),
         )?;
         let route_svc = RouteService::new(
             settings,
@@ -108,6 +109,7 @@ impl Daemon {
             pool.clone(),
             route_svc.clone_update_channel(),
             delegate_key_updater,
+            shutdown_listener.clone(),
         )?;
         let admin_svc = AdminService::new(
             settings,

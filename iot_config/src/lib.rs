@@ -36,14 +36,17 @@ pub fn update_channel<T: Clone>() -> broadcast::Sender<T> {
     update_tx
 }
 
-pub async fn broadcast_update<T>(
+pub async fn broadcast_update<T: std::fmt::Debug>(
     message: T,
     sender: broadcast::Sender<T>,
 ) -> Result<(), broadcast::error::SendError<T>> {
     while !enqueue_update(sender.len()) {
         tokio::time::sleep(tokio::time::Duration::from_millis(25)).await
     }
-    sender.send(message).map(|_| ())
+    sender.send(message).map(|_| ()).map_err(|err| {
+        tracing::error!(error = ?err, "failed to broadcast routing update");
+        err
+    })
 }
 
 fn enqueue_update(queue_size: usize) -> bool {

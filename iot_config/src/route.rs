@@ -137,28 +137,28 @@ pub async fn create_route(
 
     transaction.commit().await?;
 
-    if new_route.active && !new_route.locked {
-        let timestamp = Utc::now().encode_timestamp();
-        let signer = signing_key.public_key().into();
-        let mut update = proto::RouteStreamResV1 {
-            action: proto::ActionV1::Add.into(),
-            data: Some(proto::route_stream_res_v1::Data::Route(
-                new_route.clone().into(),
-            )),
-            timestamp,
-            signer,
-            signature: vec![],
-        };
-        _ = signing_key
-            .sign(&update.encode_to_vec())
-            .map_err(|err| tracing::error!("error signing route stream response: {err:?}"))
-            .and_then(|signature| {
-                update.signature = signature;
-                update_tx.send(update).map_err(|err| {
-                    tracing::warn!("error broadcasting route stream response: {err:?}")
-                })
-            });
+    let timestamp = Utc::now().encode_timestamp();
+    let signer = signing_key.public_key().into();
+    let mut update = proto::RouteStreamResV1 {
+        action: proto::ActionV1::Add.into(),
+        data: Some(proto::route_stream_res_v1::Data::Route(
+            new_route.clone().into(),
+        )),
+        timestamp,
+        signer,
+        signature: vec![],
     };
+    _ = futures::future::ready(signing_key.sign(&update.encode_to_vec()))
+        .map_err(|err| {
+            tracing::error!(error = ?err, "error signing route create");
+            anyhow!("error signing route create")
+        })
+        .and_then(|signature| {
+            update.signature = signature;
+            broadcast_update(update, update_tx)
+                .map_err(|_| anyhow!("failed broadcasting route create"))
+        })
+        .await;
 
     Ok(new_route)
 }
@@ -213,15 +213,17 @@ pub async fn update_route(
         signature: vec![],
     };
 
-    _ = signing_key
-        .sign(&update_res.encode_to_vec())
-        .map_err(|err| tracing::error!("error signing route stream response: {err:?}"))
+    _ = futures::future::ready(signing_key.sign(&update_res.encode_to_vec()))
+        .map_err(|err| {
+            tracing::error!(error = ?err, "error signing route update");
+            anyhow!("error signing route update")
+        })
         .and_then(|signature| {
             update_res.signature = signature;
-            update_tx
-                .send(update_res)
-                .map_err(|err| tracing::warn!("error broadcasting route stream response: {err:?}"))
-        });
+            broadcast_update(update_res, update_tx)
+                .map_err(|_| anyhow!("failed broadcasting route update"))
+        })
+        .await;
 
     Ok(updated_route)
 }
@@ -523,7 +525,6 @@ pub fn active_route_stream<'a>(
         select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
             from routes r
             join organizations o on r.oui = o.oui
-            where o.locked = false and r.active = true
             group by r.id, o.locked
         "#,
     )
