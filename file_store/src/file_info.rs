@@ -129,6 +129,7 @@ pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
 pub const MAPPER_MSG: &str = "mapper_msg";
 pub const COVERAGE_OBJECT: &str = "coverage_object";
 pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
+pub const SENIORITY_UPDATE: &str = "seniority_update";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -166,6 +167,7 @@ pub enum FileType {
     MapperMsg,
     CoverageObject,
     CoverageObjectIngestReport,
+    SeniorityUpdate,
 }
 
 impl fmt::Display for FileType {
@@ -208,6 +210,7 @@ impl fmt::Display for FileType {
             Self::MapperMsg => MAPPER_MSG,
             Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
+            Self::SeniorityUpdate => SENIORITY_UPDATE,
         };
         f.write_str(s)
     }
@@ -253,6 +256,7 @@ impl FileType {
             Self::MapperMsg => MAPPER_MSG,
             Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
+            Self::SeniorityUpdate => SENIORITY_UPDATE,
         }
     }
 }
@@ -298,6 +302,7 @@ impl FromStr for FileType {
             MAPPER_MSG => Self::MapperMsg,
             COVERAGE_OBJECT => Self::CoverageObject,
             COVERAGE_OBJECT_INGEST_REPORT => Self::CoverageObjectIngestReport,
+            SENIORITY_UPDATE => Self::SeniorityUpdate,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

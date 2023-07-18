@@ -1,4 +1,4 @@
-CREATE TYPE signal_level as ENUM (
+CREATE TYPE signal_level AS ENUM (
        'none',
        'low',
        'medium',
@@ -17,8 +17,9 @@ CREATE TABLE hex_coverage (
 
 CREATE TABLE seniority (
        cbsd_id TEXT PRIMARY KEY,
+       uuid UUID NOT NULL,
        last_heartbeat TIMESTAMPTZ NOT NULL,
-       coverage_claim_time TIMESTAMPTZ NOT NULL
+       seniority_ts TIMESTAMPTZ NOT NULL
 );
 
 ALTER TABLE heartbeats ADD COLUMN coverage_object UUID;

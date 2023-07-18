@@ -54,7 +54,8 @@ pub struct HeartbeatDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_client: GatewayClient,
     heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
-    file_sink: FileSinkClient,
+    heartbeat_sink: FileSinkClient,
+    seniority_sink: FileSinkClient,
     max_distance: f64,
 }
 
@@ -63,14 +64,16 @@ impl HeartbeatDaemon {
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_client: GatewayClient,
         heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
-        file_sink: FileSinkClient,
+        heartbeat_sink: FileSinkClient,
+        seniority_sink: FileSinkClient,
         max_distance: f64,
     ) -> Self {
         Self {
             pool,
             gateway_client,
             heartbeats,
-            file_sink,
+            heartbeat_sink,
+            seniority_sink,
             max_distance,
         }
     }
@@ -148,9 +151,13 @@ impl HeartbeatDaemon {
         );
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
-            heartbeat.write(&self.file_sink).await?;
+            heartbeat.write(&self.heartbeat_sink).await?;
             heartbeat
-                .update_seniority(coverage_claim_time_cache, &mut transaction)
+                .update_seniority(
+                    coverage_claim_time_cache,
+                    &self.seniority_sink,
+                    &mut transaction,
+                )
                 .await?;
 
             let key = (
@@ -166,7 +173,8 @@ impl HeartbeatDaemon {
             }
         }
 
-        self.file_sink.commit().await?;
+        self.heartbeat_sink.commit().await?;
+        self.seniority_sink.commit().await?;
         transaction.commit().await?;
 
         Ok(())
@@ -226,6 +234,8 @@ pub struct Heartbeat {
     pub hotspot_key: PublicKeyBinary,
     pub timestamp: DateTime<Utc>,
     pub coverage_object: Option<Uuid>,
+    pub lat: f64,
+    pub lon: f64,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -235,6 +245,12 @@ pub enum SaveHeartbeatError {
     RoundingError(#[from] RoundingError),
     #[error("sql error: {0}")]
     SqlError(#[from] sqlx::Error),
+}
+
+#[derive(sqlx::FromRow)]
+struct Seniority {
+    uuid: Uuid,
+    last_heartbeat: DateTime<Utc>,
 }
 
 impl Heartbeat {
@@ -265,6 +281,8 @@ impl Heartbeat {
                     hotspot_key: heartbeat_report.report.pubkey,
                     cbsd_id: heartbeat_report.report.cbsd_id,
                     timestamp: heartbeat_report.received_timestamp,
+                    lat: heartbeat_report.report.lat,
+                    lon: heartbeat_report.report.lon,
                     cell_type,
                     validity,
                 })
@@ -284,6 +302,8 @@ impl Heartbeat {
                     cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
                     validity: self.validity as i32,
                     timestamp: self.timestamp.timestamp() as u64,
+                    lat: self.lat,
+                    lon: self.lon,
                     coverage_object: self
                         .coverage_object
                         .map(|x| Vec::from(x.into_bytes()))
@@ -298,8 +318,8 @@ impl Heartbeat {
     pub async fn update_seniority(
         &self,
         coverage_claim_time_cache: &Cache<(String, Option<Uuid>), DateTime<Utc>>,
+        seniorities: &FileSinkClient,
         exec: &mut Transaction<'_, Postgres>,
-        /* seniorities: &FileSinkClient, */
     ) -> anyhow::Result<()> {
         let key = (self.cbsd_id.to_string(), self.coverage_object);
         let coverage_claim_time =
@@ -325,33 +345,76 @@ impl Heartbeat {
                 coverage_claim_time
             };
 
-        sqlx::query(
-            r#"
-            INSERT INTO seniority
-              (cbsd_id, last_heartbeat, coverage_claim_time)
-            VALUES
-              ($1, $2, $3)
-            ON CONFLICT (cbsd_id)
-            DO UPDATE SET
-            coverage_claim_time =
-                CASE WHEN
-                  $2 - seniority.last_heartbeat > INTERVAL '3 days'
-                THEN
-                  $2
-                ELSE
-                  MAX(seniority.coverage_claim_time, EXCLUDED.coverage_claim_time)
-                END,
-            last_heartbeat = EXCLUDED.last_heartbeat,
-            uuid = EXCLUDED.uuid
-            "#,
-        )
-        .bind(&self.cbsd_id)
-        .bind(self.timestamp)
-        .bind(coverage_claim_time)
-        .execute(&mut *exec)
-        .await?;
+        let update = if let Some(prev_seniority) =
+            sqlx::query_as::<_, Seniority>("SELCT * FROM seniority WHERE cbsd_id = $1")
+                .bind(&self.cbsd_id)
+                .fetch_optional(&mut *exec)
+                .await?
+        {
+            let update = if self.timestamp - prev_seniority.last_heartbeat > Duration::days(3) {
+                let new_seniority = coverage_claim_time.max(self.timestamp);
+                sqlx::query("UPDATE seniority SET seniority_ts = $1 WHERE cbsd_id = $2")
+                    .bind(new_seniority)
+                    .bind(&self.cbsd_id)
+                    .execute(&mut *exec)
+                    .await?;
+                Some((
+                    new_seniority,
+                    proto::SeniorityUpdateReason::HeartbeatNotSeen,
+                ))
+            } else if self.coverage_object != Some(prev_seniority.uuid) {
+                sqlx::query("UPDATE seniority SET seniority_ts = $1 WHERE cbsd_id = $2")
+                    .bind(coverage_claim_time)
+                    .bind(&self.cbsd_id)
+                    .execute(&mut *exec)
+                    .await?;
+                Some((
+                    coverage_claim_time,
+                    proto::SeniorityUpdateReason::NewCoverageClaimTime,
+                ))
+            } else {
+                None
+            };
+            sqlx::query("UPDATE seniority SET uuid = $1, last_heartbeat = $2 WHERE cbsd_id = $3")
+                .bind(self.coverage_object)
+                .bind(self.timestamp)
+                .bind(&self.cbsd_id)
+                .execute(&mut *exec)
+                .await?;
+            update
+        } else {
+            sqlx::query(
+                r#"
+                INSERT INTO seniority
+                  (cbsd_id, uuid, last_heartbeat, seniority)
+                VALUES
+                  ($1, $2, $3, $4)
+                "#,
+            )
+            .bind(&self.cbsd_id)
+            .bind(self.coverage_object)
+            .bind(self.timestamp)
+            .bind(coverage_claim_time)
+            .execute(&mut *exec)
+            .await?;
+            Some((
+                coverage_claim_time,
+                proto::SeniorityUpdateReason::NewCoverageClaimTime,
+            ))
+        };
 
-        // TODO: Write out seniority report
+        if let Some((new_seniority_timestamp, reason)) = update {
+            seniorities
+                .write(
+                    proto::SeniorityUpdate {
+                        cbsd_id: self.cbsd_id.to_string(),
+                        new_seniority_timestamp: new_seniority_timestamp.timestamp() as u64,
+                        reason: reason as i32,
+                    },
+                    [],
+                )
+                .await?;
+        }
 
         Ok(())
     }

@@ -80,11 +80,25 @@ impl Cmd {
         .create()
         .await?;
 
+        // Seniority updates
+        let (seniority_updates, mut seniority_updates_server) = file_sink::FileSinkBuilder::new(
+            FileType::SeniorityUpdate,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_seniority_update"),
+            shutdown_listener.clone(),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
         let heartbeat_daemon = HeartbeatDaemon::new(
             pool.clone(),
             gateway_client.clone(),
             heartbeats,
             valid_heartbeats,
+            seniority_updates,
             settings.max_heartbeat_distance_from_coverage_km,
         );
 
@@ -232,6 +246,7 @@ impl Cmd {
             valid_heartbeats_server.run().map_err(Error::from),
             valid_speedtests_server.run().map_err(Error::from),
             valid_coverage_objs_server.run().map_err(Error::from),
+            seniority_updates_server.run().map_err(Error::from),
             mobile_rewards_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             reward_manifests_server.run().map_err(Error::from),
