@@ -309,7 +309,7 @@ impl Heartbeat {
                         .map(|x| Vec::from(x.into_bytes()))
                         .unwrap_or_default(),
                 },
-                [],
+                &[("validity", self.validity.as_str_name())],
             )
             .await?;
         Ok(())

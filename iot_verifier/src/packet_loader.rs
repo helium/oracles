@@ -1,5 +1,5 @@
 use crate::{
-    gateway_cache::GatewayCache, metrics::LoaderMetricTracker, reward_share::GatewayDCShare,
+    gateway_cache::GatewayCache, reward_share::GatewayDCShare, telemetry::LoaderMetricTracker,
     Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};

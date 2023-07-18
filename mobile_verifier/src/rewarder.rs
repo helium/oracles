@@ -3,7 +3,7 @@ use crate::{
     heartbeats::HeartbeatReward,
     reward_shares::{CoveragePoints, MapperShares, TransferRewards},
     speedtests::SpeedtestAverages,
-    subscriber_location,
+    subscriber_location, telemetry,
 };
 use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -54,8 +54,8 @@ impl Rewarder {
 
     pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         loop {
-            let last_rewarded_end_time = self.last_rewarded_end_time().await?;
-            let next_rewarded_end_time = self.next_rewarded_end_time().await?;
+            let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
+            let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
             let scheduler = Scheduler::new(
                 self.reward_period_duration,
                 last_rewarded_end_time,
@@ -86,18 +86,6 @@ impl Rewarder {
         }
 
         Ok(())
-    }
-
-    async fn last_rewarded_end_time(&self) -> db_store::Result<DateTime<Utc>> {
-        Utc.timestamp_opt(meta::fetch(&self.pool, "last_rewarded_end_time").await?, 0)
-            .single()
-            .ok_or(db_store::Error::DecodeError)
-    }
-
-    async fn next_rewarded_end_time(&self) -> db_store::Result<DateTime<Utc>> {
-        Utc.timestamp_opt(meta::fetch(&self.pool, "next_rewarded_end_time").await?, 0)
-            .single()
-            .ok_or(db_store::Error::DecodeError)
     }
 
     async fn disable_complete_data_checks_until(&self) -> db_store::Result<DateTime<Utc>> {
@@ -181,7 +169,7 @@ impl Rewarder {
         let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
             bail!("The data transfer rewards scale cannot be converted to a float");
         };
-        metrics::gauge!("data_transfer_rewards_scale", scale);
+        telemetry::data_transfer_rewards_scale(scale);
 
         for mobile_reward_share in
             coverage_points.into_rewards(transfer_rewards.reward_sum(), reward_period)
@@ -271,12 +259,21 @@ impl Rewarder {
             .await??;
 
         self.reward_manifests.commit().await?;
-        metrics::gauge!(
-            "last_rewarded_end_time",
-            next_reward_period.start.timestamp() as f64
-        );
+        telemetry::last_rewarded_end_time(next_reward_period.start);
         Ok(())
     }
+}
+
+pub async fn last_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
+    Utc.timestamp_opt(meta::fetch(db, "last_rewarded_end_time").await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
+}
+
+async fn next_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
+    Utc.timestamp_opt(meta::fetch(db, "next_rewarded_end_time").await?, 0)
+        .single()
+        .ok_or(db_store::Error::DecodeError)
 }
 
 async fn save_last_rewarded_end_time(

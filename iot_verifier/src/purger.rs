@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, metrics::Metrics, poc_report::Report, Settings};
+use crate::{entropy::Entropy, poc_report::Report, telemetry, Settings};
 use chrono::Duration;
 use file_store::{
     file_sink::{self, FileSinkClient},
@@ -209,7 +209,7 @@ impl Purger {
             .await?;
         // delete the report from the DB
         Report::delete_report(tx.lock().await.deref_mut(), &beacon_id).await?;
-        Metrics::decrement_num_beacons();
+        telemetry::decrement_num_beacons();
         Ok(())
     }
 

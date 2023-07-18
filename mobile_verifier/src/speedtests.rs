@@ -243,7 +243,7 @@ impl SpeedtestRollingAverage {
     pub async fn write(&self, averages: &file_sink::FileSinkClient) -> file_store::Result {
         // Write out the speedtests to S3
         let average = Average::from(&self.speedtests);
-        let validity = average.validity() as i32;
+        let validity = average.validity();
         // this is guaratneed to safely convert and not panic as it can only be one of
         // four possible decimal values based on the speedtest average tier
         let reward_multiplier = average.reward_multiplier().try_into().unwrap();
@@ -272,10 +272,10 @@ impl SpeedtestRollingAverage {
                         latency_ms: st.latency as u32,
                     })
                     .collect(),
-                    validity,
+                    validity: validity as i32,
                     reward_multiplier,
                 },
-                [],
+                &[("validity", validity.as_str_name())],
             )
             .await?;
 

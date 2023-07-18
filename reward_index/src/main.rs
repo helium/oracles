@@ -6,7 +6,7 @@ use file_store::{
     FileType,
 };
 use futures_util::TryFutureExt;
-use reward_index::{settings::Settings, Indexer};
+use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -75,6 +75,8 @@ impl Server {
             .connect(&app_name, shutdown_listener.clone())
             .await?;
         sqlx::migrate!().run(&pool).await?;
+
+        telemetry::initialize(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
 
