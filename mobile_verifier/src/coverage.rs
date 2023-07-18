@@ -255,11 +255,10 @@ impl CoveredHexStream for Pool<Postgres> {
         // Adjust the coverage
         let adjusted_coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
             r#"
-            SELECT coverage_claim_time FROM seniority WHERE cbsd_id = $1 AND uuid = $2
+            SELECT seniority_ts FROM seniority WHERE cbsd_id = $1
             "#,
         )
         .bind(cbsd_id)
-        .bind(*coverage_obj)
         .fetch_one(self)
         .await?;
         Ok(
