@@ -28,5 +28,5 @@ poc-metrics = { path = "../metrics" }
 triggered = {workspace = true}
 solana-client = {workspace = true}
 solana-sdk = {workspace = true}
-price-oracle = {workspace = true}
+helium-anchor-gen = {workspace = true}
 anchor-lang = {workspace = true}
