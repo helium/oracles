@@ -22,11 +22,11 @@ metrics = {workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
+helium-anchor-gen = { workspace = true }
 helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 triggered = {workspace = true}
 solana-client = {workspace = true}
 solana-sdk = {workspace = true}
-price-oracle = {workspace = true}
 anchor-lang = {workspace = true}
