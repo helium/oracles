@@ -256,6 +256,7 @@ impl CoveragePoints {
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: SpeedtestAverages,
+        period_end: DateTime<Utc>,
     ) -> Result<Self, sqlx::Error> {
         let mut heartbeats = std::pin::pin!(heartbeats);
         let mut covered_hexes = CoveredHexes::default();
@@ -271,7 +272,7 @@ impl CoveragePoints {
             }
 
             let covered_hex_stream = hex_streams
-                .covered_hex_stream(&heartbeat.cbsd_id, &heartbeat.coverage_object)
+                .covered_hex_stream(&heartbeat.cbsd_id, &heartbeat.coverage_object, period_end)
                 .await?;
             covered_hexes
                 .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
@@ -666,6 +667,7 @@ mod test {
             &'a self,
             cbsd_id: &'a str,
             coverage_obj: &'a Uuid,
+            _period_end: DateTime<Utc>,
         ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
             Ok(stream::iter(
                 self.get(&(cbsd_id.to_string(), *coverage_obj))
@@ -767,6 +769,8 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeats).map(Ok),
             speedtest_avgs,
+            // Field isn't used:
+            DateTime::<Utc>::MIN_UTC,
         )
         .await
         .unwrap();
@@ -1063,6 +1067,8 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeats).map(Ok),
             speedtest_avgs,
+            // Field isn't used:
+            DateTime::<Utc>::MIN_UTC,
         )
         .await
         .unwrap()

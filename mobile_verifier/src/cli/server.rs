@@ -1,7 +1,7 @@
 use crate::{
-    coverage::CoverageDaemon, data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
-    Settings,
+    coverage::CoverageDaemon, data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon,
+    rewarder::Rewarder, speedtests::SpeedtestDaemon,
+    subscriber_location::SubscriberLocationIngestor, telemetry, Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;

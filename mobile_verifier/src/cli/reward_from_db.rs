@@ -41,7 +41,7 @@ impl Cmd {
         let heartbeats = HeartbeatReward::validated(&pool, &epoch);
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
         let reward_shares =
-            CoveragePoints::aggregate_points(&pool, heartbeats, speedtests.clone()).await?;
+            CoveragePoints::aggregate_points(&pool, heartbeats, speedtests.clone(), end).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();

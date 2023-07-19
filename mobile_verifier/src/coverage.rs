@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::heartbeats::Seniority;
 use chrono::{DateTime, Utc};
 use file_store::{
     coverage::{CoverageObject, CoverageObjectIngestReport},
@@ -242,6 +243,7 @@ pub trait CoveredHexStream {
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
+        period_end: DateTime<Utc>,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
 }
 
@@ -251,23 +253,30 @@ impl CoveredHexStream for Pool<Postgres> {
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
+        period_end: DateTime<Utc>,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
         // Adjust the coverage
-        let adjusted_coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
+        let seniority: Seniority = sqlx::query_as(
             r#"
-            SELECT seniority_ts FROM seniority WHERE cbsd_id = $1
+            SELECT * FROM seniority WHERE cbsd_id = $1 AND last_heartbeat <= $2 ORDER BY last_heartbeat DESC
             "#,
         )
-        .bind(cbsd_id)
+            .bind(cbsd_id)
+            .bind(period_end)
         .fetch_one(self)
-        .await?;
+            .await?;
+        // We can safely delete any seniority objects that appear before the latest in the reward period
+        sqlx::query("DELETE FROM seniority WHERE last_heartbeat < $1")
+            .bind(seniority.last_heartbeat)
+            .execute(self)
+            .await?;
         Ok(
             sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")
                 .bind(cbsd_id)
                 .bind(*coverage_obj)
                 .fetch(self)
                 .map_ok(move |hc| HexCoverage {
-                    coverage_claim_time: adjusted_coverage_claim_time,
+                    coverage_claim_time: seniority.seniority_ts,
                     ..hc
                 })
                 .boxed(),

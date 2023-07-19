@@ -247,10 +247,12 @@ pub enum SaveHeartbeatError {
     SqlError(#[from] sqlx::Error),
 }
 
+// TODO: Move this into coverage?
 #[derive(sqlx::FromRow)]
-struct Seniority {
-    uuid: Uuid,
-    last_heartbeat: DateTime<Utc>,
+pub struct Seniority {
+    pub uuid: Uuid,
+    pub seniority_ts: DateTime<Utc>,
+    pub last_heartbeat: DateTime<Utc>,
 }
 
 impl Heartbeat {
@@ -345,71 +347,58 @@ impl Heartbeat {
                 coverage_claim_time
             };
 
-        let update = if let Some(prev_seniority) =
-            sqlx::query_as::<_, Seniority>("SELCT * FROM seniority WHERE cbsd_id = $1")
-                .bind(&self.cbsd_id)
-                .fetch_optional(&mut *exec)
-                .await?
-        {
-            let update = if self.timestamp - prev_seniority.last_heartbeat > Duration::days(3) {
-                let new_seniority = coverage_claim_time.max(self.timestamp);
-                sqlx::query("UPDATE seniority SET seniority_ts = $1 WHERE cbsd_id = $2")
-                    .bind(new_seniority)
-                    .bind(&self.cbsd_id)
-                    .execute(&mut *exec)
-                    .await?;
-                Some((
-                    new_seniority,
-                    proto::SeniorityUpdateReason::HeartbeatNotSeen,
-                ))
-            } else if self.coverage_object != Some(prev_seniority.uuid) {
-                sqlx::query("UPDATE seniority SET seniority_ts = $1 WHERE cbsd_id = $2")
-                    .bind(coverage_claim_time)
-                    .bind(&self.cbsd_id)
-                    .execute(&mut *exec)
-                    .await?;
-                Some((
-                    coverage_claim_time,
-                    proto::SeniorityUpdateReason::NewCoverageClaimTime,
-                ))
-            } else {
-                None
-            };
-            sqlx::query("UPDATE seniority SET uuid = $1, last_heartbeat = $2 WHERE cbsd_id = $3")
-                .bind(self.coverage_object)
-                .bind(self.timestamp)
-                .bind(&self.cbsd_id)
-                .execute(&mut *exec)
-                .await?;
-            update
-        } else {
-            sqlx::query(
-                r#"
-                INSERT INTO seniority
-                  (cbsd_id, uuid, last_heartbeat, seniority)
-                VALUES
-                  ($1, $2, $3, $4)
-                "#,
+        let (seniority_ts, update_reason) = if let Some(prev_seniority) =
+            sqlx::query_as::<_, Seniority>(
+                "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC",
             )
             .bind(&self.cbsd_id)
-            .bind(self.coverage_object)
-            .bind(self.timestamp)
-            .bind(coverage_claim_time)
-            .execute(&mut *exec)
-            .await?;
-            Some((
+            .fetch_optional(&mut *exec)
+            .await?
+        {
+            if self.coverage_object != Some(prev_seniority.uuid) {
+                (
+                    coverage_claim_time,
+                    Some(proto::SeniorityUpdateReason::NewCoverageClaimTime),
+                )
+            } else if self.timestamp - prev_seniority.last_heartbeat > Duration::days(3)
+                && coverage_claim_time < self.timestamp
+            {
+                (
+                    self.timestamp,
+                    Some(proto::SeniorityUpdateReason::HeartbeatNotSeen),
+                )
+            } else {
+                (coverage_claim_time, None)
+            }
+        } else {
+            (
                 coverage_claim_time,
-                proto::SeniorityUpdateReason::NewCoverageClaimTime,
-            ))
+                Some(proto::SeniorityUpdateReason::NewCoverageClaimTime),
+            )
         };
 
-        if let Some((new_seniority_timestamp, reason)) = update {
+        sqlx::query(
+            r#"
+            INSERT INTO seniority
+              (cbsd_id, last_heartbeat, uuid, seniority_ts)
+            VALUES
+              ($1, $2, $3, $4)
+            "#,
+        )
+        .bind(&self.cbsd_id)
+        .bind(self.timestamp)
+        .bind(self.coverage_object)
+        .bind(seniority_ts)
+        .execute(&mut *exec)
+        .await?;
+
+        if let Some(update_reason) = update_reason {
             seniorities
                 .write(
                     proto::SeniorityUpdate {
                         cbsd_id: self.cbsd_id.to_string(),
-                        new_seniority_timestamp: new_seniority_timestamp.timestamp() as u64,
-                        reason: reason as i32,
+                        new_seniority_timestamp: seniority_ts.timestamp() as u64,
+                        reason: update_reason as i32,
                     },
                     [],
                 )
