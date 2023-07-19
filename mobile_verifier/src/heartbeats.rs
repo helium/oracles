@@ -253,6 +253,7 @@ pub struct Seniority {
     pub uuid: Uuid,
     pub seniority_ts: DateTime<Utc>,
     pub last_heartbeat: DateTime<Utc>,
+    pub inserted_at: DateTime<Utc>,
 }
 
 impl Heartbeat {
@@ -347,6 +348,11 @@ impl Heartbeat {
                 coverage_claim_time
             };
 
+        enum InsertOrUpdate {
+            Insert(proto::SeniorityUpdateReason),
+            Update(DateTime<Utc>),
+        }
+
         let (seniority_ts, update_reason) = if let Some(prev_seniority) =
             sqlx::query_as::<_, Seniority>(
                 "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC",
@@ -358,51 +364,72 @@ impl Heartbeat {
             if self.coverage_object != Some(prev_seniority.uuid) {
                 (
                     coverage_claim_time,
-                    Some(proto::SeniorityUpdateReason::NewCoverageClaimTime),
+                    InsertOrUpdate::Insert(proto::SeniorityUpdateReason::NewCoverageClaimTime),
                 )
             } else if self.timestamp - prev_seniority.last_heartbeat > Duration::days(3)
                 && coverage_claim_time < self.timestamp
             {
                 (
                     self.timestamp,
-                    Some(proto::SeniorityUpdateReason::HeartbeatNotSeen),
+                    InsertOrUpdate::Insert(proto::SeniorityUpdateReason::HeartbeatNotSeen),
                 )
             } else {
-                (coverage_claim_time, None)
+                (
+                    coverage_claim_time,
+                    InsertOrUpdate::Update(prev_seniority.seniority_ts),
+                )
             }
         } else {
             (
                 coverage_claim_time,
-                Some(proto::SeniorityUpdateReason::NewCoverageClaimTime),
+                InsertOrUpdate::Insert(proto::SeniorityUpdateReason::NewCoverageClaimTime),
             )
         };
 
-        sqlx::query(
-            r#"
-            INSERT INTO seniority
-              (cbsd_id, last_heartbeat, uuid, seniority_ts)
-            VALUES
-              ($1, $2, $3, $4)
-            "#,
-        )
-        .bind(&self.cbsd_id)
-        .bind(self.timestamp)
-        .bind(self.coverage_object)
-        .bind(seniority_ts)
-        .execute(&mut *exec)
-        .await?;
-
-        if let Some(update_reason) = update_reason {
-            seniorities
-                .write(
-                    proto::SeniorityUpdate {
-                        cbsd_id: self.cbsd_id.to_string(),
-                        new_seniority_timestamp: seniority_ts.timestamp() as u64,
-                        reason: update_reason as i32,
-                    },
-                    [],
+        match update_reason {
+            InsertOrUpdate::Insert(update_reason) => {
+                sqlx::query(
+                    r#"
+                    INSERT INTO seniority
+                      (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at)
+                    VALUES
+                      ($1, $2, $3, $4, $5)
+                    "#,
                 )
+                .bind(&self.cbsd_id)
+                .bind(self.timestamp)
+                .bind(self.coverage_object)
+                .bind(seniority_ts)
+                .bind(self.timestamp)
+                .execute(&mut *exec)
                 .await?;
+                seniorities
+                    .write(
+                        proto::SeniorityUpdate {
+                            cbsd_id: self.cbsd_id.to_string(),
+                            new_seniority_timestamp: seniority_ts.timestamp() as u64,
+                            reason: update_reason as i32,
+                        },
+                        [],
+                    )
+                    .await?;
+            }
+            InsertOrUpdate::Update(seniority_ts) => {
+                sqlx::query(
+                    r#"
+                    UPDATE seniority
+                    SET last_heartbeat = $1
+                    WHERE
+                      cbsd_id = $2 AND
+                      seniority_ts = $3
+                    "#,
+                )
+                .bind(self.timestamp)
+                .bind(&self.cbsd_id)
+                .bind(seniority_ts)
+                .execute(&mut *exec)
+                .await?;
+            }
         }
 
         Ok(())

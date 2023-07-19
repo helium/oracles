@@ -232,11 +232,6 @@ pub struct CoverageReward {
 
 pub const MAX_RADIOS_PER_HEX: usize = 5;
 
-#[derive(Default)]
-pub struct CoveredHexes {
-    hexes: HashMap<CellIndex, [BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>; 2]>,
-}
-
 #[async_trait::async_trait]
 pub trait CoveredHexStream {
     async fn covered_hex_stream<'a>(
@@ -258,18 +253,25 @@ impl CoveredHexStream for Pool<Postgres> {
         // Adjust the coverage
         let seniority: Seniority = sqlx::query_as(
             r#"
-            SELECT * FROM seniority WHERE cbsd_id = $1 AND last_heartbeat <= $2 ORDER BY last_heartbeat DESC
+            SELECT * FROM seniority
+            WHERE
+              cbsd_id = $1 AND
+              inserted_at <= $2
+            ORDER BY inserted_at DESC
+            LIMIT 1
             "#,
         )
-            .bind(cbsd_id)
-            .bind(period_end)
+        .bind(cbsd_id)
+        .bind(period_end)
         .fetch_one(self)
-            .await?;
+        .await?;
+
         // We can safely delete any seniority objects that appear before the latest in the reward period
-        sqlx::query("DELETE FROM seniority WHERE last_heartbeat < $1")
-            .bind(seniority.last_heartbeat)
+        sqlx::query("DELETE FROM seniority WHERE inserted_at < $1")
+            .bind(seniority.inserted_at)
             .execute(self)
             .await?;
+
         Ok(
             sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")
                 .bind(cbsd_id)
@@ -282,6 +284,11 @@ impl CoveredHexStream for Pool<Postgres> {
                 .boxed(),
         )
     }
+}
+
+#[derive(Default)]
+pub struct CoveredHexes {
+    hexes: HashMap<CellIndex, [BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>; 2]>,
 }
 
 impl CoveredHexes {
