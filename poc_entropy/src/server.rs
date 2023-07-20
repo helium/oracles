@@ -1,14 +1,25 @@
 use crate::entropy_generator::MessageReceiver;
+use futures::future::LocalBoxFuture;
 use helium_proto::{
     services::poc_entropy::{EntropyReqV1, PocEntropy, Server as GrpcServer},
     EntropyReportV1,
 };
 use std::net::SocketAddr;
+use task_manager::ManagedTask;
 use tokio::time::Duration;
 use tonic::transport;
 
 struct EntropyServer {
     entropy_watch: MessageReceiver,
+}
+
+impl ManagedTask for ApiServer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 #[tonic::async_trait]
@@ -41,7 +52,7 @@ impl ApiServer {
         })
     }
 
-    pub async fn run(self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!(listen = self.socket_addr.to_string(), "starting");
         transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))

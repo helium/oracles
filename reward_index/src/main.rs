@@ -5,10 +5,9 @@ use file_store::{
     file_info_poller::LookbackBehavior, file_source, reward_manifest::RewardManifest, FileStore,
     FileType,
 };
-use futures_util::TryFutureExt;
 use reward_index::{settings::Settings, telemetry, Indexer};
 use std::path::PathBuf;
-use tokio::signal;
+use task_manager::TaskManager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
@@ -57,30 +56,17 @@ impl Server {
 
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
-        //
-        // Configure shutdown trigger
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
 
         // Create database pool
         let app_name = format!("{}_{}", settings.mode, env!("CARGO_PKG_NAME"));
-        let (pool, db_join_handle) = settings
-            .database
-            .connect(&app_name, shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect(&app_name).await?;
         sqlx::migrate!().run(&pool).await?;
 
         telemetry::initialize(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
 
-        let (receiver, source_join_handle) = file_source::continuous_source::<RewardManifest>()
+        let (receiver, receiver_server) = file_source::continuous_source::<RewardManifest>()
             .db(pool.clone())
             .store(file_store)
             .file_type(FileType::RewardManifest)
@@ -91,20 +77,16 @@ impl Server {
             ))
             .poll_duration(settings.interval())
             .offset(settings.interval() * 2)
-            .build()?
-            .start(shutdown_listener.clone())
-            .await?;
+            .create()?;
 
         // Reward server
-        let mut indexer = Indexer::new(settings, pool).await?;
+        let indexer = Indexer::new(settings, pool, receiver).await?;
 
-        tokio::try_join!(
-            db_join_handle.map_err(anyhow::Error::from),
-            source_join_handle.map_err(anyhow::Error::from),
-            indexer.run(shutdown_listener, receiver),
-        )?;
-
-        Ok(())
+        TaskManager::builder()
+            .add_task(receiver_server)
+            .add_task(indexer)
+            .start()
+            .await
     }
 }
 

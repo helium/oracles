@@ -6,6 +6,7 @@ use file_store::{
     traits::TimestampEncode,
 };
 use futures::{
+    future::LocalBoxFuture,
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
@@ -22,6 +23,7 @@ use std::{
     collections::{HashMap, VecDeque},
     pin::pin,
 };
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -58,6 +60,15 @@ pub struct SpeedtestDaemon {
     gateway_client: GatewayClient,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     file_sink: FileSinkClient,
+}
+
+impl ManagedTask for SpeedtestDaemon {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 impl SpeedtestDaemon {

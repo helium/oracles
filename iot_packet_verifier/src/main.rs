@@ -37,7 +37,7 @@ pub enum Cmd {
 impl Cmd {
     async fn run(self, settings: Settings) -> Result<()> {
         match self {
-            Self::Server(cmd) => cmd.run(&settings).await,
+            Self::Server(cmd) => cmd.run(settings).await,
         }
     }
 }

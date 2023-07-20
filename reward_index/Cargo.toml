@@ -41,3 +41,5 @@ rust_decimal_macros = {workspace = true}
 tonic = {workspace = true}
 rand = {workspace = true}
 async-trait = {workspace = true}
+tokio-util = { workspace = true }
+task-manager = { path = "../task_manager" }

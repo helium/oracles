@@ -1,12 +1,11 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use chrono::Duration;
 use clap::Parser;
 use file_store::{file_sink, file_upload, FileType};
-use futures_util::TryFutureExt;
 use helium_proto::BlockchainTokenTypeV1;
 use price::{cli::check, PriceGenerator, Settings};
 use std::path::{self, PathBuf};
-use tokio::{self, signal};
+use task_manager::TaskManager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const PRICE_SINK_ROLL_MINS: i64 = 3;
@@ -80,62 +79,42 @@ impl Server {
         // Install the prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        // configure shutdown trigger
-        let (shutdown_trigger, shutdown) = triggered::trigger();
-
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Initialize uploader
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings(&settings.output).await?;
 
         let store_base_path = path::Path::new(&settings.cache);
 
-        // price generators
-        let mut hnt_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Hnt).await?;
-        let mut mobile_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Mobile).await?;
-        let mut iot_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Iot).await?;
-        let mut hst_price_generator =
-            PriceGenerator::new(settings, BlockchainTokenTypeV1::Hst).await?;
-
-        let (price_sink, mut price_sink_server) = file_sink::FileSinkBuilder::new(
+        let (price_sink, price_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::PriceReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
-            shutdown.clone(),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(PRICE_SINK_ROLL_MINS))
         .create()
         .await?;
 
-        tokio::try_join!(
-            hnt_price_generator
-                .run(price_sink.clone(), &shutdown)
-                .map_err(Error::from),
-            mobile_price_generator
-                .run(price_sink.clone(), &shutdown)
-                .map_err(Error::from),
-            iot_price_generator
-                .run(price_sink.clone(), &shutdown)
-                .map_err(Error::from),
-            hst_price_generator
-                .run(price_sink, &shutdown)
-                .map_err(Error::from),
-            price_sink_server.run().map_err(Error::from),
-            file_upload.run(&shutdown).map_err(Error::from),
-        )
-        .map(|_| ())
+        // price generators
+        let hnt_price_generator =
+            PriceGenerator::new(settings, BlockchainTokenTypeV1::Hnt, price_sink.clone()).await?;
+        let mobile_price_generator =
+            PriceGenerator::new(settings, BlockchainTokenTypeV1::Mobile, price_sink.clone())
+                .await?;
+        let iot_price_generator =
+            PriceGenerator::new(settings, BlockchainTokenTypeV1::Iot, price_sink.clone()).await?;
+        let hst_price_generator =
+            PriceGenerator::new(settings, BlockchainTokenTypeV1::Hst, price_sink).await?;
+
+        TaskManager::builder()
+            .add_task(file_upload_server)
+            .add_task(price_sink_server)
+            .add_task(hnt_price_generator)
+            .add_task(mobile_price_generator)
+            .add_task(iot_price_generator)
+            .add_task(hst_price_generator)
+            .start()
+            .await
     }
 }
 

@@ -1,30 +1,41 @@
 use chrono::{DateTime, Utc};
 use file_store::{file_info_poller::FileInfoStream, mobile_transfer::ValidDataTransferSession};
 use futures::{
+    future::LocalBoxFuture,
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{collections::HashMap, ops::Range};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 pub struct DataSessionIngestor {
     pub pool: PgPool,
+    pub receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
+}
+
+impl ManagedTask for DataSessionIngestor {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 pub type HotspotMap = HashMap<PublicKeyBinary, u64>;
 
 impl DataSessionIngestor {
-    pub fn new(pool: sqlx::Pool<sqlx::Postgres>) -> Self {
-        Self { pool }
+    pub fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
+    ) -> Self {
+        Self { pool, receiver }
     }
 
-    pub async fn run(
-        self,
-        mut receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
-        shutdown: triggered::Listener,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting DataSessionIngestor");
         tokio::spawn(async move {
             loop {
@@ -33,7 +44,7 @@ impl DataSessionIngestor {
                         tracing::info!("DataSessionIngestor shutting down");
                         break;
                     }
-                    Some(file) = receiver.recv() => self.process_file(file).await?,
+                    Some(file) = self.receiver.recv() => self.process_file(file).await?,
                 }
             }
 

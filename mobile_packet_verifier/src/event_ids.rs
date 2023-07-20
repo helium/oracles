@@ -1,7 +1,8 @@
-use chrono::{DateTime, Duration, Utc};
-use sqlx::{Pool, Postgres, Transaction};
-
 use crate::settings::Settings;
+use chrono::{DateTime, Duration, Utc};
+use futures::future::LocalBoxFuture;
+use sqlx::{Pool, Postgres, Transaction};
+use task_manager::ManagedTask;
 
 pub async fn is_duplicate(
     txn: &mut Transaction<'_, Postgres>,
@@ -21,6 +22,15 @@ pub struct EventIdPurger {
     conn: Pool<Postgres>,
     interval: Duration,
     max_age: Duration,
+}
+
+impl ManagedTask for EventIdPurger {
+    fn start_task(
+        self: Box<Self>,
+        shutdown_listener: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown_listener))
+    }
 }
 
 impl EventIdPurger {

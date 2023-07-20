@@ -7,6 +7,7 @@ use file_store::{
     heartbeat::CellHeartbeatIngestReport,
 };
 use futures::{
+    future::LocalBoxFuture,
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
@@ -17,6 +18,7 @@ use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
 use std::{ops::Range, pin::pin, sync::Arc, time};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
@@ -47,6 +49,15 @@ pub struct HeartbeatDaemon {
     gateway_client: GatewayClient,
     heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
     file_sink: FileSinkClient,
+}
+
+impl ManagedTask for HeartbeatDaemon {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 impl HeartbeatDaemon {

@@ -4,7 +4,7 @@ use chrono::Utc;
 use file_store::{
     file_info_poller::FileInfoStream, reward_manifest::RewardManifest, FileInfo, FileStore,
 };
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{future::LocalBoxFuture, stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
@@ -14,6 +14,7 @@ use helium_proto::{
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
 use std::{collections::HashMap, str::FromStr};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 pub struct Indexer {
@@ -21,6 +22,7 @@ pub struct Indexer {
     verifier_store: FileStore,
     mode: settings::Mode,
     op_fund_key: String,
+    receiver: Receiver<FileInfoStream<RewardManifest>>,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -38,8 +40,21 @@ pub struct RewardKey {
     reward_type: RewardType,
 }
 
+impl ManagedTask for Indexer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
 impl Indexer {
-    pub async fn new(settings: &Settings, pool: Pool<Postgres>) -> Result<Self> {
+    pub async fn new(
+        settings: &Settings,
+        pool: Pool<Postgres>,
+        receiver: Receiver<FileInfoStream<RewardManifest>>,
+    ) -> Result<Self> {
         Ok(Self {
             mode: settings.mode,
             verifier_store: FileStore::from_settings(&settings.verifier).await?,
@@ -50,14 +65,11 @@ impl Indexer {
                     .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
                 settings::Mode::Mobile => String::new(),
             },
+            receiver,
         })
     }
 
-    pub async fn run(
-        &mut self,
-        shutdown: triggered::Listener,
-        mut receiver: Receiver<FileInfoStream<RewardManifest>>,
-    ) -> Result<()> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!(mode = self.mode.to_string(), "starting index");
 
         loop {
@@ -66,7 +78,7 @@ impl Indexer {
                     tracing::info!("Indexer shutting down");
                     return Ok(());
             }
-            msg = receiver.recv() => if let Some(file_info_stream) = msg {
+            msg = self.receiver.recv() => if let Some(file_info_stream) = msg {
                     let key = &file_info_stream.file_info.key.clone();
                     tracing::info!(file = %key, "Processing reward file");
                     let mut txn = self.pool.begin().await?;

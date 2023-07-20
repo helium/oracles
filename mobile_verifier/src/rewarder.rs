@@ -9,6 +9,7 @@ use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use futures::future::LocalBoxFuture;
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -16,6 +17,7 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
+use task_manager::ManagedTask;
 use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -27,6 +29,15 @@ pub struct Rewarder {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
+}
+
+impl ManagedTask for Rewarder {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 impl Rewarder {

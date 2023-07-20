@@ -10,6 +10,7 @@ use std::{sync::Arc, time::Duration};
 /// how often to evict expired items from the cache ( every 5 mins)
 const CACHE_EVICTION_FREQUENCY: Duration = Duration::from_secs(60 * 5);
 
+#[derive(Clone)]
 pub struct RegionCache {
     pub iot_config_client: IotConfigClient,
     pub cache: Arc<Cache<ProtoRegion, RegionParamsInfo>>,

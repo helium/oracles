@@ -34,3 +34,5 @@ triggered = {workspace = true}
 http = {workspace = true}
 http-serde = {workspace = true}
 sha2 = {workspace = true}
+tokio-util = { workspace = true }
+task-manager = { path = "../task_manager" }

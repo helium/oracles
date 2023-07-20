@@ -37,7 +37,6 @@ pub struct RouteService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
     update_channel: broadcast::Sender<RouteStreamResV1>,
-    shutdown: triggered::Listener,
     signing_key: Arc<Keypair>,
 }
 
@@ -48,17 +47,11 @@ enum OrgId<'a> {
 }
 
 impl RouteService {
-    pub fn new(
-        settings: &Settings,
-        auth_cache: AuthCache,
-        pool: Pool<Postgres>,
-        shutdown: triggered::Listener,
-    ) -> Result<Self> {
+    pub fn new(settings: &Settings, auth_cache: AuthCache, pool: Pool<Postgres>) -> Result<Self> {
         Ok(Self {
             auth_cache,
             pool,
             update_channel: update_channel(),
-            shutdown,
             signing_key: Arc::new(settings.signing_keypair()?),
         })
     }
@@ -390,7 +383,6 @@ impl iot_config::Route for RouteService {
 
         tracing::info!("client subscribed to route stream");
         let pool = self.pool.clone();
-        let shutdown_listener = self.shutdown.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
         let signing_key = self.signing_key.clone();
 
@@ -398,7 +390,6 @@ impl iot_config::Route for RouteService {
 
         tokio::spawn(async move {
             tokio::select! {
-                _ = shutdown_listener.clone() => return,
                 result = stream_existing_routes(&pool, &signing_key, tx.clone())
                              .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
                              .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
@@ -410,13 +401,7 @@ impl iot_config::Route for RouteService {
             tracing::info!("existing routes sent; streaming updates as available");
             telemetry::route_stream_subscribe();
             loop {
-                let shutdown = shutdown_listener.clone();
-
                 tokio::select! {
-                    _ = shutdown => {
-                        telemetry::route_stream_unsubscribe();
-                        return
-                    }
                     msg = route_updates.recv() => if let Ok(update) = msg {
                         if tx.send(Ok(update)).await.is_err() {
                             telemetry::route_stream_unsubscribe();
@@ -448,7 +433,6 @@ impl iot_config::Route for RouteService {
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
-        let shutdown_listener = self.shutdown.clone();
 
         tracing::debug!(route_id = request.route_id, "listing eui pairs");
 
@@ -473,9 +457,6 @@ impl iot_config::Route for RouteService {
             };
 
             tokio::select! {
-                _ = shutdown_listener => {
-                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
-                }
                 _ = async {
                     while let Some(eui) = eui_stream.next().await {
                         let message = match eui {
@@ -522,7 +503,6 @@ impl iot_config::Route for RouteService {
             .await?;
 
         tokio::select! {
-            _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
             result = incoming_stream
                 .map_ok(|update| match validator.validate_update(&update) {
                     Ok(()) => Ok(update),
@@ -609,8 +589,6 @@ impl iot_config::Route for RouteService {
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
         let pool = self.pool.clone();
-        let shutdown_listener = self.shutdown.clone();
-
         tracing::debug!(route_id = request.route_id, "listing devaddr ranges");
 
         tokio::spawn(async move {
@@ -632,9 +610,6 @@ impl iot_config::Route for RouteService {
             };
 
             tokio::select! {
-                _ = shutdown_listener => {
-                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
-                }
                 _ = async {
                     while let Some(devaddr) = devaddrs.next().await {
                         let message = match devaddr {
@@ -684,7 +659,6 @@ impl iot_config::Route for RouteService {
             .await?;
 
         tokio::select! {
-            _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
             result = incoming_stream
                 .map_ok(|update| match validator.validate_update(&update) {
                     Ok(()) => Ok(update),
@@ -777,7 +751,6 @@ impl iot_config::Route for RouteService {
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
-        let shutdown_listener = self.shutdown.clone();
 
         tracing::debug!(
             route_id = request.route_id,
@@ -805,9 +778,6 @@ impl iot_config::Route for RouteService {
             };
 
             tokio::select! {
-                _ = shutdown_listener => {
-                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
-                }
                 _ = async {
                     while let Some(skf) = skf_stream.next().await {
                         let message = match skf {
@@ -839,7 +809,6 @@ impl iot_config::Route for RouteService {
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
-        let shutdown_listener = self.shutdown.clone();
 
         tracing::debug!(
             route_id = request.route_id,
@@ -871,9 +840,6 @@ impl iot_config::Route for RouteService {
             };
 
             tokio::select! {
-                _ = shutdown_listener => {
-                    _ = tx.send(Err(Status::unavailable("service shutting down"))).await;
-                }
                 _ = async {
                     while let Some(skf) = skf_stream.next().await {
                         let message = match skf {
