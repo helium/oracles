@@ -79,9 +79,9 @@ where
 {
     fn start_task(
         self: Box<Self>,
-        shutdown_listener: triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown_listener));
+        let handle = tokio::spawn(self.run(shutdown));
 
         Box::pin(
             handle

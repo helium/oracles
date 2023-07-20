@@ -30,9 +30,9 @@ pub enum NewLoaderError {
 impl ManagedTask for PacketLoader {
     fn start_task(
         self: Box<Self>,
-        shutdown_listener: triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown_listener))
+        Box::pin(self.run(shutdown))
     }
 }
 

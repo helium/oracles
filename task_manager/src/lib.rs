@@ -9,7 +9,7 @@ use tokio::signal;
 pub trait ManagedTask {
     fn start_task(
         self: Box<Self>,
-        shutdown_listener: triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>>;
 }
 
@@ -44,9 +44,9 @@ where
 {
     fn start_task(
         self: Box<Self>,
-        shutdown_listener: triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self(shutdown_listener))
+        Box::pin(self(shutdown))
     }
 }
 

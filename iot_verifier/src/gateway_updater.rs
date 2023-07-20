@@ -34,9 +34,9 @@ pub enum GatewayUpdaterError {
 impl ManagedTask for GatewayUpdater {
     fn start_task(
         self: Box<Self>,
-        shutdown_listener: triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown_listener))
+        Box::pin(self.run(shutdown))
     }
 }
 
