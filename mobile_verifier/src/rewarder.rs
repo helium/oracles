@@ -170,22 +170,24 @@ impl Rewarder {
         };
         telemetry::data_transfer_rewards_scale(scale);
 
-        for mobile_reward_share in
+        if let Some(mobile_reward_shares) =
             poc_rewards.into_rewards(transfer_rewards.reward_sum(), reward_period)
         {
-            self.mobile_rewards
-                .write(mobile_reward_share, [])
-                .await?
-                // Await the returned one shot to ensure that we wrote the file
-                .await??;
-        }
+            for mobile_reward_share in mobile_reward_shares {
+                self.mobile_rewards
+                    .write(mobile_reward_share, [])
+                    .await?
+                    // Await the returned one shot to ensure that we wrote the file
+                    .await??;
+            }
 
-        for mobile_reward_share in transfer_rewards.into_rewards(reward_period) {
-            self.mobile_rewards
-                .write(mobile_reward_share, [])
-                .await?
-                // Await the returned one shot to ensure that we wrote the file
-                .await??;
+            for mobile_reward_share in transfer_rewards.into_rewards(reward_period) {
+                self.mobile_rewards
+                    .write(mobile_reward_share, [])
+                    .await?
+                    // Await the returned one shot to ensure that we wrote the file
+                    .await??;
+            }
         }
 
         // Mapper rewards currently include rewards for discovery mapping only.
