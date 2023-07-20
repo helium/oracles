@@ -57,19 +57,6 @@ impl PacketLoader {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting iot packet loader");
-        // let store_base_path = Path::new(&self.cache);
-        // let (non_rewardable_packet_sink, mut non_rewardable_packet_server) =
-        //     file_sink::FileSinkBuilder::new(
-        //         FileType::NonRewardablePacket,
-        //         store_base_path,
-        //         concat!(env!("CARGO_PKG_NAME"), "_non_rewardable_packet"),
-        //         shutdown.clone(),
-        //     )
-        //     .deposits(Some(file_upload_tx.clone()))
-        //     .roll_time(ChronoDuration::minutes(5))
-        //     .create()
-        //     .await?;
-        // tokio::spawn(async move { non_rewardable_packet_server.run().await });
 
         loop {
             if shutdown.is_triggered() {

@@ -137,47 +137,6 @@ impl Runner {
         let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
         denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        // let store_base_path = Path::new(&self.cache);
-
-        // let (iot_invalid_beacon_sink, mut iot_invalid_beacon_sink_server) =
-        //     file_sink::FileSinkBuilder::new(
-        //         FileType::IotInvalidBeaconReport,
-        //         store_base_path,
-        //         concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon_report"),
-        //         shutdown.clone(),
-        //     )
-        //     .deposits(Some(file_upload_tx.clone()))
-        //     .roll_time(ChronoDuration::minutes(5))
-        //     .create()
-        //     .await?;
-
-        // let (iot_invalid_witness_sink, mut iot_invalid_witness_sink_server) =
-        //     file_sink::FileSinkBuilder::new(
-        //         FileType::IotInvalidWitnessReport,
-        //         store_base_path,
-        //         concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
-        //         shutdown.clone(),
-        //     )
-        //     .deposits(Some(file_upload_tx.clone()))
-        //     .roll_time(ChronoDuration::minutes(5))
-        //     .create()
-        //     .await?;
-
-        // let (iot_poc_sink, mut iot_poc_sink_server) = file_sink::FileSinkBuilder::new(
-        //     FileType::IotPoc,
-        //     store_base_path,
-        //     concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
-        //     shutdown.clone(),
-        // )
-        // .deposits(Some(file_upload_tx.clone()))
-        // .roll_time(ChronoDuration::minutes(2))
-        // .create()
-        // .await?;
-
-        // tokio::spawn(async move { iot_invalid_beacon_sink_server.run().await });
-        // tokio::spawn(async move { iot_invalid_witness_sink_server.run().await });
-        // tokio::spawn(async move { iot_poc_sink_server.run().await });
-
         loop {
             if shutdown.is_triggered() {
                 break;

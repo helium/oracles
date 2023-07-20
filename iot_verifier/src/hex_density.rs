@@ -64,12 +64,6 @@ lazy_static! {
     };
 }
 
-// #[async_trait::async_trait]
-// pub trait HexDensityMap: Clone {
-//     async fn get(&self, hex: u64) -> Option<Decimal>;
-//     async fn swap(&self, new_map: HashMap<u64, Decimal>);
-// }
-
 #[derive(Debug, Clone)]
 pub struct HexDensityMap(Arc<RwLock<HashMap<u64, Decimal>>>);
 

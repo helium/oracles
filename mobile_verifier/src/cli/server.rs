@@ -192,9 +192,9 @@ impl Cmd {
             .add_task(data_session_ingest_server)
             .add_task(subscriber_location_ingestor)
             .add_task(data_session_ingestor)
-            .add_task(rewarder)
             .add_task(heartbeat_daemon)
             .add_task(speedtest_daemon)
+            .add_task(rewarder)
             .start()
             .await
     }

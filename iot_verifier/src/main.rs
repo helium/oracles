@@ -304,10 +304,10 @@ impl Server {
             .add_task(entropy_loader_server)
             .add_task(entropy_loader)
             .add_task(packet_loader)
+            .add_task(purger)
             .add_task(loader)
             .add_task(runner)
             .add_task(rewarder)
-            .add_task(purger)
             .start()
             .await
     }
