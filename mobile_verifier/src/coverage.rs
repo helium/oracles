@@ -1,13 +1,13 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BinaryHeap, HashMap},
+    pin::pin,
     sync::Arc,
 };
 
-use crate::heartbeats::Seniority;
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::{CoverageObject, CoverageObjectIngestReport},
+    coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     traits::TimestampEncode,
@@ -26,7 +26,7 @@ use mobile_config::client::AuthorizationClient;
 use retainer::Cache;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlx::{FromRow, Pool, Postgres, Type};
+use sqlx::{FromRow, Pool, Postgres, Transaction, Type};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
@@ -99,70 +99,16 @@ impl CoverageDaemon {
         tracing::info!("Processing coverage object file {}", file.file_info.key);
 
         let mut transaction = self.pool.begin().await?;
-        let mut reports = file.into_stream(&mut transaction).await?;
+        let reports = file.into_stream(&mut transaction).await?;
 
-        while let Some(CoverageObjectIngestReport { report, .. }) = reports.next().await {
-            let CoverageObject {
-                pub_key,
-                uuid,
-                cbsd_id,
-                coverage_claim_time,
-                indoor,
-                coverage,
-                signature,
-            } = report;
+        let mut validated_coverage_objects = pin!(CoverageObject::validate_coverage_objects(
+            &self.auth_client,
+            reports
+        ));
 
-            let validity = if self
-                .auth_client
-                .verify_authorized_key(&pub_key, NetworkKeyRole::MobilePcs)
-                .await?
-            {
-                CoverageObjectValidity::Valid
-            } else {
-                CoverageObjectValidity::InvalidPubKey
-            };
-
-            self.file_sink
-                .write(
-                    proto::CoverageObjectV1 {
-                        coverage_object: Some(proto::CoverageObjectReqV1 {
-                            pub_key: pub_key.into(),
-                            uuid: Vec::from(uuid.into_bytes()),
-                            cbsd_id: cbsd_id.clone(),
-                            coverage_claim_time: coverage_claim_time.encode_timestamp(),
-                            indoor,
-                            // It's pretty weird that we have to convert these back and forth, but it
-                            // shouldn't be too inefficient
-                            coverage: coverage.clone().into_iter().map(Into::into).collect(),
-                            signature,
-                        }),
-                        validity: validity as i32,
-                    },
-                    [],
-                )
-                .await?;
-
-            if !matches!(validity, CoverageObjectValidity::Valid) {
-                continue;
-            }
-
-            for hex in coverage {
-                let location: u64 = hex.location.into();
-                sqlx::query(
-                    r#"
-                    INSERT INTO hex_coverage
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    "#,
-                )
-                .bind(uuid)
-                .bind(location as i64)
-                .bind(indoor)
-                .bind(cbsd_id.clone())
-                .bind(SignalLevel::from(hex.signal_level))
-                .bind(coverage_claim_time)
-                .execute(&mut transaction)
-                .await?;
-            }
+        while let Some(coverage_object) = validated_coverage_objects.next().await.transpose()? {
+            coverage_object.write(&self.file_sink).await?;
+            coverage_object.save(&mut transaction).await?;
         }
 
         self.file_sink.commit().await?;
@@ -170,6 +116,107 @@ impl CoverageDaemon {
 
         Ok(())
     }
+}
+
+pub struct CoverageObject {
+    pub_key: PublicKeyBinary,
+    signature: Vec<u8>,
+    cbsd_id: String,
+    uuid: Uuid,
+    indoor: bool,
+    coverage_claim_time: DateTime<Utc>,
+    coverage: Vec<RadioHexSignalLevel>,
+    validity: CoverageObjectValidity,
+}
+
+impl CoverageObject {
+    pub fn validate_coverage_objects<'a>(
+        auth_client: &'a AuthorizationClient,
+        coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
+        coverage_objects.then(move |coverage_object_report| {
+            let mut auth_client = auth_client.clone();
+            async move {
+                let validity =
+                    validate_coverage_object(&coverage_object_report, &mut auth_client).await?;
+
+                Ok(CoverageObject {
+                    cbsd_id: coverage_object_report.report.cbsd_id,
+                    uuid: coverage_object_report.report.uuid,
+                    indoor: coverage_object_report.report.indoor,
+                    coverage_claim_time: coverage_object_report.report.coverage_claim_time,
+                    coverage: coverage_object_report.report.coverage,
+                    pub_key: coverage_object_report.report.pub_key,
+                    signature: coverage_object_report.report.signature,
+                    validity,
+                })
+            }
+        })
+    }
+
+    pub async fn write(&self, coverage_objects: &FileSinkClient) -> file_store::Result {
+        coverage_objects
+            .write(
+                proto::CoverageObjectV1 {
+                    coverage_object: Some(proto::CoverageObjectReqV1 {
+                        pub_key: self.pub_key.clone().into(),
+                        uuid: Vec::from(self.uuid.into_bytes()),
+                        cbsd_id: self.cbsd_id.clone(),
+                        coverage_claim_time: self.coverage_claim_time.encode_timestamp(),
+                        indoor: self.indoor,
+                        coverage: self.coverage.clone().into_iter().map(Into::into).collect(),
+                        signature: self.signature.clone(),
+                    }),
+                    validity: self.validity as i32,
+                },
+                &[("validity", self.validity.as_str_name())],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
+        // If the coverage object is not valid, do not save it
+        if self.validity != CoverageObjectValidity::Valid {
+            return Ok(false);
+        }
+
+        for hex in self.coverage {
+            let location: u64 = hex.location.into();
+            sqlx::query(
+                r#"
+                INSERT INTO hex_coverage
+                  (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time)
+                VALUES
+                  ($1, $2, $3, $4, $5, $6)
+                "#,
+            )
+            .bind(&self.uuid)
+            .bind(location as i64)
+            .bind(self.indoor)
+            .bind(&self.cbsd_id)
+            .bind(SignalLevel::from(hex.signal_level))
+            .bind(self.coverage_claim_time)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        Ok(true)
+    }
+}
+
+async fn validate_coverage_object(
+    coverage_object: &CoverageObjectIngestReport,
+    auth_client: &mut AuthorizationClient,
+) -> anyhow::Result<CoverageObjectValidity> {
+    if !auth_client
+        .verify_authorized_key(&coverage_object.report.pub_key, NetworkKeyRole::MobilePcs)
+        .await?
+    {
+        return Ok(CoverageObjectValidity::InvalidPubKey);
+    }
+
+    Ok(CoverageObjectValidity::Valid)
 }
 
 #[derive(Clone, FromRow)]
@@ -240,6 +287,14 @@ pub trait CoveredHexStream {
         coverage_obj: &'a Uuid,
         period_end: DateTime<Utc>,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
+}
+
+#[derive(sqlx::FromRow)]
+pub struct Seniority {
+    pub uuid: Uuid,
+    pub seniority_ts: DateTime<Utc>,
+    pub last_heartbeat: DateTime<Utc>,
+    pub inserted_at: DateTime<Utc>,
 }
 
 #[async_trait::async_trait]
@@ -325,6 +380,7 @@ impl CoveredHexes {
         Ok(())
     }
 
+    /// Returns the radios that should be rewarded for giving coverage.
     pub fn into_iter(self) -> impl Iterator<Item = CoverageReward> {
         self.hexes
             .into_values()
@@ -346,6 +402,53 @@ impl CoveredHexes {
             .flatten()
             .flatten()
             .filter(|r| r.points > Decimal::ZERO)
+    }
+}
+
+pub struct CoverageClaimTimeCache {
+    cache: Arc<Cache<(String, Option<Uuid>), DateTime<Utc>>>,
+}
+
+impl CoverageClaimTimeCache {
+    pub fn new() -> Self {
+        let cache = Arc::new(Cache::new());
+        let cache_clone = cache.clone();
+        tokio::spawn(async move {
+            cache_clone
+                .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 24 * 5))
+                .await
+        });
+        Self { cache }
+    }
+
+    pub async fn fetch_coverage_claim_time(
+        &self,
+        cbsd_id: &str,
+        coverage_object: &Option<Uuid>,
+        exec: &mut Transaction<'_, Postgres>,
+    ) -> Result<DateTime<Utc>, sqlx::Error> {
+        let key = (cbsd_id.to_string(), *coverage_object);
+        if let Some(coverage_claim_time) = self.cache.get(&key).await {
+            Ok(*coverage_claim_time)
+        } else {
+            let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
+                r#"
+                SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2
+                "#,
+            )
+            .bind(cbsd_id)
+            .bind(coverage_object)
+            .fetch_one(&mut *exec)
+            .await?;
+            self.cache
+                .insert(
+                    key,
+                    coverage_claim_time,
+                    std::time::Duration::from_secs(60 * 60 * 24),
+                )
+                .await;
+            Ok(coverage_claim_time)
+        }
     }
 }
 

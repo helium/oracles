@@ -1,6 +1,9 @@
 //! Heartbeat storage
 
-use crate::{cell_type::CellType, coverage::CoveredHexCache};
+use crate::{
+    cell_type::CellType,
+    coverage::{CoverageClaimTimeCache, CoveredHexCache},
+};
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient,
@@ -28,14 +31,6 @@ pub struct HeartbeatKey {
     cbsd_id: String,
     cell_type: CellType,
     latest_timestamp: DateTime<Utc>,
-}
-
-pub struct HeartbeatReward {
-    pub coverage_object: Uuid,
-    pub hotspot_key: PublicKeyBinary,
-    pub cbsd_id: String,
-    pub reward_weight: Decimal,
-    pub latest_timestamp: DateTime<Utc>,
 }
 
 impl From<HeartbeatKey> for HeartbeatReward {
@@ -82,8 +77,6 @@ impl HeartbeatDaemon {
         tokio::spawn(async move {
             let heartbeat_cache =
                 Arc::new(Cache::<(String, DateTime<Utc>, Option<Uuid>), ()>::new());
-            let coverage_claim_time_cache =
-                Arc::new(Cache::<(String, Option<Uuid>), DateTime<Utc>>::new());
 
             let heartbeat_cache_clone = heartbeat_cache.clone();
             tokio::spawn(async move {
@@ -92,13 +85,7 @@ impl HeartbeatDaemon {
                     .await
             });
 
-            let coverage_claim_time_cache_clone = coverage_claim_time_cache.clone();
-            tokio::spawn(async move {
-                coverage_claim_time_cache_clone
-                    .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 24 * 5))
-                    .await
-            });
-
+            let coverage_claim_time_cache = CoverageClaimTimeCache::new();
             let covered_hex_cache = CoveredHexCache::new(&self.pool);
 
             loop {
@@ -129,7 +116,7 @@ impl HeartbeatDaemon {
         &self,
         file: FileInfoStream<CellHeartbeatIngestReport>,
         heartbeat_cache: &Cache<(String, DateTime<Utc>, Option<Uuid>), ()>,
-        coverage_claim_time_cache: &Cache<(String, Option<Uuid>), DateTime<Utc>>,
+        coverage_claim_time_cache: &CoverageClaimTimeCache,
         covered_hex_cache: &CoveredHexCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing heartbeat file {}", file.file_info.key);
@@ -139,25 +126,26 @@ impl HeartbeatDaemon {
         let mut transaction = self.pool.begin().await?;
         let reports = file.into_stream(&mut transaction).await?;
 
-        let mut validated_heartbeats = pin!(
-            Heartbeat::validate_heartbeats(
-                &self.gateway_client,
-                covered_hex_cache,
-                reports,
-                &epoch,
-                self.max_distance,
-            )
-            .await
-        );
+        let mut validated_heartbeats = pin!(Heartbeat::validate_heartbeats(
+            &self.gateway_client,
+            covered_hex_cache,
+            reports,
+            &epoch,
+            self.max_distance,
+        ));
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
-            heartbeat.write(&self.heartbeat_sink).await?;
-            heartbeat
-                .update_seniority(
-                    coverage_claim_time_cache,
-                    &self.seniority_sink,
+            let coverage_claim_time = coverage_claim_time_cache
+                .fetch_coverage_claim_time(
+                    &heartbeat.cbsd_id,
+                    &heartbeat.coverage_object,
                     &mut transaction,
                 )
+                .await?;
+
+            heartbeat.write(&self.heartbeat_sink).await?;
+            heartbeat
+                .update_seniority(coverage_claim_time, &self.seniority_sink, &mut transaction)
                 .await?;
 
             let key = (
@@ -179,6 +167,14 @@ impl HeartbeatDaemon {
 
         Ok(())
     }
+}
+
+pub struct HeartbeatReward {
+    pub coverage_object: Uuid,
+    pub hotspot_key: PublicKeyBinary,
+    pub cbsd_id: String,
+    pub reward_weight: Decimal,
+    pub latest_timestamp: DateTime<Utc>,
 }
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
@@ -239,29 +235,12 @@ pub struct Heartbeat {
     pub validity: proto::HeartbeatValidity,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum SaveHeartbeatError {
-    #[error("rounding error: {0}")]
-    RoundingError(#[from] RoundingError),
-    #[error("sql error: {0}")]
-    SqlError(#[from] sqlx::Error),
-}
-
-// TODO: Move this into coverage?
-#[derive(sqlx::FromRow)]
-pub struct Seniority {
-    pub uuid: Uuid,
-    pub seniority_ts: DateTime<Utc>,
-    pub last_heartbeat: DateTime<Utc>,
-    pub inserted_at: DateTime<Utc>,
-}
-
 impl Heartbeat {
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
         self.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub async fn validate_heartbeats<'a>(
+    pub fn validate_heartbeats<'a>(
         gateway_client: &'a GatewayClient,
         covered_hex_cache: &'a CoveredHexCache,
         heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
@@ -320,41 +299,17 @@ impl Heartbeat {
 
     pub async fn update_seniority(
         &self,
-        coverage_claim_time_cache: &Cache<(String, Option<Uuid>), DateTime<Utc>>,
+        coverage_claim_time: DateTime<Utc>,
         seniorities: &FileSinkClient,
         exec: &mut Transaction<'_, Postgres>,
     ) -> anyhow::Result<()> {
-        let key = (self.cbsd_id.to_string(), self.coverage_object);
-        let coverage_claim_time =
-            if let Some(coverage_claim_time) = coverage_claim_time_cache.get(&key).await {
-                *coverage_claim_time
-            } else {
-                let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
-                    r#"
-                    SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2
-                    "#,
-                )
-                .bind(&self.cbsd_id)
-                .bind(self.coverage_object)
-                .fetch_one(&mut *exec)
-                .await?;
-                coverage_claim_time_cache
-                    .insert(
-                        key,
-                        coverage_claim_time,
-                        time::Duration::from_secs(60 * 60 * 24),
-                    )
-                    .await;
-                coverage_claim_time
-            };
-
         enum InsertOrUpdate {
             Insert(proto::SeniorityUpdateReason),
             Update(DateTime<Utc>),
         }
 
         let (seniority_ts, update_reason) = if let Some(prev_seniority) =
-            sqlx::query_as::<_, Seniority>(
+            sqlx::query_as::<_, crate::coverage::Seniority>(
                 "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC",
             )
             .bind(&self.cbsd_id)
@@ -435,10 +390,7 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn save(
-        self,
-        exec: &mut Transaction<'_, Postgres>,
-    ) -> Result<bool, SaveHeartbeatError> {
+    pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
         // If the heartbeat is not valid, do not save it
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);

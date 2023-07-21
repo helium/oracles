@@ -17,10 +17,10 @@ CREATE TABLE hex_coverage (
 
 CREATE TABLE seniority (
        cbsd_id TEXT NOT NULL,
+       seniority_ts TIMESTAMPTZ NOT NULL,
        last_heartbeat TIMESTAMPTZ NOT NULL,
        uuid UUID NOT NULL,
-       seniority_ts TIMESTAMPTZ NOT NULL,
-       PRIMARY KEY (cbsd_id, last_heartbeat)
+       PRIMARY KEY (cbsd_id, seniority_ts)
 );
 
 ALTER TABLE heartbeats ADD COLUMN coverage_object UUID;
