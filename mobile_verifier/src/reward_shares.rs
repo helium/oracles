@@ -16,7 +16,7 @@ use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::ops::Range;
 
-/// Total tokens emissions pool per 365 days
+/// Total tokens emissions pool per 365 days or 366 days for a leap year
 const TOTAL_EMISSIONS_POOL: Decimal = dec!(30_000_000_000_000_000);
 
 /// Maximum amount of the total emissions pool allocated for data transfer
@@ -306,7 +306,7 @@ impl PocShares {
 }
 
 pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
-    (TOTAL_EMISSIONS_POOL / dec!(365) / Decimal::from(Duration::hours(24).num_seconds()))
+    (TOTAL_EMISSIONS_POOL / dec!(366) / Decimal::from(Duration::hours(24).num_seconds()))
         * Decimal::from(duration.num_seconds())
 }
 
@@ -380,14 +380,14 @@ mod test {
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(82_191_780_821_917, total_epoch_rewards);
+        assert_eq!(81_967_213_114_754, total_epoch_rewards);
 
         // verify total rewards allocated to mappers the epoch
         let total_mapper_rewards = get_scheduled_tokens_for_mappers(epoch.end - epoch.start)
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(16_438_356_164_383, total_mapper_rewards);
+        assert_eq!(16_393_442_622_950, total_mapper_rewards);
 
         let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
 
@@ -401,7 +401,7 @@ mod test {
         }
 
         // verify the total rewards awared for discovery mapping
-        assert_eq!(16_438_356_160_000, total_discovery_mapping_rewards);
+        assert_eq!(16_393_442_620_000, total_discovery_mapping_rewards);
 
         // the sum of rewards distributed should not exceed the epoch amount
         // but due to rounding whilst going to u64 for each subscriber,
@@ -447,7 +447,7 @@ mod test {
         // total_rewards will be in bones
         assert_eq!(
             (total_rewards / dec!(1_000_000) * dec!(24)).trunc(),
-            dec!(49_315_068)
+            dec!(49_180_327)
         );
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
@@ -517,11 +517,11 @@ mod test {
         // for POC and data transfer (which is 60% of the daily total emissions).
         let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
-        assert_eq!(available_poc_rewards.trunc(), dec!(16_438_356_164_383));
+        assert_eq!(available_poc_rewards.trunc(), dec!(16_393_442_622_950));
         assert_eq!(
             // Rewards are automatically scaled
             data_transfer_rewards.reward(&owner).trunc(),
-            dec!(32_876_712_328_767)
+            dec!(32_786_885_245_901)
         );
         assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.5));
     }
@@ -838,20 +838,20 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            491_745_697_224
+            490_402_129_746
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            1_475_237_091_670
+            1_471_206_389_237
         );
 
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            87_811_731_647
+            87_571_808_883
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
@@ -860,7 +860,7 @@ mod test {
             total += *val
         }
 
-        assert_eq!(total, 2_054_794_520_541); // total emissions for 1 hour
+        assert_eq!(total, 2_049_180_327_866); // total emissions for 1 hour
     }
 
     #[tokio::test]
