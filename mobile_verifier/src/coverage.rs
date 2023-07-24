@@ -327,10 +327,18 @@ impl CoveredHexStream for Pool<Postgres> {
             .execute(self)
             .await?;
 
+        // Is this a valid delete?
+        sqlx::query("DELETE FROM hex_coverage WHERE cbsd_id = $1 AND uuid != $2 AND coverage_claim_time < $3")
+            .bind(cbsd_id)
+            .bind(coverage_obj)
+            .bind(seniority.seniority_ts)
+            .execute(self)
+            .await?;
+
         Ok(
             sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")
                 .bind(cbsd_id)
-                .bind(*coverage_obj)
+                .bind(coverage_obj)
                 .fetch(self)
                 .map_ok(move |hc| HexCoverage {
                     coverage_claim_time: seniority.seniority_ts,
