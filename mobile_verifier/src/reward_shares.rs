@@ -323,61 +323,71 @@ impl CoveragePoints {
         self,
         transfer_rewards_sum: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+    ) -> Option<impl Iterator<Item = proto::MobileRewardShare> + '_> {
         let total_shares = self.total_shares();
         let available_poc_rewards =
             get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start) - transfer_rewards_sum;
-        let poc_rewards_per_share = available_poc_rewards / total_shares;
-        let start_period = epoch.start.encode_timestamp();
-        let end_period = epoch.end.encode_timestamp();
-        self.coverage_points
-            .into_iter()
-            .flat_map(
-                move |(
-                    hotspot_key,
-                    HotspotPoints {
-                        speedtest_multiplier,
-                        radio_points,
-                    },
-                )| {
-                    radio_points.into_iter().map(
+        if let Some(poc_rewards_per_share) = available_poc_rewards.checked_div(total_shares) {
+            let start_period = epoch.start.encode_timestamp();
+            let end_period = epoch.end.encode_timestamp();
+            Some(
+                self.coverage_points
+                    .into_iter()
+                    .flat_map(
                         move |(
-                            cbsd_id,
-                            RadioPoints {
-                                heartbeat_multiplier,
-                                points,
+                            hotspot_key,
+                            HotspotPoints {
+                                speedtest_multiplier,
+                                radio_points,
                             },
                         )| {
-                            let poc_reward = poc_rewards_per_share
-                                * speedtest_multiplier
-                                * heartbeat_multiplier
-                                * points;
-                            let hotspot_key: Vec<u8> = hotspot_key.clone().into();
-                            proto::MobileRewardShare {
-                                start_period,
-                                end_period,
-                                reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-                                    proto::RadioReward {
-                                        hotspot_key,
-                                        cbsd_id,
-                                        poc_reward: poc_reward
-                                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                            .to_u64()
-                                            .unwrap_or(0),
-                                        ..Default::default()
+                            radio_points.into_iter().map(
+                                move |(
+                                    cbsd_id,
+                                    RadioPoints {
+                                        heartbeat_multiplier,
+                                        points,
                                     },
-                                )),
-                            }
+                                )| {
+                                    let poc_reward = poc_rewards_per_share
+                                        * speedtest_multiplier
+                                        * heartbeat_multiplier
+                                        * points;
+                                    let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+                                    proto::MobileRewardShare {
+                                        start_period,
+                                        end_period,
+                                        reward: Some(
+                                            proto::mobile_reward_share::Reward::RadioReward(
+                                                proto::RadioReward {
+                                                    hotspot_key,
+                                                    cbsd_id,
+                                                    poc_reward: poc_reward
+                                                        .round_dp_with_strategy(
+                                                            0,
+                                                            RoundingStrategy::ToZero,
+                                                        )
+                                                        .to_u64()
+                                                        .unwrap_or(0),
+                                                    ..Default::default()
+                                                },
+                                            ),
+                                        ),
+                                    }
+                                },
+                            )
                         },
                     )
-                },
+                    .filter(|mobile_reward| match mobile_reward.reward {
+                        Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
+                            radio_reward.poc_reward > 0
+                        }
+                        _ => false,
+                    }),
             )
-            .filter(|mobile_reward| match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
-                    radio_reward.poc_reward > 0
-                }
-                _ => false,
-            })
+        } else {
+            None
+        }
     }
 }
 
@@ -1073,6 +1083,7 @@ mod test {
         .await
         .unwrap()
         .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1178,7 +1189,7 @@ mod test {
         let coverage_points = CoveragePoints { coverage_points };
         let epoch = now - Duration::hours(1)..now;
         let expected_hotspot = gw1;
-        for mobile_reward in coverage_points.into_rewards(Decimal::ZERO, &epoch) {
+        for mobile_reward in coverage_points.into_rewards(Decimal::ZERO, &epoch).unwrap() {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
                 _ => unreachable!(),
@@ -1186,5 +1197,19 @@ mod test {
             let actual_hotspot = PublicKeyBinary::from(radio_reward.hotspot_key);
             assert_eq!(actual_hotspot, expected_hotspot);
         }
+    }
+
+    #[tokio::test]
+    async fn skip_empty_radio_rewards() {
+        let coverage_points = CoveragePoints {
+            coverage_points: HashMap::new(),
+        };
+
+        let now = Utc::now();
+        let epoch = now - Duration::hours(1)..now;
+
+        assert!(coverage_points
+            .into_rewards(Decimal::ZERO, &epoch)
+            .is_none());
     }
 }
