@@ -327,10 +327,11 @@ impl CoveragePoints {
         let total_shares = self.total_shares();
         let available_poc_rewards =
             get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start) - transfer_rewards_sum;
-        if let Some(poc_rewards_per_share) = available_poc_rewards.checked_div(total_shares) {
-            let start_period = epoch.start.encode_timestamp();
-            let end_period = epoch.end.encode_timestamp();
-            Some(
+        available_poc_rewards
+            .checked_div(total_shares)
+            .map(|poc_rewards_per_share| {
+                let start_period = epoch.start.encode_timestamp();
+                let end_period = epoch.end.encode_timestamp();
                 self.coverage_points
                     .into_iter()
                     .flat_map(
@@ -383,11 +384,8 @@ impl CoveragePoints {
                             radio_reward.poc_reward > 0
                         }
                         _ => false,
-                    }),
-            )
-        } else {
-            None
-        }
+                    })
+            })
     }
 }
 
