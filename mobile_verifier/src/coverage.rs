@@ -191,7 +191,7 @@ impl CoverageObject {
                   ($1, $2, $3, $4, $5, $6)
                 "#,
             )
-            .bind(&self.uuid)
+            .bind(self.uuid)
             .bind(location as i64)
             .bind(self.indoor)
             .bind(&self.cbsd_id)
@@ -405,8 +405,10 @@ impl CoveredHexes {
     }
 }
 
+type CoverageClaimTimeKey = (String, Option<Uuid>);
+
 pub struct CoverageClaimTimeCache {
-    cache: Arc<Cache<(String, Option<Uuid>), DateTime<Utc>>>,
+    cache: Arc<Cache<CoverageClaimTimeKey, DateTime<Utc>>>,
 }
 
 impl CoverageClaimTimeCache {
