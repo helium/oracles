@@ -186,9 +186,9 @@ impl CoverageObject {
             sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
-                  (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time)
+                  (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time, inserted_at)
                 VALUES
-                  ($1, $2, $3, $4, $5, $6)
+                  ($1, $2, $3, $4, $5, $6, $7)
                 "#,
             )
             .bind(self.uuid)
@@ -197,6 +197,7 @@ impl CoverageObject {
             .bind(&self.cbsd_id)
             .bind(SignalLevel::from(hex.signal_level))
             .bind(self.coverage_claim_time)
+            .bind(Utc::now())
             .execute(&mut *transaction)
             .await?;
         }
@@ -327,13 +328,25 @@ impl CoveredHexStream for Pool<Postgres> {
             .execute(self)
             .await?;
 
-        // Is this a valid delete?
-        sqlx::query("DELETE FROM hex_coverage WHERE cbsd_id = $1 AND uuid != $2 AND coverage_claim_time < $3")
-            .bind(cbsd_id)
-            .bind(coverage_obj)
-            .bind(seniority.seniority_ts)
-            .execute(self)
-            .await?;
+        // Find the time of insertion for the currently in use coverage object
+        let current_inserted_at: DateTime<Utc> = sqlx::query_scalar(
+            "SELECT inserted_at FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2 LIMIT 1",
+        )
+        .bind(cbsd_id)
+        .bind(coverage_obj)
+        .fetch_one(self)
+        .await?;
+
+        // Delete any hex coverages that were inserted before the one we are currently using, as they are
+        // no longer useful.
+        sqlx::query(
+            "DELETE FROM hex_coverage WHERE cbsd_id = $1 AND uuid != $2 AND inserted_at < $3",
+        )
+        .bind(cbsd_id)
+        .bind(coverage_obj)
+        .bind(current_inserted_at)
+        .execute(self)
+        .await?;
 
         Ok(
             sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")

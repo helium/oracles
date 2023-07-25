@@ -12,6 +12,7 @@ CREATE TABLE hex_coverage (
        cbsd_id TEXT NOT NULL,
        signal_level signal_level NOT NULL,
        coverage_claim_time TIMESTAMPTZ NOT NULL,
+       inserted_at TIMESTAMPTZ NOT NULL,
        PRIMARY KEY (uuid, hex)
 );
 

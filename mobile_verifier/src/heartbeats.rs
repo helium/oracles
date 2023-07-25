@@ -194,6 +194,8 @@ impl HeartbeatReward {
                 SELECT MAX(t2.latest_timestamp)
                 FROM heartbeats t2
                 WHERE t2.cbsd_id = t1.cbsd_id
+                  AND truncated_timestamp >= $1
+                  AND truncated_timestamp < $2
               )
             )
             SELECT
