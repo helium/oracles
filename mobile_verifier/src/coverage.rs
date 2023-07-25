@@ -231,6 +231,7 @@ pub struct HexCoverage {
 }
 
 #[derive(Eq)]
+#[allow(dead_code)]
 struct CoverageLevel {
     cbsd_id: String,
     coverage_claim_time: DateTime<Utc>,
@@ -258,6 +259,7 @@ impl Ord for CoverageLevel {
 }
 
 impl CoverageLevel {
+    #[allow(dead_code)]
     fn coverage_points(&self) -> anyhow::Result<Decimal> {
         Ok(match (self.indoor, self.signal_level) {
             (true, SignalLevel::High) => dec!(400),
@@ -278,6 +280,7 @@ pub struct CoverageReward {
     pub hotspot: PublicKeyBinary,
 }
 
+#[allow(dead_code)]
 pub const MAX_RADIOS_PER_HEX: usize = 5;
 
 #[async_trait::async_trait]
@@ -363,11 +366,13 @@ impl CoveredHexStream for Pool<Postgres> {
 }
 
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct CoveredHexes {
     hexes: HashMap<CellIndex, [BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>; 2]>,
 }
 
 impl CoveredHexes {
+    #[allow(dead_code)]
     pub async fn aggregate_coverage<E>(
         &mut self,
         hotspot: &PublicKeyBinary,
@@ -402,6 +407,7 @@ impl CoveredHexes {
     }
 
     /// Returns the radios that should be rewarded for giving coverage.
+    #[allow(dead_code)]
     pub fn into_iter(self) -> impl Iterator<Item = CoverageReward> {
         self.hexes
             .into_values()

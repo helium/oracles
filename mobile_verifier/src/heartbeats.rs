@@ -26,21 +26,17 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
 pub struct HeartbeatKey {
-    coverage_object: Uuid,
     hotspot_key: PublicKeyBinary,
     cbsd_id: String,
     cell_type: CellType,
-    latest_timestamp: DateTime<Utc>,
 }
 
 impl From<HeartbeatKey> for HeartbeatReward {
     fn from(value: HeartbeatKey) -> Self {
         Self {
-            coverage_object: value.coverage_object,
             hotspot_key: value.hotspot_key,
             cbsd_id: value.cbsd_id,
             reward_weight: value.cell_type.reward_weight(),
-            latest_timestamp: value.latest_timestamp,
         }
     }
 }
@@ -135,18 +131,20 @@ impl HeartbeatDaemon {
         ));
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
-            let coverage_claim_time = coverage_claim_time_cache
-                .fetch_coverage_claim_time(
-                    &heartbeat.cbsd_id,
-                    &heartbeat.coverage_object,
-                    &mut transaction,
-                )
-                .await?;
+            if heartbeat.coverage_object.is_some() {
+                let coverage_claim_time = coverage_claim_time_cache
+                    .fetch_coverage_claim_time(
+                        &heartbeat.cbsd_id,
+                        &heartbeat.coverage_object,
+                        &mut transaction,
+                    )
+                    .await?;
+                heartbeat
+                    .update_seniority(coverage_claim_time, &self.seniority_sink, &mut transaction)
+                    .await?;
+            }
 
             heartbeat.write(&self.heartbeat_sink).await?;
-            heartbeat
-                .update_seniority(coverage_claim_time, &self.seniority_sink, &mut transaction)
-                .await?;
 
             let key = (
                 heartbeat.cbsd_id.clone(),
@@ -170,11 +168,9 @@ impl HeartbeatDaemon {
 }
 
 pub struct HeartbeatReward {
-    pub coverage_object: Uuid,
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
     pub reward_weight: Decimal,
-    pub latest_timestamp: DateTime<Utc>,
 }
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
@@ -187,33 +183,18 @@ impl HeartbeatReward {
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
         sqlx::query_as::<_, HeartbeatKey>(
             r#"
-            WITH coverage_objs AS (
-              SELECT t1.cbsd_id, t1.coverage_object, t1.latest_timestamp
-              FROM heartbeats t1
-              WHERE t1.latest_timestamp = (
-                SELECT MAX(t2.latest_timestamp)
-                FROM heartbeats t2
-                WHERE t2.cbsd_id = t1.cbsd_id
-                  AND truncated_timestamp >= $1
-                  AND truncated_timestamp < $2
-              )
-            )
             SELECT
               hotspot_key,
               heartbeats.cbsd_id,
-              cell_type,
-              coverage_objs.coverage_object,
-              coverage_objs.latest_timestamp,
-            FROM heartbeats
-              JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id
+              cell_type
+            FROM
+              heartbeats
             WHERE truncated_timestamp >= $1
             	AND truncated_timestamp < $2
             GROUP BY
               heartbeats.cbsd_id,
               hotspot_key,
               cell_type,
-              coverage_objs.coverage_object,
-              coverage_objs.latest_timestamp,
             HAVING count(*) >= $3
             "#,
         )
@@ -459,7 +440,8 @@ async fn validate_heartbeat(
     }
 
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
-        return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
+        return Ok((cell_type, proto::HeartbeatValidity::Valid));
+        // return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
     };
 
     let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await? else {
