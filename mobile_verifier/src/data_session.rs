@@ -144,10 +144,10 @@ pub async fn data_sessions_to_dc<'a>(
 
 pub async fn clear_hotspot_data_sessions(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    reward_period: &Range<DateTime<Utc>>,
+    timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("delete from hotspot_data_transfer_sessions where received_timestamp < $1")
-        .bind(reward_period.end)
+        .bind(timestamp)
         .execute(&mut *tx)
         .await?;
     Ok(())

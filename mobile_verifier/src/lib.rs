@@ -4,6 +4,7 @@ mod heartbeats;
 mod reward_shares;
 mod settings;
 mod speedtests;
+mod speedtests_average;
 mod subscriber_location;
 mod telemetry;
 

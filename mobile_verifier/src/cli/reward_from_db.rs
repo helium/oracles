@@ -1,7 +1,7 @@
 use crate::{
     heartbeats::HeartbeatReward,
     reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares},
-    speedtests::{Average, SpeedtestAverages},
+    speedtests_average::SpeedtestAverages,
     Settings,
 };
 use anyhow::Result;
@@ -39,8 +39,9 @@ impl Cmd {
             .await?;
 
         let heartbeats = HeartbeatReward::validated(&pool, &epoch);
-        let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let reward_shares = PocShares::aggregate(heartbeats, speedtests.clone()).await?;
+        let speedtest_averages =
+            SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
+        let reward_shares = PocShares::aggregate(heartbeats, &speedtest_averages).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
@@ -62,11 +63,11 @@ impl Cmd {
         }
         let rewards: Vec<_> = owner_rewards.into_iter().collect();
         let mut multiplier_count = HashMap::<_, usize>::new();
-        let speedtest_multipliers: Vec<_> = speedtests
-            .speedtests
+        let speedtest_multipliers: Vec<_> = speedtest_averages
+            .averages
             .into_iter()
-            .map(|(pub_key, avg)| {
-                let reward_multiplier = Average::from(&avg).reward_multiplier();
+            .map(|(pub_key, average)| {
+                let reward_multiplier = average.reward_multiplier;
                 *multiplier_count.entry(reward_multiplier).or_default() += 1;
                 (pub_key, reward_multiplier)
             })
