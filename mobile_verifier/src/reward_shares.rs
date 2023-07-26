@@ -334,51 +334,16 @@ impl CoveragePoints {
                 let end_period = epoch.end.encode_timestamp();
                 self.coverage_points
                     .into_iter()
-                    .flat_map(
-                        move |(
+                    .flat_map(move |(hotspot_key, hotspot_points)| {
+                        radio_points_into_rewards(
                             hotspot_key,
-                            HotspotPoints {
-                                speedtest_multiplier,
-                                radio_points,
-                            },
-                        )| {
-                            radio_points.into_iter().map(
-                                move |(
-                                    cbsd_id,
-                                    RadioPoints {
-                                        heartbeat_multiplier,
-                                        points,
-                                    },
-                                )| {
-                                    let poc_reward = poc_rewards_per_share
-                                        * speedtest_multiplier
-                                        * heartbeat_multiplier
-                                        * points;
-                                    let hotspot_key: Vec<u8> = hotspot_key.clone().into();
-                                    proto::MobileRewardShare {
-                                        start_period,
-                                        end_period,
-                                        reward: Some(
-                                            proto::mobile_reward_share::Reward::RadioReward(
-                                                proto::RadioReward {
-                                                    hotspot_key,
-                                                    cbsd_id,
-                                                    poc_reward: poc_reward
-                                                        .round_dp_with_strategy(
-                                                            0,
-                                                            RoundingStrategy::ToZero,
-                                                        )
-                                                        .to_u64()
-                                                        .unwrap_or(0),
-                                                    ..Default::default()
-                                                },
-                                            ),
-                                        ),
-                                    }
-                                },
-                            )
-                        },
-                    )
+                            start_period,
+                            end_period,
+                            poc_rewards_per_share,
+                            hotspot_points.speedtest_multiplier,
+                            hotspot_points.radio_points.into_iter(),
+                        )
+                    })
                     .filter(|mobile_reward| match mobile_reward.reward {
                         Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
                             radio_reward.poc_reward > 0
@@ -386,6 +351,57 @@ impl CoveragePoints {
                         _ => false,
                     })
             })
+    }
+}
+
+fn radio_points_into_rewards(
+    hotspot_key: PublicKeyBinary,
+    start_period: u64,
+    end_period: u64,
+    poc_rewards_per_share: Decimal,
+    speedtest_multiplier: Decimal,
+    radio_points: impl Iterator<Item = (String, RadioPoints)>,
+) -> impl Iterator<Item = proto::MobileRewardShare> {
+    radio_points.map(move |(cbsd_id, radio_points)| {
+        new_radio_reward(
+            cbsd_id,
+            &hotspot_key,
+            start_period,
+            end_period,
+            poc_rewards_per_share,
+            radio_points.heartbeat_multiplier,
+            speedtest_multiplier,
+            radio_points.points,
+        )
+    })
+}
+
+fn new_radio_reward(
+    cbsd_id: String,
+    hotspot_key: &PublicKeyBinary,
+    start_period: u64,
+    end_period: u64,
+    poc_rewards_per_share: Decimal,
+    heartbeat_multiplier: Decimal,
+    speedtest_multiplier: Decimal,
+    points: Decimal,
+) -> proto::MobileRewardShare {
+    let poc_reward = poc_rewards_per_share * speedtest_multiplier * heartbeat_multiplier * points;
+    let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+    proto::MobileRewardShare {
+        start_period,
+        end_period,
+        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+            proto::RadioReward {
+                hotspot_key,
+                cbsd_id,
+                poc_reward: poc_reward
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0),
+                ..Default::default()
+            },
+        )),
     }
 }
 
