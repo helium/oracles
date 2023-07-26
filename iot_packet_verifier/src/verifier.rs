@@ -19,6 +19,7 @@ use tokio::{
     task::JoinError,
     time::{sleep_until, Duration, Instant},
 };
+use tracing::debug;
 
 pub struct Verifier<D, C> {
     pub debiter: D,
@@ -64,13 +65,17 @@ where
         tokio::pin!(reports);
 
         while let Some(report) = reports.next().await {
+            debug!(%report.received_timestamp, "Processing packet report");
+
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
 
+            debug!(%report.oui, "Fetching payer");
             let payer = self
                 .config_server
                 .fetch_org(report.oui, &mut org_cache)
                 .await
                 .map_err(VerificationError::ConfigError)?;
+            debug!(%payer, "Debiting payer");
             let remaining_balance = self
                 .debiter
                 .debit_if_sufficient(&payer, debit_amount)
@@ -78,10 +83,14 @@ where
                 .map_err(VerificationError::DebitError)?;
 
             if let Some(remaining_balance) = remaining_balance {
+                debug!(%debit_amount, "Adding debit amount to pending burns");
+
                 pending_burns
                     .add_burned_amount(&payer, debit_amount)
                     .await
                     .map_err(VerificationError::BurnError)?;
+
+                debug!("Writing valid packet report");
                 valid_packets
                     .write(ValidPacket {
                         packet_timestamp: report.timestamp(),
@@ -94,12 +103,14 @@ where
                     .map_err(VerificationError::ValidPacketWriterError)?;
 
                 if remaining_balance < minimum_allowed_balance {
+                    debug!(%report.oui, "Disabling org");
                     self.config_server
                         .disable_org(report.oui)
                         .await
                         .map_err(VerificationError::ConfigError)?;
                 }
             } else {
+                debug!("Writing invalid packet report");
                 invalid_packets
                     .write(InvalidPacket {
                         payload_size: report.payload_size,

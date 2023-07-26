@@ -21,6 +21,7 @@ use tokio::{
     signal,
     sync::{mpsc::Receiver, Mutex},
 };
+use tracing::debug;
 
 struct Daemon {
     pool: Pool<Postgres>,
@@ -68,7 +69,9 @@ impl Daemon {
                 &self.invalid_packets,
             )
             .await?;
+        debug!("Committing transaction");
         transaction.commit().await?;
+        debug!("Committing files");
         self.valid_packets.commit().await?;
         self.invalid_packets.commit().await?;
 
