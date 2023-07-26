@@ -87,6 +87,7 @@ impl Debiter for InstantBurnedBalance {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
+        _trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, ()> {
         let map = self.0.lock().await;
         let balance = map.get(payer).unwrap();

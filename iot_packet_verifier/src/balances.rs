@@ -73,6 +73,7 @@ where
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
+        trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, S::Error> {
         let mut balances = self.balances.lock().await;
 
@@ -83,8 +84,12 @@ where
         } else {
             let balance = balances.get_mut(payer).unwrap();
 
-            // If the balance is not sufficient, check to see if it has been increased
             if balance.balance < amount + balance.burned {
+                return Ok(None);
+            }
+
+            if balance.balance < amount + balance.burned + trigger_balance_check_threshold {
+                // If the balance is not sufficient, check to see if it has been increased
                 balance.balance = self.solana.payer_balance(payer).await?;
             }
 
