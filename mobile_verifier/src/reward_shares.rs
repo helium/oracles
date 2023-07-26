@@ -1,7 +1,6 @@
+use crate::speedtests_average::SpeedtestAverages;
 use crate::{
-    data_session::HotspotMap,
-    heartbeats::HeartbeatReward,
-    speedtests::{Average, SpeedtestAverages},
+    data_session::HotspotMap, heartbeats::HeartbeatReward, speedtests_average::SpeedtestAverage,
     subscriber_location::SubscriberValidatedLocations,
 };
 
@@ -219,17 +218,17 @@ pub struct PocShares {
 }
 
 impl PocShares {
-    pub async fn aggregate(
+    pub async fn aggregate<'a>(
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
-        speedtests: SpeedtestAverages,
+        averages: &SpeedtestAverages,
     ) -> Result<Self, sqlx::Error> {
         let mut poc_shares = Self::default();
         let mut heartbeats = std::pin::pin!(heartbeats);
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
-            let speedmultiplier = speedtests
-                .get_average(&heartbeat.hotspot_key)
-                .as_ref()
-                .map_or(Decimal::ZERO, Average::reward_multiplier);
+            let speedmultiplier = averages
+                .averages
+                .get(&heartbeat.hotspot_key)
+                .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
             *poc_shares
                 .hotspot_shares
                 .entry(heartbeat.hotspot_key)
@@ -326,14 +325,15 @@ mod test {
         data_session,
         data_session::HotspotDataSession,
         heartbeats::HeartbeatReward,
-        speedtests::{Speedtest, SpeedtestAverages},
+        speedtests::Speedtest,
+        speedtests_average::{SpeedtestAverage, SpeedtestAverages},
         subscriber_location::SubscriberValidatedLocations,
     };
     use chrono::{Duration, Utc};
     use futures::stream;
     use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
     use prost::Message;
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::HashMap;
 
     fn valid_shares() -> RadioShares {
         let mut radio_shares: HashMap<String, Decimal> = Default::default();
@@ -536,8 +536,9 @@ mod test {
             .reward_weight()
     }
 
-    fn acceptable_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+    fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            pubkey,
             timestamp,
             upload_speed: bytes_per_s(10),
             download_speed: bytes_per_s(100),
@@ -545,8 +546,9 @@ mod test {
         }
     }
 
-    fn degraded_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+    fn degraded_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            pubkey,
             timestamp,
             upload_speed: bytes_per_s(5),
             download_speed: bytes_per_s(60),
@@ -554,8 +556,9 @@ mod test {
         }
     }
 
-    fn failed_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+    fn failed_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            pubkey,
             timestamp,
             upload_speed: bytes_per_s(1),
             download_speed: bytes_per_s(20),
@@ -563,8 +566,9 @@ mod test {
         }
     }
 
-    fn poor_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+    fn poor_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            pubkey,
             timestamp,
             upload_speed: bytes_per_s(2),
             download_speed: bytes_per_s(40),
@@ -611,19 +615,21 @@ mod test {
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
-            acceptable_speedtest(last_timestamp),
-            acceptable_speedtest(timestamp),
+            acceptable_speedtest(g1.clone(), last_timestamp),
+            acceptable_speedtest(g1.clone(), timestamp),
         ];
         let g2_speedtests = vec![
-            acceptable_speedtest(last_timestamp),
-            acceptable_speedtest(timestamp),
+            acceptable_speedtest(g2.clone(), last_timestamp),
+            acceptable_speedtest(g2.clone(), timestamp),
         ];
-        let mut speedtests = HashMap::new();
-        speedtests.insert(g1.clone(), VecDeque::from(g1_speedtests));
-        speedtests.insert(g2.clone(), VecDeque::from(g2_speedtests));
-        let speedtest_avgs = SpeedtestAverages { speedtests };
+        let g1_average = SpeedtestAverage::from(&g1_speedtests);
+        let g2_average = SpeedtestAverage::from(&g2_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(g1.clone(), g1_average);
+        averages.insert(g2.clone(), g2_average);
+        let speedtest_avgs = SpeedtestAverages { averages };
 
-        let rewards = PocShares::aggregate(stream::iter(heartbeats).map(Ok), speedtest_avgs)
+        let rewards = PocShares::aggregate(stream::iter(heartbeats).map(Ok), &speedtest_avgs)
             .await
             .unwrap();
 
@@ -779,44 +785,56 @@ mod test {
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
         let gw1_speedtests = vec![
-            acceptable_speedtest(last_speedtest),
-            acceptable_speedtest(timestamp),
+            acceptable_speedtest(gw1.clone(), last_speedtest),
+            acceptable_speedtest(gw1.clone(), timestamp),
         ];
         let gw2_speedtests = vec![
-            acceptable_speedtest(last_speedtest),
-            acceptable_speedtest(timestamp),
+            acceptable_speedtest(gw2.clone(), last_speedtest),
+            acceptable_speedtest(gw2.clone(), timestamp),
         ];
         let gw3_speedtests = vec![
-            acceptable_speedtest(last_speedtest),
-            acceptable_speedtest(timestamp),
+            acceptable_speedtest(gw3.clone(), last_speedtest),
+            acceptable_speedtest(gw3.clone(), timestamp),
         ];
         let gw4_speedtests = vec![
-            acceptable_speedtest(last_speedtest),
-            acceptable_speedtest(timestamp),
+            acceptable_speedtest(gw4.clone(), last_speedtest),
+            acceptable_speedtest(gw4.clone(), timestamp),
         ];
         let gw5_speedtests = vec![
-            degraded_speedtest(last_speedtest),
-            degraded_speedtest(timestamp),
+            degraded_speedtest(gw5.clone(), last_speedtest),
+            degraded_speedtest(gw5.clone(), timestamp),
         ];
         let gw6_speedtests = vec![
-            failed_speedtest(last_speedtest),
-            failed_speedtest(timestamp),
+            failed_speedtest(gw6.clone(), last_speedtest),
+            failed_speedtest(gw6.clone(), timestamp),
         ];
-        let gw7_speedtests = vec![poor_speedtest(last_speedtest), poor_speedtest(timestamp)];
-        let mut speedtests = HashMap::new();
-        speedtests.insert(gw1, VecDeque::from(gw1_speedtests));
-        speedtests.insert(gw2, VecDeque::from(gw2_speedtests));
-        speedtests.insert(gw3, VecDeque::from(gw3_speedtests));
-        speedtests.insert(gw4, VecDeque::from(gw4_speedtests));
-        speedtests.insert(gw5, VecDeque::from(gw5_speedtests));
-        speedtests.insert(gw6, VecDeque::from(gw6_speedtests));
-        speedtests.insert(gw7, VecDeque::from(gw7_speedtests));
-        let speedtest_avgs = SpeedtestAverages { speedtests };
+        let gw7_speedtests = vec![
+            poor_speedtest(gw7.clone(), last_speedtest),
+            poor_speedtest(gw7.clone(), timestamp),
+        ];
+
+        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let gw3_average = SpeedtestAverage::from(&gw3_speedtests);
+        let gw4_average = SpeedtestAverage::from(&gw4_speedtests);
+        let gw5_average = SpeedtestAverage::from(&gw5_speedtests);
+        let gw6_average = SpeedtestAverage::from(&gw6_speedtests);
+        let gw7_average = SpeedtestAverage::from(&gw7_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+        averages.insert(gw2.clone(), gw2_average);
+        averages.insert(gw3.clone(), gw3_average);
+        averages.insert(gw4.clone(), gw4_average);
+        averages.insert(gw5.clone(), gw5_average);
+        averages.insert(gw6.clone(), gw6_average);
+        averages.insert(gw7.clone(), gw7_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
 
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        for mobile_reward in PocShares::aggregate(stream::iter(heartbeats).map(Ok), speedtest_avgs)
+        for mobile_reward in PocShares::aggregate(stream::iter(heartbeats).map(Ok), &speedtest_avgs)
             .await
             .unwrap()
             .into_rewards(Decimal::ZERO, &epoch)

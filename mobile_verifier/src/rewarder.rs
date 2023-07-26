@@ -2,7 +2,7 @@ use crate::{
     data_session,
     heartbeats::HeartbeatReward,
     reward_shares::{MapperShares, PocShares, TransferRewards},
-    speedtests::SpeedtestAverages,
+    speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry,
 };
 use anyhow::bail;
@@ -139,9 +139,9 @@ impl Rewarder {
         );
 
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
-        let speedtests = SpeedtestAverages::validated(&self.pool, reward_period.end).await?;
-
-        let poc_rewards = PocShares::aggregate(heartbeats, speedtests).await?;
+        let averages =
+            SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
+        let poc_rewards = PocShares::aggregate(heartbeats, &averages).await?;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
