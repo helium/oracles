@@ -5,7 +5,10 @@ use crate::{
 use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 
 /// Caches balances fetched from the solana chain and debits made by the
@@ -77,31 +80,26 @@ where
     ) -> Result<Option<u64>, S::Error> {
         let mut balances = self.balances.lock().await;
 
-        let balance = if !balances.contains_key(payer) {
-            let new_balance = self.solana.payer_balance(payer).await?;
-            balances.insert(payer.clone(), Balance::new(new_balance));
-            balances.get_mut(payer).unwrap()
-        } else {
-            let balance = balances.get_mut(payer).unwrap();
+        // Fetch the balance if we haven't seen the payer before
+        if let Entry::Vacant(balance) = balances.entry(payer.clone()) {
+            let balance = balance.insert(Balance::new(self.solana.payer_balance(payer).await?));
+            return Ok((balance.balance >= amount).then(|| {
+                balance.burned += amount;
+                balance.balance - amount
+            }));
+        }
 
-            if balance.balance < amount + balance.burned {
-                return Ok(None);
+        let balance = balances.get_mut(payer).unwrap();
+        match balance.balance.checked_sub(amount + balance.burned) {
+            Some(remaining_balance) => {
+                if remaining_balance < trigger_balance_check_threshold {
+                    balance.balance = self.solana.payer_balance(payer).await?;
+                }
+                balance.burned += amount;
+                Ok(Some(balance.balance - balance.burned))
             }
-
-            if balance.balance < amount + balance.burned + trigger_balance_check_threshold {
-                // If the balance is not sufficient, check to see if it has been increased
-                balance.balance = self.solana.payer_balance(payer).await?;
-            }
-
-            balance
-        };
-
-        Ok(if balance.balance >= amount + balance.burned {
-            balance.burned += amount;
-            Some(balance.balance - balance.burned)
-        } else {
-            None
-        })
+            None => Ok(None),
+        }
     }
 }
 
