@@ -16,6 +16,7 @@ use futures_util::TryFutureExt;
 use iot_config::client::OrgClient;
 use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
+use tracing::debug;
 use std::{sync::Arc, time::Duration};
 use tokio::{
     signal,
@@ -68,7 +69,9 @@ impl Daemon {
                 &self.invalid_packets,
             )
             .await?;
+        debug!("Committing transaction");
         transaction.commit().await?;
+        debug!("Committing files");
         self.valid_packets.commit().await?;
         self.invalid_packets.commit().await?;
 
