@@ -8,7 +8,6 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket};
 use iot_config::client::{ClientError, OrgClient};
 use solana::SolanaNetwork;
-use tracing::debug;
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::Infallible,
@@ -20,6 +19,7 @@ use tokio::{
     task::JoinError,
     time::{sleep_until, Duration, Instant},
 };
+use tracing::debug;
 
 pub struct Verifier<D, C> {
     pub debiter: D,
