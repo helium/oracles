@@ -219,7 +219,6 @@ pub struct SpeedtestAverages {
 }
 
 impl SpeedtestAverages {
-
     pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<SpeedtestAverage> {
         self.averages.get(pub_key).cloned()
     }
