@@ -219,10 +219,6 @@ pub struct SpeedtestAverages {
 }
 
 impl SpeedtestAverages {
-    #[allow(dead_code)]
-    pub fn into_iter(self) -> impl IntoIterator<Item = SpeedtestAverage> {
-        self.averages.into_values()
-    }
 
     pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<SpeedtestAverage> {
         self.averages.get(pub_key).cloned()
