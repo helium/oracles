@@ -139,9 +139,9 @@ impl Rewarder {
         );
 
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
-        let averages =
+        let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
-        let poc_rewards = PocShares::aggregate(heartbeats, &averages).await?;
+        let poc_rewards = PocShares::aggregate(heartbeats, &speedtest_averages).await?;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)

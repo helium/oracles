@@ -2,8 +2,7 @@ use crate::speedtests::{self, Speedtest};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::SpeedtestAvgValidity;
-use helium_proto::services::poc_mobile::{self as proto};
+use helium_proto::services::poc_mobile::{self as proto, SpeedtestAvgValidity};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::FromRow;
@@ -224,7 +223,6 @@ impl SpeedtestAverages {
         self.averages.into_values()
     }
 
-    #[allow(dead_code)]
     pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<SpeedtestAverage> {
         self.averages.get(pub_key).cloned()
     }

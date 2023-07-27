@@ -220,14 +220,14 @@ pub struct PocShares {
 impl PocShares {
     pub async fn aggregate<'a>(
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
-        averages: &SpeedtestAverages,
+        speedtest_averages: &SpeedtestAverages,
     ) -> Result<Self, sqlx::Error> {
         let mut poc_shares = Self::default();
         let mut heartbeats = std::pin::pin!(heartbeats);
         while let Some(heartbeat) = heartbeats.next().await.transpose()? {
-            let speedmultiplier = averages
-                .averages
-                .get(&heartbeat.hotspot_key)
+            let speedmultiplier = speedtest_averages
+                .get_average(&heartbeat.hotspot_key)
+                .as_ref()
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
             *poc_shares
                 .hotspot_shares
