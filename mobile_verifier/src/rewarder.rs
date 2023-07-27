@@ -2,7 +2,7 @@ use crate::{
     data_session,
     heartbeats::HeartbeatReward,
     reward_shares::{MapperShares, PocShares, TransferRewards},
-    speedtests_average::SpeedtestAverages,
+    speedtests_average::{SpeedtestAverages, SPEEDTEST_LAPSE},
     subscriber_location, telemetry,
 };
 use anyhow::bail;
@@ -217,6 +217,14 @@ impl Rewarder {
         // Clear the heartbeats table of old heartbeats:
         sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
             .bind(reward_period.start)
+            .execute(&mut transaction)
+            .await?;
+
+        // Clear the speedtests table of tests older than hours defined by SPEEDTEST_LAPSE
+        // We end up with tests older than we need here but erroring on side of caution
+        // and the volume of tests is low so no big impact there
+        sqlx::query("DELETE FROM speedtests timestamp < $1")
+            .bind(Utc::now() - Duration::hours(SPEEDTEST_LAPSE))
             .execute(&mut transaction)
             .await?;
 

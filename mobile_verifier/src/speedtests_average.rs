@@ -9,7 +9,7 @@ use sqlx::FromRow;
 
 use std::collections::HashMap;
 
-const SPEEDTEST_LAPSE: i64 = 48;
+pub const SPEEDTEST_LAPSE: i64 = 48;
 const MIN_DOWNLOAD: u64 = mbps(30);
 const MIN_UPLOAD: u64 = mbps(2);
 const MAX_LATENCY: u32 = 100;
