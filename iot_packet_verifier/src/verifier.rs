@@ -270,14 +270,14 @@ pub enum ConfigServerError {
 
 pub struct CachedOrgClient {
     client: OrgClient,
-    cache: HashMap<u64, bool>,
+    locked_cache: HashMap<u64, bool>,
 }
 
 impl CachedOrgClient {
     pub fn new(client: OrgClient) -> Self {
         Self {
             client,
-            cache: HashMap::new(),
+            locked_cache: HashMap::new(),
         }
     }
 }
@@ -289,9 +289,9 @@ impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
     async fn fetch_org(
         &self,
         oui: u64,
-        cache: &mut HashMap<u64, PublicKeyBinary>,
+        oui_cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, Self::Error> {
-        if let Entry::Vacant(e) = cache.entry(oui) {
+        if let Entry::Vacant(e) = oui_cache.entry(oui) {
             let pubkey = PublicKeyBinary::from(
                 self.lock()
                     .await
@@ -304,23 +304,23 @@ impl ConfigServer for Arc<Mutex<CachedOrgClient>> {
             );
             e.insert(pubkey);
         }
-        Ok(cache.get(&oui).unwrap().clone())
+        Ok(oui_cache.get(&oui).unwrap().clone())
     }
 
     async fn disable_org(&self, oui: u64) -> Result<(), Self::Error> {
         let mut cached_client = self.lock().await;
-        if *cached_client.cache.entry(oui).or_insert(true) {
+        if *cached_client.locked_cache.entry(oui).or_insert(true) {
             cached_client.client.disable(oui).await?;
-            *cached_client.cache.get_mut(&oui).unwrap() = false;
+            *cached_client.locked_cache.get_mut(&oui).unwrap() = false;
         }
         Ok(())
     }
 
     async fn enable_org(&self, oui: u64) -> Result<(), Self::Error> {
         let mut cached_client = self.lock().await;
-        if !*cached_client.cache.entry(oui).or_insert(false) {
+        if !*cached_client.locked_cache.entry(oui).or_insert(false) {
             cached_client.client.enable(oui).await?;
-            *cached_client.cache.get_mut(&oui).unwrap() = true;
+            *cached_client.locked_cache.get_mut(&oui).unwrap() = true;
         }
         Ok(())
     }
