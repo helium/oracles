@@ -111,12 +111,10 @@ impl Rewarder {
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM speedtests WHERE timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
+            if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM speedtests WHERE timestamp >= $1")
+                .bind(reward_period.end)
+                .fetch_one(&self.pool)
+                .await?
                 == 0
             {
                 tracing::info!("No speedtests found past reward period");
