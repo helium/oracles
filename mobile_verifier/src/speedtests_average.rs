@@ -133,6 +133,7 @@ impl SpeedtestAverage {
     }
 
     #[allow(dead_code)]
+    // function used by tests only
     pub fn tier(&self) -> SpeedtestTier {
         calculate_tier(
             self.window_size,

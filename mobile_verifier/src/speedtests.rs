@@ -174,7 +174,7 @@ pub async fn aggregate_epoch_speedtests<'a>(
     exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
 ) -> Result<EpochSpeedTests, sqlx::Error> {
     let mut speedtests = EpochSpeedTests::new();
-    // pull the last N most recent speedtests up until the epoch end for each pubkey
+    // pull the last N most recent speedtests from prior to the epoch end for each pubkey
     let mut rows = sqlx::query_as::<_, Speedtest>(
         "select * from (
             SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, row_number()
@@ -185,7 +185,7 @@ pub async fn aggregate_epoch_speedtests<'a>(
     .bind(epoch_end)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
     .fetch(exec);
-    // iterate over the returned rows, collate the speedtest based on pubkey
+    // collate the returned speedtests based on pubkey
     while let Some(speedtest) = rows.try_next().await? {
         speedtests
             .entry(speedtest.pubkey.clone())

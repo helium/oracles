@@ -218,7 +218,7 @@ pub struct PocShares {
 }
 
 impl PocShares {
-    pub async fn aggregate<'a>(
+    pub async fn aggregate(
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtest_averages: &SpeedtestAverages,
     ) -> Result<Self, sqlx::Error> {

@@ -39,8 +39,9 @@ impl Cmd {
             .await?;
 
         let heartbeats = HeartbeatReward::validated(&pool, &epoch);
-        let averages = SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
-        let reward_shares = PocShares::aggregate(heartbeats, &averages).await?;
+        let speedtest_averages =
+            SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
+        let reward_shares = PocShares::aggregate(heartbeats, &speedtest_averages).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
@@ -62,7 +63,7 @@ impl Cmd {
         }
         let rewards: Vec<_> = owner_rewards.into_iter().collect();
         let mut multiplier_count = HashMap::<_, usize>::new();
-        let speedtest_multipliers: Vec<_> = averages
+        let speedtest_multipliers: Vec<_> = speedtest_averages
             .averages
             .into_iter()
             .map(|(pub_key, average)| {

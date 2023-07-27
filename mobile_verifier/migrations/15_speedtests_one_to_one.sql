@@ -6,10 +6,13 @@ CREATE TABLE speedtests_migration (
        latency integer,
        timestamp timestamptz NOT NULL
 );
+CREATE INDEX idx_speedtests_pubkey on speedtests_migration (pubkey);
 
-insert into speedtests_migration (pubkey, upload_speed, download_speed, latency, timestamp)
-select id, (st).upload_speed, (st).download_speed, (st).latency, (st).timestamp
-from (select id, unnest(speedtests) as st from speedtests) as tmp;
+INSERT INTO speedtests_migration (pubkey, upload_speed, download_speed, latency, timestamp)
+SELECT id, (st).upload_speed, (st).download_speed, (st).latency, (st).timestamp
+FROM (select id, unnest(speedtests) as st from speedtests) as tmp;
 
 ALTER TABLE speedtests RENAME TO speedtests_old;
 ALTER TABLE speedtests_migration RENAME TO speedtests;
+
+
