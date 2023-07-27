@@ -118,21 +118,15 @@ impl SpeedtestDaemon {
                         // below is an o(n) op but the vec size will be limited
                         // todo: consider alternative
                         if !gateways_to_average.contains(&pubkey) {
-                            &gateways_to_average.push(pubkey)
-                        } else {
-                            &()
-                        };
-                    };
+                            gateways_to_average.push(pubkey)
+                        }
+                    }
                     Ok((gateways_to_average, transaction))
                 },
             )
             .await?;
-        // commit the speedtests to the db
         transaction.commit().await?;
 
-        // the processed speedtests are committed to the DB
-        // so now calculate the latest averages for each gateway
-        // from which we recevied a new and valid speedtest
         let averages_transaction = self.pool.begin().await?;
         stream::iter(gateways_to_average)
             .map(anyhow::Ok)
@@ -150,8 +144,8 @@ impl SpeedtestDaemon {
             .await?
             .commit()
             .await?;
-
         self.file_sink.commit().await?;
+
         Ok(())
     }
 }
