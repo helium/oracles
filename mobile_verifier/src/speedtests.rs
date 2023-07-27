@@ -19,10 +19,10 @@ pub type EpochSpeedTests = HashMap<PublicKeyBinary, Vec<Speedtest>>;
 #[sqlx(type_name = "speedtest")]
 pub struct Speedtest {
     pub pubkey: PublicKeyBinary,
-    pub timestamp: DateTime<Utc>,
     pub upload_speed: i64,
     pub download_speed: i64,
     pub latency: i32,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl Speedtest {
@@ -89,6 +89,10 @@ impl SpeedtestDaemon {
         &self,
         file_info_stream: FileInfoStream<CellSpeedtestIngestReport>,
     ) -> anyhow::Result<()> {
+        tracing::info!(
+            "Processing speedtest file {}",
+            file_info_stream.file_info.key
+        );
         let mut transaction = self.pool.begin().await?;
         // process the speedtest reports from the file, if valid insert to the db
         // collect a list of pubkeys from valid reports

@@ -1,13 +1,13 @@
 
 CREATE TABLE speedtests_migration (
-       id TEXT NOT NULL,
+       pubkey text NOT NULL,
        upload_speed bigint,
        download_speed bigint,
        latency integer,
-       timestamp TIMESTAMP NOT NULL
+       timestamp timestamptz NOT NULL
 );
 
-insert into speedtests_migration (id, upload_speed, download_speed, latency, timestamp)
+insert into speedtests_migration (pubkey, upload_speed, download_speed, latency, timestamp)
 select id, (st).upload_speed, (st).download_speed, (st).latency, (st).timestamp
 from (select id, unnest(speedtests) as st from speedtests) as tmp;
 
