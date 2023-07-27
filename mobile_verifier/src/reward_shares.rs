@@ -369,9 +369,8 @@ fn radio_points_into_rewards(
             start_period,
             end_period,
             poc_rewards_per_share,
-            radio_points.heartbeat_multiplier,
             speedtest_multiplier,
-            radio_points.points,
+            radio_points,
         )
     })
 }
@@ -382,11 +381,13 @@ fn new_radio_reward(
     start_period: u64,
     end_period: u64,
     poc_rewards_per_share: Decimal,
-    heartbeat_multiplier: Decimal,
     speedtest_multiplier: Decimal,
-    points: Decimal,
+    radio_points: RadioPoints,
 ) -> proto::MobileRewardShare {
-    let poc_reward = poc_rewards_per_share * speedtest_multiplier * heartbeat_multiplier * points;
+    let poc_reward = poc_rewards_per_share
+        * speedtest_multiplier
+        * radio_points.heartbeat_multiplier
+        * radio_points.points;
     let hotspot_key: Vec<u8> = hotspot_key.clone().into();
     proto::MobileRewardShare {
         start_period,
