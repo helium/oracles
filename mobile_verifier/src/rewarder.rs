@@ -112,7 +112,7 @@ impl Rewarder {
             }
 
             if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM speedtests WHERE latest_timestamp >= $1",
+                "SELECT COUNT(*) FROM speedtests WHERE timestamp >= $1",
             )
             .bind(reward_period.end)
             .fetch_one(&self.pool)
@@ -223,7 +223,7 @@ impl Rewarder {
         // Clear the speedtests table of tests older than hours defined by SPEEDTEST_LAPSE
         // We end up with tests older than we need here but erroring on side of caution
         // and the volume of tests is low so no big impact there
-        sqlx::query("DELETE FROM speedtests timestamp < $1")
+        sqlx::query("DELETE FROM speedtests where timestamp < $1")
             .bind(Utc::now() - Duration::hours(SPEEDTEST_LAPSE))
             .execute(&mut transaction)
             .await?;
