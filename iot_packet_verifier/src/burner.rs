@@ -75,18 +75,22 @@ where
             .await
             .map_err(BurnError::SolanaError)?;
 
-        // Now that we have successfully executed the burn and are no long in
-        // sync land, we can remove the amount burned.
+        // Now that we have successfully executed the burn and are no longer in
+        // sync land, we can remove the amount burned:
         self.pending_burns
             .subtract_burned_amount(&payer, amount)
             .await
             .map_err(BurnError::SqlError)?;
 
         let mut balance_lock = self.balances.lock().await;
-        let balances = balance_lock.get_mut(&payer).unwrap();
-        balances.burned -= amount;
-        // Zero the balance in order to force a reset:
-        balances.balance = 0;
+        let payer_account = balance_lock.get_mut(&payer).unwrap();
+        payer_account.burned -= amount;
+        // Reset the balance of the payer:
+        payer_account.balance = self
+            .solana
+            .payer_balance(&payer)
+            .await
+            .map_err(BurnError::SolanaError)?;
 
         metrics::counter!("burned", amount, "payer" => payer.to_string());
 
