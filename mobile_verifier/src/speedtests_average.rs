@@ -5,8 +5,6 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{self as proto, SpeedtestAvgValidity};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlx::FromRow;
-
 use std::collections::HashMap;
 
 pub const SPEEDTEST_LAPSE: i64 = 48;
@@ -213,7 +211,7 @@ impl SpeedtestTier {
     }
 }
 
-#[derive(Clone, Default, FromRow)]
+#[derive(Clone, Default)]
 pub struct SpeedtestAverages {
     pub averages: HashMap<PublicKeyBinary, SpeedtestAverage>,
 }
