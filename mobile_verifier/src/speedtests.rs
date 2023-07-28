@@ -1,5 +1,5 @@
-use crate::speedtests_average::SpeedtestAverage;
-use chrono::{DateTime, Utc};
+use crate::speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient,
     speedtest::CellSpeedtestIngestReport,
@@ -188,5 +188,16 @@ pub async fn save_speedtest_to_db(
     .bind(report.report.timestamp)
     .execute(exec)
     .await?;
+    Ok(())
+}
+
+// Clear the speedtests table of tests older than hours defined by SPEEDTEST_LAPSE
+pub async fn clear_speedtests(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM speedtests where timestamp < $1")
+        .bind(Utc::now() - Duration::hours(SPEEDTEST_LAPSE))
+        .execute(&mut *tx)
+        .await?;
     Ok(())
 }
