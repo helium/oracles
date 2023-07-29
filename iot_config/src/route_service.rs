@@ -122,6 +122,21 @@ impl RouteService {
         }
     }
 
+    async fn verify_request_signature_or_stream<'a, R>(
+        &self,
+        signer: &PublicKey,
+        request: &R,
+        id: OrgId<'a>,
+    ) -> Result<(), Status>
+    where
+        R: MsgVerify,
+    {
+        if let Ok(()) = self.verify_request_signature(signer, request, id).await {
+            return Ok(());
+        }
+        self.verify_stream_request_signature(signer, request)
+    }
+
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
         self.signing_key
             .sign(response)
@@ -418,8 +433,12 @@ impl iot_config::Route for RouteService {
         telemetry::count_request("route", "get-euis");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
-            .await?;
+        self.verify_request_signature_or_stream(
+            &signer,
+            &request,
+            OrgId::RouteId(&request.route_id),
+        )
+        .await?;
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
@@ -739,8 +758,12 @@ impl iot_config::Route for RouteService {
         telemetry::count_request("route", "list-skfs");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
-            .await?;
+        self.verify_request_signature_or_stream(
+            &signer,
+            &request,
+            OrgId::RouteId(&request.route_id),
+        )
+        .await?;
 
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
