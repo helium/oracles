@@ -389,7 +389,7 @@ impl Heartbeat {
         Ok(
             sqlx::query_scalar(
                 r#"
-                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, first_timestamp, latest_timestamp, truncated_timestamp, coverage_object)
+                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
                 latest_timestamp = EXCLUDED.latest_timestamp
@@ -400,7 +400,6 @@ impl Heartbeat {
             .bind(self.cbsd_id)
             .bind(self.hotspot_key)
             .bind(self.cell_type.unwrap())
-            .bind(self.timestamp)
             .bind(self.timestamp)
             .bind(truncated_timestamp)
             .bind(self.coverage_object)
