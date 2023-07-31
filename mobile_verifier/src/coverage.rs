@@ -127,9 +127,7 @@ impl CoverageObject {
         coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         coverage_objects.then(move |coverage_object_report| async move {
-            let validity =
-                validate_coverage_object(&coverage_object_report, auth_client).await?;
-
+            let validity = validate_coverage_object(&coverage_object_report, auth_client).await?;
             Ok(CoverageObject {
                 coverage_obj: coverage_object_report.report,
                 validity,
