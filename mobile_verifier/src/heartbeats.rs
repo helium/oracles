@@ -131,7 +131,7 @@ impl HeartbeatDaemon {
         ));
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
-            if heartbeat.coverage_object.is_some() {
+            if heartbeat.is_valid() && heartbeat.coverage_object.is_some() {
                 let coverage_claim_time = coverage_claim_time_cache
                     .fetch_coverage_claim_time(
                         &heartbeat.cbsd_id,
@@ -219,6 +219,10 @@ pub struct Heartbeat {
 }
 
 impl Heartbeat {
+    fn is_valid(&self) -> bool {
+        self.validity == proto::HeartbeatValidity::Valid
+    }
+
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
         self.timestamp.duration_trunc(Duration::hours(1))
     }
