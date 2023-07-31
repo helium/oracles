@@ -126,17 +126,14 @@ impl CoverageObject {
         auth_client: &'a AuthorizationClient,
         coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        coverage_objects.then(move |coverage_object_report| {
-            let mut auth_client = auth_client.clone();
-            async move {
-                let validity =
-                    validate_coverage_object(&coverage_object_report, &mut auth_client).await?;
+        coverage_objects.then(move |coverage_object_report| async move {
+            let validity =
+                validate_coverage_object(&coverage_object_report, auth_client).await?;
 
-                Ok(CoverageObject {
-                    coverage_obj: coverage_object_report.report,
-                    validity,
-                })
-            }
+            Ok(CoverageObject {
+                coverage_obj: coverage_object_report.report,
+                validity,
+            })
         })
     }
 
@@ -203,7 +200,7 @@ impl CoverageObject {
 
 async fn validate_coverage_object(
     coverage_object: &CoverageObjectIngestReport,
-    auth_client: &mut AuthorizationClient,
+    auth_client: &AuthorizationClient,
 ) -> anyhow::Result<CoverageObjectValidity> {
     if !auth_client
         .verify_authorized_key(&coverage_object.report.pub_key, NetworkKeyRole::MobilePcs)

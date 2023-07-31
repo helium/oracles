@@ -230,28 +230,25 @@ impl Heartbeat {
         epoch: &'a Range<DateTime<Utc>>,
         max_distance: f64,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        heartbeats.then(move |heartbeat_report| {
-            let mut gateway_client = gateway_client.clone();
-            async move {
-                let (cell_type, validity) = validate_heartbeat(
-                    &heartbeat_report,
-                    &mut gateway_client,
-                    covered_hex_cache,
-                    epoch,
-                    max_distance,
-                )
-                .await?;
-                Ok(Heartbeat {
-                    coverage_object: heartbeat_report.report.coverage_object(),
-                    hotspot_key: heartbeat_report.report.pubkey,
-                    cbsd_id: heartbeat_report.report.cbsd_id,
-                    timestamp: heartbeat_report.received_timestamp,
-                    lat: heartbeat_report.report.lat,
-                    lon: heartbeat_report.report.lon,
-                    cell_type,
-                    validity,
-                })
-            }
+        heartbeats.then(move |heartbeat_report| async move {
+            let (cell_type, validity) = validate_heartbeat(
+                &heartbeat_report,
+                gateway_client,
+                covered_hex_cache,
+                epoch,
+                max_distance,
+            )
+            .await?;
+            Ok(Heartbeat {
+                coverage_object: heartbeat_report.report.coverage_object(),
+                hotspot_key: heartbeat_report.report.pubkey,
+                cbsd_id: heartbeat_report.report.cbsd_id,
+                timestamp: heartbeat_report.received_timestamp,
+                lat: heartbeat_report.report.lat,
+                lon: heartbeat_report.report.lon,
+                cell_type,
+                validity,
+            })
         })
     }
 
@@ -412,7 +409,7 @@ impl Heartbeat {
 /// Validate a heartbeat in the given epoch.
 async fn validate_heartbeat(
     heartbeat: &CellHeartbeatIngestReport,
-    gateway_client: &mut GatewayClient,
+    gateway_client: &GatewayClient,
     coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
     max_distance: f64,
