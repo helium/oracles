@@ -7,10 +7,8 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
-    traits::TimestampEncode,
+    coverage::CoverageObjectIngestReport, file_info_poller::FileInfoStream,
+    file_sink::FileSinkClient, traits::TimestampEncode,
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
@@ -119,13 +117,7 @@ impl CoverageDaemon {
 }
 
 pub struct CoverageObject {
-    pub_key: PublicKeyBinary,
-    signature: Vec<u8>,
-    cbsd_id: String,
-    uuid: Uuid,
-    indoor: bool,
-    coverage_claim_time: DateTime<Utc>,
-    coverage: Vec<RadioHexSignalLevel>,
+    coverage_obj: file_store::coverage::CoverageObject,
     validity: CoverageObjectValidity,
 }
 
@@ -141,13 +133,7 @@ impl CoverageObject {
                     validate_coverage_object(&coverage_object_report, &mut auth_client).await?;
 
                 Ok(CoverageObject {
-                    cbsd_id: coverage_object_report.report.cbsd_id,
-                    uuid: coverage_object_report.report.uuid,
-                    indoor: coverage_object_report.report.indoor,
-                    coverage_claim_time: coverage_object_report.report.coverage_claim_time,
-                    coverage: coverage_object_report.report.coverage,
-                    pub_key: coverage_object_report.report.pub_key,
-                    signature: coverage_object_report.report.signature,
+                    coverage_obj: coverage_object_report.report,
                     validity,
                 })
             }
@@ -159,13 +145,22 @@ impl CoverageObject {
             .write(
                 proto::CoverageObjectV1 {
                     coverage_object: Some(proto::CoverageObjectReqV1 {
-                        pub_key: self.pub_key.clone().into(),
-                        uuid: Vec::from(self.uuid.into_bytes()),
-                        cbsd_id: self.cbsd_id.clone(),
-                        coverage_claim_time: self.coverage_claim_time.encode_timestamp(),
-                        indoor: self.indoor,
-                        coverage: self.coverage.clone().into_iter().map(Into::into).collect(),
-                        signature: self.signature.clone(),
+                        pub_key: self.coverage_obj.pub_key.clone().into(),
+                        uuid: Vec::from(self.coverage_obj.uuid.into_bytes()),
+                        cbsd_id: self.coverage_obj.cbsd_id.clone(),
+                        coverage_claim_time: self
+                            .coverage_obj
+                            .coverage_claim_time
+                            .encode_timestamp(),
+                        indoor: self.coverage_obj.indoor,
+                        coverage: self
+                            .coverage_obj
+                            .coverage
+                            .clone()
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        signature: self.coverage_obj.signature.clone(),
                     }),
                     validity: self.validity as i32,
                 },
@@ -181,7 +176,7 @@ impl CoverageObject {
             return Ok(false);
         }
 
-        for hex in self.coverage {
+        for hex in self.coverage_obj.coverage {
             let location: u64 = hex.location.into();
             sqlx::query(
                 r#"
@@ -191,12 +186,12 @@ impl CoverageObject {
                   ($1, $2, $3, $4, $5, $6, $7)
                 "#,
             )
-            .bind(self.uuid)
+            .bind(self.coverage_obj.uuid)
             .bind(location as i64)
-            .bind(self.indoor)
-            .bind(&self.cbsd_id)
+            .bind(self.coverage_obj.indoor)
+            .bind(&self.coverage_obj.cbsd_id)
             .bind(SignalLevel::from(hex.signal_level))
-            .bind(self.coverage_claim_time)
+            .bind(self.coverage_obj.coverage_claim_time)
             .bind(Utc::now())
             .execute(&mut *transaction)
             .await?;
@@ -462,7 +457,7 @@ impl CoverageClaimTimeCache {
         } else {
             let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
                 r#"
-                SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2
+                SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2 LIMIT 1
                 "#,
             )
             .bind(cbsd_id)
@@ -506,7 +501,7 @@ impl CoveredHexCache {
         if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
             return Ok(Some(covered_hexes.clone()));
         }
-        let Some(cbsd_id) = sqlx::query_scalar("SELECT cbsd_id FROM hex_coverage WHERE uuid = $1")
+        let Some(cbsd_id) = sqlx::query_scalar("SELECT cbsd_id FROM hex_coverage WHERE uuid = $1 LIMIT 1")
             .bind(uuid)
             .fetch_optional(&self.pool)
             .await?

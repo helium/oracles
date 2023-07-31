@@ -293,7 +293,7 @@ impl Heartbeat {
 
         let (seniority_ts, update_reason) = if let Some(prev_seniority) =
             sqlx::query_as::<_, crate::coverage::Seniority>(
-                "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC",
+                "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC LIMIT 1",
             )
             .bind(&self.cbsd_id)
             .fetch_optional(&mut *exec)
