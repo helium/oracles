@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use file_store::file_sink::FileSinkClient;
 use file_store::mobile_session::{
-    DataTransferSessionIngestReport, DataTransferSessionReq, InvalidDataTransferIngestReport,
+    DataTransferSessionIngestReport, InvalidDataTransferIngestReport,
 };
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -11,22 +11,12 @@ use helium_proto::services::poc_mobile::{
     InvalidDataTransferIngestReportV1,
 };
 use mobile_config::{
-    client::{AuthorizationClient, ClientError, GatewayClient},
+    client::{AuthorizationClient, GatewayClient},
     gateway_info::GatewayInfoResolver,
 };
 use sqlx::{Postgres, Transaction};
 
-#[derive(thiserror::Error, Debug)]
-pub enum AccumulationError {
-    #[error("file store error: {0}")]
-    FileStoreError(#[from] file_store::Error),
-    #[error("sqlx error: {0}")]
-    SqlxError(#[from] sqlx::Error),
-    #[error("reports stream dropped")]
-    ReportsStreamDropped,
-    #[error("config client error: {0}")]
-    ConfigClientError(#[from] ClientError),
-}
+use crate::event_ids;
 
 pub async fn accumulate_sessions(
     gateway_client: &GatewayClient,
@@ -35,7 +25,7 @@ pub async fn accumulate_sessions(
     invalid_data_session_report_sink: &FileSinkClient,
     curr_file_ts: DateTime<Utc>,
     reports: impl Stream<Item = DataTransferSessionIngestReport>,
-) -> Result<(), AccumulationError> {
+) -> anyhow::Result<()> {
     tokio::pin!(reports);
 
     while let Some(report) = reports.next().await {
@@ -51,7 +41,7 @@ pub async fn accumulate_sessions(
             continue;
         }
 
-        let report_validity = verify_report(gateway_client, auth_client, &report.report).await;
+        let report_validity = verify_report(conn, gateway_client, auth_client, &report).await?;
         if report_validity != DataTransferIngestReportStatus::Valid {
             write_invalid_report(invalid_data_session_report_sink, report_validity, report).await?;
             continue;
@@ -80,17 +70,29 @@ pub async fn accumulate_sessions(
 }
 
 async fn verify_report(
+    tx: &mut Transaction<'_, Postgres>,
     gateway_client: &GatewayClient,
     auth_client: &AuthorizationClient,
-    report: &DataTransferSessionReq,
-) -> DataTransferIngestReportStatus {
-    if !verify_gateway(gateway_client, &report.data_transfer_usage.pub_key).await {
-        return DataTransferIngestReportStatus::InvalidGatewayKey;
+    report: &DataTransferSessionIngestReport,
+) -> anyhow::Result<DataTransferIngestReportStatus> {
+    if event_ids::is_duplicate(tx, report.report.data_transfer_usage.event_id.clone()).await? {
+        return Ok(DataTransferIngestReportStatus::Duplicate);
+    } else {
+        event_ids::record(
+            tx,
+            report.report.data_transfer_usage.event_id.clone(),
+            report.received_timestamp,
+        )
+        .await?;
+    }
+
+    if !verify_gateway(gateway_client, &report.report.data_transfer_usage.pub_key).await {
+        return Ok(DataTransferIngestReportStatus::InvalidGatewayKey);
     };
-    if !verify_known_routing_key(auth_client, &report.pub_key).await {
-        return DataTransferIngestReportStatus::InvalidRoutingKey;
+    if !verify_known_routing_key(auth_client, &report.report.pub_key).await {
+        return Ok(DataTransferIngestReportStatus::InvalidRoutingKey);
     };
-    DataTransferIngestReportStatus::Valid
+    Ok(DataTransferIngestReportStatus::Valid)
 }
 
 async fn verify_gateway(gateway_client: &GatewayClient, public_key: &PublicKeyBinary) -> bool {

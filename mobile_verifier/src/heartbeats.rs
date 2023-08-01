@@ -213,6 +213,8 @@ impl Heartbeat {
                     validity: self.validity as i32,
                     timestamp: self.timestamp.timestamp() as u64,
                     coverage_object: Vec::with_capacity(0), // Placeholder so the project compiles
+                    lat: 0.0,
+                    lon: 0.0,
                 },
                 &[("validity", self.validity.as_str_name())],
             )
