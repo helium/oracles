@@ -246,7 +246,7 @@ mod db {
         INSERT INTO files_processed(file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4)
         "#)
     .bind(file_info.key)
-    .bind(file_info.file_type.to_str())
+    .bind(&file_info.prefix)
     .bind(file_info.timestamp)
     .bind(Utc::now())
     .execute(tx)

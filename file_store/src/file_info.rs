@@ -8,7 +8,7 @@ use std::{fmt, io, os::unix::fs::MetadataExt, path::Path, str::FromStr};
 #[derive(Debug, Clone, Serialize)]
 pub struct FileInfo {
     pub key: String,
-    pub file_type: FileType,
+    pub prefix: String,
     pub timestamp: DateTime<Utc>,
     pub size: usize,
 }
@@ -24,13 +24,13 @@ impl FromStr for FileInfo {
         let cap = RE
             .captures(s)
             .ok_or_else(|| DecodeError::file_info("failed to decode file info"))?;
-        let file_type = FileType::from_str(&cap[1])?;
+        let prefix = cap[1].to_owned();
         let timestamp = u64::from_str(&cap[2])
             .map_err(|_| DecodeError::file_info("failed to decode timestamp"))?
             .to_timestamp_millis()?;
         Ok(Self {
             key,
-            file_type,
+            prefix,
             timestamp,
             size: 0,
         })
@@ -59,7 +59,7 @@ impl From<(FileType, DateTime<Utc>)> for FileInfo {
     fn from(v: (FileType, DateTime<Utc>)) -> Self {
         Self {
             key: format!("{}.{}.gz", &v.0, v.1.timestamp_millis()),
-            file_type: v.0,
+            prefix: v.0.to_string(),
             timestamp: v.1,
             size: 0,
         }
