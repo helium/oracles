@@ -13,7 +13,7 @@ use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
-use h3o::LatLng;
+// use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
@@ -132,16 +132,22 @@ impl HeartbeatDaemon {
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             if heartbeat.is_valid() && heartbeat.coverage_object.is_some() {
-                let coverage_claim_time = coverage_claim_time_cache
+                if let Some(coverage_claim_time) = coverage_claim_time_cache
                     .fetch_coverage_claim_time(
                         &heartbeat.cbsd_id,
                         &heartbeat.coverage_object,
                         &mut transaction,
                     )
-                    .await?;
-                heartbeat
-                    .update_seniority(coverage_claim_time, &self.seniority_sink, &mut transaction)
-                    .await?;
+                    .await?
+                {
+                    heartbeat
+                        .update_seniority(
+                            coverage_claim_time,
+                            &self.seniority_sink,
+                            &mut transaction,
+                        )
+                        .await?;
+                }
             }
 
             heartbeat.write(&self.heartbeat_sink).await?;
@@ -414,9 +420,9 @@ impl Heartbeat {
 async fn validate_heartbeat(
     heartbeat: &CellHeartbeatIngestReport,
     gateway_client: &GatewayClient,
-    coverage_cache: &CoveredHexCache,
+    _coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
-    max_distance: f64,
+    _max_distance: f64,
 ) -> anyhow::Result<(Option<CellType>, proto::HeartbeatValidity)> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
         Some(ty) => Some(ty),
@@ -439,9 +445,9 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
     }
 
+    /*
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
-        return Ok((cell_type, proto::HeartbeatValidity::Valid));
-        // return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
+        return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
     };
 
     let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await? else {
@@ -459,6 +465,7 @@ async fn validate_heartbeat(
     if coverage.max_distance_km(latlng) > max_distance {
         return Ok((cell_type, proto::HeartbeatValidity::TooFarFromCoverage));
     }
+    */
 
     Ok((cell_type, proto::HeartbeatValidity::Valid))
 }

@@ -445,37 +445,41 @@ impl CoverageClaimTimeCache {
         cbsd_id: &str,
         coverage_object: &Option<Uuid>,
         exec: &mut Transaction<'_, Postgres>,
-    ) -> Result<DateTime<Utc>, sqlx::Error> {
+    ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
         let key = (cbsd_id.to_string(), *coverage_object);
         if let Some(coverage_claim_time) = self.cache.get(&key).await {
-            Ok(*coverage_claim_time)
+            Ok(Some(*coverage_claim_time))
         } else {
-            let coverage_claim_time: DateTime<Utc> = sqlx::query_scalar(
+            let coverage_claim_time: Option<DateTime<Utc>> = sqlx::query_scalar(
                 r#"
                 SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2 LIMIT 1
                 "#,
             )
             .bind(cbsd_id)
             .bind(coverage_object)
-            .fetch_one(&mut *exec)
+            .fetch_optional(&mut *exec)
             .await?;
-            self.cache
-                .insert(
-                    key,
-                    coverage_claim_time,
-                    std::time::Duration::from_secs(60 * 60 * 24),
-                )
-                .await;
+            if let Some(coverage_claim_time) = coverage_claim_time {
+                self.cache
+                    .insert(
+                        key,
+                        coverage_claim_time,
+                        std::time::Duration::from_secs(60 * 60 * 24),
+                    )
+                    .await;
+            }
             Ok(coverage_claim_time)
         }
     }
 }
 
+#[allow(dead_code)]
 pub struct CoveredHexCache {
     pool: Pool<Postgres>,
     covered_hexes: Arc<Cache<Uuid, CachedCoverage>>,
 }
 
+#[allow(dead_code)]
 impl CoveredHexCache {
     pub fn new(pool: &Pool<Postgres>) -> Self {
         let cache = Arc::new(Cache::new());
@@ -524,11 +528,13 @@ impl CoveredHexCache {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct CachedCoverage {
     pub cbsd_id: String,
     coverage: Vec<CellIndex>,
 }
 
+#[allow(dead_code)]
 impl CachedCoverage {
     pub fn max_distance_km(&self, latlng: LatLng) -> f64 {
         self.coverage.iter().fold(0.0, |curr_max, curr_cov| {
