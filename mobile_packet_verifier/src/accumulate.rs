@@ -70,20 +70,13 @@ pub async fn accumulate_sessions(
 }
 
 async fn verify_report(
-    tx: &mut Transaction<'_, Postgres>,
+    txn: &mut Transaction<'_, Postgres>,
     gateway_client: &GatewayClient,
     auth_client: &AuthorizationClient,
     report: &DataTransferSessionIngestReport,
 ) -> anyhow::Result<DataTransferIngestReportStatus> {
-    if event_ids::is_duplicate(tx, report.report.data_transfer_usage.event_id.clone()).await? {
+    if is_duplicate(txn, report).await? {
         return Ok(DataTransferIngestReportStatus::Duplicate);
-    } else {
-        event_ids::record(
-            tx,
-            report.report.data_transfer_usage.event_id.clone(),
-            report.received_timestamp,
-        )
-        .await?;
     }
 
     if !verify_gateway(gateway_client, &report.report.data_transfer_usage.pub_key).await {
@@ -113,6 +106,18 @@ async fn verify_known_routing_key(
         Ok(res) => res,
         Err(_err) => false,
     }
+}
+
+async fn is_duplicate(
+    txn: &mut Transaction<'_, Postgres>,
+    report: &DataTransferSessionIngestReport,
+) -> anyhow::Result<bool> {
+    event_ids::is_duplicate(
+        txn,
+        report.report.data_transfer_usage.event_id.clone(),
+        report.received_timestamp,
+    )
+    .await
 }
 
 async fn write_invalid_report(

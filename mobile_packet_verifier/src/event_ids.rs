@@ -4,29 +4,16 @@ use sqlx::{Pool, Postgres, Transaction};
 use crate::settings::Settings;
 
 pub async fn is_duplicate(
-    tx: &mut Transaction<'_, Postgres>,
-    event_id: String,
-) -> anyhow::Result<bool> {
-    let result =
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM event_ids WHERE event_id = $1)")
-            .bind(event_id.clone())
-            .fetch_one(&mut *tx)
-            .await?;
-
-    Ok(result)
-}
-
-pub async fn record(
-    tx: &mut Transaction<'_, Postgres>,
+    txn: &mut Transaction<'_, Postgres>,
     event_id: String,
     received_timestamp: DateTime<Utc>,
-) -> anyhow::Result<()> {
-    sqlx::query("INSERT INTO event_ids(event_id, received_timestamp) VALUES($1,$2)")
+) -> anyhow::Result<bool> {
+    sqlx::query("INSERT INTO event_ids(event_id, received_timestamp) VALUES($1, $2) ON CONFLICT (event_id) DO NOTHING")
         .bind(event_id)
         .bind(received_timestamp)
-        .execute(tx)
+        .execute(txn)
         .await
-        .map(|_| ())
+        .map(|result| result.rows_affected() > 0)
         .map_err(anyhow::Error::from)
 }
 

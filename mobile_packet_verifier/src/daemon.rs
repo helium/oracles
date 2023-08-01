@@ -181,7 +181,7 @@ impl Cmd {
             invalid_sessions,
         );
 
-        let event_id_purger = EventIdPurger::from_settings(pool, &settings);
+        let event_id_purger = EventIdPurger::from_settings(pool, settings);
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),
