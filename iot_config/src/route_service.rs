@@ -594,8 +594,12 @@ impl iot_config::Route for RouteService {
         telemetry::count_request("route", "get-devaddr-ranges");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
-            .await?;
+        self.verify_request_signature_or_stream(
+            &signer,
+            &request,
+            OrgId::RouteId(&request.route_id),
+        )
+        .await?;
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
         let pool = self.pool.clone();
