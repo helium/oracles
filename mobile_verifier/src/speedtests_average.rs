@@ -38,17 +38,14 @@ where
         let mut sum_latency = 0;
 
         for Speedtest {
-            pubkey, // eww!
-            upload_speed,
-            download_speed,
-            latency,
+            report,
             ..
         } in speedtests_without_lapsed(iter.into_iter(), Duration::hours(SPEEDTEST_LAPSE))
         {
-            id = pubkey.as_ref().to_vec(); // eww!
-            sum_upload += *upload_speed as u64;
-            sum_download += *download_speed as u64;
-            sum_latency += *latency as u32;
+            id = report.pubkey.as_ref().to_vec(); // eww!
+            sum_upload += report.upload_speed as u64;
+            sum_download += report.download_speed as u64;
+            sum_latency += report.latency as u32;
             window_size += 1;
         }
 
@@ -111,10 +108,10 @@ impl SpeedtestAverage {
                         Duration::hours(SPEEDTEST_LAPSE),
                     )
                     .map(|st| proto::Speedtest {
-                        timestamp: st.timestamp.timestamp() as u64,
-                        upload_speed_bps: st.upload_speed as u64,
-                        download_speed_bps: st.download_speed as u64,
-                        latency_ms: st.latency as u32,
+                        timestamp: st.report.timestamp.timestamp() as u64,
+                        upload_speed_bps: st.report.upload_speed as u64,
+                        download_speed_bps: st.report.download_speed as u64,
+                        latency_ms: st.report.latency as u32,
                     })
                     .collect(),
                     validity: self.validity as i32,
@@ -221,11 +218,11 @@ impl SpeedtestAverages {
         self.averages.get(pub_key).cloned()
     }
 
-    pub async fn aggregate_epoch_averages<'a>(
+    pub async fn aggregate_epoch_averages(
         epoch_end: DateTime<Utc>,
-        exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
+        pool: &sqlx::Pool<sqlx::Postgres>,
     ) -> Result<SpeedtestAverages, sqlx::Error> {
-        let averages: EpochAverages = speedtests::aggregate_epoch_speedtests(epoch_end, exec)
+        let averages: EpochAverages = speedtests::aggregate_epoch_speedtests(epoch_end, pool)
             .await?
             .into_iter()
             .map(|(pub_key, speedtests)| {
@@ -280,9 +277,9 @@ fn speedtests_without_lapsed<'a>(
 ) -> impl Iterator<Item = &'a Speedtest> {
     let mut last_timestamp = None;
     iterable.take_while(move |speedtest| match last_timestamp {
-        Some(ts) if ts - speedtest.timestamp > lapse_cliff => false,
+        Some(ts) if ts - speedtest.report.timestamp > lapse_cliff => false,
         None | Some(_) => {
-            last_timestamp = Some(speedtest.timestamp);
+            last_timestamp = Some(speedtest.report.timestamp);
             true
         }
     })
@@ -296,13 +293,14 @@ const fn mbps(mbps: u64) -> u64 {
 mod test {
     use super::*;
     use chrono::TimeZone;
+    use file_store::speedtest::CellSpeedtest;
 
     fn parse_dt(dt: &str) -> DateTime<Utc> {
         Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
             .expect("unable_to_parse")
     }
 
-    fn bytes_per_s(mbps: i64) -> i64 {
+    fn bytes_per_s(mbps: u64) -> u64 {
         mbps * 125000
     }
 
@@ -369,50 +367,50 @@ mod test {
             .expect("failed gw1 parse");
 
         vec![
-            Speedtest::new(gw1.clone(), parse_dt("2022-08-02 18:00:00 +0000"), 0, 0, 0),
-            Speedtest::new(
+            default_cellspeedtest(gw1.clone(), parse_dt("2022-08-02 18:00:00 +0000"), 0, 0, 0),
+            default_cellspeedtest(
                 gw1.clone(),
                 parse_dt("2022-08-02 12:00:00 +0000"),
                 bytes_per_s(20),
                 bytes_per_s(150),
                 70,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 gw1.clone(),
                 parse_dt("2022-08-02 6:00:00 +0000"),
                 bytes_per_s(10),
                 bytes_per_s(118),
                 50,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 gw1.clone(),
                 parse_dt("2022-08-02 0:00:00 +0000"),
                 bytes_per_s(30),
                 bytes_per_s(112),
                 40,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 gw1.clone(),
                 parse_dt("2022-08-02 0:00:00 +0000"),
                 bytes_per_s(15),
                 bytes_per_s(90),
                 10,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 gw1.clone(),
                 parse_dt("2022-08-01 18:00:00 +0000"),
                 bytes_per_s(20),
                 bytes_per_s(130),
                 10,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 gw1.clone(),
                 parse_dt("2022-08-01 12:00:00 +0000"),
                 bytes_per_s(10),
                 bytes_per_s(100),
                 30,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 gw1,
                 parse_dt("2022-08-01 6:00:00 +0000"),
                 bytes_per_s(30),
@@ -432,21 +430,21 @@ mod test {
             .parse()
             .expect("failed owner parse");
         let disjoint_speedtests = vec![
-            Speedtest::new(
+            default_cellspeedtest(
                 pubkey.clone(),
                 parse_dt("2022-08-02 6:00:00 +0000"),
                 bytes_per_s(20),
                 bytes_per_s(150),
                 70,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 pubkey.clone(),
                 parse_dt("2022-08-01 18:00:00 +0000"),
                 bytes_per_s(10),
                 bytes_per_s(118),
                 50,
             ),
-            Speedtest::new(
+            default_cellspeedtest(
                 pubkey,
                 parse_dt("2022-08-01 12:00:00 +0000"),
                 bytes_per_s(30),
@@ -460,4 +458,25 @@ mod test {
         assert_eq!(contiguous_speedtests.count(), 8);
         assert_eq!(disjoint_speedtests.count(), 1);
     }
+
+    fn default_cellspeedtest(
+        pubkey: PublicKeyBinary,
+        timestamp: DateTime<Utc>,
+        upload_speed: u64,
+        download_speed: u64,
+        latency: u32,
+    ) -> Speedtest {
+        Speedtest{
+            report:
+            CellSpeedtest {
+            pubkey,
+            timestamp,
+            upload_speed,
+            download_speed,
+            latency,
+            serial: "".to_string(),
+        }
+    }
+    }
 }
+

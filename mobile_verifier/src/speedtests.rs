@@ -1,46 +1,41 @@
-use crate::speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE};
-use chrono::{DateTime, Duration, Utc};
+use crate::speedtests_average::SpeedtestAverage;
+use chrono::{DateTime, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient,
-    speedtest::CellSpeedtestIngestReport,
+    file_info_poller::FileInfoStream,
+    file_sink::FileSinkClient,
+    speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
 };
-use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use futures::{
+    stream::{Stream, StreamExt, TryStreamExt},
+    TryFutureExt,
+};
 use helium_crypto::PublicKeyBinary;
 use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
-use sqlx::{FromRow, Postgres, Transaction, Type};
-use std::collections::HashMap;
+use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
+use std::{collections::HashMap, ops::Range, pin::pin};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 
 pub type EpochSpeedTests = HashMap<PublicKeyBinary, Vec<Speedtest>>;
 
-#[derive(Debug, Clone, Type, FromRow)]
-#[sqlx(type_name = "speedtest")]
+#[derive(Debug, Clone)]
 pub struct Speedtest {
-    pub pubkey: PublicKeyBinary,
-    pub upload_speed: i64,
-    pub download_speed: i64,
-    pub latency: i32,
-    pub timestamp: DateTime<Utc>,
+    pub report: CellSpeedtest,
 }
 
-impl Speedtest {
-    #[cfg(test)]
-    pub fn new(
-        pubkey: PublicKeyBinary,
-        timestamp: DateTime<Utc>,
-        upload_speed: i64,
-        download_speed: i64,
-        latency: i32,
-    ) -> Self {
-        Self {
-            pubkey,
-            timestamp,
-            upload_speed,
-            download_speed,
-            latency,
-        }
+impl FromRow<'_, PgRow> for Speedtest {
+    fn from_row(row: &PgRow) -> sqlx::Result<Speedtest> {
+        Ok(Self {
+            report: CellSpeedtest {
+                pubkey: row.get::<PublicKeyBinary, &str>("pubkey"),
+                serial: row.get::<String, &str>("serial"),
+                upload_speed: row.get::<i64, &str>("upload_speed") as u64,
+                download_speed: row.get::<i64, &str>("download_speed") as u64,
+                timestamp: row.get::<DateTime<Utc>, &str>("timestamp"),
+                latency: row.get::<i32, &str>("latency") as u32,
+            },
+        })
     }
 }
 
@@ -87,46 +82,81 @@ impl SpeedtestDaemon {
 
     async fn process_file(
         &self,
-        file_info_stream: FileInfoStream<CellSpeedtestIngestReport>,
+        file: FileInfoStream<CellSpeedtestIngestReport>,
     ) -> anyhow::Result<()> {
-        tracing::info!(
-            "Processing speedtest file {}",
-            file_info_stream.file_info.key
-        );
+        tracing::info!("Processing speedtest file {}", file.file_info.key);
+
         let mut transaction = self.pool.begin().await?;
-        // process the speedtest reports from the file, if valid insert to the db
-        // and recalcuate a new average
-        file_info_stream
-            .into_stream(&mut transaction)
-            .await?
-            .map(anyhow::Ok)
-            .try_fold(transaction, |mut transaction, report| async {
-                let pubkey = report.report.pubkey.clone();
-                if self
-                    .gateway_client
-                    .resolve_gateway_info(&pubkey.clone())
-                    .await
-                    .is_ok()
-                {
-                    save_speedtest_to_db(report, &mut transaction).await?;
-                    let latest_speedtests: Vec<Speedtest> =
-                        get_latest_speedtests_for_pubkey(&pubkey, &mut transaction).await?;
-                    let average = SpeedtestAverage::from(&latest_speedtests);
-                    average.write(&self.file_sink, latest_speedtests).await?;
-                }
-                Ok(transaction)
-            })
-            .await?
-            .commit()
-            .await?;
-        // db work all done, commit the reports to s3
+        let speedtests = file.into_stream(&mut transaction).await?;
+
+        let mut validated_speedtests =
+            pin!(Speedtest::validate_speedtests(&self.gateway_client, speedtests).await);
+
+        // todo, the double some is odd, what be the alternative ?
+        while let Some(Some(speedtest)) = validated_speedtests.next().await {
+            let pubkey = speedtest.report.pubkey.clone();
+            speedtest.save(&mut transaction).await?;
+            let latest_speedtests =
+                get_latest_speedtests_for_pubkey(&pubkey, &mut transaction).await?;
+            let average = SpeedtestAverage::from(&latest_speedtests);
+            average.write(&self.file_sink, latest_speedtests).await?;
+        }
         self.file_sink.commit().await?;
+        transaction.commit().await?;
 
         Ok(())
     }
 }
 
-pub async fn get_latest_speedtests_for_pubkey<'a>(
+impl Speedtest {
+    pub async fn validate_speedtests<'a>(
+        gateway_client: &'a GatewayClient,
+        speedtests: impl Stream<Item = CellSpeedtestIngestReport> + 'a,
+    ) -> impl Stream<Item = Option<Self>> + 'a {
+        speedtests.then(move |report| {
+            let pubkey = report.report.pubkey.clone();
+            async move {
+                if gateway_client
+                    .resolve_gateway_info(&pubkey.clone())
+                    .await
+                    .is_ok()
+                {
+                    Some(Speedtest {
+                        report: report.report.into(),
+                    })
+                }
+                else {
+                    None
+                }
+            }
+        })
+    }
+
+    pub async fn save(
+        &self,
+        exec: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            insert into speedtests (pubkey, upload_speed, download_speed, latency, serial, timestamp)
+            values ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(self.report.pubkey.clone())
+        .bind(self.report.upload_speed as i64)
+        .bind(self.report.download_speed as i64)
+        .bind(self.report.latency as i64)
+        .bind(self.report.latency as i64)
+        .bind(self.report.serial.clone())
+        .bind(self.report.timestamp)
+        .execute(exec)
+        .await?;
+        Ok(())
+    }
+}
+
+
+pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
@@ -147,13 +177,13 @@ pub async fn get_latest_speedtests_for_pubkey<'a>(
 
 pub async fn aggregate_epoch_speedtests<'a>(
     epoch_end: DateTime<Utc>,
-    exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
+    exec: &sqlx::Pool<sqlx::Postgres>
 ) -> Result<EpochSpeedTests, sqlx::Error> {
     let mut speedtests = EpochSpeedTests::new();
     // pull the last N most recent speedtests from prior to the epoch end for each pubkey
     let mut rows = sqlx::query_as::<_, Speedtest>(
         "select * from (
-            SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, row_number()
+            SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, serial, row_number()
             over (partition by pubkey order by timestamp desc) as count FROM speedtests where timestamp < $1
         ) as tmp
         where count < $2"
@@ -164,39 +194,19 @@ pub async fn aggregate_epoch_speedtests<'a>(
     // collate the returned speedtests based on pubkey
     while let Some(speedtest) = rows.try_next().await? {
         speedtests
-            .entry(speedtest.pubkey.clone())
+            .entry(speedtest.report.pubkey.clone())
             .or_default()
             .push(speedtest);
     }
     Ok(speedtests)
 }
 
-pub async fn save_speedtest_to_db(
-    report: CellSpeedtestIngestReport,
-    exec: &mut Transaction<'_, Postgres>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        insert into speedtests (pubkey, upload_speed, download_speed, latency, timestamp)
-        values ($1, $2, $3, $4, $5)
-        "#,
-    )
-    .bind(report.report.pubkey)
-    .bind(report.report.upload_speed as i64)
-    .bind(report.report.download_speed as i64)
-    .bind(report.report.latency as i64)
-    .bind(report.report.timestamp)
-    .execute(exec)
-    .await?;
-    Ok(())
-}
-
-// Clear the speedtests table of tests older than hours defined by SPEEDTEST_LAPSE
 pub async fn clear_speedtests(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    reward_period: &Range<DateTime<Utc>>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM speedtests where timestamp < $1")
-        .bind(Utc::now() - Duration::hours(SPEEDTEST_LAPSE))
+    sqlx::query("DELETE FROM speedtests WHERE timestamp < $1")
+        .bind(reward_period.start)
         .execute(&mut *tx)
         .await?;
     Ok(())

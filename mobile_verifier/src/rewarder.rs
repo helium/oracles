@@ -215,7 +215,7 @@ impl Rewarder {
 
         // clear out the various db tables
         heartbeats::clear_heartbeats(&mut transaction, reward_period).await?;
-        speedtests::clear_speedtests(&mut transaction).await?;
+        speedtests::clear_speedtests(&mut transaction, reward_period).await?;
         data_session::clear_hotspot_data_sessions(&mut transaction, reward_period).await?;
         // subscriber_location::clear_location_shares(&mut transaction, reward_period).await?;
 

@@ -330,6 +330,7 @@ mod test {
         subscriber_location::SubscriberValidatedLocations,
     };
     use chrono::{Duration, Utc};
+    use file_store::speedtest::CellSpeedtest;
     use futures::stream;
     use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
     use prost::Message;
@@ -526,7 +527,7 @@ mod test {
         assert_eq!(data_transfer_rewards.reward_scale().round_dp(1), dec!(0.5));
     }
 
-    fn bytes_per_s(mbps: i64) -> i64 {
+    fn bytes_per_s(mbps: u64) -> u64 {
         mbps * 125000
     }
 
@@ -538,42 +539,54 @@ mod test {
 
     fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            report: CellSpeedtest {
             pubkey,
             timestamp,
             upload_speed: bytes_per_s(10),
             download_speed: bytes_per_s(100),
             latency: 25,
+            serial: "".to_string(),
         }
+    }
     }
 
     fn degraded_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            report: CellSpeedtest {
             pubkey,
             timestamp,
             upload_speed: bytes_per_s(5),
             download_speed: bytes_per_s(60),
             latency: 60,
+            serial: "".to_string(),
         }
+    }
     }
 
     fn failed_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            report: CellSpeedtest {
             pubkey,
             timestamp,
             upload_speed: bytes_per_s(1),
             download_speed: bytes_per_s(20),
             latency: 110,
+            serial: "".to_string(),
         }
+    }
     }
 
     fn poor_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
+            report: CellSpeedtest {
             pubkey,
             timestamp,
             upload_speed: bytes_per_s(2),
             download_speed: bytes_per_s(40),
             latency: 90,
+            serial: "".to_string(),
         }
+    }
     }
 
     #[tokio::test]

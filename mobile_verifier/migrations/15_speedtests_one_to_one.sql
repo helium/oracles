@@ -4,7 +4,8 @@ CREATE TABLE speedtests_migration (
        upload_speed bigint,
        download_speed bigint,
        latency integer,
-       timestamp timestamptz NOT NULL
+       timestamp timestamptz NOT NULL,
+       inserted_at timestamptz default now()
 );
 CREATE INDEX idx_speedtests_pubkey on speedtests_migration (pubkey);
 
