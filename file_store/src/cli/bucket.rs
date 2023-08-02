@@ -53,18 +53,18 @@ pub struct FileFilter {
     /// Optional start time to look for (inclusive). Defaults to the oldest
     /// timestamp in the bucket.
     #[clap(long)]
-    after: Option<NaiveDateTime>,
+    pub after: Option<NaiveDateTime>,
     /// Optional end time to look for (exclusive). Defaults to the latest
     /// available timestamp in the bucket.
     #[clap(long)]
-    before: Option<NaiveDateTime>,
+    pub before: Option<NaiveDateTime>,
     /// The file type prefix to search for
     #[clap(long)]
-    prefix: String,
+    pub prefix: String,
 }
 
 impl FileFilter {
-    fn list(&self, store: &FileStore) -> FileInfoStream {
+    pub fn list(&self, store: &FileStore) -> FileInfoStream {
         store.list(
             self.prefix.clone(),
             self.after.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
