@@ -122,20 +122,16 @@ impl Speedtest {
                     .is_ok()
                 {
                     Some(Speedtest {
-                        report: report.report.into(),
+                        report: report.report,
                     })
-                }
-                else {
+                } else {
                     None
                 }
             }
         })
     }
 
-    pub async fn save(
-        &self,
-        exec: &mut Transaction<'_, Postgres>,
-    ) -> Result<(), sqlx::Error> {
+    pub async fn save(&self, exec: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
             insert into speedtests (pubkey, upload_speed, download_speed, latency, serial, timestamp)
@@ -154,7 +150,6 @@ impl Speedtest {
         Ok(())
     }
 }
-
 
 pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
@@ -177,7 +172,7 @@ pub async fn get_latest_speedtests_for_pubkey(
 
 pub async fn aggregate_epoch_speedtests<'a>(
     epoch_end: DateTime<Utc>,
-    exec: &sqlx::Pool<sqlx::Postgres>
+    exec: &sqlx::Pool<sqlx::Postgres>,
 ) -> Result<EpochSpeedTests, sqlx::Error> {
     let mut speedtests = EpochSpeedTests::new();
     // pull the last N most recent speedtests from prior to the epoch end for each pubkey

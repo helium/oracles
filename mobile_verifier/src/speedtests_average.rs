@@ -37,15 +37,13 @@ where
         let mut sum_download = 0;
         let mut sum_latency = 0;
 
-        for Speedtest {
-            report,
-            ..
-        } in speedtests_without_lapsed(iter.into_iter(), Duration::hours(SPEEDTEST_LAPSE))
+        for Speedtest { report, .. } in
+            speedtests_without_lapsed(iter.into_iter(), Duration::hours(SPEEDTEST_LAPSE))
         {
             id = report.pubkey.as_ref().to_vec(); // eww!
-            sum_upload += report.upload_speed as u64;
-            sum_download += report.download_speed as u64;
-            sum_latency += report.latency as u32;
+            sum_upload += report.upload_speed;
+            sum_download += report.download_speed;
+            sum_latency += report.latency;
             window_size += 1;
         }
 
@@ -109,9 +107,9 @@ impl SpeedtestAverage {
                     )
                     .map(|st| proto::Speedtest {
                         timestamp: st.report.timestamp.timestamp() as u64,
-                        upload_speed_bps: st.report.upload_speed as u64,
-                        download_speed_bps: st.report.download_speed as u64,
-                        latency_ms: st.report.latency as u32,
+                        upload_speed_bps: st.report.upload_speed,
+                        download_speed_bps: st.report.download_speed,
+                        latency_ms: st.report.latency,
                     })
                     .collect(),
                     validity: self.validity as i32,
@@ -466,17 +464,15 @@ mod test {
         download_speed: u64,
         latency: u32,
     ) -> Speedtest {
-        Speedtest{
-            report:
-            CellSpeedtest {
-            pubkey,
-            timestamp,
-            upload_speed,
-            download_speed,
-            latency,
-            serial: "".to_string(),
+        Speedtest {
+            report: CellSpeedtest {
+                pubkey,
+                timestamp,
+                upload_speed,
+                download_speed,
+                latency,
+                serial: "".to_string(),
+            },
         }
     }
-    }
 }
-

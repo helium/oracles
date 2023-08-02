@@ -540,53 +540,53 @@ mod test {
     fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             report: CellSpeedtest {
-            pubkey,
-            timestamp,
-            upload_speed: bytes_per_s(10),
-            download_speed: bytes_per_s(100),
-            latency: 25,
-            serial: "".to_string(),
+                pubkey,
+                timestamp,
+                upload_speed: bytes_per_s(10),
+                download_speed: bytes_per_s(100),
+                latency: 25,
+                serial: "".to_string(),
+            },
         }
-    }
     }
 
     fn degraded_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             report: CellSpeedtest {
-            pubkey,
-            timestamp,
-            upload_speed: bytes_per_s(5),
-            download_speed: bytes_per_s(60),
-            latency: 60,
-            serial: "".to_string(),
+                pubkey,
+                timestamp,
+                upload_speed: bytes_per_s(5),
+                download_speed: bytes_per_s(60),
+                latency: 60,
+                serial: "".to_string(),
+            },
         }
-    }
     }
 
     fn failed_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             report: CellSpeedtest {
-            pubkey,
-            timestamp,
-            upload_speed: bytes_per_s(1),
-            download_speed: bytes_per_s(20),
-            latency: 110,
-            serial: "".to_string(),
+                pubkey,
+                timestamp,
+                upload_speed: bytes_per_s(1),
+                download_speed: bytes_per_s(20),
+                latency: 110,
+                serial: "".to_string(),
+            },
         }
-    }
     }
 
     fn poor_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             report: CellSpeedtest {
-            pubkey,
-            timestamp,
-            upload_speed: bytes_per_s(2),
-            download_speed: bytes_per_s(40),
-            latency: 90,
-            serial: "".to_string(),
+                pubkey,
+                timestamp,
+                upload_speed: bytes_per_s(2),
+                download_speed: bytes_per_s(40),
+                latency: 90,
+                serial: "".to_string(),
+            },
         }
-    }
     }
 
     #[tokio::test]
