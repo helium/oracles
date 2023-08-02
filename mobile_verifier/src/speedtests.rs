@@ -135,13 +135,13 @@ impl Speedtest {
         sqlx::query(
             r#"
             insert into speedtests (pubkey, upload_speed, download_speed, latency, serial, timestamp)
-            values ($1, $2, $3, $4, $5)
+            values ($1, $2, $3, $4, $5, $6)
+            on conflict (pubkey, timestamp) do nothing
             "#,
         )
         .bind(self.report.pubkey.clone())
         .bind(self.report.upload_speed as i64)
         .bind(self.report.download_speed as i64)
-        .bind(self.report.latency as i64)
         .bind(self.report.latency as i64)
         .bind(self.report.serial.clone())
         .bind(self.report.timestamp)
