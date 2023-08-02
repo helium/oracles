@@ -7,7 +7,7 @@ use crate::{
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient,
-    heartbeat::CellHeartbeatIngestReport,
+    heartbeat::{CellHeartbeatIngestReport, CellHeartbeat},
 };
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -137,7 +137,7 @@ impl HeartbeatDaemon {
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             let coverage_claim_time = coverage_claim_time_cache
                 .fetch_coverage_claim_time(
-                    &heartbeat.cbsd_id,
+                    &heartbeat.heartbeat.cbsd_id,
                     &heartbeat.coverage_object,
                     &mut transaction,
                 )
@@ -149,7 +149,7 @@ impl HeartbeatDaemon {
                 .await?;
 
             let key = (
-                heartbeat.cbsd_id.clone(),
+                heartbeat.heartbeat.cbsd_id.clone(),
                 heartbeat.truncated_timestamp()?,
                 heartbeat.coverage_object,
             );
@@ -227,19 +227,15 @@ impl HeartbeatReward {
 
 #[derive(Clone)]
 pub struct Heartbeat {
-    pub cbsd_id: String,
+    pub heartbeat: CellHeartbeat,
     pub cell_type: Option<CellType>,
-    pub hotspot_key: PublicKeyBinary,
-    pub timestamp: DateTime<Utc>,
     pub coverage_object: Option<Uuid>,
-    pub lat: f64,
-    pub lon: f64,
     pub validity: proto::HeartbeatValidity,
 }
 
 impl Heartbeat {
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
-        self.timestamp.duration_trunc(Duration::hours(1))
+        self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
     pub fn validate_heartbeats<'a>(
@@ -262,11 +258,7 @@ impl Heartbeat {
                 .await?;
                 Ok(Heartbeat {
                     coverage_object: heartbeat_report.report.coverage_object(),
-                    hotspot_key: heartbeat_report.report.pubkey,
-                    cbsd_id: heartbeat_report.report.cbsd_id,
-                    timestamp: heartbeat_report.received_timestamp,
-                    lat: heartbeat_report.report.lat,
-                    lon: heartbeat_report.report.lon,
+                    heartbeat: heartbeat_report.report,
                     cell_type,
                     validity,
                 })
@@ -278,16 +270,16 @@ impl Heartbeat {
         heartbeats
             .write(
                 proto::Heartbeat {
-                    cbsd_id: self.cbsd_id.clone(),
-                    pub_key: self.hotspot_key.clone().into(),
+                    cbsd_id: self.heartbeat.cbsd_id.clone(),
+                    pub_key: self.heartbeat.pubkey.clone().into(),
                     reward_multiplier: self
                         .cell_type
                         .map_or(0.0, |ct| ct.reward_weight().to_f32().unwrap_or(0.0)),
                     cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
                     validity: self.validity as i32,
-                    timestamp: self.timestamp.timestamp() as u64,
-                    lat: self.lat,
-                    lon: self.lon,
+                    timestamp: self.heartbeat.timestamp.timestamp() as u64,
+                    lat: self.heartbeat.lat,
+                    lon: self.heartbeat.lon,
                     coverage_object: self
                         .coverage_object
                         .map(|x| Vec::from(x.into_bytes()))
@@ -312,9 +304,9 @@ impl Heartbeat {
 
         let (seniority_ts, update_reason) = if let Some(prev_seniority) =
             sqlx::query_as::<_, crate::coverage::Seniority>(
-                "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC",
+                "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC LIMIT 1",
             )
-            .bind(&self.cbsd_id)
+            .bind(&self.heartbeat.cbsd_id)
             .fetch_optional(&mut *exec)
             .await?
         {
@@ -323,11 +315,11 @@ impl Heartbeat {
                     coverage_claim_time,
                     InsertOrUpdate::Insert(proto::SeniorityUpdateReason::NewCoverageClaimTime),
                 )
-            } else if self.timestamp - prev_seniority.last_heartbeat > Duration::days(3)
-                && coverage_claim_time < self.timestamp
+            } else if self.heartbeat.timestamp - prev_seniority.last_heartbeat > Duration::days(3)
+                && coverage_claim_time < self.heartbeat.timestamp
             {
                 (
-                    self.timestamp,
+                    self.heartbeat.timestamp,
                     InsertOrUpdate::Insert(proto::SeniorityUpdateReason::HeartbeatNotSeen),
                 )
             } else {
@@ -353,17 +345,17 @@ impl Heartbeat {
                       ($1, $2, $3, $4, $5)
                     "#,
                 )
-                .bind(&self.cbsd_id)
-                .bind(self.timestamp)
+                .bind(&self.heartbeat.cbsd_id)
+                .bind(self.heartbeat.timestamp)
                 .bind(self.coverage_object)
                 .bind(seniority_ts)
-                .bind(self.timestamp)
+                .bind(self.heartbeat.timestamp)
                 .execute(&mut *exec)
                 .await?;
                 seniorities
                     .write(
                         proto::SeniorityUpdate {
-                            cbsd_id: self.cbsd_id.to_string(),
+                            cbsd_id: self.heartbeat.cbsd_id.to_string(),
                             new_seniority_timestamp: seniority_ts.timestamp() as u64,
                             reason: update_reason as i32,
                         },
@@ -381,8 +373,8 @@ impl Heartbeat {
                       seniority_ts = $3
                     "#,
                 )
-                .bind(self.timestamp)
-                .bind(&self.cbsd_id)
+                .bind(self.heartbeat.timestamp)
+                .bind(&self.heartbeat.cbsd_id)
                 .bind(seniority_ts)
                 .execute(&mut *exec)
                 .await?;
@@ -399,8 +391,8 @@ impl Heartbeat {
         }
 
         sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
-            .bind(&self.cbsd_id)
-            .bind(&self.hotspot_key)
+            .bind(&self.heartbeat.cbsd_id)
+            .bind(&self.heartbeat.pubkey)
             .execute(&mut *exec)
             .await?;
 
@@ -408,7 +400,7 @@ impl Heartbeat {
         Ok(
             sqlx::query_scalar(
                 r#"
-                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, first_timestamp, latest_timestamp, truncated_timestamp, coverage_object)
+                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
                 latest_timestamp = EXCLUDED.latest_timestamp
@@ -416,11 +408,10 @@ impl Heartbeat {
                 RETURNING (xmax = 0) as inserted
                 "#
             )
-            .bind(self.cbsd_id)
-            .bind(self.hotspot_key)
+            .bind(self.heartbeat.cbsd_id)
+            .bind(self.heartbeat.pubkey)
             .bind(self.cell_type.unwrap())
-            .bind(self.timestamp)
-            .bind(self.timestamp)
+            .bind(self.heartbeat.timestamp)
             .bind(truncated_timestamp)
             .bind(self.coverage_object)
             .fetch_one(&mut *exec)
