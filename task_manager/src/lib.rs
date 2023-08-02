@@ -145,136 +145,135 @@ async fn stop_all(futures: Vec<StopableLocalFuture>) -> anyhow::Result<()> {
 }
 
 fn create_triggers(n: usize) -> Vec<(triggered::Trigger, triggered::Listener)> {
-    let (shutdown_trigger, shutdown_listener) = triggered::trigger();
     (0..n).fold(Vec::new(), |mut vec, _| {
-        vec.push((shutdown_trigger.clone(), shutdown_listener.clone()));
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+        vec.push((shutdown_trigger, shutdown_listener));
         vec
     })
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use anyhow::anyhow;
-//     use futures::TryFutureExt;
-//     use tokio::sync::mpsc;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+    use futures::TryFutureExt;
+    use tokio::sync::mpsc;
 
-//     struct TestTask {
-//         id: u64,
-//         delay: u64,
-//         result: anyhow::Result<()>,
-//         sender: mpsc::Sender<u64>,
-//     }
+    struct TestTask {
+        id: u64,
+        delay: u64,
+        result: anyhow::Result<()>,
+        sender: mpsc::Sender<u64>,
+    }
 
-//     impl ManagedTask for TestTask {
-//         fn start_task(
-//             self: Box<Self>,
-//             shutdown_listener: triggered::Listener,
-//         ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-//             let handle = tokio::spawn(async move {
-//                 tokio::select! {
-//                     _ = shutdown_listener.cancelled() => (),
-//                     _ = tokio::time::sleep(std::time::Duration::from_millis(self.delay)) => (),
-//                 }
+    impl ManagedTask for TestTask {
+        fn start_task(
+            self: Box<Self>,
+            shutdown_listener: triggered::Listener,
+        ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+            let handle = tokio::spawn(async move {
+                tokio::select! {
+                    _ = shutdown_listener.clone() => (),
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(self.delay)) => (),
+                }
+                self.sender.send(self.id).await.expect("unable to send");
+                self.result
+            });
 
-//                 self.sender.send(self.id).await.expect("unable to send");
-//                 self.result
-//             });
+            Box::pin(
+                handle
+                    .map_err(|err| err.into())
+                    .and_then(|result| async move { result }),
+            )
+        }
+    }
 
-//             Box::pin(
-//                 handle
-//                     .map_err(|err| err.into())
-//                     .and_then(|result| async move { result }),
-//             )
-//         }
-//     }
+    #[tokio::test]
+    async fn stop_when_all_tasks_have_completed() {
+        let (sender, mut receiver) = mpsc::channel(5);
 
-//     #[tokio::test]
-//     async fn stop_when_all_tasks_have_completed() {
-//         let (sender, mut receiver) = mpsc::channel(5);
+        let result = TaskManager::builder()
+            .add_task(TestTask {
+                id: 1,
+                delay: 50,
+                result: Ok(()),
+                sender: sender.clone(),
+            })
+            .add_task(TestTask {
+                id: 2,
+                delay: 100,
+                result: Ok(()),
+                sender: sender.clone(),
+            })
+            .start()
+            .await;
 
-//         let result = TaskManager::builder()
-//             .add_task(TestTask {
-//                 id: 1,
-//                 delay: 50,
-//                 result: Ok(()),
-//                 sender: sender.clone(),
-//             })
-//             .add_task(TestTask {
-//                 id: 2,
-//                 delay: 100,
-//                 result: Ok(()),
-//                 sender: sender.clone(),
-//             })
-//             .start()
-//             .await;
+        assert_eq!(Some(1), receiver.recv().await);
+        assert_eq!(Some(2), receiver.recv().await);
+        assert!(result.is_ok());
+    }
 
-//         assert_eq!(Some(1), receiver.recv().await);
-//         assert_eq!(Some(2), receiver.recv().await);
-//         assert!(result.is_ok());
-//     }
+    #[tokio::test]
+    async fn will_stop_all_in_reverse_order_after_error() {
+        let (sender, mut receiver) = mpsc::channel(5);
 
-//     #[tokio::test]
-//     async fn will_stop_all_in_reverse_order_after_error() {
-//         let (sender, mut receiver) = mpsc::channel(5);
+        let result = TaskManager::builder()
+            .add_task(TestTask {
+                id: 1,
+                delay: 1000,
+                result: Ok(()),
+                sender: sender.clone(),
+            })
+            .add_task(TestTask {
+                id: 2,
+                delay: 50,
+                result: Err(anyhow!("error")),
+                sender: sender.clone(),
+            })
+            .add_task(TestTask {
+                id: 3,
+                delay: 1000,
+                result: Ok(()),
+                sender: sender.clone(),
+            })
+            .start()
+            .await;
 
-//         let result = TaskManager::builder()
-//             .add_task(TestTask {
-//                 id: 1,
-//                 delay: 1000,
-//                 result: Ok(()),
-//                 sender: sender.clone(),
-//             })
-//             .add_task(TestTask {
-//                 id: 2,
-//                 delay: 50,
-//                 result: Err(anyhow!("error")),
-//                 sender: sender.clone(),
-//             })
-//             .add_task(TestTask {
-//                 id: 3,
-//                 delay: 1000,
-//                 result: Ok(()),
-//                 sender: sender.clone(),
-//             })
-//             .start()
-//             .await;
+        assert_eq!(Some(2), receiver.recv().await);
+        assert_eq!(Some(3), receiver.recv().await);
+        assert_eq!(Some(1), receiver.recv().await);
+        assert_eq!("error", result.unwrap_err().to_string());
+    }
 
-//         assert_eq!(Some(2), receiver.recv().await);
-//         assert_eq!(Some(3), receiver.recv().await);
-//         assert_eq!(Some(1), receiver.recv().await);
-//         assert_eq!("error", result.unwrap_err().to_string());
-//     }
+    #[tokio::test]
+    async fn will_return_first_error_returned() {
+        let (sender, mut receiver) = mpsc::channel(5);
 
-//     #[tokio::test]
-//     async fn will_return_first_error_returned() {
-//         let (sender, mut receiver) = mpsc::channel(5);
+        let result = TaskManager::builder()
+            .add_task(TestTask {
+                id: 1,
+                delay: 1000,
+                result: Ok(()),
+                sender: sender.clone(),
+            })
+            .add_task(TestTask {
+                id: 2,
+                delay: 50,
+                result: Err(anyhow!("error")),
+                sender: sender.clone(),
+            })
+            .add_task(TestTask {
+                id: 3,
+                delay: 200,
+                result: Err(anyhow!("second")),
+                sender: sender.clone(),
+            })
+            .start()
+            .await;
 
-//         let result = TaskManager::builder()
-//             .add_task(TestTask {
-//                 id: 1,
-//                 delay: 1000,
-//                 result: Ok(()),
-//                 sender: sender.clone(),
-//             })
-//             .add_task(TestTask {
-//                 id: 2,
-//                 delay: 50,
-//                 result: Err(anyhow!("error")),
-//                 sender: sender.clone(),
-//             })
-//             .add_task(TestTask {
-//                 id: 3,
-//                 delay: 200,
-//                 result: Err(anyhow!("second")),
-//                 sender: sender.clone(),
-//             })
-//             .start()
-//             .await;
-
-//         assert_eq!(Some(2), receiver.recv().await);
-//         assert_eq!(Some(3), receiver.recv().await);
-//         assert_eq!(Some(1), receiver.recv().await);
-//         assert_eq!("error", result.unwrap_err().to_string());
-//     }
-// }
+        assert_eq!(Some(2), receiver.recv().await);
+        assert_eq!(Some(3), receiver.recv().await);
+        assert_eq!(Some(1), receiver.recv().await);
+        assert_eq!("error", result.unwrap_err().to_string());
+    }
+}
