@@ -150,7 +150,6 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            settings.disable_discovery_loc_rewards_to_s3,
         );
 
         // subscriber location

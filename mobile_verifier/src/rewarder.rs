@@ -9,7 +9,6 @@ use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
-use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -28,7 +27,6 @@ pub struct Rewarder {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
-    disable_discovery_loc_rewards_to_s3: bool,
 }
 
 impl Rewarder {
@@ -39,7 +37,6 @@ impl Rewarder {
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
-        disable_discovery_loc_rewards_to_s3: bool,
     ) -> Self {
         Self {
             pool,
@@ -48,7 +45,6 @@ impl Rewarder {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            disable_discovery_loc_rewards_to_s3,
         }
     }
 
@@ -207,24 +203,11 @@ impl Rewarder {
         for mapping_share in
             mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
         {
-            if self.disable_discovery_loc_rewards_to_s3 {
-                tracing::info!(
-                    "discovery location rewards output to s3 is disabled, outputting to logs only"
-                );
-                if let Some(ProtoReward::SubscriberReward(reward)) = mapping_share.reward {
-                    tracing::info!(
-                        "subscriber_id: {:?}, discovery_location_amount: {}",
-                        reward.subscriber_id,
-                        reward.discovery_location_amount
-                    )
-                }
-            } else {
-                self.mobile_rewards
-                    .write(mapping_share.clone(), [])
-                    .await?
-                    // Await the returned one shot to ensure that we wrote the file
-                    .await??;
-            }
+            self.mobile_rewards
+                .write(mapping_share.clone(), [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
         }
 
         let written_files = self.mobile_rewards.commit().await?.await??;
