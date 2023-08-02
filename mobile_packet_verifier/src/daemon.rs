@@ -1,4 +1,4 @@
-use crate::{burner::Burner, settings::Settings};
+use crate::{burner::Burner, event_ids::EventIdPurger, settings::Settings};
 use anyhow::{bail, Error, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
@@ -173,13 +173,15 @@ impl Cmd {
 
         let daemon = Daemon::new(
             settings,
-            pool,
+            pool.clone(),
             reports,
             burner,
             gateway_client,
             auth_client,
             invalid_sessions,
         );
+
+        let event_id_purger = EventIdPurger::from_settings(pool, settings);
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),
@@ -189,6 +191,7 @@ impl Cmd {
             daemon.run(&shutdown_listener).map_err(Error::from),
             conn_handler.map_err(Error::from),
             sol_balance_monitor.map_err(Error::from),
+            event_id_purger.run(shutdown_listener.clone()),
         )?;
 
         Ok(())
