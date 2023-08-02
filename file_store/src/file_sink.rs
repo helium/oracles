@@ -638,7 +638,8 @@ mod tests {
             .to_str()
             .and_then(|file_name| FileInfo::from_str(file_name).ok())
             .map_or(false, |file_info| {
-                file_info.file_type == FileType::EntropyReport
+                FileType::from_str(&file_info.prefix).expect("entropy report prefix")
+                    == FileType::EntropyReport
             })
     }
 }

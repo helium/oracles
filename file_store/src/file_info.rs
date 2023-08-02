@@ -66,6 +66,17 @@ impl From<(FileType, DateTime<Utc>)> for FileInfo {
     }
 }
 
+impl From<(String, DateTime<Utc>)> for FileInfo {
+    fn from(v: (String, DateTime<Utc>)) -> Self {
+        Self {
+            key: format!("{}.{}.gz", &v.0, v.1.timestamp_millis()),
+            prefix: v.0,
+            timestamp: v.1,
+            size: 0,
+        }
+    }
+}
+
 impl TryFrom<&aws_sdk_s3::model::Object> for FileInfo {
     type Error = Error;
     fn try_from(value: &aws_sdk_s3::model::Object) -> Result<Self> {

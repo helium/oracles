@@ -17,10 +17,7 @@ use helium_proto::{
     EntropyReportV1, Message, PriceReportV1,
 };
 use serde_json::json;
-use std::{
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{path::PathBuf, str::FromStr};
 
 /// Print information about a given store file.
 #[derive(Debug, clap::Args)]
