@@ -88,9 +88,11 @@ impl Server {
         // *
         // setup the price tracker requirements
         // *
-        let (price_tracker, price_sender) = PriceTracker::new(&settings.price_tracker).await?;
-
-        let price_daemon = PriceTrackerDaemon::new(&settings.price_tracker, price_sender).await?;
+        let (price_tracker, price_sender, task_killer_receiver) =
+            PriceTracker::new(&settings.price_tracker).await?;
+        let price_daemon =
+            PriceTrackerDaemon::new(&settings.price_tracker, price_sender, task_killer_receiver)
+                .await?;
 
         // *
         // setup the loader requirements

@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::{FileInfo, FileStore, FileType};
 use futures::{
@@ -69,18 +70,23 @@ impl Settings {
 pub struct PriceTracker {
     price_duration: Duration,
     price_receiver: watch::Receiver<Prices>,
+    task_killer: mpsc::Sender<String>,
 }
 
 impl PriceTracker {
-    pub async fn new(settings: &Settings) -> anyhow::Result<(Self, watch::Sender<Prices>)> {
+    pub async fn new(
+        settings: &Settings,
+    ) -> anyhow::Result<(Self, watch::Sender<Prices>, mpsc::Receiver<String>)> {
         let (price_sender, price_receiver) = watch::channel(Prices::new());
-
+        let (task_kill_sender, task_kill_receiver) = mpsc::channel(1);
         Ok((
             Self {
                 price_duration: settings.price_duration(),
                 price_receiver,
+                task_killer: task_kill_sender,
             },
             price_sender,
+            task_kill_receiver,
         ))
     }
 
@@ -101,6 +107,10 @@ impl PriceTracker {
                 }
             });
 
+        if let Err(error) = &result {
+            self.task_killer.send(error.to_string()).await?;
+        }
+
         result
     }
 }
@@ -108,6 +118,7 @@ impl PriceTracker {
 pub struct PriceTrackerDaemon {
     file_store: FileStore,
     price_sender: watch::Sender<Prices>,
+    task_killer: mpsc::Receiver<String>,
     after: DateTime<Utc>,
 }
 
@@ -124,6 +135,7 @@ impl PriceTrackerDaemon {
     pub async fn new(
         settings: &Settings,
         price_sender: watch::Sender<Prices>,
+        task_killer: mpsc::Receiver<String>,
     ) -> anyhow::Result<Self> {
         let file_store = FileStore::from_settings(&settings.file_store).await?;
         let price_duration = settings.price_duration();
@@ -132,6 +144,7 @@ impl PriceTrackerDaemon {
         Ok(Self {
             file_store,
             price_sender,
+            task_killer,
             after: initial_timestamp,
         })
     }
@@ -151,6 +164,9 @@ impl PriceTrackerDaemon {
                     let timestamp = process_files(&self.file_store, &self.price_sender, self.after).await?;
                     self.after = timestamp.unwrap_or(self.after);
                 }
+                msg = self.task_killer.recv() => if let Some(error) = msg {
+                    return Err(anyhow!(error));
+            }
             }
         }
 
