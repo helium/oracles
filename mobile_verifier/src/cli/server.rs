@@ -13,9 +13,8 @@ use file_store::{
 };
 
 use mobile_config::client::{AuthorizationClient, EntityClient, GatewayClient};
-use price::PriceTracker;
+use price::price_tracker::{PriceTracker, PriceTrackerDaemon};
 use task_manager::TaskManager;
-use tokio::signal;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -42,18 +41,12 @@ impl Cmd {
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
         let entity_client = EntityClient::from_settings(&settings.config_client)?;
 
-        // todo: update price tracker to not require shutdown listener to be passed in
-        // price tracker
-        let (shutdown_trigger, shutdown) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-        let (price_tracker, _price_receiver) =
-            PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
+        // *
+        // setup the price tracker requirements
+        // *
+        let (price_tracker, price_sender) = PriceTracker::new(&settings.price_tracker).await?;
+
+        let price_daemon = PriceTrackerDaemon::new(&settings.price_tracker, price_sender).await?;
 
         // Heartbeats
         let (heartbeats, heartbeats_ingest_server) =
@@ -190,6 +183,7 @@ impl Cmd {
             .add_task(speedtests_ingest_server)
             .add_task(subscriber_location_ingest_server)
             .add_task(data_session_ingest_server)
+            .add_task(price_daemon)
             .add_task(subscriber_location_ingestor)
             .add_task(data_session_ingestor)
             .add_task(heartbeat_daemon)

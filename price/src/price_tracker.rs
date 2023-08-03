@@ -1,9 +1,14 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::{FileInfo, FileStore, FileType};
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::{
+    future::LocalBoxFuture,
+    stream::{StreamExt, TryStreamExt},
+};
 use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use task_manager::ManagedTask;
+use tokio;
 use tokio::sync::{mpsc, watch};
 
 #[derive(thiserror::Error, Debug)]
@@ -27,7 +32,7 @@ pub enum PriceTrackerError {
 }
 
 #[derive(Clone)]
-struct Price {
+pub struct Price {
     price: u64,
     timestamp: DateTime<Utc>,
 }
@@ -63,52 +68,20 @@ impl Settings {
 #[derive(Clone)]
 pub struct PriceTracker {
     price_duration: Duration,
-    task_killer: mpsc::Sender<String>,
     price_receiver: watch::Receiver<Prices>,
 }
 
 impl PriceTracker {
-    pub async fn start(
-        settings: &Settings,
-        shutdown: triggered::Listener,
-    ) -> Result<
-        (
-            Self,
-            impl std::future::Future<Output = Result<(), PriceTrackerError>>,
-        ),
-        PriceTrackerError,
-    > {
-        let file_store = FileStore::from_settings(&settings.file_store).await?;
+    pub async fn new(settings: &Settings) -> anyhow::Result<(Self, watch::Sender<Prices>)> {
         let (price_sender, price_receiver) = watch::channel(Prices::new());
-        let (task_kill_sender, task_kill_receiver) = mpsc::channel(1);
-        let initial_timestamp =
-            calculate_initial_prices(&file_store, settings.price_duration(), &price_sender).await?;
 
-        let shutdown_clone = shutdown.clone();
-        let handle = tokio::spawn(async move {
-            run(
-                file_store,
-                task_kill_receiver,
-                price_sender,
-                initial_timestamp,
-                shutdown_clone,
-            )
-            .await
-        });
-
-        let tracker = Self {
-            price_duration: settings.price_duration(),
-            task_killer: task_kill_sender,
-            price_receiver,
-        };
-
-        Ok((tracker, async move {
-            match handle.await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(err)) => Err(err),
-                Err(err) => Err(PriceTrackerError::from(err)),
-            }
-        }))
+        Ok((
+            Self {
+                price_duration: settings.price_duration(),
+                price_receiver,
+            },
+            price_sender,
+        ))
     }
 
     pub async fn price(
@@ -128,42 +101,61 @@ impl PriceTracker {
                 }
             });
 
-        if let Err(error) = &result {
-            self.task_killer.send(error.to_string()).await?;
-        }
-
         result
     }
 }
 
-async fn run(
+pub struct PriceTrackerDaemon {
     file_store: FileStore,
-    mut task_killer: mpsc::Receiver<String>,
     price_sender: watch::Sender<Prices>,
-    mut after: DateTime<Utc>,
-    shutdown: triggered::Listener,
-) -> Result<(), PriceTrackerError> {
-    let mut trigger = tokio::time::interval(std::time::Duration::from_secs(30));
+    after: DateTime<Utc>,
+}
 
-    loop {
-        let shutdown = shutdown.clone();
+impl ManagedTask for PriceTrackerDaemon {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
 
-        tokio::select! {
-            _ = shutdown => {
-                tracing::info!("PriceTracker: shutting down");
-                break;
-            }
-            _ = trigger.tick() => {
-                let timestamp = process_files(&file_store, &price_sender, after).await?;
-                after = timestamp.unwrap_or(after);
-            }
-            msg = task_killer.recv() => if let Some(error) = msg {
-                    return Err(PriceTrackerError::KilledError(error));
-            }
-        }
+impl PriceTrackerDaemon {
+    pub async fn new(
+        settings: &Settings,
+        price_sender: watch::Sender<Prices>,
+    ) -> anyhow::Result<Self> {
+        let file_store = FileStore::from_settings(&settings.file_store).await?;
+        let price_duration = settings.price_duration();
+        let initial_timestamp =
+            calculate_initial_prices(&file_store, price_duration, &price_sender).await?;
+        Ok(Self {
+            file_store,
+            price_sender,
+            after: initial_timestamp,
+        })
     }
 
-    Ok(())
+    async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        let mut trigger = tokio::time::interval(std::time::Duration::from_secs(30));
+
+        loop {
+            let shutdown = shutdown.clone();
+
+            tokio::select! {
+                _ = shutdown => {
+                    tracing::info!("PriceTracker: shutting down");
+                    break;
+                }
+                _ = trigger.tick() => {
+                    let timestamp = process_files(&self.file_store, &self.price_sender, self.after).await?;
+                    self.after = timestamp.unwrap_or(self.after);
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 async fn calculate_initial_prices(

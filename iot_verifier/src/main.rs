@@ -12,10 +12,9 @@ use iot_verifier::{
     packet_loader, purger, region_cache::RegionCache, rewarder::Rewarder, runner, telemetry,
     tx_scaler::Server as DensityScaler, Settings,
 };
-use price::PriceTracker;
+use price::{price_tracker::PriceTrackerDaemon, PriceTracker};
 use std::path;
 use task_manager::TaskManager;
-use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, clap::Parser)]
@@ -89,17 +88,9 @@ impl Server {
         // *
         // setup the price tracker requirements
         // *
-        // todo: update price tracker to not require shutdown listener to be passed in
-        let (shutdown_trigger, shutdown) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-        let (price_tracker, _price_receiver) =
-            PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
+        let (price_tracker, price_sender) = PriceTracker::new(&settings.price_tracker).await?;
+
+        let price_daemon = PriceTrackerDaemon::new(&settings.price_tracker, price_sender).await?;
 
         // *
         // setup the loader requirements
@@ -299,6 +290,7 @@ impl Server {
             .add_task(runner_invalid_beacon_sink_server)
             .add_task(runner_invalid_witness_sink_server)
             .add_task(runner_poc_sink_server)
+            .add_task(price_daemon)
             .add_task(density_scaler)
             .add_task(gateway_updater_server)
             .add_task(entropy_loader_server)
