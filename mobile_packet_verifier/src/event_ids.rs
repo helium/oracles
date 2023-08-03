@@ -13,7 +13,7 @@ pub async fn is_duplicate(
         .bind(received_timestamp)
         .execute(txn)
         .await
-        .map(|result| result.rows_affected() > 0)
+        .map(|result| result.rows_affected() == 0)
         .map_err(anyhow::Error::from)
 }
 
