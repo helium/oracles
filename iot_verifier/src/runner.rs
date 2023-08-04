@@ -1,7 +1,12 @@
 use crate::{
-    gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon, poc::Poc,
-    poc_report::Report, region_cache::RegionCache, reward_share::GatewayPocShare, telemetry,
-    Settings,
+    gateway_cache::GatewayCache,
+    hex_density::HexDensityMap,
+    last_beacon::LastBeacon,
+    poc::{Poc, VerifyBeaconResult},
+    poc_report::Report,
+    region_cache::RegionCache,
+    reward_share::GatewayPocShare,
+    telemetry, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
@@ -149,7 +154,7 @@ impl Runner {
                     match self.handle_denylist_tick().await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("fatal loader error, denylist_tick triggered: {err:?}");
+                        tracing::error!("error whilst handling denylist tick: {err:?}");
                     }
                 },
                 _ = db_timer.tick() =>
@@ -404,9 +409,9 @@ impl Runner {
             VerificationStatus::Invalid => {
                 // the beacon is invalid, which in turn renders all witnesses invalid
                 self.handle_invalid_poc(
+                    beacon_verify_result,
                     &beacon_report,
                     witnesses,
-                    beacon_verify_result.invalid_reason,
                     iot_invalid_beacon_sink,
                     iot_invalid_witness_sink,
                 )
@@ -418,9 +423,9 @@ impl Runner {
 
     async fn handle_invalid_poc(
         &self,
+        beacon_verify_result: VerifyBeaconResult,
         beacon_report: &IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
-        invalid_reason: InvalidReason,
         iot_invalid_beacon_sink: &FileSinkClient,
         iot_invalid_witness_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
@@ -428,10 +433,22 @@ impl Runner {
         let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
         let beacon_report_id = beacon_report.ingest_id();
+
+        let (location, elevation, gain) = match beacon_verify_result.gateway_info {
+            Some(gateway_info) => match gateway_info.metadata {
+                Some(metadata) => (Some(metadata.location), metadata.elevation, metadata.gain),
+                None => (None, 0, 0),
+            },
+            None => (None, 0, 0),
+        };
+
         let invalid_poc: IotInvalidBeaconReport = IotInvalidBeaconReport {
             received_timestamp: beacon_report.received_timestamp,
-            reason: invalid_reason,
+            reason: beacon_verify_result.invalid_reason,
             report: beacon.clone(),
+            location,
+            elevation,
+            gain,
         };
         let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
         // save invalid poc to s3, if write fails update attempts and go no further
@@ -439,7 +456,7 @@ impl Runner {
         match iot_invalid_beacon_sink
             .write(
                 invalid_poc_proto,
-                &[("reason", invalid_reason.as_str_name())],
+                &[("reason", beacon_verify_result.invalid_reason.as_str_name())],
             )
             .await
         {
@@ -459,7 +476,7 @@ impl Runner {
             let invalid_witness_report: IotInvalidWitnessReport = IotInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
                 report: witness_report.report,
-                reason: invalid_reason,
+                reason: beacon_verify_result.invalid_reason,
                 participant_side: InvalidParticipantSide::Beaconer,
             };
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
@@ -467,7 +484,7 @@ impl Runner {
             match iot_invalid_witness_sink
                 .write(
                     invalid_witness_report_proto,
-                    &[("reason", invalid_reason.as_str_name())],
+                    &[("reason", beacon_verify_result.invalid_reason.as_str_name())],
                 )
                 .await
             {

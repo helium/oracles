@@ -198,6 +198,9 @@ impl Purger {
             received_timestamp,
             reason: InvalidReason::Stale,
             report: beacon.clone(),
+            location: None,
+            gain: 0,
+            elevation: 0,
         }
         .into();
 
