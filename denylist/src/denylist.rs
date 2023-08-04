@@ -1,6 +1,6 @@
 use crate::{client::DenyListClient, models::metadata::Asset, Error, Result};
 use bytes::Buf;
-use helium_crypto::{PublicKey, Verify};
+use helium_crypto::{PublicKey, PublicKeyBinary, Verify};
 use serde::Serialize;
 use std::{fs, hash::Hasher, path, str::FromStr};
 use twox_hash::XxHash64;
@@ -23,6 +23,20 @@ pub struct DenyList {
     pub client: DenyListClient,
     #[serde(skip_serializing)]
     pub filter: Xor32,
+}
+
+impl TryFrom<Vec<PublicKeyBinary>> for DenyList {
+    type Error = Error;
+    fn try_from(v: Vec<PublicKeyBinary>) -> Result<Self> {
+        let keys: Vec<u64> = v.into_iter().map(public_key_hash).collect();
+        let filter = Xor32::from(&keys);
+        let client = DenyListClient::new()?;
+        Ok(Self {
+            tag_name: 0,
+            client,
+            filter,
+        })
+    }
 }
 
 impl DenyList {
@@ -89,7 +103,7 @@ impl DenyList {
         Ok(())
     }
 
-    pub async fn check_key<K: AsRef<[u8]>>(&self, pub_key: K) -> bool {
+    pub fn check_key<K: AsRef<[u8]>>(&self, pub_key: K) -> bool {
         if self.filter.len() == 0 {
             tracing::warn!("empty denylist filter, rejecting key");
             return true;

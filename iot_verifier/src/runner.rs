@@ -4,6 +4,7 @@ use crate::{
     Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
+use denylist::DenyList;
 use file_store::{
     file_sink,
     file_sink::FileSinkClient,
@@ -23,7 +24,7 @@ use helium_proto::services::poc_lora::{
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
@@ -42,11 +43,10 @@ pub struct Runner {
     max_witnesses_per_poc: u64,
     beacon_max_retries: u64,
     witness_max_retries: u64,
+    deny_list_latest_url: String,
+    deny_list_trigger_interval: Duration,
+    deny_list: DenyList,
 }
-
-#[derive(thiserror::Error, Debug)]
-#[error("error creating runner: {0}")]
-pub struct NewRunnerError(#[from] db_store::Error);
 
 #[derive(thiserror::Error, Debug)]
 pub enum RunnerError {
@@ -58,14 +58,16 @@ pub enum FilterStatus {
     Drop,
     Include,
 }
+
 impl Runner {
-    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, NewRunnerError> {
+    pub async fn new(settings: &Settings, pool: PgPool) -> anyhow::Result<Self> {
         let cache = settings.cache.clone();
         let beacon_interval = settings.beacon_interval();
         let beacon_interval_tolerance = settings.beacon_interval_tolerance();
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
         let beacon_max_retries = settings.beacon_max_retries;
         let witness_max_retries = settings.witness_max_retries;
+        let deny_list = DenyList::new()?;
         Ok(Self {
             pool,
             cache,
@@ -74,6 +76,9 @@ impl Runner {
             max_witnesses_per_poc,
             beacon_max_retries,
             witness_max_retries,
+            deny_list_latest_url: settings.denylist.denylist_url.clone(),
+            deny_list_trigger_interval: settings.denylist.trigger_interval(),
+            deny_list,
         })
     }
 
@@ -89,6 +94,9 @@ impl Runner {
 
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
+        denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let store_base_path = Path::new(&self.cache);
 
@@ -137,6 +145,13 @@ impl Runner {
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
+                _ = denylist_timer.tick() =>
+                    match self.handle_denylist_tick().await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::error!("fatal loader error, denylist_tick triggered: {err:?}");
+                    }
+                },
                 _ = db_timer.tick() =>
                     match self.handle_db_tick(  shutdown.clone(),
                                                 &iot_invalid_beacon_sink,
@@ -153,6 +168,23 @@ impl Runner {
             }
         }
         tracing::info!("stopping runner");
+        Ok(())
+    }
+
+    async fn handle_denylist_tick(&mut self) -> anyhow::Result<()> {
+        tracing::info!("handling denylist tick");
+        // sink any errors whilst updating the denylist
+        // the verifier should not stop just because github
+        // could not be reached for example
+        match self
+            .deny_list
+            .update_to_latest(&self.deny_list_latest_url)
+            .await
+        {
+            Ok(()) => (),
+            Err(e) => tracing::warn!("failed to update denylist: {e}"),
+        }
+        tracing::info!("completed handling denylist tick");
         Ok(())
     }
 
@@ -270,6 +302,7 @@ impl Runner {
                 &self.pool,
                 self.beacon_interval,
                 self.beacon_interval_tolerance,
+                &self.deny_list,
             )
             .await?;
         match beacon_verify_result.result {
@@ -277,7 +310,12 @@ impl Runner {
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
                     let verified_witnesses_result = poc
-                        .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
+                        .verify_witnesses(
+                            &beacon_info,
+                            hex_density_map,
+                            gateway_cache,
+                            &self.deny_list,
+                        )
                         .await?;
                     // check if there are any failed witnesses
                     // if so update the DB attempts count

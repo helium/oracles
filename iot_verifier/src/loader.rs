@@ -7,7 +7,6 @@ use crate::{
 };
 use chrono::DateTime;
 use chrono::{Duration as ChronoDuration, Utc};
-use denylist::DenyList;
 use file_store::{
     iot_beacon_report::IotBeaconIngestReport,
     iot_witness_report::IotWitnessIngestReport,
@@ -17,7 +16,7 @@ use file_store::{
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
-use std::{hash::Hasher, ops::DerefMut, time::Duration};
+use std::{hash::Hasher, ops::DerefMut};
 use tokio::{
     sync::Mutex,
     time::{self, MissedTickBehavior},
@@ -34,9 +33,6 @@ pub struct Loader {
     window_width: ChronoDuration,
     ingestor_rollup_time: ChronoDuration,
     max_lookback_age: ChronoDuration,
-    deny_list_latest_url: String,
-    deny_list_trigger_interval: Duration,
-    deny_list: DenyList,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -45,13 +41,10 @@ pub enum NewLoaderError {
     FileStoreError(#[from] file_store::Error),
     #[error("db_store error: {0}")]
     DbStoreError(#[from] db_store::Error),
-    #[error("denylist error: {0}")]
-    DenyListError(#[from] denylist::Error),
 }
 
 pub enum ValidGatewayResult {
     Valid,
-    Denied,
     Unknown,
 }
 
@@ -63,7 +56,6 @@ impl Loader {
         let window_width = settings.poc_loader_window_width();
         let ingestor_rollup_time = settings.ingestor_rollup_time();
         let max_lookback_age = settings.loader_window_max_lookback_age();
-        let deny_list = DenyList::new()?;
         Ok(Self {
             pool,
             ingest_store,
@@ -71,9 +63,6 @@ impl Loader {
             window_width,
             ingestor_rollup_time,
             max_lookback_age,
-            deny_list_latest_url: settings.denylist.denylist_url.clone(),
-            deny_list_trigger_interval: settings.denylist.trigger_interval(),
-            deny_list,
         })
     }
 
@@ -85,21 +74,12 @@ impl Loader {
         tracing::info!("started verifier loader");
         let mut report_timer = time::interval(self.poll_time);
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
-        denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             if shutdown.is_triggered() {
                 break;
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = denylist_timer.tick() =>
-                    match self.handle_denylist_tick().await {
-                    Ok(()) => (),
-                    Err(err) => {
-                        tracing::error!("fatal loader error, denylist_tick triggered: {err:?}");
-                    }
-                },
                 _ = report_timer.tick() => match self.handle_report_tick(gateway_cache).await {
                     Ok(()) => (),
                     Err(err) => {
@@ -109,23 +89,6 @@ impl Loader {
             }
         }
         tracing::info!("stopping verifier loader");
-        Ok(())
-    }
-
-    async fn handle_denylist_tick(&mut self) -> anyhow::Result<()> {
-        tracing::info!("handling denylist tick");
-        // sink any errors whilst updating the denylist
-        // the verifier should not stop just because github
-        // could not be reached for example
-        match self
-            .deny_list
-            .update_to_latest(&self.deny_list_latest_url)
-            .await
-        {
-            Ok(()) => (),
-            Err(e) => tracing::warn!("failed to update denylist: {e}"),
-        }
-        tracing::info!("completed handling denylist tick");
         Ok(())
     }
 
@@ -375,11 +338,6 @@ impl Loader {
                         };
                         Ok(Some(res))
                     }
-                    ValidGatewayResult::Denied => {
-                        metrics.increment_beacons_denied();
-                        Ok(None)
-                    }
-
                     ValidGatewayResult::Unknown => {
                         metrics.increment_beacons_unknown();
                         Ok(None)
@@ -409,10 +367,6 @@ impl Loader {
                                     };
                                     metrics.increment_witnesses();
                                     Ok(Some(res))
-                                }
-                                ValidGatewayResult::Denied => {
-                                    metrics.increment_witnesses_denied();
-                                    Ok(None)
                                 }
                                 ValidGatewayResult::Unknown => {
                                     metrics.increment_witnesses_unknown();
@@ -445,10 +399,6 @@ impl Loader {
         pub_key: &PublicKeyBinary,
         gateway_cache: &GatewayCache,
     ) -> ValidGatewayResult {
-        if self.check_gw_denied(pub_key).await {
-            tracing::debug!("dropping denied gateway : {:?}", &pub_key);
-            return ValidGatewayResult::Denied;
-        }
         if self.check_unknown_gw(pub_key, gateway_cache).await {
             tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
             return ValidGatewayResult::Unknown;
@@ -462,10 +412,6 @@ impl Loader {
         gateway_cache: &GatewayCache,
     ) -> bool {
         gateway_cache.resolve_gateway_info(pub_key).await.is_err()
-    }
-
-    async fn check_gw_denied(&self, pub_key: &PublicKeyBinary) -> bool {
-        self.deny_list.check_key(pub_key).await
     }
 }
 

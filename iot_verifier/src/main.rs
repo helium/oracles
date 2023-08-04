@@ -164,7 +164,7 @@ impl Server {
 
         // init da processes
         let mut loader = loader::Loader::from_settings(settings, pool.clone()).await?;
-        let mut runner = runner::Runner::from_settings(settings, pool.clone()).await?;
+        let mut runner = runner::Runner::new(settings, pool.clone()).await?;
         let purger = purger::Purger::from_settings(settings, pool.clone()).await?;
         let mut density_scaler =
             DensityScaler::from_settings(settings, pool, gateway_updater_receiver.clone()).await?;
