@@ -18,7 +18,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::ops::Range;
 use tokio::sync::mpsc::Receiver;
 
-const SUBSCRIBER_REWARD_PERIOD_LENGTH_IN_DAYS: i64 = 7;
+const SUBSCRIBER_REWARD_PERIOD_LENGTH_IN_DAYS: i64 = 14;
 
 pub type SubscriberValidatedLocations = Vec<Vec<u8>>;
 
