@@ -12,13 +12,14 @@ CREATE TABLE hex_coverage (
        cbsd_id TEXT NOT NULL,
        signal_level signal_level NOT NULL,
        coverage_claim_time TIMESTAMPTZ NOT NULL,
-       inserted_at TIMESTAMPTZ NOT NULL,
+       inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
        PRIMARY KEY (uuid, hex)
 );
 
 CREATE TABLE seniority (
        cbsd_id TEXT NOT NULL,
        seniority_ts TIMESTAMPTZ NOT NULL,
+       inserted_at TIMESTAMPTZ NOT NULL,
        last_heartbeat TIMESTAMPTZ NOT NULL,
        uuid UUID NOT NULL,
        PRIMARY KEY (cbsd_id, seniority_ts)

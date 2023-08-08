@@ -176,9 +176,9 @@ impl CoverageObject {
             sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
-                  (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time, inserted_at)
+                  (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time)
                 VALUES
-                  ($1, $2, $3, $4, $5, $6, $7)
+                  ($1, $2, $3, $4, $5, $6)
                 "#,
             )
             .bind(self.coverage_obj.uuid)
@@ -187,7 +187,6 @@ impl CoverageObject {
             .bind(&self.coverage_obj.cbsd_id)
             .bind(SignalLevel::from(hex.signal_level))
             .bind(self.coverage_obj.coverage_claim_time)
-            .bind(Utc::now())
             .execute(&mut *transaction)
             .await?;
         }
