@@ -92,8 +92,8 @@ impl SpeedtestDaemon {
             if self
                 .gateway_client
                 .resolve_gateway_info(&pubkey)
-                .await
-                .is_ok()
+                .await?
+                .is_some()
             {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
                 let latest_speedtests =
