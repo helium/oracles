@@ -6,13 +6,13 @@ use file_store::{
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
 };
 use futures::{
-    stream::{Stream, StreamExt, TryStreamExt},
+    stream::{StreamExt, TryStreamExt},
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
 use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
-use std::{collections::HashMap, ops::Range, pin::pin};
+use std::{collections::HashMap, ops::Range};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -85,72 +85,52 @@ impl SpeedtestDaemon {
         file: FileInfoStream<CellSpeedtestIngestReport>,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing speedtest file {}", file.file_info.key);
-
         let mut transaction = self.pool.begin().await?;
-        let speedtests = file.into_stream(&mut transaction).await?;
-
-        let mut validated_speedtests =
-            pin!(Speedtest::validate_speedtests(&self.gateway_client, speedtests).await);
-
-        // todo, the double some is odd, what be the alternative ?
-        while let Some(Some(speedtest)) = validated_speedtests.next().await {
-            let pubkey = speedtest.report.pubkey.clone();
-            speedtest.save(&mut transaction).await?;
-            let latest_speedtests =
-                get_latest_speedtests_for_pubkey(&pubkey, &mut transaction).await?;
-            let average = SpeedtestAverage::from(&latest_speedtests);
-            average.write(&self.file_sink, latest_speedtests).await?;
+        let mut speedtests = file.into_stream(&mut transaction).await?;
+        while let Some(speedtest_report) = speedtests.next().await {
+            let pubkey = speedtest_report.report.pubkey.clone();
+            if gateway_is_valid(&pubkey, &self.gateway_client).await {
+                save_speedtest(&speedtest_report.report, &mut transaction).await?;
+                let latest_speedtests =
+                    get_latest_speedtests_for_pubkey(&pubkey, &mut transaction).await?;
+                let average = SpeedtestAverage::from(&latest_speedtests);
+                average.write(&self.file_sink, latest_speedtests).await?;
+            }
         }
         self.file_sink.commit().await?;
         transaction.commit().await?;
-
         Ok(())
     }
 }
 
-impl Speedtest {
-    pub async fn validate_speedtests<'a>(
-        gateway_client: &'a GatewayClient,
-        speedtests: impl Stream<Item = CellSpeedtestIngestReport> + 'a,
-    ) -> impl Stream<Item = Option<Self>> + 'a {
-        speedtests.then(move |report| {
-            let pubkey = report.report.pubkey.clone();
-            async move {
-                if gateway_client
-                    .resolve_gateway_info(&pubkey.clone())
-                    .await
-                    .is_ok()
-                {
-                    Some(Speedtest {
-                        report: report.report,
-                    })
-                } else {
-                    None
-                }
-            }
-        })
-    }
-
-    pub async fn save(&self, exec: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            r#"
-            insert into speedtests (pubkey, upload_speed, download_speed, latency, serial, timestamp)
-            values ($1, $2, $3, $4, $5, $6)
-            on conflict (pubkey, timestamp) do nothing
-            "#,
-        )
-        .bind(self.report.pubkey.clone())
-        .bind(self.report.upload_speed as i64)
-        .bind(self.report.download_speed as i64)
-        .bind(self.report.latency as i64)
-        .bind(self.report.serial.clone())
-        .bind(self.report.timestamp)
-        .execute(exec)
-        .await?;
-        Ok(())
-    }
+pub async fn save_speedtest(
+    speedtest: &CellSpeedtest,
+    exec: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        insert into speedtests (pubkey, upload_speed, download_speed, latency, serial, timestamp)
+        values ($1, $2, $3, $4, $5, $6)
+        on conflict (pubkey, timestamp) do nothing
+        "#,
+    )
+    .bind(speedtest.pubkey.clone())
+    .bind(speedtest.upload_speed as i64)
+    .bind(speedtest.download_speed as i64)
+    .bind(speedtest.latency as i64)
+    .bind(speedtest.serial.clone())
+    .bind(speedtest.timestamp)
+    .execute(exec)
+    .await?;
+    Ok(())
 }
 
+pub async fn gateway_is_valid<'a>(
+    pubkey: &PublicKeyBinary,
+    gateway_client: &'a GatewayClient,
+) -> bool {
+    gateway_client.resolve_gateway_info(pubkey).await.is_ok()
+}
 pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
     exec: &mut Transaction<'_, Postgres>,
