@@ -27,12 +27,6 @@ pub struct Settings {
     pub start_after: u64,
     #[serde(default = "default_max_heartbeat_distance_from_coverage_km")]
     pub max_heartbeat_distance_from_coverage_km: f64,
-    #[serde(default = "default_disable_discovery_loc_rewards_to_s3")]
-    pub disable_discovery_loc_rewards_to_s3: bool,
-}
-
-pub fn default_disable_discovery_loc_rewards_to_s3() -> bool {
-    true
 }
 
 pub fn default_log() -> String {

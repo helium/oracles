@@ -2,7 +2,7 @@ use crate::{
     balances::BalanceCache,
     burner::Burner,
     settings::Settings,
-    verifier::{ConfigServer, Verifier},
+    verifier::{CachedOrgClient, ConfigServer, Verifier},
 };
 use anyhow::{bail, Error, Result};
 use file_store::{
@@ -24,7 +24,7 @@ use tokio::{
 
 struct Daemon {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<OrgClient>>>,
+    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<CachedOrgClient>>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
@@ -156,9 +156,9 @@ impl Cmd {
         .create()
         .await?;
 
-        let org_client = Arc::new(Mutex::new(OrgClient::from_settings(
+        let org_client = Arc::new(Mutex::new(CachedOrgClient::new(OrgClient::from_settings(
             &settings.iot_config_client,
-        )?));
+        )?)));
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 

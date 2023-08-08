@@ -87,6 +87,7 @@ impl Debiter for InstantBurnedBalance {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
+        _trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, ()> {
         let map = self.0.lock().await;
         let balance = map.get(payer).unwrap();
@@ -484,43 +485,4 @@ async fn test_end_to_end() {
         invalid_packets,
         vec![invalid_packet(BYTES_PER_DC as u32, vec![5])]
     );
-
-    // Add one DC to the balance:
-    *solana_network.lock().await.get_mut(&payer).unwrap() = 1;
-
-    valid_packets.clear();
-    invalid_packets.clear();
-
-    // First packet should be invalid since it is too large, second
-    // should clear
-    verifier
-        .verify(
-            1,
-            pending_burns.clone(),
-            stream::iter(vec![
-                packet_report(0, 5, 2 * BYTES_PER_DC as u32, vec![6]),
-                packet_report(0, 6, BYTES_PER_DC as u32, vec![7]),
-            ]),
-            &mut valid_packets,
-            &mut invalid_packets,
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        invalid_packets,
-        vec![invalid_packet(2 * BYTES_PER_DC as u32, vec![6])]
-    );
-    assert_eq!(
-        valid_packets,
-        vec![valid_packet(6000, BYTES_PER_DC as u32, vec![7])]
-    );
-
-    let balance = {
-        let balances = verifier.debiter.balances();
-        let balances = balances.lock().await;
-        *balances.get(&payer).unwrap()
-    };
-    assert_eq!(balance.balance, 1);
-    assert_eq!(balance.burned, 1);
 }
