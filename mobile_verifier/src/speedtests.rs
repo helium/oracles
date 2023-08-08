@@ -89,7 +89,12 @@ impl SpeedtestDaemon {
         let mut speedtests = file.into_stream(&mut transaction).await?;
         while let Some(speedtest_report) = speedtests.next().await {
             let pubkey = speedtest_report.report.pubkey.clone();
-            if gateway_is_valid(&pubkey, &self.gateway_client).await {
+            if self
+                .gateway_client
+                .resolve_gateway_info(&pubkey)
+                .await
+                .is_ok()
+            {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
                 let latest_speedtests =
                     get_latest_speedtests_for_pubkey(&pubkey, &mut transaction).await?;
@@ -125,12 +130,6 @@ pub async fn save_speedtest(
     Ok(())
 }
 
-pub async fn gateway_is_valid<'a>(
-    pubkey: &PublicKeyBinary,
-    gateway_client: &'a GatewayClient,
-) -> bool {
-    gateway_client.resolve_gateway_info(pubkey).await.is_ok()
-}
 pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
     exec: &mut Transaction<'_, Postgres>,
