@@ -111,6 +111,7 @@ pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report"
 pub const VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "verified_subscriber_location_report";
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
+pub const VERIFIED_SPEEDTEST: &str = "verified_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
 pub const CELL_SPEEDTEST_INGEST_REPORT: &str = "speedtest_report";
 pub const ENTROPY: &str = "entropy";
@@ -175,6 +176,7 @@ pub enum FileType {
     VerifiedSubscriberLocationIngestReport,
     MapperMsg,
     CoverageObjectIngestReport,
+    VerifiedSpeedtest,
 }
 
 impl fmt::Display for FileType {
@@ -187,6 +189,7 @@ impl fmt::Display for FileType {
             }
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
+            Self::VerifiedSpeedtest => VERIFIED_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
@@ -231,6 +234,7 @@ impl FileType {
             }
             Self::CellHeartbeat => CELL_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
+            Self::VerifiedSpeedtest => VERIFIED_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
@@ -275,6 +279,7 @@ impl FromStr for FileType {
             }
             CELL_HEARTBEAT => Self::CellHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
+            VERIFIED_SPEEDTEST => Self::VerifiedSpeedtest,
             CELL_HEARTBEAT_INGEST_REPORT => Self::CellHeartbeatIngestReport,
             CELL_SPEEDTEST_INGEST_REPORT => Self::CellSpeedtestIngestReport,
             ENTROPY => Self::Entropy,
