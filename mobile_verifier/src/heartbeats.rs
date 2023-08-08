@@ -399,7 +399,7 @@ impl Heartbeat {
                 INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
-                latest_timestamp = EXCLUDED.latest_timestamp
+                latest_timestamp = EXCLUDED.latest_timestamp,
                 coverage_object = EXCLUDED.coverage_object
                 RETURNING (xmax = 0) as inserted
                 "#
