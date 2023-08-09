@@ -16,7 +16,7 @@ use file_store::{
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
-use std::{hash::Hasher, ops::DerefMut, str::FromStr, time::Duration};
+use std::{hash::Hasher, ops::DerefMut, str::FromStr};
 use tokio::{
     sync::Mutex,
     time::{self, MissedTickBehavior},
