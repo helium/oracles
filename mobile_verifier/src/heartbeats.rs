@@ -292,10 +292,10 @@ async fn validate_heartbeat(
 
 pub async fn clear_heartbeats(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    reward_period: &Range<DateTime<Utc>>,
+    timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
-        .bind(reward_period.start)
+        .bind(timestamp)
         .execute(&mut *tx)
         .await?;
     Ok(())

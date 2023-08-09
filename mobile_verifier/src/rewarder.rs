@@ -214,10 +214,10 @@ impl Rewarder {
         let mut transaction = self.pool.begin().await?;
 
         // clear out the various db tables
-        heartbeats::clear_heartbeats(&mut transaction, reward_period).await?;
-        speedtests::clear_speedtests(&mut transaction, reward_period).await?;
-        data_session::clear_hotspot_data_sessions(&mut transaction, reward_period).await?;
-        // subscriber_location::clear_location_shares(&mut transaction, reward_period).await?;
+        heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
+        speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
+        data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.end).await?;
+        // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
         save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;

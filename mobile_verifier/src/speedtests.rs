@@ -12,7 +12,7 @@ use futures::{
 use helium_crypto::PublicKeyBinary;
 use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
-use std::{collections::HashMap, ops::Range};
+use std::collections::HashMap;
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -177,10 +177,10 @@ pub async fn aggregate_epoch_speedtests<'a>(
 
 pub async fn clear_speedtests(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    reward_period: &Range<DateTime<Utc>>,
+    timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM speedtests WHERE timestamp < $1")
-        .bind(reward_period.start)
+        .bind(timestamp)
         .execute(&mut *tx)
         .await?;
     Ok(())

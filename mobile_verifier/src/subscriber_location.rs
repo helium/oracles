@@ -193,10 +193,10 @@ pub async fn aggregate_location_shares(
 #[allow(dead_code)]
 pub async fn clear_location_shares(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    reward_period: &Range<DateTime<Utc>>,
+    timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("delete from subscriber_loc_verified where received_timestamp < $1")
-        .bind(reward_period.end)
+        .bind(timestamp)
         .execute(&mut *tx)
         .await?;
     Ok(())
