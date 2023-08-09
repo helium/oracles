@@ -16,7 +16,7 @@ use file_store::{
 use futures::{stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
-use std::{hash::Hasher, ops::DerefMut};
+use std::{hash::Hasher, ops::DerefMut, str::FromStr};
 use tokio::{
     sync::Mutex,
     time::{self, MissedTickBehavior},
@@ -220,7 +220,7 @@ impl Loader {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
         );
-        let infos = store.list_all(file_type, after, before).await?;
+        let infos = store.list_all(file_type.to_str(), after, before).await?;
         if infos.is_empty() {
             tracing::info!("no available ingest files of type {file_type}");
             return Ok(());
@@ -264,7 +264,7 @@ impl Loader {
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
     ) -> anyhow::Result<()> {
-        let file_type = file_info.file_type;
+        let file_type = file_info.prefix.clone();
         let tx = Mutex::new(self.pool.begin().await?);
         let metrics = LoaderMetricTracker::new();
         store
@@ -279,7 +279,7 @@ impl Loader {
                             tracing::warn!("skipping report of type {file_type} due to error {err:?}")
                         }
                         Ok(buf) => {
-                            match self.handle_report(file_type, &buf, gateway_cache, xor_data, xor_filter, &metrics).await
+                            match self.handle_report(&file_type, &buf, gateway_cache, xor_data, xor_filter, &metrics).await
                                 {
                                     Ok(Some(bindings)) =>  inserts.push(bindings),
                                     Ok(None) => (),
@@ -305,14 +305,14 @@ impl Loader {
 
     async fn handle_report(
         &self,
-        file_type: FileType,
+        file_type: &str,
         buf: &[u8],
         gateway_cache: &GatewayCache,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
         metrics: &LoaderMetricTracker,
     ) -> anyhow::Result<Option<InsertBindings>> {
-        match file_type {
+        match FileType::from_str(file_type)? {
             FileType::IotBeaconIngestReport => {
                 let beacon = IotBeaconIngestReport::decode(buf)?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);

@@ -1,5 +1,5 @@
 use crate::{
-    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, FileType, Result, Settings,
+    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, Result, Settings,
 };
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
@@ -57,27 +57,25 @@ impl FileStore {
         })
     }
 
-    pub async fn list_all<A, B, F>(
+    pub async fn list_all<A, B>(
         &self,
-        file_type: F,
+        file_type: &str,
         after: A,
         before: B,
     ) -> Result<Vec<FileInfo>>
     where
-        F: Into<FileType> + Copy,
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
         self.list(file_type, after, before).try_collect().await
     }
 
-    pub fn list<A, B, F>(&self, file_type: F, after: A, before: B) -> FileInfoStream
+    pub fn list<A, B>(&self, prefix: &str, after: A, before: B) -> FileInfoStream
     where
-        F: Into<FileType> + Copy,
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
-        let file_type = file_type.into();
+        let file_type = prefix.to_string();
         let before = before.into();
         let after = after.into();
 
