@@ -220,7 +220,7 @@ impl Loader {
         tracing::info!(
             "checking for new ingest files of type {file_type} after {after} and before {before}"
         );
-        let infos = store.list_all(file_type, after, before).await?;
+        let infos = store.list_all(file_type.to_str(), after, before).await?;
         if infos.is_empty() {
             tracing::info!("no available ingest files of type {file_type}");
             return Ok(());

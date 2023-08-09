@@ -66,7 +66,7 @@ pub struct FileFilter {
 impl FileFilter {
     pub fn list(&self, store: &FileStore) -> FileInfoStream {
         store.list(
-            self.prefix.clone(),
+            &self.prefix,
             self.after.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
             self.before.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
         )

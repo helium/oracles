@@ -183,7 +183,7 @@ async fn process_files(
     after: DateTime<Utc>,
 ) -> Result<Option<DateTime<Utc>>, PriceTrackerError> {
     file_store
-        .list(FileType::PriceReport, after, None)
+        .list(FileType::PriceReport.to_str(), after, None)
         .map_err(PriceTrackerError::from)
         .and_then(|file| process_file(file_store, file, sender))
         .try_fold(None, |_old, ts| async move { Ok(Some(ts)) })

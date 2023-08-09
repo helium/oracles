@@ -57,23 +57,21 @@ impl FileStore {
         })
     }
 
-    pub async fn list_all<A, B, P>(
+    pub async fn list_all<A, B>(
         &self,
-        file_type: P,
+        file_type: &str,
         after: A,
         before: B,
     ) -> Result<Vec<FileInfo>>
     where
-        P: ToString + std::fmt::Display,
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
         self.list(file_type, after, before).try_collect().await
     }
 
-    pub fn list<A, B, P>(&self, prefix: P, after: A, before: B) -> FileInfoStream
+    pub fn list<A, B>(&self, prefix: &str, after: A, before: B) -> FileInfoStream
     where
-        P: ToString,
         A: Into<Option<DateTime<Utc>>> + Copy,
         B: Into<Option<DateTime<Utc>>> + Copy,
     {
