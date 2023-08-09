@@ -1,5 +1,7 @@
 use crate::{
-    error::DecodeError, BytesMutStream, Error, FileInfo, FileInfoStream, Result, Settings,
+    error::DecodeError,
+    settings::{self, Settings},
+    BytesMutStream, Error, FileInfo, FileInfoStream, Result,
 };
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{types::ByteStream, Client, Endpoint, Region};
@@ -55,6 +57,36 @@ impl FileStore {
             client,
             bucket: settings.bucket.clone(),
         })
+    }
+
+    pub async fn new(
+        bucket: String,
+        endpoint: Option<String>,
+        region: Option<String>,
+    ) -> Result<Self> {
+        let endpoint: Option<Endpoint> = match &endpoint {
+            Some(endpoint) => Uri::from_str(endpoint)
+                .map(Endpoint::immutable)
+                .map(Some)
+                .map_err(DecodeError::from)?,
+            _ => None,
+        };
+        let region = if region.is_some() {
+            Region::new(region.unwrap())
+        } else {
+            Region::new(settings::default_region())
+        };
+        let region_provider = RegionProviderChain::first_try(region).or_default_provider();
+
+        let mut config = aws_config::from_env().region(region_provider);
+        if let Some(endpoint) = endpoint {
+            config = config.endpoint_resolver(endpoint);
+        }
+
+        let config = config.load().await;
+
+        let client = Client::new(&config);
+        Ok(Self { client, bucket })
     }
 
     pub async fn list_all<A, B>(

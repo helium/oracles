@@ -18,7 +18,7 @@ pub struct Settings {
     pub secret_access_key: Option<String>,
 }
 
-fn default_region() -> String {
+pub fn default_region() -> String {
     "us-west-2".to_string()
 }
 
