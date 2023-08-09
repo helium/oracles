@@ -17,6 +17,9 @@ pub struct IotInvalidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
     pub reason: InvalidReason,
     pub report: IotBeaconReport,
+    pub location: Option<u64>,
+    pub gain: i32,
+    pub elevation: i32,
 }
 
 #[derive(Serialize, Clone)]
@@ -75,6 +78,9 @@ impl TryFrom<LoraInvalidBeaconReportV1> for IotInvalidBeaconReport {
                 .report
                 .ok_or_else(|| Error::not_found("iot invalid beacon report v1"))?
                 .try_into()?,
+            location: v.location.parse().ok(),
+            gain: v.gain,
+            elevation: v.elevation,
         })
     }
 }
@@ -87,6 +93,12 @@ impl From<IotInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
             received_timestamp,
             reason: v.reason as i32,
             report: Some(report),
+            location: v
+                .location
+                .map(|l| l.to_string())
+                .unwrap_or_else(String::new),
+            gain: v.gain,
+            elevation: v.elevation,
         }
     }
 }
