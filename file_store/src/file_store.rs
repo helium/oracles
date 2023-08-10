@@ -59,13 +59,10 @@ impl FileStore {
         })
     }
 
-    // todo: wrap from_settings around new
     pub async fn new(
         bucket: String,
         endpoint: Option<String>,
         region: Option<String>,
-        _access_key_id: Option<String>,
-        _secret_access_key: Option<String>,
     ) -> Result<Self> {
         let endpoint: Option<Endpoint> = match &endpoint {
             Some(endpoint) => Uri::from_str(endpoint)
@@ -84,16 +81,6 @@ impl FileStore {
         let mut config = aws_config::from_env().region(region_provider);
         if let Some(endpoint) = endpoint {
             config = config.endpoint_resolver(endpoint);
-        }
-
-        #[cfg(feature = "local")]
-        if _access_key_id.is_some() && _secret_access_key.is_some() {
-            let creds = aws_types::credentials::Credentials::from_keys(
-                _access_key_id.as_ref().unwrap(),
-                _secret_access_key.as_ref().unwrap(),
-                None,
-            );
-            config = config.credentials_provider(creds);
         }
 
         let config = config.load().await;
