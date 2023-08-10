@@ -160,7 +160,7 @@ pub async fn aggregate_epoch_speedtests<'a>(
             SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, serial, row_number()
             over (partition by pubkey order by timestamp desc) as count FROM speedtests where timestamp < $1
         ) as tmp
-        where count < $2"
+        where count <= $2"
     )
     .bind(epoch_end)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
