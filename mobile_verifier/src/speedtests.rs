@@ -1,5 +1,5 @@
-use crate::speedtests_average::SpeedtestAverage;
-use chrono::{DateTime, Utc};
+use crate::speedtests_average::{SpeedtestAverage, SPEEDTEST_LAPSE};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
@@ -154,14 +154,17 @@ pub async fn aggregate_epoch_speedtests<'a>(
     exec: &sqlx::Pool<sqlx::Postgres>,
 ) -> Result<EpochSpeedTests, sqlx::Error> {
     let mut speedtests = EpochSpeedTests::new();
+    // use latest speedtest which are no older than hours defined by SPEEDTEST_LAPSE
+    let start = epoch_end - Duration::hours(SPEEDTEST_LAPSE);
     // pull the last N most recent speedtests from prior to the epoch end for each pubkey
     let mut rows = sqlx::query_as::<_, Speedtest>(
         "select * from (
             SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, serial, row_number()
-            over (partition by pubkey order by timestamp desc) as count FROM speedtests where timestamp < $1
+            over (partition by pubkey order by timestamp desc) as count FROM speedtests where timestamp >= $1 and timestamp < $2
         ) as tmp
-        where count <= $2"
+        where count <= $3"
     )
+    .bind(start)
     .bind(epoch_end)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
     .fetch(exec);
@@ -175,12 +178,14 @@ pub async fn aggregate_epoch_speedtests<'a>(
     Ok(speedtests)
 }
 
+
 pub async fn clear_speedtests(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    timestamp: &DateTime<Utc>,
+    epoch_end: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
+    let oldest_ts = *epoch_end - Duration::hours(SPEEDTEST_LAPSE);
     sqlx::query("DELETE FROM speedtests WHERE timestamp < $1")
-        .bind(timestamp)
+        .bind(oldest_ts)
         .execute(&mut *tx)
         .await?;
     Ok(())
