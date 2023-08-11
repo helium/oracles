@@ -768,6 +768,9 @@ async fn insert_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
 
     const SKF_INSERT_VALS: &str =
         " insert into route_session_key_filters (route_id, devaddr, session_key, max_copies) ";
+    // changes to existing records are always treated as an upsert and override the existing value
+    // instead of ignoring. this avoids reconciliation bugs attempting to update fields of an
+    // existing skf from succeeding on the HPRs but being ignored by the Config Service
     const SKF_INSERT_CONFLICT: &str =
         " on conflict (route_id, devaddr, session_key) update set max_copies = excluded.max_copies returning * ";
 
