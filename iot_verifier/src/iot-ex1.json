@@ -1,0 +1,15 @@
+[
+    {
+      "start_time": "2022-08-01T00:00:01Z",
+      "yearly_emissions": 65000000000
+    },
+    {
+      "start_time": "2023-08-01T00:00:01Z",
+      "yearly_emissions": 32500000000
+    },
+    {
+        "start_time": "2024-08-01T00:00:01Z",
+        "yearly_emissions": 16250000000
+    }
+
+]

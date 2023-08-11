@@ -16,9 +16,6 @@ const DEFAULT_PREC: u32 = 15;
 // rewards in IoT Bones ( iot @ 10^6 ) per 24 hours based on emission curve year 1
 // TODO: expand to cover the full multi-year emission curve
 lazy_static! {
-    // TODO: year 1 emissions allocate 30% of total to PoC with 6% to beacons and 24% to witnesses but subsequent years back
-    // total PoC percentage off 1.5% each year; determine how beacons and witnesses will split the subsequent years' allocations
-    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(32_500_000_000_u64) / Decimal::from(366)) * Decimal::from(1_000_000); //  88_797_814_207_650.273224043715847
     static ref BEACON_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.06);
     static ref WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
     // Data transfer is allocated 50% of daily rewards
@@ -39,29 +36,28 @@ fn get_tokens_by_duration(tokens: Decimal, duration: Duration) -> Decimal {
 }
 
 fn get_scheduled_poc_tokens(
+    daily_emissions: Decimal,
     duration: Duration,
     dc_transfer_remainder: Decimal,
 ) -> (Decimal, Decimal) {
     (
-        get_tokens_by_duration(*REWARDS_PER_DAY * *BEACON_REWARDS_PER_DAY_PERCENT, duration)
+        get_tokens_by_duration(daily_emissions * *BEACON_REWARDS_PER_DAY_PERCENT, duration)
             + (dc_transfer_remainder * *BEACON_DC_REMAINER_PERCENT),
-        get_tokens_by_duration(
-            *REWARDS_PER_DAY * *WITNESS_REWARDS_PER_DAY_PERCENT,
-            duration,
-        ) + (dc_transfer_remainder * *WITNESS_DC_REMAINER_PERCENT),
+        get_tokens_by_duration(daily_emissions * *WITNESS_REWARDS_PER_DAY_PERCENT, duration)
+            + (dc_transfer_remainder * *WITNESS_DC_REMAINER_PERCENT),
     )
 }
 
-fn get_scheduled_dc_tokens(duration: Duration) -> Decimal {
+fn get_scheduled_dc_tokens(daily_emissions: Decimal, duration: Duration) -> Decimal {
     get_tokens_by_duration(
-        *REWARDS_PER_DAY * *DATA_TRANSFER_REWARDS_PER_DAY_PERCENT,
+        daily_emissions * *DATA_TRANSFER_REWARDS_PER_DAY_PERCENT,
         duration,
     )
 }
 
-fn get_scheduled_ops_fund_tokens(duration: Duration) -> u64 {
+fn get_scheduled_ops_fund_tokens(daily_emissions: Decimal, duration: Duration) -> u64 {
     get_tokens_by_duration(
-        *REWARDS_PER_DAY * *OPERATIONS_REWARDS_PER_DAY_PERCENT,
+        daily_emissions * *OPERATIONS_REWARDS_PER_DAY_PERCENT,
         duration,
     )
     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
@@ -302,6 +298,7 @@ impl GatewayShares {
 
     pub fn into_iot_reward_shares(
         self,
+        daily_emissions: Decimal,
         reward_period: &'_ Range<DateTime<Utc>>,
         iot_price: Decimal,
     ) -> impl Iterator<Item = proto::IotRewardShare> + '_ {
@@ -310,7 +307,7 @@ impl GatewayShares {
         let (total_beacon_shares, total_witness_shares, total_dc_shares) = self.total_shares();
         // the total number of iot rewards for dc transfer this epoch
         let total_dc_transfer_rewards =
-            get_scheduled_dc_tokens(reward_period.end - reward_period.start);
+            get_scheduled_dc_tokens(daily_emissions, reward_period.end - reward_period.start);
 
         // convert the total spent data transfer DC to it equiv iot bone value
         // the rewards distributed to gateways will be equal to this
@@ -326,6 +323,7 @@ impl GatewayShares {
         // the total amounts of iot rewards this epoch for beacons, witnesses
         // taking into account any remaining dc transfer rewards
         let (total_beacon_rewards, total_witness_rewards) = get_scheduled_poc_tokens(
+            daily_emissions,
             reward_period.end - reward_period.start,
             dc_transfer_rewards_unused,
         );
@@ -377,9 +375,15 @@ impl GatewayShares {
 pub mod operational_rewards {
     use super::*;
 
-    pub fn compute(reward_period: &Range<DateTime<Utc>>) -> proto::IotRewardShare {
+    pub fn compute(
+        daily_emissions: Decimal,
+        reward_period: &Range<DateTime<Utc>>,
+    ) -> proto::IotRewardShare {
         let op_fund_reward = proto::OperationalReward {
-            amount: get_scheduled_ops_fund_tokens(reward_period.end - reward_period.start),
+            amount: get_scheduled_ops_fund_tokens(
+                daily_emissions,
+                reward_period.end - reward_period.start,
+            ),
         };
         proto::IotRewardShare {
             start_period: reward_period.start.encode_timestamp(),
@@ -449,6 +453,8 @@ fn compute_rewards(rewards_per_share: Decimal, shares: Decimal) -> u64 {
 #[cfg(test)]
 mod test {
     use super::*;
+    use chrono::prelude::*;
+    use file_store::emissions::{Emission, EmissionsSchedule};
 
     fn reward_shares_in_dec(
         beacon_shares: Decimal,
@@ -466,13 +472,42 @@ mod test {
         }
     }
 
+    fn default_emissions_schedule() -> EmissionsSchedule {
+        let schedule = vec![
+            Emission {
+                start_time: Utc.with_ymd_and_hms(2023, 8, 1, 0, 0, 1).unwrap(),
+                yearly_emissions:dec!(32_500_000_000),
+            },
+            Emission {
+                start_time: Utc.with_ymd_and_hms(2022, 8, 1, 0, 0, 1).unwrap(),
+                yearly_emissions: dec!(65_000_000_000),
+            },
+        ];
+        EmissionsSchedule { schedule }
+    }
+
+
+    #[tokio::test]
+    async fn test_emission_schedule_file() {
+        // todo: maybe move this test to filestore
+        let emissions_schedule = EmissionsSchedule::from_file("./src/iot-ex1.json".to_string()).await.unwrap();
+        let yearly_emissions = emissions_schedule.yearly_emissions(Utc::now()).unwrap();
+        let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
+        assert_eq!(dec!(32_500_000_000_000_000), yearly_emissions);
+        assert_eq!(dec!(88_797_814_207_650.27322404371585), daily_emissions);
+    }
+
     #[test]
     fn test_non_gateway_reward_shares() {
         let epoch_duration = Duration::hours(1);
-        let total_tokens_for_period = *REWARDS_PER_DAY / dec!(24);
+        let emissions_schedule = default_emissions_schedule();
+        let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
+
+        let total_tokens_for_period = daily_emissions / dec!(24);
         println!("total_tokens_for_period: {total_tokens_for_period}");
 
-        let operation_tokens_for_period = get_scheduled_ops_fund_tokens(epoch_duration);
+        let operation_tokens_for_period =
+            get_scheduled_ops_fund_tokens(daily_emissions, epoch_duration);
         assert_eq!(258_993_624_772, operation_tokens_for_period);
     }
 
@@ -482,6 +517,9 @@ mod test {
     // total epoch dc rewards amount
     // this results in a significant redistribution of dc rewards to POC
     fn test_reward_share_calculation_fixed_dc_spend_with_transfer_distribution() {
+        let emissions_schedule = default_emissions_schedule();
+        let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
+
         let iot_price = dec!(359);
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -504,7 +542,8 @@ mod test {
 
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
-        let total_data_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        let total_data_transfer_tokens_for_period =
+            get_scheduled_dc_tokens(daily_emissions, Duration::minutes(10));
         println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
 
         let gw1_dc_spend = dec!(502);
@@ -555,7 +594,7 @@ mod test {
         let gw_shares = GatewayShares { shares };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
-            .into_iot_reward_shares(&reward_period, iot_price)
+            .into_iot_reward_shares(daily_emissions, &reward_period, iot_price)
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
@@ -647,8 +686,11 @@ mod test {
             + gw6_rewards.beacon_amount
             + gw6_rewards.witness_amount;
 
-        let (exp_total_beacon_tokens, exp_total_witness_tokens) =
-            get_scheduled_poc_tokens(Duration::minutes(10), total_unused_data_transfer_tokens);
+        let (exp_total_beacon_tokens, exp_total_witness_tokens) = get_scheduled_poc_tokens(
+            daily_emissions,
+            Duration::minutes(10),
+            total_unused_data_transfer_tokens,
+        );
         let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
         println!("max poc rewards: {exp_sum_poc_tokens}");
         println!("total actual poc rewards distributed: {sum_poc_amounts}");
@@ -662,7 +704,10 @@ mod test {
     #[test]
     // test reward distribution where there is zero transfer of dc rewards to poc
     fn test_reward_share_calculation_without_data_transfer_distribution() {
+        let emissions_schedule = default_emissions_schedule();
+        let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
         let iot_price = dec!(359);
+
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
@@ -684,7 +729,8 @@ mod test {
 
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
-        let total_data_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        let total_data_transfer_tokens_for_period =
+            get_scheduled_dc_tokens(daily_emissions, Duration::minutes(10));
         println!("total data transfer scheduled tokens: {total_data_transfer_tokens_for_period}");
 
         // get the expected total amount of dc we need to spend
@@ -739,7 +785,7 @@ mod test {
         let gw_shares = GatewayShares { shares };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
-            .into_iot_reward_shares(&reward_period, iot_price)
+            .into_iot_reward_shares(daily_emissions, &reward_period, iot_price)
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
@@ -824,7 +870,7 @@ mod test {
             + gw6_rewards.beacon_amount
             + gw6_rewards.witness_amount;
         let (exp_total_beacon_tokens, exp_total_witness_tokens) =
-            get_scheduled_poc_tokens(Duration::minutes(10), Decimal::ZERO);
+            get_scheduled_poc_tokens(daily_emissions, Duration::minutes(10), Decimal::ZERO);
         let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
         println!("max poc rewards: {exp_sum_poc_tokens}");
         println!("total actual poc rewards distributed: {sum_poc_amounts}");
@@ -838,7 +884,10 @@ mod test {
     #[test]
     // test reward distribution where there is transfer of dc rewards to poc
     fn test_reward_share_calculation_with_data_transfer_distribution() {
+        let emissions_schedule = default_emissions_schedule();
+        let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
         let iot_price = dec!(359);
+
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
@@ -860,7 +909,8 @@ mod test {
 
         let now = Utc::now();
         let reward_period = (now - Duration::minutes(10))..now;
-        let total_data_transfer_tokens_for_period = get_scheduled_dc_tokens(Duration::minutes(10));
+        let total_data_transfer_tokens_for_period =
+            get_scheduled_dc_tokens(daily_emissions, Duration::minutes(10));
         println!("total_data_transfer_tokens_for_period: {total_data_transfer_tokens_for_period}");
 
         // get the expected total amount of dc we need to spend
@@ -907,7 +957,7 @@ mod test {
         let gw_shares = GatewayShares { shares };
         let mut rewards: HashMap<PublicKeyBinary, proto::GatewayReward> = HashMap::new();
         let gw_reward_shares: Vec<proto::IotRewardShare> = gw_shares
-            .into_iot_reward_shares(&reward_period, iot_price)
+            .into_iot_reward_shares(daily_emissions, &reward_period, iot_price)
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
@@ -989,8 +1039,11 @@ mod test {
         let expected_data_transfer_tokens_for_poc = total_data_transfer_tokens_for_period
             - Decimal::from_u64(sum_data_transfer_amounts).unwrap();
         println!("expected_data_transfer_tokens_for_poc: {expected_data_transfer_tokens_for_poc}");
-        let (exp_total_beacon_tokens, exp_total_witness_tokens) =
-            get_scheduled_poc_tokens(Duration::minutes(10), expected_data_transfer_tokens_for_poc);
+        let (exp_total_beacon_tokens, exp_total_witness_tokens) = get_scheduled_poc_tokens(
+            daily_emissions,
+            Duration::minutes(10),
+            expected_data_transfer_tokens_for_poc,
+        );
         let exp_sum_poc_tokens = exp_total_beacon_tokens + exp_total_witness_tokens;
         println!("max poc rewards: {exp_sum_poc_tokens}");
         println!("total actual poc rewards distributed: {sum_poc_amounts}");
