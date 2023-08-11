@@ -713,16 +713,18 @@ pub async fn update_skfs(
 ) -> anyhow::Result<()> {
     let mut transaction = db.begin().await?;
 
-    let added_updates: Vec<(Skf, proto::ActionV1)> = insert_skfs(to_add, &mut transaction)
-        .await?
-        .into_iter()
-        .map(|added_skf| (added_skf, proto::ActionV1::Add))
-        .collect();
-
+    // Always process removes before adds to ensure updating existing values doesn't result in
+    // removing a value that was just added
     let removed_updates: Vec<(Skf, proto::ActionV1)> = remove_skfs(to_remove, &mut transaction)
         .await?
         .into_iter()
         .map(|removed_skf| (removed_skf, proto::ActionV1::Remove))
+        .collect();
+
+    let added_updates: Vec<(Skf, proto::ActionV1)> = insert_skfs(to_add, &mut transaction)
+        .await?
+        .into_iter()
+        .map(|added_skf| (added_skf, proto::ActionV1::Add))
         .collect();
 
     transaction.commit().await?;
@@ -766,8 +768,11 @@ async fn insert_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
 
     const SKF_INSERT_VALS: &str =
         " insert into route_session_key_filters (route_id, devaddr, session_key, max_copies) ";
+    // changes to existing records are always treated as an upsert and override the existing value
+    // instead of ignoring. this avoids reconciliation bugs attempting to update fields of an
+    // existing skf from succeeding on the HPRs but being ignored by the Config Service
     const SKF_INSERT_CONFLICT: &str =
-        " on conflict (route_id, devaddr, session_key) do nothing returning * ";
+        " on conflict (route_id, devaddr, session_key) update set max_copies = excluded.max_copies returning * ";
 
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SKF_INSERT_VALS);
