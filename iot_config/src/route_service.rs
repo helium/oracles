@@ -47,6 +47,15 @@ enum OrgId<'a> {
     RouteId(&'a str),
 }
 
+impl<'a> OrgId<'a> {
+    fn route_id(route_id: &'a str) -> Result<Self, Status> {
+        sqlx::types::Uuid::try_parse(route_id).map_err(|_| {
+            Status::invalid_argument(format!("unable to parse route_id: {route_id}"))
+        })?;
+        Ok(Self::RouteId(route_id))
+    }
+}
+
 impl RouteService {
     pub fn new(
         settings: &Settings,
@@ -222,7 +231,7 @@ impl iot_config::Route for RouteService {
         telemetry::count_request("route", "get");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
+        self.verify_request_signature(&signer, &request, OrgId::route_id(&request.id)?)
             .await?;
 
         tracing::debug!(route_id = request.id, "get route");
@@ -311,7 +320,7 @@ impl iot_config::Route for RouteService {
         );
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&route.id))
+        self.verify_request_signature(&signer, &request, OrgId::route_id(&route.id)?)
             .await?;
 
         let updated_route = route::update_route(
@@ -342,7 +351,7 @@ impl iot_config::Route for RouteService {
         telemetry::count_request("route", "delete");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.id))
+        self.verify_request_signature(&signer, &request, OrgId::route_id(&request.id)?)
             .await?;
 
         tracing::debug!(route_id = request.id, "route delete");
@@ -436,7 +445,7 @@ impl iot_config::Route for RouteService {
         self.verify_request_signature_or_stream(
             &signer,
             &request,
-            OrgId::RouteId(&request.route_id),
+            OrgId::route_id(&request.route_id)?,
         )
         .await?;
 
@@ -597,7 +606,7 @@ impl iot_config::Route for RouteService {
         self.verify_request_signature_or_stream(
             &signer,
             &request,
-            OrgId::RouteId(&request.route_id),
+            OrgId::route_id(&request.route_id)?,
         )
         .await?;
 
@@ -765,7 +774,7 @@ impl iot_config::Route for RouteService {
         self.verify_request_signature_or_stream(
             &signer,
             &request,
-            OrgId::RouteId(&request.route_id),
+            OrgId::route_id(&request.route_id)?,
         )
         .await?;
 
@@ -828,7 +837,7 @@ impl iot_config::Route for RouteService {
         telemetry::count_request("route", "get-skfs");
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
+        self.verify_request_signature(&signer, &request, OrgId::route_id(&request.route_id)?)
             .await?;
 
         let pool = self.pool.clone();
@@ -899,7 +908,7 @@ impl iot_config::Route for RouteService {
         };
 
         let signer = verify_public_key(&request.signer)?;
-        self.verify_request_signature(&signer, &request, OrgId::RouteId(&request.route_id))
+        self.verify_request_signature(&signer, &request, OrgId::route_id(&request.route_id)?)
             .await?;
 
         self.validate_skf_devaddrs(&request.route_id, &request.updates)
