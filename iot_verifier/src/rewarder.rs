@@ -4,7 +4,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
-use file_store::{file_sink, traits::TimestampEncode};
+use file_store::{emissions::EmissionsSchedule, file_sink, traits::TimestampEncode};
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -32,7 +32,6 @@ impl Rewarder {
         tracing::info!("Starting iot verifier rewarder");
 
         let reward_period_length = Duration::hours(self.reward_period_hours);
-
         loop {
             let now = Utc::now();
 
@@ -82,12 +81,17 @@ impl Rewarder {
         scheduler: &Scheduler,
         iot_price: Decimal,
     ) -> anyhow::Result<()> {
+        let emissions_schedule = EmissionsSchedule::from_file("./iot.json".to_string()).await?;
+        let daily_emissions = emissions_schedule.daily_emissions(Utc::now())?;
+
         let gateway_reward_shares =
             GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
 
-        for reward_share in
-            gateway_reward_shares.into_iot_reward_shares(&scheduler.reward_period, iot_price)
-        {
+        for reward_share in gateway_reward_shares.into_iot_reward_shares(
+            daily_emissions,
+            &scheduler.reward_period,
+            iot_price,
+        ) {
             self.rewards_sink
                 .write(reward_share, [])
                 .await?
@@ -96,7 +100,10 @@ impl Rewarder {
         }
 
         self.rewards_sink
-            .write(operational_rewards::compute(&scheduler.reward_period), [])
+            .write(
+                operational_rewards::compute(daily_emissions, &scheduler.reward_period),
+                [],
+            )
             .await?
             // Await the returned oneshot to ensure we wrote the file
             .await??;

@@ -56,6 +56,8 @@ pub enum DecodeError {
     UnsupportedStatusReason(String, i32),
     #[error("invalid unix timestamp {0}")]
     InvalidTimestamp(u64),
+    #[error("json error")]
+    Json(#[from] serde_json::Error),
 }
 
 #[derive(Error, Debug)]
