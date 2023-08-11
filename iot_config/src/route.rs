@@ -772,7 +772,7 @@ async fn insert_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
     // instead of ignoring. this avoids reconciliation bugs attempting to update fields of an
     // existing skf from succeeding on the HPRs but being ignored by the Config Service
     const SKF_INSERT_CONFLICT: &str =
-        " on conflict (route_id, devaddr, session_key) update set max_copies = excluded.max_copies returning * ";
+        " on conflict (route_id, devaddr, session_key) do update set max_copies = excluded.max_copies returning * ";
 
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SKF_INSERT_VALS);
