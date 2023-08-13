@@ -93,7 +93,10 @@ impl RouteService {
             OrgId::Oui(oui) => org::get_org_pubkeys(oui, &self.pool).await,
             OrgId::RouteId(route_id) => org::get_org_pubkeys_by_route(route_id, &self.pool).await,
         }
-        .map_err(|_| Status::internal("auth verification error"))?;
+        .map_err(|err| match err {
+            OrgStoreError::RouteIdParse(id_err) => Status::invalid_argument(id_err.to_string()),
+            _ => Status::internal("auth verification error"),
+        })?;
 
         if org_keys.as_slice().contains(signer) && request.verify(signer).is_ok() {
             tracing::debug!(
