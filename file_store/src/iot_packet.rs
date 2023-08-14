@@ -7,7 +7,10 @@ use blake3::Hasher;
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidPacket;
-use helium_proto::{services::router::PacketRouterPacketReportV1, DataRate, Region};
+use helium_proto::{
+    services::router::{packet_router_packet_report_v1::PacketType, PacketRouterPacketReportV1},
+    DataRate, Region,
+};
 use serde::Serialize;
 
 #[derive(Serialize, Clone)]
@@ -23,6 +26,7 @@ pub struct PacketRouterPacketReport {
     pub gateway: PublicKeyBinary,
     pub payload_hash: Vec<u8>,
     pub payload_size: u32,
+    pub packet_type: PacketType,
     pub received_timestamp: DateTime<Utc>,
 }
 
@@ -77,6 +81,9 @@ impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
         let region = Region::from_i32(v.region).ok_or_else(|| {
             DecodeError::unsupported_region("iot_packet_router_packet_report_v1", v.region)
         })?;
+        let packet_type = PacketType::from_i32(v.r#type).ok_or_else(|| {
+            DecodeError::unsupported_packet_type("iot_packet_router_packet_report_v1", v.r#type)
+        })?;
         let received_timestamp = v.timestamp()?;
         Ok(Self {
             received_timestamp,
@@ -90,6 +97,7 @@ impl TryFrom<PacketRouterPacketReportV1> for PacketRouterPacketReport {
             gateway: v.gateway.into(),
             payload_hash: v.payload_hash,
             payload_size: v.payload_size,
+            packet_type,
         })
     }
 }

@@ -56,6 +56,8 @@ pub enum DecodeError {
     UnsupportedStatusReason(String, i32),
     #[error("invalid unix timestamp {0}")]
     InvalidTimestamp(u64),
+    #[error("unsupported packet type, type: {0}, value: {1}")]
+    UnsupportedPacketType(String, i32),
 }
 
 #[derive(Error, Debug)]
@@ -110,6 +112,10 @@ impl DecodeError {
 
     pub fn unsupported_datarate<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedDataRate(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_packet_type<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedPacketType(msg1.to_string(), msg2))
     }
 
     pub fn unsupported_participant_side<E: ToString>(msg1: E, msg2: i32) -> Error {

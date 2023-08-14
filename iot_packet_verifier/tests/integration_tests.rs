@@ -5,7 +5,10 @@ use futures::{Stream, StreamExt};
 use futures_util::stream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
+    services::{
+        packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
+        router::packet_router_packet_report_v1::PacketType,
+    },
     DataRate, Region,
 };
 use iot_packet_verifier::{
@@ -148,6 +151,7 @@ fn packet_report(
         gateway: PublicKeyBinary::from(vec![]),
         payload_hash,
         payload_size,
+        packet_type: PacketType::Uplink,
     }
 }
 
