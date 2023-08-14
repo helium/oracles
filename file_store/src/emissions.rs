@@ -17,9 +17,8 @@ pub struct EmissionsSchedule {
 }
 
 impl EmissionsSchedule {
-    pub fn default() -> Result<Self> {
-        let data = schedule();
-        let emissions: Vec<Emission> = serde_json::from_str(&data)?;
+    pub fn from_json(json: &str) -> Result<Self> {
+        let emissions: Vec<Emission> = serde_json::from_str(json)?;
         Ok(EmissionsSchedule {
             schedule: emissions,
         })
@@ -44,6 +43,7 @@ impl EmissionsSchedule {
             .find(|emission| datetime >= emission.start_time)
             .ok_or("failed to find emissions for specified date {datetime}")
             .unwrap();
+        // return yearly emissions in bones
         Ok(res.yearly_emissions * Decimal::from(1_000_000))
     }
 
@@ -72,23 +72,7 @@ fn is_leap_epoch(cur_year: i32, cur_month: u32) -> bool {
 }
 
 fn is_year_a_leap(year: i32) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || (year % 100 == 0 && year % 400 == 0))
-}
-
-fn schedule() -> String {
-    "[{
-        \"start_time\": \"2022-08-01T00:00:01Z\",
-        \"yearly_emissions\": 65000000000
-      },
-      {
-        \"start_time\": \"2023-08-01T00:00:01Z\",
-        \"yearly_emissions\": 32500000000
-      },
-      {
-          \"start_time\": \"2024-08-01T00:00:01Z\",
-          \"yearly_emissions\": 16250000000
-      }]"
-    .to_string()
+    !(year % 4 != 0 || year % 100 == 0 && year % 400 != 0)
 }
 
 #[cfg(test)]
@@ -97,14 +81,25 @@ mod test {
 
     #[test]
     fn test_leap_year() {
-        assert_eq!(false, is_leap_epoch(2023, 7));
+        assert!(!is_leap_epoch(2023, 7));
         assert!(is_leap_epoch(2023, 8));
         assert!(is_leap_epoch(2024, 7));
-        assert_eq!(false, is_leap_epoch(2024, 8));
+        assert!(!is_leap_epoch(2024, 8));
 
-        assert_eq!(false, is_leap_epoch(2027, 7));
+        assert!(!is_leap_epoch(2025, 1));
+        assert!(!is_leap_epoch(2025, 7));
+        assert!(!is_leap_epoch(2025, 8));
+        assert!(!is_leap_epoch(2026, 1));
+        assert!(!is_leap_epoch(2026, 7));
+        assert!(!is_leap_epoch(2026, 8));
+
+        assert!(!is_leap_epoch(2027, 7));
         assert!(is_leap_epoch(2027, 8));
         assert!(is_leap_epoch(2028, 7));
-        assert_eq!(false, is_leap_epoch(2028, 8));
+        assert!(!is_leap_epoch(2028, 8));
+
+        assert!(!is_leap_epoch(2029, 1));
+        assert!(!is_leap_epoch(2029, 7));
+        assert!(!is_leap_epoch(2029, 8));
     }
 }

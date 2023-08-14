@@ -485,19 +485,11 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_default_emission_schedule() {
-        let emissions_schedule = EmissionsSchedule::default().unwrap();
-        let yearly_emissions = emissions_schedule.yearly_emissions(Utc::now()).unwrap();
-        let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
-        assert_eq!(dec!(32_500_000_000_000_000), yearly_emissions);
-        assert_eq!(dec!(88_797_814_207_650.27322404371585), daily_emissions);
-        // todo assert rest of years
-    }
-
-    #[test]
-    fn test_non_gateway_reward_shares() {
+    async fn test_non_gateway_reward_shares() {
         let epoch_duration = Duration::hours(1);
-        let emissions_schedule = EmissionsSchedule::default().unwrap();
+        let emissions_schedule = EmissionsSchedule::from_file("./src/iot-ex1.json".to_string())
+            .await
+            .unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
 
         let total_tokens_for_period = daily_emissions / dec!(24);
@@ -508,13 +500,15 @@ mod test {
         assert_eq!(258_993_624_772, operation_tokens_for_period);
     }
 
-    #[test]
+    #[tokio::test]
     // test reward distribution where there is a fixed dc spend per gateway
     // with the total dc spend across all gateways being significantly lower than the
     // total epoch dc rewards amount
     // this results in a significant redistribution of dc rewards to POC
-    fn test_reward_share_calculation_fixed_dc_spend_with_transfer_distribution() {
-        let emissions_schedule = EmissionsSchedule::default().unwrap();
+    async fn test_reward_share_calculation_fixed_dc_spend_with_transfer_distribution() {
+        let emissions_schedule = EmissionsSchedule::from_file("./src/iot-ex1.json".to_string())
+            .await
+            .unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
 
         let iot_price = dec!(359);
@@ -698,10 +692,12 @@ mod test {
         assert_eq!(poc_diff, 5);
     }
 
-    #[test]
+    #[tokio::test]
     // test reward distribution where there is zero transfer of dc rewards to poc
-    fn test_reward_share_calculation_without_data_transfer_distribution() {
-        let emissions_schedule = EmissionsSchedule::default().unwrap();
+    async fn test_reward_share_calculation_without_data_transfer_distribution() {
+        let emissions_schedule = EmissionsSchedule::from_file("./src/iot-ex1.json".to_string())
+            .await
+            .unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
         let iot_price = dec!(359);
 
@@ -878,10 +874,12 @@ mod test {
         assert_eq!(poc_diff, 6);
     }
 
-    #[test]
+    #[tokio::test]
     // test reward distribution where there is transfer of dc rewards to poc
-    fn test_reward_share_calculation_with_data_transfer_distribution() {
-        let emissions_schedule = EmissionsSchedule::default().unwrap();
+    async fn test_reward_share_calculation_with_data_transfer_distribution() {
+        let emissions_schedule = EmissionsSchedule::from_file("./src/iot-ex1.json".to_string())
+            .await
+            .unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
         let iot_price = dec!(359);
 
