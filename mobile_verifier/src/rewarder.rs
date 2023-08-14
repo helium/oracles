@@ -222,7 +222,7 @@ impl Rewarder {
 
         // clear the db of data sessions data & subscriber location data for the epoch
         data_session::clear_hotspot_data_sessions(&mut transaction, reward_period).await?;
-        subscriber_location::clear_location_shares(&mut transaction, reward_period).await?;
+        // subscriber_location::clear_location_shares(&mut transaction, reward_period).await?;
 
         let next_reward_period = scheduler.next_reward_period();
         save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;
