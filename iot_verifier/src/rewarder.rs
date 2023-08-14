@@ -81,7 +81,7 @@ impl Rewarder {
         scheduler: &Scheduler,
         iot_price: Decimal,
     ) -> anyhow::Result<()> {
-        let emissions_schedule = EmissionsSchedule::from_file("./iot.json".to_string()).await?;
+        let emissions_schedule = EmissionsSchedule::default()?;
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now())?;
 
         let gateway_reward_shares =

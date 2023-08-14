@@ -453,8 +453,7 @@ fn compute_rewards(rewards_per_share: Decimal, shares: Decimal) -> u64 {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::prelude::*;
-    use file_store::emissions::{Emission, EmissionsSchedule};
+    use file_store::emissions::EmissionsSchedule;
 
     fn reward_shares_in_dec(
         beacon_shares: Decimal,
@@ -472,20 +471,6 @@ mod test {
         }
     }
 
-    fn default_emissions_schedule() -> EmissionsSchedule {
-        let schedule = vec![
-            Emission {
-                start_time: Utc.with_ymd_and_hms(2023, 8, 1, 0, 0, 1).unwrap(),
-                yearly_emissions: dec!(32_500_000_000),
-            },
-            Emission {
-                start_time: Utc.with_ymd_and_hms(2022, 8, 1, 0, 0, 1).unwrap(),
-                yearly_emissions: dec!(65_000_000_000),
-            },
-        ];
-        EmissionsSchedule { schedule }
-    }
-
     #[tokio::test]
     async fn test_emission_schedule_file() {
         // todo: maybe move this test to filestore
@@ -496,12 +481,23 @@ mod test {
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
         assert_eq!(dec!(32_500_000_000_000_000), yearly_emissions);
         assert_eq!(dec!(88_797_814_207_650.27322404371585), daily_emissions);
+        // todo assert rest of years
+    }
+
+    #[tokio::test]
+    async fn test_default_emission_schedule() {
+        let emissions_schedule = EmissionsSchedule::default().unwrap();
+        let yearly_emissions = emissions_schedule.yearly_emissions(Utc::now()).unwrap();
+        let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
+        assert_eq!(dec!(32_500_000_000_000_000), yearly_emissions);
+        assert_eq!(dec!(88_797_814_207_650.27322404371585), daily_emissions);
+        // todo assert rest of years
     }
 
     #[test]
     fn test_non_gateway_reward_shares() {
         let epoch_duration = Duration::hours(1);
-        let emissions_schedule = default_emissions_schedule();
+        let emissions_schedule = EmissionsSchedule::default().unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
 
         let total_tokens_for_period = daily_emissions / dec!(24);
@@ -518,7 +514,7 @@ mod test {
     // total epoch dc rewards amount
     // this results in a significant redistribution of dc rewards to POC
     fn test_reward_share_calculation_fixed_dc_spend_with_transfer_distribution() {
-        let emissions_schedule = default_emissions_schedule();
+        let emissions_schedule = EmissionsSchedule::default().unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
 
         let iot_price = dec!(359);
@@ -705,7 +701,7 @@ mod test {
     #[test]
     // test reward distribution where there is zero transfer of dc rewards to poc
     fn test_reward_share_calculation_without_data_transfer_distribution() {
-        let emissions_schedule = default_emissions_schedule();
+        let emissions_schedule = EmissionsSchedule::default().unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
         let iot_price = dec!(359);
 
@@ -885,7 +881,7 @@ mod test {
     #[test]
     // test reward distribution where there is transfer of dc rewards to poc
     fn test_reward_share_calculation_with_data_transfer_distribution() {
-        let emissions_schedule = default_emissions_schedule();
+        let emissions_schedule = EmissionsSchedule::default().unwrap();
         let daily_emissions = emissions_schedule.daily_emissions(Utc::now()).unwrap();
         let iot_price = dec!(359);
 
