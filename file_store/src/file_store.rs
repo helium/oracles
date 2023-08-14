@@ -71,11 +71,7 @@ impl FileStore {
                 .map_err(DecodeError::from)?,
             _ => None,
         };
-        let region = if region.is_some() {
-            Region::new(region.unwrap())
-        } else {
-            Region::new(settings::default_region())
-        };
+        let region = Region::new(region.unwrap_or_else(settings::default_region));
         let region_provider = RegionProviderChain::first_try(region).or_default_provider();
 
         let mut config = aws_config::from_env().region(region_provider);
