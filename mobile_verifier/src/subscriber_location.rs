@@ -173,13 +173,11 @@ pub struct SubscriberLocationShare {
 
 pub async fn aggregate_location_shares(
     db: impl sqlx::PgExecutor<'_> + Copy,
-    reward_period: &Range<DateTime<Utc>>,
+    _reward_period: &Range<DateTime<Utc>>,
 ) -> Result<SubscriberValidatedLocations, sqlx::Error> {
     let mut rows = sqlx::query_as::<_, SubscriberLocationShare>(
-        "select distinct(subscriber_id) from subscriber_loc_verified where received_timestamp >= $1 and received_timestamp < $2",
+        "select distinct(subscriber_id) from subscriber_loc_verified",
     )
-    .bind(reward_period.start)
-    .bind(reward_period.end)
     .fetch(db);
     let mut location_shares = SubscriberValidatedLocations::new();
     while let Some(share) = rows.try_next().await? {
