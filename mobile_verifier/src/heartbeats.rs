@@ -1,6 +1,6 @@
 //! Heartbeat storage
 
-use crate::cell_type::CellType;
+use crate::{cell_type::CellType, HasOwner};
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient,
@@ -12,7 +12,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::GatewayClient;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
@@ -104,8 +104,11 @@ impl HeartbeatDaemon {
         let mut transaction = self.pool.begin().await?;
         let reports = file.into_stream(&mut transaction).await?;
 
-        let mut validated_heartbeats =
-            pin!(Heartbeat::validate_heartbeats(&self.gateway_client, reports, &epoch).await);
+        let mut validated_heartbeats = pin!(Heartbeat::validate_heartbeats(
+            &self.gateway_client,
+            reports,
+            &epoch
+        ));
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             heartbeat.write(&self.file_sink).await?;
@@ -179,24 +182,21 @@ impl Heartbeat {
         self.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub async fn validate_heartbeats<'a>(
-        gateway_client: &'a GatewayClient,
+    pub fn validate_heartbeats<'a, O: HasOwner>(
+        gateway_client: &'a O,
         heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
-        heartbeats.then(move |heartbeat_report| {
-            let mut gateway_client = gateway_client.clone();
-            async move {
-                let (cell_type, validity) =
-                    validate_heartbeat(&heartbeat_report, &mut gateway_client, epoch).await?;
-                Ok(Heartbeat {
-                    hotspot_key: heartbeat_report.report.pubkey,
-                    cbsd_id: heartbeat_report.report.cbsd_id,
-                    timestamp: heartbeat_report.received_timestamp,
-                    cell_type,
-                    validity,
-                })
-            }
+    ) -> impl Stream<Item = Result<Self, O::Error>> + 'a {
+        heartbeats.then(move |heartbeat_report| async move {
+            let (cell_type, validity) =
+                validate_heartbeat(&heartbeat_report, gateway_client, epoch).await?;
+            Ok(Heartbeat {
+                hotspot_key: heartbeat_report.report.pubkey,
+                cbsd_id: heartbeat_report.report.cbsd_id,
+                timestamp: heartbeat_report.received_timestamp,
+                cell_type,
+                validity,
+            })
         })
     }
 
@@ -261,11 +261,11 @@ impl Heartbeat {
 }
 
 /// Validate a heartbeat in the given epoch.
-async fn validate_heartbeat(
+async fn validate_heartbeat<O: HasOwner>(
     heartbeat: &CellHeartbeatIngestReport,
-    gateway_client: &mut GatewayClient,
+    gateway_client: &O,
     epoch: &Range<DateTime<Utc>>,
-) -> Result<(Option<CellType>, proto::HeartbeatValidity), ClientError> {
+) -> Result<(Option<CellType>, proto::HeartbeatValidity), O::Error> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
         Some(ty) => Some(ty),
         _ => return Ok((None, proto::HeartbeatValidity::BadCbsdId)),
@@ -279,11 +279,7 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::HeartbeatOutsideRange));
     }
 
-    if gateway_client
-        .resolve_gateway_info(&heartbeat.report.pubkey)
-        .await?
-        .is_none()
-    {
+    if !gateway_client.has_owner(&heartbeat.report.pubkey).await? {
         return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
     }
 

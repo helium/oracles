@@ -11,7 +11,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::GatewayClient;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{
@@ -23,6 +23,8 @@ use std::{
     pin::pin,
 };
 use tokio::sync::mpsc::Receiver;
+
+use crate::HasOwner;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
 const SPEEDTEST_LAPSE: i64 = 48;
@@ -156,11 +158,11 @@ impl SpeedtestRollingAverage {
         }
     }
 
-    pub async fn validate_speedtests<'a>(
-        gateway_client: &'a GatewayClient,
+    pub async fn validate_speedtests<'a, O: HasOwner>(
+        gateway_client: &'a O,
         speedtests: impl Stream<Item = CellSpeedtest> + 'a,
         exec: &mut Transaction<'_, Postgres>,
-    ) -> Result<impl Stream<Item = Result<Self, ClientError>> + 'a, sqlx::Error> {
+    ) -> Result<impl Stream<Item = Result<Self, O::Error>> + 'a, sqlx::Error> {
         let tests_by_publickey = speedtests
             .fold(
                 HashMap::<PublicKeyBinary, Vec<CellSpeedtest>>::new(),
@@ -187,18 +189,12 @@ impl SpeedtestRollingAverage {
         }
 
         Ok(futures::stream::iter(speedtests.into_iter())
-            .then(move |(rolling_average, cell_speedtests)| {
-                async move {
-                    // If we get back some gateway info for the given address, it's a valid address
-                    if gateway_client
-                        .resolve_gateway_info(&rolling_average.id)
-                        .await?
-                        .is_none()
-                    {
-                        return Ok(None);
-                    }
-                    Ok(Some((rolling_average, cell_speedtests)))
-                }
+            .then(move |(rolling_average, cell_speedtests)| async move {
+                // If we get back some gateway info for the given address, it's a valid address
+                Ok(gateway_client
+                    .has_owner(&rolling_average.id)
+                    .await?
+                    .then(move || (rolling_average, cell_speedtests)))
             })
             .filter_map(|item| async move { item.transpose() })
             .map_ok(|(rolling_average, cell_speedtests)| {

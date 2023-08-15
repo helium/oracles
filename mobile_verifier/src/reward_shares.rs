@@ -206,7 +206,7 @@ pub struct RadioShares {
 }
 
 impl RadioShares {
-    fn total_shares(&self) -> Decimal {
+    pub fn total_shares(&self) -> Decimal {
         self.radio_shares
             .values()
             .fold(Decimal::ZERO, |sum, amount| sum + amount)

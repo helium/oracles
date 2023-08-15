@@ -14,14 +14,14 @@ use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
-use sqlx::{PgExecutor, Pool, Postgres};
+use sqlx::{PgExecutor, PgPool, Pool, Postgres};
 use std::ops::Range;
 use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
 pub struct Rewarder {
-    pool: Pool<Postgres>,
+    pool: PgPool,
     reward_period_duration: Duration,
     reward_offset: Duration,
     mobile_rewards: FileSinkClient,
@@ -31,7 +31,7 @@ pub struct Rewarder {
 
 impl Rewarder {
     pub fn new(
-        pool: Pool<Postgres>,
+        pool: PgPool,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient,
@@ -138,26 +138,13 @@ impl Rewarder {
             reward_period.end
         );
 
-        let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
-        let speedtests = SpeedtestAverages::validated(&self.pool, reward_period.end).await?;
-
-        let poc_rewards = PocShares::aggregate(heartbeats, speedtests).await?;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
             .await?;
 
-        // Mobile prices are supplied in 10^6, so we must convert them to Decimal
-        let mobile_bone_price = Decimal::from(mobile_price)
-                / dec!(1_000_000)  // Per Mobile token
-                / dec!(1_000_000); // Per Bone
-        let transfer_rewards = TransferRewards::from_transfer_sessions(
-            mobile_bone_price,
-            data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
-            &poc_rewards,
-            reward_period,
-        )
-        .await;
+        let (poc_rewards, transfer_rewards) =
+            calculate_rewards_from_db(&self.pool, reward_period, mobile_price).await?;
 
         // It's important to gauge the scale metric. If this value is < 1.0, we are in
         // big trouble.
@@ -246,6 +233,31 @@ impl Rewarder {
         telemetry::last_rewarded_end_time(next_reward_period.start);
         Ok(())
     }
+}
+
+pub async fn calculate_rewards_from_db(
+    pool: &PgPool,
+    reward_period: &'_ Range<DateTime<Utc>>,
+    mobile_price: u64,
+) -> anyhow::Result<(PocShares, TransferRewards)> {
+    let heartbeats = HeartbeatReward::validated(pool, reward_period);
+    let speedtests = SpeedtestAverages::validated(pool, reward_period.end).await?;
+    let poc_rewards = PocShares::aggregate(heartbeats, speedtests).await?;
+
+    // Mobile prices are supplied in 10^6, so we must convert them to Decimal
+    let mobile_bone_price = Decimal::from(mobile_price)
+        / dec!(1_000_000)  // Per Mobile token
+        / dec!(1_000_000); // Per Bone
+
+    let transfer_rewards = TransferRewards::from_transfer_sessions(
+        mobile_bone_price,
+        data_session::aggregate_hotspot_data_sessions_to_dc(pool, reward_period).await?,
+        &poc_rewards,
+        reward_period,
+    )
+    .await;
+
+    Ok((poc_rewards, transfer_rewards))
 }
 
 pub async fn last_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
