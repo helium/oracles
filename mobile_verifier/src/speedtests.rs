@@ -194,7 +194,7 @@ impl SpeedtestRollingAverage {
                 Ok(gateway_client
                     .has_owner(&rolling_average.id)
                     .await?
-                    .then(move || (rolling_average, cell_speedtests)))
+                    .then_some((rolling_average, cell_speedtests)))
             })
             .filter_map(|item| async move { item.transpose() })
             .map_ok(|(rolling_average, cell_speedtests)| {
@@ -290,7 +290,7 @@ pub struct SpeedtestAverages {
 
 impl SpeedtestAverages {
     #[allow(dead_code)]
-    pub fn into_iter(self) -> impl IntoIterator<Item = SpeedtestRollingAverage> {
+    pub fn into_rolling_avgs(self) -> impl IntoIterator<Item = SpeedtestRollingAverage> {
         self.speedtests
             .into_iter()
             .map(|(id, window)| SpeedtestRollingAverage {
@@ -627,7 +627,7 @@ mod test {
         let avgs = SpeedtestAverages {
             speedtests: HashMap::from([(owner, speedtests)]),
         }
-        .into_iter();
+        .into_rolling_avgs();
         for avg in avgs {
             if let Some(first) = avg.speedtests.first() {
                 assert_eq!(avg.latest_timestamp, first.timestamp);
