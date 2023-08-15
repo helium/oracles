@@ -134,10 +134,13 @@ impl RouteService {
     where
         R: MsgVerify,
     {
-        if let Ok(()) = self.verify_request_signature(signer, request, id).await {
+        if self
+            .verify_stream_request_signature(signer, request)
+            .is_ok()
+        {
             return Ok(());
         }
-        self.verify_stream_request_signature(signer, request)
+        self.verify_request_signature(signer, request, id).await
     }
 
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {
