@@ -7,7 +7,7 @@ use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
     packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
-    router,
+    router::packet_router_packet_report_v1::PacketType,
 };
 use iot_config::client::{ClientError, OrgClient};
 use solana::SolanaNetwork;
@@ -67,7 +67,7 @@ where
         tokio::pin!(reports);
 
         while let Some(report) = reports.next().await {
-            if router::packet_router_packet_report_v1::PacketType::Join == report.packet_type {
+            if PacketType::Uplink != report.packet_type {
                 continue;
             }
 
