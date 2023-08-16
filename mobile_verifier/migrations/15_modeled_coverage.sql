@@ -21,6 +21,7 @@ CREATE TABLE seniority (
        seniority_ts TIMESTAMPTZ NOT NULL,
        last_heartbeat TIMESTAMPTZ NOT NULL,
        uuid UUID NOT NULL,
+       update_reason INT NOT NULL,
        PRIMARY KEY (cbsd_id, seniority_ts)
 );
 

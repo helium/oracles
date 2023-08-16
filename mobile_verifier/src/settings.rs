@@ -29,6 +29,7 @@ pub struct Settings {
     pub max_heartbeat_distance_from_coverage_km: f64,
     #[serde(default = "default_disable_discovery_loc_rewards_to_s3")]
     pub disable_discovery_loc_rewards_to_s3: bool,
+    pub modeled_coverage_start_timestamp: DateTime<Utc>,
 }
 
 pub fn default_disable_discovery_loc_rewards_to_s3() -> bool {

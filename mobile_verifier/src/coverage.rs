@@ -296,6 +296,7 @@ pub struct Seniority {
     pub seniority_ts: DateTime<Utc>,
     pub last_heartbeat: DateTime<Utc>,
     pub inserted_at: DateTime<Utc>,
+    pub update_reason: i32,
 }
 
 #[async_trait::async_trait]

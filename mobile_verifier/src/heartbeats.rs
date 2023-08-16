@@ -6,8 +6,9 @@ use crate::{
 };
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient,
-    heartbeat::{CellHeartbeatIngestReport, CellHeartbeat},
+    file_info_poller::FileInfoStream,
+    file_sink::FileSinkClient,
+    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
 };
 use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
@@ -52,6 +53,7 @@ pub struct HeartbeatDaemon {
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
     max_distance: f64,
+    modeled_coverage_start_timestamp: DateTime<Utc>,
 }
 
 impl HeartbeatDaemon {
@@ -62,6 +64,7 @@ impl HeartbeatDaemon {
         heartbeat_sink: FileSinkClient,
         seniority_sink: FileSinkClient,
         max_distance: f64,
+        modeled_coverage_start_timestamp: DateTime<Utc>,
     ) -> Self {
         Self {
             pool,
@@ -70,6 +73,7 @@ impl HeartbeatDaemon {
             heartbeat_sink,
             seniority_sink,
             max_distance,
+            modeled_coverage_start_timestamp,
         }
     }
 
@@ -145,7 +149,12 @@ impl HeartbeatDaemon {
 
             heartbeat.write(&self.heartbeat_sink).await?;
             heartbeat
-                .update_seniority(coverage_claim_time, &self.seniority_sink, &mut transaction)
+                .update_seniority(
+                    coverage_claim_time,
+                    self.modeled_coverage_start_timestamp,
+                    &self.seniority_sink,
+                    &mut transaction,
+                )
                 .await?;
 
             let key = (
@@ -230,12 +239,13 @@ pub struct Heartbeat {
     pub heartbeat: CellHeartbeat,
     pub cell_type: Option<CellType>,
     pub coverage_object: Option<Uuid>,
+    pub received_timestamp: DateTime<Utc>,
     pub validity: proto::HeartbeatValidity,
 }
 
 impl Heartbeat {
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
-        self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
+        self.received_timestamp.duration_trunc(Duration::hours(1))
     }
 
     pub fn validate_heartbeats<'a>(
@@ -259,6 +269,7 @@ impl Heartbeat {
                 Ok(Heartbeat {
                     coverage_object: heartbeat_report.report.coverage_object(),
                     heartbeat: heartbeat_report.report,
+                    received_timestamp: heartbeat_report.received_timestamp,
                     cell_type,
                     validity,
                 })
@@ -277,7 +288,7 @@ impl Heartbeat {
                         .map_or(0.0, |ct| ct.reward_weight().to_f32().unwrap_or(0.0)),
                     cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
                     validity: self.validity as i32,
-                    timestamp: self.heartbeat.timestamp.timestamp() as u64,
+                    timestamp: self.received_timestamp.timestamp() as u64,
                     lat: self.heartbeat.lat,
                     lon: self.heartbeat.lon,
                     coverage_object: self
@@ -294,9 +305,12 @@ impl Heartbeat {
     pub async fn update_seniority(
         &self,
         coverage_claim_time: DateTime<Utc>,
+        modeled_coverage_start_timestamp: DateTime<Utc>,
         seniorities: &FileSinkClient,
         exec: &mut Transaction<'_, Postgres>,
     ) -> anyhow::Result<()> {
+        use proto::SeniorityUpdateReason::*;
+
         enum InsertOrUpdate {
             Insert(proto::SeniorityUpdateReason),
             Update(DateTime<Utc>),
@@ -311,16 +325,21 @@ impl Heartbeat {
             .await?
         {
             if self.coverage_object != Some(prev_seniority.uuid) {
+                if prev_seniority.update_reason == HeartbeatNotSeen as i32
+                    && coverage_claim_time < prev_seniority.seniority_ts
+                {
+                    return Ok(());
+                }
                 (
                     coverage_claim_time,
-                    InsertOrUpdate::Insert(proto::SeniorityUpdateReason::NewCoverageClaimTime),
+                    InsertOrUpdate::Insert(NewCoverageClaimTime),
                 )
-            } else if self.heartbeat.timestamp - prev_seniority.last_heartbeat > Duration::days(3)
-                && coverage_claim_time < self.heartbeat.timestamp
+            } else if self.received_timestamp - prev_seniority.last_heartbeat > Duration::days(3)
+                && coverage_claim_time < self.received_timestamp
             {
                 (
-                    self.heartbeat.timestamp,
-                    InsertOrUpdate::Insert(proto::SeniorityUpdateReason::HeartbeatNotSeen),
+                    self.received_timestamp,
+                    InsertOrUpdate::Insert(HeartbeatNotSeen),
                 )
             } else {
                 (
@@ -328,10 +347,16 @@ impl Heartbeat {
                     InsertOrUpdate::Update(prev_seniority.seniority_ts),
                 )
             }
+        } else if self.received_timestamp - modeled_coverage_start_timestamp > Duration::days(3) {
+            // This will become the default case 72 hours after we launch modeled coverage
+            (
+                self.received_timestamp,
+                InsertOrUpdate::Insert(HeartbeatNotSeen),
+            )
         } else {
             (
                 coverage_claim_time,
-                InsertOrUpdate::Insert(proto::SeniorityUpdateReason::NewCoverageClaimTime),
+                InsertOrUpdate::Insert(NewCoverageClaimTime),
             )
         };
 
@@ -340,16 +365,17 @@ impl Heartbeat {
                 sqlx::query(
                     r#"
                     INSERT INTO seniority
-                      (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at)
+                      (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason)
                     VALUES
-                      ($1, $2, $3, $4, $5)
+                      ($1, $2, $3, $4, $5, $6)
                     "#,
                 )
                 .bind(&self.heartbeat.cbsd_id)
-                .bind(self.heartbeat.timestamp)
+                .bind(self.received_timestamp)
                 .bind(self.coverage_object)
                 .bind(seniority_ts)
-                .bind(self.heartbeat.timestamp)
+                .bind(self.received_timestamp)
+                .bind(update_reason as i32)
                 .execute(&mut *exec)
                 .await?;
                 seniorities
@@ -373,7 +399,7 @@ impl Heartbeat {
                       seniority_ts = $3
                     "#,
                 )
-                .bind(self.heartbeat.timestamp)
+                .bind(self.received_timestamp)
                 .bind(&self.heartbeat.cbsd_id)
                 .bind(seniority_ts)
                 .execute(&mut *exec)
@@ -411,7 +437,7 @@ impl Heartbeat {
             .bind(self.heartbeat.cbsd_id)
             .bind(self.heartbeat.pubkey)
             .bind(self.cell_type.unwrap())
-            .bind(self.heartbeat.timestamp)
+            .bind(self.received_timestamp)
             .bind(truncated_timestamp)
             .bind(self.coverage_object)
             .fetch_one(&mut *exec)
