@@ -323,8 +323,9 @@ impl CoveredHexStream for Pool<Postgres> {
         .await?;
 
         // We can safely delete any seniority objects that appear before the latest in the reward period
-        sqlx::query("DELETE FROM seniority WHERE inserted_at < $1")
+        sqlx::query("DELETE FROM seniority WHERE inserted_at < $1 AND cbsd_id = $2")
             .bind(seniority.inserted_at)
+            .bind(cbsd_id)
             .execute(self)
             .await?;
 
