@@ -7,8 +7,8 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraInvalidBeaconReportV1,
-    LoraInvalidWitnessReportV1, LoraWitnessReportReqV1,
+    InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1,
+    LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraWitnessReportReqV1,
 };
 use serde::Serialize;
 
@@ -16,6 +16,7 @@ use serde::Serialize;
 pub struct IotInvalidBeaconReport {
     pub received_timestamp: DateTime<Utc>,
     pub reason: InvalidReason,
+    pub invalid_details: Option<InvalidDetails>,
     pub report: IotBeaconReport,
     pub location: Option<u64>,
     pub gain: i32,
@@ -26,6 +27,7 @@ pub struct IotInvalidBeaconReport {
 pub struct IotInvalidWitnessReport {
     pub received_timestamp: DateTime<Utc>,
     pub reason: InvalidReason,
+    pub invalid_details: Option<InvalidDetails>,
     pub report: IotWitnessReport,
     pub participant_side: InvalidParticipantSide,
 }
@@ -70,7 +72,6 @@ impl TryFrom<LoraInvalidBeaconReportV1> for IotInvalidBeaconReport {
             InvalidReason::from_i32(inv_reason).ok_or_else(|| {
                 DecodeError::unsupported_invalid_reason("iot_invalid_beacon_report_v1", inv_reason)
             })?;
-
         Ok(Self {
             received_timestamp: v.timestamp()?,
             reason: invalid_reason,
@@ -81,6 +82,7 @@ impl TryFrom<LoraInvalidBeaconReportV1> for IotInvalidBeaconReport {
             location: v.location.parse().ok(),
             gain: v.gain,
             elevation: v.elevation,
+            invalid_details: v.invalid_details,
         })
     }
 }
@@ -99,6 +101,7 @@ impl From<IotInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
                 .unwrap_or_else(String::new),
             gain: v.gain,
             elevation: v.elevation,
+            invalid_details: v.invalid_details,
         }
     }
 }
@@ -129,6 +132,7 @@ impl TryFrom<LoraInvalidWitnessReportV1> for IotInvalidWitnessReport {
                 .report
                 .ok_or_else(|| Error::not_found("iot invalid witness report"))?
                 .try_into()?,
+            invalid_details: v.invalid_details,
         })
     }
 }
@@ -142,6 +146,7 @@ impl From<IotInvalidWitnessReport> for LoraInvalidWitnessReportV1 {
             reason: v.reason as i32,
             report: Some(report),
             participant_side: v.participant_side as i32,
+            invalid_details: v.invalid_details,
         }
     }
 }

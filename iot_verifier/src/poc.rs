@@ -17,7 +17,9 @@ use file_store::{
 use h3o::{CellIndex, LatLng, Resolution};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::poc_lora::{InvalidParticipantSide, InvalidReason, VerificationStatus},
+    services::poc_lora::{
+        invalid_details, InvalidDetails, InvalidParticipantSide, InvalidReason, VerificationStatus,
+    },
     BlockchainRegionParamV1, Region as ProtoRegion,
 };
 use iot_config::gateway_info::{GatewayInfo, GatewayMetadata};
@@ -26,7 +28,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::f64::consts::PI;
 
-pub type GenericVerifyResult<T = ()> = std::result::Result<T, InvalidReason>;
+pub type GenericVerifyResult<T = ()> = std::result::Result<T, InvalidResponse>;
 
 /// C is the speed of light in air in meters per second
 pub const C: f64 = 2.998e8;
@@ -48,6 +50,11 @@ lazy_static! {
     /// would disqualify the hotspot from validating further beacons
     static ref DEFAULT_TX_SCALE: Decimal = Decimal::new(2000, 4);
 }
+#[derive(Debug, PartialEq)]
+pub struct InvalidResponse {
+    reason: InvalidReason,
+    details: Option<InvalidDetails>,
+}
 
 pub struct Poc {
     beacon_report: IotBeaconIngestReport,
@@ -56,10 +63,11 @@ pub struct Poc {
     entropy_end: DateTime<Utc>,
     entropy_version: i32,
 }
-
+#[derive(Clone)]
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: InvalidReason,
+    pub invalid_details: Option<InvalidDetails>,
     pub gateway_info: Option<GatewayInfo>,
     pub hex_scale: Option<Decimal>,
 }
@@ -126,6 +134,7 @@ impl Poc {
             None => {
                 return Ok(VerifyBeaconResult::invalid(
                     InvalidReason::NotAsserted,
+                    None,
                     beaconer_info,
                 ))
             }
@@ -158,7 +167,11 @@ impl Poc {
                     .unwrap_or(*DEFAULT_TX_SCALE);
                 Ok(VerifyBeaconResult::valid(beaconer_info, tx_scale))
             }
-            Err(invalid_reason) => Ok(VerifyBeaconResult::invalid(invalid_reason, beaconer_info)),
+            Err(invalid_response) => Ok(VerifyBeaconResult::invalid(
+                invalid_response.reason,
+                invalid_response.details,
+                beaconer_info,
+            )),
         }
     }
 
@@ -200,6 +213,7 @@ impl Poc {
                 // the report is a dup
                 let dup_witness = IotVerifiedWitnessReport::invalid(
                     InvalidReason::Duplicate,
+                    None,
                     &witness_report.report,
                     witness_report.received_timestamp,
                     None,
@@ -234,6 +248,7 @@ impl Poc {
             Err(GatewayCacheError::GatewayNotFound(_)) => {
                 return Ok(IotVerifiedWitnessReport::invalid(
                     InvalidReason::GatewayNotFound,
+                    None,
                     &witness_report.report,
                     witness_report.received_timestamp,
                     None,
@@ -244,11 +259,13 @@ impl Poc {
                 ));
             }
         };
+
         let witness_metadata = match witness_info.metadata {
             Some(ref metadata) => metadata,
             None => {
                 return Ok(IotVerifiedWitnessReport::invalid(
                     InvalidReason::NotAsserted,
+                    None,
                     &witness_report.report,
                     witness_report.received_timestamp,
                     None,
@@ -264,6 +281,7 @@ impl Poc {
         let Some(ref beaconer_metadata) = beaconer_info.metadata else {
             return Ok(IotVerifiedWitnessReport::invalid(
                 InvalidReason::NotAsserted,
+                None,
                 &witness_report.report,
                 witness_report.received_timestamp,
                 None,
@@ -297,8 +315,9 @@ impl Poc {
                     tx_scale,
                 ))
             }
-            Err(invalid_reason) => Ok(IotVerifiedWitnessReport::invalid(
-                invalid_reason,
+            Err(invalid_response) => Ok(IotVerifiedWitnessReport::invalid(
+                invalid_response.reason,
+                invalid_response.details,
                 &witness_report.report,
                 witness_report.received_timestamp,
                 Some(beaconer_metadata.location),
@@ -330,7 +349,12 @@ pub fn do_beacon_verifications(
     let beacon_received_ts = beacon_report.received_timestamp;
     let beaconer_metadata = match beaconer_info.metadata {
         Some(ref metadata) => metadata,
-        None => return Err(InvalidReason::NotAsserted),
+        None => {
+            return Err(InvalidResponse {
+                reason: InvalidReason::NotAsserted,
+                details: None,
+            })
+        }
     };
     verify_denylist(&beacon_report.report.pub_key, deny_list)?;
     verify_entropy(entropy_start, entropy_end, beacon_received_ts)?;
@@ -372,7 +396,12 @@ pub fn do_witness_verifications(
     let beacon_report = &beacon_report;
     let witness_metadata = match witness_info.metadata {
         Some(ref metadata) => metadata,
-        None => return Err(InvalidReason::NotAsserted),
+        None => {
+            return Err(InvalidResponse {
+                reason: InvalidReason::NotAsserted,
+                details: None,
+            })
+        }
     };
     verify_denylist(&witness_report.report.pub_key, deny_list)?;
     verify_self_witness(
@@ -425,7 +454,10 @@ fn verify_beacon_schedule(
                         IrregularInterval. Seconds since last beacon {:?}",
                     interval_since_last_beacon.num_seconds()
                 );
-                return Err(InvalidReason::IrregularInterval);
+                return Err(InvalidResponse {
+                    reason: InvalidReason::IrregularInterval,
+                    details: None,
+                });
             }
         }
         None => {
@@ -440,15 +472,23 @@ fn verify_denylist(pub_key: &PublicKeyBinary, deny_list: &DenyList) -> GenericVe
     if deny_list.check_key(pub_key) {
         tracing::debug!(
             "report verification failed, reason: {:?}.
-            pubkey: {}",
+            pubkey: {}, tagname: {}",
             InvalidReason::Denied,
             pub_key,
+            deny_list.tag_name
         );
-        return Err(InvalidReason::Denied);
+        return Err(InvalidResponse {
+            reason: InvalidReason::Denied,
+            details: Some(InvalidDetails {
+                data: Some(invalid_details::Data::DenylistTag(
+                    deny_list.tag_name.to_string(),
+                )),
+            }),
+        });
     }
+    //
     Ok(())
 }
-
 /// verify remote entropy
 /// if received timestamp is outside of entopy start/end then return invalid
 fn verify_entropy(
@@ -469,7 +509,10 @@ fn verify_entropy(
             entropy_start,
             entropy_end
         );
-        return Err(InvalidReason::EntropyExpired);
+        return Err(InvalidResponse {
+            reason: InvalidReason::EntropyExpired,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -506,7 +549,10 @@ fn verify_beacon_payload(
             e,
             beacon_report.pub_key
         );
-        InvalidReason::InvalidPacket
+        InvalidResponse {
+            reason: InvalidReason::InvalidPacket,
+            details: None,
+        }
     })?;
     tracing::debug!("generated beacon {:?}", generated_beacon);
 
@@ -520,7 +566,10 @@ fn verify_beacon_payload(
                     e,
                     beacon_report.pub_key
                 );
-                return Err(InvalidReason::InvalidPacket);
+                return Err(InvalidResponse {
+                    reason: InvalidReason::InvalidPacket,
+                    details: None,
+                });
             }
         };
     tracing::debug!("reported beacon {:?}", reported_beacon);
@@ -531,7 +580,10 @@ fn verify_beacon_payload(
             "beacon construction verification failed, pubkey {:?}",
             beacon_report.pub_key,
         );
-        return Err(InvalidReason::InvalidPacket);
+        return Err(InvalidResponse {
+            reason: InvalidReason::InvalidPacket,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -544,7 +596,10 @@ fn verify_gw_capability(is_full_hotspot: bool) -> GenericVerifyResult {
             InvalidReason::InvalidCapability,
             is_full_hotspot
         );
-        return Err(InvalidReason::InvalidCapability);
+        return Err(InvalidResponse {
+            reason: InvalidReason::InvalidCapability,
+            details: None,
+        });
     };
     Ok(())
 }
@@ -559,7 +614,10 @@ fn verify_self_witness(
             "witness verification failed, reason: {:?}",
             InvalidReason::SelfWitness
         );
-        return Err(InvalidReason::SelfWitness);
+        return Err(InvalidResponse {
+            reason: InvalidReason::SelfWitness,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -572,7 +630,10 @@ fn verify_witness_freq(beacon_freq: u64, witness_freq: u64) -> GenericVerifyResu
             "witness verification failed, reason: {:?}. beaconer freq: {beacon_freq}, witness freq: {witness_freq}",
             InvalidReason::InvalidFrequency
         );
-        return Err(InvalidReason::InvalidFrequency);
+        return Err(InvalidResponse {
+            reason: InvalidReason::InvalidFrequency,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -587,7 +648,10 @@ fn verify_witness_region(
             "witness verification failed, reason: {:?}. beaconer region: {beacon_region}, witness region: {witness_region}",
             InvalidReason::InvalidRegion
         );
-        return Err(InvalidReason::InvalidRegion);
+        return Err(InvalidResponse {
+            reason: InvalidReason::InvalidRegion,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -596,14 +660,22 @@ fn verify_witness_region(
 fn verify_witness_distance(beacon_loc: u64, witness_loc: u64) -> GenericVerifyResult {
     let witness_distance = match calc_distance(beacon_loc, witness_loc) {
         Ok(d) => d,
-        Err(_) => return Err(InvalidReason::MaxDistanceExceeded),
+        Err(_) => {
+            return Err(InvalidResponse {
+                reason: InvalidReason::MaxDistanceExceeded,
+                details: None,
+            })
+        }
     };
     if witness_distance / 1000 > POC_DISTANCE_LIMIT {
         tracing::debug!(
             "witness verification failed, reason: {:?}. distance {witness_distance}",
             InvalidReason::MaxDistanceExceeded
         );
-        return Err(InvalidReason::MaxDistanceExceeded);
+        return Err(InvalidResponse {
+            reason: InvalidReason::MaxDistanceExceeded,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -612,14 +684,22 @@ fn verify_witness_distance(beacon_loc: u64, witness_loc: u64) -> GenericVerifyRe
 fn verify_witness_cell_distance(beacon_loc: u64, witness_loc: u64) -> GenericVerifyResult {
     let cell_distance = match calc_cell_distance(beacon_loc, witness_loc) {
         Ok(d) => d,
-        Err(_) => return Err(InvalidReason::BelowMinDistance),
+        Err(_) => {
+            return Err(InvalidResponse {
+                reason: InvalidReason::BelowMinDistance,
+                details: None,
+            })
+        }
     };
     if cell_distance < POC_CELL_DISTANCE_MINIMUM {
         tracing::debug!(
             "witness verification failed, reason: {:?}. cell distance {cell_distance}",
             InvalidReason::BelowMinDistance
         );
-        return Err(InvalidReason::BelowMinDistance);
+        return Err(InvalidResponse {
+            reason: InvalidReason::BelowMinDistance,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -636,7 +716,12 @@ fn verify_witness_rssi(
 ) -> GenericVerifyResult {
     let distance = match calc_distance(beacon_loc, witness_loc) {
         Ok(d) => d,
-        Err(_) => return Err(InvalidReason::BadRssi),
+        Err(_) => {
+            return Err(InvalidResponse {
+                reason: InvalidReason::BadRssi,
+                details: None,
+            })
+        }
     };
     let min_rcv_signal = calc_expected_rssi(
         beacon_tx_power,
@@ -658,7 +743,10 @@ fn verify_witness_rssi(
             min_rcv_signal: {min_rcv_signal}",
             InvalidReason::BadRssi
         );
-        return Err(InvalidReason::BadRssi);
+        return Err(InvalidResponse {
+            reason: InvalidReason::BadRssi,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -670,7 +758,10 @@ fn verify_witness_data(beacon_data: &Vec<u8>, witness_data: &Vec<u8>) -> Generic
             InvalidReason::InvalidPacket,
             witness_data
         );
-        return Err(InvalidReason::InvalidPacket);
+        return Err(InvalidResponse {
+            reason: InvalidReason::InvalidPacket,
+            details: None,
+        });
     }
     Ok(())
 }
@@ -749,12 +840,14 @@ impl VerifyBeaconResult {
     pub fn new(
         result: VerificationStatus,
         invalid_reason: InvalidReason,
+        invalid_details: Option<InvalidDetails>,
         gateway_info: Option<GatewayInfo>,
         hex_scale: Option<Decimal>,
     ) -> Self {
         Self {
             result,
             invalid_reason,
+            invalid_details,
             gateway_info,
             hex_scale,
         }
@@ -764,15 +857,21 @@ impl VerifyBeaconResult {
         Self::new(
             VerificationStatus::Valid,
             InvalidReason::ReasonNone,
+            None,
             Some(gateway_info),
             Some(hex_scale),
         )
     }
 
-    pub fn invalid(invalid_reason: InvalidReason, gateway_info: GatewayInfo) -> Self {
+    pub fn invalid(
+        invalid_reason: InvalidReason,
+        invalid_details: Option<InvalidDetails>,
+        gateway_info: GatewayInfo,
+    ) -> Self {
         Self::new(
             VerificationStatus::Invalid,
             invalid_reason,
+            invalid_details,
             Some(gateway_info),
             None,
         )
@@ -782,6 +881,7 @@ impl VerifyBeaconResult {
         Self::new(
             VerificationStatus::Invalid,
             InvalidReason::GatewayNotFound,
+            None,
             None,
             None,
         )
@@ -931,7 +1031,10 @@ mod tests {
         // this will be rendered invalid
         ingest_beacon_report.report.tx_power = 20;
         assert_eq!(
-            Err(InvalidReason::InvalidPacket),
+            Err(InvalidResponse {
+                reason: InvalidReason::IrregularInterval,
+                details: None
+            }),
             verify_beacon_payload(
                 &ingest_beacon_report.report,
                 region,
@@ -972,7 +1075,10 @@ mod tests {
         // last beacon was BEACON_INTERVAL - 1 hr, too soon after our last beacon,
         // expectation fail
         assert_eq!(
-            Err(InvalidReason::IrregularInterval),
+            Err(InvalidResponse {
+                reason: InvalidReason::IrregularInterval,
+                details: None
+            }),
             verify_beacon_schedule(
                 &last_beacon,
                 now - Duration::minutes(60),
@@ -983,7 +1089,10 @@ mod tests {
         // last beacon was just outside of our tolerance period by 2 mins
         // therefore beacon too soon, expectation fail
         assert_eq!(
-            Err(InvalidReason::IrregularInterval),
+            Err(InvalidResponse {
+                reason: InvalidReason::IrregularInterval,
+                details: None
+            }),
             verify_beacon_schedule(
                 &last_beacon,
                 now - (beacon_interval_tolerance + Duration::minutes(2)),
@@ -1013,11 +1122,17 @@ mod tests {
         let entropy_end = now - Duration::seconds(10);
         assert!(verify_entropy(entropy_start, entropy_end, now - Duration::seconds(30)).is_ok());
         assert_eq!(
-            Err(InvalidReason::EntropyExpired),
+            Err(InvalidResponse {
+                reason: InvalidReason::EntropyExpired,
+                details: None
+            }),
             verify_entropy(entropy_start, entropy_end, now - Duration::seconds(1))
         );
         assert_eq!(
-            Err(InvalidReason::EntropyExpired),
+            Err(InvalidResponse {
+                reason: InvalidReason::EntropyExpired,
+                details: None
+            }),
             verify_entropy(entropy_start, entropy_end, now - Duration::seconds(65))
         );
     }
@@ -1029,7 +1144,12 @@ mod tests {
             .unwrap();
         assert!(verify_denylist(&PublicKeyBinary::from_str(PUBKEY1).unwrap(), &deny_list).is_ok());
         assert_eq!(
-            Err(InvalidReason::Denied),
+            Err(InvalidResponse {
+                reason: InvalidReason::Denied,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
             verify_denylist(
                 &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
                 &deny_list
@@ -1041,7 +1161,10 @@ mod tests {
     fn test_verify_capability() {
         assert!(verify_gw_capability(true).is_ok());
         assert_eq!(
-            Err(InvalidReason::InvalidCapability),
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidCapability,
+                details: None
+            }),
             verify_gw_capability(false)
         );
     }
@@ -1052,7 +1175,10 @@ mod tests {
         let key2 = PublicKeyBinary::from_str(PUBKEY2).unwrap();
         assert!(verify_self_witness(&key1, &key2).is_ok());
         assert_eq!(
-            Err(InvalidReason::SelfWitness),
+            Err(InvalidResponse {
+                reason: InvalidReason::SelfWitness,
+                details: None
+            }),
             verify_self_witness(&key1, &key1)
         );
     }
@@ -1071,7 +1197,10 @@ mod tests {
         assert!(verify_witness_freq(beacon_freq, witness1_freq).is_ok());
         assert!(verify_witness_freq(beacon_freq, witness2_freq).is_ok());
         assert_eq!(
-            Err(InvalidReason::InvalidFrequency),
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidFrequency,
+                details: None
+            }),
             verify_witness_freq(beacon_freq, witness3_freq)
         );
     }
@@ -1083,7 +1212,10 @@ mod tests {
         let witness2_region = ProtoRegion::Eu868;
         assert!(verify_witness_region(beacon_region, witness1_region).is_ok());
         assert_eq!(
-            Err(InvalidReason::InvalidRegion),
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidRegion,
+                details: None
+            }),
             verify_witness_region(beacon_region, witness2_region)
         );
     }
@@ -1095,7 +1227,10 @@ mod tests {
         let witness2_loc = LOC2;
         assert!(verify_witness_distance(beacon_loc, witness1_loc).is_ok());
         assert_eq!(
-            Err(InvalidReason::MaxDistanceExceeded),
+            Err(InvalidResponse {
+                reason: InvalidReason::MaxDistanceExceeded,
+                details: None
+            }),
             verify_witness_distance(beacon_loc, witness2_loc)
         );
     }
@@ -1108,7 +1243,10 @@ mod tests {
 
         // witness 1 location is 7 cells from the beaconer and thus invalid
         assert_eq!(
-            Err(InvalidReason::BelowMinDistance),
+            Err(InvalidResponse {
+                reason: InvalidReason::BelowMinDistance,
+                details: None
+            }),
             verify_witness_cell_distance(beacon_loc, witness1_loc)
         );
         // witness 2's location is 28 cells from the beaconer and thus valid
@@ -1142,7 +1280,10 @@ mod tests {
         let witness2_signal = -19;
         let witness2_freq = 904499968;
         assert_eq!(
-            Err(InvalidReason::BadRssi),
+            Err(InvalidResponse {
+                reason: InvalidReason::BadRssi,
+                details: None
+            }),
             verify_witness_rssi(
                 witness2_signal,
                 witness2_freq,
@@ -1162,7 +1303,10 @@ mod tests {
         let witness2_data = "data2".as_bytes().to_vec();
         assert!(verify_witness_data(&beacon_data, &witness1_data).is_ok());
         assert_eq!(
-            Err(InvalidReason::InvalidPacket),
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidPacket,
+                details: None
+            }),
             verify_witness_data(&beacon_data, &witness2_data)
         );
     }
@@ -1202,7 +1346,15 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        assert_eq!(Err(InvalidReason::Denied), resp1);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::Denied,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
+            resp1
+        );
 
         // test entropy lifepsan verification is active in the beacon validation list
         let beacon_report1 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(4));
@@ -1218,7 +1370,13 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        assert_eq!(Err(InvalidReason::EntropyExpired), resp1);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::EntropyExpired,
+                details: None
+            }),
+            resp1
+        );
 
         // test location verification is active in the beacon validation list
         let beacon_report2 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
@@ -1235,7 +1393,13 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        assert_eq!(Err(InvalidReason::NotAsserted), resp2);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::NotAsserted,
+                details: None
+            }),
+            resp2
+        );
 
         // test schedule verification is active in the beacon validation list
         let beacon_report3 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
@@ -1255,7 +1419,13 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        assert_eq!(Err(InvalidReason::IrregularInterval), resp3);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::IrregularInterval,
+                details: None
+            }),
+            resp3
+        );
 
         // test capability verification is active in the beacon validation list
         let beacon_report4 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
@@ -1272,7 +1442,13 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        assert_eq!(Err(InvalidReason::InvalidCapability), resp4);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidCapability,
+                details: None
+            }),
+            resp4
+        );
 
         // test beacon construction verification is active in the beacon validation list
         let beacon_report5 = invalid_beacon_bad_payload(entropy_start + Duration::minutes(2));
@@ -1288,7 +1464,13 @@ mod tests {
             beacon_interval,
             beacon_interval_tolerance,
         );
-        assert_eq!(Err(InvalidReason::InvalidPacket), resp5);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidPacket,
+                details: None
+            }),
+            resp5
+        );
 
         // for completeness, confirm our valid beacon report is sane
         let beacon_report6 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
@@ -1341,7 +1523,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::SelfWitness), resp1);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::SelfWitness,
+                details: None
+            }),
+            resp1
+        );
 
         // test entropy lifepsan verification is active in the witness validation list
         let witness_report2 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(5));
@@ -1354,7 +1542,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::EntropyExpired), resp2);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::EntropyExpired,
+                details: None
+            }),
+            resp2
+        );
 
         // test witness packet data verification is active in the witness validation list
         let witness_report3 = invalid_witness_bad_data(entropy_start + Duration::minutes(2));
@@ -1367,7 +1561,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::InvalidPacket), resp3);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidPacket,
+                details: None
+            }),
+            resp3
+        );
 
         // test location verification is active in the witness validation list
         let witness_report4 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
@@ -1381,7 +1581,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::NotAsserted), resp4);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::NotAsserted,
+                details: None
+            }),
+            resp4
+        );
 
         // test witness frequency verification is active in the witness validation list
         let witness_report5 = invalid_witness_bad_freq(entropy_start + Duration::minutes(2));
@@ -1394,7 +1600,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::InvalidFrequency), resp5);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidFrequency,
+                details: None
+            }),
+            resp5
+        );
 
         // test witness region verification is active in the witness validation list
         let witness_report6 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
@@ -1408,7 +1620,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::InvalidRegion), resp6);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidRegion,
+                details: None
+            }),
+            resp6
+        );
 
         // test witness min cell distance verification is active in the witness validation list
         let witness_report7 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
@@ -1422,7 +1640,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::BelowMinDistance), resp7);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::BelowMinDistance,
+                details: None
+            }),
+            resp7
+        );
 
         // test witness max distance verification is active in the witness validation list
         let witness_report8 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
@@ -1436,7 +1660,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::MaxDistanceExceeded), resp8);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::MaxDistanceExceeded,
+                details: None
+            }),
+            resp8
+        );
 
         // test witness rssi verification is active in the witness validation list
         let witness_report9 = invalid_witness_bad_rssi(entropy_start + Duration::minutes(2));
@@ -1449,7 +1679,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::BadRssi), resp9);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::BadRssi,
+                details: None
+            }),
+            resp9
+        );
 
         // test witness capability verification is active in the witness validation list
         let witness_report10 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
@@ -1463,7 +1699,13 @@ mod tests {
             &beacon_report,
             &beaconer_metadata,
         );
-        assert_eq!(Err(InvalidReason::InvalidCapability), resp10);
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::InvalidCapability,
+                details: None
+            }),
+            resp10
+        );
 
         // for completeness, confirm our valid witness report is sane
         let witness_report11 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(2));
