@@ -81,8 +81,18 @@ where
             },
         ) in payer_totals.into_iter()
         {
-            tracing::info!(%total_dcs, %payer, "Burning DC");
+            let payer_balance = self
+                .solana
+                .payer_balance(&payer)
+                .await
+                .map_err(BurnError::SolanaError)?;
 
+            if payer_balance < total_dcs {
+                tracing::warn!(%payer, %payer_balance, %total_dcs, "Payer does not have enough balance to burn dcs");
+                continue;
+            }
+
+            tracing::info!(%total_dcs, %payer, "Burning DC");
             if self
                 .solana
                 .burn_data_credits(&payer, total_dcs)
@@ -123,18 +133,6 @@ where
                     )
                     .await?;
             }
-
-            // Fetch the balance after
-
-            metrics::gauge!(
-                "balance",
-                self
-                    .solana
-                    .payer_balance(&payer)
-                    .await
-                    .map_err(BurnError::SolanaError)? as f64,
-                "payer" => payer.to_string()
-            );
         }
 
         Ok(())
