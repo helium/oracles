@@ -95,7 +95,7 @@ where
                 }
                 _ = cleanup_trigger.tick() => self.clean(&cache).await?,
                 _ = poll_trigger.tick() => {
-                    let files = self.store.list_all(self.file_type, after, before).await?;
+                    let files = self.store.list_all(self.file_type.to_str(), after, before).await?;
                     for file in files {
                         if !is_already_processed(&self.db, &cache, &file).await? {
                             if send_stream(&sender, &self.store, file.clone()).await? {
@@ -246,7 +246,7 @@ mod db {
         INSERT INTO files_processed(file_name, file_type, file_timestamp, processed_at) VALUES($1, $2, $3, $4)
         "#)
     .bind(file_info.key)
-    .bind(file_info.file_type.to_str())
+    .bind(&file_info.prefix)
     .bind(file_info.timestamp)
     .bind(Utc::now())
     .execute(tx)

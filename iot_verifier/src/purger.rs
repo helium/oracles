@@ -197,7 +197,11 @@ impl Purger {
         let invalid_beacon_proto: LoraInvalidBeaconReportV1 = IotInvalidBeaconReport {
             received_timestamp,
             reason: InvalidReason::Stale,
+            invalid_details: None,
             report: beacon.clone(),
+            location: None,
+            gain: 0,
+            elevation: 0,
         }
         .into();
 
@@ -227,6 +231,7 @@ impl Purger {
             received_timestamp,
             report: witness_report.report,
             reason: InvalidReason::Stale,
+            invalid_details: None,
             participant_side: InvalidParticipantSide::Witness,
         }
         .into();

@@ -93,7 +93,10 @@ impl RouteService {
             OrgId::Oui(oui) => org::get_org_pubkeys(oui, &self.pool).await,
             OrgId::RouteId(route_id) => org::get_org_pubkeys_by_route(route_id, &self.pool).await,
         }
-        .map_err(|_| Status::internal("auth verification error"))?;
+        .map_err(|err| match err {
+            OrgStoreError::RouteIdParse(id_err) => Status::invalid_argument(id_err.to_string()),
+            _ => Status::internal("auth verification error"),
+        })?;
 
         if org_keys.as_slice().contains(signer) && request.verify(signer).is_ok() {
             tracing::debug!(
@@ -131,10 +134,13 @@ impl RouteService {
     where
         R: MsgVerify,
     {
-        if let Ok(()) = self.verify_request_signature(signer, request, id).await {
+        if self
+            .verify_stream_request_signature(signer, request)
+            .is_ok()
+        {
             return Ok(());
         }
-        self.verify_stream_request_signature(signer, request)
+        self.verify_request_signature(signer, request, id).await
     }
 
     fn sign_response(&self, response: &[u8]) -> Result<Vec<u8>, Status> {

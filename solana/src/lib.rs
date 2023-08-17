@@ -17,8 +17,8 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
-use std::collections::HashMap;
 use std::convert::Infallible;
+use std::{collections::HashMap, str::FromStr};
 use std::{
     sync::Arc,
     time::{SystemTime, SystemTimeError},
@@ -43,7 +43,7 @@ pub enum SolanaRpcError {
     #[error("Solana rpc error: {0}")]
     RpcClientError(#[from] ClientError),
     #[error("Anchor error: {0}")]
-    AnchorError(#[from] anchor_lang::error::Error),
+    AnchorError(Box<anchor_lang::error::Error>),
     #[error("Solana program error: {0}")]
     ProgramError(#[from] solana_sdk::program_error::ProgramError),
     #[error("Parse pubkey error: {0}")]
@@ -54,6 +54,14 @@ pub enum SolanaRpcError {
     SystemTimeError(#[from] SystemTimeError),
     #[error("Failed to read keypair file")]
     FailedToReadKeypairError,
+    #[error("crypto error: {0}")]
+    Crypto(#[from] helium_crypto::Error),
+}
+
+impl From<anchor_lang::error::Error> for SolanaRpcError {
+    fn from(err: anchor_lang::error::Error) -> Self {
+        Self::AnchorError(Box::new(err))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +71,18 @@ pub struct Settings {
     burn_keypair: String,
     dc_mint: String,
     dnt_mint: String,
+    #[serde(default)]
+    payers_to_monitor: Vec<String>,
+}
+
+impl Settings {
+    pub fn payers_to_monitor(&self) -> Result<Vec<PublicKeyBinary>, SolanaRpcError> {
+        self.payers_to_monitor
+            .iter()
+            .map(|payer| PublicKeyBinary::from_str(payer))
+            .collect::<Result<_, _>>()
+            .map_err(SolanaRpcError::from)
+    }
 }
 
 pub struct SolanaRpc {
@@ -70,6 +90,7 @@ pub struct SolanaRpc {
     program_cache: BurnProgramCache,
     cluster: String,
     keypair: [u8; 64],
+    payers_to_monitor: Vec<PublicKeyBinary>,
 }
 
 impl SolanaRpc {
@@ -90,6 +111,7 @@ impl SolanaRpc {
             provider,
             program_cache,
             keypair: keypair.to_bytes(),
+            payers_to_monitor: settings.payers_to_monitor()?,
         }))
     }
 }
@@ -110,6 +132,15 @@ impl SolanaNetwork for SolanaRpc {
             return Ok(0);
         };
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
+
+        if self.payers_to_monitor.contains(payer) {
+            metrics::gauge!(
+                "balance",
+                account_layout.amount as f64,
+                "payer" => payer.to_string()
+            );
+        }
+
         Ok(account_layout.amount)
     }
 
