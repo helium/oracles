@@ -1,9 +1,10 @@
 use crate::{Error, FileStore, Result, Settings};
-use futures::StreamExt;
+use futures::{future::LocalBoxFuture, StreamExt, TryFutureExt};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use task_manager::ManagedTask;
 use tokio::{fs, sync::mpsc, time};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -18,19 +19,63 @@ pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
     tx.send(file.to_path_buf()).map_err(|_| Error::channel())
 }
 
+#[derive(Debug, Clone)]
 pub struct FileUpload {
+    sender: MessageSender,
+}
+
+pub struct FileUploadServer {
     messages: UnboundedReceiverStream<PathBuf>,
     store: FileStore,
 }
 
 impl FileUpload {
-    pub async fn from_settings(settings: &Settings, messages: MessageReceiver) -> Result<Self> {
-        Ok(Self {
+    pub async fn from_settings(settings: &Settings, messages: MessageReceiver) -> Result<FileUploadServer> {
+        Ok(FileUploadServer {
             messages: UnboundedReceiverStream::new(messages),
             store: FileStore::from_settings(settings).await?,
         })
     }
+
+    pub async fn from_settings_tm(settings: &Settings) -> Result<(Self, FileUploadServer)> {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        Ok((
+            Self { sender },
+            FileUploadServer {
+                messages: UnboundedReceiverStream::new(receiver),
+                store: FileStore::from_settings(settings).await?,
+            },
+        ))
+    }
+
+    pub async fn upload_file(&self, file: &Path) -> Result {
+        self.sender
+            .send(file.to_path_buf())
+            .map_err(|_| Error::channel())
+    }
+}
+
+impl ManagedTask for FileUploadServer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run_tm(shutdown));
+
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
+    }
+}
+
+impl FileUploadServer {
     pub async fn run(self, shutdown: &triggered::Listener) -> Result {
+        self.run_tm( shutdown.clone()).await
+    }
+
+    pub async fn run_tm(self, shutdown: triggered::Listener) -> Result {
         tracing::info!("starting file uploader 1");
 
         let uploads = self

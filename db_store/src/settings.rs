@@ -72,6 +72,23 @@ impl Settings {
         }
     }
 
+    pub async fn connect_tm(&self, app_name: &str) -> Result<Pool<Postgres>> {
+        match self.auth_type {
+            AuthType::Postgres => match self.simple_connect().await {
+                Ok(pool) => {
+                    metric_tracker::start_tm(app_name, pool.clone()).await;
+                    Ok(pool)
+                }
+                Err(err) => Err(err),
+            },
+            AuthType::Iam => {
+                let pool = iam_auth_pool::connect_tm(self).await?;
+                metric_tracker::start_tm(app_name, pool.clone()).await;
+                Ok(pool)
+            }
+        }
+    }
+
     async fn simple_connect(&self) -> Result<Pool<Postgres>> {
         let connect_options = self
             .url

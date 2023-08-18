@@ -2,8 +2,10 @@ use crate::{
     balances::{BalanceCache, BalanceStore},
     pending_burns::{Burn, PendingBurns},
 };
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use solana::SolanaNetwork;
 use std::time::Duration;
+use task_manager::ManagedTask;
 use tokio::task;
 
 pub struct Burner<P, S> {
@@ -11,6 +13,19 @@ pub struct Burner<P, S> {
     balances: BalanceStore,
     burn_period: Duration,
     solana: S,
+}
+
+impl<P, S> ManagedTask for Burner<P, S>
+where
+    P: PendingBurns + Send + Sync + 'static,
+    S: SolanaNetwork,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown).map_err(anyhow::Error::from))
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -41,7 +56,7 @@ where
 {
     pub async fn run(
         mut self,
-        shutdown: &triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
         let burn_service = task::spawn(async move {
             loop {

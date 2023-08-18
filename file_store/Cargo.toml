@@ -7,13 +7,14 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = {workspace = true}
 clap = {workspace = true}
 config = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
 thiserror = {workspace = true}
 tokio = { workspace = true }
-tokio-util = "0"
+tokio-util = { workspace = true }
 tokio-stream = {workspace = true}
 triggered = {workspace = true}
 async-compression = {version = "0", features = ["tokio", "gzip"]}
@@ -46,6 +47,7 @@ sqlx = {workspace = true}
 async-trait = {workspace = true}
 derive_builder = "0"
 retainer = {workspace = true}
+task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
 hex-literal = "0"

@@ -43,6 +43,23 @@ pub async fn connect(
     ))
 }
 
+pub async fn connect_tm(settings: &Settings) -> Result<Pool<Postgres>> {
+    let aws_config = aws_config::load_from_env().await;
+    let client = aws_sdk_sts::Client::new(&aws_config);
+    let connect_parameters = ConnectParameters::try_from(settings)?;
+    let connect_options = connect_parameters.connect_options(&client).await?;
+
+    let pool = settings
+        .pool_options()
+        .connect_with(connect_options)
+        .await?;
+
+    let cloned_pool = pool.clone();
+    tokio::spawn(async move { run_tm(client, connect_parameters, cloned_pool).await });
+
+    Ok(pool)
+}
+
 async fn run(
     client: aws_sdk_sts::Client,
     connect_parameters: ConnectParameters,
@@ -65,6 +82,24 @@ async fn run(
     }
 
     Ok(())
+}
+
+async fn run_tm(
+    client: aws_sdk_sts::Client,
+    connect_parameters: ConnectParameters,
+    pool: Pool<Postgres>,
+) -> Result {
+    let duration = std::time::Duration::from_secs(connect_parameters.iam_duration_seconds as u64)
+        - Duration::from_secs(120);
+
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(duration) => {
+                let connect_options = connect_parameters.connect_options(&client).await?;
+                pool.set_connect_options(connect_options);
+            }
+        }
+    }
 }
 
 struct ConnectParameters {

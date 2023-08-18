@@ -1,30 +1,54 @@
 use crate::{SolanaRpc, SolanaRpcError};
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
 use std::{sync::Arc, time::Duration};
+use task_manager::ManagedTask;
 
 // Check balance every 12 hours
 const DURATION: Duration = Duration::from_secs(43_200);
 
-pub async fn start(
-    app_account: &str,
-    solana: Option<Arc<SolanaRpc>>,
-    shutdown: triggered::Listener,
-) -> Result<futures::future::BoxFuture<'static, Result<(), tokio::task::JoinError>>, SolanaRpcError>
-{
-    Ok(match solana {
-        None => Box::pin(async move { Ok(()) }),
-        Some(rpc_client) => {
-            let Ok(keypair) = Keypair::from_bytes(&rpc_client.keypair) else {
-                tracing::error!("sol monitor: keypair failed to deserialize");
-                return Err(SolanaRpcError::InvalidKeypair)
-            };
-            let app_metric_name = format!("{app_account}-sol-balance");
-            let handle = tokio::spawn(async move {
-                run(app_metric_name, rpc_client, keypair.pubkey(), shutdown).await
-            });
-            Box::pin(handle)
+pub enum BalanceMonitor {
+    Solana(String, Arc<SolanaRpc>, Pubkey),
+    Noop,
+}
+
+impl BalanceMonitor {
+    pub fn new(
+        app_account: &str,
+        solana: Option<Arc<SolanaRpc>>,
+    ) -> Result<Self, Box<SolanaRpcError>> {
+        match solana {
+            None => Ok(BalanceMonitor::Noop),
+            Some(rpc_client) => {
+                let Ok(keypair) = Keypair::from_bytes(&rpc_client.keypair) else {
+                    tracing::error!("sol monitor: keypair failed to deserialize");
+                    return Err(Box::new(SolanaRpcError::InvalidKeypair))
+                };
+                let app_metric_name = format!("{app_account}-sol-balance");
+
+                Ok(BalanceMonitor::Solana(
+                    app_metric_name,
+                    rpc_client,
+                    keypair.pubkey(),
+                ))
+            }
         }
-    })
+    }
+}
+
+impl ManagedTask for BalanceMonitor {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        match *self {
+            Self::Noop => Box::pin(async move { Ok(()) }),
+            Self::Solana(metric, solana, pubkey) => {
+                let handle = tokio::spawn(run(metric, solana, pubkey, shutdown));
+                Box::pin(handle.map_err(anyhow::Error::from))
+            }
+        }
+    }
 }
 
 async fn run(
@@ -33,16 +57,15 @@ async fn run(
     service_pubkey: Pubkey,
     shutdown: triggered::Listener,
 ) {
+    tracing::info!("starting sol monitor");
+
     let mut trigger = tokio::time::interval(DURATION);
 
     loop {
         let shutdown = shutdown.clone();
 
         tokio::select! {
-            _ = shutdown => {
-                tracing::info!("sol monitor: shutting down");
-                break
-            }
+            _ = shutdown => break,
             _ = trigger.tick() => {
                 match solana.provider.get_balance(&service_pubkey).await {
                     Ok(balance) => metrics::gauge!(metric_name.clone(), balance as f64),
@@ -51,4 +74,5 @@ async fn run(
             }
         }
     }
+    tracing::info!("stopping sol monitor")
 }
