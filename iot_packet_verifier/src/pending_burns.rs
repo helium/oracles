@@ -80,6 +80,8 @@ impl PendingBurns for Pool<Postgres> {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<(), Self::Error> {
+        let mut transaction = self.begin().await?;
+
         sqlx::query(
             r#"
             UPDATE pending_burns SET
@@ -91,13 +93,15 @@ impl PendingBurns for Pool<Postgres> {
         .bind(amount as i64)
         .bind(Utc::now().naive_utc())
         .bind(payer)
-        .execute(&*self)
+        .execute(&mut transaction)
         .await?;
 
         sqlx::query("DELETE FROM saved_balances WHERE payer = $1")
             .bind(payer)
-            .execute(&*self)
+            .execute(&mut transaction)
             .await?;
+
+        transaction.commit().await?;
 
         Ok(())
     }
