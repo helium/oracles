@@ -1,9 +1,9 @@
-use crate::speedtests_average::SpeedtestAverages;
 use crate::{
-    data_session::HotspotMap, heartbeats::HeartbeatReward, speedtests_average::SpeedtestAverage,
+    data_session::HotspotMap,
+    heartbeats::HeartbeatReward,
+    speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
 };
-
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
@@ -321,12 +321,8 @@ pub fn get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
 mod test {
     use super::*;
     use crate::{
-        cell_type::CellType,
-        data_session,
-        data_session::HotspotDataSession,
-        heartbeats::HeartbeatReward,
-        speedtests::Speedtest,
-        speedtests_average::{SpeedtestAverage, SpeedtestAverages},
+        cell_type::CellType, data_session, data_session::HotspotDataSession,
+        heartbeats::HeartbeatReward, speedtests::Speedtest,
         subscriber_location::SubscriberValidatedLocations,
     };
     use chrono::{Duration, Utc};

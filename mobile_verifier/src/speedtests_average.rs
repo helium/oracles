@@ -1,8 +1,11 @@
 use crate::speedtests::{self, Speedtest};
 use chrono::{DateTime, Duration, Utc};
-use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use file_store::{
+    file_sink::FileSinkClient,
+    traits::{MsgTimestamp, TimestampEncode},
+};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{self as proto, SpeedtestAvgValidity};
+use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -22,7 +25,7 @@ pub struct SpeedtestAverage {
     pub upload_speed_avg_bps: u64,
     pub download_speed_avg_bps: u64,
     pub latency_avg_ms: u32,
-    pub validity: SpeedtestAvgValidity,
+    pub validity: proto::SpeedtestAvgValidity,
     pub reward_multiplier: Decimal,
 }
 
@@ -106,7 +109,7 @@ impl SpeedtestAverage {
                         Duration::hours(SPEEDTEST_LAPSE),
                     )
                     .map(|st| proto::Speedtest {
-                        timestamp: st.report.timestamp.timestamp() as u64,
+                        timestamp: st.report.timestamp(),
                         upload_speed_bps: st.report.upload_speed,
                         download_speed_bps: st.report.download_speed,
                         latency_ms: st.report.latency,
@@ -123,17 +126,6 @@ impl SpeedtestAverage {
 
     pub fn reward_multiplier(&self) -> Decimal {
         self.reward_multiplier
-    }
-
-    #[allow(dead_code)]
-    // function used by tests only
-    pub fn tier(&self) -> SpeedtestTier {
-        calculate_tier(
-            self.window_size,
-            self.upload_speed_avg_bps,
-            self.download_speed_avg_bps,
-            self.latency_avg_ms,
-        )
     }
 }
 
@@ -292,6 +284,17 @@ mod test {
     use super::*;
     use chrono::TimeZone;
     use file_store::speedtest::CellSpeedtest;
+
+    impl SpeedtestAverage {
+        pub fn tier(&self) -> SpeedtestTier {
+            calculate_tier(
+                self.window_size,
+                self.upload_speed_avg_bps,
+                self.download_speed_avg_bps,
+                self.latency_avg_ms,
+            )
+        }
+    }
 
     fn parse_dt(dt: &str) -> DateTime<Utc> {
         Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")

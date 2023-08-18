@@ -29,7 +29,7 @@ impl FromRow<'_, PgRow> for Speedtest {
         Ok(Self {
             report: CellSpeedtest {
                 pubkey: row.get::<PublicKeyBinary, &str>("pubkey"),
-                serial: row.get::<String, &str>("serial"),
+                serial: row.get::<String, &str>("serial_num"),
                 upload_speed: row.get::<i64, &str>("upload_speed") as u64,
                 download_speed: row.get::<i64, &str>("download_speed") as u64,
                 timestamp: row.get::<DateTime<Utc>, &str>("timestamp"),
@@ -114,7 +114,7 @@ pub async fn save_speedtest(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        insert into speedtests (pubkey, upload_speed, download_speed, latency, serial, timestamp)
+        insert into speedtests (pubkey, upload_speed, download_speed, latency, serial_num, timestamp)
         values ($1, $2, $3, $4, $5, $6)
         on conflict (pubkey, timestamp) do nothing
         "#,
@@ -134,18 +134,13 @@ pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
-    let mut speedtests = Vec::new();
-
-    let mut rows = sqlx::query_as::<_, Speedtest>(
+    let speedtests = sqlx::query_as::<_, Speedtest>(
         "SELECT * FROM speedtests where pubkey = $1 order by timestamp desc limit $2",
     )
     .bind(pubkey)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
-    .fetch(exec);
-
-    while let Some(speedtest) = rows.try_next().await? {
-        speedtests.push(speedtest);
-    }
+    .fetch_all(exec)
+    .await?;
     Ok(speedtests)
 }
 
@@ -154,12 +149,12 @@ pub async fn aggregate_epoch_speedtests<'a>(
     exec: &sqlx::Pool<sqlx::Postgres>,
 ) -> Result<EpochSpeedTests, sqlx::Error> {
     let mut speedtests = EpochSpeedTests::new();
-    // use latest speedtest which are no older than hours defined by SPEEDTEST_LAPSE
+    // use latest speedtest which are no older than N hours, defined by SPEEDTEST_LAPSE
     let start = epoch_end - Duration::hours(SPEEDTEST_LAPSE);
     // pull the last N most recent speedtests from prior to the epoch end for each pubkey
     let mut rows = sqlx::query_as::<_, Speedtest>(
         "select * from (
-            SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, serial, row_number()
+            SELECT distinct(pubkey), upload_speed, download_speed, latency, timestamp, serial_num, row_number()
             over (partition by pubkey order by timestamp desc) as count FROM speedtests where timestamp >= $1 and timestamp < $2
         ) as tmp
         where count <= $3"
