@@ -70,10 +70,7 @@ impl Server {
 
         // Create database pool
         let app_name = format!("{}_{}", settings.mode, env!("CARGO_PKG_NAME"));
-        let (pool, db_join_handle) = settings
-            .database
-            .connect(&app_name, shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect(&app_name).await?;
         sqlx::migrate!().run(&pool).await?;
 
         telemetry::initialize(&pool).await?;
@@ -99,7 +96,6 @@ impl Server {
         let mut indexer = Indexer::new(settings, pool).await?;
 
         tokio::try_join!(
-            db_join_handle.map_err(anyhow::Error::from),
             source_join_handle.map_err(anyhow::Error::from),
             indexer.run(shutdown_listener, receiver),
         )?;

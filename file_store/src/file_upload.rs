@@ -30,7 +30,10 @@ pub struct FileUploadServer {
 }
 
 impl FileUpload {
-    pub async fn from_settings(settings: &Settings, messages: MessageReceiver) -> Result<FileUploadServer> {
+    pub async fn from_settings(
+        settings: &Settings,
+        messages: MessageReceiver,
+    ) -> Result<FileUploadServer> {
         Ok(FileUploadServer {
             messages: UnboundedReceiverStream::new(messages),
             store: FileStore::from_settings(settings).await?,
@@ -72,7 +75,7 @@ impl ManagedTask for FileUploadServer {
 
 impl FileUploadServer {
     pub async fn run(self, shutdown: &triggered::Listener) -> Result {
-        self.run_tm( shutdown.clone()).await
+        self.run_tm(shutdown.clone()).await
     }
 
     pub async fn run_tm(self, shutdown: triggered::Listener) -> Result {

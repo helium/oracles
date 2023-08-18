@@ -34,6 +34,16 @@ impl BalanceMonitor {
             }
         }
     }
+
+    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        match self {
+            Self::Noop => Ok(()),
+            Self::Solana(metric, solana, pubkey) => {
+                run(metric, solana, pubkey, shutdown).await;
+                Ok(())
+            }
+        }
+    }
 }
 
 impl ManagedTask for BalanceMonitor {
@@ -41,13 +51,13 @@ impl ManagedTask for BalanceMonitor {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        match *self {
-            Self::Noop => Box::pin(async move { Ok(()) }),
-            Self::Solana(metric, solana, pubkey) => {
-                let handle = tokio::spawn(run(metric, solana, pubkey, shutdown));
-                Box::pin(handle.map_err(anyhow::Error::from))
-            }
-        }
+        let handle = tokio::spawn(self.run(shutdown));
+
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 

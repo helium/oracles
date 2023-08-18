@@ -76,10 +76,7 @@ impl Server {
         });
 
         // Create database pool and run migrations
-        let (pool, db_join_handle) = settings
-            .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown.clone())
-            .await?;
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
         telemetry::initialize(&pool).await?;
@@ -172,7 +169,6 @@ impl Server {
             PriceTracker::start(&settings.price_tracker, shutdown.clone()).await?;
 
         tokio::try_join!(
-            db_join_handle.map_err(Error::from),
             gateway_updater.run(&shutdown).map_err(Error::from),
             gateway_rewards_server.run().map_err(Error::from),
             reward_manifests_server.run().map_err(Error::from),

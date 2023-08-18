@@ -7,10 +7,11 @@ use crate::{
 use anyhow::{bail, Result};
 use file_store::{
     file_info_poller_tm::{FileInfoStream, LookbackBehavior},
+    file_sink_tm::FileSinkBuilder,
     file_sink_tm::FileSinkClient,
     file_source_tm, file_upload,
     iot_packet::PacketRouterPacketReport,
-    file_sink_tm::FileSinkBuilder, FileStore, FileType,
+    FileStore, FileType,
 };
 use futures_util::TryFutureExt;
 use iot_config::client::OrgClient;
@@ -37,7 +38,6 @@ impl ManagedTask for Daemon {
         Box::pin(self.run(shutdown))
     }
 }
-
 
 impl Daemon {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
@@ -92,7 +92,7 @@ impl Cmd {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         // Set up the postgres pool:
-        let pool = settings.database.connect_tm(env!("CARGO_PKG_NAME")).await?;
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
         let solana = if settings.enable_solana_integration {
@@ -196,6 +196,5 @@ impl Cmd {
             .add_task(burner)
             .start()
             .await
-
     }
 }

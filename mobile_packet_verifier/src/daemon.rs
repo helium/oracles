@@ -99,10 +99,7 @@ impl Cmd {
         });
 
         // Set up the postgres pool:
-        let (pool, conn_handler) = settings
-            .database
-            .connect("mobile-packet-verifier", shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect("mobile-packet-verifier").await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Set up the solana network:
@@ -116,12 +113,8 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = solana::balance_monitor::start(
-            env!("CARGO_PKG_NAME"),
-            solana.clone(),
-            shutdown_listener.clone(),
-        )
-        .await?;
+        let sol_balance_monitor =
+            solana::balance_monitor::BalanceMonitor::new(env!("CARGO_PKG_NAME"), solana.clone())?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
@@ -189,8 +182,9 @@ impl Cmd {
             invalid_sessions_server.run().map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
-            conn_handler.map_err(Error::from),
-            sol_balance_monitor.map_err(Error::from),
+            sol_balance_monitor
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
             event_id_purger.run(shutdown_listener.clone()),
         )?;
 

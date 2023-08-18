@@ -33,10 +33,7 @@ impl Cmd {
             }
         });
 
-        let (pool, db_join_handle) = settings
-            .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
         telemetry::initialize(&pool).await?;
@@ -197,7 +194,6 @@ impl Cmd {
         let data_session_ingestor = DataSessionIngestor::new(pool.clone());
 
         tokio::try_join!(
-            db_join_handle.map_err(Error::from),
             valid_heartbeats_server.run().map_err(Error::from),
             valid_speedtests_server.run().map_err(Error::from),
             mobile_rewards_server.run().map_err(Error::from),
