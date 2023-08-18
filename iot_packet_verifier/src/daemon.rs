@@ -189,9 +189,9 @@ impl Cmd {
                     )
                     .map_err(anyhow::Error::from)
             })
-            .add_task(burner)
             .add_task(verifier_daemon)
             .add_task(sol_balance_monitor)
+            .add_task(burner)
             .start()
             .await
     }
