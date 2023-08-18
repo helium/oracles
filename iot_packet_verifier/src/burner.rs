@@ -23,22 +23,44 @@ pub enum BurnError<P, S> {
     SolanaError(S),
 }
 
-impl<P, S> Burner<P, S> {
-    pub fn new(pending_burns: P, balances: &BalanceCache<S>, burn_period: u64, solana: S) -> Self {
-        Self {
-            pending_burns,
-            balances: balances.balances(),
-            burn_period: Duration::from_secs(60 * burn_period),
-            solana,
-        }
-    }
-}
-
 impl<P, S> Burner<P, S>
 where
     P: PendingBurns + Send + Sync + 'static,
     S: SolanaNetwork,
 {
+    pub async fn new(
+        mut pending_burns: P,
+        balances: &BalanceCache<S>,
+        burn_period: u64,
+        solana: S,
+    ) -> Result<Self, BurnError<P::Error, S::Error>> {
+        // Recover from failed burn storage
+        for saved_balance in pending_burns
+            .fetch_saved_balances()
+            .await
+            .map_err(BurnError::SqlError)?
+        {
+            let curr_balance = solana
+                .payer_balance(&saved_balance.payer)
+                .await
+                .map_err(BurnError::SolanaError)?;
+            // If the balance we have saved is greater than the current balance,
+            // we must have burned and failed to reduce the pending burns table.
+            let burned = saved_balance.amount() - curr_balance;
+            pending_burns
+                .subtract_burned_amount(&saved_balance.payer, burned)
+                .await
+                .map_err(BurnError::SqlError)?
+        }
+
+        Ok(Self {
+            pending_burns,
+            balances: balances.balances(),
+            burn_period: Duration::from_secs(60 * burn_period),
+            solana,
+        })
+    }
+
     pub async fn run(
         mut self,
         shutdown: &triggered::Listener,
@@ -69,6 +91,17 @@ where
         tracing::info!(%amount, %payer, "Burning DC");
 
         let amount = amount as u64;
+
+        self.pending_burns
+            .save_balance(
+                &payer,
+                self.solana
+                    .payer_balance(&payer)
+                    .await
+                    .map_err(BurnError::SolanaError)?,
+            )
+            .await
+            .map_err(BurnError::SqlError)?;
 
         self.solana
             .burn_data_credits(&payer, amount)

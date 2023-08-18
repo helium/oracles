@@ -125,7 +125,8 @@ impl Cmd {
             &balances,
             settings.burn_period,
             solana.clone(),
-        );
+        )
+        .await?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =

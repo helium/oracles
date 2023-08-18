@@ -16,6 +16,14 @@ pub trait PendingBurns {
 
     async fn fetch_next(&mut self) -> Result<Option<Burn>, Self::Error>;
 
+    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error>;
+
+    async fn save_balance(
+        &mut self,
+        payer: &PublicKeyBinary,
+        balance: u64,
+    ) -> Result<(), Self::Error>;
+
     async fn subtract_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
@@ -48,6 +56,25 @@ impl PendingBurns for Pool<Postgres> {
             .await
     }
 
+    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error> {
+        sqlx::query_as("SELECT * FROM saved_balances")
+            .fetch_all(&*self)
+            .await
+    }
+
+    async fn save_balance(
+        &mut self,
+        payer: &PublicKeyBinary,
+        balance: u64,
+    ) -> Result<(), Self::Error> {
+        sqlx::query("INSERT INTO saved_balances (payer, balance) VALUES ($1, $2)")
+            .bind(payer)
+            .bind(balance as i64)
+            .execute(&*self)
+            .await?;
+        Ok(())
+    }
+
     async fn subtract_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
@@ -58,7 +85,7 @@ impl PendingBurns for Pool<Postgres> {
             UPDATE pending_burns SET
               amount = amount - $1,
               last_burn = $2
-            WHERE payer = $3
+            WHERE payer = $3;
             "#,
         )
         .bind(amount as i64)
@@ -66,6 +93,11 @@ impl PendingBurns for Pool<Postgres> {
         .bind(payer)
         .execute(&*self)
         .await?;
+
+        sqlx::query("DELETE FROM saved_balances WHERE payer = $1")
+            .bind(payer)
+            .execute(&*self)
+            .await?;
 
         Ok(())
     }
@@ -110,6 +142,25 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
             .await
     }
 
+    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error> {
+        sqlx::query_as("SELECT * FROM saved_balances")
+            .fetch_all(&mut **self)
+            .await
+    }
+
+    async fn save_balance(
+        &mut self,
+        payer: &PublicKeyBinary,
+        balance: u64,
+    ) -> Result<(), Self::Error> {
+        sqlx::query("INSERT INTO saved_balances (payer, balance) VALUES ($1, $2)")
+            .bind(payer)
+            .bind(balance as i64)
+            .execute(&mut **self)
+            .await?;
+        Ok(())
+    }
+
     async fn subtract_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
@@ -128,6 +179,11 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
         .bind(payer)
         .execute(&mut **self)
         .await?;
+
+        sqlx::query("DELETE FROM saved_balances WHERE payer = $1")
+            .bind(payer)
+            .execute(&mut **self)
+            .await?;
 
         Ok(())
     }
@@ -189,6 +245,18 @@ impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
             }))
     }
 
+    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error> {
+        Ok(Vec::new())
+    }
+
+    async fn save_balance(
+        &mut self,
+        _payer: &PublicKeyBinary,
+        _balance: u64,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     async fn subtract_burned_amount(
         &mut self,
         payer: &PublicKeyBinary,
@@ -215,4 +283,16 @@ impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 pub struct Burn {
     pub payer: PublicKeyBinary,
     pub amount: i64,
+}
+
+#[derive(FromRow)]
+pub struct SavedBalance {
+    pub payer: PublicKeyBinary,
+    amount: i64,
+}
+
+impl SavedBalance {
+    pub fn amount(&self) -> u64 {
+        self.amount as u64
+    }
 }
