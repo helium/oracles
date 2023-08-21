@@ -180,7 +180,6 @@ impl Cmd {
             .add_task(file_upload_server)
             .add_task(valid_packets_server)
             .add_task(invalid_packets_server)
-            .add_task(report_files_server)
             .add_task(move |shutdown| {
                 org_client
                     .monitor_funds(
@@ -195,6 +194,7 @@ impl Cmd {
             .add_task(verifier_daemon)
             .add_task(sol_balance_monitor)
             .add_task(burner)
+            .add_task(report_files_server)
             .start()
             .await
     }

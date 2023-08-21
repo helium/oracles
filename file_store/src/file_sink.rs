@@ -379,6 +379,7 @@ impl FileSink {
 
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {

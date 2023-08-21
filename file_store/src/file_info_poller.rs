@@ -122,6 +122,7 @@ where
             let before = Utc::now();
 
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => {
                     tracing::info!("stopping FileInfoPoller for file type {}", self.config.file_type);
                     break;
