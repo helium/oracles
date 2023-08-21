@@ -120,12 +120,17 @@ impl FileSinkBuilder {
     }
 
     pub fn deposits(self, deposits: Option<file_upload::MessageSender>) -> Self {
-        Self { deposits, ..self }
+        Self {
+            deposits,
+            file_upload: None,
+            ..self
+        }
     }
 
     pub fn file_upload(self, file_upload: Option<FileUpload>) -> Self {
         Self {
             file_upload,
+            deposits: None,
             ..self
         }
     }
