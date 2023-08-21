@@ -108,11 +108,10 @@ impl Server {
         let mut hst_price_generator =
             PriceGenerator::new(settings, BlockchainTokenTypeV1::Hst).await?;
 
-        let (price_sink, mut price_sink_server) = file_sink::FileSinkBuilder::new(
+        let (price_sink, price_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::PriceReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(PRICE_SINK_ROLL_MINS))
@@ -132,7 +131,7 @@ impl Server {
             hst_price_generator
                 .run(price_sink, &shutdown)
                 .map_err(Error::from),
-            price_sink_server.run().map_err(Error::from),
+            price_sink_server.run(shutdown.clone()).map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),
         )
         .map(|_| ())

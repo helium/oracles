@@ -122,22 +122,20 @@ impl Cmd {
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
-        let (valid_sessions, mut valid_sessions_server) = FileSinkBuilder::new(
+        let (valid_sessions, valid_sessions_server) = FileSinkBuilder::new(
             FileType::ValidDataTransferSession,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_data_transfer_session"),
-            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(true)
         .create()
         .await?;
 
-        let (invalid_sessions, mut invalid_sessions_server) = FileSinkBuilder::new(
+        let (invalid_sessions, invalid_sessions_server) = FileSinkBuilder::new(
             FileType::InvalidDataTransferSessionIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_data_transfer_session"),
-            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -148,7 +146,7 @@ impl Cmd {
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (reports, source_join_handle) =
+        let (reports, reports_server) =
             file_source::continuous_source::<DataTransferSessionIngestReport>()
                 .db(pool.clone())
                 .store(file_store)
@@ -157,9 +155,8 @@ impl Cmd {
                 ))
                 .file_type(FileType::DataTransferSessionIngestReport)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
+                .create()?;
+        let source_join_handle = reports_server.start(shutdown_listener.clone()).await?;
 
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
@@ -178,8 +175,12 @@ impl Cmd {
 
         tokio::try_join!(
             source_join_handle.map_err(Error::from),
-            valid_sessions_server.run().map_err(Error::from),
-            invalid_sessions_server.run().map_err(Error::from),
+            valid_sessions_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            invalid_sessions_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
             file_upload.run(&shutdown_listener).map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
             sol_balance_monitor

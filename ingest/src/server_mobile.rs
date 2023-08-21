@@ -210,32 +210,28 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     let store_base_path = Path::new(&settings.cache);
 
-    let (heartbeat_report_sink, mut heartbeat_report_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::CellHeartbeatIngestReport,
-            store_base_path,
-            concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
-            shutdown.clone(),
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
-        .create()
-        .await?;
+    let (heartbeat_report_sink, heartbeat_report_sink_server) = file_sink::FileSinkBuilder::new(
+        FileType::CellHeartbeatIngestReport,
+        store_base_path,
+        concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
+    )
+    .deposits(Some(file_upload_tx.clone()))
+    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+    .create()
+    .await?;
 
     // speedtests
-    let (speedtest_report_sink, mut speedtest_report_sink_server) =
-        file_sink::FileSinkBuilder::new(
-            FileType::CellSpeedtestIngestReport,
-            store_base_path,
-            concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
-            shutdown.clone(),
-        )
-        .deposits(Some(file_upload_tx.clone()))
-        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
-        .create()
-        .await?;
+    let (speedtest_report_sink, speedtest_report_sink_server) = file_sink::FileSinkBuilder::new(
+        FileType::CellSpeedtestIngestReport,
+        store_base_path,
+        concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
+    )
+    .deposits(Some(file_upload_tx.clone()))
+    .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+    .create()
+    .await?;
 
-    let (data_transfer_session_sink, mut data_transfer_session_sink_server) =
+    let (data_transfer_session_sink, data_transfer_session_sink_server) =
         file_sink::FileSinkBuilder::new(
             FileType::DataTransferSessionIngestReport,
             store_base_path,
@@ -243,31 +239,28 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
                 env!("CARGO_PKG_NAME"),
                 "_mobile_data_transfer_session_report"
             ),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
 
-    let (subscriber_location_report_sink, mut subscriber_location_report_sink_server) =
+    let (subscriber_location_report_sink, subscriber_location_report_sink_server) =
         file_sink::FileSinkBuilder::new(
             FileType::SubscriberLocationIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_subscriber_location_report"),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
 
-    let (coverage_object_report_sink, mut coverage_object_report_sink_server) =
+    let (coverage_object_report_sink, coverage_object_report_sink_server) =
         file_sink::FileSinkBuilder::new(
             FileType::CoverageObjectIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object_report"),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
@@ -315,14 +308,20 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     tokio::try_join!(
         server,
-        heartbeat_report_sink_server.run().map_err(Error::from),
-        speedtest_report_sink_server.run().map_err(Error::from),
-        data_transfer_session_sink_server.run().map_err(Error::from),
+        heartbeat_report_sink_server
+            .run(shutdown.clone())
+            .map_err(Error::from),
+        speedtest_report_sink_server
+            .run(shutdown.clone())
+            .map_err(Error::from),
+        data_transfer_session_sink_server
+            .run(shutdown.clone())
+            .map_err(Error::from),
         subscriber_location_report_sink_server
-            .run()
+            .run(shutdown.clone())
             .map_err(Error::from),
         coverage_object_report_sink_server
-            .run()
+            .run(shutdown.clone())
             .map_err(Error::from),
         file_upload.run(&shutdown).map_err(Error::from),
     )

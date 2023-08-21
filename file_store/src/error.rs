@@ -33,7 +33,7 @@ pub enum Error {
     #[error("shutting down")]
     Shutdown,
     #[error("error building file info poller")]
-    FileInfoPollerError(#[from] crate::file_info_poller_tm::FileInfoPollerConfigBuilderError),
+    FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
 }
 
 #[derive(Error, Debug)]

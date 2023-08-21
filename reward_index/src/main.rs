@@ -77,7 +77,7 @@ impl Server {
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
 
-        let (receiver, source_join_handle) = file_source::continuous_source::<RewardManifest>()
+        let (receiver, server) = file_source::continuous_source::<RewardManifest>()
             .db(pool.clone())
             .store(file_store)
             .file_type(FileType::RewardManifest)
@@ -88,9 +88,8 @@ impl Server {
             ))
             .poll_duration(settings.interval())
             .offset(settings.interval() * 2)
-            .build()?
-            .start(shutdown_listener.clone())
-            .await?;
+            .create()?;
+        let source_join_handle = server.start(shutdown_listener.clone()).await?;
 
         // Reward server
         let mut indexer = Indexer::new(settings, pool).await?;

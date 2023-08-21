@@ -6,10 +6,10 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use file_store::{
-    file_info_poller_tm::{FileInfoStream, LookbackBehavior},
-    file_sink_tm::FileSinkBuilder,
-    file_sink_tm::FileSinkClient,
-    file_source_tm, file_upload,
+    file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::FileSinkBuilder,
+    file_sink::FileSinkClient,
+    file_source, file_upload,
     iot_packet::PacketRouterPacketReport,
     FileStore, FileType,
 };
@@ -124,7 +124,7 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         // Verified packets:
-        let (valid_packets, valid_packets_server) = FileSinkBuilder::new(
+        let (valid_packets, valid_packets_server) = FileSinkBuilder::new_tm(
             FileType::IotValidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
@@ -134,7 +134,7 @@ impl Cmd {
         .create()
         .await?;
 
-        let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new(
+        let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new_tm(
             FileType::InvalidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
@@ -151,7 +151,7 @@ impl Cmd {
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
         let (report_files, report_files_server) =
-            file_source_tm::continuous_source::<PacketRouterPacketReport>()
+            file_source::continuous_source::<PacketRouterPacketReport>()
                 .db(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))

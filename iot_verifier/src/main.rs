@@ -95,11 +95,10 @@ impl Server {
 
         let store_base_path = std::path::Path::new(&settings.cache);
         // Gateway reward shares sink
-        let (rewards_sink, mut gateway_rewards_server) = file_sink::FileSinkBuilder::new(
+        let (rewards_sink, gateway_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::IotRewardShare,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_gateway_reward_shares"),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -107,11 +106,10 @@ impl Server {
         .await?;
 
         // Reward manifest
-        let (reward_manifests_sink, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
+        let (reward_manifests_sink, reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_iot_reward_manifest"),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -131,7 +129,7 @@ impl Server {
         let mut entropy_loader = EntropyLoader { pool: pool.clone() };
         let entropy_store = FileStore::from_settings(&settings.entropy).await?;
         let entropy_interval = settings.entropy_interval();
-        let (entropy_loader_receiver, entropy_loader_source_join_handle) =
+        let (entropy_loader_receiver, entropy_loader_server) =
             file_source::continuous_source::<EntropyReport>()
                 .db(pool.clone())
                 .store(entropy_store.clone())
@@ -139,15 +137,15 @@ impl Server {
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(entropy_interval)
                 .offset(entropy_interval * 2)
-                .build()?
-                .start(shutdown.clone())
-                .await?;
+                .create()?;
+        let entropy_loader_source_join_handle =
+            entropy_loader_server.start(shutdown.clone()).await?;
 
         // setup the packet loader continious source
         let packet_loader = packet_loader::PacketLoader::from_settings(settings, pool.clone());
         let packet_store = FileStore::from_settings(&settings.packet_ingest).await?;
         let packet_interval = settings.packet_interval();
-        let (pk_loader_receiver, pk_loader_source_join_handle) =
+        let (pk_loader_receiver, pk_loader_server) =
             file_source::continuous_source::<IotValidPacket>()
                 .db(pool.clone())
                 .store(packet_store.clone())
@@ -155,9 +153,8 @@ impl Server {
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(packet_interval)
                 .offset(packet_interval * 2)
-                .build()?
-                .start(shutdown.clone())
-                .await?;
+                .create()?;
+        let pk_loader_source_join_handle = pk_loader_server.start(shutdown.clone()).await?;
 
         // init da processes
         let mut loader = loader::Loader::from_settings(settings, pool.clone()).await?;
@@ -170,8 +167,12 @@ impl Server {
 
         tokio::try_join!(
             gateway_updater.run(&shutdown).map_err(Error::from),
-            gateway_rewards_server.run().map_err(Error::from),
-            reward_manifests_server.run().map_err(Error::from),
+            gateway_rewards_server
+                .run(shutdown.clone())
+                .map_err(Error::from),
+            reward_manifests_server
+                .run(shutdown.clone())
+                .map_err(Error::from),
             file_upload.run(&shutdown).map_err(Error::from),
             runner.run(
                 file_upload_tx.clone(),
@@ -184,11 +185,11 @@ impl Server {
             loader.run(&shutdown, &gateway_cache),
             packet_loader.run(
                 pk_loader_receiver,
-                &shutdown,
+                shutdown.clone(),
                 &gateway_cache,
                 file_upload_tx.clone()
             ),
-            purger.run(&shutdown),
+            purger.run(shutdown.clone()),
             rewarder.run(price_tracker, &shutdown),
             density_scaler.run(&shutdown).map_err(Error::from),
             price_receiver.map_err(Error::from),
