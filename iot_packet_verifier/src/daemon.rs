@@ -44,6 +44,7 @@ impl Daemon {
         tracing::info!("starting daemon");
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 file = self.report_files.recv() => {
                     if let Some(file) = file {
