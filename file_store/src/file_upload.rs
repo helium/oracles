@@ -79,7 +79,7 @@ impl FileUploadServer {
     }
 
     pub async fn run_tm(self, shutdown: triggered::Listener) -> Result {
-        tracing::info!("starting file uploader 1");
+        tracing::info!("starting file uploader {}", self.store.bucket);
 
         let uploads = self
             .messages
@@ -98,7 +98,6 @@ impl FileUploadServer {
                 let mut retry = 0;
                 const MAX_RETRIES: u8 = 5;
                 const RETRY_WAIT: Duration = Duration::from_secs(10);
-                tracing::info!("starting file uploader 2");
                 while retry <= MAX_RETRIES {
                     tracing::debug!("storing {path_str} in {bucket} retry {retry}");
                     match store.put(&path).await {
@@ -131,7 +130,7 @@ impl FileUploadServer {
             _ = shutdown.clone() => (),
         }
 
-        tracing::info!("stopping file uploader");
+        tracing::info!("stopping file uploader {}", self.store.bucket);
         Ok(())
     }
 }

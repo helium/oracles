@@ -115,6 +115,7 @@ where
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
 
         let mut latest_ts = db::latest_ts(&self.config.db, self.config.file_type).await?;
+        tracing::info!("starting FileInfoPoller for file type {}", self.config.file_type);
 
         loop {
             let after = self.after(latest_ts);
@@ -122,7 +123,7 @@ where
 
             tokio::select! {
                 _ = shutdown.clone() => {
-                    tracing::info!("FileInfoPoller shutting down");
+                    tracing::info!("stopping FileInfoPoller for file type {}", self.config.file_type);
                     break;
                 }
                 _ = cleanup_trigger.tick() => self.clean(&cache).await?,

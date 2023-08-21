@@ -58,6 +58,7 @@ where
         mut self,
         shutdown: triggered::Listener,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
+        tracing::info!("starting burner");
         let burn_service = task::spawn(async move {
             loop {
                 if let Err(e) = self.burn().await {
@@ -68,9 +69,11 @@ where
         });
 
         tokio::select! {
-            _ = shutdown.clone() => Ok(()),
+            _ = shutdown.clone() => {tracing::info!("stopping burner"); Ok(())},
             service_result = burn_service => service_result?,
         }
+
+
     }
 
     pub async fn burn(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {

@@ -41,6 +41,7 @@ impl ManagedTask for Daemon {
 
 impl Daemon {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
+        tracing::info!("starting daemon");
         loop {
             tokio::select! {
                 _ = shutdown.clone() => break,
