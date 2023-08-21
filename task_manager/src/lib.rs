@@ -1,9 +1,8 @@
 mod select_all;
 
-use std::pin::pin;
-
 use crate::select_all::select_all;
 use futures::{future::LocalBoxFuture, Future, StreamExt};
+use std::pin::pin;
 use tokio::signal;
 
 pub trait ManagedTask {

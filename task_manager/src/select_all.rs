@@ -1,5 +1,4 @@
-use core::mem;
-use core::pin::Pin;
+use core::{mem, pin::Pin};
 use futures::{
     future::FutureExt,
     task::{Context, Poll},
