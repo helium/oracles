@@ -288,7 +288,7 @@ impl SolanaNetwork for SolanaRpc {
                 &signer.pubkey(),
                 GetConfirmedSignaturesForAddress2Config {
                     before: None,
-                    until: Some(since.clone()),
+                    until: Some(*since),
                     limit: None,
                     commitment: Some(CommitmentConfig::confirmed()),
                 },
@@ -466,19 +466,18 @@ fn extract_burn_info(
         } => {
             for instruction in instructions {
                 for instruction in instruction.instructions {
-                    match instruction {
-                        UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed_instruction)) => {
-                            let Ok(instruction) = serde_json::from_value::<Instruction>(parsed_instruction.parsed) else {
+                    if let UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed_instruction)) =
+                        instruction
+                    {
+                        let Ok(instruction) = serde_json::from_value::<Instruction>(parsed_instruction.parsed) else {
                                 continue;
                             };
-                            if instruction.instr_type != "burn" {
-                                continue;
-                            }
-                            let amount: u64 = instruction.info.amount.parse()?;
-                            let account: Pubkey = instruction.info.account.parse()?;
-                            return Ok(Some(BurnInfo { account, amount }));
+                        if instruction.instr_type != "burn" {
+                            continue;
                         }
-                        _ => (),
+                        let amount: u64 = instruction.info.amount.parse()?;
+                        let account: Pubkey = instruction.info.account.parse()?;
+                        return Ok(Some(BurnInfo { account, amount }));
                     }
                 }
             }
@@ -549,8 +548,7 @@ impl SolanaNetwork for MockSolanaNetwork {
             .await
             .last()
             .ok_or(MockSolanaError::NoTransactionsFound)?
-            .signature
-            .clone())
+            .signature)
     }
 
     async fn has_burn_transaction(
@@ -560,13 +558,13 @@ impl SolanaNetwork for MockSolanaNetwork {
         since: &Signature,
     ) -> Result<bool, Self::Error> {
         let transactions = self.transactions.lock().await;
-        let mut transaction_iter = transactions.iter();
-        while let Some(transaction) = transaction_iter.next() {
+        let transaction_iter = transactions.iter();
+        for transaction in transaction_iter.as_ref() {
             if transaction.signature == *since {
                 break;
             }
         }
-        while let Some(transaction) = transaction_iter.next() {
+        for transaction in transaction_iter {
             if transaction.account == *payer && transaction.amount == amount {
                 return Ok(true);
             }
