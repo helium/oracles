@@ -48,7 +48,7 @@ macro_rules! call_with_retry {
                     Code::Cancelled | Code::DeadlineExceeded | Code::Unavailable => {
                         if attempt < 3 {
                             attempt += 1;
-                            tokio::time::sleep(Duration::from_millis(attempt * 100)).await;
+                            tokio::time::sleep(Duration::from_secs(attempt)).await;
                             continue;
                         } else {
                             break Err(status);
