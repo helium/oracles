@@ -58,7 +58,7 @@ impl Purger {
         })
     }
 
-    pub async fn run(&self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(&self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting purger");
 
         let mut db_timer = time::interval(DB_POLL_TIME);
@@ -69,34 +69,32 @@ impl Purger {
         let file_upload =
             file_upload::FileUpload::from_settings(&self.output, file_upload_rx).await?;
 
-        let (invalid_beacon_sink, mut invalid_beacon_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::IotInvalidBeaconReport,
-                store_base_path,
-                concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon"),
-                shutdown.clone(),
-            )
-            .deposits(Some(file_upload_tx.clone()))
-            .auto_commit(false)
-            .create()
-            .await?;
+        let (invalid_beacon_sink, invalid_beacon_sink_server) = file_sink::FileSinkBuilder::new(
+            FileType::IotInvalidBeaconReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .create()
+        .await?;
 
-        let (invalid_witness_sink, mut invalid_witness_sink_server) =
-            file_sink::FileSinkBuilder::new(
-                FileType::IotInvalidWitnessReport,
-                store_base_path,
-                concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
-                shutdown.clone(),
-            )
-            .deposits(Some(file_upload_tx.clone()))
-            .auto_commit(false)
-            .create()
-            .await?;
+        let (invalid_witness_sink, invalid_witness_sink_server) = file_sink::FileSinkBuilder::new(
+            FileType::IotInvalidWitnessReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .create()
+        .await?;
 
-        let upload_shutdown = shutdown.clone();
-        tokio::spawn(async move { invalid_beacon_sink_server.run().await });
-        tokio::spawn(async move { invalid_witness_sink_server.run().await });
-        tokio::spawn(async move { file_upload.run(&upload_shutdown).await });
+        let shutdown1 = shutdown.clone();
+        let shutdown2 = shutdown.clone();
+        let shutdown3 = shutdown.clone();
+        tokio::spawn(async move { invalid_beacon_sink_server.run(shutdown1).await });
+        tokio::spawn(async move { invalid_witness_sink_server.run(shutdown2).await });
+        tokio::spawn(async move { file_upload.run(shutdown3).await });
 
         loop {
             if shutdown.is_triggered() {

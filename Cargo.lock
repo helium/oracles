@@ -2489,6 +2489,7 @@ dependencies = [
 name = "file-store"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-compression",
  "async-trait",
  "aws-config",
@@ -2523,6 +2524,7 @@ dependencies = [
  "sqlx",
  "strum",
  "strum_macros",
+ "task-manager",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3380,6 +3382,7 @@ dependencies = [
  "serde",
  "solana",
  "sqlx",
+ "task-manager",
  "thiserror",
  "tokio",
  "tonic",
@@ -5910,6 +5913,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-client",
  "anchor-lang",
+ "anyhow",
  "async-trait",
  "clap 4.1.11",
  "data-credits",
@@ -5923,8 +5927,10 @@ dependencies = [
  "solana-program",
  "solana-sdk",
  "spl-token",
+ "task-manager",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "triggered",
 ]
@@ -6988,6 +6994,18 @@ dependencies = [
  "quote 1.0.21",
  "syn 1.0.104",
  "unicode-xid 0.2.4",
+]
+
+[[package]]
+name = "task-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "futures-util",
+ "tokio",
+ "tokio-util",
+ "triggered",
 ]
 
 [[package]]

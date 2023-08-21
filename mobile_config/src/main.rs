@@ -72,17 +72,11 @@ impl Daemon {
         poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool
-        let (pool, pool_handle) = settings
-            .database
-            .connect("mobile-config-store", shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect("mobile-config-store").await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Create on-chain metadata pool
-        let (metadata_pool, md_pool_handle) = settings
-            .metadata
-            .connect("mobile-config-metadata", shutdown_listener.clone())
-            .await?;
+        let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
 
         let listen_addr = settings.listen_addr()?;
 
@@ -102,7 +96,7 @@ impl Daemon {
             settings.signing_keypair()?,
         );
 
-        let server = transport::Server::builder()
+        transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(AdminServer::new(admin_svc))
@@ -110,13 +104,8 @@ impl Daemon {
             .add_service(AuthorizationServer::new(auth_svc))
             .add_service(EntityServer::new(entity_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
-            .map_err(Error::from);
-
-        tokio::try_join!(
-            pool_handle.map_err(Error::from),
-            md_pool_handle.map_err(Error::from),
-            server,
-        )?;
+            .map_err(Error::from)
+            .await?;
 
         Ok(())
     }
