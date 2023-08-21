@@ -198,7 +198,9 @@ impl Cmd {
             mobile_rewards_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
-            file_upload.run(&shutdown_listener).map_err(Error::from),
+            file_upload
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
             reward_manifests_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),

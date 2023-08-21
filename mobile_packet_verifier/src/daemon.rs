@@ -181,7 +181,9 @@ impl Cmd {
             invalid_sessions_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
-            file_upload.run(&shutdown_listener).map_err(Error::from),
+            file_upload
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
             sol_balance_monitor
                 .run(shutdown_listener.clone())

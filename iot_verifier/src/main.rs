@@ -173,7 +173,7 @@ impl Server {
             reward_manifests_server
                 .run(shutdown.clone())
                 .map_err(Error::from),
-            file_upload.run(&shutdown).map_err(Error::from),
+            file_upload.run(shutdown.clone()).map_err(Error::from),
             runner.run(
                 file_upload_tx.clone(),
                 &gateway_cache,

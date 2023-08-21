@@ -87,20 +87,6 @@ impl FileSinkBuilder {
         }
     }
 
-    pub fn new_tm(prefix: impl ToString, target_path: &Path, metric: &'static str) -> Self {
-        Self {
-            prefix: prefix.to_string(),
-            target_path: target_path.to_path_buf(),
-            tmp_path: target_path.join("tmp"),
-            max_size: 50_000_000,
-            roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
-            deposits: None,
-            file_upload: None,
-            auto_commit: true,
-            metric,
-        }
-    }
-
     pub fn max_size(self, max_size: usize) -> Self {
         Self { max_size, ..self }
     }

@@ -132,7 +132,7 @@ impl Server {
                 .run(price_sink, &shutdown)
                 .map_err(Error::from),
             price_sink_server.run(shutdown.clone()).map_err(Error::from),
-            file_upload.run(&shutdown).map_err(Error::from),
+            file_upload.run(shutdown.clone()).map_err(Error::from),
         )
         .map(|_| ())
     }

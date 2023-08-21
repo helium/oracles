@@ -126,7 +126,7 @@ impl Cmd {
         let store_base_path = std::path::Path::new(&settings.cache);
 
         // Verified packets:
-        let (valid_packets, valid_packets_server) = FileSinkBuilder::new_tm(
+        let (valid_packets, valid_packets_server) = FileSinkBuilder::new(
             FileType::IotValidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
@@ -136,7 +136,7 @@ impl Cmd {
         .create()
         .await?;
 
-        let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new_tm(
+        let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new(
             FileType::InvalidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),

@@ -63,7 +63,7 @@ impl ManagedTask for FileUploadServer {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run_tm(shutdown));
+        let handle = tokio::spawn(self.run(shutdown));
 
         Box::pin(
             handle
@@ -74,11 +74,7 @@ impl ManagedTask for FileUploadServer {
 }
 
 impl FileUploadServer {
-    pub async fn run(self, shutdown: &triggered::Listener) -> Result {
-        self.run_tm(shutdown.clone()).await
-    }
-
-    pub async fn run_tm(self, shutdown: triggered::Listener) -> Result {
+    pub async fn run(self, shutdown: triggered::Listener) -> Result {
         tracing::info!("starting file uploader {}", self.store.bucket);
 
         let uploads = self

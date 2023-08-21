@@ -94,7 +94,7 @@ impl Purger {
         let shutdown3 = shutdown.clone();
         tokio::spawn(async move { invalid_beacon_sink_server.run(shutdown1).await });
         tokio::spawn(async move { invalid_witness_sink_server.run(shutdown2).await });
-        tokio::spawn(async move { file_upload.run(&shutdown3).await });
+        tokio::spawn(async move { file_upload.run(shutdown3).await });
 
         loop {
             if shutdown.is_triggered() {
