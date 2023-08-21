@@ -317,7 +317,7 @@ impl FileSink {
             }
         }
 
-        // Notify all existing completed sinks
+        // Notify all existing completed sinks via deposits
         if let Some(deposits) = &self.deposits {
             let mut dir = fs::read_dir(&self.target_path).await?;
             loop {
@@ -335,6 +335,26 @@ impl FileSink {
                 }
             }
         }
+
+        // Notify all existing completed sinks via file uploads
+        if let Some(file_uploads) = &self.file_upload {
+            let mut dir = fs::read_dir(&self.target_path).await?;
+            loop {
+                match dir.next_entry().await {
+                    Ok(Some(entry))
+                        if entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(&self.prefix) =>
+                    {
+                        file_upload::upload_file(&file_uploads.sender, &entry.path()).await?;
+                    }
+                    Ok(None) => break,
+                    _ => continue,
+                }
+            }
+        }
+
         Ok(())
     }
 

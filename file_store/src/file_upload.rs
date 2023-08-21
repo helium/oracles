@@ -21,7 +21,7 @@ pub async fn upload_file(tx: &MessageSender, file: &Path) -> Result {
 
 #[derive(Debug, Clone)]
 pub struct FileUpload {
-    sender: MessageSender,
+    pub sender: MessageSender,
 }
 
 pub struct FileUploadServer {
