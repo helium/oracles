@@ -70,7 +70,7 @@ impl TaskManager {
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
 
         let shutdown_triggers = create_triggers(self.tasks.len());
 

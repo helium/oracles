@@ -96,7 +96,7 @@ impl Daemon {
             settings.signing_keypair()?,
         );
 
-        let server = transport::Server::builder()
+        transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(AdminServer::new(admin_svc))
@@ -104,9 +104,8 @@ impl Daemon {
             .add_service(AuthorizationServer::new(auth_svc))
             .add_service(EntityServer::new(entity_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
-            .map_err(Error::from);
-
-        tokio::try_join!(server)?;
+            .map_err(Error::from)
+            .await?;
 
         Ok(())
     }
