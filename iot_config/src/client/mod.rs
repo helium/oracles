@@ -41,8 +41,7 @@ macro_rules! call_with_retry {
 
         let mut attempt = 1;
         loop {
-            let response = $rpc.await;
-            match response {
+            match $rpc.await {
                 Ok(resp) => break Ok(resp),
                 Err(status) => match status.code() {
                     Code::Cancelled | Code::DeadlineExceeded | Code::Unavailable => {

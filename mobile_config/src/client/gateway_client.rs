@@ -1,4 +1,4 @@
-use super::{ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
 use crate::gateway_info;
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
@@ -60,7 +60,7 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
-        let response = match self.client.clone().info(request).await {
+        let response = match call_with_retry!(self.client.clone().info(request.clone())) {
             Ok(info_res) => {
                 let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;
@@ -88,10 +88,7 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
         tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
-        let res_stream = self
-            .client
-            .info_stream(req)
-            .await?
+        let res_stream = call_with_retry!(self.client.info_stream(req.clone()))?
             .into_inner()
             .filter_map(|res| async move { res.ok() })
             .map(move |res| (res, pubkey.clone()))
