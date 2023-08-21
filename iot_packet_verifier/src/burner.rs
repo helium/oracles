@@ -6,7 +6,7 @@ use futures::{future::LocalBoxFuture, TryFutureExt};
 use solana::SolanaNetwork;
 use std::time::Duration;
 use task_manager::ManagedTask;
-use tokio::task;
+use tokio::time::{self, MissedTickBehavior};
 
 pub struct Burner<P, S> {
     pending_burns: P,
@@ -24,9 +24,16 @@ where
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown).map_err(anyhow::Error::from))
+        let handle = tokio::spawn(self.run(shutdown));
+
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum BurnError<P, S> {
@@ -59,21 +66,24 @@ where
         shutdown: triggered::Listener,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
         tracing::info!("starting burner");
-        let burn_service = task::spawn(async move {
-            loop {
-                if let Err(e) = self.burn().await {
-                    tracing::error!("Failed to burn: {e:?}");
+        let mut burn_timer = time::interval(self.burn_period);
+        burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => break,
+                _ = burn_timer.tick() =>
+                    match self.burn().await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::error!("error whilst handling denylist tick: {err:?}");
+                    }
                 }
-                tokio::time::sleep(self.burn_period).await;
             }
-        });
-
-        tokio::select! {
-            _ = shutdown.clone() => {tracing::info!("stopping burner"); Ok(())},
-            service_result = burn_service => service_result?,
         }
-
-
+        tracing::info!("stopping burner");
+        Ok(())
     }
 
     pub async fn burn(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {
