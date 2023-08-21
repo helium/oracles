@@ -67,7 +67,7 @@ where
     T: Clone,
 {
     pub fn create(self) -> Result<(Receiver<FileInfoStream<T>>, FileInfoPollerServer<T>)> {
-        let config = self.build().unwrap(); // TODO: fix the unwrap
+        let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         Ok((receiver, FileInfoPollerServer { config, sender }))
     }
