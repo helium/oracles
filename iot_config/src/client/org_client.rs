@@ -1,6 +1,6 @@
 use super::{
-    iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message, MsgVerify,
-    PublicKey, Settings, Sign,
+    call_with_retry, iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message,
+    MsgVerify, PublicKey, Settings, Sign,
 };
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
@@ -32,7 +32,7 @@ impl OrgClient {
         tracing::debug!(%oui, "retrieving org");
 
         let req = OrgGetReqV1 { oui };
-        let res = self.client.get(req).await?.into_inner();
+        let res = call_with_retry!(self.client.get(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res)
     }
@@ -40,7 +40,7 @@ impl OrgClient {
     pub async fn list(&mut self) -> Result<Vec<OrgV1>, ClientError> {
         tracing::debug!("retrieving org list");
 
-        let res = self.client.list(OrgListReqV1 {}).await?.into_inner();
+        let res = call_with_retry!(self.client.list(OrgListReqV1 {}))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res.orgs)
     }
@@ -55,7 +55,7 @@ impl OrgClient {
             signature: vec![],
         };
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
-        let res = self.client.enable(req).await?.into_inner();
+        let res = call_with_retry!(self.client.enable(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(())
     }
@@ -70,7 +70,7 @@ impl OrgClient {
             signature: vec![],
         };
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
-        let res = self.client.disable(req).await?.into_inner();
+        let res = call_with_retry!(self.client.disable(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(())
     }
