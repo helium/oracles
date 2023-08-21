@@ -8,16 +8,22 @@ use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_client::{
+    client_error::ClientError, nonblocking::rpc_client::RpcClient,
+    rpc_client::GetConfirmedSignaturesForAddress2Config,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
     pubkey::{ParsePubkeyError, Pubkey},
-    signature::{read_keypair_file, Keypair},
+    signature::{read_keypair_file, Keypair, ParseSignatureError, Signature},
     signer::Signer,
     transaction::Transaction,
 };
-use std::convert::Infallible;
+use solana_transaction_status::{
+    option_serializer::OptionSerializer, EncodedConfirmedTransactionWithStatusMeta,
+    EncodedTransactionWithStatusMeta, UiInstruction, UiParsedInstruction, UiTransactionStatusMeta,
+};
 use std::{collections::HashMap, str::FromStr};
 use std::{
     sync::Arc,
@@ -36,6 +42,15 @@ pub trait SolanaNetwork: Send + Sync + 'static {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<(), Self::Error>;
+
+    async fn latest_transaction(&self) -> Result<Signature, Self::Error>;
+
+    async fn has_burn_transaction(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        since: &Signature,
+    ) -> Result<bool, Self::Error>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,14 +63,20 @@ pub enum SolanaRpcError {
     ProgramError(#[from] solana_sdk::program_error::ProgramError),
     #[error("Parse pubkey error: {0}")]
     ParsePubkeyError(#[from] ParsePubkeyError),
+    #[error("Parse int error: {0}")]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error("Parse signature error: {0}")]
+    ParseSignatureError(#[from] ParseSignatureError),
     #[error("DC burn authority does not match keypair")]
     InvalidKeypair,
     #[error("System time error: {0}")]
     SystemTimeError(#[from] SystemTimeError),
     #[error("Failed to read keypair file")]
     FailedToReadKeypairError,
-    #[error("crypto error: {0}")]
+    #[error("Crypto error: {0}")]
     Crypto(#[from] helium_crypto::Error),
+    #[error("No transactions found")]
+    NoTransactionsFound,
 }
 
 impl From<anchor_lang::error::Error> for SolanaRpcError {
@@ -227,6 +248,73 @@ impl SolanaNetwork for SolanaRpc {
 
         Ok(())
     }
+
+    async fn latest_transaction(&self) -> Result<Signature, Self::Error> {
+        let signer = Keypair::from_bytes(&self.keypair).unwrap();
+        let mut signatures = self
+            .provider
+            .get_signatures_for_address_with_config(
+                &signer.pubkey(),
+                GetConfirmedSignaturesForAddress2Config {
+                    before: None,
+                    until: None,
+                    limit: Some(1),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                },
+            )
+            .await?;
+        Ok(signatures
+            .pop()
+            .ok_or(SolanaRpcError::NoTransactionsFound)?
+            .signature
+            .parse()?)
+    }
+
+    async fn has_burn_transaction(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        since: &Signature,
+    ) -> Result<bool, Self::Error> {
+        let signer = Keypair::from_bytes(&self.keypair).unwrap();
+        let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
+        let (escrow_account, _) = Pubkey::find_program_address(
+            &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
+            &data_credits::ID,
+        );
+        let signatures = self
+            .provider
+            .get_signatures_for_address_with_config(
+                &signer.pubkey(),
+                GetConfirmedSignaturesForAddress2Config {
+                    before: None,
+                    until: Some(since.clone()),
+                    limit: None,
+                    commitment: Some(CommitmentConfig::confirmed()),
+                },
+            )
+            .await?;
+        for signature in signatures.into_iter() {
+            let signature: Signature = signature.signature.parse()?;
+            if signature == *since {
+                continue;
+            }
+            let transaction = self
+                .provider
+                .get_transaction(
+                    &signature,
+                    solana_transaction_status::UiTransactionEncoding::JsonParsed,
+                )
+                .await?;
+            let Some(burn_info) = extract_burn_info(transaction)? else {
+                continue;
+            };
+            if burn_info.account == escrow_account && burn_info.amount == amount {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 }
 
 /// Cached pubkeys for the burn program
@@ -302,23 +390,26 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
             Ok(())
         }
     }
-}
 
-#[async_trait]
-impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
-    type Error = Infallible;
-
-    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
-        Ok(*self.lock().await.get(payer).unwrap())
+    async fn latest_transaction(&self) -> Result<Signature, Self::Error> {
+        if let Some(ref rpc) = self {
+            rpc.latest_transaction().await
+        } else {
+            Ok(Signature::new_unique())
+        }
     }
 
-    async fn burn_data_credits(
+    async fn has_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<(), Self::Error> {
-        *self.lock().await.get_mut(payer).unwrap() -= amount;
-        Ok(())
+        since: &Signature,
+    ) -> Result<bool, Self::Error> {
+        if let Some(ref rpc) = self {
+            rpc.has_burn_transaction(payer, amount, since).await
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -336,4 +427,150 @@ pub fn delegated_data_credits(sub_dao: &Pubkey, payer: &PublicKeyBinary) -> Pubk
         &data_credits::ID,
     );
     ddc_key
+}
+
+#[derive(Debug)]
+struct BurnInfo {
+    account: Pubkey,
+    amount: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct Instruction {
+    #[serde(rename = "type")]
+    instr_type: String,
+    info: InstrInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstrInfo {
+    account: String,
+    amount: String,
+}
+
+fn extract_burn_info(
+    transaction: EncodedConfirmedTransactionWithStatusMeta,
+) -> Result<Option<BurnInfo>, SolanaRpcError> {
+    match transaction {
+        EncodedConfirmedTransactionWithStatusMeta {
+            transaction:
+                EncodedTransactionWithStatusMeta {
+                    meta:
+                        Some(UiTransactionStatusMeta {
+                            inner_instructions: OptionSerializer::Some(instructions),
+                            ..
+                        }),
+                    ..
+                },
+            ..
+        } => {
+            for instruction in instructions {
+                for instruction in instruction.instructions {
+                    match instruction {
+                        UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed_instruction)) => {
+                            let Ok(instruction) = serde_json::from_value::<Instruction>(parsed_instruction.parsed) else {
+                                continue;
+                            };
+                            if instruction.instr_type != "burn" {
+                                continue;
+                            }
+                            let amount: u64 = instruction.info.amount.parse()?;
+                            let account: Pubkey = instruction.info.account.parse()?;
+                            return Ok(Some(BurnInfo { account, amount }));
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            Ok(None)
+        }
+        _ => Ok(None),
+    }
+}
+
+#[derive(Clone)]
+pub struct MockSolanaNetwork {
+    pub ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    pub transactions: Arc<Mutex<Vec<MockTransaction>>>,
+}
+
+impl MockSolanaNetwork {
+    pub fn new(ledger: HashMap<PublicKeyBinary, u64>) -> Self {
+        Self {
+            ledger: Arc::new(Mutex::new(ledger)),
+            transactions: Arc::new(Mutex::new(vec![MockTransaction {
+                amount: 0,
+                account: PublicKeyBinary::from(Vec::new()),
+                signature: Signature::new_unique(),
+            }])),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct MockTransaction {
+    pub amount: u64,
+    pub account: PublicKeyBinary,
+    pub signature: Signature,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum MockSolanaError {
+    #[error("No transactions found")]
+    NoTransactionsFound,
+}
+
+#[async_trait]
+impl SolanaNetwork for MockSolanaNetwork {
+    type Error = MockSolanaError;
+
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+        Ok(*self.ledger.lock().await.get(payer).unwrap())
+    }
+
+    async fn burn_data_credits(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), Self::Error> {
+        self.transactions.lock().await.push(MockTransaction {
+            amount,
+            account: payer.clone(),
+            signature: Signature::new_unique(),
+        });
+        *self.ledger.lock().await.get_mut(payer).unwrap() -= amount;
+        Ok(())
+    }
+
+    async fn latest_transaction(&self) -> Result<Signature, Self::Error> {
+        Ok(self
+            .transactions
+            .lock()
+            .await
+            .last()
+            .ok_or(MockSolanaError::NoTransactionsFound)?
+            .signature
+            .clone())
+    }
+
+    async fn has_burn_transaction(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        since: &Signature,
+    ) -> Result<bool, Self::Error> {
+        let transactions = self.transactions.lock().await;
+        let mut transaction_iter = transactions.iter();
+        while let Some(transaction) = transaction_iter.next() {
+            if transaction.signature == *since {
+                break;
+            }
+        }
+        while let Some(transaction) = transaction_iter.next() {
+            if transaction.account == *payer && transaction.amount == amount {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 }

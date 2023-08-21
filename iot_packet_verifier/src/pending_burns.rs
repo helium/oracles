@@ -16,15 +16,18 @@ pub trait PendingBurns {
 
     async fn fetch_next(&mut self) -> Result<Option<Burn>, Self::Error>;
 
-    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error>;
+    async fn fetch_incomplete_burns(&mut self) -> Result<Vec<BurnAttempt>, Self::Error>;
 
-    async fn save_balance(
+    async fn remove_incomplete_burns(&mut self) -> Result<(), Self::Error>;
+
+    async fn begin_burn_attempt(
         &mut self,
         payer: &PublicKeyBinary,
-        balance: u64,
+        amount: u64,
+        latest_transaction_signature: &str,
     ) -> Result<(), Self::Error>;
 
-    async fn subtract_burned_amount(
+    async fn complete_burn_attempt(
         &mut self,
         payer: &PublicKeyBinary,
         amount: u64,
@@ -56,26 +59,35 @@ impl PendingBurns for Pool<Postgres> {
             .await
     }
 
-    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error> {
-        sqlx::query_as("SELECT * FROM saved_balances")
+    async fn fetch_incomplete_burns(&mut self) -> Result<Vec<BurnAttempt>, Self::Error> {
+        sqlx::query_as("SELECT * FROM attempted_burns")
             .fetch_all(&*self)
             .await
     }
 
-    async fn save_balance(
-        &mut self,
-        payer: &PublicKeyBinary,
-        balance: u64,
-    ) -> Result<(), Self::Error> {
-        sqlx::query("INSERT INTO saved_balances (payer, balance) VALUES ($1, $2)")
-            .bind(payer)
-            .bind(balance as i64)
+    async fn remove_incomplete_burns(&mut self) -> Result<(), Self::Error> {
+        sqlx::query("TRUNCATE TABLE attempted_burns")
             .execute(&*self)
             .await?;
         Ok(())
     }
 
-    async fn subtract_burned_amount(
+    async fn begin_burn_attempt(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        latest_transaction_signature: &str,
+    ) -> Result<(), Self::Error> {
+        sqlx::query("INSERT INTO attempted_burns (payer, amount, latest_transaction_signature) VALUES ($1, $2, $3)")
+            .bind(payer)
+            .bind(amount as i64)
+            .bind(latest_transaction_signature)
+            .execute(&*self)
+            .await?;
+        Ok(())
+    }
+
+    async fn complete_burn_attempt(
         &mut self,
         payer: &PublicKeyBinary,
         amount: u64,
@@ -96,7 +108,7 @@ impl PendingBurns for Pool<Postgres> {
         .execute(&mut transaction)
         .await?;
 
-        sqlx::query("DELETE FROM saved_balances WHERE payer = $1")
+        sqlx::query("DELETE FROM attempted_burns WHERE payer = $1")
             .bind(payer)
             .execute(&mut transaction)
             .await?;
@@ -146,26 +158,35 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
             .await
     }
 
-    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error> {
-        sqlx::query_as("SELECT * FROM saved_balances")
+    async fn fetch_incomplete_burns(&mut self) -> Result<Vec<BurnAttempt>, Self::Error> {
+        sqlx::query_as("SELECT * FROM attempted_burns")
             .fetch_all(&mut **self)
             .await
     }
 
-    async fn save_balance(
-        &mut self,
-        payer: &PublicKeyBinary,
-        balance: u64,
-    ) -> Result<(), Self::Error> {
-        sqlx::query("INSERT INTO saved_balances (payer, balance) VALUES ($1, $2)")
-            .bind(payer)
-            .bind(balance as i64)
+    async fn remove_incomplete_burns(&mut self) -> Result<(), Self::Error> {
+        sqlx::query("TRUNCATE TABLE attempted_burns")
             .execute(&mut **self)
             .await?;
         Ok(())
     }
 
-    async fn subtract_burned_amount(
+    async fn begin_burn_attempt(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        latest_transaction_signature: &str,
+    ) -> Result<(), Self::Error> {
+        sqlx::query("INSERT INTO attempted_burns (payer, amount, latest_transaction_signature) VALUES ($1, $2, $3)")
+            .bind(payer)
+            .bind(amount as i64)
+            .bind(latest_transaction_signature)
+            .execute(&mut **self)
+            .await?;
+        Ok(())
+    }
+
+    async fn complete_burn_attempt(
         &mut self,
         payer: &PublicKeyBinary,
         amount: u64,
@@ -184,7 +205,7 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
         .execute(&mut **self)
         .await?;
 
-        sqlx::query("DELETE FROM saved_balances WHERE payer = $1")
+        sqlx::query("DELETE FROM attempted_burns WHERE payer = $1")
             .bind(payer)
             .execute(&mut **self)
             .await?;
@@ -215,15 +236,22 @@ impl PendingBurns for &'_ mut Transaction<'_, Postgres> {
     }
 }
 
+#[derive(Clone)]
+pub struct MockPendingBurns {
+    pub pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+    pub burn_attempts: Arc<Mutex<HashMap<PublicKeyBinary, BurnAttempt>>>,
+}
+
 #[async_trait]
-impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
+impl PendingBurns for MockPendingBurns {
     type Error = Infallible;
 
     async fn fetch_all<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>> {
         stream::iter(
-            self.lock()
+            self.pending_burns
+                .lock()
                 .await
                 .clone()
                 .into_iter()
@@ -239,6 +267,7 @@ impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
 
     async fn fetch_next(&mut self) -> Result<Option<Burn>, Self::Error> {
         Ok(self
+            .pending_burns
             .lock()
             .await
             .iter()
@@ -249,24 +278,39 @@ impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
             }))
     }
 
-    async fn fetch_saved_balances(&mut self) -> Result<Vec<SavedBalance>, Self::Error> {
-        Ok(Vec::new())
+    async fn fetch_incomplete_burns(&mut self) -> Result<Vec<BurnAttempt>, Self::Error> {
+        Ok(self.burn_attempts.lock().await.values().cloned().collect())
     }
 
-    async fn save_balance(
-        &mut self,
-        _payer: &PublicKeyBinary,
-        _balance: u64,
-    ) -> Result<(), Self::Error> {
+    async fn remove_incomplete_burns(&mut self) -> Result<(), Self::Error> {
+        self.burn_attempts.lock().await.clear();
         Ok(())
     }
 
-    async fn subtract_burned_amount(
+    async fn begin_burn_attempt(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+        latest_transaction_signature: &str,
+    ) -> Result<(), Self::Error> {
+        self.burn_attempts.lock().await.insert(
+            payer.clone(),
+            BurnAttempt {
+                payer: payer.clone(),
+                amount: amount as i64,
+                latest_transaction_signature: latest_transaction_signature.to_string(),
+            },
+        );
+        Ok(())
+    }
+
+    async fn complete_burn_attempt(
         &mut self,
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<(), Self::Error> {
-        let mut map = self.lock().await;
+        self.burn_attempts.lock().await.remove(payer);
+        let mut map = self.pending_burns.lock().await;
         let balance = map.get_mut(payer).unwrap();
         *balance -= amount;
         Ok(())
@@ -277,7 +321,7 @@ impl PendingBurns for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<(), Self::Error> {
-        let mut map = self.lock().await;
+        let mut map = self.pending_burns.lock().await;
         *map.entry(payer.clone()).or_default() += amount;
         Ok(())
     }
@@ -289,14 +333,21 @@ pub struct Burn {
     pub amount: i64,
 }
 
-#[derive(FromRow)]
-pub struct SavedBalance {
+#[derive(Clone, FromRow, Debug)]
+pub struct BurnAttempt {
     pub payer: PublicKeyBinary,
     amount: i64,
+    latest_transaction_signature: String,
 }
 
-impl SavedBalance {
+impl BurnAttempt {
     pub fn amount(&self) -> u64 {
         self.amount as u64
+    }
+
+    pub fn latest_transaction_signature(
+        &self,
+    ) -> Result<solana_sdk::signature::Signature, solana_sdk::signature::ParseSignatureError> {
+        self.latest_transaction_signature.parse()
     }
 }

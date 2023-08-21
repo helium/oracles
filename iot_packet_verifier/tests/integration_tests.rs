@@ -11,9 +11,10 @@ use helium_proto::{
 use iot_packet_verifier::{
     balances::BalanceCache,
     burner::Burner,
-    pending_burns::{Burn, PendingBurns},
+    pending_burns::{Burn, BurnAttempt, MockPendingBurns, PendingBurns},
     verifier::{payload_size_to_dc, ConfigServer, Debiter, Org, Verifier, BYTES_PER_DC},
 };
+use solana::{MockSolanaNetwork, SolanaNetwork};
 use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
@@ -110,7 +111,24 @@ impl PendingBurns for InstantBurnedBalance {
         Ok(None)
     }
 
-    async fn subtract_burned_amount(
+    async fn fetch_incomplete_burns(&mut self) -> Result<Vec<BurnAttempt>, Self::Error> {
+        Ok(Vec::new())
+    }
+
+    async fn remove_incomplete_burns(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn begin_burn_attempt(
+        &mut self,
+        _payer: &PublicKeyBinary,
+        _amount: u64,
+        _latest_transaction_signature: &str,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn complete_burn_attempt(
         &mut self,
         _payer: &PublicKeyBinary,
         _amount: u64,
@@ -178,7 +196,7 @@ async fn test_config_unlocking() {
     // Set up balances:
     let mut solana_network = HashMap::new();
     solana_network.insert(PublicKeyBinary::from(vec![0]), 3);
-    let solana_network = Arc::new(Mutex::new(solana_network));
+    let solana_network = MockSolanaNetwork::new(solana_network);
     // Set up cache:
     let mut cache = HashMap::new();
     cache.insert(PublicKeyBinary::from(vec![0]), 3);
@@ -210,6 +228,7 @@ async fn test_config_unlocking() {
 
     // Update the solana network:
     *solana_network
+        .ledger
         .lock()
         .await
         .get_mut(&PublicKeyBinary::from(vec![0]))
@@ -352,13 +371,15 @@ async fn test_end_to_end() {
     let payer = PublicKeyBinary::from(vec![0]);
 
     // Pending burns:
-    let mut pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let mut pending_burns = MockPendingBurns {
+        pending_burns: Arc::new(Mutex::new(HashMap::new())),
+        burn_attempts: Arc::new(Mutex::new(HashMap::new())),
+    };
 
     // Solana network:
     let mut solana_network = HashMap::new();
     solana_network.insert(payer.clone(), 3_u64); // Start with 3 data credits
-    let solana_network = Arc::new(Mutex::new(solana_network));
+    let solana_network = MockSolanaNetwork::new(solana_network);
 
     // Balance cache:
     let balance_cache = BalanceCache::new(&mut pending_burns, solana_network.clone())
@@ -441,7 +462,12 @@ async fn test_end_to_end() {
     assert_eq!(balance.burned, 3);
 
     // Check that 3 DC are pending to be burned:
-    let pending_burn = *pending_burns.lock().await.get(&payer).unwrap();
+    let pending_burn = *pending_burns
+        .pending_burns
+        .lock()
+        .await
+        .get(&payer)
+        .unwrap();
     assert_eq!(pending_burn, 3);
 
     // Initiate the burn:
@@ -457,11 +483,16 @@ async fn test_end_to_end() {
     assert_eq!(balance.burned, 0);
 
     // Pending burns should be empty as well:
-    let pending_burn = *pending_burns.lock().await.get(&payer).unwrap();
+    let pending_burn = *pending_burns
+        .pending_burns
+        .lock()
+        .await
+        .get(&payer)
+        .unwrap();
     assert_eq!(pending_burn, 0);
 
     // Additionally, the balance on the solana network should be zero:
-    let solana_balance = *solana_network.lock().await.get(&payer).unwrap();
+    let solana_balance = *solana_network.ledger.lock().await.get(&payer).unwrap();
     assert_eq!(solana_balance, 0);
 
     // Attempting to validate one packet should fail now:
@@ -484,5 +515,76 @@ async fn test_end_to_end() {
     assert_eq!(
         invalid_packets,
         vec![invalid_packet(BYTES_PER_DC as u32, vec![5])]
+    );
+}
+
+#[tokio::test]
+async fn test_attempt_recovery() {
+    let payer = PublicKeyBinary::from(vec![0]);
+
+    let mut pending_burns = MockPendingBurns {
+        pending_burns: Arc::new(Mutex::new(HashMap::new())),
+        burn_attempts: Arc::new(Mutex::new(HashMap::new())),
+    };
+
+    let mut solana_network = HashMap::new();
+    solana_network.insert(payer.clone(), 10_u64); // Start with 3 data credits
+    let solana_network = MockSolanaNetwork::new(solana_network);
+
+    // Balance cache:
+    let balance_cache = BalanceCache::new(&mut pending_burns, solana_network.clone())
+        .await
+        .unwrap();
+
+    let mut burner = Burner::new(
+        pending_burns.clone(),
+        &balance_cache,
+        0,
+        solana_network.clone(),
+    );
+
+    // Send the burn on the chain but don't complete burns
+    pending_burns.add_burned_amount(&payer, 7).await.unwrap();
+
+    pending_burns
+        .begin_burn_attempt(
+            &payer,
+            7,
+            &solana_network
+                .latest_transaction()
+                .await
+                .unwrap()
+                .to_string(),
+        )
+        .await
+        .unwrap();
+
+    solana_network.burn_data_credits(&payer, 7).await.unwrap();
+
+    // We should now have fewer credits on chain, but pending burns remain at 7
+    assert_eq!(*solana_network.ledger.lock().await.get(&payer).unwrap(), 3);
+    assert_eq!(
+        *pending_burns
+            .pending_burns
+            .lock()
+            .await
+            .get(&payer)
+            .unwrap(),
+        7
+    );
+
+    // Now, when we call Burner::recover_attempted_burns, we should see the pending
+    // burns reset to 0.
+
+    burner.recover_attempted_burns().await.unwrap();
+
+    assert_eq!(
+        *pending_burns
+            .pending_burns
+            .lock()
+            .await
+            .get(&payer)
+            .unwrap(),
+        0
     );
 }

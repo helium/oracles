@@ -17,10 +17,12 @@ helium-crypto = {workspace = true, features = ["solana"]}
 helium-sub-daos = {workspace = true}
 metrics = {workspace = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 sha2 = {workspace = true}
 solana-client = {workspace = true}
 solana-program = {workspace = true}
 solana-sdk = {workspace = true}
+solana-transaction-status = {workspace = true}
 spl-token = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}

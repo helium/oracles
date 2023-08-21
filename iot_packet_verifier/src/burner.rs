@@ -3,6 +3,7 @@ use crate::{
     pending_burns::{Burn, PendingBurns},
 };
 use solana::SolanaNetwork;
+use solana_sdk::signature::ParseSignatureError;
 use std::time::Duration;
 use tokio::task;
 
@@ -21,6 +22,8 @@ pub enum BurnError<P, S> {
     SqlError(P),
     #[error("Solana error: {0}")]
     SolanaError(S),
+    #[error("Parse signature error: {0}")]
+    ParseSignatureError(#[from] ParseSignatureError),
 }
 
 impl<P, S> Burner<P, S>
@@ -28,43 +31,21 @@ where
     P: PendingBurns + Send + Sync + 'static,
     S: SolanaNetwork,
 {
-    pub async fn new(
-        mut pending_burns: P,
-        balances: &BalanceCache<S>,
-        burn_period: u64,
-        solana: S,
-    ) -> Result<Self, BurnError<P::Error, S::Error>> {
-        // Recover from failed burn storage
-        for saved_balance in pending_burns
-            .fetch_saved_balances()
-            .await
-            .map_err(BurnError::SqlError)?
-        {
-            let curr_balance = solana
-                .payer_balance(&saved_balance.payer)
-                .await
-                .map_err(BurnError::SolanaError)?;
-            // If the balance we have saved is greater than the current balance,
-            // we must have burned and failed to reduce the pending burns table.
-            let burned = saved_balance.amount() - curr_balance;
-            pending_burns
-                .subtract_burned_amount(&saved_balance.payer, burned)
-                .await
-                .map_err(BurnError::SqlError)?
-        }
-
-        Ok(Self {
+    pub fn new(pending_burns: P, balances: &BalanceCache<S>, burn_period: u64, solana: S) -> Self {
+        Self {
             pending_burns,
             balances: balances.balances(),
             burn_period: Duration::from_secs(60 * burn_period),
             solana,
-        })
+        }
     }
 
     pub async fn run(
         mut self,
         shutdown: &triggered::Listener,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
+        self.recover_attempted_burns().await?;
+
         let burn_service = task::spawn(async move {
             loop {
                 if let Err(e) = self.burn().await {
@@ -80,6 +61,42 @@ where
         }
     }
 
+    pub async fn recover_attempted_burns(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {
+        tracing::info!("Attempting to recover attempted burns");
+
+        for attempted_burn in self
+            .pending_burns
+            .fetch_incomplete_burns()
+            .await
+            .map_err(BurnError::SqlError)?
+        {
+            let amount = attempted_burn.amount();
+            let since = attempted_burn.latest_transaction_signature()?;
+            tracing::info!(%since, %amount, "Checking chain for burn transaction");
+            if self
+                .solana
+                .has_burn_transaction(&attempted_burn.payer, amount, &since)
+                .await
+                .map_err(BurnError::SolanaError)?
+            {
+                tracing::info!("Found a matching transaction. Removing burn attempt");
+                self.pending_burns
+                    .complete_burn_attempt(&attempted_burn.payer, amount)
+                    .await
+                    .map_err(BurnError::SqlError)?;
+            } else {
+                tracing::info!("No matching transactions found");
+            }
+        }
+
+        self.pending_burns
+            .remove_incomplete_burns()
+            .await
+            .map_err(BurnError::SqlError)?;
+
+        Ok(())
+    }
+
     pub async fn burn(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {
         // Create burn transaction and execute it:
 
@@ -91,15 +108,14 @@ where
         tracing::info!(%amount, %payer, "Burning DC");
 
         let amount = amount as u64;
+        let latest_transaction = self
+            .solana
+            .latest_transaction()
+            .await
+            .map_err(BurnError::SolanaError)?;
 
         self.pending_burns
-            .save_balance(
-                &payer,
-                self.solana
-                    .payer_balance(&payer)
-                    .await
-                    .map_err(BurnError::SolanaError)?,
-            )
+            .begin_burn_attempt(&payer, amount, &latest_transaction.to_string())
             .await
             .map_err(BurnError::SqlError)?;
 
@@ -108,10 +124,8 @@ where
             .await
             .map_err(BurnError::SolanaError)?;
 
-        // Now that we have successfully executed the burn and are no longer in
-        // sync land, we can remove the amount burned:
         self.pending_burns
-            .subtract_burned_amount(&payer, amount)
+            .complete_burn_attempt(&payer, amount)
             .await
             .map_err(BurnError::SqlError)?;
 

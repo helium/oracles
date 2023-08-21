@@ -25,6 +25,7 @@ prost = {workspace = true}
 serde = {workspace = true}
 sqlx = {workspace = true}
 solana = {path = "../solana"}
+solana-sdk = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tonic = {workspace = true}
