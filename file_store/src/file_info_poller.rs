@@ -115,7 +115,10 @@ where
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
 
         let mut latest_ts = db::latest_ts(&self.config.db, self.config.file_type).await?;
-        tracing::info!("starting FileInfoPoller for file type {}", self.config.file_type);
+        tracing::info!(
+            "starting FileInfoPoller for file type {}",
+            self.config.file_type
+        );
 
         loop {
             let after = self.after(latest_ts);

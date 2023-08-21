@@ -34,7 +34,6 @@ where
     }
 }
 
-
 #[derive(thiserror::Error, Debug)]
 pub enum BurnError<P, S> {
     #[error("Join error: {0}")]
