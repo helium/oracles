@@ -123,21 +123,18 @@ pub fn filter_from_bin(bin: &Vec<u8>, valid_sign_keys: &Vec<PublicKey>) -> Resul
     let _version = buf.get_u8();
     let signature_len = buf.get_u16_le() as usize;
     let signature = buf.copy_to_bytes(signature_len).to_vec();
-    for pubkey in valid_sign_keys {
-        match pubkey.verify(buf, &signature) {
-            Ok(_) => {
-                tracing::info!(%pubkey, "updating filter to latest");
-                let _serial = buf.get_u32_le();
-                let xor = bincode::deserialize::<Xor32>(buf)?;
-                return Ok(xor);
-            }
-            Err(_) => continue,
-        }
-    }
-    tracing::warn!("filter signature verification failed");
-    Err(Error::InvalidBinary(
-        "filter signature verification failed".to_string(),
-    ))
+    valid_sign_keys
+        .iter()
+        .any(|key| key.verify(buf, &signature).is_ok())
+        .then(|| {
+            let _serial = buf.get_u32_le();
+            bincode::deserialize::<Xor32>(buf)
+        })
+        .transpose()?
+        .ok_or_else(|| {
+            tracing::warn!("filter signature verification failed");
+            Error::InvalidBinary("filter signature verification failed".to_string())
+        })
 }
 
 fn public_key_hash<R: AsRef<[u8]>>(public_key: R) -> u64 {
