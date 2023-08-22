@@ -568,6 +568,58 @@ mod test {
     }
 
     #[test]
+    fn ensure_first_seniority_causes_update() {
+        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
+        let coverage_claim_time: DateTime<Utc> =
+            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
+        let coverage_object = Uuid::new_v4();
+
+        let received_timestamp: DateTime<Utc> =
+            "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
+        let new_heartbeat = heartbeat(received_timestamp, coverage_object);
+        let seniority_action = SeniorityUpdate::determine_update_action(
+            &new_heartbeat,
+            coverage_claim_time,
+            modeled_coverage_start,
+            None,
+        );
+
+        assert_eq!(
+            seniority_action.action,
+            SeniorityUpdateAction::Insert {
+                new_seniority: coverage_claim_time,
+                update_reason: NewCoverageClaimTime,
+            }
+        );
+    }
+
+    #[test]
+    fn ensure_first_seniority_72_hours_after_start_resets_coverage_claim_time() {
+        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
+        let coverage_claim_time: DateTime<Utc> =
+            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
+        let coverage_object = Uuid::new_v4();
+
+        let received_timestamp: DateTime<Utc> =
+            "2023-08-23 00:00:01.000000000 UTC".parse().unwrap();
+        let new_heartbeat = heartbeat(received_timestamp, coverage_object);
+        let seniority_action = SeniorityUpdate::determine_update_action(
+            &new_heartbeat,
+            coverage_claim_time,
+            modeled_coverage_start,
+            None,
+        );
+
+        assert_eq!(
+            seniority_action.action,
+            SeniorityUpdateAction::Insert {
+                new_seniority: received_timestamp,
+                update_reason: HeartbeatNotSeen,
+            }
+        );
+    }
+
+    #[test]
     fn ensure_seniority_updates_on_new_coverage_object() {
         let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
         let coverage_claim_time: DateTime<Utc> =
