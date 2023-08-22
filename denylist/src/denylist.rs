@@ -10,7 +10,7 @@ pub const SERIAL_SIZE: usize = 32;
 
 /// the pubkey used to verify the signature of denylist updates
 // TODO: is there a better home for this key ?
-const PUB_KEY_B58: &str = "1SbEYKju337P6aYsRd9DT2k4qgK5ZK62kXbSvnJgqeaxK3hqQrYURZjL";
+const PUB_KEY_B58: &str = "1SVQyj9xpBybhar4ESUMKuak8GCTDmrcNnUfhSYhRh4vUhsu9bXBR1rU";
 /// a copy of the last saved filter bin downloaded from github
 /// if present will be used to initialise the denylist upon verifier startup
 // TODO: look at using the tempfile crate to handle this
