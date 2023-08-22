@@ -114,7 +114,7 @@ impl DenyList {
 }
 
 /// deconstruct bytes into the filter component parts
-pub fn filter_from_bin(bin: &Vec<u8>, valid_sign_keys: &Vec<PublicKey>) -> Result<Xor32> {
+pub fn filter_from_bin(bin: &Vec<u8>, valid_sign_keys: &[PublicKey]) -> Result<Xor32> {
     if bin.is_empty() {
         return Err(Error::InvalidBinary("invalid filter bin".to_string()));
     }
@@ -125,7 +125,14 @@ pub fn filter_from_bin(bin: &Vec<u8>, valid_sign_keys: &Vec<PublicKey>) -> Resul
     let signature = buf.copy_to_bytes(signature_len).to_vec();
     valid_sign_keys
         .iter()
-        .any(|key| key.verify(buf, &signature).is_ok())
+        .any(|key| {
+            if key.verify(buf, &signature).is_ok() {
+                tracing::info!(pubkey = %key, "valid denylist signer");
+                true
+            } else {
+                false
+            }
+        })
         .then(|| {
             let _serial = buf.get_u32_le();
             bincode::deserialize::<Xor32>(buf)
