@@ -38,7 +38,7 @@ impl TryFrom<Vec<PublicKeyBinary>> for DenyList {
 }
 
 impl DenyList {
-    pub fn new(settings: Settings) -> Result<Self> {
+    pub fn new(settings: &Settings) -> Result<Self> {
         tracing::debug!("initializing new denylist");
         // if exists default to the local saved filter bin,
         // otherwise default to empty filter
@@ -126,7 +126,7 @@ pub fn filter_from_bin(bin: &Vec<u8>, valid_sign_keys: &Vec<PublicKey>) -> Resul
     for pubkey in valid_sign_keys {
         match pubkey.verify(buf, &signature) {
             Ok(_) => {
-                tracing::info!("updating filter to latest");
+                tracing::info!(%pubkey, "updating filter to latest");
                 let _serial = buf.get_u32_le();
                 let xor = bincode::deserialize::<Xor32>(buf)?;
                 return Ok(xor);
