@@ -96,7 +96,7 @@ impl Cmd {
             valid_heartbeats,
             seniority_updates,
             settings.max_heartbeat_distance_from_coverage_km,
-            settings.modeled_coverage_start_timestamp,
+            settings.modeled_coverage_start(),
         );
 
         // Speedtests
