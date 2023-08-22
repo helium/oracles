@@ -21,3 +21,30 @@ pub enum ClientError {
     #[error("error verifying response signature {0}")]
     VerificationError(#[from] file_store::Error),
 }
+
+macro_rules! call_with_retry {
+    ($rpc:expr) => {{
+        use tonic::Code;
+
+        let mut attempt = 1;
+        loop {
+            match $rpc.await {
+                Ok(resp) => break Ok(resp),
+                Err(status) => match status.code() {
+                    Code::Cancelled | Code::DeadlineExceeded | Code::Unavailable => {
+                        if attempt < 3 {
+                            attempt += 1;
+                            tokio::time::sleep(Duration::from_secs(attempt)).await;
+                            continue;
+                        } else {
+                            break Err(status);
+                        }
+                    }
+                    _ => break Err(status),
+                },
+            }
+        }
+    }};
+}
+
+pub(crate) use call_with_retry;

@@ -78,11 +78,10 @@ impl Server {
         let mut entropy_generator = EntropyGenerator::new(&settings.source).await?;
         let entropy_watch = entropy_generator.receiver();
 
-        let (entropy_sink, mut entropy_sink_server) = file_sink::FileSinkBuilder::new(
+        let (entropy_sink, entropy_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::EntropyReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_report_submission"),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(Duration::minutes(ENTROPY_SINK_ROLL_MINS))
@@ -100,8 +99,10 @@ impl Server {
             entropy_generator
                 .run(entropy_sink, &shutdown)
                 .map_err(Error::from),
-            entropy_sink_server.run().map_err(Error::from),
-            file_upload.run(&shutdown).map_err(Error::from),
+            entropy_sink_server
+                .run(shutdown.clone())
+                .map_err(Error::from),
+            file_upload.run(shutdown.clone()).map_err(Error::from),
         )
         .map(|_| ())
     }

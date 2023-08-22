@@ -16,7 +16,10 @@ use helium_crypto::PublicKey;
 use helium_proto::{
     services::{
         packet_verifier::ValidDataTransferSession as ValidDataTransferSessionProto,
-        poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
+        poc_lora::{
+            LoraBeaconIngestReportV1, LoraInvalidWitnessReportV1, LoraPocV1,
+            LoraWitnessIngestReportV1,
+        },
         poc_mobile::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
             Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare, RadioRewardShare,
@@ -125,6 +128,17 @@ impl Cmd {
                     let json = json!({
                         "received_timestamp": dec_msg.received_timestamp,
                         "report":  dec_msg.report,
+                    });
+                    // TODO: tmp dump out as json
+                    // printing to json here as csv serializing failing due on header generation from struct
+                    print_json(&json)?;
+                    // wtr.serialize(IotWitnessIngestReport::try_from(dec_msg)?)?;
+                }
+                FileType::IotInvalidWitnessReport => {
+                    let dec_msg = LoraInvalidWitnessReportV1::decode(msg)?;
+                    let json = json!({
+                        "received_timestamp": dec_msg.received_timestamp,
+                        "reason":  dec_msg.reason
                     });
                     // TODO: tmp dump out as json
                     // printing to json here as csv serializing failing due on header generation from struct

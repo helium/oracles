@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::path::Path;
@@ -24,6 +24,18 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
+    #[serde(default = "default_purger_interval_in_hours")]
+    pub purger_interval_in_hours: u64,
+    #[serde(default = "default_purger_max_age_in_hours")]
+    pub purger_max_age_in_hours: u64,
+}
+
+pub fn default_purger_interval_in_hours() -> u64 {
+    1
+}
+
+pub fn default_purger_max_age_in_hours() -> u64 {
+    24
 }
 
 pub fn default_start_after() -> u64 {
@@ -69,5 +81,13 @@ impl Settings {
         Utc.timestamp_opt(self.start_after as i64, 0)
             .single()
             .unwrap()
+    }
+
+    pub fn purger_interval(&self) -> Duration {
+        Duration::hours(self.purger_interval_in_hours as i64)
+    }
+
+    pub fn purger_max_age(&self) -> Duration {
+        Duration::hours(self.purger_max_age_in_hours as i64)
     }
 }

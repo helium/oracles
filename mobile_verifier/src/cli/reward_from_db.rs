@@ -32,11 +32,8 @@ impl Cmd {
         let epoch = start..end;
         let expected_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let (pool, _join_handle) = settings
-            .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown_listener)
-            .await?;
+        let (shutdown_trigger, _shutdown_listener) = triggered::trigger();
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
 
         let heartbeats = HeartbeatReward::validated(&pool, &epoch);
         let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;

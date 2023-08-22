@@ -2,15 +2,36 @@ use crate::{
     balances::{BalanceCache, BalanceStore},
     pending_burns::{Burn, PendingBurns},
 };
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use solana::SolanaNetwork;
 use std::time::Duration;
-use tokio::task;
+use task_manager::ManagedTask;
+use tokio::time::{self, MissedTickBehavior};
 
 pub struct Burner<P, S> {
     pending_burns: P,
     balances: BalanceStore,
     burn_period: Duration,
     solana: S,
+}
+
+impl<P, S> ManagedTask for Burner<P, S>
+where
+    P: PendingBurns + Send + Sync + 'static,
+    S: SolanaNetwork,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -41,21 +62,27 @@ where
 {
     pub async fn run(
         mut self,
-        shutdown: &triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
-        let burn_service = task::spawn(async move {
-            loop {
-                if let Err(e) = self.burn().await {
-                    tracing::error!("Failed to burn: {e:?}");
-                }
-                tokio::time::sleep(self.burn_period).await;
-            }
-        });
+        tracing::info!("starting burner");
+        let mut burn_timer = time::interval(self.burn_period);
+        burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        tokio::select! {
-            _ = shutdown.clone() => Ok(()),
-            service_result = burn_service => service_result?,
+        loop {
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => break,
+                _ = burn_timer.tick() =>
+                    match self.burn().await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::error!("error whilst handling denylist tick: {err:?}");
+                    }
+                }
+            }
         }
+        tracing::info!("stopping burner");
+        Ok(())
     }
 
     pub async fn burn(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {
@@ -75,18 +102,22 @@ where
             .await
             .map_err(BurnError::SolanaError)?;
 
-        // Now that we have successfully executed the burn and are no long in
-        // sync land, we can remove the amount burned.
+        // Now that we have successfully executed the burn and are no longer in
+        // sync land, we can remove the amount burned:
         self.pending_burns
             .subtract_burned_amount(&payer, amount)
             .await
             .map_err(BurnError::SqlError)?;
 
         let mut balance_lock = self.balances.lock().await;
-        let balances = balance_lock.get_mut(&payer).unwrap();
-        balances.burned -= amount;
-        // Zero the balance in order to force a reset:
-        balances.balance = 0;
+        let payer_account = balance_lock.get_mut(&payer).unwrap();
+        payer_account.burned -= amount;
+        // Reset the balance of the payer:
+        payer_account.balance = self
+            .solana
+            .payer_balance(&payer)
+            .await
+            .map_err(BurnError::SolanaError)?;
 
         metrics::counter!("burned", amount, "payer" => payer.to_string());
 

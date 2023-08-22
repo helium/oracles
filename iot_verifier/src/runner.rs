@@ -1,9 +1,15 @@
 use crate::{
-    gateway_cache::GatewayCache, hex_density::HexDensityMap, last_beacon::LastBeacon, poc::Poc,
-    poc_report::Report, region_cache::RegionCache, reward_share::GatewayPocShare, telemetry,
-    Settings,
+    gateway_cache::GatewayCache,
+    hex_density::HexDensityMap,
+    last_beacon::LastBeacon,
+    poc::{Poc, VerifyBeaconResult},
+    poc_report::Report,
+    region_cache::RegionCache,
+    reward_share::GatewayPocShare,
+    telemetry, Settings,
 };
 use chrono::{Duration as ChronoDuration, Utc};
+use denylist::DenyList;
 use file_store::{
     file_sink,
     file_sink::FileSinkClient,
@@ -23,7 +29,7 @@ use helium_proto::services::poc_lora::{
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
@@ -42,11 +48,10 @@ pub struct Runner {
     max_witnesses_per_poc: u64,
     beacon_max_retries: u64,
     witness_max_retries: u64,
+    deny_list_latest_url: String,
+    deny_list_trigger_interval: Duration,
+    deny_list: DenyList,
 }
-
-#[derive(thiserror::Error, Debug)]
-#[error("error creating runner: {0}")]
-pub struct NewRunnerError(#[from] db_store::Error);
 
 #[derive(thiserror::Error, Debug)]
 pub enum RunnerError {
@@ -58,14 +63,30 @@ pub enum FilterStatus {
     Drop,
     Include,
 }
+
 impl Runner {
-    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, NewRunnerError> {
+    pub async fn new(settings: &Settings, pool: PgPool) -> anyhow::Result<Self> {
         let cache = settings.cache.clone();
         let beacon_interval = settings.beacon_interval();
         let beacon_interval_tolerance = settings.beacon_interval_tolerance();
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
         let beacon_max_retries = settings.beacon_max_retries;
         let witness_max_retries = settings.witness_max_retries;
+        let deny_list_latest_url = settings.denylist.denylist_url.clone();
+        let mut deny_list = DenyList::new()?;
+        // force update to latest in order to update the tag name
+        // when first run, the denylist will load the local filter
+        // but we dont save the tag name so it defaults to 0
+        // updating it here forces the tag name to be refreshed
+        // which will see it carry through to invalid poc reports
+        // if we cant update such as github being down then ignore
+        match deny_list.update_to_latest(&deny_list_latest_url).await {
+            Ok(()) => (),
+            Err(err) => {
+                tracing::error!("error whilst updating denylist to latest: {err:?}");
+            }
+        }
+
         Ok(Self {
             pool,
             cache,
@@ -74,6 +95,9 @@ impl Runner {
             max_witnesses_per_poc,
             beacon_max_retries,
             witness_max_retries,
+            deny_list_latest_url,
+            deny_list_trigger_interval: settings.denylist.trigger_interval(),
+            deny_list,
         })
     }
 
@@ -90,46 +114,48 @@ impl Runner {
         let mut db_timer = time::interval(DB_POLL_TIME);
         db_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+        let mut denylist_timer = time::interval(self.deny_list_trigger_interval);
+        denylist_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
         let store_base_path = Path::new(&self.cache);
 
-        let (iot_invalid_beacon_sink, mut iot_invalid_beacon_sink_server) =
+        let (iot_invalid_beacon_sink, iot_invalid_beacon_sink_server) =
             file_sink::FileSinkBuilder::new(
                 FileType::IotInvalidBeaconReport,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_beacon_report"),
-                shutdown.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .roll_time(ChronoDuration::minutes(5))
             .create()
             .await?;
 
-        let (iot_invalid_witness_sink, mut iot_invalid_witness_sink_server) =
+        let (iot_invalid_witness_sink, iot_invalid_witness_sink_server) =
             file_sink::FileSinkBuilder::new(
                 FileType::IotInvalidWitnessReport,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_invalid_witness_report"),
-                shutdown.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .roll_time(ChronoDuration::minutes(5))
             .create()
             .await?;
 
-        let (iot_poc_sink, mut iot_poc_sink_server) = file_sink::FileSinkBuilder::new(
+        let (iot_poc_sink, iot_poc_sink_server) = file_sink::FileSinkBuilder::new(
             FileType::IotPoc,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_poc"),
-            shutdown.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .roll_time(ChronoDuration::minutes(2))
         .create()
         .await?;
-
-        tokio::spawn(async move { iot_invalid_beacon_sink_server.run().await });
-        tokio::spawn(async move { iot_invalid_witness_sink_server.run().await });
-        tokio::spawn(async move { iot_poc_sink_server.run().await });
+        let shutdown1 = shutdown.clone();
+        let shutdown2 = shutdown.clone();
+        let shutdown3 = shutdown.clone();
+        tokio::spawn(async move { iot_invalid_beacon_sink_server.run(shutdown1).await });
+        tokio::spawn(async move { iot_invalid_witness_sink_server.run(shutdown2).await });
+        tokio::spawn(async move { iot_poc_sink_server.run(shutdown3).await });
 
         loop {
             if shutdown.is_triggered() {
@@ -137,6 +163,13 @@ impl Runner {
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
+                _ = denylist_timer.tick() =>
+                    match self.handle_denylist_tick().await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        tracing::error!("error whilst handling denylist tick: {err:?}");
+                    }
+                },
                 _ = db_timer.tick() =>
                     match self.handle_db_tick(  shutdown.clone(),
                                                 &iot_invalid_beacon_sink,
@@ -153,6 +186,23 @@ impl Runner {
             }
         }
         tracing::info!("stopping runner");
+        Ok(())
+    }
+
+    async fn handle_denylist_tick(&mut self) -> anyhow::Result<()> {
+        tracing::info!("handling denylist tick");
+        // sink any errors whilst updating the denylist
+        // the verifier should not stop just because github
+        // could not be reached for example
+        match self
+            .deny_list
+            .update_to_latest(&self.deny_list_latest_url)
+            .await
+        {
+            Ok(()) => (),
+            Err(e) => tracing::warn!("failed to update denylist: {e}"),
+        }
+        tracing::info!("completed handling denylist tick");
         Ok(())
     }
 
@@ -270,6 +320,7 @@ impl Runner {
                 &self.pool,
                 self.beacon_interval,
                 self.beacon_interval_tolerance,
+                &self.deny_list,
             )
             .await?;
         match beacon_verify_result.result {
@@ -277,7 +328,12 @@ impl Runner {
                 // beacon is valid, verify the POC witnesses
                 if let Some(beacon_info) = beacon_verify_result.gateway_info {
                     let verified_witnesses_result = poc
-                        .verify_witnesses(&beacon_info, hex_density_map, gateway_cache)
+                        .verify_witnesses(
+                            &beacon_info,
+                            hex_density_map,
+                            gateway_cache,
+                            &self.deny_list,
+                        )
                         .await?;
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
@@ -366,9 +422,9 @@ impl Runner {
             VerificationStatus::Invalid => {
                 // the beacon is invalid, which in turn renders all witnesses invalid
                 self.handle_invalid_poc(
+                    beacon_verify_result,
                     &beacon_report,
                     witnesses,
-                    beacon_verify_result.invalid_reason,
                     iot_invalid_beacon_sink,
                     iot_invalid_witness_sink,
                 )
@@ -380,9 +436,9 @@ impl Runner {
 
     async fn handle_invalid_poc(
         &self,
+        beacon_verify_result: VerifyBeaconResult,
         beacon_report: &IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
-        invalid_reason: InvalidReason,
         iot_invalid_beacon_sink: &FileSinkClient,
         iot_invalid_witness_sink: &FileSinkClient,
     ) -> anyhow::Result<()> {
@@ -390,10 +446,25 @@ impl Runner {
         let beacon = &beacon_report.report;
         let beacon_id = beacon.data.clone();
         let beacon_report_id = beacon_report.ingest_id();
+        let beacon_invalid_reason = beacon_verify_result.invalid_reason;
+        let beacon_invalid_details = beacon_verify_result.invalid_details;
+
+        let (location, elevation, gain) = match beacon_verify_result.gateway_info {
+            Some(gateway_info) => match gateway_info.metadata {
+                Some(metadata) => (Some(metadata.location), metadata.elevation, metadata.gain),
+                None => (None, 0, 0),
+            },
+            None => (None, 0, 0),
+        };
+
         let invalid_poc: IotInvalidBeaconReport = IotInvalidBeaconReport {
             received_timestamp: beacon_report.received_timestamp,
-            reason: invalid_reason,
+            reason: beacon_invalid_reason,
+            invalid_details: beacon_invalid_details.clone(),
             report: beacon.clone(),
+            location,
+            elevation,
+            gain,
         };
         let invalid_poc_proto: LoraInvalidBeaconReportV1 = invalid_poc.into();
         // save invalid poc to s3, if write fails update attempts and go no further
@@ -401,7 +472,7 @@ impl Runner {
         match iot_invalid_beacon_sink
             .write(
                 invalid_poc_proto,
-                &[("reason", invalid_reason.as_str_name())],
+                &[("reason", beacon_verify_result.invalid_reason.as_str_name())],
             )
             .await
         {
@@ -421,7 +492,8 @@ impl Runner {
             let invalid_witness_report: IotInvalidWitnessReport = IotInvalidWitnessReport {
                 received_timestamp: witness_report.received_timestamp,
                 report: witness_report.report,
-                reason: invalid_reason,
+                reason: beacon_invalid_reason,
+                invalid_details: beacon_invalid_details.clone(),
                 participant_side: InvalidParticipantSide::Beaconer,
             };
             let invalid_witness_report_proto: LoraInvalidWitnessReportV1 =
@@ -429,7 +501,7 @@ impl Runner {
             match iot_invalid_witness_sink
                 .write(
                     invalid_witness_report_proto,
-                    &[("reason", invalid_reason.as_str_name())],
+                    &[("reason", beacon_verify_result.invalid_reason.as_str_name())],
                 )
                 .await
             {
@@ -626,6 +698,7 @@ mod tests {
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Valid,
             invalid_reason: InvalidReason::ReasonNone,
+            invalid_details: None,
             participant_side: InvalidParticipantSide::SideNone,
         };
 
@@ -639,6 +712,7 @@ mod tests {
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
             invalid_reason: InvalidReason::SelfWitness,
+            invalid_details: None,
             participant_side: InvalidParticipantSide::Witness,
         };
 
@@ -652,6 +726,7 @@ mod tests {
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
             invalid_reason: InvalidReason::Stale,
+            invalid_details: None,
             participant_side: InvalidParticipantSide::Witness,
         };
 
@@ -665,6 +740,7 @@ mod tests {
             reward_unit: Decimal::ZERO,
             status: VerificationStatus::Invalid,
             invalid_reason: InvalidReason::Duplicate,
+            invalid_details: None,
             participant_side: InvalidParticipantSide::Witness,
         };
 
@@ -719,6 +795,7 @@ mod tests {
                 reward_unit: Decimal::ZERO,
                 status: VerificationStatus::Valid,
                 invalid_reason: InvalidReason::ReasonNone,
+                invalid_details: None,
                 participant_side: InvalidParticipantSide::SideNone,
             })
             .collect::<Vec<IotVerifiedWitnessReport>>();
