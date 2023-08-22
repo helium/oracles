@@ -19,7 +19,7 @@ pub struct DenyList {
     pub client: DenyListClient,
     #[serde(skip_serializing)]
     pub filter: Xor32,
-    pub valid_sign_keys: Vec<PublicKey>,
+    pub sign_keys: Vec<PublicKey>,
 }
 
 impl TryFrom<Vec<PublicKeyBinary>> for DenyList {
@@ -32,7 +32,7 @@ impl TryFrom<Vec<PublicKeyBinary>> for DenyList {
             tag_name: 0,
             client,
             filter,
-            valid_sign_keys: vec![],
+            sign_keys: vec![],
         })
     }
 }
@@ -52,9 +52,8 @@ impl DenyList {
             );
             Vec::new()
         });
-        let valid_sign_keys = settings.valid_sign_keys()?;
-        let filter =
-            filter_from_bin(&bin, &valid_sign_keys).unwrap_or_else(|_| Xor32::from(Vec::new()));
+        let sign_keys = settings.sign_keys()?;
+        let filter = filter_from_bin(&bin, &sign_keys).unwrap_or_else(|_| Xor32::from(Vec::new()));
         let client = DenyListClient::new()?;
         Ok(Self {
             // default tag to 0, proper tag name will be set on first
@@ -62,7 +61,7 @@ impl DenyList {
             tag_name: 0,
             client,
             filter,
-            valid_sign_keys,
+            sign_keys,
         })
     }
 
@@ -94,7 +93,7 @@ impl DenyList {
                 tracing::debug!("found asset for tag");
                 let asset_url = &asset.browser_download_url;
                 let bin = self.client.get_bin(asset_url).await?;
-                if let Ok(filter) = filter_from_bin(&bin, &self.valid_sign_keys) {
+                if let Ok(filter) = filter_from_bin(&bin, &self.sign_keys) {
                     self.filter = filter;
                     self.tag_name = new_tag_name;
                     save_local_filter_bin(&bin, FILTER_BIN_PATH)?;
@@ -114,7 +113,7 @@ impl DenyList {
 }
 
 /// deconstruct bytes into the filter component parts
-pub fn filter_from_bin(bin: &Vec<u8>, valid_sign_keys: &[PublicKey]) -> Result<Xor32> {
+pub fn filter_from_bin(bin: &Vec<u8>, sign_keys: &[PublicKey]) -> Result<Xor32> {
     if bin.is_empty() {
         return Err(Error::InvalidBinary("invalid filter bin".to_string()));
     }
@@ -123,7 +122,7 @@ pub fn filter_from_bin(bin: &Vec<u8>, valid_sign_keys: &[PublicKey]) -> Result<X
     let _version = buf.get_u8();
     let signature_len = buf.get_u16_le() as usize;
     let signature = buf.copy_to_bytes(signature_len).to_vec();
-    valid_sign_keys
+    sign_keys
         .iter()
         .any(|key| {
             if key.verify(buf, &signature).is_ok() {

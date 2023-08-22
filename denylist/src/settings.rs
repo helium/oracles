@@ -19,7 +19,7 @@ pub struct Settings {
     // vec of b58 helium encoded pubkeys
     // used to verify signature of denylist filters
     #[serde(default)]
-    pub valid_sign_keys: Vec<String>,
+    pub sign_keys: Vec<String>,
 }
 
 pub fn default_log() -> String {
@@ -62,8 +62,8 @@ impl Settings {
         Duration::from_secs(self.trigger)
     }
 
-    pub fn valid_sign_keys(&self) -> std::result::Result<Vec<PublicKey>, helium_crypto::Error> {
-        self.valid_sign_keys
+    pub fn sign_keys(&self) -> std::result::Result<Vec<PublicKey>, helium_crypto::Error> {
+        self.sign_keys
             .iter()
             .map(|pubkey| PublicKey::from_str(pubkey))
             .collect()
