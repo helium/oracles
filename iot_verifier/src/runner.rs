@@ -73,7 +73,7 @@ impl Runner {
         let beacon_max_retries = settings.beacon_max_retries;
         let witness_max_retries = settings.witness_max_retries;
         let deny_list_latest_url = settings.denylist.denylist_url.clone();
-        let mut deny_list = DenyList::new()?;
+        let mut deny_list = DenyList::new(&settings.denylist)?;
         // force update to latest in order to update the tag name
         // when first run, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0

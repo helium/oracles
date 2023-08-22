@@ -1,7 +1,8 @@
 use crate::{Error, Result};
 use config::{Config, Environment, File};
+use helium_crypto::PublicKey;
 use serde::Deserialize;
-use std::{path::Path, time::Duration};
+use std::{path::Path, str::FromStr, time::Duration};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -15,6 +16,10 @@ pub struct Settings {
     /// Cadence at which we poll for an updated denylist (secs)
     #[serde(default = "default_trigger_interval")]
     pub trigger: u64,
+    // vec of b58 helium encoded pubkeys
+    // used to verify signature of denylist filters
+    #[serde(default)]
+    pub sign_keys: Vec<String>,
 }
 
 pub fn default_log() -> String {
@@ -55,5 +60,12 @@ impl Settings {
 
     pub fn trigger_interval(&self) -> Duration {
         Duration::from_secs(self.trigger)
+    }
+
+    pub fn sign_keys(&self) -> std::result::Result<Vec<PublicKey>, helium_crypto::Error> {
+        self.sign_keys
+            .iter()
+            .map(|pubkey| PublicKey::from_str(pubkey))
+            .collect()
     }
 }
