@@ -100,7 +100,7 @@ pub enum RouteStorageError {
 pub async fn create_route(
     route: Route,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    signing_key: &Keypair,
+    signing_key: Arc<Keypair>,
     update_tx: Sender<proto::RouteStreamResV1>,
 ) -> anyhow::Result<Route> {
     let net_id: i32 = route.net_id.into();
@@ -137,28 +137,35 @@ pub async fn create_route(
 
     transaction.commit().await?;
 
-    let timestamp = Utc::now().encode_timestamp();
-    let signer = signing_key.public_key().into();
-    let mut update = proto::RouteStreamResV1 {
-        action: proto::ActionV1::Add.into(),
-        data: Some(proto::route_stream_res_v1::Data::Route(
-            new_route.clone().into(),
-        )),
-        timestamp,
-        signer,
-        signature: vec![],
-    };
-    _ = futures::future::ready(signing_key.sign(&update.encode_to_vec()))
-        .map_err(|err| {
-            tracing::error!(error = ?err, "error signing route create");
-            anyhow!("error signing route create")
-        })
-        .and_then(|signature| {
-            update.signature = signature;
-            broadcast_update(update, update_tx)
-                .map_err(|_| anyhow!("failed broadcasting route create"))
-        })
-        .await;
+    tokio::spawn({
+        let new_route = new_route.clone();
+        async move {
+            let timestamp = Utc::now().encode_timestamp();
+            let signer = signing_key.public_key().into();
+            let mut update = proto::RouteStreamResV1 {
+                action: proto::ActionV1::Add.into(),
+                data: Some(proto::route_stream_res_v1::Data::Route(
+                    new_route.clone().into(),
+                )),
+                timestamp,
+                signer,
+                signature: vec![],
+            };
+            _ = futures::future::ready(signing_key.sign(&update.encode_to_vec()))
+                .map_err(|err| {
+                    tracing::error!(error = ?err, "error signing route create");
+                    anyhow!("error signing route create")
+                })
+                .and_then(|signature| {
+                    update.signature = signature;
+                    broadcast_update(update, update_tx).map_err(|_| {
+                        tracing::error!("failed broadcasting route create");
+                        anyhow!("failed broadcasting route create")
+                    })
+                })
+                .await;
+        }
+    });
 
     Ok(new_route)
 }
@@ -166,7 +173,7 @@ pub async fn create_route(
 pub async fn update_route(
     route: Route,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    signing_key: &Keypair,
+    signing_key: Arc<Keypair>,
     update_tx: Sender<proto::RouteStreamResV1>,
 ) -> anyhow::Result<Route> {
     let protocol_opts = route
@@ -201,29 +208,36 @@ pub async fn update_route(
 
     transaction.commit().await?;
 
-    let timestamp = Utc::now().encode_timestamp();
-    let signer = signing_key.public_key().into();
-    let mut update_res = proto::RouteStreamResV1 {
-        action: proto::ActionV1::Add.into(),
-        data: Some(proto::route_stream_res_v1::Data::Route(
-            updated_route.clone().into(),
-        )),
-        timestamp,
-        signer,
-        signature: vec![],
-    };
+    tokio::spawn({
+        let updated_route = updated_route.clone();
+        async move {
+            let timestamp = Utc::now().encode_timestamp();
+            let signer = signing_key.public_key().into();
+            let mut update_res = proto::RouteStreamResV1 {
+                action: proto::ActionV1::Add.into(),
+                data: Some(proto::route_stream_res_v1::Data::Route(
+                    updated_route.clone().into(),
+                )),
+                timestamp,
+                signer,
+                signature: vec![],
+            };
 
-    _ = futures::future::ready(signing_key.sign(&update_res.encode_to_vec()))
-        .map_err(|err| {
-            tracing::error!(error = ?err, "error signing route update");
-            anyhow!("error signing route update")
-        })
-        .and_then(|signature| {
-            update_res.signature = signature;
-            broadcast_update(update_res, update_tx)
-                .map_err(|_| anyhow!("failed broadcasting route update"))
-        })
-        .await;
+            _ = futures::future::ready(signing_key.sign(&update_res.encode_to_vec()))
+                .map_err(|err| {
+                    tracing::error!(error = ?err, "error signing route update");
+                    anyhow!("error signing route update")
+                })
+                .and_then(|signature| {
+                    update_res.signature = signature;
+                    broadcast_update(update_res, update_tx).map_err(|_| {
+                        tracing::error!("failed broadcasting route update");
+                        anyhow!("failed broadcasting route update")
+                    })
+                })
+                .await;
+        }
+    });
 
     Ok(updated_route)
 }
@@ -622,7 +636,7 @@ pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Resul
 pub async fn delete_route(
     id: &str,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-    signing_key: &Keypair,
+    signing_key: Arc<Keypair>,
     update_tx: Sender<proto::RouteStreamResV1>,
 ) -> anyhow::Result<()> {
     let uuid = Uuid::try_parse(id)?;
@@ -642,27 +656,30 @@ pub async fn delete_route(
 
     transaction.commit().await?;
 
-    let timestamp = Utc::now().encode_timestamp();
-    let signer = signing_key.public_key().into();
-    let mut delete_res = proto::RouteStreamResV1 {
-        action: proto::ActionV1::Remove.into(),
-        data: Some(proto::route_stream_res_v1::Data::Route(
-            route.clone().into(),
-        )),
-        timestamp,
-        signer,
-        signature: vec![],
-    };
+    tokio::spawn(async move {
+        let timestamp = Utc::now().encode_timestamp();
+        let signer = signing_key.public_key().into();
+        let mut delete_res = proto::RouteStreamResV1 {
+            action: proto::ActionV1::Remove.into(),
+            data: Some(proto::route_stream_res_v1::Data::Route(
+                route.clone().into(),
+            )),
+            timestamp,
+            signer,
+            signature: vec![],
+        };
 
-    _ = signing_key
-        .sign(&delete_res.encode_to_vec())
-        .map_err(|_| anyhow!("failed to sign route delete update"))
-        .and_then(|signature| {
-            delete_res.signature = signature;
-            update_tx
-                .send(delete_res)
-                .map_err(|_| anyhow!("failed to broadcast route delete update"))
-        });
+        _ = signing_key
+            .sign(&delete_res.encode_to_vec())
+            .map_err(|_| anyhow!("failed to sign route delete update"))
+            .and_then(|signature| {
+                delete_res.signature = signature;
+                update_tx.send(delete_res).map_err(|_| {
+                    tracing::error!("failed to broadcast route delete update");
+                    anyhow!("failed to broadcast route delete update")
+                })
+            });
+    });
 
     Ok(())
 }
