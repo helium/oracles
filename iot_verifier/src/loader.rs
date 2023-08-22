@@ -13,10 +13,11 @@ use file_store::{
     traits::{IngestId, MsgDecode},
     FileInfo, FileStore, FileType,
 };
-use futures::{stream, StreamExt};
+use futures::{future::LocalBoxFuture, stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
 use std::{hash::Hasher, ops::DerefMut, str::FromStr};
+use task_manager::ManagedTask;
 use tokio::{
     sync::Mutex,
     time::{self, MissedTickBehavior},
@@ -33,6 +34,7 @@ pub struct Loader {
     window_width: ChronoDuration,
     ingestor_rollup_time: ChronoDuration,
     max_lookback_age: ChronoDuration,
+    gateway_cache: GatewayCache,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -48,8 +50,21 @@ pub enum ValidGatewayResult {
     Unknown,
 }
 
+impl ManagedTask for Loader {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
 impl Loader {
-    pub async fn from_settings(settings: &Settings, pool: PgPool) -> Result<Self, NewLoaderError> {
+    pub async fn from_settings(
+        settings: &Settings,
+        pool: PgPool,
+        gateway_cache: GatewayCache,
+    ) -> Result<Self, NewLoaderError> {
         tracing::info!("from_settings verifier loader");
         let ingest_store = FileStore::from_settings(&settings.ingest).await?;
         let poll_time = settings.poc_loader_poll_time();
@@ -63,15 +78,12 @@ impl Loader {
             window_width,
             ingestor_rollup_time,
             max_lookback_age,
+            gateway_cache,
         })
     }
 
-    pub async fn run(
-        &mut self,
-        shutdown: &triggered::Listener,
-        gateway_cache: &GatewayCache,
-    ) -> anyhow::Result<()> {
-        tracing::info!("started verifier loader");
+    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("starting loader");
         let mut report_timer = time::interval(self.poll_time);
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
@@ -80,7 +92,7 @@ impl Loader {
             }
             tokio::select! {
                 _ = shutdown.clone() => break,
-                _ = report_timer.tick() => match self.handle_report_tick(gateway_cache).await {
+                _ = report_timer.tick() => match self.handle_report_tick().await {
                     Ok(()) => (),
                     Err(err) => {
                         tracing::error!("loader error, report_tick triggered: {err:?}");
@@ -92,7 +104,7 @@ impl Loader {
         Ok(())
     }
 
-    async fn handle_report_tick(&self, gateway_cache: &GatewayCache) -> anyhow::Result<()> {
+    async fn handle_report_tick(&self) -> anyhow::Result<()> {
         tracing::info!("handling report tick");
         let now = Utc::now();
         // the loader loads files from s3 via a sliding window
@@ -124,7 +136,7 @@ impl Loader {
             tracing::info!("current window width insufficient. completed handling poc_report tick");
             return Ok(());
         }
-        self.process_window(gateway_cache, after, before).await?;
+        self.process_window(after, before).await?;
         Meta::update_last_timestamp(&self.pool, REPORTS_META_NAME, Some(before)).await?;
         Report::pending_beacons_to_ready(&self.pool, now).await?;
         tracing::info!("completed handling poc_report tick");
@@ -133,7 +145,6 @@ impl Loader {
 
     async fn process_window(
         &self,
-        gateway_cache: &GatewayCache,
         after: DateTime<Utc>,
         before: DateTime<Utc>,
     ) -> anyhow::Result<()> {
@@ -150,7 +161,6 @@ impl Loader {
             .process_events(
                 FileType::IotBeaconIngestReport,
                 &self.ingest_store,
-                gateway_cache,
                 after,
                 before,
                 Some(&xor_data),
@@ -191,7 +201,6 @@ impl Loader {
             .process_events(
                 FileType::IotWitnessIngestReport,
                 &self.ingest_store,
-                gateway_cache,
                 after - (self.ingestor_rollup_time + ChronoDuration::seconds(120)),
                 before + (self.ingestor_rollup_time + ChronoDuration::seconds(120)),
                 None,
@@ -213,7 +222,6 @@ impl Loader {
         &self,
         file_type: FileType,
         store: &FileStore,
-        gateway_cache: &GatewayCache,
         after: chrono::DateTime<Utc>,
         before: chrono::DateTime<Utc>,
         xor_data: Option<&Mutex<Vec<u64>>>,
@@ -232,13 +240,7 @@ impl Loader {
         stream::iter(infos)
             .for_each_concurrent(10, |file_info| async move {
                 match self
-                    .process_file(
-                        store,
-                        file_info.clone(),
-                        gateway_cache,
-                        xor_data,
-                        xor_filter,
-                    )
+                    .process_file(store, file_info.clone(), xor_data, xor_filter)
                     .await
                 {
                     Ok(()) => tracing::debug!(
@@ -262,7 +264,6 @@ impl Loader {
         &self,
         store: &FileStore,
         file_info: FileInfo,
-        gateway_cache: &GatewayCache,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
     ) -> anyhow::Result<()> {
@@ -281,7 +282,7 @@ impl Loader {
                             tracing::warn!("skipping report of type {file_type} due to error {err:?}")
                         }
                         Ok(buf) => {
-                            match self.handle_report(&file_type, &buf, gateway_cache, xor_data, xor_filter, &metrics).await
+                            match self.handle_report(&file_type, &buf, xor_data, xor_filter, &metrics).await
                                 {
                                     Ok(Some(bindings)) =>  inserts.push(bindings),
                                     Ok(None) => (),
@@ -309,7 +310,6 @@ impl Loader {
         &self,
         file_type: &str,
         buf: &[u8],
-        gateway_cache: &GatewayCache,
         xor_data: Option<&Mutex<Vec<u64>>>,
         xor_filter: Option<&Xor16>,
         metrics: &LoaderMetricTracker,
@@ -319,10 +319,7 @@ impl Loader {
                 let beacon = IotBeaconIngestReport::decode(buf)?;
                 tracing::debug!("beacon report from ingestor: {:?}", &beacon);
                 let packet_data = beacon.report.data.clone();
-                match self
-                    .check_valid_gateway(&beacon.report.pub_key, gateway_cache)
-                    .await
-                {
+                match self.check_valid_gateway(&beacon.report.pub_key).await {
                     ValidGatewayResult::Valid => {
                         let res = InsertBindings {
                             id: beacon.ingest_id(),
@@ -352,30 +349,25 @@ impl Loader {
                 let packet_data = witness.report.data.clone();
                 if let Some(filter) = xor_filter {
                     match verify_witness_packet_data(&packet_data, filter) {
-                        true => {
-                            match self
-                                .check_valid_gateway(&witness.report.pub_key, gateway_cache)
-                                .await
-                            {
-                                ValidGatewayResult::Valid => {
-                                    let res = InsertBindings {
-                                        id: witness.ingest_id(),
-                                        remote_entropy: Vec::<u8>::with_capacity(0),
-                                        packet_data,
-                                        buf: buf.to_vec(),
-                                        received_ts: witness.received_timestamp,
-                                        report_type: ReportType::Witness,
-                                        status: IotStatus::Ready,
-                                    };
-                                    metrics.increment_witnesses();
-                                    Ok(Some(res))
-                                }
-                                ValidGatewayResult::Unknown => {
-                                    metrics.increment_witnesses_unknown();
-                                    Ok(None)
-                                }
+                        true => match self.check_valid_gateway(&witness.report.pub_key).await {
+                            ValidGatewayResult::Valid => {
+                                let res = InsertBindings {
+                                    id: witness.ingest_id(),
+                                    remote_entropy: Vec::<u8>::with_capacity(0),
+                                    packet_data,
+                                    buf: buf.to_vec(),
+                                    received_ts: witness.received_timestamp,
+                                    report_type: ReportType::Witness,
+                                    status: IotStatus::Ready,
+                                };
+                                metrics.increment_witnesses();
+                                Ok(Some(res))
                             }
-                        }
+                            ValidGatewayResult::Unknown => {
+                                metrics.increment_witnesses_unknown();
+                                Ok(None)
+                            }
+                        },
                         false => {
                             tracing::debug!(
                                 "dropping witness report as no associated beacon data: {:?}",
@@ -396,24 +388,19 @@ impl Loader {
         }
     }
 
-    async fn check_valid_gateway(
-        &self,
-        pub_key: &PublicKeyBinary,
-        gateway_cache: &GatewayCache,
-    ) -> ValidGatewayResult {
-        if self.check_unknown_gw(pub_key, gateway_cache).await {
+    async fn check_valid_gateway(&self, pub_key: &PublicKeyBinary) -> ValidGatewayResult {
+        if self.check_unknown_gw(pub_key).await {
             tracing::debug!("dropping unknown gateway: {:?}", &pub_key);
             return ValidGatewayResult::Unknown;
         }
         ValidGatewayResult::Valid
     }
 
-    async fn check_unknown_gw(
-        &self,
-        pub_key: &PublicKeyBinary,
-        gateway_cache: &GatewayCache,
-    ) -> bool {
-        gateway_cache.resolve_gateway_info(pub_key).await.is_err()
+    async fn check_unknown_gw(&self, pub_key: &PublicKeyBinary) -> bool {
+        self.gateway_cache
+            .resolve_gateway_info(pub_key)
+            .await
+            .is_err()
     }
 }
 

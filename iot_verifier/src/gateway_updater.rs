@@ -1,12 +1,13 @@
 use crate::Settings;
 use chrono::Duration;
-use futures::stream::StreamExt;
+use futures::{future::LocalBoxFuture, stream::StreamExt};
 use helium_crypto::PublicKeyBinary;
 use iot_config::{
     client::{Client as IotConfigClient, ClientError as IotConfigClientError},
     gateway_info::{GatewayInfo, GatewayInfoResolver},
 };
 use std::collections::HashMap;
+use task_manager::ManagedTask;
 use tokio::sync::watch;
 use tokio::time;
 
@@ -28,6 +29,15 @@ pub enum GatewayUpdaterError {
     SendError(#[from] watch::error::SendError<GatewayMap>),
 }
 
+impl ManagedTask for GatewayUpdater {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
 impl GatewayUpdater {
     pub async fn from_settings(
         settings: &Settings,
@@ -45,7 +55,7 @@ impl GatewayUpdater {
         ))
     }
 
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<(), GatewayUpdaterError> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting gateway_updater");
 
         let mut trigger_timer = time::interval(
@@ -57,14 +67,16 @@ impl GatewayUpdater {
         loop {
             if shutdown.is_triggered() {
                 tracing::info!("stopping gateway_updater");
-                return Ok(());
+                break;
             }
 
             tokio::select! {
                 _ = trigger_timer.tick() => self.handle_refresh_tick().await?,
-                _ = shutdown.clone() => return Ok(()),
+                _ = shutdown.clone() => break,
             }
         }
+        tracing::info!("stopping gateway_updater");
+        Ok(())
     }
 
     async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError> {

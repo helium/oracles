@@ -5,12 +5,14 @@ use crate::{
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
+use futures::future::LocalBoxFuture;
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
-use sqlx::{PgExecutor, Pool, Postgres};
+use sqlx::{PgExecutor, PgPool, Pool, Postgres};
 use std::ops::Range;
+use task_manager::ManagedTask;
 use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -21,15 +23,39 @@ pub struct Rewarder {
     pub reward_manifests_sink: file_sink::FileSinkClient,
     pub reward_period_hours: i64,
     pub reward_offset: Duration,
+    pub price_tracker: PriceTracker,
+}
+
+impl ManagedTask for Rewarder {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 impl Rewarder {
-    pub async fn run(
-        mut self,
+    pub async fn new(
+        pool: PgPool,
+        rewards_sink: file_sink::FileSinkClient,
+        reward_manifests_sink: file_sink::FileSinkClient,
+        reward_period_hours: i64,
+        reward_offset: Duration,
         price_tracker: PriceTracker,
-        shutdown: &triggered::Listener,
-    ) -> anyhow::Result<()> {
-        tracing::info!("Starting iot verifier rewarder");
+    ) -> Self {
+        Self {
+            pool,
+            rewards_sink,
+            reward_manifests_sink,
+            reward_period_hours,
+            reward_offset,
+            price_tracker,
+        }
+    }
+
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("Starting rewarder");
 
         let reward_period_length = Duration::hours(self.reward_period_hours);
 
@@ -44,7 +70,8 @@ impl Rewarder {
             );
 
             let sleep_duration = if scheduler.should_reward(now) {
-                let iot_price = price_tracker
+                let iot_price = self
+                    .price_tracker
                     .price(&helium_proto::BlockchainTokenTypeV1::Iot)
                     .await?;
                 tracing::info!(
@@ -64,17 +91,14 @@ impl Rewarder {
                 scheduler.sleep_duration(Utc::now())?
             };
 
-            tracing::info!(
-                "Sleeping for {}",
-                humantime::format_duration(sleep_duration)
-            );
-
             let shutdown = shutdown.clone();
             tokio::select! {
-                _ = shutdown => return Ok(()),
+                _ = shutdown => break,
                 _ = sleep(sleep_duration) => (),
             }
         }
+        tracing::info!("stopping rewarder");
+        Ok(())
     }
 
     pub async fn reward(

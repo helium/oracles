@@ -64,28 +64,25 @@ lazy_static! {
     };
 }
 
-#[async_trait::async_trait]
-pub trait HexDensityMap: Clone {
-    async fn get(&self, hex: u64) -> Option<Decimal>;
-    async fn swap(&self, new_map: HashMap<u64, Decimal>);
+#[derive(Debug, Clone)]
+pub struct HexDensityMap(Arc<RwLock<HashMap<u64, Decimal>>>);
+
+impl Default for HexDensityMap {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-#[derive(Debug, Clone)]
-pub struct SharedHexDensityMap(Arc<RwLock<HashMap<u64, Decimal>>>);
-
-impl SharedHexDensityMap {
+impl HexDensityMap {
     pub fn new() -> Self {
         Self(Arc::new(RwLock::new(HashMap::new())))
     }
-}
 
-#[async_trait::async_trait]
-impl HexDensityMap for SharedHexDensityMap {
-    async fn get(&self, hex: u64) -> Option<Decimal> {
+    pub async fn get(&self, hex: u64) -> Option<Decimal> {
         self.0.read().await.get(&hex).cloned()
     }
 
-    async fn swap(&self, new_map: HashMap<u64, Decimal>) {
+    pub async fn swap(&self, new_map: HashMap<u64, Decimal>) {
         *self.0.write().await = new_map;
     }
 }
