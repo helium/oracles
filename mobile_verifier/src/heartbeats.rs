@@ -2,7 +2,7 @@
 
 use crate::{
     cell_type::CellType,
-    coverage::{CoverageClaimTimeCache, CoveredHexCache},
+    coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
 };
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
@@ -53,7 +53,7 @@ pub struct HeartbeatDaemon {
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
     max_distance: f64,
-    modeled_coverage_start_timestamp: DateTime<Utc>,
+    modeled_coverage_start: DateTime<Utc>,
 }
 
 impl HeartbeatDaemon {
@@ -64,7 +64,7 @@ impl HeartbeatDaemon {
         heartbeat_sink: FileSinkClient,
         seniority_sink: FileSinkClient,
         max_distance: f64,
-        modeled_coverage_start_timestamp: DateTime<Utc>,
+        modeled_coverage_start: DateTime<Utc>,
     ) -> Self {
         Self {
             pool,
@@ -73,7 +73,7 @@ impl HeartbeatDaemon {
             heartbeat_sink,
             seniority_sink,
             max_distance,
-            modeled_coverage_start_timestamp,
+            modeled_coverage_start,
         }
     }
 
@@ -139,6 +139,12 @@ impl HeartbeatDaemon {
         ));
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
+            heartbeat.write(&self.heartbeat_sink).await?;
+
+            if !heartbeat.is_valid() {
+                continue;
+            }
+
             let coverage_claim_time = coverage_claim_time_cache
                 .fetch_coverage_claim_time(
                     &heartbeat.heartbeat.cbsd_id,
@@ -146,15 +152,16 @@ impl HeartbeatDaemon {
                     &mut transaction,
                 )
                 .await?;
-
-            heartbeat.write(&self.heartbeat_sink).await?;
-            heartbeat
-                .update_seniority(
-                    coverage_claim_time,
-                    self.modeled_coverage_start_timestamp,
-                    &self.seniority_sink,
-                    &mut transaction,
-                )
+            let latest_seniority =
+                Seniority::fetch_latest(&mut transaction, &heartbeat.heartbeat.cbsd_id).await?;
+            let seniority_update = SeniorityUpdate::determine_update_action(
+                &heartbeat,
+                coverage_claim_time,
+                self.modeled_coverage_start,
+                latest_seniority,
+            );
+            seniority_update
+                .execute(&self.seniority_sink, &mut transaction)
                 .await?;
 
             let key = (
@@ -244,6 +251,10 @@ pub struct Heartbeat {
 }
 
 impl Heartbeat {
+    pub fn is_valid(&self) -> bool {
+        matches!(self.validity, proto::HeartbeatValidity::Valid)
+    }
+
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
         self.received_timestamp.duration_trunc(Duration::hours(1))
     }
@@ -302,120 +313,7 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn update_seniority(
-        &self,
-        coverage_claim_time: DateTime<Utc>,
-        modeled_coverage_start_timestamp: DateTime<Utc>,
-        seniorities: &FileSinkClient,
-        exec: &mut Transaction<'_, Postgres>,
-    ) -> anyhow::Result<()> {
-        use proto::SeniorityUpdateReason::*;
-
-        enum InsertOrUpdate {
-            Insert(proto::SeniorityUpdateReason),
-            Update(DateTime<Utc>),
-        }
-
-        let (seniority_ts, update_reason) = if let Some(prev_seniority) =
-            sqlx::query_as::<_, crate::coverage::Seniority>(
-                "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC LIMIT 1",
-            )
-            .bind(&self.heartbeat.cbsd_id)
-            .fetch_optional(&mut *exec)
-            .await?
-        {
-            if self.coverage_object != Some(prev_seniority.uuid) {
-                if prev_seniority.update_reason == HeartbeatNotSeen as i32
-                    && coverage_claim_time < prev_seniority.seniority_ts
-                {
-                    return Ok(());
-                }
-                (
-                    coverage_claim_time,
-                    InsertOrUpdate::Insert(NewCoverageClaimTime),
-                )
-            } else if self.received_timestamp - prev_seniority.last_heartbeat > Duration::days(3)
-                && coverage_claim_time < self.received_timestamp
-            {
-                (
-                    self.received_timestamp,
-                    InsertOrUpdate::Insert(HeartbeatNotSeen),
-                )
-            } else {
-                (
-                    coverage_claim_time,
-                    InsertOrUpdate::Update(prev_seniority.seniority_ts),
-                )
-            }
-        } else if self.received_timestamp - modeled_coverage_start_timestamp > Duration::days(3) {
-            // This will become the default case 72 hours after we launch modeled coverage
-            (
-                self.received_timestamp,
-                InsertOrUpdate::Insert(HeartbeatNotSeen),
-            )
-        } else {
-            (
-                coverage_claim_time,
-                InsertOrUpdate::Insert(NewCoverageClaimTime),
-            )
-        };
-
-        match update_reason {
-            InsertOrUpdate::Insert(update_reason) => {
-                sqlx::query(
-                    r#"
-                    INSERT INTO seniority
-                      (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason)
-                    VALUES
-                      ($1, $2, $3, $4, $5, $6)
-                    "#,
-                )
-                .bind(&self.heartbeat.cbsd_id)
-                .bind(self.received_timestamp)
-                .bind(self.coverage_object)
-                .bind(seniority_ts)
-                .bind(self.received_timestamp)
-                .bind(update_reason as i32)
-                .execute(&mut *exec)
-                .await?;
-                seniorities
-                    .write(
-                        proto::SeniorityUpdate {
-                            cbsd_id: self.heartbeat.cbsd_id.to_string(),
-                            new_seniority_timestamp: seniority_ts.timestamp() as u64,
-                            reason: update_reason as i32,
-                        },
-                        [],
-                    )
-                    .await?;
-            }
-            InsertOrUpdate::Update(seniority_ts) => {
-                sqlx::query(
-                    r#"
-                    UPDATE seniority
-                    SET last_heartbeat = $1
-                    WHERE
-                      cbsd_id = $2 AND
-                      seniority_ts = $3
-                    "#,
-                )
-                .bind(self.received_timestamp)
-                .bind(&self.heartbeat.cbsd_id)
-                .bind(seniority_ts)
-                .execute(&mut *exec)
-                .await?;
-            }
-        }
-
-        Ok(())
-    }
-
     pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
-        // If the heartbeat is not valid, do not save it
-        if self.validity != proto::HeartbeatValidity::Valid {
-            return Ok(false);
-        }
-
         sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
             .bind(&self.heartbeat.cbsd_id)
             .bind(&self.heartbeat.pubkey)
@@ -496,4 +394,150 @@ async fn validate_heartbeat(
     }
 
     Ok((cell_type, proto::HeartbeatValidity::Valid))
+}
+
+struct SeniorityUpdate<'a> {
+    heartbeat: &'a Heartbeat,
+    action: SeniorityUpdateAction,
+}
+
+enum SeniorityUpdateAction {
+    NoAction,
+    Insert {
+        new_seniority: DateTime<Utc>,
+        update_reason: proto::SeniorityUpdateReason,
+    },
+    Update {
+        curr_seniority: DateTime<Utc>,
+    },
+}
+
+impl<'a> SeniorityUpdate<'a> {
+    fn new(heartbeat: &'a Heartbeat, action: SeniorityUpdateAction) -> Self {
+        Self { heartbeat, action }
+    }
+
+    pub fn determine_update_action(
+        heartbeat: &'a Heartbeat,
+        coverage_claim_time: DateTime<Utc>,
+        modeled_coverage_start_timestamp: DateTime<Utc>,
+        latest_seniority: Option<Seniority>,
+    ) -> Self {
+        use proto::SeniorityUpdateReason::*;
+
+        if let Some(prev_seniority) = latest_seniority {
+            if heartbeat.coverage_object != Some(prev_seniority.uuid) {
+                if prev_seniority.update_reason == HeartbeatNotSeen as i32
+                    && coverage_claim_time < prev_seniority.seniority_ts
+                {
+                    Self::new(heartbeat, SeniorityUpdateAction::NoAction)
+                } else {
+                    Self::new(
+                        heartbeat,
+                        SeniorityUpdateAction::Insert {
+                            new_seniority: coverage_claim_time,
+                            update_reason: NewCoverageClaimTime,
+                        },
+                    )
+                }
+            } else if heartbeat.received_timestamp - prev_seniority.last_heartbeat
+                > Duration::days(3)
+                && coverage_claim_time < heartbeat.received_timestamp
+            {
+                Self::new(
+                    heartbeat,
+                    SeniorityUpdateAction::Insert {
+                        new_seniority: heartbeat.received_timestamp,
+                        update_reason: HeartbeatNotSeen,
+                    },
+                )
+            } else {
+                Self::new(
+                    heartbeat,
+                    SeniorityUpdateAction::Update {
+                        curr_seniority: prev_seniority.seniority_ts,
+                    },
+                )
+            }
+        } else if heartbeat.received_timestamp - modeled_coverage_start_timestamp
+            > Duration::days(3)
+        {
+            // This will become the default case 72 hours after we launch modeled coverage
+            Self::new(
+                heartbeat,
+                SeniorityUpdateAction::Insert {
+                    new_seniority: heartbeat.received_timestamp,
+                    update_reason: HeartbeatNotSeen,
+                },
+            )
+        } else {
+            Self::new(
+                heartbeat,
+                SeniorityUpdateAction::Insert {
+                    new_seniority: coverage_claim_time,
+                    update_reason: NewCoverageClaimTime,
+                },
+            )
+        }
+    }
+}
+
+impl SeniorityUpdate<'_> {
+    pub async fn execute(
+        self,
+        seniorities: &FileSinkClient,
+        exec: &mut Transaction<'_, Postgres>,
+    ) -> anyhow::Result<()> {
+        match self.action {
+            SeniorityUpdateAction::NoAction => (),
+            SeniorityUpdateAction::Insert {
+                new_seniority,
+                update_reason,
+            } => {
+                sqlx::query(
+                    r#"
+                    INSERT INTO seniority
+                      (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason)
+                    VALUES
+                      ($1, $2, $3, $4, $5, $6)
+                    "#,
+                )
+                .bind(&self.heartbeat.heartbeat.cbsd_id)
+                .bind(self.heartbeat.received_timestamp)
+                .bind(self.heartbeat.coverage_object)
+                .bind(new_seniority)
+                .bind(self.heartbeat.received_timestamp)
+                .bind(update_reason as i32)
+                .execute(&mut *exec)
+                .await?;
+                seniorities
+                    .write(
+                        proto::SeniorityUpdate {
+                            cbsd_id: self.heartbeat.heartbeat.cbsd_id.to_string(),
+                            new_seniority_timestamp: new_seniority.timestamp() as u64,
+                            reason: update_reason as i32,
+                        },
+                        [],
+                    )
+                    .await?;
+            }
+            SeniorityUpdateAction::Update { curr_seniority } => {
+                sqlx::query(
+                    r#"
+                    UPDATE seniority
+                    SET last_heartbeat = $1
+                    WHERE
+                      cbsd_id = $2 AND
+                      seniority_ts = $3
+                    "#,
+                )
+                .bind(self.heartbeat.received_timestamp)
+                .bind(&self.heartbeat.heartbeat.cbsd_id)
+                .bind(curr_seniority)
+                .execute(&mut *exec)
+                .await?;
+            }
+        }
+        Ok(())
+    }
 }

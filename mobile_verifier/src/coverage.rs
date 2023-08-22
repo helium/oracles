@@ -299,6 +299,20 @@ pub struct Seniority {
     pub update_reason: i32,
 }
 
+impl Seniority {
+    pub async fn fetch_latest(
+        exec: &mut Transaction<'_, Postgres>,
+        cbsd_id: &str,
+    ) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC LIMIT 1",
+        )
+        .bind(cbsd_id)
+        .fetch_optional(&mut *exec)
+        .await
+    }
+}
+
 #[async_trait::async_trait]
 impl CoveredHexStream for Pool<Postgres> {
     async fn covered_hex_stream<'a>(
