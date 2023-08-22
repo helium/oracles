@@ -1,4 +1,4 @@
-use super::{ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
@@ -48,7 +48,7 @@ impl EntityClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(?entity_id, "verifying entity on-chain");
-        let response = match self.client.clone().verify(request).await {
+        let response = match call_with_retry!(self.client.clone().verify(request.clone())) {
             Ok(verify_res) => {
                 let response = verify_res.into_inner();
                 response.verify(&self.config_pubkey)?;
