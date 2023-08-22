@@ -401,6 +401,7 @@ struct SeniorityUpdate<'a> {
     action: SeniorityUpdateAction,
 }
 
+#[derive(Debug, PartialEq)]
 enum SeniorityUpdateAction {
     NoAction,
     Insert {
@@ -420,7 +421,7 @@ impl<'a> SeniorityUpdate<'a> {
     pub fn determine_update_action(
         heartbeat: &'a Heartbeat,
         coverage_claim_time: DateTime<Utc>,
-        modeled_coverage_start_timestamp: DateTime<Utc>,
+        modeled_coverage_start: DateTime<Utc>,
         latest_seniority: Option<Seniority>,
     ) -> Self {
         use proto::SeniorityUpdateReason::*;
@@ -441,7 +442,7 @@ impl<'a> SeniorityUpdate<'a> {
                     )
                 }
             } else if heartbeat.received_timestamp - prev_seniority.last_heartbeat
-                > Duration::days(3)
+                >= Duration::days(3)
                 && coverage_claim_time < heartbeat.received_timestamp
             {
                 Self::new(
@@ -459,9 +460,7 @@ impl<'a> SeniorityUpdate<'a> {
                     },
                 )
             }
-        } else if heartbeat.received_timestamp - modeled_coverage_start_timestamp
-            > Duration::days(3)
-        {
+        } else if heartbeat.received_timestamp - modeled_coverage_start > Duration::days(3) {
             // This will become the default case 72 hours after we launch modeled coverage
             Self::new(
                 heartbeat,
@@ -539,5 +538,64 @@ impl SeniorityUpdate<'_> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn heartbeat(timestamp: DateTime<Utc>, coverage_object: Uuid) -> Heartbeat {
+        Heartbeat {
+            received_timestamp: timestamp,
+            cell_type: None,
+            coverage_object: Some(coverage_object),
+            heartbeat: CellHeartbeat {
+                pubkey: PublicKeyBinary::from(Vec::new()),
+                hotspot_type: "".to_string(),
+                cell_id: 0,
+                timestamp,
+                lon: 0.0,
+                lat: 0.0,
+                operation_mode: false,
+                cbsd_category: "".to_string(),
+                cbsd_id: "".to_string(),
+                coverage_object: Vec::new(),
+            },
+            validity: Default::default(),
+        }
+    }
+
+    #[test]
+    fn ensure_seniority_updates_after_72_hours() {
+        use proto::SeniorityUpdateReason::*;
+
+        let modeled_coverage_start = "2023-08-20 00:00:00.000000000 UTC".parse().unwrap();
+        let coverage_claim_time: DateTime<Utc> =
+            "2023-08-22 00:00:00.000000000 UTC".parse().unwrap();
+        let last_heartbeat: DateTime<Utc> = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
+        let coverage_object = Uuid::new_v4();
+        let last_seniority = Seniority {
+            uuid: coverage_object,
+            seniority_ts: coverage_claim_time,
+            last_heartbeat,
+            inserted_at: last_heartbeat,
+            update_reason: proto::SeniorityUpdateReason::NewCoverageClaimTime as i32,
+        };
+        let received_timestamp = "2023-08-26 00:00:00.000000000 UTC".parse().unwrap();
+        let new_heartbeat = heartbeat(received_timestamp, coverage_object);
+        let seniority_action = SeniorityUpdate::determine_update_action(
+            &new_heartbeat,
+            coverage_claim_time,
+            modeled_coverage_start,
+            Some(last_seniority),
+        );
+        assert_eq!(
+            seniority_action.action,
+            SeniorityUpdateAction::Insert {
+                new_seniority: received_timestamp,
+                update_reason: HeartbeatNotSeen,
+            }
+        );
     }
 }
