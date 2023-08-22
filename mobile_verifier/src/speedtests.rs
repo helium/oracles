@@ -88,16 +88,16 @@ impl SpeedtestDaemon {
         let mut transaction = self.pool.begin().await?;
         let mut speedtests = file.into_stream(&mut transaction).await?;
         while let Some(speedtest_report) = speedtests.next().await {
-            let pubkey = speedtest_report.report.pubkey.clone();
+            let pubkey = &speedtest_report.report.pubkey;
             if self
                 .gateway_client
-                .resolve_gateway_info(&pubkey)
+                .resolve_gateway_info(pubkey)
                 .await?
                 .is_some()
             {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
                 let latest_speedtests =
-                    get_latest_speedtests_for_pubkey(&pubkey, &mut transaction).await?;
+                    get_latest_speedtests_for_pubkey(pubkey, &mut transaction).await?;
                 let average = SpeedtestAverage::from(&latest_speedtests);
                 average.write(&self.file_sink, latest_speedtests).await?;
             }
@@ -119,11 +119,11 @@ pub async fn save_speedtest(
         on conflict (pubkey, timestamp) do nothing
         "#,
     )
-    .bind(speedtest.pubkey.clone())
+    .bind(&speedtest.pubkey)
     .bind(speedtest.upload_speed as i64)
     .bind(speedtest.download_speed as i64)
     .bind(speedtest.latency as i64)
-    .bind(speedtest.serial.clone())
+    .bind(&speedtest.serial)
     .bind(speedtest.timestamp)
     .execute(exec)
     .await?;
