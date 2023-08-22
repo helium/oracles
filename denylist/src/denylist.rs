@@ -124,10 +124,11 @@ pub fn filter_from_bin(bin: &Vec<u8>, sign_keys: &[PublicKey]) -> Result<Xor32> 
     let signature = buf.copy_to_bytes(signature_len).to_vec();
     sign_keys
         .iter()
-        .any(|key| {
-            key.verify(buf, &signature)
+        .any(|pubkey| {
+            pubkey
+                .verify(buf, &signature)
                 .map(|res| {
-                    tracing::info!(pubkey = %key, "valid denylist signer");
+                    tracing::info!(%pubkey, "valid denylist signer");
                     res
                 })
                 .is_ok()
