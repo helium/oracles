@@ -134,7 +134,7 @@ pub fn filter_from_bin(bin: &Vec<u8>, sign_keys: &[PublicKey]) -> Result<Xor32> 
                 .is_ok()
         })
         .then(|| {
-            let _serial = buf.get_u32_le();
+            buf.advance(4);
             bincode::deserialize::<Xor32>(buf)
         })
         .transpose()?
