@@ -125,12 +125,12 @@ pub fn filter_from_bin(bin: &Vec<u8>, sign_keys: &[PublicKey]) -> Result<Xor32> 
     sign_keys
         .iter()
         .any(|key| {
-            if key.verify(buf, &signature).is_ok() {
-                tracing::info!(pubkey = %key, "valid denylist signer");
-                true
-            } else {
-                false
-            }
+            key.verify(buf, &signature)
+                .map(|res| {
+                    tracing::info!(pubkey = %key, "valid denylist signer");
+                    res
+                })
+                .is_ok()
         })
         .then(|| {
             let _serial = buf.get_u32_le();
