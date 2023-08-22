@@ -290,7 +290,7 @@ pub trait CoveredHexStream {
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Clone, sqlx::FromRow)]
 pub struct Seniority {
     pub uuid: Uuid,
     pub seniority_ts: DateTime<Utc>,
