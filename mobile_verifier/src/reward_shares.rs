@@ -288,7 +288,7 @@ impl CoveragePoints {
             cbsd_id,
             points,
             hotspot,
-        } in covered_hexes.into_iter()
+        } in covered_hexes.into_coverage_rewards()
         {
             // Guaranteed that points contains the given hotspot.
             coverage_points
@@ -309,6 +309,14 @@ impl CoveragePoints {
         } else {
             false
         }
+    }
+
+    /// Only used for testing
+    pub fn hotspot_points(&self, hotspot: &PublicKeyBinary) -> Decimal {
+        self.coverage_points
+            .get(hotspot)
+            .map(HotspotPoints::total_points)
+            .unwrap_or(Decimal::ZERO)
     }
 
     pub fn total_shares(&self) -> Decimal {

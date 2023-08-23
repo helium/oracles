@@ -3,6 +3,7 @@
 use crate::{
     cell_type::CellType,
     coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
+    HasOwner,
 };
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
@@ -17,7 +18,7 @@ use futures::{
 use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::GatewayClient;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
@@ -160,9 +161,8 @@ impl HeartbeatDaemon {
                 self.modeled_coverage_start,
                 latest_seniority,
             );
-            seniority_update
-                .execute(&self.seniority_sink, &mut transaction)
-                .await?;
+            seniority_update.write(&self.seniority_sink).await?;
+            seniority_update.execute(&mut transaction).await?;
 
             let key = (
                 heartbeat.heartbeat.cbsd_id.clone(),
@@ -219,7 +219,7 @@ impl HeartbeatReward {
               heartbeats.cbsd_id,
               cell_type,
               coverage_objs.coverage_object,
-              coverage_objs.latest_timestamp,
+              coverage_objs.latest_timestamp
             FROM heartbeats
               JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id
             WHERE truncated_timestamp >= $1
@@ -229,7 +229,7 @@ impl HeartbeatReward {
               hotspot_key,
               cell_type,
               coverage_objs.coverage_object,
-              coverage_objs.latest_timestamp,
+              coverage_objs.latest_timestamp
             HAVING count(*) >= $3
             "#,
         )
@@ -260,31 +260,28 @@ impl Heartbeat {
     }
 
     pub fn validate_heartbeats<'a>(
-        gateway_client: &'a GatewayClient,
+        gateway_client: &'a impl HasOwner,
         covered_hex_cache: &'a CoveredHexCache,
         heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
         max_distance: f64,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        heartbeats.then(move |heartbeat_report| {
-            let mut gateway_client = gateway_client.clone();
-            async move {
-                let (cell_type, validity) = validate_heartbeat(
-                    &heartbeat_report,
-                    &mut gateway_client,
-                    covered_hex_cache,
-                    epoch,
-                    max_distance,
-                )
-                .await?;
-                Ok(Heartbeat {
-                    coverage_object: heartbeat_report.report.coverage_object(),
-                    heartbeat: heartbeat_report.report,
-                    received_timestamp: heartbeat_report.received_timestamp,
-                    cell_type,
-                    validity,
-                })
-            }
+        heartbeats.then(move |heartbeat_report| async move {
+            let (cell_type, validity) = validate_heartbeat(
+                &heartbeat_report,
+                gateway_client,
+                covered_hex_cache,
+                epoch,
+                max_distance,
+            )
+            .await?;
+            Ok(Heartbeat {
+                coverage_object: heartbeat_report.report.coverage_object(),
+                heartbeat: heartbeat_report.report,
+                received_timestamp: heartbeat_report.received_timestamp,
+                cell_type,
+                validity,
+            })
         })
     }
 
@@ -327,7 +324,7 @@ impl Heartbeat {
                 INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
-                latest_timestamp = EXCLUDED.latest_timestamp
+                latest_timestamp = EXCLUDED.latest_timestamp,
                 coverage_object = EXCLUDED.coverage_object
                 RETURNING (xmax = 0) as inserted
                 "#
@@ -347,7 +344,7 @@ impl Heartbeat {
 /// Validate a heartbeat in the given epoch.
 async fn validate_heartbeat(
     heartbeat: &CellHeartbeatIngestReport,
-    gateway_client: &mut GatewayClient,
+    gateway_client: &impl HasOwner,
     coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
     max_distance: f64,
@@ -365,11 +362,7 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::HeartbeatOutsideRange));
     }
 
-    if gateway_client
-        .resolve_gateway_info(&heartbeat.report.pubkey)
-        .await?
-        .is_none()
-    {
+    if gateway_client.has_owner(&heartbeat.report.pubkey).await? {
         return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
     }
 
@@ -396,7 +389,7 @@ async fn validate_heartbeat(
     Ok((cell_type, proto::HeartbeatValidity::Valid))
 }
 
-struct SeniorityUpdate<'a> {
+pub struct SeniorityUpdate<'a> {
     heartbeat: &'a Heartbeat,
     action: SeniorityUpdateAction,
 }
@@ -482,11 +475,27 @@ impl<'a> SeniorityUpdate<'a> {
 }
 
 impl SeniorityUpdate<'_> {
-    pub async fn execute(
-        self,
-        seniorities: &FileSinkClient,
-        exec: &mut Transaction<'_, Postgres>,
-    ) -> anyhow::Result<()> {
+    pub async fn write(&self, seniorities: &FileSinkClient) -> anyhow::Result<()> {
+        if let SeniorityUpdateAction::Insert {
+            new_seniority,
+            update_reason,
+        } = self.action
+        {
+            seniorities
+                .write(
+                    proto::SeniorityUpdate {
+                        cbsd_id: self.heartbeat.heartbeat.cbsd_id.to_string(),
+                        new_seniority_timestamp: new_seniority.timestamp() as u64,
+                        reason: update_reason as i32,
+                    },
+                    [],
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn execute(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         match self.action {
             SeniorityUpdateAction::NoAction => (),
             SeniorityUpdateAction::Insert {
@@ -509,16 +518,6 @@ impl SeniorityUpdate<'_> {
                 .bind(update_reason as i32)
                 .execute(&mut *exec)
                 .await?;
-                seniorities
-                    .write(
-                        proto::SeniorityUpdate {
-                            cbsd_id: self.heartbeat.heartbeat.cbsd_id.to_string(),
-                            new_seniority_timestamp: new_seniority.timestamp() as u64,
-                            reason: update_reason as i32,
-                        },
-                        [],
-                    )
-                    .await?;
             }
             SeniorityUpdateAction::Update { curr_seniority } => {
                 sqlx::query(

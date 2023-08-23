@@ -294,7 +294,7 @@ pub struct SpeedtestAverages {
 
 impl SpeedtestAverages {
     #[allow(dead_code)]
-    pub fn into_iter(self) -> impl IntoIterator<Item = SpeedtestRollingAverage> {
+    pub fn into_speedtest_avgs(self) -> impl IntoIterator<Item = SpeedtestRollingAverage> {
         self.speedtests
             .into_iter()
             .map(|(id, window)| SpeedtestRollingAverage {
@@ -631,7 +631,7 @@ mod test {
         let avgs = SpeedtestAverages {
             speedtests: HashMap::from([(owner, speedtests)]),
         }
-        .into_iter();
+        .into_speedtest_avgs();
         for avg in avgs {
             if let Some(first) = avg.speedtests.first() {
                 assert_eq!(avg.latest_timestamp, first.timestamp);

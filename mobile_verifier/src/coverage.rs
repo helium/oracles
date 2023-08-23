@@ -30,6 +30,8 @@ use sqlx::{FromRow, Pool, Postgres, Transaction, Type};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
+use crate::IsAuthorized;
+
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Type)]
 #[sqlx(type_name = "signal_level")]
 #[sqlx(rename_all = "lowercase")]
@@ -108,7 +110,9 @@ impl CoverageDaemon {
 
         while let Some(coverage_object) = validated_coverage_objects.next().await.transpose()? {
             coverage_object.write(&self.file_sink).await?;
-            coverage_object.save(&mut transaction).await?;
+            if coverage_object.is_valid() {
+                coverage_object.save(&mut transaction).await?;
+            }
         }
 
         self.file_sink.commit().await?;
@@ -130,27 +134,27 @@ pub struct CoverageObject {
 }
 
 impl CoverageObject {
+    pub fn is_valid(&self) -> bool {
+        matches!(self.validity, CoverageObjectValidity::Valid)
+    }
+
     pub fn validate_coverage_objects<'a>(
-        auth_client: &'a AuthorizationClient,
+        auth_client: &'a impl IsAuthorized,
         coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        coverage_objects.then(move |coverage_object_report| {
-            let mut auth_client = auth_client.clone();
-            async move {
-                let validity =
-                    validate_coverage_object(&coverage_object_report, &mut auth_client).await?;
+        coverage_objects.then(move |coverage_object_report| async move {
+            let validity = validate_coverage_object(&coverage_object_report, auth_client).await?;
 
-                Ok(CoverageObject {
-                    cbsd_id: coverage_object_report.report.cbsd_id,
-                    uuid: coverage_object_report.report.uuid,
-                    indoor: coverage_object_report.report.indoor,
-                    coverage_claim_time: coverage_object_report.report.coverage_claim_time,
-                    coverage: coverage_object_report.report.coverage,
-                    pub_key: coverage_object_report.report.pub_key,
-                    signature: coverage_object_report.report.signature,
-                    validity,
-                })
-            }
+            Ok(CoverageObject {
+                cbsd_id: coverage_object_report.report.cbsd_id,
+                uuid: coverage_object_report.report.uuid,
+                indoor: coverage_object_report.report.indoor,
+                coverage_claim_time: coverage_object_report.report.coverage_claim_time,
+                coverage: coverage_object_report.report.coverage,
+                pub_key: coverage_object_report.report.pub_key,
+                signature: coverage_object_report.report.signature,
+                validity,
+            })
         })
     }
 
@@ -176,11 +180,6 @@ impl CoverageObject {
     }
 
     pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
-        // If the coverage object is not valid, do not save it
-        if self.validity != CoverageObjectValidity::Valid {
-            return Ok(false);
-        }
-
         for hex in self.coverage {
             let location: u64 = hex.location.into();
             sqlx::query(
@@ -208,10 +207,10 @@ impl CoverageObject {
 
 async fn validate_coverage_object(
     coverage_object: &CoverageObjectIngestReport,
-    auth_client: &mut AuthorizationClient,
+    auth_client: &impl IsAuthorized,
 ) -> anyhow::Result<CoverageObjectValidity> {
     if !auth_client
-        .verify_authorized_key(&coverage_object.report.pub_key, NetworkKeyRole::MobilePcs)
+        .is_authorized(&coverage_object.report.pub_key, NetworkKeyRole::MobilePcs)
         .await?
     {
         return Ok(CoverageObjectValidity::InvalidPubKey);
@@ -418,7 +417,7 @@ impl CoveredHexes {
     }
 
     /// Returns the radios that should be rewarded for giving coverage.
-    pub fn into_iter(self) -> impl Iterator<Item = CoverageReward> {
+    pub fn into_coverage_rewards(self) -> impl Iterator<Item = CoverageReward> {
         self.hexes
             .into_values()
             .flat_map(|radios| {
@@ -446,6 +445,12 @@ type CoverageClaimTimeKey = (String, Option<Uuid>);
 
 pub struct CoverageClaimTimeCache {
     cache: Arc<Cache<CoverageClaimTimeKey, DateTime<Utc>>>,
+}
+
+impl Default for CoverageClaimTimeCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CoverageClaimTimeCache {
@@ -598,7 +603,7 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes.into_iter().collect();
+        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
         assert_eq!(
             rewards,
             vec![CoverageReward {
@@ -700,7 +705,7 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes.into_iter().collect();
+        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
         assert_eq!(
             rewards,
             vec![
