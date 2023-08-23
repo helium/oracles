@@ -7,13 +7,15 @@ use file_store::{
     traits::MsgVerify,
     FileType,
 };
+use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_lora::{
     self, LoraBeaconIngestReportV1, LoraBeaconReportReqV1, LoraBeaconReportRespV1,
     LoraWitnessIngestReportV1, LoraWitnessReportReqV1, LoraWitnessReportRespV1,
 };
-use std::{convert::TryFrom, path::Path};
+use std::{convert::TryFrom, net::SocketAddr, path::Path};
+use task_manager::{ManagedTask, TaskManager};
 use tonic::{transport, Request, Response, Status};
 
 pub type GrpcResult<T> = std::result::Result<Response<T>, Status>;
@@ -23,21 +25,27 @@ pub struct GrpcServer {
     beacon_report_sink: FileSinkClient,
     witness_report_sink: FileSinkClient,
     required_network: Network,
+    address: SocketAddr,
+}
+
+impl ManagedTask for GrpcServer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let address = self.address;
+        Box::pin(async move {
+            transport::Server::builder()
+                .layer(poc_metrics::request_layer!("ingest_server_iot_connection"))
+                .add_service(poc_lora::Server::new(*self))
+                .serve_with_shutdown(address, shutdown)
+                .map_err(Error::from)
+                .await
+        })
+    }
 }
 
 impl GrpcServer {
-    fn new(
-        beacon_report_sink: FileSinkClient,
-        witness_report_sink: FileSinkClient,
-        required_network: Network,
-    ) -> Result<Self> {
-        Ok(Self {
-            beacon_report_sink,
-            witness_report_sink,
-            required_network,
-        })
-    }
-
     fn verify_network(&self, public_key: PublicKey) -> VerifyResult<PublicKey> {
         if self.required_network == public_key.network {
             Ok(public_key)
@@ -108,13 +116,12 @@ impl poc_lora::PocLora for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result<()> {
+pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let grpc_addr = settings.listen_addr()?;
 
     // Initialize uploader
-    let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-    let file_upload =
-        file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+    let (file_upload, file_upload_server) =
+        file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
     let store_base_path = Path::new(&settings.cache);
 
@@ -124,7 +131,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_beacon_report"),
     )
-    .deposits(Some(file_upload_tx.clone()))
+    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(5))
     .create()
     .await?;
@@ -135,33 +142,28 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_witness_report"),
     )
-    .deposits(Some(file_upload_tx.clone()))
+    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(5))
     .create()
     .await?;
 
-    let grpc_server = GrpcServer::new(beacon_report_sink, witness_report_sink, settings.network)?;
+    let grpc_server = GrpcServer {
+        beacon_report_sink,
+        witness_report_sink,
+        required_network: settings.network,
+        address: grpc_addr,
+    };
 
     tracing::info!(
         "grpc listening on {grpc_addr} and server mode {:?}",
         settings.mode
     );
 
-    let server = transport::Server::builder()
-        .layer(poc_metrics::request_layer!("ingest_server_iot_connection"))
-        .add_service(poc_lora::Server::new(grpc_server))
-        .serve_with_shutdown(grpc_addr, shutdown.clone())
-        .map_err(Error::from);
-
-    tokio::try_join!(
-        server,
-        beacon_report_sink_server
-            .run(shutdown.clone())
-            .map_err(Error::from),
-        witness_report_sink_server
-            .run(shutdown.clone())
-            .map_err(Error::from),
-        file_upload.run(shutdown.clone()).map_err(Error::from),
-    )
-    .map(|_| ())
+    TaskManager::builder()
+        .add_task(file_upload_server)
+        .add_task(beacon_report_sink_server)
+        .add_task(witness_report_sink_server)
+        .add_task(grpc_server)
+        .start()
+        .await
 }
