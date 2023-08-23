@@ -298,9 +298,9 @@ impl Server {
             .add_task(entropy_loader)
             .add_task(packet_loader)
             .add_task(loader)
-            .add_task(rewarder)
             .add_task(pk_loader_server)
             .add_task(entropy_loader_server)
+            .add_task(rewarder)
             .start()
             .await
     }
