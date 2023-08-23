@@ -2,6 +2,7 @@ use crate::{
     balances::{BalanceCache, BalanceStore},
     pending_burns::{Burn, PendingBurns},
 };
+use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
 use solana_sdk::signature::ParseSignatureError;
 use std::time::Duration;
@@ -84,6 +85,10 @@ where
                     .complete_burn_attempt(&attempted_burn.payer, amount)
                     .await
                     .map_err(BurnError::SqlError)?;
+                // Reset the payer's balance
+                self.adjust_payer_balance(&attempted_burn.payer, amount)
+                    .await
+                    .map_err(BurnError::SolanaError)?;
             } else {
                 tracing::info!("No matching transactions found");
             }
@@ -94,6 +99,19 @@ where
             .await
             .map_err(BurnError::SqlError)?;
 
+        Ok(())
+    }
+
+    pub async fn adjust_payer_balance(
+        &self,
+        payer: &PublicKeyBinary,
+        burned_amount: u64,
+    ) -> Result<(), S::Error> {
+        let mut balance_lock = self.balances.lock().await;
+        let payer_account = balance_lock.get_mut(payer).unwrap();
+        payer_account.burned -= burned_amount;
+        // Reset the balance of the payer:
+        payer_account.balance = self.solana.payer_balance(payer).await?;
         Ok(())
     }
 
@@ -129,13 +147,7 @@ where
             .await
             .map_err(BurnError::SqlError)?;
 
-        let mut balance_lock = self.balances.lock().await;
-        let payer_account = balance_lock.get_mut(&payer).unwrap();
-        payer_account.burned -= amount;
-        // Reset the balance of the payer:
-        payer_account.balance = self
-            .solana
-            .payer_balance(&payer)
+        self.adjust_payer_balance(&payer, amount)
             .await
             .map_err(BurnError::SolanaError)?;
 

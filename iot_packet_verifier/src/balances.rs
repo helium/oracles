@@ -107,7 +107,7 @@ where
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct PayerAccount {
     pub balance: u64,
     pub burned: u64,

@@ -9,7 +9,7 @@ use helium_proto::{
     DataRate, Region,
 };
 use iot_packet_verifier::{
-    balances::BalanceCache,
+    balances::{BalanceCache, PayerAccount},
     burner::Burner,
     pending_burns::{Burn, BurnAttempt, MockPendingBurns, PendingBurns},
     verifier::{payload_size_to_dc, ConfigServer, Debiter, Org, Verifier, BYTES_PER_DC},
@@ -543,6 +543,12 @@ async fn test_attempt_recovery() {
         solana_network.clone(),
     );
 
+    // Debit from the balance cache to simulate verification
+    balance_cache
+        .debit_if_sufficient(&payer, 7, 10)
+        .await
+        .unwrap();
+
     // Send the burn on the chain but don't complete burns
     pending_burns.add_burned_amount(&payer, 7).await.unwrap();
 
@@ -561,7 +567,7 @@ async fn test_attempt_recovery() {
 
     solana_network.burn_data_credits(&payer, 7).await.unwrap();
 
-    // We should now have fewer credits on chain, but pending burns remain at 7
+    // We should now have fewer credits on chain, but pending burns and cache remain at 7
     assert_eq!(*solana_network.ledger.lock().await.get(&payer).unwrap(), 3);
     assert_eq!(
         *pending_burns
@@ -571,6 +577,13 @@ async fn test_attempt_recovery() {
             .get(&payer)
             .unwrap(),
         7
+    );
+    assert_eq!(
+        *balance_cache.balances().lock().await.get(&payer).unwrap(),
+        PayerAccount {
+            balance: 10,
+            burned: 7
+        }
     );
 
     // Now, when we call Burner::recover_attempted_burns, we should see the pending
@@ -586,5 +599,12 @@ async fn test_attempt_recovery() {
             .get(&payer)
             .unwrap(),
         0
+    );
+    assert_eq!(
+        *balance_cache.balances().lock().await.get(&payer).unwrap(),
+        PayerAccount {
+            balance: 3,
+            burned: 0
+        }
     );
 }
