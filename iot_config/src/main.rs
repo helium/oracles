@@ -1,5 +1,6 @@
 use anyhow::{Error, Result};
 use clap::Parser;
+use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer};
 use iot_config::{
@@ -7,8 +8,8 @@ use iot_config::{
     org_service::OrgService, region_map::RegionMapReader, route_service::RouteService,
     settings::Settings, telemetry,
 };
-use std::{path::PathBuf, time::Duration};
-use tokio::signal;
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use task_manager::{ManagedTask, TaskManager};
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -60,16 +61,6 @@ impl Daemon {
         poc_metrics::start_metrics(&settings.metrics)?;
         telemetry::initialize();
 
-        // Configure shutdown trigger
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Create database pool
         let pool = settings.database.connect("iot-config-store").await?;
         sqlx::migrate!().run(&pool).await?;
@@ -89,21 +80,14 @@ impl Daemon {
             region_map.clone(),
             auth_cache.clone(),
             delegate_key_cache,
-            shutdown_listener.clone(),
         )?;
-        let route_svc = RouteService::new(
-            settings,
-            auth_cache.clone(),
-            pool.clone(),
-            shutdown_listener.clone(),
-        )?;
+        let route_svc = RouteService::new(settings, auth_cache.clone(), pool.clone())?;
         let org_svc = OrgService::new(
             settings,
             auth_cache.clone(),
             pool.clone(),
             route_svc.clone_update_channel(),
             delegate_key_updater,
-            shutdown_listener.clone(),
         )?;
         let admin_svc = AdminService::new(
             settings,
@@ -120,19 +104,44 @@ impl Daemon {
         tracing::debug!("listening on {listen_addr}");
         tracing::debug!("signing as {pubkey}");
 
-        transport::Server::builder()
-            .http2_keepalive_interval(Some(Duration::from_secs(250)))
-            .http2_keepalive_timeout(Some(Duration::from_secs(60)))
-            .layer(tower_http::trace::TraceLayer::new_for_grpc())
-            .add_service(GatewayServer::new(gateway_svc))
-            .add_service(OrgServer::new(org_svc))
-            .add_service(RouteServer::new(route_svc))
-            .add_service(AdminServer::new(admin_svc))
-            .serve_with_shutdown(listen_addr, shutdown_listener)
-            .map_err(Error::from)
-            .await?;
+        let grpc_server = GrpcServer {
+            listen_addr,
+            gateway_svc,
+            route_svc,
+            org_svc,
+            admin_svc,
+        };
 
-        Ok(())
+        TaskManager::builder().add_task(grpc_server).start().await
+    }
+}
+
+pub struct GrpcServer {
+    listen_addr: SocketAddr,
+    gateway_svc: GatewayService,
+    route_svc: RouteService,
+    org_svc: OrgService,
+    admin_svc: AdminService,
+}
+
+impl ManagedTask for GrpcServer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(async move {
+            transport::Server::builder()
+                .http2_keepalive_interval(Some(Duration::from_secs(250)))
+                .http2_keepalive_timeout(Some(Duration::from_secs(60)))
+                .layer(tower_http::trace::TraceLayer::new_for_grpc())
+                .add_service(GatewayServer::new(self.gateway_svc))
+                .add_service(OrgServer::new(self.org_svc))
+                .add_service(RouteServer::new(self.route_svc))
+                .add_service(AdminServer::new(self.admin_svc))
+                .serve_with_shutdown(self.listen_addr, shutdown)
+                .map_err(Error::from)
+                .await
+        })
     }
 }
 

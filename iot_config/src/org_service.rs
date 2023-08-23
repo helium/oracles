@@ -26,7 +26,6 @@ pub struct OrgService {
     route_update_tx: broadcast::Sender<RouteStreamResV1>,
     signing_key: Keypair,
     delegate_updater: watch::Sender<org::DelegateCache>,
-    shutdown: triggered::Listener,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,7 +41,6 @@ impl OrgService {
         pool: Pool<Postgres>,
         route_update_tx: broadcast::Sender<RouteStreamResV1>,
         delegate_updater: watch::Sender<org::DelegateCache>,
-        shutdown: triggered::Listener,
     ) -> Result<Self> {
         Ok(Self {
             auth_cache,
@@ -50,7 +48,6 @@ impl OrgService {
             route_update_tx,
             signing_key: settings.signing_keypair()?,
             delegate_updater,
-            shutdown,
         })
     }
 
@@ -467,7 +464,6 @@ impl iot_config::Org for OrgService {
                 })?;
 
             tokio::select! {
-                _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
                 result = self.stream_org_routes_enable_disable(request.oui) => result?
             }
         }
@@ -506,7 +502,6 @@ impl iot_config::Org for OrgService {
                 })?;
 
             tokio::select! {
-                _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
                 result = self.stream_org_routes_enable_disable(request.oui) => result?
             }
         }

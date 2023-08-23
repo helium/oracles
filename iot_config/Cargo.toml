@@ -35,8 +35,11 @@ sqlx = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
+tokio-util = { workspace = true }
 tonic = {workspace = true}
 tower-http = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
+task-manager = { path = "../task_manager" }
+

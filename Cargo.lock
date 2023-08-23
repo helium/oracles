@@ -324,7 +324,7 @@ checksum = "7556be6f2b0d82376c1ece1fda4dffd728816ac53bee2c285f3f74269ddc4a97"
 dependencies = [
  "anyhow",
  "clap 4.1.11",
- "helium-crypto",
+ "helium-crypto 0.6.8",
  "md5",
 ]
 
@@ -2100,7 +2100,7 @@ dependencies = [
  "bytes",
  "chrono",
  "config",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "reqwest",
  "serde",
  "serde_json",
@@ -2523,7 +2523,7 @@ dependencies = [
  "derive_builder",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "hex-literal",
  "http",
@@ -2940,6 +2940,25 @@ dependencies = [
 
 [[package]]
 name = "helium-crypto"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "289576899272c1b9f6cb1a2d393c5f3c142b62b4343454bd1ada5d0eefd47ce7"
+dependencies = [
+ "base64 0.21.0",
+ "bs58 0.4.0",
+ "ed25519-compact",
+ "k256",
+ "lazy_static",
+ "p256",
+ "rand_core 0.6.4",
+ "serde",
+ "sha2 0.10.6",
+ "signature",
+ "thiserror",
+]
+
+[[package]]
+name = "helium-crypto"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5847434afa99d189f926f2337172a2072785edc1762adb36313e74038c86008"
@@ -3293,7 +3312,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "http",
  "metrics",
@@ -3355,7 +3374,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "hextree",
  "http",
@@ -3369,9 +3388,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "task-manager",
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tonic",
  "tower-http",
  "tracing",
@@ -3392,7 +3413,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "http",
  "http-serde",
@@ -3431,7 +3452,7 @@ dependencies = [
  "futures",
  "futures-util",
  "h3o",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "http-serde",
  "humantime",
@@ -3994,7 +4015,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "hextree",
  "http",
@@ -4028,7 +4049,7 @@ dependencies = [
  "dialoguer",
  "futures",
  "h3o",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "mobile-config",
  "prost",
@@ -4055,7 +4076,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "http",
  "http-serde",
@@ -4089,7 +4110,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "http-serde",
  "humantime",
@@ -4700,7 +4721,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "http",
  "hyper",
@@ -5312,7 +5333,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-proto",
  "http-serde",
  "lazy_static",
@@ -5995,7 +6016,7 @@ dependencies = [
  "clap 4.1.11",
  "data-credits",
  "futures",
- "helium-crypto",
+ "helium-crypto 0.8.0",
  "helium-sub-daos",
  "metrics",
  "serde",
