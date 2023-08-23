@@ -32,7 +32,7 @@ use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
-const DB_POLL_TIME: time::Duration = time::Duration::from_secs(30);
+const DB_POLL_TIME: time::Duration = Duration::from_secs(30);
 const BEACON_WORKERS: usize = 100;
 
 const WITNESS_REDUNDANCY: u32 = 4;
@@ -54,7 +54,7 @@ pub struct Runner {
     invalid_beacon_sink: FileSinkClient,
     invalid_witness_sink: FileSinkClient,
     poc_sink: FileSinkClient,
-    hex_density_map: HexDensityMap, // TODO: fix this
+    hex_density_map: HexDensityMap,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -147,6 +147,7 @@ impl Runner {
                 break;
             }
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = denylist_timer.tick() =>
                     match self.handle_denylist_tick().await {
@@ -261,9 +262,9 @@ impl Runner {
         // verify POC beacon
         let beacon_verify_result = poc
             .verify_beacon(
-                self.hex_density_map.clone(),
-                self.gateway_cache.clone(),
-                self.region_cache.clone(),
+                &self.hex_density_map,
+                &self.gateway_cache,
+                &self.region_cache,
                 &self.pool,
                 self.beacon_interval,
                 self.beacon_interval_tolerance,
@@ -277,8 +278,8 @@ impl Runner {
                     let verified_witnesses_result = poc
                         .verify_witnesses(
                             &beacon_info,
-                            self.hex_density_map.clone(),
-                            self.gateway_cache.clone(),
+                            &self.hex_density_map,
+                            &self.gateway_cache,
                             &self.deny_list,
                         )
                         .await?;
@@ -318,7 +319,7 @@ impl Runner {
                         sort_and_split_witnesses(&mut selected_witnesses, max_witnesses_per_poc)?;
 
                     // concat the unselected valid witnesses and the invalid witnesses
-                    // these will then form the unseleted list on the poc
+                    // these will then form the unselected list on the poc
                     unselected_witnesses =
                         [&unselected_witnesses[..], &invalid_witnesses[..]].concat();
 
@@ -424,7 +425,7 @@ impl Runner {
         }
         // save invalid witnesses to s3, ignore any failed witness writes
         // taking the lossly approach here as if we re attempt the POC later
-        // we will have to clean out any sucessful writes of other witnesses
+        // we will have to clean out any successful writes of other witnesses
         // and also the invalid poc
         // so if a report fails from this point on, it shall be lost for ever more
         for witness_report in witness_reports {
@@ -494,7 +495,7 @@ impl Runner {
             }
         }
         // write out metrics for any witness which failed verification
-        // TODO: work our approach that doesnt require the prior cloning of
+        // TODO: work our approach that doesn't require the prior cloning of
         // the selected and unselected witnesses vecs
         // tried to do this directly from the now discarded poc_proto
         // but could nae get it to get a way past the lack of COPY

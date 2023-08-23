@@ -1,6 +1,6 @@
 use crate::Settings;
 use chrono::Duration;
-use futures::{future::LocalBoxFuture, stream::StreamExt};
+use futures::{future::LocalBoxFuture, stream::StreamExt, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
 use iot_config::{
     client::{Client as IotConfigClient, ClientError as IotConfigClientError},
@@ -34,7 +34,12 @@ impl ManagedTask for GatewayUpdater {
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 
@@ -57,22 +62,19 @@ impl GatewayUpdater {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting gateway_updater");
-
         let mut trigger_timer = time::interval(
             self.refresh_interval
                 .to_std()
                 .expect("valid interval in seconds"),
         );
-
         loop {
             if shutdown.is_triggered() {
-                tracing::info!("stopping gateway_updater");
                 break;
             }
-
             tokio::select! {
-                _ = trigger_timer.tick() => self.handle_refresh_tick().await?,
+                biased;
                 _ = shutdown.clone() => break,
+                _ = trigger_timer.tick() => self.handle_refresh_tick().await?,
             }
         }
         tracing::info!("stopping gateway_updater");

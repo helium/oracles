@@ -91,6 +91,7 @@ impl Loader {
                 break;
             }
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = report_timer.tick() => match self.handle_report_tick().await {
                     Ok(()) => (),
@@ -100,7 +101,7 @@ impl Loader {
                 }
             }
         }
-        tracing::info!("stopping verifier loader");
+        tracing::info!("stopping loader");
         Ok(())
     }
 

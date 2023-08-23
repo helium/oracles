@@ -23,8 +23,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub struct Cli {
     /// Optional configuration file to use. If present the toml file at the
-    /// given path will be loaded. Environemnt variables can override the
-    /// settins in the given file.
+    /// given path will be loaded. Environment variables can override the
+    /// settings in the given file.
     #[clap(short = 'c')]
     config: Option<path::PathBuf>,
 
@@ -71,19 +71,19 @@ impl Server {
 
         telemetry::initialize(&pool).await?;
 
-        let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
-
-        let (gateway_updater_receiver, gateway_updater_server) =
-            GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
-
-        let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
-
-        let region_cache = RegionCache::from_settings(settings, iot_config_client.clone())?;
-
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
+        let store_base_path = path::Path::new(&settings.cache);
 
-        let store_base_path = std::path::Path::new(&settings.cache);
+        let iot_config_client = IotConfigClient::from_settings(&settings.iot_config_client)?;
+
+        // *
+        // setup caches
+        // *
+        let (gateway_updater_receiver, gateway_updater_server) =
+            GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
+        let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
+        let region_cache = RegionCache::from_settings(settings, iot_config_client)?;
 
         // *
         // setup the price tracker requirements
@@ -104,8 +104,7 @@ impl Server {
         // setup the density scaler requirements
         // *
         let density_scaler =
-            DensityScaler::from_settings(settings, pool.clone(), gateway_updater_receiver.clone())
-                .await?;
+            DensityScaler::from_settings(settings, pool.clone(), gateway_updater_receiver).await?;
 
         // *
         // setup the rewarder requirements
@@ -152,7 +151,7 @@ impl Server {
         let (entropy_loader_receiver, entropy_loader_server) =
             file_source::continuous_source::<EntropyReport>()
                 .db(pool.clone())
-                .store(entropy_store.clone())
+                .store(entropy_store)
                 .file_type(FileType::EntropyReport)
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(entropy_interval)
@@ -272,12 +271,12 @@ impl Server {
         let runner = runner::Runner::from_settings(
             settings,
             pool.clone(),
-            gateway_cache.clone(),
-            region_cache.clone(),
+            gateway_cache.clone(), // todo: confirm this is just cloning a reference to an arc
+            region_cache.clone(),  // todo: confirm this is just cloning a reference to an arc
             runner_invalid_beacon_sink,
             runner_invalid_witness_sink,
             runner_poc_sink,
-            density_scaler.hex_density_map.clone(),
+            density_scaler.hex_density_map.clone(), // todo: confirm this is just cloning a reference to an arc
         )
         .await?;
 

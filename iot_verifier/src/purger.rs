@@ -83,6 +83,7 @@ impl Purger {
                 break;
             }
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = db_timer.tick() =>
                     match self.handle_db_tick().await {

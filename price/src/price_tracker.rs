@@ -223,16 +223,12 @@ impl PriceTrackerDaemon {
     }
 
     async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("starting price tracker");
         let mut trigger = tokio::time::interval(std::time::Duration::from_secs(30));
-
         loop {
             let shutdown = shutdown.clone();
-
             tokio::select! {
-                _ = shutdown => {
-                    tracing::info!("PriceTracker: shutting down");
-                    break;
-                }
+                _ = shutdown => break,
                 _ = trigger.tick() => {
                     let timestamp = process_files(&self.file_store, &self.price_sender, self.after).await?;
                     self.after = timestamp.unwrap_or(self.after);
@@ -242,7 +238,7 @@ impl PriceTrackerDaemon {
             }
             }
         }
-
+        tracing::info!("stopping price tracker");
         Ok(())
     }
 }

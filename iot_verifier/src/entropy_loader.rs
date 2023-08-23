@@ -36,6 +36,7 @@ impl EntropyLoader {
                 break;
             }
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 msg = self.file_receiver.recv() => if let Some(stream) =  msg {
                     self.handle_report(stream).await?;

@@ -56,13 +56,14 @@ impl PacketLoader {
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("starting iot packet loader");
+        tracing::info!("starting packet loader");
 
         loop {
             if shutdown.is_triggered() {
                 break;
             }
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 msg = self.file_receiver.recv() => if let Some(stream) =  msg {
                     let metrics = LoaderMetricTracker::new();
@@ -77,7 +78,7 @@ impl PacketLoader {
                 }
             }
         }
-        tracing::info!("stopping iot packet loader");
+        tracing::info!("stopping packet loader");
         Ok(())
     }
 

@@ -58,21 +58,21 @@ impl Server {
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tracing::info!("density_scaler: starting transmit scaler process");
+        tracing::info!("starting tx scaler process");
 
         loop {
             if shutdown.is_triggered() {
-                tracing::info!("density_scaler: stopping transmit scaler");
-                return Ok(());
+                break;
             }
 
             tokio::select! {
-                _ = self.gateway_cache_receiver.changed() => self.refresh_scaling_map().await?,
+                biased;
                 _ = shutdown.clone() => break,
+                _ = self.gateway_cache_receiver.changed() => self.refresh_scaling_map().await?,
             }
         }
 
-        tracing::info!("stopping transmit scaler process");
+        tracing::info!("stopping tx scaler process");
         Ok(())
     }
 

@@ -111,9 +111,9 @@ impl Poc {
     #[allow(clippy::too_many_arguments)]
     pub async fn verify_beacon(
         &mut self,
-        hex_density_map: HexDensityMap,
-        gateway_cache: GatewayCache,
-        region_cache: RegionCache,
+        hex_density_map: &HexDensityMap,
+        gateway_cache: &GatewayCache,
+        region_cache: &RegionCache,
         pool: &PgPool,
         beacon_interval: Duration,
         beacon_interval_tolerance: Duration,
@@ -178,8 +178,8 @@ impl Poc {
     pub async fn verify_witnesses(
         &mut self,
         beacon_info: &GatewayInfo,
-        hex_density_map: HexDensityMap,
-        gateway_cache: GatewayCache,
+        hex_density_map: &HexDensityMap,
+        gateway_cache: &GatewayCache,
         deny_list: &DenyList,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
@@ -277,7 +277,7 @@ impl Poc {
             }
         };
         // to avoid assuming beaconer location is set and to avoid unwrap
-        // we explicity match location here again
+        // we explicitly match location here again
         let Some(ref beaconer_metadata) = beaconer_info.metadata else {
             return Ok(IotVerifiedWitnessReport::invalid(
                 InvalidReason::NotAsserted,
@@ -1319,7 +1319,7 @@ mod tests {
         // in order to assert the presence of each expected verification
         // by confirming the beacon report is rendered as invalid
         // asserting the presence of each will guard against
-        // one of more verifications being accidently removed
+        // one of more verifications being accidentally removed
         // from `do_beacon_verifications`
 
         // create default data structs
@@ -1357,7 +1357,7 @@ mod tests {
             resp1
         );
 
-        // test entropy lifepsan verification is active in the beacon validation list
+        // test entropy lifespan verification is active in the beacon validation list
         let beacon_report1 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(4));
         let resp1 = do_beacon_verifications(
             &deny_list,
@@ -1497,7 +1497,7 @@ mod tests {
         // in order to assert the presence of each expected verification
         // by confirming the witness report is rendered as invalid
         // asserting the presence of each will guard against
-        // one of more verifications being accidently removed
+        // one of more verifications being accidentally removed
         // from `do_witness_verifications`
 
         // create default data structs
@@ -1532,7 +1532,7 @@ mod tests {
             resp1
         );
 
-        // test entropy lifepsan verification is active in the witness validation list
+        // test entropy lifespan verification is active in the witness validation list
         let witness_report2 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(5));
         let resp2 = do_witness_verifications(
             &deny_list,

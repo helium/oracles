@@ -93,6 +93,7 @@ impl Rewarder {
 
             let shutdown = shutdown.clone();
             tokio::select! {
+                biased;
                 _ = shutdown => break,
                 _ = sleep(sleep_duration) => (),
             }
