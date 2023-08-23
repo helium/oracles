@@ -71,17 +71,11 @@ impl Daemon {
         });
 
         // Create database pool
-        let (pool, db_join_handle) = settings
-            .database
-            .connect("iot-config-store", shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect("iot-config-store").await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Create on-chain metadata pool
-        let (metadata_pool, md_pool_handle) = settings
-            .metadata
-            .connect("iot-config-metadata", shutdown_listener.clone())
-            .await?;
+        let metadata_pool = settings.metadata.connect("iot-config-metadata").await?;
 
         let listen_addr = settings.listen_addr()?;
 
@@ -126,7 +120,7 @@ impl Daemon {
         tracing::debug!("listening on {listen_addr}");
         tracing::debug!("signing as {pubkey}");
 
-        let server = transport::Server::builder()
+        transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
             .add_service(GatewayServer::new(gateway_svc))
@@ -134,13 +128,8 @@ impl Daemon {
             .add_service(RouteServer::new(route_svc))
             .add_service(AdminServer::new(admin_svc))
             .serve_with_shutdown(listen_addr, shutdown_listener)
-            .map_err(Error::from);
-
-        tokio::try_join!(
-            db_join_handle.map_err(Error::from),
-            md_pool_handle.map_err(Error::from),
-            server
-        )?;
+            .map_err(Error::from)
+            .await?;
 
         Ok(())
     }

@@ -37,29 +37,26 @@ impl PacketLoader {
     pub async fn run(
         &self,
         mut receiver: Receiver<FileInfoStream<IotValidPacket>>,
-        shutdown: &triggered::Listener,
+        shutdown: triggered::Listener,
         gateway_cache: &GatewayCache,
         file_upload_tx: FileUploadSender,
     ) -> anyhow::Result<()> {
         tracing::info!("starting verifier iot packet loader");
         let store_base_path = Path::new(&self.cache);
-        let (non_rewardable_packet_sink, mut non_rewardable_packet_server) =
+        let (non_rewardable_packet_sink, non_rewardable_packet_server) =
             file_sink::FileSinkBuilder::new(
                 FileType::NonRewardablePacket,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_non_rewardable_packet"),
-                shutdown.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .roll_time(ChronoDuration::minutes(5))
             .create()
             .await?;
-        tokio::spawn(async move { non_rewardable_packet_server.run().await });
+        let shutdown1 = shutdown.clone();
+        tokio::spawn(async move { non_rewardable_packet_server.run(shutdown1).await });
 
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
                 _ = shutdown.clone() => break,
                 msg = receiver.recv() => if let Some(stream) =  msg {

@@ -2,17 +2,38 @@ use crate::{
     balances::{BalanceCache, BalanceStore},
     pending_burns::{Burn, PendingBurns},
 };
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
 use solana_sdk::signature::ParseSignatureError;
 use std::time::Duration;
-use tokio::task;
+use task_manager::ManagedTask;
+use tokio::time::{self, MissedTickBehavior};
 
 pub struct Burner<P, S> {
     pending_burns: P,
     balances: BalanceStore,
     burn_period: Duration,
     solana: S,
+}
+
+impl<P, S> ManagedTask for Burner<P, S>
+where
+    P: PendingBurns + Send + Sync + 'static,
+    S: SolanaNetwork,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -43,23 +64,28 @@ where
 
     pub async fn run(
         mut self,
-        shutdown: &triggered::Listener,
+        shutdown: triggered::Listener,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
+        tracing::info!("Starting burner");
+
         self.recover_attempted_burns().await?;
 
-        let burn_service = task::spawn(async move {
-            loop {
-                if let Err(e) = self.burn().await {
-                    tracing::error!("Failed to burn: {e:?}");
-                }
-                tokio::time::sleep(self.burn_period).await;
-            }
-        });
+        let mut burn_timer = time::interval(self.burn_period);
+        burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        tokio::select! {
-            _ = shutdown.clone() => Ok(()),
-            service_result = burn_service => service_result?,
+        loop {
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => break,
+                _ = burn_timer.tick() =>
+                    if let Err(err) = self.burn().await {
+                        tracing::error!("Failed to burn: {err:?}");
+                    }
+            }
         }
+
+        tracing::info!("Stopping burner");
+        Ok(())
     }
 
     pub async fn recover_attempted_burns(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {

@@ -33,10 +33,7 @@ impl Cmd {
             }
         });
 
-        let (pool, db_join_handle) = settings
-            .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
         telemetry::initialize(&pool).await?;
@@ -60,21 +57,19 @@ impl Cmd {
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
         // Heartbeats
-        let (heartbeats, heartbeats_join_handle) =
+        let (heartbeats, heartbeats_server) =
             file_source::continuous_source::<CellHeartbeatIngestReport>()
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .file_type(FileType::CellHeartbeatIngestReport)
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
+                .create()?;
+        let heartbeats_join_handle = heartbeats_server.start(shutdown_listener.clone()).await?;
 
-        let (valid_heartbeats, mut valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
+        let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
-            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -90,21 +85,19 @@ impl Cmd {
         );
 
         // Speedtests
-        let (speedtests, speedtests_join_handle) =
+        let (speedtests, speedtests_server) =
             file_source::continuous_source::<CellSpeedtestIngestReport>()
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .file_type(FileType::CellSpeedtestIngestReport)
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
+                .create()?;
+        let speedtests_join_handle = speedtests_server.start(shutdown_listener.clone()).await?;
 
-        let (valid_speedtests, mut valid_speedtests_server) = file_sink::FileSinkBuilder::new(
+        let (valid_speedtests, valid_speedtests_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
-            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -121,22 +114,20 @@ impl Cmd {
 
         // Mobile rewards
         let reward_period_hours = settings.rewards;
-        let (mobile_rewards, mut mobile_rewards_server) = file_sink::FileSinkBuilder::new(
+        let (mobile_rewards, mobile_rewards_server) = file_sink::FileSinkBuilder::new(
             FileType::MobileRewardShare,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
-            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
         .create()
         .await?;
 
-        let (reward_manifests, mut reward_manifests_server) = file_sink::FileSinkBuilder::new(
+        let (reward_manifests, reward_manifests_server) = file_sink::FileSinkBuilder::new(
             FileType::RewardManifest,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
-            shutdown_listener.clone(),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -153,22 +144,22 @@ impl Cmd {
         );
 
         // subscriber location
-        let (subscriber_location_ingest, subscriber_location_ingest_join_handle) =
+        let (subscriber_location_ingest, subscriber_location_ingest_server) =
             file_source::continuous_source::<SubscriberLocationIngestReport>()
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .file_type(FileType::SubscriberLocationIngestReport)
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
+                .create()?;
+        let subscriber_location_ingest_join_handle = subscriber_location_ingest_server
+            .start(shutdown_listener.clone())
+            .await?;
 
-        let (verified_subscriber_location, mut verified_subscriber_location_server) =
+        let (verified_subscriber_location, verified_subscriber_location_server) =
             file_sink::FileSinkBuilder::new(
                 FileType::VerifiedSubscriberLocationIngestReport,
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_location"),
-                shutdown_listener.clone(),
             )
             .deposits(Some(file_upload_tx.clone()))
             .auto_commit(false)
@@ -184,27 +175,37 @@ impl Cmd {
         );
 
         // data transfers
-        let (data_session_ingest, data_session_ingest_join_handle) =
+        let (data_session_ingest, data_session_ingest_server) =
             file_source::continuous_source::<ValidDataTransferSession>()
                 .db(pool.clone())
                 .store(data_transfer_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .file_type(FileType::ValidDataTransferSession)
-                .build()?
-                .start(shutdown_listener.clone())
-                .await?;
+                .create()?;
+        let data_session_ingest_join_handle = data_session_ingest_server
+            .start(shutdown_listener.clone())
+            .await?;
 
         let data_session_ingestor = DataSessionIngestor::new(pool.clone());
 
         tokio::try_join!(
-            db_join_handle.map_err(Error::from),
-            valid_heartbeats_server.run().map_err(Error::from),
-            valid_speedtests_server.run().map_err(Error::from),
-            mobile_rewards_server.run().map_err(Error::from),
-            file_upload.run(&shutdown_listener).map_err(Error::from),
-            reward_manifests_server.run().map_err(Error::from),
+            valid_heartbeats_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            valid_speedtests_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            mobile_rewards_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            file_upload
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            reward_manifests_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
             verified_subscriber_location_server
-                .run()
+                .run(shutdown_listener.clone())
                 .map_err(Error::from),
             subscriber_location_ingestor
                 .run(&shutdown_listener)
