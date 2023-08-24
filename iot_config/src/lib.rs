@@ -52,7 +52,7 @@ pub async fn broadcast_update<T: std::fmt::Debug>(
 fn enqueue_update(queue_size: usize) -> bool {
     // enqueue the message for broadcast if
     // the current queue is <= 80% full
-    (queue_size * 100) / BROADCAST_CHANNEL_QUEUE <= 80
+    (queue_size * 100) / BROADCAST_CHANNEL_QUEUE <= 85
 }
 
 pub fn verify_public_key(bytes: &[u8]) -> Result<PublicKey, Status> {
