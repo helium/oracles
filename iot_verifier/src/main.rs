@@ -9,7 +9,7 @@ use file_store::{
 use iot_config::client::Client as IotConfigClient;
 use iot_verifier::{
     entropy_loader, gateway_cache::GatewayCache, gateway_updater::GatewayUpdater, loader,
-    packet_loader, purger, region_cache::RegionCache, rewarder::Rewarder, runner, telemetry,
+    packet_loader, purger, rewarder::Rewarder, runner, telemetry,
     tx_scaler::Server as DensityScaler, Settings,
 };
 use price::PriceTracker;
@@ -83,7 +83,6 @@ impl Server {
         let (gateway_updater_receiver, gateway_updater_server) =
             GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
         let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
-        let region_cache = RegionCache::from_settings(settings, iot_config_client)?;
 
         // *
         // setup the price tracker requirements
@@ -266,13 +265,13 @@ impl Server {
 
         let runner = runner::Runner::from_settings(
             settings,
+            iot_config_client.clone(),
             pool.clone(),
-            gateway_cache.clone(), // todo: confirm this is just cloning a reference to an arc
-            region_cache.clone(),  // todo: confirm this is just cloning a reference to an arc
+            gateway_cache.clone(),
             runner_invalid_beacon_sink,
             runner_invalid_witness_sink,
             runner_poc_sink,
-            density_scaler.hex_density_map.clone(), // todo: confirm this is just cloning a reference to an arc
+            density_scaler.hex_density_map.clone(),
         )
         .await?;
 

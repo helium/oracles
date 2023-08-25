@@ -197,8 +197,8 @@ impl Poc {
                         deny_list,
                         &witness_report,
                         beacon_info,
-                        gateway_cache.clone(),
-                        hex_density_map.clone(),
+                        gateway_cache,
+                        hex_density_map,
                     )
                     .await
                 {
@@ -237,8 +237,8 @@ impl Poc {
         deny_list: &DenyList,
         witness_report: &IotWitnessIngestReport,
         beaconer_info: &GatewayInfo,
-        gateway_cache: GatewayCache,
-        hex_density_map: HexDensityMap,
+        gateway_cache: &GatewayCache,
+        hex_density_map: &HexDensityMap,
     ) -> Result<IotVerifiedWitnessReport, VerificationError> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();

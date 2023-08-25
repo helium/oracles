@@ -24,6 +24,7 @@ use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
     LoraPocV1, VerificationStatus,
 };
+use iot_config::client::Client as IotConfigClient;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -86,9 +87,9 @@ impl Runner {
     #[allow(clippy::too_many_arguments)]
     pub async fn from_settings(
         settings: &Settings,
+        iot_config_client: IotConfigClient,
         pool: PgPool,
         gateway_cache: GatewayCache,
-        region_cache: RegionCache,
         invalid_beacon_sink: FileSinkClient,
         invalid_witness_sink: FileSinkClient,
         poc_sink: FileSinkClient,
@@ -101,6 +102,7 @@ impl Runner {
         let witness_max_retries = settings.witness_max_retries;
         let deny_list_latest_url = settings.denylist.denylist_url.clone();
         let mut deny_list = DenyList::new(&settings.denylist)?;
+        let region_cache = RegionCache::from_settings(settings, iot_config_client)?;
         // force update to latest in order to update the tag name
         // when first run, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0
@@ -183,7 +185,6 @@ impl Runner {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn handle_db_tick(&self) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
         let db_beacon_reports =
@@ -217,7 +218,6 @@ impl Runner {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn handle_beacon_report(&self, db_beacon: Report) -> anyhow::Result<()> {
         let entropy_start_time = match db_beacon.timestamp {
             Some(v) => v,
