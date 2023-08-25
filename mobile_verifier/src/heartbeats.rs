@@ -26,6 +26,7 @@ pub struct HeartbeatKey {
     cell_type: CellType,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
     pub cbsd_id: String,
@@ -136,11 +137,29 @@ impl HeartbeatReward {
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
         sqlx::query_as::<_, HeartbeatKey>(
             r#"
-            SELECT hotspot_key, cbsd_id, cell_type
+            WITH latest_hotspots AS (
+                 SELECT t1.cbsd_id, t1.hotspot_key, t1.latest_timestamp
+                 FROM heartbeats t1
+                 WHERE t1.latest_timestamp = (
+                       SELECT MAX(t2.latest_timestamp)
+                       FROM heartbeats t2
+                       WHERE t2.cbsd_id = t1.cbsd_id
+                       AND truncated_timestamp >= $1
+                       AND truncated_timestamp < $2
+                )
+            )
+            SELECT
+              latest_hotspots.hotspot_key,
+              heartbeats.cbsd_id,
+              cell_type
             FROM heartbeats
+            JOIN latest_hotspots ON heartbeats.cbsd_id = latest_hotspots.cbsd_id
             WHERE truncated_timestamp >= $1
-            	and truncated_timestamp < $2
-            GROUP BY cbsd_id, hotspot_key, cell_type
+            	AND truncated_timestamp < $2
+            GROUP BY
+              heartbeats.cbsd_id,
+              latest_hotspots.hotspot_key,
+              cell_type
             HAVING count(*) >= $3
             "#,
         )
@@ -230,13 +249,6 @@ impl Heartbeat {
         if self.validity != proto::HeartbeatValidity::Valid {
             return Ok(false);
         }
-
-        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
-            .bind(&self.cbsd_id)
-            .bind(&self.hotspot_key)
-            .execute(&mut *exec)
-            .await?;
-
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(
             sqlx::query_as::<_, HeartbeatSaveResult>(
