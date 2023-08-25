@@ -143,7 +143,7 @@ impl gateway_info::GatewayInfoResolver for Client {
             .filter_map(|resp| async move { resp.ok() })
             .map(move |resp| (resp, pubkey.clone()))
             .filter_map(|(resp, pubkey)| async move { resp.verify(&pubkey).map(|_| resp).ok() })
-            .flat_map(|resp| stream::iter(resp.gateways.into_iter()))
+            .flat_map(|resp| stream::iter(resp.gateways))
             .map(gateway_info::GatewayInfo::from)
             .boxed();
 

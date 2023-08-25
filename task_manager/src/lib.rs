@@ -124,7 +124,7 @@ fn start_futures(
 ) -> Vec<StopableLocalFuture> {
     shutdown_triggers
         .into_iter()
-        .zip(tasks.into_iter())
+        .zip(tasks)
         .map(
             |((shutdown_trigger, shutdown_listener), task)| StopableLocalFuture {
                 shutdown_trigger,
@@ -134,6 +134,7 @@ fn start_futures(
         .collect()
 }
 
+#[allow(clippy::manual_try_fold)]
 async fn stop_all(futures: Vec<StopableLocalFuture>) -> anyhow::Result<()> {
     futures::stream::iter(futures.into_iter().rev())
         .fold(Ok(()), |last_result, local| async move {

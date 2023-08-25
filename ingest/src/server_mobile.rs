@@ -279,13 +279,10 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     let Some(api_token) = settings
         .token
         .as_ref()
-        .and_then(|token| {
-            format!("Bearer {token}")
-                .parse::<MetadataValue<_>>()
-                .ok()
-        }) else {
-            bail!("expected valid api token in settings");
-        };
+        .and_then(|token| format!("Bearer {token}").parse::<MetadataValue<_>>().ok())
+    else {
+        bail!("expected valid api token in settings");
+    };
 
     tracing::info!(
         "grpc listening on {grpc_addr} and server mode {:?}",
