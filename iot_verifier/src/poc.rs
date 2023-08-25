@@ -303,7 +303,6 @@ impl Poc {
         ) {
             Ok(()) => {
                 let tx_scale = hex_density_map
-                    .clone()
                     .get(beaconer_metadata.location)
                     .await
                     .unwrap_or(*DEFAULT_TX_SCALE);
