@@ -22,6 +22,7 @@ members = [
     "solana",
     "task_manager",
 ]
+resolver = "2"
 
 [workspace.package]
 authors = ["Nova Labs <info@nova-labs.com>"]
