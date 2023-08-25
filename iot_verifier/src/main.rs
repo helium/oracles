@@ -12,7 +12,7 @@ use iot_verifier::{
     packet_loader, purger, region_cache::RegionCache, rewarder::Rewarder, runner, telemetry,
     tx_scaler::Server as DensityScaler, Settings,
 };
-use price::{price_tracker::PriceTrackerDaemon, PriceTracker};
+use price::PriceTracker;
 use std::path;
 use task_manager::TaskManager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -88,11 +88,7 @@ impl Server {
         // *
         // setup the price tracker requirements
         // *
-        let (price_tracker, price_sender, task_killer_receiver) =
-            PriceTracker::new_tm(&settings.price_tracker).await?;
-        let price_daemon =
-            PriceTrackerDaemon::new(&settings.price_tracker, price_sender, task_killer_receiver)
-                .await?;
+        let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
         // *
         // setup the loader requirements

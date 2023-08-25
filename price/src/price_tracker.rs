@@ -117,19 +117,26 @@ impl PriceTracker {
         }))
     }
 
-    pub async fn new_tm(
-        settings: &Settings,
-    ) -> anyhow::Result<(Self, watch::Sender<Prices>, mpsc::Receiver<String>)> {
+    pub async fn new_tm(settings: &Settings) -> anyhow::Result<(Self, PriceTrackerDaemon)> {
+        let file_store = FileStore::from_settings(&settings.file_store).await?;
+        let price_duration = settings.price_duration();
         let (price_sender, price_receiver) = watch::channel(Prices::new());
         let (task_kill_sender, task_kill_receiver) = mpsc::channel(1);
+        let initial_timestamp =
+            calculate_initial_prices(&file_store, price_duration, &price_sender).await?;
+
         Ok((
             Self {
                 price_duration: settings.price_duration(),
                 price_receiver,
                 task_killer: task_kill_sender,
             },
-            price_sender,
-            task_kill_receiver,
+            PriceTrackerDaemon {
+                file_store,
+                price_sender,
+                task_killer: task_kill_receiver,
+                after: initial_timestamp,
+            },
         ))
     }
 
@@ -205,23 +212,6 @@ impl ManagedTask for PriceTrackerDaemon {
 }
 
 impl PriceTrackerDaemon {
-    pub async fn new(
-        settings: &Settings,
-        price_sender: watch::Sender<Prices>,
-        task_killer: mpsc::Receiver<String>,
-    ) -> anyhow::Result<Self> {
-        let file_store = FileStore::from_settings(&settings.file_store).await?;
-        let price_duration = settings.price_duration();
-        let initial_timestamp =
-            calculate_initial_prices(&file_store, price_duration, &price_sender).await?;
-        Ok(Self {
-            file_store,
-            price_sender,
-            task_killer,
-            after: initial_timestamp,
-        })
-    }
-
     async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting price tracker");
         let mut trigger = tokio::time::interval(std::time::Duration::from_secs(30));
