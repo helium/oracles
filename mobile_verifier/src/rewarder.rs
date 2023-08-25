@@ -76,6 +76,7 @@ impl Rewarder {
             );
 
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = sleep(sleep_duration) => (),
             }

@@ -87,9 +87,6 @@ impl Loader {
         let mut report_timer = time::interval(self.poll_time);
         report_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,

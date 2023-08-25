@@ -61,10 +61,6 @@ impl Server {
         tracing::info!("starting tx scaler process");
 
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
-
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,

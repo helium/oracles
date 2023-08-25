@@ -167,6 +167,7 @@ impl PriceGenerator {
 
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = trigger.tick() => {
                     let price = Price::new(Utc::now(), default_price, self.token_type);
@@ -193,6 +194,7 @@ impl PriceGenerator {
 
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = trigger.tick() => self.handle(&key, &file_sink).await?,
             }

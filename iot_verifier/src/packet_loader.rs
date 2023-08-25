@@ -59,9 +59,6 @@ impl PacketLoader {
         tracing::info!("starting packet loader");
 
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,

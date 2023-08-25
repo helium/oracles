@@ -32,9 +32,6 @@ impl EntropyLoader {
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting entropy_loader");
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,

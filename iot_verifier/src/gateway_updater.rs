@@ -68,9 +68,6 @@ impl GatewayUpdater {
                 .expect("valid interval in seconds"),
         );
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,
