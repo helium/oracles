@@ -110,6 +110,11 @@ impl HeartbeatDaemon {
 
         while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
             heartbeat.write(&self.file_sink).await?;
+
+            if !heartbeat.is_valid() {
+                continue;
+            }
+
             let key = (heartbeat.cbsd_id.clone(), heartbeat.truncated_timestamp()?);
 
             if cache.get(&key).await.is_none() {
@@ -194,6 +199,10 @@ pub enum SaveHeartbeatError {
 }
 
 impl Heartbeat {
+    pub fn is_valid(&self) -> bool {
+        self.validity == proto::HeartbeatValidity::Valid
+    }
+
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
         self.timestamp.duration_trunc(Duration::hours(1))
     }
@@ -245,10 +254,6 @@ impl Heartbeat {
         self,
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<bool, SaveHeartbeatError> {
-        // If the heartbeat is not valid, do not save it
-        if self.validity != proto::HeartbeatValidity::Valid {
-            return Ok(false);
-        }
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(
             sqlx::query_as::<_, HeartbeatSaveResult>(
