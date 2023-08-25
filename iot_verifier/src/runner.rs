@@ -33,7 +33,7 @@ use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
 
 /// the cadence in seconds at which the DB is polled for ready POCs
-const DB_POLL_TIME: time::Duration = Duration::from_secs(30);
+const DB_POLL_TIME: Duration = Duration::from_secs(30);
 const BEACON_WORKERS: usize = 100;
 
 const WITNESS_REDUNDANCY: u32 = 4;
