@@ -88,8 +88,12 @@ where
     pub async fn burn(&mut self) -> Result<(), BurnError<P::Error, S::Error>> {
         // Create burn transaction and execute it:
 
-        let Some(Burn { payer, amount }) = self.pending_burns.fetch_next().await
-            .map_err(BurnError::SqlError)? else {
+        let Some(Burn { payer, amount }) = self
+            .pending_burns
+            .fetch_next()
+            .await
+            .map_err(BurnError::SqlError)?
+        else {
             return Ok(());
         };
 

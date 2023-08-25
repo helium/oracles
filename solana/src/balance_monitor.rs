@@ -22,7 +22,7 @@ impl BalanceMonitor {
             Some(rpc_client) => {
                 let Ok(keypair) = Keypair::from_bytes(&rpc_client.keypair) else {
                     tracing::error!("sol monitor: keypair failed to deserialize");
-                    return Err(Box::new(SolanaRpcError::InvalidKeypair))
+                    return Err(Box::new(SolanaRpcError::InvalidKeypair));
                 };
                 let app_metric_name = format!("{app_account}-sol-balance");
 

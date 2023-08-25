@@ -98,7 +98,7 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
                     Err(_) => None,
                 }
             })
-            .flat_map(|res| stream::iter(res.gateways.into_iter()))
+            .flat_map(|res| stream::iter(res.gateways))
             .map(gateway_info::GatewayInfo::from)
             .boxed();
 
