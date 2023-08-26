@@ -124,7 +124,7 @@ fn start_futures(
 ) -> Vec<StopableLocalFuture> {
     shutdown_triggers
         .into_iter()
-        .zip(tasks.into_iter())
+        .zip(tasks)
         .map(
             |((shutdown_trigger, shutdown_listener), task)| StopableLocalFuture {
                 shutdown_trigger,

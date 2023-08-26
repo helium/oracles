@@ -289,7 +289,7 @@ impl Poc {
                 0,
                 0,
                 InvalidParticipantSide::Beaconer,
-            ))
+            ));
         };
         // run the witness verifications
         match do_witness_verifications(
