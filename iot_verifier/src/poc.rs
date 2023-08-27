@@ -289,7 +289,7 @@ impl Poc {
                 0,
                 0,
                 InvalidParticipantSide::Beaconer,
-            ))
+            ));
         };
         // run the witness verifications
         match do_witness_verifications(
@@ -320,9 +320,9 @@ impl Poc {
                 invalid_response.details,
                 &witness_report.report,
                 witness_report.received_timestamp,
-                Some(beaconer_metadata.location),
-                beaconer_metadata.gain,
-                beaconer_metadata.elevation,
+                Some(witness_metadata.location),
+                witness_metadata.gain,
+                witness_metadata.elevation,
                 InvalidParticipantSide::Witness,
             )),
         }
