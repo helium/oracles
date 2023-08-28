@@ -1,7 +1,7 @@
 use crate::{
     data_session,
     heartbeats::HeartbeatReward,
-    reward_shares::{MapperShares, PocShares, TransferRewards},
+    reward_shares::{CoveragePoints, MapperShares, TransferRewards},
     speedtests::SpeedtestAverages,
     subscriber_location, telemetry,
 };
@@ -141,7 +141,9 @@ impl Rewarder {
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
         let speedtests = SpeedtestAverages::validated(&self.pool, reward_period.end).await?;
 
-        let poc_rewards = PocShares::aggregate(heartbeats, speedtests).await?;
+        let coverage_points =
+            CoveragePoints::aggregate_points(&self.pool, heartbeats, speedtests, reward_period.end)
+                .await?;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
@@ -154,7 +156,7 @@ impl Rewarder {
         let transfer_rewards = TransferRewards::from_transfer_sessions(
             mobile_bone_price,
             data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
-            &poc_rewards,
+            &coverage_points,
             reward_period,
         )
         .await;
@@ -167,7 +169,7 @@ impl Rewarder {
         telemetry::data_transfer_rewards_scale(scale);
 
         if let Some(mobile_reward_shares) =
-            poc_rewards.into_rewards(transfer_rewards.reward_sum(), reward_period)
+            coverage_points.into_rewards(transfer_rewards.reward_sum(), reward_period)
         {
             for mobile_reward_share in mobile_reward_shares {
                 self.mobile_rewards

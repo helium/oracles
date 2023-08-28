@@ -15,6 +15,7 @@ use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
+use h3o::LatLng;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use mobile_config::GatewayClient;
@@ -346,9 +347,9 @@ impl Heartbeat {
 async fn validate_heartbeat(
     heartbeat: &CellHeartbeatIngestReport,
     gateway_client: &impl HasOwner,
-    _coverage_cache: &CoveredHexCache,
+    coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
-    _max_distance: f64,
+    max_distance: f64,
 ) -> anyhow::Result<(Option<CellType>, proto::HeartbeatValidity)> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
         Some(ty) => Some(ty),
@@ -367,7 +368,6 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
     }
 
-    /*
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
         return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
     };
@@ -387,7 +387,6 @@ async fn validate_heartbeat(
     if coverage.max_distance_km(latlng) > max_distance {
         return Ok((cell_type, proto::HeartbeatValidity::TooFarFromCoverage));
     }
-     */
 
     Ok((cell_type, proto::HeartbeatValidity::Valid))
 }
