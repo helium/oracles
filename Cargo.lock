@@ -2506,6 +2506,7 @@ dependencies = [
  "derive_builder",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
  "helium-proto",
  "hex-literal",
@@ -2532,6 +2533,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "triggered",
+ "uuid",
 ]
 
 [[package]]
@@ -2852,6 +2854,8 @@ dependencies = [
  "geo",
  "geojson",
  "konst",
+ "serde",
+ "serde_repr",
 ]
 
 [[package]]
@@ -4062,6 +4066,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
+ "h3o",
  "helium-crypto",
  "helium-proto",
  "http-serde",
@@ -4089,6 +4094,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triggered",
+ "uuid",
 ]
 
 [[package]]
@@ -5691,6 +5697,17 @@ dependencies = [
  "itoa 1.0.4",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "395627de918015623b32e7669714206363a7fc00382bf477e72c1f7533e8eafc"
+dependencies = [
+ "proc-macro2 1.0.47",
+ "quote 1.0.21",
+ "syn 1.0.104",
 ]
 
 [[package]]
@@ -7605,6 +7622,10 @@ name = "uuid"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "422ee0de9031b5b948b97a8fc04e3aa35230001a722ddd27943e0be31564ce4c"
+dependencies = [
+ "getrandom 0.2.8",
+ "serde",
+]
 
 [[package]]
 name = "vcell"

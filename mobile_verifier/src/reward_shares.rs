@@ -334,6 +334,7 @@ mod test {
     use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
     use prost::Message;
     use std::collections::{HashMap, VecDeque};
+    use uuid::Uuid;
 
     fn valid_shares() -> RadioShares {
         let mut radio_shares: HashMap<String, Decimal> = Default::default();
@@ -583,6 +584,13 @@ mod test {
 
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
+        let c3 = "P27-SCE4255W2107CW5000016".to_string();
+        let c4 = "P27-SCE4255W2107CW5000018".to_string();
+
+        let cov_obj_1 = Uuid::new_v4();
+        let cov_obj_2 = Uuid::new_v4();
+        let cov_obj_3 = Uuid::new_v4();
+        let cov_obj_4 = Uuid::new_v4();
 
         let timestamp = Utc::now();
 
@@ -591,21 +599,29 @@ mod test {
                 cbsd_id: c1.clone(),
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c1),
+                coverage_object: cov_obj_1,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c2.clone(),
                 hotspot_key: g1.clone(),
                 reward_weight: cell_type_weight(&c2),
+                coverage_object: cov_obj_2,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
-                cbsd_id: c1.clone(),
+                cbsd_id: c3.clone(),
                 hotspot_key: g2.clone(),
-                reward_weight: cell_type_weight(&c1),
+                reward_weight: cell_type_weight(&c3),
+                coverage_object: cov_obj_3,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
-                cbsd_id: c1.clone(),
+                cbsd_id: c4.clone(),
                 hotspot_key: g2.clone(),
-                reward_weight: cell_type_weight(&c1),
+                reward_weight: cell_type_weight(&c4),
+                coverage_object: cov_obj_4,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
         ];
 
@@ -709,6 +725,19 @@ mod test {
         let c13 = "P27-SCE4255W2107CW5000022".to_string();
         let c14 = "2AG32PBS3101S1202000464223GY0157".to_string();
 
+        let cov_obj_2 = Uuid::new_v4();
+        let cov_obj_4 = Uuid::new_v4();
+        let cov_obj_5 = Uuid::new_v4();
+        let cov_obj_6 = Uuid::new_v4();
+        let cov_obj_7 = Uuid::new_v4();
+        let cov_obj_8 = Uuid::new_v4();
+        let cov_obj_9 = Uuid::new_v4();
+        let cov_obj_10 = Uuid::new_v4();
+        let cov_obj_11 = Uuid::new_v4();
+        let cov_obj_12 = Uuid::new_v4();
+        let cov_obj_13 = Uuid::new_v4();
+        let cov_obj_14 = Uuid::new_v4();
+
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
 
@@ -718,61 +747,85 @@ mod test {
                 cbsd_id: c2.clone(),
                 hotspot_key: gw2.clone(),
                 reward_weight: cell_type_weight(&c2),
+                coverage_object: cov_obj_2,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c4.clone(),
                 hotspot_key: gw3.clone(),
                 reward_weight: cell_type_weight(&c4),
+                coverage_object: cov_obj_4,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c5.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c5),
+                coverage_object: cov_obj_5,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c6.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c6),
+                coverage_object: cov_obj_6,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c7.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c7),
+                coverage_object: cov_obj_7,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c8.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c8),
+                coverage_object: cov_obj_8,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c9.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c9),
+                coverage_object: cov_obj_9,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c10.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c10),
+                coverage_object: cov_obj_10,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c11.clone(),
                 hotspot_key: gw4.clone(),
                 reward_weight: cell_type_weight(&c11),
+                coverage_object: cov_obj_11,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c12.clone(),
                 hotspot_key: gw5.clone(),
                 reward_weight: cell_type_weight(&c12),
+                coverage_object: cov_obj_12,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c13.clone(),
                 hotspot_key: gw6.clone(),
                 reward_weight: cell_type_weight(&c13),
+                coverage_object: cov_obj_13,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
             HeartbeatReward {
                 cbsd_id: c14.clone(),
                 hotspot_key: gw7.clone(),
                 reward_weight: cell_type_weight(&c14),
+                coverage_object: cov_obj_14,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
             },
         ];
 

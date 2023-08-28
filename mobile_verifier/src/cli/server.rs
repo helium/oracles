@@ -1,15 +1,15 @@
 use crate::{
-    data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
-    Settings,
+    coverage::CoverageDaemon, data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon,
+    rewarder::Rewarder, speedtests::SpeedtestDaemon,
+    subscriber_location::SubscriberLocationIngestor, telemetry, Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
-    file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
-    heartbeat::CellHeartbeatIngestReport, mobile_subscriber::SubscriberLocationIngestReport,
-    mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport, FileStore,
-    FileType,
+    coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
+    file_source, file_upload, heartbeat::CellHeartbeatIngestReport,
+    mobile_subscriber::SubscriberLocationIngestReport, mobile_transfer::ValidDataTransferSession,
+    speedtest::CellSpeedtestIngestReport, FileStore, FileType,
 };
 
 use futures_util::TryFutureExt;
@@ -77,11 +77,26 @@ impl Cmd {
         .create()
         .await?;
 
+        // Seniority updates
+        let (seniority_updates, seniority_updates_server) = file_sink::FileSinkBuilder::new(
+            FileType::SeniorityUpdate,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_seniority_update"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
         let heartbeat_daemon = HeartbeatDaemon::new(
             pool.clone(),
             gateway_client.clone(),
             heartbeats,
             valid_heartbeats,
+            seniority_updates,
+            settings.max_heartbeat_distance_from_coverage_km,
+            settings.modeled_coverage_start(),
         );
 
         // Speedtests
@@ -110,6 +125,36 @@ impl Cmd {
             gateway_client.clone(),
             speedtests,
             valid_speedtests,
+        );
+
+        // Coverage objects
+        let (coverage_objs, coverage_objs_server) =
+            file_source::continuous_source::<CoverageObjectIngestReport>()
+                .db(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::CoverageObjectIngestReport)
+                .create()?;
+        let coverage_objs_join_handle = coverage_objs_server
+            .start(shutdown_listener.clone())
+            .await?;
+
+        let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
+            FileType::CoverageObject,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
+        let coverage_daemon = CoverageDaemon::new(
+            pool.clone(),
+            auth_client.clone(),
+            coverage_objs,
+            valid_coverage_objs,
         );
 
         // Mobile rewards
@@ -195,6 +240,12 @@ impl Cmd {
             valid_speedtests_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
+            valid_coverage_objs_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            seniority_updates_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
             mobile_rewards_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
@@ -216,8 +267,10 @@ impl Cmd {
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
+            coverage_objs_join_handle.map_err(Error::from),
             heartbeat_daemon.run(shutdown_listener.clone()),
             speedtest_daemon.run(shutdown_listener.clone()),
+            coverage_daemon.run(shutdown_listener.clone()),
             rewarder.run(shutdown_listener.clone()),
             subscriber_location_ingest_join_handle.map_err(anyhow::Error::from),
             data_session_ingest_join_handle.map_err(anyhow::Error::from),
