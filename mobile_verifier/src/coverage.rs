@@ -7,10 +7,8 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::CoverageObjectIngestReport,
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
-    traits::TimestampEncode,
+    coverage::CoverageObjectIngestReport, file_info_poller::FileInfoStream,
+    file_sink::FileSinkClient, traits::TimestampEncode,
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
