@@ -3353,6 +3353,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "triggered",
@@ -3985,6 +3986,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "triggered",
@@ -7342,6 +7344,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
