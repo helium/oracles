@@ -123,6 +123,7 @@ impl Daemon {
         transport::Server::builder()
             .http2_keepalive_interval(Some(Duration::from_secs(250)))
             .http2_keepalive_timeout(Some(Duration::from_secs(60)))
+            .layer(tower_http::trace::TraceLayer::new_for_grpc())
             .add_service(GatewayServer::new(gateway_svc))
             .add_service(OrgServer::new(org_svc))
             .add_service(RouteServer::new(route_svc))

@@ -280,7 +280,7 @@ impl iot_config::Route for RouteService {
         let new_route: Route = route::create_route(
             route,
             &self.pool,
-            self.signing_key.clone(),
+            &self.signing_key,
             self.clone_update_channel(),
         )
         .await
@@ -323,7 +323,7 @@ impl iot_config::Route for RouteService {
         let updated_route = route::update_route(
             route,
             &self.pool,
-            self.signing_key.clone(),
+            &self.signing_key,
             self.clone_update_channel(),
         )
         .await
@@ -360,7 +360,7 @@ impl iot_config::Route for RouteService {
         route::delete_route(
             &request.id,
             &self.pool,
-            self.signing_key.clone(),
+            &self.signing_key,
             self.clone_update_channel(),
         )
         .await
@@ -403,7 +403,10 @@ impl iot_config::Route for RouteService {
                              .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
                              .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
                              .and_then(|_| stream_existing_skfs(&pool, &signing_key, tx.clone())) => {
-                    if result.is_err() { return; }
+                    if let Err(error) = result {
+                        tracing::error!(?error, "Error occurred streaming current routing configuration");
+                        return;
+                    }
                 }
             }
 
@@ -417,10 +420,18 @@ impl iot_config::Route for RouteService {
                         telemetry::route_stream_unsubscribe();
                         return
                     }
-                    msg = route_updates.recv() => if let Ok(update) = msg {
-                        if tx.send(Ok(update)).await.is_err() {
-                            telemetry::route_stream_unsubscribe();
-                            return;
+                    msg = route_updates.recv() => {
+                        match msg {
+                            Ok(update) => {
+                                if tx.send(Ok(update)).await.is_err() {
+                                    tracing::info!("Client disconnected; shutting down stream");
+                                    telemetry::route_stream_unsubscribe();
+                                    return;
+                                }
+                            }
+                            Err(error) => {
+                                tracing::error!(?error, "Error occurred processing route stream update");
+                            }
                         }
                     }
                 }
