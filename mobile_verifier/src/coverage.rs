@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
+    coverage::CoverageObjectIngestReport,
     file_info_poller::FileInfoStream,
     file_sink::FileSinkClient,
     traits::TimestampEncode,
@@ -123,13 +123,7 @@ impl CoverageDaemon {
 }
 
 pub struct CoverageObject {
-    pub_key: PublicKeyBinary,
-    signature: Vec<u8>,
-    cbsd_id: String,
-    uuid: Uuid,
-    indoor: bool,
-    coverage_claim_time: DateTime<Utc>,
-    coverage: Vec<RadioHexSignalLevel>,
+    coverage_object: file_store::coverage::CoverageObject,
     validity: CoverageObjectValidity,
 }
 
@@ -143,17 +137,9 @@ impl CoverageObject {
         coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         coverage_objects.then(move |coverage_object_report| async move {
-            let validity = validate_coverage_object(&coverage_object_report, auth_client).await?;
-
             Ok(CoverageObject {
-                cbsd_id: coverage_object_report.report.cbsd_id,
-                uuid: coverage_object_report.report.uuid,
-                indoor: coverage_object_report.report.indoor,
-                coverage_claim_time: coverage_object_report.report.coverage_claim_time,
-                coverage: coverage_object_report.report.coverage,
-                pub_key: coverage_object_report.report.pub_key,
-                signature: coverage_object_report.report.signature,
-                validity,
+                validity: validate_coverage_object(&coverage_object_report, auth_client).await?,
+                coverage_object: coverage_object_report.report,
             })
         })
     }
@@ -163,13 +149,22 @@ impl CoverageObject {
             .write(
                 proto::CoverageObjectV1 {
                     coverage_object: Some(proto::CoverageObjectReqV1 {
-                        pub_key: self.pub_key.clone().into(),
-                        uuid: Vec::from(self.uuid.into_bytes()),
-                        cbsd_id: self.cbsd_id.clone(),
-                        coverage_claim_time: self.coverage_claim_time.encode_timestamp(),
-                        indoor: self.indoor,
-                        coverage: self.coverage.clone().into_iter().map(Into::into).collect(),
-                        signature: self.signature.clone(),
+                        pub_key: self.coverage_object.pub_key.clone().into(),
+                        uuid: Vec::from(self.coverage_object.uuid.into_bytes()),
+                        cbsd_id: self.coverage_object.cbsd_id.clone(),
+                        coverage_claim_time: self
+                            .coverage_object
+                            .coverage_claim_time
+                            .encode_timestamp(),
+                        indoor: self.coverage_object.indoor,
+                        coverage: self
+                            .coverage_object
+                            .coverage
+                            .clone()
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        signature: self.coverage_object.signature.clone(),
                     }),
                     validity: self.validity as i32,
                 },
@@ -180,7 +175,7 @@ impl CoverageObject {
     }
 
     pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
-        for hex in self.coverage {
+        for hex in self.coverage_object.coverage {
             let location: u64 = hex.location.into();
             sqlx::query(
                 r#"
@@ -190,12 +185,12 @@ impl CoverageObject {
                   ($1, $2, $3, $4, $5, $6, $7)
                 "#,
             )
-            .bind(self.uuid)
+            .bind(self.coverage_object.uuid)
             .bind(location as i64)
-            .bind(self.indoor)
-            .bind(&self.cbsd_id)
+            .bind(self.coverage_object.indoor)
+            .bind(&self.coverage_object.cbsd_id)
             .bind(SignalLevel::from(hex.signal_level))
-            .bind(self.coverage_claim_time)
+            .bind(self.coverage_object.coverage_claim_time)
             .bind(Utc::now())
             .execute(&mut *transaction)
             .await?;
