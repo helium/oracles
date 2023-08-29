@@ -280,7 +280,7 @@ impl iot_config::Route for RouteService {
         let new_route: Route = route::create_route(
             route,
             &self.pool,
-            self.signing_key.clone(),
+            &self.signing_key,
             self.clone_update_channel(),
         )
         .await
@@ -323,7 +323,7 @@ impl iot_config::Route for RouteService {
         let updated_route = route::update_route(
             route,
             &self.pool,
-            self.signing_key.clone(),
+            &self.signing_key,
             self.clone_update_channel(),
         )
         .await
@@ -360,7 +360,7 @@ impl iot_config::Route for RouteService {
         route::delete_route(
             &request.id,
             &self.pool,
-            self.signing_key.clone(),
+            &self.signing_key,
             self.clone_update_channel(),
         )
         .await
