@@ -31,7 +31,7 @@ const DEFAULT_PREC: u32 = 15;
 // Percent of total emissions allocated for mapper rewards
 const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
 
-/// shares of the mappers pool allocated per eligble subscriber for discovery mapping
+/// shares of the mappers pool allocated per eligible subscriber for discovery mapping
 const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 
 pub struct TransferRewards {
@@ -155,12 +155,12 @@ impl MapperShares {
         let duration: Duration = reward_period.end - reward_period.start;
         let total_mappers_pool = get_scheduled_tokens_for_mappers(duration);
 
-        // the number of subscribers eligible for discovery location rewards hihofe
+        // the number of subscribers eligible for discovery location rewards
         let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
 
         // calculate the total eligible mapping shares for the epoch
         // this could be simplified as every subscriber is awarded the same share
-        // however the fuction is setup to allow the verification mapper shares to be easily
+        // however the function is setup to allow the verification mapper shares to be easily
         // added without impacting code structure ( the per share value for those will be different )
         let total_mapper_shares = discovery_mappers_count * DISCOVERY_MAPPING_SHARES;
         let res = total_mappers_pool
@@ -219,23 +219,23 @@ pub struct PocShares {
 
 impl PocShares {
     pub async fn aggregate(
-        heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
+        heartbeat_rewards: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtest_averages: &SpeedtestAverages,
-    ) -> Result<Self, sqlx::Error> {
+    ) -> anyhow::Result<Self> {
         let mut poc_shares = Self::default();
-        let mut heartbeats = std::pin::pin!(heartbeats);
-        while let Some(heartbeat) = heartbeats.next().await.transpose()? {
+        let mut heartbeat_rewards = std::pin::pin!(heartbeat_rewards);
+        while let Some(heartbeat_reward) = heartbeat_rewards.next().await.transpose()? {
             let speedmultiplier = speedtest_averages
-                .get_average(&heartbeat.hotspot_key)
+                .get_average(&heartbeat_reward.hotspot_key)
                 .as_ref()
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
             *poc_shares
                 .hotspot_shares
-                .entry(heartbeat.hotspot_key)
+                .entry(heartbeat_reward.hotspot_key.clone())
                 .or_default()
                 .radio_shares
-                .entry(heartbeat.cbsd_id)
-                .or_default() += heartbeat.reward_weight * speedmultiplier;
+                .entry(heartbeat_reward.id()?)
+                .or_default() += heartbeat_reward.reward_weight * speedmultiplier;
         }
         Ok(poc_shares)
     }
@@ -321,8 +321,11 @@ pub fn get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
 mod test {
     use super::*;
     use crate::{
-        cell_type::CellType, data_session, data_session::HotspotDataSession,
-        heartbeats::HeartbeatReward, speedtests::Speedtest,
+        cell_type::CellType,
+        data_session,
+        data_session::HotspotDataSession,
+        heartbeats::{HeartbeatReward, HeartbeatRow},
+        speedtests::Speedtest,
         subscriber_location::SubscriberValidatedLocations,
     };
     use chrono::{Duration, Utc};
@@ -527,12 +530,6 @@ mod test {
         mbps * 125000
     }
 
-    fn cell_type_weight(cbsd_id: &str) -> Decimal {
-        CellType::from_cbsd_id(cbsd_id)
-            .expect("unable to get cell_type")
-            .reward_weight()
-    }
-
     fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
         Speedtest {
             report: CellSpeedtest {
@@ -593,34 +590,65 @@ mod test {
         let g2: PublicKeyBinary = "118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc"
             .parse()
             .expect("unable to construct pubkey");
+        let g3: PublicKeyBinary = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf"
+            .parse()
+            .expect("unable to construct pubkey");
+        let g4: PublicKeyBinary = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo"
+            .parse()
+            .expect("unable to construct pubkey");
 
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
+        let c1ct = CellType::from_cbsd_id(&c1).expect("unable to get cell_type");
+        let c2ct = CellType::from_cbsd_id(&c2).expect("unable to get cell_type");
+
+        let g3ct = CellType::NovaGenericWifiIndoor;
+        let g4ct = CellType::NovaGenericWifiIndoor;
 
         let timestamp = Utc::now();
 
-        let heartbeats = vec![
-            HeartbeatReward {
-                cbsd_id: c1.clone(),
+        let heartbeat_keys = vec![
+            HeartbeatRow {
+                cbsd_id: Some(c1.clone()),
                 hotspot_key: g1.clone(),
-                reward_weight: cell_type_weight(&c1),
+                cell_type: c1ct,
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c2.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c2.clone()),
                 hotspot_key: g1.clone(),
-                reward_weight: cell_type_weight(&c2),
+                cell_type: c2ct,
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c1.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c1.clone()),
                 hotspot_key: g2.clone(),
-                reward_weight: cell_type_weight(&c1),
+                cell_type: c1ct,
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c1.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c1.clone()),
                 hotspot_key: g2.clone(),
-                reward_weight: cell_type_weight(&c1),
+                cell_type: c1ct,
+                location_validation_timestamp: None,
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: g3.clone(),
+                cell_type: g3ct,
+                location_validation_timestamp: Some(timestamp),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: g4.clone(),
+                cell_type: g4ct,
+                location_validation_timestamp: None,
             },
         ];
+        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
+            .into_iter()
+            .map(HeartbeatReward::from)
+            .collect();
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
@@ -631,30 +659,62 @@ mod test {
             acceptable_speedtest(g2.clone(), last_timestamp),
             acceptable_speedtest(g2.clone(), timestamp),
         ];
+        let g3_speedtests = vec![
+            acceptable_speedtest(g3.clone(), last_timestamp),
+            acceptable_speedtest(g3.clone(), timestamp),
+        ];
+        let g4_speedtests = vec![
+            acceptable_speedtest(g4.clone(), last_timestamp),
+            acceptable_speedtest(g4.clone(), timestamp),
+        ];
         let g1_average = SpeedtestAverage::from(&g1_speedtests);
         let g2_average = SpeedtestAverage::from(&g2_speedtests);
+        let g3_average = SpeedtestAverage::from(&g3_speedtests);
+        let g4_average = SpeedtestAverage::from(&g4_speedtests);
         let mut averages = HashMap::new();
         averages.insert(g1.clone(), g1_average);
         averages.insert(g2.clone(), g2_average);
+        averages.insert(g3.clone(), g3_average);
+        averages.insert(g4.clone(), g4_average);
         let speedtest_avgs = SpeedtestAverages { averages };
 
-        let rewards = PocShares::aggregate(stream::iter(heartbeats).map(Ok), &speedtest_avgs)
-            .await
-            .unwrap();
+        let rewards =
+            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
+                .await
+                .unwrap();
+
+        let gw1_shares = rewards
+            .hotspot_shares
+            .get(&g1)
+            .expect("Could not fetch gateway1 shares")
+            .total_shares();
+        let gw2_shares = rewards
+            .hotspot_shares
+            .get(&g2)
+            .expect("Could not fetch gateway1 shares")
+            .total_shares();
+        let gw3_shares = rewards
+            .hotspot_shares
+            .get(&g3)
+            .expect("Could not fetch gateway1 shares")
+            .total_shares();
+        let gw4_shares = rewards
+            .hotspot_shares
+            .get(&g4)
+            .expect("Could not fetch gateway1 shares")
+            .total_shares();
 
         // The owner with two hotspots gets more rewards
-        assert!(
-            rewards
-                .hotspot_shares
-                .get(&g1)
-                .expect("Could not fetch gateway1 shares")
-                .total_shares()
-                > rewards
-                    .hotspot_shares
-                    .get(&g2)
-                    .expect("Could not fetch gateway2 shares")
-                    .total_shares()
-        );
+        assert_eq!(gw1_shares, dec!(3.50));
+        assert_eq!(gw2_shares, dec!(2.00));
+        assert!(gw1_shares > gw2_shares);
+
+        // gw3 has wifi HBs and has location validation timestamp
+        // gets the full 0.4 reward weight
+        assert_eq!(gw3_shares, dec!(0.40));
+        // gw4 has wifi HBs and DOES NOT have a location validation timestamp
+        // gets 0.25 of the full reward weight
+        assert_eq!(gw4_shares, dec!(0.1));
     }
 
     #[tokio::test]
@@ -728,68 +788,85 @@ mod test {
         let timestamp = now - Duration::minutes(20);
 
         // setup heartbeats
-        let heartbeats = vec![
-            HeartbeatReward {
-                cbsd_id: c2.clone(),
+        let heartbeat_keys = vec![
+            HeartbeatRow {
+                cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
-                reward_weight: cell_type_weight(&c2),
+                cell_type: CellType::from_cbsd_id(&c2).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c4.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c4.clone()),
                 hotspot_key: gw3.clone(),
-                reward_weight: cell_type_weight(&c4),
+                cell_type: CellType::from_cbsd_id(&c4).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c5.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c5.clone()),
                 hotspot_key: gw4.clone(),
-                reward_weight: cell_type_weight(&c5),
+                cell_type: CellType::from_cbsd_id(&c5).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c6.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c6.clone()),
                 hotspot_key: gw4.clone(),
-                reward_weight: cell_type_weight(&c6),
+                cell_type: CellType::from_cbsd_id(&c6).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c7.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c7.clone()),
                 hotspot_key: gw4.clone(),
-                reward_weight: cell_type_weight(&c7),
+                cell_type: CellType::from_cbsd_id(&c7).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c8.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c8.clone()),
                 hotspot_key: gw4.clone(),
-                reward_weight: cell_type_weight(&c8),
+                cell_type: CellType::from_cbsd_id(&c8).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c9.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c9.clone()),
                 hotspot_key: gw4.clone(),
-                reward_weight: cell_type_weight(&c9),
+                cell_type: CellType::from_cbsd_id(&c9).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c10.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c10.clone()),
                 hotspot_key: gw4.clone(),
-                reward_weight: cell_type_weight(&c10),
+                cell_type: CellType::from_cbsd_id(&c10).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c11.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c11.clone()),
                 hotspot_key: gw4.clone(),
-                reward_weight: cell_type_weight(&c11),
+                cell_type: CellType::from_cbsd_id(&c11).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c12.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c12.clone()),
                 hotspot_key: gw5.clone(),
-                reward_weight: cell_type_weight(&c12),
+                cell_type: CellType::from_cbsd_id(&c12).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c13.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c13.clone()),
                 hotspot_key: gw6.clone(),
-                reward_weight: cell_type_weight(&c13),
+                cell_type: CellType::from_cbsd_id(&c13).unwrap(),
+                location_validation_timestamp: None,
             },
-            HeartbeatReward {
-                cbsd_id: c14.clone(),
+            HeartbeatRow {
+                cbsd_id: Some(c14.clone()),
                 hotspot_key: gw7.clone(),
-                reward_weight: cell_type_weight(&c14),
+                cell_type: CellType::from_cbsd_id(&c14).unwrap(),
+                location_validation_timestamp: None,
             },
         ];
+
+        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
+            .into_iter()
+            .map(HeartbeatReward::from)
+            .collect();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -843,11 +920,12 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        for mobile_reward in PocShares::aggregate(stream::iter(heartbeats).map(Ok), &speedtest_avgs)
-            .await
-            .unwrap()
-            .into_rewards(Decimal::ZERO, &epoch)
-            .unwrap()
+        for mobile_reward in
+            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
+                .await
+                .unwrap()
+                .into_rewards(Decimal::ZERO, &epoch)
+                .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,

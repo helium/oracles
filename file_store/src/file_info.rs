@@ -110,8 +110,10 @@ pub const SUBSCRIBER_LOCATION_REQ: &str = "subscriber_location_req";
 pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report";
 pub const VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "verified_subscriber_location_report";
 pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
+pub const WIFI_HEARTBEAT: &str = "wifi_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
+pub const WIFI_HEARTBEAT_INGEST_REPORT: &str = "wifi_heartbeat_report";
 pub const CELL_SPEEDTEST_INGEST_REPORT: &str = "speedtest_report";
 pub const ENTROPY: &str = "entropy";
 pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
@@ -123,6 +125,7 @@ pub const IOT_INVALID_BEACON_REPORT: &str = "iot_invalid_beacon";
 pub const IOT_INVALID_WITNESS_REPORT: &str = "iot_invalid_witness";
 pub const SPEEDTEST_AVG: &str = "speedtest_avg";
 pub const VALIDATED_HEARTBEAT: &str = "validated_heartbeat";
+pub const VALIDATED_WIFI_HEARTBEAT: &str = "validated_wifi_heartbeat";
 pub const SIGNED_POC_RECEIPT_TXN: &str = "signed_poc_receipt_txn";
 pub const RADIO_REWARD_SHARE: &str = "radio_reward_share";
 pub const REWARD_MANIFEST: &str = "reward_manifest";
@@ -175,6 +178,9 @@ pub enum FileType {
     VerifiedSubscriberLocationIngestReport,
     MapperMsg,
     CoverageObjectIngestReport,
+    WifiHeartbeat,
+    WifiHeartbeatIngestReport,
+    ValidatedWifiHeartbeat,
 }
 
 impl fmt::Display for FileType {
@@ -186,8 +192,10 @@ impl fmt::Display for FileType {
                 VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
             }
             Self::CellHeartbeat => CELL_HEARTBEAT,
+            Self::WifiHeartbeat => WIFI_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::WifiHeartbeatIngestReport => WIFI_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
@@ -199,6 +207,7 @@ impl fmt::Display for FileType {
             Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
+            Self::ValidatedWifiHeartbeat => VALIDATED_WIFI_HEARTBEAT,
             Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
@@ -230,8 +239,10 @@ impl FileType {
                 VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
             }
             Self::CellHeartbeat => CELL_HEARTBEAT,
+            Self::WifiHeartbeat => WIFI_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::WifiHeartbeatIngestReport => WIFI_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
@@ -243,6 +254,7 @@ impl FileType {
             Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
+            Self::ValidatedWifiHeartbeat => VALIDATED_WIFI_HEARTBEAT,
             Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
@@ -274,8 +286,10 @@ impl FromStr for FileType {
                 Self::VerifiedSubscriberLocationIngestReport
             }
             CELL_HEARTBEAT => Self::CellHeartbeat,
+            WIFI_HEARTBEAT => Self::WifiHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
             CELL_HEARTBEAT_INGEST_REPORT => Self::CellHeartbeatIngestReport,
+            WIFI_HEARTBEAT_INGEST_REPORT => Self::WifiHeartbeatIngestReport,
             CELL_SPEEDTEST_INGEST_REPORT => Self::CellSpeedtestIngestReport,
             ENTROPY => Self::Entropy,
             SUBNETWORK_REWARDS => Self::SubnetworkRewards,
@@ -287,6 +301,7 @@ impl FromStr for FileType {
             IOT_INVALID_WITNESS_REPORT => Self::IotInvalidWitnessReport,
             SPEEDTEST_AVG => Self::SpeedtestAvg,
             VALIDATED_HEARTBEAT => Self::ValidatedHeartbeat,
+            VALIDATED_WIFI_HEARTBEAT => Self::ValidatedWifiHeartbeat,
             SIGNED_POC_RECEIPT_TXN => Self::SignedPocReceiptTxn,
             RADIO_REWARD_SHARE => Self::RadioRewardShare,
             REWARD_MANIFEST => Self::RewardManifest,

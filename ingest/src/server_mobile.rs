@@ -14,7 +14,8 @@ use helium_proto::services::poc_mobile::{
     CoverageObjectIngestReportV1, CoverageObjectReqV1, CoverageObjectRespV1,
     DataTransferSessionIngestReportV1, DataTransferSessionReqV1, DataTransferSessionRespV1,
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
-    SubscriberLocationReqV1, SubscriberLocationRespV1,
+    SubscriberLocationReqV1, SubscriberLocationRespV1, WifiHeartbeatIngestReportV1,
+    WifiHeartbeatReqV1, WifiHeartbeatRespV1,
 };
 use std::path::Path;
 use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
@@ -26,6 +27,7 @@ pub type VerifyResult<T> = std::result::Result<T, Status>;
 
 pub struct GrpcServer {
     heartbeat_report_sink: FileSinkClient,
+    wifi_heartbeat_report_sink: FileSinkClient,
     speedtest_report_sink: FileSinkClient,
     data_transfer_session_sink: FileSinkClient,
     subscriber_location_report_sink: FileSinkClient,
@@ -36,6 +38,7 @@ pub struct GrpcServer {
 impl GrpcServer {
     fn new(
         heartbeat_report_sink: FileSinkClient,
+        wifi_heartbeat_report_sink: FileSinkClient,
         speedtest_report_sink: FileSinkClient,
         data_transfer_session_sink: FileSinkClient,
         subscriber_location_report_sink: FileSinkClient,
@@ -44,6 +47,7 @@ impl GrpcServer {
     ) -> Result<Self> {
         Ok(Self {
             heartbeat_report_sink,
+            wifi_heartbeat_report_sink,
             speedtest_report_sink,
             data_transfer_session_sink,
             subscriber_location_report_sink,
@@ -119,6 +123,28 @@ impl poc_mobile::PocMobile for GrpcServer {
 
         let id = timestamp.to_string();
         Ok(Response::new(CellHeartbeatRespV1 { id }))
+    }
+
+    async fn submit_wifi_heartbeat(
+        &self,
+        request: Request<WifiHeartbeatReqV1>,
+    ) -> GrpcResult<WifiHeartbeatRespV1> {
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let event = request.into_inner();
+
+        let report = self
+            .verify_public_key(event.pub_key.as_ref())
+            .and_then(|public_key| self.verify_network(public_key))
+            .and_then(|public_key| self.verify_signature(public_key, event))
+            .map(|(_, event)| WifiHeartbeatIngestReportV1 {
+                received_timestamp: timestamp,
+                report: Some(event),
+            })?;
+
+        _ = self.wifi_heartbeat_report_sink.write(report, []).await;
+
+        let id = timestamp.to_string();
+        Ok(Response::new(WifiHeartbeatRespV1 { id }))
     }
 
     async fn submit_data_transfer_session(
@@ -220,6 +246,17 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     .create()
     .await?;
 
+    let (wifi_heartbeat_report_sink, wifi_heartbeat_report_sink_server) =
+        file_sink::FileSinkBuilder::new(
+            FileType::WifiHeartbeatIngestReport,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_wifi_heartbeat_report"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
+        .create()
+        .await?;
+
     // speedtests
     let (speedtest_report_sink, speedtest_report_sink_server) = file_sink::FileSinkBuilder::new(
         FileType::CellSpeedtestIngestReport,
@@ -269,6 +306,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
 
     let grpc_server = GrpcServer::new(
         heartbeat_report_sink,
+        wifi_heartbeat_report_sink,
         speedtest_report_sink,
         data_transfer_session_sink,
         subscriber_location_report_sink,
@@ -306,6 +344,9 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
     tokio::try_join!(
         server,
         heartbeat_report_sink_server
+            .run(shutdown.clone())
+            .map_err(Error::from),
+        wifi_heartbeat_report_sink_server
             .run(shutdown.clone())
             .map_err(Error::from),
         speedtest_report_sink_server

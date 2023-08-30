@@ -20,6 +20,7 @@ pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
 pub mod traits;
+pub mod wifi_heartbeat;
 
 pub use crate::file_store::FileStore;
 pub use cli::bucket::FileFilter;
