@@ -306,3 +306,14 @@ async fn validate_heartbeat(
 
     Ok((cell_type, proto::HeartbeatValidity::Valid))
 }
+
+pub async fn clear_heartbeats(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    timestamp: &DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
+        .bind(timestamp)
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
+}

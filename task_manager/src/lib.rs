@@ -134,6 +134,7 @@ fn start_futures(
         .collect()
 }
 
+#[allow(clippy::manual_try_fold)]
 async fn stop_all(futures: Vec<StopableLocalFuture>) -> anyhow::Result<()> {
     #[allow(clippy::manual_try_fold)]
     futures::stream::iter(futures.into_iter().rev())
