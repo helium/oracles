@@ -15,6 +15,7 @@ use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoRewa
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
+use uuid::Uuid;
 
 /// Total tokens emissions pool per 365 days or 366 days for a leap year
 const TOTAL_EMISSIONS_POOL: Decimal = dec!(30_000_000_000_000_000);
@@ -203,13 +204,17 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 #[derive(Debug)]
 struct RadioPoints {
     heartbeat_multiplier: Decimal,
+    coverage_object: Uuid,
+    seniority: DateTime<Utc>,
     points: Decimal,
 }
 
 impl RadioPoints {
-    fn new(heartbeat_multiplier: Decimal) -> Self {
+    fn new(heartbeat_multiplier: Decimal, coverage_object: Uuid, seniority: DateTime<Utc>) -> Self {
         Self {
             heartbeat_multiplier,
+            seniority,
+            coverage_object,
             points: Decimal::ZERO,
         }
     }
@@ -271,8 +276,11 @@ impl CoveragePoints {
                 continue;
             }
 
+            let seniority = hex_streams
+                .fetch_seniority(&heartbeat.cbsd_id, period_end)
+                .await?;
             let covered_hex_stream = hex_streams
-                .covered_hex_stream(&heartbeat.cbsd_id, &heartbeat.coverage_object, period_end)
+                .covered_hex_stream(&heartbeat.cbsd_id, &heartbeat.coverage_object, &seniority)
                 .await?;
             covered_hexes
                 .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
@@ -281,7 +289,14 @@ impl CoveragePoints {
                 .entry(heartbeat.hotspot_key)
                 .or_insert_with(|| HotspotPoints::new(speedtest_multiplier))
                 .radio_points
-                .insert(heartbeat.cbsd_id, RadioPoints::new(heartbeat.reward_weight));
+                .insert(
+                    heartbeat.cbsd_id,
+                    RadioPoints::new(
+                        heartbeat.reward_weight,
+                        heartbeat.coverage_object,
+                        seniority.seniority_ts,
+                    ),
+                );
         }
 
         for CoverageReward {
@@ -408,6 +423,9 @@ fn new_radio_reward(
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
                     .unwrap_or(0),
+                coverage_points: radio_points.points.to_u64().unwrap_or(0),
+                seniority_timestamp: radio_points.seniority.encode_timestamp(),
+                coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
                 ..Default::default()
             },
         )),
@@ -432,7 +450,7 @@ mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
-        coverage::{CoveredHexStream, HexCoverage},
+        coverage::{CoveredHexStream, HexCoverage, Seniority},
         data_session,
         data_session::HotspotDataSession,
         heartbeats::HeartbeatReward,
@@ -464,6 +482,8 @@ mod test {
             String::new(),
             RadioPoints {
                 heartbeat_multiplier: Decimal::ONE,
+                seniority: DateTime::default(),
+                coverage_object: Uuid::new_v4(),
                 points: Decimal::ONE,
             },
         );
@@ -700,7 +720,7 @@ mod test {
             &'a self,
             cbsd_id: &'a str,
             coverage_obj: &'a Uuid,
-            _period_end: DateTime<Utc>,
+            _seniority: &'a Seniority,
         ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
             Ok(stream::iter(
                 self.get(&(cbsd_id.to_string(), *coverage_obj))
@@ -709,6 +729,19 @@ mod test {
             )
             .map(Ok)
             .boxed())
+        }
+        async fn fetch_seniority(
+            &self,
+            _cbsd_id: &str,
+            _period_end: DateTime<Utc>,
+        ) -> Result<Seniority, sqlx::Error> {
+            Ok(Seniority {
+                uuid: Uuid::new_v4(),
+                seniority_ts: DateTime::default(),
+                last_heartbeat: DateTime::default(),
+                inserted_at: DateTime::default(),
+                update_reason: 0,
+            })
         }
     }
 
@@ -1174,6 +1207,8 @@ mod test {
                     c1,
                     RadioPoints {
                         heartbeat_multiplier: dec!(1.0),
+                        seniority: DateTime::default(),
+                        coverage_object: Uuid::new_v4(),
                         points: dec!(10.0),
                     },
                 )]
@@ -1190,6 +1225,8 @@ mod test {
                         c2,
                         RadioPoints {
                             heartbeat_multiplier: dec!(1.0),
+                            seniority: DateTime::default(),
+                            coverage_object: Uuid::new_v4(),
                             points: dec!(-1.0),
                         },
                     ),
@@ -1198,6 +1235,8 @@ mod test {
                         RadioPoints {
                             heartbeat_multiplier: dec!(1.0),
                             points: dec!(0.0),
+                            seniority: DateTime::default(),
+                            coverage_object: Uuid::new_v4(),
                         },
                     ),
                 ]

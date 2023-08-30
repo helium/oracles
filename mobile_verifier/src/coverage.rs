@@ -278,8 +278,14 @@ pub trait CoveredHexStream {
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
-        period_end: DateTime<Utc>,
+        seniority: &'a Seniority,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
+
+    async fn fetch_seniority(
+        &self,
+        cbsd_id: &str,
+        period_end: DateTime<Utc>,
+    ) -> Result<Seniority, sqlx::Error>;
 }
 
 #[derive(Clone, sqlx::FromRow)]
@@ -311,25 +317,10 @@ impl CoveredHexStream for Pool<Postgres> {
         &'a self,
         cbsd_id: &'a str,
         coverage_obj: &'a Uuid,
-        period_end: DateTime<Utc>,
+        seniority: &'a Seniority,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
-        // Adjust the coverage
-        let seniority: Seniority = sqlx::query_as(
-            r#"
-            SELECT * FROM seniority
-            WHERE
-              cbsd_id = $1 AND
-              inserted_at <= $2
-            ORDER BY inserted_at DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(cbsd_id)
-        .bind(period_end)
-        .fetch_one(self)
-        .await?;
-
-        // We can safely delete any seniority objects that appear before the latest in the reward period
+        // Adjust the coverage. We can safely delete any seniority objects that appears
+        // before the latest in the reward period
         sqlx::query("DELETE FROM seniority WHERE inserted_at < $1 AND cbsd_id = $2")
             .bind(seniority.inserted_at)
             .bind(cbsd_id)
@@ -367,6 +358,27 @@ impl CoveredHexStream for Pool<Postgres> {
                 })
                 .boxed(),
         )
+    }
+
+    async fn fetch_seniority(
+        &self,
+        cbsd_id: &str,
+        period_end: DateTime<Utc>,
+    ) -> Result<Seniority, sqlx::Error> {
+        sqlx::query_as(
+            r#"
+            SELECT * FROM seniority
+            WHERE
+              cbsd_id = $1 AND
+              inserted_at <= $2
+            ORDER BY inserted_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(cbsd_id)
+        .bind(period_end)
+        .fetch_one(self)
+        .await
     }
 }
 
