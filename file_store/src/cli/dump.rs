@@ -207,6 +207,7 @@ impl Cmd {
                             "dc_transfer_reward": reward.dc_transfer_reward,
                         }))?,
                         Some(Reward::RadioReward(reward)) => print_json(&json!({
+                            "hotspot_key":  PublicKey::try_from(reward.hotspot_key)?,
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
                         }))?,

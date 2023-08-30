@@ -8,8 +8,8 @@ use chrono::Duration;
 use file_store::{
     file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
     heartbeat::CellHeartbeatIngestReport, mobile_subscriber::SubscriberLocationIngestReport,
-    mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport, FileStore,
-    FileType,
+    mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport,
+    wifi_heartbeat::WifiHeartbeatIngestReport, FileStore, FileType,
 };
 use futures_util::TryFutureExt;
 use mobile_config::client::{AuthorizationClient, EntityClient, GatewayClient};
@@ -55,7 +55,7 @@ impl Cmd {
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        // Heartbeats
+        // Cell Heartbeats
         let (heartbeats, heartbeats_server) =
             file_source::continuous_source::<CellHeartbeatIngestReport>()
                 .db(pool.clone())
@@ -64,6 +64,18 @@ impl Cmd {
                 .file_type(FileType::CellHeartbeatIngestReport)
                 .create()?;
         let heartbeats_join_handle = heartbeats_server.start(shutdown_listener.clone()).await?;
+
+        // Wifi Heartbeats
+        let (wifi_heartbeats, wifi_heartbeats_server) =
+            file_source::continuous_source::<WifiHeartbeatIngestReport>()
+                .db(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .file_type(FileType::WifiHeartbeatIngestReport)
+                .create()?;
+        let wifi_heartbeats_join_handle = wifi_heartbeats_server
+            .start(shutdown_listener.clone())
+            .await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
@@ -80,6 +92,7 @@ impl Cmd {
             pool.clone(),
             gateway_client.clone(),
             heartbeats,
+            wifi_heartbeats,
             valid_heartbeats,
         );
 
@@ -229,6 +242,7 @@ impl Cmd {
                 .map_err(Error::from),
             tracker_process.map_err(Error::from),
             heartbeats_join_handle.map_err(Error::from),
+            wifi_heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
             heartbeat_daemon.run(shutdown_listener.clone()),
             speedtest_daemon.run(shutdown_listener.clone()),
