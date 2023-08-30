@@ -1,12 +1,13 @@
 use crate::{
     cli::print_json,
     file_source,
-    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
     mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
+    wifi_heartbeat::WifiHeartbeatIngestReport,
     FileType, Result, Settings,
 };
 use base64::Engine;
@@ -50,17 +51,27 @@ impl Cmd {
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
-                FileType::CellHeartbeat => {
+                FileType::CbrsHeartbeat => {
                     let dec_msg = CellHeartbeatReqV1::decode(msg)?;
-                    wtr.serialize(CellHeartbeat::try_from(dec_msg)?)?;
+                    wtr.serialize(CbrsHeartbeat::try_from(dec_msg)?)?;
+                }
+                FileType::WifiHeartbeatIngestReport => {
+                    let msg = WifiHeartbeatIngestReport::decode(msg)?;
+                    let json = json!({
+                        "received_timestamp": msg.received_timestamp,
+                        "pubkey": msg.report.pubkey,
+                        "operation_mode": msg.report.operation_mode,
+                        "location_validation_timestamp": msg.report.location_validation_timestamp,
+                    });
+                    print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {
                     let dec_msg = SpeedtestReqV1::decode(msg)?;
                     wtr.serialize(CellSpeedtest::try_from(dec_msg)?)?;
                 }
-                FileType::CellHeartbeatIngestReport => {
+                FileType::CbrsHeartbeatIngestReport => {
                     let dec_msg = CellHeartbeatIngestReportV1::decode(msg)?;
-                    let ingest_report = CellHeartbeatIngestReport::try_from(dec_msg)?;
+                    let ingest_report = CbrsHeartbeatIngestReport::try_from(dec_msg)?;
                     print_json(&ingest_report)?;
                 }
                 FileType::CellSpeedtestIngestReport => {
@@ -207,6 +218,7 @@ impl Cmd {
                             "dc_transfer_reward": reward.dc_transfer_reward,
                         }))?,
                         Some(Reward::RadioReward(reward)) => print_json(&json!({
+                            "hotspot_key":  PublicKey::try_from(reward.hotspot_key)?,
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
                         }))?,

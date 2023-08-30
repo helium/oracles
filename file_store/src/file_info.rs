@@ -109,10 +109,12 @@ impl FileInfo {
 pub const SUBSCRIBER_LOCATION_REQ: &str = "subscriber_location_req";
 pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report";
 pub const VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "verified_subscriber_location_report";
-pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
+pub const CBRS_HEARTBEAT: &str = "cbrs_heartbeat";
+pub const WIFI_HEARTBEAT: &str = "wifi_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
 pub const VERIFIED_SPEEDTEST: &str = "verified_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
+pub const WIFI_HEARTBEAT_INGEST_REPORT: &str = "wifi_heartbeat_report";
 pub const CELL_SPEEDTEST_INGEST_REPORT: &str = "speedtest_report";
 pub const ENTROPY: &str = "entropy";
 pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
@@ -144,11 +146,11 @@ pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
-    CellHeartbeat = 0,
+    CbrsHeartbeat = 0,
     CellSpeedtest = 1,
     Entropy = 2,
     SubnetworkRewards = 3,
-    CellHeartbeatIngestReport,
+    CbrsHeartbeatIngestReport,
     CellSpeedtestIngestReport,
     EntropyReport,
     IotBeaconIngestReport,
@@ -177,6 +179,8 @@ pub enum FileType {
     MapperMsg,
     CoverageObjectIngestReport,
     VerifiedSpeedtest,
+    WifiHeartbeat,
+    WifiHeartbeatIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -187,10 +191,12 @@ impl fmt::Display for FileType {
             Self::VerifiedSubscriberLocationIngestReport => {
                 VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
             }
-            Self::CellHeartbeat => CELL_HEARTBEAT,
+            Self::CbrsHeartbeat => CBRS_HEARTBEAT,
+            Self::WifiHeartbeat => WIFI_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::VerifiedSpeedtest => VERIFIED_SPEEDTEST,
-            Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::CbrsHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::WifiHeartbeatIngestReport => WIFI_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
@@ -232,10 +238,12 @@ impl FileType {
             Self::VerifiedSubscriberLocationIngestReport => {
                 VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
             }
-            Self::CellHeartbeat => CELL_HEARTBEAT,
+            Self::CbrsHeartbeat => CBRS_HEARTBEAT,
+            Self::WifiHeartbeat => WIFI_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
             Self::VerifiedSpeedtest => VERIFIED_SPEEDTEST,
-            Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::CbrsHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::WifiHeartbeatIngestReport => WIFI_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
@@ -277,10 +285,12 @@ impl FromStr for FileType {
             VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT => {
                 Self::VerifiedSubscriberLocationIngestReport
             }
-            CELL_HEARTBEAT => Self::CellHeartbeat,
+            CBRS_HEARTBEAT => Self::CbrsHeartbeat,
+            WIFI_HEARTBEAT => Self::WifiHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
             VERIFIED_SPEEDTEST => Self::VerifiedSpeedtest,
-            CELL_HEARTBEAT_INGEST_REPORT => Self::CellHeartbeatIngestReport,
+            CELL_HEARTBEAT_INGEST_REPORT => Self::CbrsHeartbeatIngestReport,
+            WIFI_HEARTBEAT_INGEST_REPORT => Self::WifiHeartbeatIngestReport,
             CELL_SPEEDTEST_INGEST_REPORT => Self::CellSpeedtestIngestReport,
             ENTROPY => Self::Entropy,
             SUBNETWORK_REWARDS => Self::SubnetworkRewards,

@@ -25,6 +25,15 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
+    // Max distance in meters between the asserted location of a WIFI hotspot
+    // and the lat/lng defined in a heartbeat
+    // beyond which its location weight will be reduced
+    #[serde(default = "default_max_asserted_distance_deviation")]
+    pub max_asserted_distance_deviation: u32,
+}
+
+pub fn default_max_asserted_distance_deviation() -> u32 {
+    100
 }
 
 pub fn default_log() -> String {

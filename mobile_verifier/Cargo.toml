@@ -12,6 +12,7 @@ config = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
+h3o = {workspace = true, features = ["geo"]}
 http-serde = {workspace = true}
 clap = {workspace = true}
 sqlx = {workspace = true}
