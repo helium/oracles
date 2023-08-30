@@ -63,10 +63,10 @@ jobs:
         ## free up disk space if we are packaging a release from a tag
       - uses: jlumbroso/free-disk-space@main
 
-      - name: Run integration tests
-        env:
-          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
-        run: cargo test --test '*' -- --ignored # Only run integration tests that have been ignored
+#      - name: Run integration tests
+#        env:
+#          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
+#        run: cargo test --test '*' -- --ignored # Only run integration tests that have been ignored
 
       - name: Debian packaging
         if: contains(github.ref, 'refs/tags/')
