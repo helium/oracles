@@ -62,7 +62,6 @@ jobs:
 
         ## free up disk space if we are packaging a release from a tag
       - uses: jlumbroso/free-disk-space@main
-        if: contains(github.ref, 'refs/tags/')
 
       - name: Run integration tests
         env:
