@@ -60,13 +60,10 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -Dclippy::all -D warnings
 
-      - name: Run unit tests
-        run: cargo test -r
-
-      - name: Run integration tests
+      - name: Run unit and integration tests
         env:
           DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
-        run: cargo test --test '*' -- --ignored # Only run integration tests that have been ignored
+        run: cargo test -r -- --include-ignored
 
       - name: Debian packaging
         if: contains(github.ref, 'refs/tags/')
