@@ -136,6 +136,7 @@ fn start_futures(
 
 #[allow(clippy::manual_try_fold)]
 async fn stop_all(futures: Vec<StopableLocalFuture>) -> anyhow::Result<()> {
+    #[allow(clippy::manual_try_fold)]
     futures::stream::iter(futures.into_iter().rev())
         .fold(Ok(()), |last_result, local| async move {
             local.shutdown_trigger.trigger();

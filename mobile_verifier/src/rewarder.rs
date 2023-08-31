@@ -1,8 +1,9 @@
 use crate::{
     data_session,
-    heartbeats::HeartbeatReward,
+    heartbeats::{self, HeartbeatReward},
     reward_shares::{CoveragePoints, MapperShares, TransferRewards},
-    speedtests::SpeedtestAverages,
+    speedtests,
+    speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry,
 };
 use anyhow::bail;
@@ -111,12 +112,10 @@ impl Rewarder {
                 return Ok(false);
             }
 
-            if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM speedtests WHERE latest_timestamp >= $1",
-            )
-            .bind(reward_period.end)
-            .fetch_one(&self.pool)
-            .await?
+            if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM speedtests WHERE timestamp >= $1")
+                .bind(reward_period.end)
+                .fetch_one(&self.pool)
+                .await?
                 == 0
             {
                 tracing::info!("No speedtests found past reward period");
@@ -139,11 +138,16 @@ impl Rewarder {
         );
 
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
-        let speedtests = SpeedtestAverages::validated(&self.pool, reward_period.end).await?;
 
-        let coverage_points =
-            CoveragePoints::aggregate_points(&self.pool, heartbeats, speedtests, reward_period.end)
-                .await?;
+        let speedtest_averages =
+            SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
+        let coverage_points = CoveragePoints::aggregate_points(
+            &self.pool,
+            heartbeats,
+            &speedtest_averages,
+            reward_period.end,
+        )
+        .await?;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
@@ -216,15 +220,11 @@ impl Rewarder {
 
         let mut transaction = self.pool.begin().await?;
 
-        // Clear the heartbeats table of old heartbeats:
-        sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
-            .bind(reward_period.start)
-            .execute(&mut transaction)
-            .await?;
-
-        // clear the db of data sessions data & subscriber location data for the epoch
-        data_session::clear_hotspot_data_sessions(&mut transaction, reward_period).await?;
-        // subscriber_location::clear_location_shares(&mut transaction, reward_period).await?;
+        // clear out the various db tables
+        heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
+        speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
+        data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.end).await?;
+        // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();
         save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;

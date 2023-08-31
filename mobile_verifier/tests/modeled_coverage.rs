@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
     heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    speedtest::CellSpeedtest,
 };
 use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -10,16 +11,13 @@ use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoveredHexCache, Seniority},
     heartbeats::{Heartbeat, HeartbeatReward, SeniorityUpdate},
     reward_shares::CoveragePoints,
-    speedtests::{Speedtest, SpeedtestAverages},
+    speedtests::Speedtest,
+    speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     HasOwner, IsAuthorized,
 };
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
-use std::{
-    collections::{HashMap, VecDeque},
-    ops::Range,
-    pin::pin,
-};
+use std::{collections::HashMap, ops::Range, pin::pin};
 use uuid::Uuid;
 
 #[derive(Copy, Clone)]
@@ -80,43 +78,59 @@ fn heartbeats<'a>(
     })
 }
 
-fn bytes_per_s(mbps: i64) -> i64 {
+fn bytes_per_s(mbps: u64) -> u64 {
     mbps * 125000
 }
 
-fn acceptable_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+fn acceptable_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
     Speedtest {
-        timestamp,
-        upload_speed: bytes_per_s(10),
-        download_speed: bytes_per_s(100),
-        latency: 25,
+        report: CellSpeedtest {
+            pubkey,
+            timestamp,
+            upload_speed: bytes_per_s(10),
+            download_speed: bytes_per_s(100),
+            latency: 25,
+            serial: "".to_string(),
+        },
     }
 }
 
-fn degraded_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+fn degraded_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
     Speedtest {
-        timestamp,
-        upload_speed: bytes_per_s(5),
-        download_speed: bytes_per_s(60),
-        latency: 60,
+        report: CellSpeedtest {
+            pubkey,
+            timestamp,
+            upload_speed: bytes_per_s(5),
+            download_speed: bytes_per_s(60),
+            latency: 60,
+            serial: "".to_string(),
+        },
     }
 }
 
-fn failed_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+fn failed_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
     Speedtest {
-        timestamp,
-        upload_speed: bytes_per_s(1),
-        download_speed: bytes_per_s(20),
-        latency: 110,
+        report: CellSpeedtest {
+            pubkey,
+            timestamp,
+            upload_speed: bytes_per_s(1),
+            download_speed: bytes_per_s(20),
+            latency: 110,
+            serial: "".to_string(),
+        },
     }
 }
 
-fn poor_speedtest(timestamp: DateTime<Utc>) -> Speedtest {
+fn poor_speedtest(pubkey: PublicKeyBinary, timestamp: DateTime<Utc>) -> Speedtest {
     Speedtest {
-        timestamp,
-        upload_speed: bytes_per_s(2),
-        download_speed: bytes_per_s(40),
-        latency: 90,
+        report: CellSpeedtest {
+            pubkey,
+            timestamp,
+            upload_speed: bytes_per_s(2),
+            download_speed: bytes_per_s(40),
+            latency: 90,
+            serial: "".to_string(),
+        },
     }
 }
 
@@ -218,17 +232,17 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
 
     let last_timestamp = end - Duration::hours(12);
     let owner_speedtests = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner.clone(), last_timestamp),
+        acceptable_speedtest(owner.clone(), end),
     ];
-    let mut speedtests = HashMap::new();
-    speedtests.insert(owner.clone(), VecDeque::from(owner_speedtests));
-    let speedtest_avgs = SpeedtestAverages { speedtests };
+    let mut averages = HashMap::new();
+    averages.insert(owner.clone(), SpeedtestAverage::from(&owner_speedtests));
+    let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, speedtest_avgs, end).await?;
+        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner), dec!(1000));
 
@@ -303,20 +317,23 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let last_timestamp = end - Duration::hours(12);
-    let speedtests_1 = vec![degraded_speedtest(last_timestamp), degraded_speedtest(end)];
-    let speedtests_2 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+    let speedtests_1 = vec![
+        degraded_speedtest(owner_1.clone(), last_timestamp),
+        degraded_speedtest(owner_1.clone(), end),
     ];
-    let mut speedtests = HashMap::new();
-    speedtests.insert(owner_1.clone(), VecDeque::from(speedtests_1));
-    speedtests.insert(owner_2.clone(), VecDeque::from(speedtests_2));
-    let speedtest_avgs = SpeedtestAverages { speedtests };
+    let speedtests_2 = vec![
+        acceptable_speedtest(owner_2.clone(), last_timestamp),
+        acceptable_speedtest(owner_2.clone(), end),
+    ];
+    let mut averages = HashMap::new();
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
+    let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, speedtest_avgs, end).await?;
+        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(500));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(1000));
@@ -508,34 +525,43 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let last_timestamp = end - Duration::hours(12);
-    let speedtests_1 = vec![poor_speedtest(last_timestamp), poor_speedtest(end)];
-    let speedtests_2 = vec![poor_speedtest(last_timestamp), poor_speedtest(end)];
+    let speedtests_1 = vec![
+        poor_speedtest(owner_1.clone(), last_timestamp),
+        poor_speedtest(owner_1.clone(), end),
+    ];
+    let speedtests_2 = vec![
+        poor_speedtest(owner_2.clone(), last_timestamp),
+        poor_speedtest(owner_2.clone(), end),
+    ];
     let speedtests_3 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_3.clone(), last_timestamp),
+        acceptable_speedtest(owner_3.clone(), end),
     ];
     let speedtests_4 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_4.clone(), last_timestamp),
+        acceptable_speedtest(owner_4.clone(), end),
     ];
-    let speedtests_5 = vec![failed_speedtest(last_timestamp), failed_speedtest(end)];
+    let speedtests_5 = vec![
+        failed_speedtest(owner_5.clone(), last_timestamp),
+        failed_speedtest(owner_5.clone(), end),
+    ];
     let speedtests_6 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_6.clone(), last_timestamp),
+        acceptable_speedtest(owner_6.clone(), end),
     ];
-    let mut speedtests = HashMap::new();
-    speedtests.insert(owner_1.clone(), VecDeque::from(speedtests_1));
-    speedtests.insert(owner_2.clone(), VecDeque::from(speedtests_2));
-    speedtests.insert(owner_3.clone(), VecDeque::from(speedtests_3));
-    speedtests.insert(owner_4.clone(), VecDeque::from(speedtests_4));
-    speedtests.insert(owner_5.clone(), VecDeque::from(speedtests_5));
-    speedtests.insert(owner_6.clone(), VecDeque::from(speedtests_6));
-    let speedtest_avgs = SpeedtestAverages { speedtests };
+    let mut averages = HashMap::new();
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
+    averages.insert(owner_3.clone(), SpeedtestAverage::from(&speedtests_3));
+    averages.insert(owner_4.clone(), SpeedtestAverage::from(&speedtests_4));
+    averages.insert(owner_5.clone(), SpeedtestAverage::from(&speedtests_5));
+    averages.insert(owner_6.clone(), SpeedtestAverage::from(&speedtests_6));
+    let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, speedtest_avgs, end).await?;
+        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(250));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
@@ -589,17 +615,17 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
 
     let last_timestamp = end - Duration::hours(12);
     let owner_speedtests = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner.clone(), last_timestamp),
+        acceptable_speedtest(owner.clone(), end),
     ];
-    let mut speedtests = HashMap::new();
-    speedtests.insert(owner.clone(), VecDeque::from(owner_speedtests));
-    let speedtest_avgs = SpeedtestAverages { speedtests };
+    let mut averages = HashMap::new();
+    averages.insert(owner.clone(), SpeedtestAverage::from(&owner_speedtests));
+    let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, speedtest_avgs, end).await?;
+        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner), dec!(76));
 
@@ -673,20 +699,23 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let last_timestamp = end - Duration::hours(12);
-    let speedtests_1 = vec![degraded_speedtest(last_timestamp), degraded_speedtest(end)];
-    let speedtests_2 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+    let speedtests_1 = vec![
+        degraded_speedtest(owner_1.clone(), last_timestamp),
+        degraded_speedtest(owner_1.clone(), end),
     ];
-    let mut speedtests = HashMap::new();
-    speedtests.insert(owner_1.clone(), VecDeque::from(speedtests_1));
-    speedtests.insert(owner_2.clone(), VecDeque::from(speedtests_2));
-    let speedtest_avgs = SpeedtestAverages { speedtests };
+    let speedtests_2 = vec![
+        acceptable_speedtest(owner_2.clone(), last_timestamp),
+        acceptable_speedtest(owner_2.clone(), end),
+    ];
+    let mut averages = HashMap::new();
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
+    let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, speedtest_avgs, end).await?;
+        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
     assert_eq!(
         coverage_points.hotspot_points(&owner_1),
@@ -875,34 +904,43 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let last_timestamp = end - Duration::hours(12);
-    let speedtests_1 = vec![poor_speedtest(last_timestamp), poor_speedtest(end)];
-    let speedtests_2 = vec![poor_speedtest(last_timestamp), poor_speedtest(end)];
+    let speedtests_1 = vec![
+        poor_speedtest(owner_1.clone(), last_timestamp),
+        poor_speedtest(owner_1.clone(), end),
+    ];
+    let speedtests_2 = vec![
+        poor_speedtest(owner_2.clone(), last_timestamp),
+        poor_speedtest(owner_2.clone(), end),
+    ];
     let speedtests_3 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_3.clone(), last_timestamp),
+        acceptable_speedtest(owner_3.clone(), end),
     ];
     let speedtests_4 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_4.clone(), last_timestamp),
+        acceptable_speedtest(owner_4.clone(), end),
     ];
-    let speedtests_5 = vec![failed_speedtest(last_timestamp), failed_speedtest(end)];
+    let speedtests_5 = vec![
+        failed_speedtest(owner_5.clone(), last_timestamp),
+        failed_speedtest(owner_5.clone(), end),
+    ];
     let speedtests_6 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_6.clone(), last_timestamp),
+        acceptable_speedtest(owner_6.clone(), end),
     ];
-    let mut speedtests = HashMap::new();
-    speedtests.insert(owner_1.clone(), VecDeque::from(speedtests_1));
-    speedtests.insert(owner_2.clone(), VecDeque::from(speedtests_2));
-    speedtests.insert(owner_3.clone(), VecDeque::from(speedtests_3));
-    speedtests.insert(owner_4.clone(), VecDeque::from(speedtests_4));
-    speedtests.insert(owner_5.clone(), VecDeque::from(speedtests_5));
-    speedtests.insert(owner_6.clone(), VecDeque::from(speedtests_6));
-    let speedtest_avgs = SpeedtestAverages { speedtests };
+    let mut averages = HashMap::new();
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
+    averages.insert(owner_3.clone(), SpeedtestAverage::from(&speedtests_3));
+    averages.insert(owner_4.clone(), SpeedtestAverage::from(&speedtests_4));
+    averages.insert(owner_5.clone(), SpeedtestAverage::from(&speedtests_5));
+    averages.insert(owner_6.clone(), SpeedtestAverage::from(&speedtests_6));
+    let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, speedtest_avgs, end).await?;
+        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
     assert_eq!(
         coverage_points.hotspot_points(&owner_1),
@@ -1107,37 +1145,43 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     let last_timestamp = end - Duration::hours(12);
-    let speedtests_1 = vec![poor_speedtest(last_timestamp), poor_speedtest(end)];
-    let speedtests_2 = vec![poor_speedtest(last_timestamp), poor_speedtest(end)];
+    let speedtests_1 = vec![
+        poor_speedtest(owner_1.clone(), last_timestamp),
+        poor_speedtest(owner_1.clone(), end),
+    ];
+    let speedtests_2 = vec![
+        poor_speedtest(owner_2.clone(), last_timestamp),
+        poor_speedtest(owner_2.clone(), end),
+    ];
     let speedtests_3 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_3.clone(), last_timestamp),
+        acceptable_speedtest(owner_3.clone(), end),
     ];
     let speedtests_4 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_4.clone(), last_timestamp),
+        acceptable_speedtest(owner_4.clone(), end),
     ];
     let speedtests_5 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_5.clone(), last_timestamp),
+        acceptable_speedtest(owner_5.clone(), end),
     ];
     let speedtests_6 = vec![
-        acceptable_speedtest(last_timestamp),
-        acceptable_speedtest(end),
+        acceptable_speedtest(owner_6.clone(), last_timestamp),
+        acceptable_speedtest(owner_6.clone(), end),
     ];
-    let mut speedtests = HashMap::new();
-    speedtests.insert(owner_1.clone(), VecDeque::from(speedtests_1));
-    speedtests.insert(owner_2.clone(), VecDeque::from(speedtests_2));
-    speedtests.insert(owner_3.clone(), VecDeque::from(speedtests_3));
-    speedtests.insert(owner_4.clone(), VecDeque::from(speedtests_4));
-    speedtests.insert(owner_5.clone(), VecDeque::from(speedtests_5));
-    speedtests.insert(owner_6.clone(), VecDeque::from(speedtests_6));
-    let speedtest_avgs = SpeedtestAverages { speedtests };
+    let mut averages = HashMap::new();
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
+    averages.insert(owner_3.clone(), SpeedtestAverage::from(&speedtests_3));
+    averages.insert(owner_4.clone(), SpeedtestAverage::from(&speedtests_4));
+    averages.insert(owner_5.clone(), SpeedtestAverage::from(&speedtests_5));
+    averages.insert(owner_6.clone(), SpeedtestAverage::from(&speedtests_6));
+    let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
     let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
     let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, speedtest_avgs, end).await?;
+        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
     assert_eq!(coverage_points.hotspot_points(&owner_1), dec!(250));
     assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(250));
