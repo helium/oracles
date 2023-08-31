@@ -186,6 +186,7 @@ impl HeartbeatDaemon {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct HeartbeatReward {
     pub coverage_object: Uuid,
     pub hotspot_key: PublicKeyBinary,
@@ -205,29 +206,40 @@ impl HeartbeatReward {
         sqlx::query_as::<_, HeartbeatKey>(
             r#"
             WITH coverage_objs AS (
-              SELECT t1.cbsd_id, t1.coverage_object, t1.latest_timestamp
-              FROM heartbeats t1
-              WHERE t1.latest_timestamp = (
-                SELECT MAX(t2.latest_timestamp)
-                FROM heartbeats t2
-                WHERE t2.cbsd_id = t1.cbsd_id
-                  AND truncated_timestamp >= $1
-                  AND truncated_timestamp < $2
-              )
+                SELECT t1.cbsd_id, t1.coverage_object, t1.latest_timestamp
+                FROM heartbeats t1
+                WHERE t1.latest_timestamp = (
+                       SELECT MAX(t2.latest_timestamp)
+                       FROM heartbeats t2
+                       WHERE t2.cbsd_id = t1.cbsd_id
+                         AND truncated_timestamp >= $1
+                         AND truncated_timestamp < $2
+                )
+            ), latest_hotspots AS (
+                 SELECT t1.cbsd_id, t1.hotspot_key, t1.latest_timestamp
+                 FROM heartbeats t1
+                 WHERE t1.latest_timestamp = (
+                       SELECT MAX(t2.latest_timestamp)
+                       FROM heartbeats t2
+                       WHERE t2.cbsd_id = t1.cbsd_id
+                         AND truncated_timestamp >= $1
+                         AND truncated_timestamp < $2
+                )
             )
             SELECT
-              hotspot_key,
+              latest_hotspots.hotspot_key,
               heartbeats.cbsd_id,
               cell_type,
               coverage_objs.coverage_object,
               coverage_objs.latest_timestamp
             FROM heartbeats
-              JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id
+              LEFT JOIN latest_hotspots ON heartbeats.cbsd_id = latest_hotspots.cbsd_id
+              LEFT JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id 
             WHERE truncated_timestamp >= $1
             	AND truncated_timestamp < $2
             GROUP BY
               heartbeats.cbsd_id,
-              hotspot_key,
+              latest_hotspots.hotspot_key,
               cell_type,
               coverage_objs.coverage_object,
               coverage_objs.latest_timestamp
@@ -253,7 +265,7 @@ pub struct Heartbeat {
 
 impl Heartbeat {
     pub fn is_valid(&self) -> bool {
-        matches!(self.validity, proto::HeartbeatValidity::Valid)
+        self.validity == proto::HeartbeatValidity::Valid
     }
 
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
@@ -312,12 +324,6 @@ impl Heartbeat {
     }
 
     pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
-        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
-            .bind(&self.heartbeat.cbsd_id)
-            .bind(&self.heartbeat.pubkey)
-            .execute(&mut *exec)
-            .await?;
-
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(
             sqlx::query_scalar(
@@ -390,6 +396,17 @@ async fn validate_heartbeat(
      */
 
     Ok((cell_type, proto::HeartbeatValidity::Valid))
+}
+
+pub async fn clear_heartbeats(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    timestamp: &DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
+        .bind(timestamp)
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
 }
 
 pub struct SeniorityUpdate<'a> {

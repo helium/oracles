@@ -4,7 +4,8 @@ mod data_session;
 pub mod heartbeats;
 pub mod reward_shares;
 mod settings;
-pub mod speedtests;
+mod speedtests;
+mod speedtests_average;
 mod subscriber_location;
 mod telemetry;
 
