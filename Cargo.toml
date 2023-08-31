@@ -59,7 +59,7 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-crypto = {version = "0.6.8", features=["sqlx-postgres", "multisig"]}
+helium-crypto = {version = "0.8.0", features=["sqlx-postgres", "multisig"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 hextree = "*"
 solana-client = "1.14"
