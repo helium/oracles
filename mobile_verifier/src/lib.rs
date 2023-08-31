@@ -1,6 +1,6 @@
 mod cell_type;
 mod data_session;
-mod heartbeats;
+pub mod heartbeats;
 mod reward_shares;
 mod settings;
 mod speedtests;

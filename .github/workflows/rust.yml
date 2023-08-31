@@ -18,7 +18,23 @@ jobs:
   build:
     runs-on: ubuntu-latest-m
 
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
+      ## free up disk space if we are packaging a release from a tag
+      - uses: jlumbroso/free-disk-space@main
+
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -44,8 +60,10 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -Dclippy::all -D warnings
 
-      - name: Run tests
-        run: cargo test -r
+      - name: Run unit and integration tests
+        env:
+          DATABASE_URL: "postgres://postgres:postgres@localhost:5432/postgres"
+        run: cargo test -r -- --include-ignored
 
       - name: Debian packaging
         if: contains(github.ref, 'refs/tags/')
