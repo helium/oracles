@@ -383,12 +383,6 @@ impl ValidatedHeartbeat {
             .as_ref()
             .ok_or_else(|| anyhow!("failed to save cell heartbeat, invalid cbsd_id"))?;
 
-        sqlx::query("DELETE FROM heartbeats WHERE cbsd_id = $1 AND hotspot_key != $2")
-            .bind(cbsd_id)
-            .bind(&self.report.hotspot_key)
-            .execute(&mut *exec)
-            .await?;
-
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(
             sqlx::query_as::<_, HeartbeatSaveResult>(
