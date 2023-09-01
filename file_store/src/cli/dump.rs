@@ -7,6 +7,7 @@ use crate::{
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
+    wifi_heartbeat::WifiHeartbeatIngestReport,
     FileType, Result, Settings,
 };
 use base64::Engine;
@@ -53,6 +54,16 @@ impl Cmd {
                 FileType::CellHeartbeat => {
                     let dec_msg = CellHeartbeatReqV1::decode(msg)?;
                     wtr.serialize(CellHeartbeat::try_from(dec_msg)?)?;
+                }
+                FileType::WifiHeartbeatIngestReport => {
+                    let msg = WifiHeartbeatIngestReport::decode(msg)?;
+                    let json = json!({
+                        "received_timestamp": msg.received_timestamp,
+                        "pubkey": msg.report.pubkey,
+                        "operation mode": msg.report.operation_mode,
+                        "location validation timestamp mode": msg.report.location_validation_timestamp,
+                    });
+                    print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {
                     let dec_msg = SpeedtestReqV1::decode(msg)?;

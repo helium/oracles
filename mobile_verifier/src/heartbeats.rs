@@ -51,13 +51,15 @@ impl Heartbeat {
     }
 
     fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
-        let cbsd_id = self
-            .cbsd_id
-            .clone()
-            .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?;
         let ts = self.truncated_timestamp()?;
         match self.hb_type {
-            HBType::Cell => Ok((cbsd_id, ts)),
+            HBType::Cell => {
+                let cbsd_id = self
+                    .cbsd_id
+                    .clone()
+                    .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?;
+                Ok((cbsd_id, ts))
+            }
             HBType::Wifi => Ok((self.hotspot_key.to_string(), ts)),
         }
     }
@@ -412,7 +414,7 @@ impl ValidatedHeartbeat {
                 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, location_validation_timestamp,
                     latest_timestamp, truncated_timestamp)
                 VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (truncated_timestamp) DO UPDATE SET
+                ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
                 latest_timestamp = EXCLUDED.latest_timestamp
                 RETURNING (xmax = 0) as inserted
                 "#,
