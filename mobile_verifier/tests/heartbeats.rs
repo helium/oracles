@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use futures_util::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
+use mobile_verifier::cell_type::CellType;
 use mobile_verifier::heartbeats::HeartbeatReward;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -9,6 +10,7 @@ use sqlx::PgPool;
 #[ignore]
 async fn only_fetch_latest_hotspot(pool: PgPool) -> anyhow::Result<()> {
     let cbsd_id = "P27-SCE4255W120200039521XGB0103".to_string();
+    let cell_type = CellType::from_cbsd_id(&cbsd_id).expect("unable to get cell_type");
     let hotspot_1: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     let hotspot_2: PublicKeyBinary =
@@ -59,7 +61,8 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot_2,
-            cbsd_id,
+            cell_type,
+            cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE
         }]
     );
@@ -71,6 +74,7 @@ VALUES
 #[ignore]
 async fn ensure_hotspot_does_not_affect_count(pool: PgPool) -> anyhow::Result<()> {
     let cbsd_id = "P27-SCE4255W120200039521XGB0103".to_string();
+    let cell_type = CellType::from_cbsd_id(&cbsd_id).expect("unable to get cell_type");
     let hotspot_1: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     let hotspot_2: PublicKeyBinary =
@@ -109,7 +113,8 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot_2,
-            cbsd_id,
+            cell_type,
+            cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE
         }]
     );
