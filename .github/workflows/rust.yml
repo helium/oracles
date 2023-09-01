@@ -16,7 +16,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest-m
+    runs-on: oracles-20.04
 
     services:
       postgres:
@@ -32,9 +32,6 @@ jobs:
           - 5432:5432
 
     steps:
-      ## free up disk space if we are packaging a release from a tag
-      - uses: jlumbroso/free-disk-space@main
-
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
