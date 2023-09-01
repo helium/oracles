@@ -220,6 +220,7 @@ pub struct HeartbeatRow {
     pub location_validation_timestamp: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
     pub cell_type: CellType,

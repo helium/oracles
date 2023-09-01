@@ -1,4 +1,4 @@
-mod cell_type;
+pub mod cell_type;
 mod data_session;
 pub mod heartbeats;
 mod reward_shares;
