@@ -263,38 +263,52 @@ impl HeartbeatReward {
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
         sqlx::query_as::<_, HeartbeatRow>(
             r#"
-            WITH latest_hotspots AS (
-                 SELECT t1.cbsd_id, t1.hotspot_key, t1.latest_timestamp
-                 FROM heartbeats t1
-                 WHERE t1.latest_timestamp = (
-                       SELECT MAX(t2.latest_timestamp)
-                       FROM heartbeats t2
-                       WHERE t2.cbsd_id = t1.cbsd_id
-                       AND truncated_timestamp >= $1
-                       AND truncated_timestamp < $2
-                )
+            (WITH latest_hotspots AS (
+                SELECT t1.cbsd_id, t1.hotspot_key, t1.latest_timestamp
+                FROM heartbeats t1
+                WHERE t1.latest_timestamp = (
+                      SELECT MAX(t2.latest_timestamp)
+                      FROM heartbeats t2
+                      WHERE t2.cbsd_id = t1.cbsd_id
+                      AND truncated_timestamp >= $1
+                      AND truncated_timestamp < $2
+               )
+           )
+           SELECT
+             latest_hotspots.hotspot_key,
+             heartbeats.cbsd_id,
+             cell_type,
+             NULL as location_validation_timestamp
+           FROM heartbeats
+           JOIN latest_hotspots ON heartbeats.cbsd_id = latest_hotspots.cbsd_id
+           WHERE truncated_timestamp >= $1
+             AND truncated_timestamp < $2
+           GROUP BY
+             heartbeats.cbsd_id,
+             latest_hotspots.hotspot_key,
+             cell_type
+           HAVING count(*) >= $3)
+           UNION
+           (WITH latest_wifi_hotspots AS (
+               SELECT tw1.hotspot_key
+               FROM wifi_heartbeats tw1
+               WHERE truncated_timestamp >= $1
+               AND truncated_timestamp < $2
             )
             SELECT
-              latest_hotspots.hotspot_key,
-              heartbeats.cbsd_id,
-              cell_type,
-              NULL as location_validation_timestamp
-            FROM heartbeats
-            JOIN latest_hotspots ON heartbeats.cbsd_id = latest_hotspots.cbsd_id
-            WHERE truncated_timestamp >= $1
-            	AND truncated_timestamp < $2
-            GROUP BY
-              heartbeats.cbsd_id,
-              latest_hotspots.hotspot_key,
-              cell_type
-            HAVING count(*) >= $3
-            UNION
-            SELECT hotspot_key, NULL as cbsd_id, cell_type, location_validation_timestamp
+            latest_wifi_hotspots.hotspot_key,
+            NULL as cbsd_id,
+            cell_type,
+            location_validation_timestamp
             FROM wifi_heartbeats
+            JOIN latest_wifi_hotspots ON wifi_heartbeats.hotspot_key = latest_wifi_hotspots.hotspot_key
             WHERE truncated_timestamp >= $1
-            	and truncated_timestamp < $2
-            GROUP BY hotspot_key, location_validation_timestamp, cell_type
-            HAVING count(hotspot_key) >= $4
+            AND truncated_timestamp < $2
+            GROUP BY
+            latest_wifi_hotspots.hotspot_key,
+            cell_type,
+            location_validation_timestamp
+            HAVING count(*) >= $4);
             "#,
         )
         .bind(epoch.start)
