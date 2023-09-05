@@ -175,12 +175,13 @@ impl CoverageObject {
     pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
         for hex in self.coverage_object.coverage {
             let location: u64 = hex.location.into();
-            sqlx::query(
+            let inserted = sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
                   (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time, inserted_at)
                 VALUES
                   ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT DO NOTHING
                 "#,
             )
             .bind(self.coverage_object.uuid)
@@ -191,7 +192,12 @@ impl CoverageObject {
             .bind(self.coverage_object.coverage_claim_time)
             .bind(Utc::now())
             .execute(&mut *transaction)
-            .await?;
+            .await?
+            .rows_affected()
+                > 0;
+            if !inserted {
+                tracing::error!(%self.coverage_object.uuid, %location, "Conflict inserting hex coverage");
+            }
         }
 
         Ok(true)
