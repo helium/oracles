@@ -172,7 +172,14 @@ impl CoverageObject {
         Ok(())
     }
 
-    pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
+    pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+        if sqlx::query_scalar("SELECT count(1) > 0 FROM hex_coverage WHERE uuid = $1")
+            .bind(self.coverage_object.uuid)
+            .fetch_one(&mut *transaction)
+            .await?
+        {
+            return Ok(());
+        }
         for hex in self.coverage_object.coverage {
             let location: u64 = hex.location.into();
             let inserted = sqlx::query(
@@ -196,11 +203,10 @@ impl CoverageObject {
             .rows_affected()
                 > 0;
             if !inserted {
-                tracing::error!(%self.coverage_object.uuid, %location, "Conflict inserting hex coverage");
+                tracing::error!(uuid = %self.coverage_object.uuid, %location, "Duplicate hex coverage");
             }
         }
-
-        Ok(true)
+        Ok(())
     }
 }
 

@@ -521,12 +521,16 @@ impl SeniorityUpdate<'_> {
                 new_seniority,
                 update_reason,
             } => {
-                sqlx::query(
+                let inserted: bool = sqlx::query_scalar(
                     r#"
                     INSERT INTO seniority
                       (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason)
                     VALUES
                       ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (cbsd_id, seniority_ts) DO UPDATE SET
+                      last_heartbeat = EXCLUDED.last_heartbeat,
+                      update_reason = EXCLUDED.update_reason
+                    RETURNING (xmax = 0) as inserted
                     "#,
                 )
                 .bind(&self.heartbeat.heartbeat.cbsd_id)
@@ -535,8 +539,14 @@ impl SeniorityUpdate<'_> {
                 .bind(new_seniority)
                 .bind(self.heartbeat.received_timestamp)
                 .bind(update_reason as i32)
-                .execute(&mut *exec)
+                .fetch_one(&mut *exec)
                 .await?;
+                if !inserted {
+                    tracing::error!(
+                        coverage_object = %self.heartbeat.coverage_object.unwrap(),
+                        "Failed to insert new seniority, updating"
+                    );
+                }
             }
             SeniorityUpdateAction::Update { curr_seniority } => {
                 sqlx::query(
