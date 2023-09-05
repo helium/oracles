@@ -194,7 +194,7 @@ impl HeartbeatDaemon {
         while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
             validated_heartbeat.write(&self.file_sink).await?;
 
-            if !validated_heartbeat.is_valid() {
+            if !validated_heartbeat.check_validity() {
                 continue;
             }
 
@@ -326,7 +326,7 @@ struct HeartbeatSaveResult {
 }
 
 impl ValidatedHeartbeat {
-    pub fn is_valid(&self) -> bool {
+    pub fn check_validity(&self) -> bool {
         self.validity == proto::HeartbeatValidity::Valid
     }
 
