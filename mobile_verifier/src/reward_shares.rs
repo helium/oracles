@@ -201,7 +201,7 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 
 #[derive(Default)]
 pub struct RadioShares {
-    radio_shares: HashMap<String, Decimal>,
+    radio_shares: HashMap<Option<String>, Decimal>,
 }
 
 impl RadioShares {
@@ -234,7 +234,7 @@ impl PocShares {
                 .entry(heartbeat_reward.hotspot_key.clone())
                 .or_default()
                 .radio_shares
-                .entry(heartbeat_reward.id()?)
+                .entry(heartbeat_reward.cbsd_id)
                 .or_default() += heartbeat_reward.reward_weight * speedmultiplier;
         }
         Ok(poc_shares)
@@ -280,7 +280,7 @@ impl PocShares {
                                 reward: Some(proto::mobile_reward_share::Reward::RadioReward(
                                     proto::RadioReward {
                                         hotspot_key,
-                                        cbsd_id,
+                                        cbsd_id: cbsd_id.unwrap_or(String::new()),
                                         poc_reward: poc_reward
                                             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                                             .to_u64()
@@ -336,8 +336,8 @@ mod test {
     use std::collections::HashMap;
 
     fn valid_shares() -> RadioShares {
-        let mut radio_shares: HashMap<String, Decimal> = Default::default();
-        radio_shares.insert(String::new(), Decimal::ONE);
+        let mut radio_shares: HashMap<Option<String>, Decimal> = Default::default();
+        radio_shares.insert(Some(String::new()), Decimal::ONE);
         RadioShares { radio_shares }
     }
 
@@ -988,13 +988,13 @@ mod test {
         hotspot_shares.insert(
             gw1.clone(),
             RadioShares {
-                radio_shares: vec![(c1, dec!(10.0))].into_iter().collect(),
+                radio_shares: vec![(Some(c1), dec!(10.0))].into_iter().collect(),
             },
         );
         hotspot_shares.insert(
             gw2,
             RadioShares {
-                radio_shares: vec![(c2, dec!(-1.0)), (c3, dec!(0.0))]
+                radio_shares: vec![(Some(c2), dec!(-1.0)), (Some(c3), dec!(0.0))]
                     .into_iter()
                     .collect(),
             },
