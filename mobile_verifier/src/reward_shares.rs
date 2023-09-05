@@ -231,7 +231,7 @@ impl PocShares {
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
             *poc_shares
                 .hotspot_shares
-                .entry(heartbeat_reward.hotspot_key.clone())
+                .entry(heartbeat_reward.hotspot_key)
                 .or_default()
                 .radio_shares
                 .entry(heartbeat_reward.cbsd_id)
