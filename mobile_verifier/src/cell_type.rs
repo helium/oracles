@@ -22,7 +22,6 @@ pub enum CellType {
     SercommOutdoor = 4,
     CellTypeNone = 5,
     NovaGenericWifiIndoor = 6,
-    NovaGenericWifiOutdoor = 7,
 }
 
 pub enum CellTypeLabel {
@@ -52,7 +51,6 @@ impl CellType {
             Self::SercommOutdoor => CellTypeLabel::Cell,
             Self::CellTypeNone => CellTypeLabel::None,
             Self::NovaGenericWifiIndoor => CellTypeLabel::Wifi,
-            Self::NovaGenericWifiOutdoor => CellTypeLabel::Wifi,
         }
     }
 
@@ -65,7 +63,6 @@ impl CellType {
             Self::SercommOutdoor => dec!(2.5),
             Self::CellTypeNone => dec!(0.0),
             Self::NovaGenericWifiIndoor => dec!(0.4),
-            Self::NovaGenericWifiOutdoor => dec!(1.0),
         }
     }
 
@@ -88,7 +85,6 @@ impl From<CellType> for CellTypeProto {
             CellType::SercommOutdoor => Self::SercommOutdoor,
             CellType::CellTypeNone => Self::None,
             CellType::NovaGenericWifiIndoor => Self::NovaGenericWifiIndoor,
-            CellType::NovaGenericWifiOutdoor => Self::NovaGenericWifiOutdoor,
         }
     }
 }
