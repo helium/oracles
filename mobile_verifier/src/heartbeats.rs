@@ -382,10 +382,6 @@ impl ValidatedHeartbeat {
     }
 
     async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
-        // If the heartbeat is not valid, do not save it
-        if self.validity != proto::HeartbeatValidity::Valid {
-            return Ok(false);
-        }
         match self.report.hb_type {
             HBType::Cell => self.save_cell_hb(exec).await,
             HBType::Wifi => self.save_wifi_hb(exec).await,
