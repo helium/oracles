@@ -527,6 +527,10 @@ impl SeniorityUpdate<'_> {
                       (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason)
                     VALUES
                       ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (cbsd_id, seniority_ts) DO UPDATE SET
+                      uuid = EXCLUDED.uuid,
+                      last_heartbeat = EXCLUDED.last_heartbeat,
+                      update_reason = EXCLUDED.update_reason
                     "#,
                 )
                 .bind(&self.heartbeat.heartbeat.cbsd_id)
