@@ -42,4 +42,3 @@ tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
 task-manager = { path = "../task_manager" }
-
