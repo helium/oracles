@@ -53,3 +53,5 @@ itertools = {workspace = true}
 rand = {workspace = true}
 beacon = {workspace = true}
 price = { path = "../price" }
+tokio-util = { workspace = true }
+task-manager = { path = "../task_manager" }

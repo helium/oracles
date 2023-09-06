@@ -138,12 +138,14 @@ fn start_futures(
 async fn stop_all(futures: Vec<StopableLocalFuture>) -> anyhow::Result<()> {
     #[allow(clippy::manual_try_fold)]
     futures::stream::iter(futures.into_iter().rev())
-        .fold(Ok(()), |last_result, local| async move {
+        .then(|local| async move {
             local.shutdown_trigger.trigger();
-            let result = local.future.await;
-            last_result.and(result)
+            local.future.await
         })
+        .collect::<Vec<_>>()
         .await
+        .into_iter()
+        .collect()
 }
 
 fn create_triggers(n: usize) -> Vec<(triggered::Trigger, triggered::Listener)> {

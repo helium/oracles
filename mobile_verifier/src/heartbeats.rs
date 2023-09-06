@@ -78,6 +78,7 @@ impl HeartbeatDaemon {
 
             loop {
                 tokio::select! {
+                    biased;
                     _ = shutdown.clone() => {
                         tracing::info!("HeartbeatDaemon shutting down");
                         break;

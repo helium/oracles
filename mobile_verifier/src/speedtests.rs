@@ -65,6 +65,7 @@ impl SpeedtestDaemon {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
+                    biased;
                     _ = shutdown.clone() => {
                         tracing::info!("SpeedtestDaemon shutting down");
                         break;

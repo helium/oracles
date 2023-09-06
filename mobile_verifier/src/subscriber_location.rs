@@ -46,10 +46,8 @@ impl SubscriberLocationIngestor {
     }
     pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 msg = self.reports_receiver.recv() => if let Some(stream) =  msg {
                     match self.process_file(stream).await {

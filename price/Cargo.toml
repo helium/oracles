@@ -21,6 +21,7 @@ tracing-subscriber = { workspace = true }
 metrics = {workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 chrono = { workspace = true }
 helium-proto = { workspace = true }
 file-store = { path = "../file_store" }
@@ -28,5 +29,6 @@ poc-metrics = { path = "../metrics" }
 triggered = {workspace = true}
 solana-client = {workspace = true}
 solana-sdk = {workspace = true}
+task-manager = {path = "../task_manager"}
 price-oracle = {workspace = true}
 anchor-lang = {workspace = true}
