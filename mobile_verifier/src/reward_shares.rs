@@ -732,6 +732,12 @@ mod test {
         let owner4: PublicKeyBinary = "112p1GbUtRLyfFaJr1XF8fH7yz9cSZ4exbrSpVDeu67DeGb31QUL"
             .parse()
             .expect("failed owner4 parse");
+        let owner5: PublicKeyBinary = "112bUGwooPd1dCDd3h3yZwskjxCzBsQNKeaJTuUF4hSgYedcsFa9"
+            .parse()
+            .expect("failed owner5 parse");
+        let owner6: PublicKeyBinary = "112WqD16uH8GLmCMhyRUrp6Rw5MTELzBdx7pSepySYUoSjixQoxJ"
+            .parse()
+            .expect("failed owner6 parse");
 
         // init hotspots
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -758,6 +764,13 @@ mod test {
         let gw8: PublicKeyBinary = "112qDCKek7fePg6wTpEnbLp3uD7TTn8MBH7PGKtmAaUcG1vKQ9eZ"
             .parse()
             .expect("failed gw8 parse");
+        // include a couple of wifi spots in the mix
+        let gw9: PublicKeyBinary = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf"
+            .parse()
+            .expect("failed gw9 parse");
+        let gw10: PublicKeyBinary = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo"
+            .parse()
+            .expect("failed gw10 parse");
 
         // link gws to owners
         let mut owners = HashMap::new();
@@ -769,6 +782,8 @@ mod test {
         owners.insert(gw6.clone(), owner3.clone());
         owners.insert(gw7.clone(), owner3.clone());
         owners.insert(gw8.clone(), owner4.clone());
+        owners.insert(gw9.clone(), owner5.clone());
+        owners.insert(gw10.clone(), owner6.clone());
 
         // init cells and cell_types
         let c2 = "P27-SCE4255W2107CW5000015".to_string();
@@ -861,6 +876,18 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
                 location_validation_timestamp: None,
             },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw9.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                location_validation_timestamp: Some(timestamp),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw10.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                location_validation_timestamp: None,
+            },
         ];
 
         let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
@@ -898,6 +925,14 @@ mod test {
             poor_speedtest(gw7.clone(), last_speedtest),
             poor_speedtest(gw7.clone(), timestamp),
         ];
+        let gw9_speedtests = vec![
+            poor_speedtest(gw9.clone(), last_speedtest),
+            poor_speedtest(gw9.clone(), timestamp),
+        ];
+        let gw10_speedtests = vec![
+            poor_speedtest(gw10.clone(), last_speedtest),
+            poor_speedtest(gw10.clone(), timestamp),
+        ];
 
         let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
         let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
@@ -906,6 +941,8 @@ mod test {
         let gw5_average = SpeedtestAverage::from(&gw5_speedtests);
         let gw6_average = SpeedtestAverage::from(&gw6_speedtests);
         let gw7_average = SpeedtestAverage::from(&gw7_speedtests);
+        let gw9_average = SpeedtestAverage::from(&gw9_speedtests);
+        let gw10_average = SpeedtestAverage::from(&gw10_speedtests);
         let mut averages = HashMap::new();
         averages.insert(gw1.clone(), gw1_average);
         averages.insert(gw2.clone(), gw2_average);
@@ -914,6 +951,8 @@ mod test {
         averages.insert(gw5.clone(), gw5_average);
         averages.insert(gw6.clone(), gw6_average);
         averages.insert(gw7.clone(), gw7_average);
+        averages.insert(gw9.clone(), gw9_average);
+        averages.insert(gw10.clone(), gw10_average);
 
         let speedtest_avgs = SpeedtestAverages { averages };
 
@@ -943,29 +982,44 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            490_402_129_746
+            486_246_179_493
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            1_471_206_389_237
+            1_458_738_538_478
         );
 
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            87_571_808_883
+            86_829_674_909
         );
         assert_eq!(owner_rewards.get(&owner4), None);
+
+        let owner5_reward = *owner_rewards
+            .get(&owner5)
+            .expect("Could not fetch owner5 rewards");
+        assert_eq!(owner5_reward, 13_892_747_985);
+
+        let owner6_reward = *owner_rewards
+            .get(&owner6)
+            .expect("Could not fetch owner6 rewards");
+        assert_eq!(owner6_reward, 3_473_186_996);
+
+        // confirm owner 6 reward is 0.25 of owner 5's reward
+        // this is due to owner 6's hotspot not having a validation location timestamp
+        // and thus its reward scale is reduced
+        assert_eq!((owner5_reward as f64 * 0.25) as u64, owner6_reward);
 
         let mut total = 0;
         for val in owner_rewards.values() {
             total += *val
         }
 
-        assert_eq!(total, 2_049_180_327_866); // total emissions for 1 hour
+        assert_eq!(total, 2_049_180_327_861); // total emissions for 1 hour
     }
 
     #[tokio::test]
