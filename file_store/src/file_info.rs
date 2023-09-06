@@ -126,7 +126,6 @@ pub const IOT_INVALID_BEACON_REPORT: &str = "iot_invalid_beacon";
 pub const IOT_INVALID_WITNESS_REPORT: &str = "iot_invalid_witness";
 pub const SPEEDTEST_AVG: &str = "speedtest_avg";
 pub const VALIDATED_HEARTBEAT: &str = "validated_heartbeat";
-pub const VALIDATED_WIFI_HEARTBEAT: &str = "validated_wifi_heartbeat";
 pub const SIGNED_POC_RECEIPT_TXN: &str = "signed_poc_receipt_txn";
 pub const RADIO_REWARD_SHARE: &str = "radio_reward_share";
 pub const REWARD_MANIFEST: &str = "reward_manifest";
@@ -182,7 +181,6 @@ pub enum FileType {
     VerifiedSpeedtest,
     WifiHeartbeat,
     WifiHeartbeatIngestReport,
-    ValidatedWifiHeartbeat,
 }
 
 impl fmt::Display for FileType {
@@ -210,7 +208,6 @@ impl fmt::Display for FileType {
             Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
-            Self::ValidatedWifiHeartbeat => VALIDATED_WIFI_HEARTBEAT,
             Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
@@ -258,7 +255,6 @@ impl FileType {
             Self::IotInvalidWitnessReport => IOT_INVALID_WITNESS_REPORT,
             Self::SpeedtestAvg => SPEEDTEST_AVG,
             Self::ValidatedHeartbeat => VALIDATED_HEARTBEAT,
-            Self::ValidatedWifiHeartbeat => VALIDATED_WIFI_HEARTBEAT,
             Self::SignedPocReceiptTxn => SIGNED_POC_RECEIPT_TXN,
             Self::RadioRewardShare => RADIO_REWARD_SHARE,
             Self::RewardManifest => REWARD_MANIFEST,
@@ -306,7 +302,6 @@ impl FromStr for FileType {
             IOT_INVALID_WITNESS_REPORT => Self::IotInvalidWitnessReport,
             SPEEDTEST_AVG => Self::SpeedtestAvg,
             VALIDATED_HEARTBEAT => Self::ValidatedHeartbeat,
-            VALIDATED_WIFI_HEARTBEAT => Self::ValidatedWifiHeartbeat,
             SIGNED_POC_RECEIPT_TXN => Self::SignedPocReceiptTxn,
             RADIO_REWARD_SHARE => Self::RadioRewardShare,
             REWARD_MANIFEST => Self::RewardManifest,

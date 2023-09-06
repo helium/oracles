@@ -23,26 +23,26 @@ const MINIMUM_CELL_HEARTBEAT_COUNT: i64 = 12;
 const MINIMUM_WIFI_HEARTBEAT_COUNT: i64 = 12;
 
 #[derive(Clone)]
-pub enum HBType {
+enum HBType {
     Cell = 0,
     Wifi = 1,
 }
 
 #[derive(Clone)]
-pub struct ValidatedHeartbeat {
-    pub report: Heartbeat,
-    pub cell_type: CellType,
-    pub validity: proto::HeartbeatValidity,
+struct ValidatedHeartbeat {
+    report: Heartbeat,
+    cell_type: CellType,
+    validity: proto::HeartbeatValidity,
 }
 
 #[derive(Clone)]
-pub struct Heartbeat {
-    pub hb_type: HBType,
-    pub hotspot_key: PublicKeyBinary,
-    pub cbsd_id: Option<String>,
-    pub operation_mode: bool,
-    pub location_validation_timestamp: Option<DateTime<Utc>>,
-    pub timestamp: DateTime<Utc>,
+struct Heartbeat {
+    hb_type: HBType,
+    hotspot_key: PublicKeyBinary,
+    cbsd_id: Option<String>,
+    operation_mode: bool,
+    location_validation_timestamp: Option<DateTime<Utc>>,
+    timestamp: DateTime<Utc>,
 }
 
 impl Heartbeat {

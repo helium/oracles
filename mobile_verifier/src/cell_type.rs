@@ -25,7 +25,7 @@ pub enum CellType {
 }
 
 pub enum CellTypeLabel {
-    None = 0,
+    CellTypeLabelNone = 0,
     Cell = 1,
     Wifi = 2,
 }
@@ -49,7 +49,7 @@ impl CellType {
             Self::Neutrino430 => CellTypeLabel::Cell,
             Self::SercommIndoor => CellTypeLabel::Cell,
             Self::SercommOutdoor => CellTypeLabel::Cell,
-            Self::CellTypeNone => CellTypeLabel::None,
+            Self::CellTypeNone => CellTypeLabel::CellTypeLabelNone,
             Self::NovaGenericWifiIndoor => CellTypeLabel::Wifi,
         }
     }

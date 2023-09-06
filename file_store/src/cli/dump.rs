@@ -60,8 +60,8 @@ impl Cmd {
                     let json = json!({
                         "received_timestamp": msg.received_timestamp,
                         "pubkey": msg.report.pubkey,
-                        "operation mode": msg.report.operation_mode,
-                        "location validation timestamp mode": msg.report.location_validation_timestamp,
+                        "operation_mode": msg.report.operation_mode,
+                        "location_validation_timestamp": msg.report.location_validation_timestamp,
                     });
                     print_json(&json)?;
                 }
