@@ -370,8 +370,8 @@ async fn validate_heartbeat(
         return Ok((cell_type, proto::HeartbeatValidity::HeartbeatOutsideRange));
     }
 
-    if gateway_client.has_owner(&heartbeat.report.pubkey).await? {
-        return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
+    if !gateway_client.has_owner(&heartbeat.report.pubkey).await? {
+        return Ok((cell_type, proto::HeartbeatValidity::GatewayNotFound));
     }
 
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
