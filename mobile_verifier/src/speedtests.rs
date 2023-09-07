@@ -6,6 +6,7 @@ use file_store::{
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
 };
 use futures::{
+    future::LocalBoxFuture,
     stream::{StreamExt, TryStreamExt},
     TryFutureExt,
 };
@@ -13,6 +14,7 @@ use helium_crypto::PublicKeyBinary;
 use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
 use std::collections::HashMap;
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -46,6 +48,20 @@ pub struct SpeedtestDaemon {
     file_sink: FileSinkClient,
 }
 
+impl ManagedTask for SpeedtestDaemon {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
+    }
+}
+
 impl SpeedtestDaemon {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
@@ -62,12 +78,13 @@ impl SpeedtestDaemon {
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("starting speedtests daemon");
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
-                        tracing::info!("SpeedtestDaemon shutting down");
+                        tracing::info!("stopping speedtests daemon");
                         break;
                     }
                     Some(file) = self.speedtests.recv() => self.process_file(file).await?,

@@ -7,7 +7,7 @@ use file_store::{
         VerifiedSubscriberLocationIngestReport,
     },
 };
-use futures::{StreamExt, TryStreamExt};
+use futures::{future::LocalBoxFuture, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{
@@ -16,6 +16,7 @@ use helium_proto::services::poc_mobile::{
 use mobile_config::client::{AuthorizationClient, EntityClient};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::ops::Range;
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 pub type SubscriberValidatedLocations = Vec<Vec<u8>>;
@@ -26,6 +27,15 @@ pub struct SubscriberLocationIngestor {
     entity_client: EntityClient,
     reports_receiver: Receiver<FileInfoStream<SubscriberLocationIngestReport>>,
     verified_report_sink: FileSinkClient,
+}
+
+impl ManagedTask for SubscriberLocationIngestor {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 impl SubscriberLocationIngestor {
@@ -44,7 +54,8 @@ impl SubscriberLocationIngestor {
             verified_report_sink,
         }
     }
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("starting subscriber location daemon");
         loop {
             tokio::select! {
                 biased;
@@ -60,7 +71,7 @@ impl SubscriberLocationIngestor {
                 }
             }
         }
-        tracing::info!("stopping subscriber location reports handler");
+        tracing::info!("stopping subscriber location daemon");
         Ok(())
     }
 

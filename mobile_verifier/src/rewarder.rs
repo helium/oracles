@@ -10,6 +10,10 @@ use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+use futures::{
+    future::LocalBoxFuture,
+    TryFutureExt,
+};
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -17,6 +21,7 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
+use task_manager::ManagedTask;
 use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -28,6 +33,20 @@ pub struct Rewarder {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
+}
+
+impl ManagedTask for Rewarder {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
+    }
 }
 
 impl Rewarder {
@@ -50,6 +69,7 @@ impl Rewarder {
     }
 
     pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("starting rewarder daemon");
         loop {
             let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
             let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
@@ -82,6 +102,7 @@ impl Rewarder {
                 _ = sleep(sleep_duration) => (),
             }
         }
+        tracing::info!("stopping rewarder daemon");
 
         Ok(())
     }
