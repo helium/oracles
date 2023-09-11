@@ -14,6 +14,7 @@ use futures::{
     stream::{BoxStream, Stream, StreamExt},
     TryFutureExt, TryStreamExt,
 };
+use futures_util::stream;
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
@@ -340,13 +341,18 @@ impl CoveredHexStream for Pool<Postgres> {
             .await?;
 
         // Find the time of insertion for the currently in use coverage object
-        let current_inserted_at: DateTime<Utc> = sqlx::query_scalar(
+        let current_inserted_at: Option<DateTime<Utc>> = sqlx::query_scalar(
             "SELECT inserted_at FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2 LIMIT 1",
         )
         .bind(cbsd_id)
         .bind(coverage_obj)
-        .fetch_one(self)
+        .fetch_optional(self)
         .await?;
+
+        // If we don't have an inserted_at, we don't have any hex coverage
+        let Some(current_inserted_at) = current_inserted_at else {
+            return Ok(stream::empty().boxed());
+        };
 
         // Delete any hex coverages that were inserted before the one we are currently using, as they are
         // no longer useful.
