@@ -289,26 +289,19 @@ impl HeartbeatReward {
              cell_type
            HAVING count(*) >= $3)
            UNION
-           (WITH latest_wifi_hotspots AS (
-               SELECT tw1.hotspot_key
-               FROM wifi_heartbeats tw1
-               WHERE truncated_timestamp >= $1
-               AND truncated_timestamp < $2
-            )
             SELECT
-            latest_wifi_hotspots.hotspot_key,
+            hotspot_key,
             NULL as cbsd_id,
             cell_type,
             location_validation_timestamp
             FROM wifi_heartbeats
-            JOIN latest_wifi_hotspots ON wifi_heartbeats.hotspot_key = latest_wifi_hotspots.hotspot_key
             WHERE truncated_timestamp >= $1
             AND truncated_timestamp < $2
             GROUP BY
-            latest_wifi_hotspots.hotspot_key,
+            hotspot_key,
             cell_type,
             location_validation_timestamp
-            HAVING count(*) >= $4);
+            HAVING count(*) >= $4;
             "#,
         )
         .bind(epoch.start)
