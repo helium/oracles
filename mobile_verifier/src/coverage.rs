@@ -14,7 +14,6 @@ use futures::{
     stream::{BoxStream, Stream, StreamExt},
     TryFutureExt, TryStreamExt,
 };
-use futures_util::stream;
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{
@@ -174,22 +173,17 @@ impl CoverageObject {
     }
 
     pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
-        if sqlx::query_scalar("SELECT count(1) > 0 FROM hex_coverage WHERE uuid = $1")
-            .bind(self.coverage_object.uuid)
-            .fetch_one(&mut *transaction)
-            .await?
-        {
-            return Ok(());
-        }
+        let insertion_time = Utc::now();
         for hex in self.coverage_object.coverage {
             let location: u64 = hex.location.into();
-            let inserted = sqlx::query(
+            sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
                   (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time, inserted_at)
                 VALUES
                   ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (uuid, hex) DO UPDATE SET
+                  inserted_at = EXCLUDED.inserted_at
                 "#,
             )
             .bind(self.coverage_object.uuid)
@@ -198,14 +192,9 @@ impl CoverageObject {
             .bind(&self.coverage_object.cbsd_id)
             .bind(SignalLevel::from(hex.signal_level))
             .bind(self.coverage_object.coverage_claim_time)
-            .bind(Utc::now())
+            .bind(insertion_time)
             .execute(&mut *transaction)
-            .await?
-            .rows_affected()
-                > 0;
-            if !inserted {
-                tracing::error!(uuid = %self.coverage_object.uuid, %location, "Duplicate hex coverage");
-            }
+            .await?;
         }
         Ok(())
     }
@@ -350,18 +339,13 @@ impl CoveredHexStream for Pool<Postgres> {
             .await?;
 
         // Find the time of insertion for the currently in use coverage object
-        let current_inserted_at: Option<DateTime<Utc>> = sqlx::query_scalar(
+        let current_inserted_at: DateTime<Utc> = sqlx::query_scalar(
             "SELECT inserted_at FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2 LIMIT 1",
         )
         .bind(cbsd_id)
         .bind(coverage_obj)
-        .fetch_optional(self)
+        .fetch_one(self)
         .await?;
-
-        // If we don't have an inserted_at, we don't have any hex coverage
-        let Some(current_inserted_at) = current_inserted_at else {
-            return Ok(stream::empty().boxed());
-        };
 
         // Delete any hex coverages that were inserted before the one we are currently using, as they are
         // no longer useful.
