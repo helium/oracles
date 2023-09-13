@@ -432,7 +432,7 @@ impl ValidatedHeartbeat {
             r#"
                 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, location_validation_timestamp, distance_to_asserted,
                     latest_timestamp, truncated_timestamp)
-                VALUES ($1, $2, $3, $4, $5)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
                 latest_timestamp = EXCLUDED.latest_timestamp
                 RETURNING (xmax = 0) as inserted
