@@ -596,6 +596,9 @@ mod test {
         let g4: PublicKeyBinary = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo"
             .parse()
             .expect("unable to construct pubkey");
+        let g5: PublicKeyBinary = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt"
+            .parse()
+            .expect("unable to construct pubkey");
 
         let c1 = "P27-SCE4255W2107CW5000014".to_string();
         let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
@@ -604,6 +607,7 @@ mod test {
 
         let g3ct = CellType::NovaGenericWifiIndoor;
         let g4ct = CellType::NovaGenericWifiIndoor;
+        let g5ct = CellType::NovaGenericWifiIndoor;
 
         let timestamp = Utc::now();
 
@@ -650,6 +654,13 @@ mod test {
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
             },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: g5.clone(),
+                cell_type: g5ct,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(100000),
+            },
         ];
         let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
             .into_iter()
@@ -673,15 +684,21 @@ mod test {
             acceptable_speedtest(g4.clone(), last_timestamp),
             acceptable_speedtest(g4.clone(), timestamp),
         ];
+        let g5_speedtests = vec![
+            acceptable_speedtest(g5.clone(), last_timestamp),
+            acceptable_speedtest(g5.clone(), timestamp),
+        ];
         let g1_average = SpeedtestAverage::from(&g1_speedtests);
         let g2_average = SpeedtestAverage::from(&g2_speedtests);
         let g3_average = SpeedtestAverage::from(&g3_speedtests);
         let g4_average = SpeedtestAverage::from(&g4_speedtests);
+        let g5_average = SpeedtestAverage::from(&g5_speedtests);
         let mut averages = HashMap::new();
         averages.insert(g1.clone(), g1_average);
         averages.insert(g2.clone(), g2_average);
         averages.insert(g3.clone(), g3_average);
         averages.insert(g4.clone(), g4_average);
+        averages.insert(g5.clone(), g5_average);
         let speedtest_avgs = SpeedtestAverages { averages };
 
         let rewards =
@@ -702,12 +719,17 @@ mod test {
         let gw3_shares = rewards
             .hotspot_shares
             .get(&g3)
-            .expect("Could not fetch gateway1 shares")
+            .expect("Could not fetch gateway3 shares")
             .total_shares();
         let gw4_shares = rewards
             .hotspot_shares
             .get(&g4)
-            .expect("Could not fetch gateway1 shares")
+            .expect("Could not fetch gateway4 shares")
+            .total_shares();
+        let gw5_shares = rewards
+            .hotspot_shares
+            .get(&g5)
+            .expect("Could not fetch gateway5 shares")
             .total_shares();
 
         // The owner with two hotspots gets more rewards
@@ -721,6 +743,10 @@ mod test {
         // gw4 has wifi HBs and DOES NOT have a location validation timestamp
         // gets 0.25 of the full reward weight
         assert_eq!(gw4_shares, dec!(0.1));
+        // gw4 has wifi HBs and does have a location validation timestamp
+        // but the HB distance is too far from the asserted location
+        // gets 0.25 of the full reward weight
+        assert_eq!(gw5_shares, dec!(0.1));
     }
 
     #[tokio::test]
