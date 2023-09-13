@@ -7,5 +7,6 @@ CREATE TABLE wifi_heartbeats (
        truncated_timestamp TIMESTAMPTZ NOT NULL CHECK (truncated_timestamp = date_trunc('hour', truncated_timestamp)),
        latest_timestamp TIMESTAMPTZ NOT NULL,
        location_validation_timestamp TIMESTAMPTZ,
+       distance_to_asserted BIGINT,
        PRIMARY KEY(hotspot_key, truncated_timestamp)
 );

@@ -10,6 +10,11 @@ pub const CELLTYPE_NEUTRINO_430: &str = "2AG32PBS31010";
 pub const CELLTYPE_SERCCOMM_INDOOR: &str = "P27-SCE4255W";
 pub const CELLTYPE_SERCCOMM_OUTDOOR: &str = "P27-SCO4255PA10";
 
+/// Max distance in meters between the asserted location of a WIFI hotspot
+/// and its heartbeats lat/lng beyond which its location weight will be reduced
+/// TODO: confirm max value
+const MAX_ASSERTED_DISTANCE_DEVIATION: i64 = 300;
+
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone, Serialize, sqlx::Type)]
 #[sqlx(type_name = "cell_type")]
 #[sqlx(rename_all = "lowercase")]
@@ -66,9 +71,24 @@ impl CellType {
         }
     }
 
-    pub fn location_weight(&self, location_validation_timestamp: Option<DateTime<Utc>>) -> Decimal {
+    // TODO: is location_validation_timestamp now redundant as we now check the HB lat/lng??
+    pub fn location_weight(
+        &self,
+        location_validation_timestamp: Option<DateTime<Utc>>,
+        distance: Option<i64>,
+    ) -> Decimal {
         match (self, location_validation_timestamp.is_some()) {
-            (Self::NovaGenericWifiIndoor, true) => dec!(1.0),
+            (Self::NovaGenericWifiIndoor, true) => match distance {
+                Some(v) => {
+                    if v > MAX_ASSERTED_DISTANCE_DEVIATION {
+                        dec!(0.25)
+                    } else {
+                        dec!(1.0)
+                    }
+                }
+                // shouldnt ever hit here but allow for it
+                None => dec!(0.25),
+            },
             (Self::NovaGenericWifiIndoor, false) => dec!(0.25),
             _ => dec!(1.0),
         }

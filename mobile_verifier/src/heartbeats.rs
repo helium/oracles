@@ -9,9 +9,10 @@ use futures::{
     stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
+use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{client::ClientError, gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
@@ -22,7 +23,7 @@ use tokio::sync::mpsc::Receiver;
 const MINIMUM_CELL_HEARTBEAT_COUNT: i64 = 12;
 const MINIMUM_WIFI_HEARTBEAT_COUNT: i64 = 12;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum HBType {
     Cell = 0,
     Wifi = 1,
@@ -33,6 +34,7 @@ struct ValidatedHeartbeat {
     report: Heartbeat,
     cell_type: CellType,
     validity: proto::HeartbeatValidity,
+    distance_to_asserted: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -41,6 +43,8 @@ struct Heartbeat {
     hotspot_key: PublicKeyBinary,
     cbsd_id: Option<String>,
     operation_mode: bool,
+    lat: f64,
+    lon: f64,
     location_validation_timestamp: Option<DateTime<Utc>>,
     timestamp: DateTime<Utc>,
 }
@@ -72,6 +76,8 @@ impl From<CellHeartbeatIngestReport> for Heartbeat {
             hotspot_key: value.report.pubkey,
             cbsd_id: Some(value.report.cbsd_id),
             operation_mode: value.report.operation_mode,
+            lat: value.report.lat,
+            lon: value.report.lon,
             location_validation_timestamp: None,
             timestamp: value.received_timestamp,
         }
@@ -85,6 +91,8 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             hotspot_key: value.report.pubkey,
             cbsd_id: None,
             operation_mode: value.report.operation_mode,
+            lat: value.report.lat,
+            lon: value.report.lon,
             location_validation_timestamp: value.report.location_validation_timestamp,
             timestamp: value.received_timestamp,
         }
@@ -220,6 +228,7 @@ pub struct HeartbeatRow {
     pub cell_type: CellType,
     // wifi hb only
     pub location_validation_timestamp: Option<DateTime<Utc>>,
+    pub distance_to_asserted: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -238,9 +247,10 @@ impl From<HeartbeatRow> for HeartbeatReward {
             cell_type: value.cell_type,
             cbsd_id: value.cbsd_id,
             reward_weight: value.cell_type.reward_weight()
-                * value
-                    .cell_type
-                    .location_weight(value.location_validation_timestamp),
+                * value.cell_type.location_weight(
+                    value.location_validation_timestamp,
+                    value.distance_to_asserted,
+                ),
         }
     }
 }
@@ -278,7 +288,8 @@ impl HeartbeatReward {
              latest_hotspots.hotspot_key,
              heartbeats.cbsd_id,
              cell_type,
-             NULL as location_validation_timestamp
+             NULL as location_validation_timestamp,
+             NULL as distance_to_asserted
            FROM heartbeats
            JOIN latest_hotspots ON heartbeats.cbsd_id = latest_hotspots.cbsd_id
            WHERE truncated_timestamp >= $1
@@ -293,14 +304,16 @@ impl HeartbeatReward {
             hotspot_key,
             NULL as cbsd_id,
             cell_type,
-            location_validation_timestamp
+            location_validation_timestamp,
+            distance_to_asserted
             FROM wifi_heartbeats
             WHERE truncated_timestamp >= $1
             AND truncated_timestamp < $2
             GROUP BY
             hotspot_key,
             cell_type,
-            location_validation_timestamp
+            location_validation_timestamp,
+            distance_to_asserted
             HAVING count(*) >= $4;
             "#,
         )
@@ -331,16 +344,18 @@ impl ValidatedHeartbeat {
         gateway_client: &'a GatewayClient,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = Result<Self, ClientError>> + 'a {
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |report| {
             let mut gateway_client = gateway_client.clone();
             async move {
-                let (cell_type, validity) =
+                let (cell_type, validity, distance_to_asserted) =
                     validate_heartbeat(&report, &mut gateway_client, epoch).await?;
+
                 Ok(Self {
                     report,
                     cell_type,
                     validity,
+                    distance_to_asserted,
                 })
             }
         })
@@ -367,6 +382,7 @@ impl ValidatedHeartbeat {
                         .report
                         .location_validation_timestamp
                         .map_or(0, |v| v.timestamp() as u64),
+                    distance_to_asserted: self.distance_to_asserted.map_or(0, |v| v as u64),
                 },
                 &[("validity", self.validity.as_str_name())],
             )
@@ -414,7 +430,7 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(sqlx::query_as::<_, HeartbeatSaveResult>(
             r#"
-                INSERT INTO wifi_heartbeats (hotspot_key, cell_type, location_validation_timestamp,
+                INSERT INTO wifi_heartbeats (hotspot_key, cell_type, location_validation_timestamp, distance_to_asserted,
                     latest_timestamp, truncated_timestamp)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
@@ -425,6 +441,7 @@ impl ValidatedHeartbeat {
         .bind(self.report.hotspot_key)
         .bind(self.cell_type)
         .bind(self.report.location_validation_timestamp)
+        .bind(self.distance_to_asserted)
         .bind(self.report.timestamp)
         .bind(truncated_timestamp)
         .fetch_one(&mut *exec)
@@ -438,16 +455,26 @@ async fn validate_heartbeat(
     heartbeat: &Heartbeat,
     gateway_client: &mut GatewayClient,
     epoch: &Range<DateTime<Utc>>,
-) -> Result<(CellType, proto::HeartbeatValidity), ClientError> {
-    // todo: a better way to write this using combinators ?
-    // cant get it to handle the early non error return
+) -> anyhow::Result<(CellType, proto::HeartbeatValidity, Option<i64>)> {
     let cell_type = match heartbeat.hb_type {
         HBType::Cell => match heartbeat.cbsd_id.as_ref() {
             Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
                 Some(ty) => ty,
-                _ => return Ok((CellType::CellTypeNone, proto::HeartbeatValidity::BadCbsdId)),
+                _ => {
+                    return Ok((
+                        CellType::CellTypeNone,
+                        proto::HeartbeatValidity::BadCbsdId,
+                        None,
+                    ))
+                }
             },
-            None => return Ok((CellType::CellTypeNone, proto::HeartbeatValidity::BadCbsdId)),
+            None => {
+                return Ok((
+                    CellType::CellTypeNone,
+                    proto::HeartbeatValidity::BadCbsdId,
+                    None,
+                ))
+            }
         },
         // for wifi HBs temporary assume we have an indoor wifi spot
         // this will be better/properly handled when coverage reports are live
@@ -455,22 +482,43 @@ async fn validate_heartbeat(
     };
 
     if !heartbeat.operation_mode {
-        return Ok((cell_type, proto::HeartbeatValidity::NotOperational));
+        return Ok((cell_type, proto::HeartbeatValidity::NotOperational, None));
     }
 
     if !epoch.contains(&heartbeat.timestamp) {
-        return Ok((cell_type, proto::HeartbeatValidity::HeartbeatOutsideRange));
+        return Ok((
+            cell_type,
+            proto::HeartbeatValidity::HeartbeatOutsideRange,
+            None,
+        ));
     }
 
-    if gateway_client
+    let Some(gateway_info) = gateway_client
         .resolve_gateway_info(&heartbeat.hotspot_key)
         .await?
-        .is_none()
-    {
-        return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
-    }
+    else {
+        return Ok((cell_type, proto::HeartbeatValidity::GatewayNotFound, None));
+    };
 
-    Ok((cell_type, proto::HeartbeatValidity::Valid))
+    let Some(metadata) = gateway_info.metadata else {
+        return Ok((
+            cell_type,
+            proto::HeartbeatValidity::GatewayNotAsserted,
+            None,
+        ));
+    };
+
+    let distance_to_asserted = if heartbeat.hb_type == HBType::Wifi {
+        Some(calc_asserted_distance(heartbeat, metadata.location)?)
+    } else {
+        None
+    };
+
+    Ok((
+        cell_type,
+        proto::HeartbeatValidity::Valid,
+        distance_to_asserted,
+    ))
 }
 
 pub async fn clear_heartbeats(
@@ -488,4 +536,10 @@ pub async fn clear_heartbeats(
         .await?;
 
     Ok(())
+}
+
+fn calc_asserted_distance(heartbeat: &Heartbeat, asserted_location: u64) -> anyhow::Result<i64> {
+    let asserted_latlng: LatLng = CellIndex::try_from(asserted_location)?.into();
+    let hb_latlng = LatLng::new(heartbeat.lat, heartbeat.lon)?;
+    Ok(asserted_latlng.distance_m(hb_latlng).round() as i64)
 }
