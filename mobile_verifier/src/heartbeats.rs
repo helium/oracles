@@ -267,6 +267,13 @@ impl HeartbeatReward {
         }
     }
 
+    pub fn reward_weight(&self, reward_wifi_hbs: bool) -> Decimal {
+        if !reward_wifi_hbs && self.cell_type.to_label() == CellTypeLabel::Wifi {
+            return Decimal::ZERO;
+        }
+        self.reward_weight
+    }
+
     pub fn validated<'a>(
         exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
         epoch: &'a Range<DateTime<Utc>>,

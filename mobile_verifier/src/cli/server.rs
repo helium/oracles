@@ -165,6 +165,7 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
+            settings.reward_wifi_hbs,
         );
 
         // subscriber location

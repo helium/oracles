@@ -28,6 +28,7 @@ pub struct Rewarder {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
+    reward_wifi_hbs: bool,
 }
 
 impl Rewarder {
@@ -38,6 +39,7 @@ impl Rewarder {
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
+        reward_wifi_hbs: bool,
     ) -> Self {
         Self {
             pool,
@@ -46,6 +48,7 @@ impl Rewarder {
             mobile_rewards,
             reward_manifests,
             price_tracker,
+            reward_wifi_hbs,
         }
     }
 
@@ -141,7 +144,8 @@ impl Rewarder {
         let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
-        let poc_rewards = PocShares::aggregate(heartbeats, &speedtest_averages).await?;
+        let poc_rewards =
+            PocShares::aggregate(heartbeats, &speedtest_averages, self.reward_wifi_hbs).await?;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)

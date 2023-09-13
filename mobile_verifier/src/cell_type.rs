@@ -28,7 +28,7 @@ pub enum CellType {
     CellTypeNone = 5,
     NovaGenericWifiIndoor = 6,
 }
-
+#[derive(PartialEq)]
 pub enum CellTypeLabel {
     CellTypeLabelNone = 0,
     Cell = 1,

@@ -25,10 +25,16 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
+    #[serde(default = "default_reward_wifi_hbs")]
+    pub reward_wifi_hbs: bool,
 }
 
 pub fn default_log() -> String {
     "mobile_verifier=debug,poc_store=info".to_string()
+}
+
+pub fn default_reward_wifi_hbs() -> bool {
+    false
 }
 
 pub fn default_start_after() -> u64 {

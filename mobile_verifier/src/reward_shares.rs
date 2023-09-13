@@ -221,6 +221,7 @@ impl PocShares {
     pub async fn aggregate(
         heartbeat_rewards: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtest_averages: &SpeedtestAverages,
+        reward_wifi_hbs: bool,
     ) -> anyhow::Result<Self> {
         let mut poc_shares = Self::default();
         let mut heartbeat_rewards = std::pin::pin!(heartbeat_rewards);
@@ -231,11 +232,11 @@ impl PocShares {
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
             *poc_shares
                 .hotspot_shares
-                .entry(heartbeat_reward.hotspot_key)
+                .entry(heartbeat_reward.hotspot_key.clone())
                 .or_default()
                 .radio_shares
-                .entry(heartbeat_reward.cbsd_id)
-                .or_default() += heartbeat_reward.reward_weight * speedmultiplier;
+                .entry(heartbeat_reward.cbsd_id.clone())
+                .or_default() += heartbeat_reward.reward_weight(reward_wifi_hbs) * speedmultiplier;
         }
         Ok(poc_shares)
     }
@@ -701,10 +702,13 @@ mod test {
         averages.insert(g5.clone(), g5_average);
         let speedtest_avgs = SpeedtestAverages { averages };
 
-        let rewards =
-            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
-                .await
-                .unwrap();
+        let rewards = PocShares::aggregate(
+            stream::iter(heartbeat_rewards).map(Ok),
+            &speedtest_avgs,
+            true,
+        )
+        .await
+        .unwrap();
 
         let gw1_shares = rewards
             .hotspot_shares
@@ -1005,12 +1009,15 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        for mobile_reward in
-            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
-                .await
-                .unwrap()
-                .into_rewards(Decimal::ZERO, &epoch)
-                .unwrap()
+        for mobile_reward in PocShares::aggregate(
+            stream::iter(heartbeat_rewards).map(Ok),
+            &speedtest_avgs,
+            true,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
