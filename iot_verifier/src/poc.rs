@@ -404,6 +404,11 @@ pub fn do_witness_verifications(
         }
     };
     verify_denylist(&witness_report.report.pub_key, deny_list)?;
+    verify_edge_denylist(
+        &beacon_report.report.pub_key,
+        &witness_report.report.pub_key,
+        deny_list,
+    )?;
     verify_self_witness(
         &beacon_report.report.pub_key,
         &witness_report.report.pub_key,
@@ -489,6 +494,36 @@ fn verify_denylist(pub_key: &PublicKeyBinary, deny_list: &DenyList) -> GenericVe
     //
     Ok(())
 }
+
+/// verify if gateway-gateway edge is on the deny list
+/// note that the order of the gateway keys is unimportant as edges are not considered directional
+fn verify_edge_denylist(
+    beaconer: &PublicKeyBinary,
+    witness: &PublicKeyBinary,
+    deny_list: &DenyList,
+) -> GenericVerifyResult {
+    if deny_list.check_edge(beaconer.as_ref(), witness.as_ref()) {
+        tracing::debug!(
+            "report verification failed, reason: {:?}.
+            beacon: {}, witness {}, tagname: {}",
+            InvalidReason::Denied,
+            beaconer,
+            witness,
+            deny_list.tag_name
+        );
+        return Err(InvalidResponse {
+            reason: InvalidReason::Denied,
+            details: Some(InvalidDetails {
+                data: Some(invalid_details::Data::DenylistTag(
+                    deny_list.tag_name.to_string(),
+                )),
+            }),
+        });
+    }
+    //
+    Ok(())
+}
+
 /// verify remote entropy
 /// if received timestamp is outside of entopy start/end then return invalid
 fn verify_entropy(
