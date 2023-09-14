@@ -11,7 +11,6 @@ use file_store::{
     mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport, FileStore,
     FileType,
 };
-
 use futures_util::TryFutureExt;
 use mobile_config::client::{AuthorizationClient, EntityClient, GatewayClient};
 use price::PriceTracker;
@@ -94,10 +93,21 @@ impl Cmd {
                 .create()?;
         let speedtests_join_handle = speedtests_server.start(shutdown_listener.clone()).await?;
 
-        let (valid_speedtests, valid_speedtests_server) = file_sink::FileSinkBuilder::new(
+        let (speedtests_avg, speedtests_avg_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
+        let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
+            FileType::VerifiedSpeedtest,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "verified_speedtest"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -109,7 +119,8 @@ impl Cmd {
             pool.clone(),
             gateway_client.clone(),
             speedtests,
-            valid_speedtests,
+            speedtests_avg,
+            speedtests_validity,
         );
 
         // Mobile rewards
@@ -192,7 +203,10 @@ impl Cmd {
             valid_heartbeats_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
-            valid_speedtests_server
+            speedtests_avg_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            speedtests_validity_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
             mobile_rewards_server
