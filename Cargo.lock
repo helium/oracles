@@ -1118,7 +1118,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/invalid-speed-test-proto#385cce65abf20eee8df3ee9e45591843861a954b"
+source = "git+https://github.com/helium/proto?branch=master#953da03fd03f1f655e7c27328f068fa9654d1954"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1128,7 +1128,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -2104,7 +2104,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "structopt",
  "thiserror",
  "tracing",
@@ -2537,7 +2537,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "strum",
  "strum_macros",
@@ -2966,7 +2966,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/invalid-speed-test-proto#385cce65abf20eee8df3ee9e45591843861a954b"
+source = "git+https://github.com/helium/proto?branch=master#953da03fd03f1f655e7c27328f068fa9654d1954"
 dependencies = [
  "bytes",
  "prost",
@@ -3302,7 +3302,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "tokio",
  "tonic",
@@ -3450,7 +3450,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "task-manager",
  "thiserror",
@@ -4064,7 +4064,7 @@ dependencies = [
  "poc-metrics",
  "prost",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "solana",
  "sqlx",
  "thiserror",
@@ -4108,7 +4108,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -5326,7 +5326,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "sqlx",
  "thiserror",
  "tokio",
@@ -5999,7 +5999,7 @@ dependencies = [
  "helium-sub-daos",
  "metrics",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "solana-client",
  "solana-program",
  "solana-sdk",
