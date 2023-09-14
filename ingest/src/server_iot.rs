@@ -183,12 +183,21 @@ impl ManagedTask for GrpcServer {
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
         let address = self.address;
         Box::pin(async move {
-            transport::Server::builder()
+            let grpc_server = transport::Server::builder()
                 .layer(poc_metrics::request_layer!("ingest_server_iot_connection"))
                 .add_service(poc_lora::Server::new(*self))
-                .serve_with_shutdown(address, shutdown)
-                .map_err(Error::from)
-                .await
+                .serve(address)
+                .map_err(Error::from);
+
+            tokio::select! {
+                _ = shutdown => {
+                    tracing::warn!("grpc server is shutting down");
+                    Ok(())
+                }
+                _ = grpc_server => {
+                    Err(anyhow::anyhow!("grpc server stopping running"))
+                }
+            }
         })
     }
 }
