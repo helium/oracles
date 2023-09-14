@@ -427,7 +427,7 @@ mod tests {
             required_network: Network::MainNet,
             session_key_offer_timeout: std::time::Duration::from_millis(session_key_offer_timeout),
             session_key_timeout: std::time::Duration::from_millis(session_key_timeout),
-            address: SocketAddr::from_str("http://localhost:8080").expect("socket addr"),
+            address: SocketAddr::from_str("0.0.0.0:8080").expect("socket addr"),
         };
 
         (StreamState::new(&grpc_server), beacon_rx, witness_rx)
