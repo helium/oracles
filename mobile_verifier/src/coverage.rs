@@ -222,6 +222,7 @@ pub struct HexCoverage {
     pub cbsd_id: String,
     pub signal_level: SignalLevel,
     pub coverage_claim_time: DateTime<Utc>,
+    pub inserted_at: DateTime<Utc>,
 }
 
 #[derive(Eq)]
@@ -338,26 +339,6 @@ impl CoveredHexStream for Pool<Postgres> {
             .execute(self)
             .await?;
 
-        // Find the time of insertion for the currently in use coverage object
-        let current_inserted_at: DateTime<Utc> = sqlx::query_scalar(
-            "SELECT inserted_at FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2 LIMIT 1",
-        )
-        .bind(cbsd_id)
-        .bind(coverage_obj)
-        .fetch_one(self)
-        .await?;
-
-        // Delete any hex coverages that were inserted before the one we are currently using, as they are
-        // no longer useful.
-        sqlx::query(
-            "DELETE FROM hex_coverage WHERE cbsd_id = $1 AND uuid != $2 AND inserted_at < $3",
-        )
-        .bind(cbsd_id)
-        .bind(coverage_obj)
-        .bind(current_inserted_at)
-        .execute(self)
-        .await?;
-
         Ok(
             sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")
                 .bind(cbsd_id)
@@ -370,6 +351,18 @@ impl CoveredHexStream for Pool<Postgres> {
                 .boxed(),
         )
     }
+}
+
+pub async fn clear_coverage_objects(
+    tx: &mut Transaction<'_, Postgres>,
+    timestamp: &DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    // Delete any hex coverage objects that were invalidated before the given timestamp
+    sqlx::query("DELETE FROM hex_coverage WHERE invalidated_at < $1")
+        .bind(timestamp)
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
 }
 
 #[derive(Default)]
@@ -515,13 +508,27 @@ impl CoveredHexCache {
     }
 
     pub async fn fetch_coverage(&self, uuid: &Uuid) -> Result<Option<CachedCoverage>, sqlx::Error> {
+        // Check (as quickly as possible) if the coverage object has become invalidated
+        if sqlx::query_scalar(
+            "SELECT TRUE FROM hex_coverage WHERE uuid = $1 AND invalidated_at IS NOT NULL LIMIT 1",
+        )
+        .bind(uuid)
+        .fetch_optional(&self.pool)
+        .await?
+        .unwrap_or(false)
+        {
+            return Ok(None);
+        }
+        // Check the cache if the coverage object has already been fetch
         if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
             return Ok(Some(covered_hexes.clone()));
         }
-        let Some(cbsd_id) = sqlx::query_scalar("SELECT cbsd_id FROM hex_coverage WHERE uuid = $1")
-            .bind(uuid)
-            .fetch_optional(&self.pool)
-            .await?
+        let Some((cbsd_id, inserted_at)) = sqlx::query_scalar(
+            "SELECT cbsd_id, inserted_at FROM hex_coverage WHERE uuid = $1 LIMIT 1",
+        )
+        .bind(uuid)
+        .fetch_optional(&self.pool)
+        .await?
         else {
             return Ok(None);
         };
@@ -532,7 +539,11 @@ impl CoveredHexCache {
             .into_iter()
             .map(|HexCoverage { hex, .. }| CellIndex::try_from(hex as u64).unwrap())
             .collect();
-        let cached_coverage = CachedCoverage { cbsd_id, coverage };
+        let cached_coverage = CachedCoverage {
+            cbsd_id,
+            coverage,
+            inserted_at,
+        };
         let _ = self
             .covered_hexes
             .insert(
@@ -549,6 +560,7 @@ impl CoveredHexCache {
 pub struct CachedCoverage {
     pub cbsd_id: String,
     coverage: Vec<CellIndex>,
+    pub inserted_at: DateTime<Utc>,
 }
 
 impl CachedCoverage {
@@ -574,6 +586,7 @@ mod test {
             cbsd_id: cbsd_id.to_string(),
             signal_level,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
         }
     }
 
@@ -633,6 +646,7 @@ mod test {
             cbsd_id: cbsd_id.to_string(),
             signal_level,
             coverage_claim_time,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
         }
     }
 

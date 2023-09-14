@@ -261,6 +261,7 @@ pub struct Heartbeat {
     pub coverage_object: Option<Uuid>,
     pub received_timestamp: DateTime<Utc>,
     pub validity: proto::HeartbeatValidity,
+    pub coverage_object_insertion_time: Option<DateTime<Utc>>,
 }
 
 impl Heartbeat {
@@ -280,7 +281,7 @@ impl Heartbeat {
         max_distance: f64,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat_report| async move {
-            let (cell_type, validity) = validate_heartbeat(
+            let (cell_type, coverage_object_insertion_time, validity) = validate_heartbeat(
                 &heartbeat_report,
                 gateway_client,
                 covered_hex_cache,
@@ -294,6 +295,7 @@ impl Heartbeat {
                 received_timestamp: heartbeat_report.received_timestamp,
                 cell_type,
                 validity,
+                coverage_object_insertion_time,
             })
         })
     }
@@ -323,28 +325,39 @@ impl Heartbeat {
         Ok(())
     }
 
-    pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
-        let truncated_timestamp = self.truncated_timestamp()?;
-        Ok(
-            sqlx::query_scalar(
-                r#"
-                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
-                latest_timestamp = EXCLUDED.latest_timestamp,
-                coverage_object = EXCLUDED.coverage_object
-                RETURNING (xmax = 0) as inserted
-                "#
-            )
-            .bind(self.heartbeat.cbsd_id)
-            .bind(self.heartbeat.pubkey)
-            .bind(self.cell_type.unwrap())
-            .bind(self.received_timestamp)
-            .bind(truncated_timestamp)
-            .bind(self.coverage_object)
-            .fetch_one(&mut *exec)
-            .await?
+    pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+        // Invalidate all of the previous coverage objects
+        sqlx::query(
+            "UPDATE hex_coverage SET invalidated_at = $1 WHERE inserted_at < $2 AND cbsd_id = $3 AND uuid != $4"
         )
+        .bind(self.received_timestamp)
+        .bind(self.coverage_object_insertion_time)
+        .bind(&self.heartbeat.cbsd_id)
+        .bind(self.coverage_object)
+        .execute(&mut *exec)
+        .await?;
+
+        // Add the heartbeat to the heartbeats table
+        let truncated_timestamp = self.truncated_timestamp()?;
+        sqlx::query_scalar(
+            r#"
+            INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
+            latest_timestamp = EXCLUDED.latest_timestamp,
+            coverage_object = EXCLUDED.coverage_object
+            RETURNING (xmax = 0) as inserted
+            "#
+        )
+        .bind(self.heartbeat.cbsd_id)
+        .bind(self.heartbeat.pubkey)
+        .bind(self.cell_type.unwrap())
+        .bind(self.received_timestamp)
+        .bind(truncated_timestamp)
+        .bind(self.coverage_object)
+        .fetch_one(&mut *exec)
+        .await?;
+        Ok(())
     }
 }
 
@@ -355,51 +368,76 @@ async fn validate_heartbeat(
     _coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
     _max_distance: f64,
-) -> anyhow::Result<(Option<CellType>, proto::HeartbeatValidity)> {
+) -> anyhow::Result<(
+    Option<CellType>,
+    Option<DateTime<Utc>>,
+    proto::HeartbeatValidity,
+)> {
     let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
         Some(ty) => Some(ty),
-        _ => return Ok((None, proto::HeartbeatValidity::BadCbsdId)),
+        _ => return Ok((None, None, proto::HeartbeatValidity::BadCbsdId)),
     };
 
     if !heartbeat.report.operation_mode {
-        return Ok((cell_type, proto::HeartbeatValidity::NotOperational));
+        return Ok((cell_type, None, proto::HeartbeatValidity::NotOperational));
     }
 
     if !epoch.contains(&heartbeat.received_timestamp) {
-        return Ok((cell_type, proto::HeartbeatValidity::HeartbeatOutsideRange));
+        return Ok((
+            cell_type,
+            None,
+            proto::HeartbeatValidity::HeartbeatOutsideRange,
+        ));
     }
 
     if gateway_client.has_owner(&heartbeat.report.pubkey).await? {
-        return Ok((cell_type, proto::HeartbeatValidity::GatewayOwnerNotFound));
+        return Ok((
+            cell_type,
+            None,
+            proto::HeartbeatValidity::GatewayOwnerNotFound,
+        ));
     }
 
     /*
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
-        return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
+        return Ok((cell_type, None, proto::HeartbeatValidity::BadCoverageObject));
     };
 
     let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await? else {
-        return Ok((cell_type, proto::HeartbeatValidity::NoSuchCoverageObject));
+        return Ok((
+            cell_type,
+            None,
+            proto::HeartbeatValidity::NoSuchCoverageObject,
+        ));
     };
 
     if coverage.cbsd_id != heartbeat.report.cbsd_id {
-        return Ok((cell_type, proto::HeartbeatValidity::BadCoverageObject));
+        return Ok((cell_type, None, proto::HeartbeatValidity::BadCoverageObject));
     }
 
     let Ok(latlng) = LatLng::new(heartbeat.report.lat, heartbeat.report.lon) else {
-        return Ok((cell_type, proto::HeartbeatValidity::InvalidLatLon));
+        return Ok((cell_type, None, proto::HeartbeatValidity::InvalidLatLon));
     };
 
     if coverage.max_distance_km(latlng) > max_distance {
-        return Ok((cell_type, proto::HeartbeatValidity::TooFarFromCoverage));
+        return Ok((
+            cell_type,
+            None,
+            proto::HeartbeatValidity::TooFarFromCoverage,
+        ));
     }
      */
 
-    Ok((cell_type, proto::HeartbeatValidity::Valid))
+    Ok((
+        cell_type,
+        None,
+        // Some(coverage.inserted_at),
+        proto::HeartbeatValidity::Valid,
+    ))
 }
 
 pub async fn clear_heartbeats(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: &mut Transaction<'_, Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
@@ -587,6 +625,7 @@ mod test {
                 coverage_object: Vec::new(),
             },
             validity: Default::default(),
+            coverage_object_insertion_time: None,
         }
     }
 
