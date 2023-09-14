@@ -1,5 +1,5 @@
 use crate::{
-    heartbeats::HeartbeatReward,
+    heartbeats_util::HeartbeatReward,
     reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares},
     speedtests_average::SpeedtestAverages,
     Settings,

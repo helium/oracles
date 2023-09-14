@@ -1,6 +1,6 @@
 use crate::{
     data_session::HotspotMap,
-    heartbeats::HeartbeatReward,
+    heartbeats_util::HeartbeatReward,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
 };
@@ -325,7 +325,7 @@ mod test {
         cell_type::CellType,
         data_session,
         data_session::HotspotDataSession,
-        heartbeats::{HeartbeatReward, HeartbeatRow},
+        heartbeats_util::{HeartbeatReward, HeartbeatRow},
         speedtests::Speedtest,
         subscriber_location::SubscriberValidatedLocations,
     };

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use futures_util::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use mobile_verifier::cell_type::CellType;
-use mobile_verifier::heartbeats::HeartbeatReward;
+use mobile_verifier::heartbeats_util::HeartbeatReward;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 

@@ -1,6 +1,6 @@
 use crate::{
     data_session,
-    heartbeats::{self, HeartbeatReward},
+    heartbeats_util::{self, HeartbeatReward},
     reward_shares::{MapperShares, PocShares, TransferRewards},
     speedtests,
     speedtests_average::SpeedtestAverages,
@@ -219,7 +219,7 @@ impl Rewarder {
         let mut transaction = self.pool.begin().await?;
 
         // clear out the various db tables
-        heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
+        heartbeats_util::clear_heartbeats(&mut transaction, &reward_period.start).await?;
         speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
         data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.end).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;

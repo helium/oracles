@@ -1,7 +1,8 @@
 use crate::{
-    data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon, rewarder::Rewarder,
-    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
-    Settings,
+    cell_heartbeats::HeartbeatDaemon as CellHeartbeatDaemon, data_session::DataSessionIngestor,
+    rewarder::Rewarder, speedtests::SpeedtestDaemon,
+    subscriber_location::SubscriberLocationIngestor, telemetry,
+    wifi_heartbeats::HeartbeatDaemon as WifiHeartbeatDaemon, Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
@@ -88,14 +89,19 @@ impl Cmd {
         .create()
         .await?;
 
-        let heartbeat_daemon = HeartbeatDaemon::new(
+        let cell_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
             gateway_client.clone(),
             heartbeats,
+            valid_heartbeats.clone(),
+        );
+
+        let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
+            pool.clone(),
+            gateway_client.clone(),
             wifi_heartbeats,
             valid_heartbeats,
         );
-
         // Speedtests
         let (speedtests, speedtests_server) =
             file_source::continuous_source::<CellSpeedtestIngestReport>()
@@ -245,7 +251,8 @@ impl Cmd {
             heartbeats_join_handle.map_err(Error::from),
             wifi_heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
-            heartbeat_daemon.run(shutdown_listener.clone()),
+            cell_heartbeat_daemon.run(shutdown_listener.clone()),
+            wifi_heartbeat_daemon.run(shutdown_listener.clone()),
             speedtest_daemon.run(shutdown_listener.clone()),
             rewarder.run(shutdown_listener.clone()),
             subscriber_location_ingest_join_handle.map_err(anyhow::Error::from),

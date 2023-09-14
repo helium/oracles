@@ -2,13 +2,10 @@ use crate::cell_type::{CellType, CellTypeLabel};
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream, file_sink::FileSinkClient,
-    heartbeat::CellHeartbeatIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport,
+    file_sink::FileSinkClient, heartbeat::CellHeartbeatIngestReport,
+    wifi_heartbeat::WifiHeartbeatIngestReport,
 };
-use futures::{
-    stream::{Stream, StreamExt, TryStreamExt},
-    TryFutureExt,
-};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
@@ -16,29 +13,19 @@ use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
-use std::{ops::Range, pin::pin, sync::Arc, time};
-use tokio::sync::mpsc::Receiver;
+use std::{ops::Range, pin::pin, time};
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
-const MINIMUM_CELL_HEARTBEAT_COUNT: i64 = 12;
-const MINIMUM_WIFI_HEARTBEAT_COUNT: i64 = 12;
+const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
 #[derive(Clone, PartialEq)]
-enum HBType {
+pub enum HBType {
     Cell = 0,
     Wifi = 1,
 }
 
 #[derive(Clone)]
-struct ValidatedHeartbeat {
-    report: Heartbeat,
-    cell_type: CellType,
-    validity: proto::HeartbeatValidity,
-    distance_to_asserted: Option<i64>,
-}
-
-#[derive(Clone)]
-struct Heartbeat {
+pub struct Heartbeat {
     hb_type: HBType,
     hotspot_key: PublicKeyBinary,
     cbsd_id: Option<String>,
@@ -50,11 +37,11 @@ struct Heartbeat {
 }
 
 impl Heartbeat {
-    fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
+    pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
         self.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
+    pub fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
         let ts = self.truncated_timestamp()?;
         match self.hb_type {
             HBType::Cell => {
@@ -96,127 +83,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             location_validation_timestamp: value.report.location_validation_timestamp,
             timestamp: value.received_timestamp,
         }
-    }
-}
-
-pub struct HeartbeatDaemon {
-    pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_client: GatewayClient,
-    heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
-    wifi_heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
-    file_sink: FileSinkClient,
-}
-
-impl HeartbeatDaemon {
-    pub fn new(
-        pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_client: GatewayClient,
-        heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
-        wifi_heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
-        file_sink: FileSinkClient,
-    ) -> Self {
-        Self {
-            pool,
-            gateway_client,
-            heartbeats,
-            wifi_heartbeats,
-            file_sink,
-        }
-    }
-
-    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tokio::spawn(async move {
-            let cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
-
-            let cache_clone = cache.clone();
-            tokio::spawn(async move {
-                cache_clone
-                    .monitor(4, 0.25, time::Duration::from_secs(60 * 60 * 3))
-                    .await
-            });
-
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => {
-                        tracing::info!("HeartbeatDaemon shutting down");
-                        break;
-                    }
-                    Some(file) = self.heartbeats.recv() => self.process_cell_hb_file(file, &cache).await?,
-                    Some(file) = self.wifi_heartbeats.recv() => self.process_wifi_hb_file(file, &cache).await?,
-                }
-            }
-
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
-    }
-
-    async fn process_cell_hb_file(
-        &self,
-        file: FileInfoStream<CellHeartbeatIngestReport>,
-        cache: &Cache<(String, DateTime<Utc>), ()>,
-    ) -> anyhow::Result<()> {
-        tracing::info!("Processing cell heartbeat file {}", file.file_info.key);
-        let mut transaction = self.pool.begin().await?;
-        let epoch = (file.file_info.timestamp - Duration::hours(3))
-            ..(file.file_info.timestamp + Duration::minutes(30));
-        // map the ingest reports to our generic heartbeat  type
-        let reports = file
-            .into_stream(&mut transaction)
-            .await?
-            .map(Heartbeat::from);
-        self.process_hbs(reports, cache, transaction, &epoch).await
-    }
-
-    async fn process_wifi_hb_file(
-        &self,
-        file: FileInfoStream<WifiHeartbeatIngestReport>,
-        cache: &Cache<(String, DateTime<Utc>), ()>,
-    ) -> anyhow::Result<()> {
-        tracing::info!("Processing wifi heartbeat file {}", file.file_info.key);
-        let mut transaction = self.pool.begin().await?;
-        let epoch = (file.file_info.timestamp - Duration::hours(3))
-            ..(file.file_info.timestamp + Duration::minutes(30));
-        // map the ingest reports to our generic heartbeat  type
-        let reports = file
-            .into_stream(&mut transaction)
-            .await?
-            .map(Heartbeat::from);
-        self.process_hbs(reports, cache, transaction, &epoch).await
-    }
-
-    async fn process_hbs<'a>(
-        &self,
-        reports: impl Stream<Item = Heartbeat> + 'a,
-        cache: &Cache<(String, DateTime<Utc>), ()>,
-        mut transaction: Transaction<'_, Postgres>,
-        epoch: &'a Range<DateTime<Utc>>,
-    ) -> anyhow::Result<()> {
-        let mut validated_heartbeats = pin!(
-            ValidatedHeartbeat::validate_heartbeats(&self.gateway_client, reports, epoch).await
-        );
-
-        while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
-            validated_heartbeat.write(&self.file_sink).await?;
-
-            if !validated_heartbeat.check_validity() {
-                continue;
-            }
-
-            let key = validated_heartbeat.report.id()?;
-            if cache.get(&key).await.is_none() {
-                validated_heartbeat.save(&mut transaction).await?;
-                cache
-                    .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
-                    .await;
-            }
-        }
-        self.file_sink.commit().await?;
-        transaction.commit().await?;
-        Ok(())
     }
 }
 
@@ -321,21 +187,28 @@ impl HeartbeatReward {
             cell_type,
             location_validation_timestamp,
             distance_to_asserted
-            HAVING count(*) >= $4;
+            HAVING count(*) >= $3;
             "#,
         )
         .bind(epoch.start)
         .bind(epoch.end)
-        .bind(MINIMUM_CELL_HEARTBEAT_COUNT)
-        .bind(MINIMUM_WIFI_HEARTBEAT_COUNT)
+        .bind(MINIMUM_HEARTBEAT_COUNT)
         .fetch(exec)
         .map_ok(HeartbeatReward::from)
     }
 }
 
 #[derive(sqlx::FromRow)]
-struct HeartbeatSaveResult {
+pub struct HeartbeatSaveResult {
     inserted: bool,
+}
+
+#[derive(Clone)]
+pub struct ValidatedHeartbeat {
+    pub report: Heartbeat,
+    cell_type: CellType,
+    validity: proto::HeartbeatValidity,
+    distance_to_asserted: Option<i64>,
 }
 
 impl ValidatedHeartbeat {
@@ -343,11 +216,11 @@ impl ValidatedHeartbeat {
         self.validity == proto::HeartbeatValidity::Valid
     }
 
-    fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
+    pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
         self.report.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    async fn validate_heartbeats<'a>(
+    pub async fn validate_heartbeats<'a>(
         gateway_client: &'a GatewayClient,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
@@ -368,17 +241,13 @@ impl ValidatedHeartbeat {
         })
     }
 
-    async fn write(&self, heartbeats: &FileSinkClient) -> file_store::Result {
+    pub async fn write(&self, heartbeats: &FileSinkClient) -> file_store::Result {
         heartbeats
             .write(
                 proto::Heartbeat {
                     cbsd_id: self.report.cbsd_id.clone().unwrap_or(String::new()),
                     pub_key: self.report.hotspot_key.as_ref().into(),
                     reward_multiplier: self.cell_type.reward_weight().to_f32().unwrap_or(0.0),
-                    // NOTE: previously cell_type would default to `Neutrino430`, if no cell type value was set
-                    // cell type is now always set to a value
-                    // and will carry through a None value to the proto
-                    // TODO: Verify this change doesnt have any unconsidered side effects
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
                     timestamp: self.report.timestamp.timestamp() as u64,
@@ -397,7 +266,7 @@ impl ValidatedHeartbeat {
         Ok(())
     }
 
-    async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
+    pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
         match self.report.hb_type {
             HBType::Cell => self.save_cell_hb(exec).await,
             HBType::Wifi => self.save_wifi_hb(exec).await,
@@ -458,7 +327,7 @@ impl ValidatedHeartbeat {
 }
 
 /// Validate a heartbeat in the given epoch.
-async fn validate_heartbeat(
+pub async fn validate_heartbeat(
     heartbeat: &Heartbeat,
     gateway_client: &mut GatewayClient,
     epoch: &Range<DateTime<Utc>>,
@@ -528,6 +397,37 @@ async fn validate_heartbeat(
     ))
 }
 
+pub async fn process_heartbeat_stream<'a>(
+    reports: impl Stream<Item = Heartbeat> + 'a,
+    gateway_client: &'a GatewayClient,
+    file_sink: &FileSinkClient,
+    cache: &Cache<(String, DateTime<Utc>), ()>,
+    mut transaction: Transaction<'_, Postgres>,
+    epoch: &'a Range<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    let mut validated_heartbeats =
+        pin!(ValidatedHeartbeat::validate_heartbeats(gateway_client, reports, epoch).await);
+
+    while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
+        validated_heartbeat.write(file_sink).await?;
+
+        if !validated_heartbeat.check_validity() {
+            continue;
+        }
+
+        let key = validated_heartbeat.report.id()?;
+        if cache.get(&key).await.is_none() {
+            validated_heartbeat.save(&mut transaction).await?;
+            cache
+                .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
+                .await;
+        }
+    }
+    file_sink.commit().await?;
+    transaction.commit().await?;
+    Ok(())
+}
+
 pub async fn clear_heartbeats(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
@@ -545,7 +445,10 @@ pub async fn clear_heartbeats(
     Ok(())
 }
 
-fn calc_asserted_distance(heartbeat: &Heartbeat, asserted_location: u64) -> anyhow::Result<i64> {
+pub fn calc_asserted_distance(
+    heartbeat: &Heartbeat,
+    asserted_location: u64,
+) -> anyhow::Result<i64> {
     let asserted_latlng: LatLng = CellIndex::try_from(asserted_location)?.into();
     let hb_latlng = LatLng::new(heartbeat.lat, heartbeat.lon)?;
     Ok(asserted_latlng.distance_m(hb_latlng).round() as i64)
