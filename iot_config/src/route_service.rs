@@ -389,35 +389,23 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            tokio::select! {
-                result = stream_existing_routes(&pool, &signing_key, tx.clone())
-                             .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
-                             .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
-                             .and_then(|_| stream_existing_skfs(&pool, &signing_key, tx.clone())) => {
-                    if let Err(error) = result {
-                        tracing::error!(?error, "Error occurred streaming current routing configuration");
-                        return;
-                    }
-                }
+            if stream_existing_routes(&pool, &signing_key, tx.clone())
+                .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_skfs(&pool, &signing_key, tx.clone()))
+                .await
+                .is_err()
+            {
+                return;
             }
 
             tracing::info!("existing routes sent; streaming updates as available");
             telemetry::route_stream_subscribe();
             loop {
-                tokio::select! {
-                    msg = route_updates.recv() => {
-                        match msg {
-                            Ok(update) => {
-                                if tx.send(Ok(update)).await.is_err() {
-                                    tracing::info!("Client disconnected; shutting down stream");
-                                    telemetry::route_stream_unsubscribe();
-                                    return;
-                                }
-                            }
-                            Err(error) => {
-                                tracing::error!(?error, "Error occurred processing route stream update");
-                            }
-                        }
+                while let Ok(update) = route_updates.recv().await {
+                    if tx.send(Ok(update)).await.is_err() {
+                        telemetry::route_stream_unsubscribe();
+                        return;
                     }
                 }
             }
