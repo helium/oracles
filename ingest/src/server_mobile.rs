@@ -7,6 +7,7 @@ use file_store::{
     traits::MsgVerify,
     FileType,
 };
+use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_crypto::{Network, PublicKey};
 use helium_proto::services::poc_mobile::{
@@ -16,8 +17,12 @@ use helium_proto::services::poc_mobile::{
     SpeedtestIngestReportV1, SpeedtestReqV1, SpeedtestRespV1, SubscriberLocationIngestReportV1,
     SubscriberLocationReqV1, SubscriberLocationRespV1,
 };
-use std::path::Path;
-use tonic::{metadata::MetadataValue, transport, Request, Response, Status};
+use std::{net::SocketAddr, path::Path};
+use task_manager::{ManagedTask, TaskManager};
+use tonic::{
+    metadata::{Ascii, MetadataValue},
+    transport, Request, Response, Status,
+};
 
 const INGEST_WAIT_DURATION_MINUTES: i64 = 15;
 
@@ -31,27 +36,35 @@ pub struct GrpcServer {
     subscriber_location_report_sink: FileSinkClient,
     coverage_object_report_sink: FileSinkClient,
     required_network: Network,
+    address: SocketAddr,
+    api_token: MetadataValue<Ascii>,
+}
+
+impl ManagedTask for GrpcServer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let api_token = self.api_token.clone();
+        let address = self.address;
+        Box::pin(async move {
+            transport::Server::builder()
+                .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
+                .add_service(poc_mobile::Server::with_interceptor(
+                    *self,
+                    move |req: Request<()>| match req.metadata().get("authorization") {
+                        Some(t) if api_token == t => Ok(req),
+                        _ => Err(Status::unauthenticated("No valid auth token")),
+                    },
+                ))
+                .serve_with_shutdown(address, shutdown)
+                .map_err(Error::from)
+                .await
+        })
+    }
 }
 
 impl GrpcServer {
-    fn new(
-        heartbeat_report_sink: FileSinkClient,
-        speedtest_report_sink: FileSinkClient,
-        data_transfer_session_sink: FileSinkClient,
-        subscriber_location_report_sink: FileSinkClient,
-        coverage_object_report_sink: FileSinkClient,
-        required_network: Network,
-    ) -> Result<Self> {
-        Ok(Self {
-            heartbeat_report_sink,
-            speedtest_report_sink,
-            data_transfer_session_sink,
-            subscriber_location_report_sink,
-            coverage_object_report_sink,
-            required_network,
-        })
-    }
-
     fn verify_network(&self, public_key: PublicKey) -> VerifyResult<PublicKey> {
         if self.required_network == public_key.network {
             Ok(public_key)
@@ -200,13 +213,12 @@ impl poc_mobile::PocMobile for GrpcServer {
     }
 }
 
-pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> Result<()> {
+pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let grpc_addr = settings.listen_addr()?;
 
     // Initialize uploader
-    let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-    let file_upload =
-        file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+    let (file_upload, file_upload_server) =
+        file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
     let store_base_path = Path::new(&settings.cache);
 
@@ -215,7 +227,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
     )
-    .deposits(Some(file_upload_tx.clone()))
+    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
     .create()
     .await?;
@@ -226,7 +238,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_speedtest_report"),
     )
-    .deposits(Some(file_upload_tx.clone()))
+    .file_upload(Some(file_upload.clone()))
     .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
     .create()
     .await?;
@@ -240,7 +252,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
                 "_mobile_data_transfer_session_report"
             ),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
@@ -251,7 +263,7 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_subscriber_location_report"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
@@ -262,19 +274,10 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object_report"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .roll_time(Duration::minutes(INGEST_WAIT_DURATION_MINUTES))
         .create()
         .await?;
-
-    let grpc_server = GrpcServer::new(
-        heartbeat_report_sink,
-        speedtest_report_sink,
-        data_transfer_session_sink,
-        subscriber_location_report_sink,
-        coverage_object_report_sink,
-        settings.network,
-    )?;
 
     let Some(api_token) = settings
         .token
@@ -284,43 +287,30 @@ pub async fn grpc_server(shutdown: triggered::Listener, settings: &Settings) -> 
         bail!("expected valid api token in settings");
     };
 
+    let grpc_server = GrpcServer {
+        heartbeat_report_sink,
+        speedtest_report_sink,
+        data_transfer_session_sink,
+        subscriber_location_report_sink,
+        coverage_object_report_sink,
+        required_network: settings.network,
+        address: grpc_addr,
+        api_token,
+    };
+
     tracing::info!(
         "grpc listening on {grpc_addr} and server mode {:?}",
         settings.mode
     );
 
-    //TODO start a service with either the poc mobile or poc iot endpoints only - not both
-    //     use _server_mode (set above ) to decide
-    let server = transport::Server::builder()
-        .layer(poc_metrics::request_layer!("ingest_server_grpc_connection"))
-        .add_service(poc_mobile::Server::with_interceptor(
-            grpc_server,
-            move |req: Request<()>| match req.metadata().get("authorization") {
-                Some(t) if api_token == t => Ok(req),
-                _ => Err(Status::unauthenticated("No valid auth token")),
-            },
-        ))
-        .serve_with_shutdown(grpc_addr, shutdown.clone())
-        .map_err(Error::from);
-
-    tokio::try_join!(
-        server,
-        heartbeat_report_sink_server
-            .run(shutdown.clone())
-            .map_err(Error::from),
-        speedtest_report_sink_server
-            .run(shutdown.clone())
-            .map_err(Error::from),
-        data_transfer_session_sink_server
-            .run(shutdown.clone())
-            .map_err(Error::from),
-        subscriber_location_report_sink_server
-            .run(shutdown.clone())
-            .map_err(Error::from),
-        coverage_object_report_sink_server
-            .run(shutdown.clone())
-            .map_err(Error::from),
-        file_upload.run(shutdown.clone()).map_err(Error::from),
-    )
-    .map(|_| ())
+    TaskManager::builder()
+        .add_task(file_upload_server)
+        .add_task(heartbeat_report_sink_server)
+        .add_task(speedtest_report_sink_server)
+        .add_task(data_transfer_session_sink_server)
+        .add_task(subscriber_location_report_sink_server)
+        .add_task(coverage_object_report_sink_server)
+        .add_task(grpc_server)
+        .start()
+        .await
 }

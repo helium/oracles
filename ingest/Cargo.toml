@@ -22,6 +22,7 @@ futures = {workspace = true}
 futures-util = {workspace = true}
 prost = {workspace = true}
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
@@ -31,3 +32,4 @@ file-store = { path = "../file_store" }
 poc-metrics = { path = "../metrics" }
 metrics = {workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+task-manager = { path = "../task_manager" }
