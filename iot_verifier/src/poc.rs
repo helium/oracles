@@ -534,6 +534,7 @@ fn verify_beacon_payload(
         region: beacon_region,
         params: region_params.to_owned(),
         gain: Decimal::new(gain as i64, 1),
+        timestamp: 0,
     };
     // generate a gateway rs beacon from the generated entropy and the beaconers region data
     let generated_beacon = generate_beacon(
@@ -996,7 +997,7 @@ mod tests {
         let region: ProtoRegion = ProtoRegion::Eu868;
 
         let region_params =
-            beacon::RegionParams::from_bytes(region.into(), gain as u64, EU868_PARAMS)
+            beacon::RegionParams::from_bytes(region.into(), gain as u64, EU868_PARAMS, 0)
                 .expect("region params");
 
         let generated_beacon = generate_beacon(
@@ -1765,6 +1766,7 @@ mod tests {
             ProtoRegion::Eu868.into(),
             BEACONER_GAIN,
             EU868_PARAMS,
+            0,
         )
         .unwrap();
         region_params.params
