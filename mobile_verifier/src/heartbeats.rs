@@ -328,7 +328,7 @@ impl Heartbeat {
     pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         // Invalidate all of the previous coverage objects
         sqlx::query(
-            "UPDATE hex_coverage SET invalidated_at = $1 WHERE inserted_at < $2 AND cbsd_id = $3 AND uuid != $4"
+            "UPDATE hex_coverage SET invalidated_at = $1 WHERE inserted_at < $2 AND invalidated_at IS NULL AND cbsd_id = $3 AND uuid != $4"
         )
         .bind(self.received_timestamp)
         .bind(self.coverage_object_insertion_time)
