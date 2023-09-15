@@ -1028,7 +1028,8 @@ mod test {
 
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
-        let epoch = (now - Duration::hours(1))..now;
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
         for mobile_reward in PocShares::aggregate(
             stream::iter(heartbeat_rewards).map(Ok),
             &speedtest_avgs,
@@ -1098,12 +1099,20 @@ mod test {
         // and thus its reward scale is reduced
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
 
-        let mut total = 0;
+        // total emissions for 1 hour
+        let expected_total_rewards = get_scheduled_tokens_for_poc_and_dc(duration);
+        // the emissions actually distributed for the hour
+        let mut distributed_total_rewards = 0;
         for val in owner_rewards.values() {
-            total += *val
+            distributed_total_rewards += *val
         }
+        assert_eq!(distributed_total_rewards, 2049180327863);
 
-        assert_eq!(total, 2049180327863); // total emissions for 1 hour
+        let diff = expected_total_rewards.to_i64().unwrap() - distributed_total_rewards as i64;
+        // the sum of rewards distributed should not exceed the epoch amount
+        // but due to rounding whilst going to u64 when computing rewards,
+        // is permitted to be a few bones less
+        assert_eq!(diff, 5);
     }
 
     #[tokio::test]
