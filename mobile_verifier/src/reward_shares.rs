@@ -1056,20 +1056,20 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-                471075937440
+            471075937440
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-                1413227812320
+            1413227812320
         );
 
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-                84120703114
+            84120703114
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
@@ -1100,7 +1100,9 @@ mod test {
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
 
         // total emissions for 1 hour
-        let expected_total_rewards = get_scheduled_tokens_for_poc_and_dc(duration);
+        let expected_total_rewards = get_scheduled_tokens_for_poc_and_dc(duration)
+            .to_u64()
+            .unwrap();
         // the emissions actually distributed for the hour
         let mut distributed_total_rewards = 0;
         for val in owner_rewards.values() {
@@ -1108,11 +1110,245 @@ mod test {
         }
         assert_eq!(distributed_total_rewards, 2049180327863);
 
-        let diff = expected_total_rewards.to_i64().unwrap() - distributed_total_rewards as i64;
+        let diff = expected_total_rewards - distributed_total_rewards;
         // the sum of rewards distributed should not exceed the epoch amount
         // but due to rounding whilst going to u64 when computing rewards,
         // is permitted to be a few bones less
         assert_eq!(diff, 5);
+    }
+
+    #[tokio::test]
+    async fn full_wifi_indoor_vs_sercomm_indoor_reward_shares() {
+        // init owners
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed owner2 parse");
+        // init hotspots
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        // link gws to owners
+        let mut owners = HashMap::new();
+        owners.insert(gw1.clone(), owner1.clone());
+        owners.insert(gw2.clone(), owner2.clone());
+
+        let now = Utc::now();
+        let timestamp = now - Duration::minutes(20);
+
+        // init cells and cell_types
+        let c2 = "P27-SCE4255W".to_string(); // sercom indoor
+
+        // setup heartbeats
+        let heartbeat_keys = vec![
+            // add wifi indoor HB
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
+            // add sercomm indoor HB
+            HeartbeatRow {
+                cbsd_id: Some(c2.clone()),
+                hotspot_key: gw2.clone(),
+                cell_type: CellType::from_cbsd_id(&c2).unwrap(),
+                location_validation_timestamp: None,
+                distance_to_asserted: Some(1),
+            },
+        ];
+
+        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
+            .into_iter()
+            .map(HeartbeatReward::from)
+            .collect();
+
+        // setup speedtests
+        let last_speedtest = timestamp - Duration::hours(12);
+        let gw1_speedtests = vec![
+            acceptable_speedtest(gw1.clone(), last_speedtest),
+            acceptable_speedtest(gw1.clone(), timestamp),
+        ];
+        let gw2_speedtests = vec![
+            acceptable_speedtest(gw2.clone(), last_speedtest),
+            acceptable_speedtest(gw2.clone(), timestamp),
+        ];
+
+        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+        averages.insert(gw2.clone(), gw2_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
+
+        // calculate the rewards for the group
+        let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+        for mobile_reward in PocShares::aggregate(
+            stream::iter(heartbeat_rewards).map(Ok),
+            &speedtest_avgs,
+            true,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
+        {
+            let radio_reward = match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let owner = owners
+                .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
+                .expect("Could not find owner")
+                .clone();
+
+            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+        }
+
+        // wifi
+        let owner1_reward = *owner_rewards
+            .get(&owner1)
+            .expect("Could not fetch owner1 rewards");
+        assert_eq!(owner1_reward, 585480093676);
+
+        //sercomm
+        let owner2_reward = *owner_rewards
+            .get(&owner2)
+            .expect("Could not fetch owner2 rewards");
+        assert_eq!(owner2_reward, 1463700234192);
+
+        // confirm owner 1 reward is 0.4 of owner 2's reward
+        // owner 1 is a wifi indoor with a distance_to_asserted < max
+        // and so gets the full reward scale of 0.4
+        // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
+        assert_eq!(owner1_reward, (owner2_reward as f64 * 0.4) as u64);
+    }
+
+    #[tokio::test]
+    async fn reduced_wifi_indoor_vs_sercomm_indoor_reward_shares() {
+        // init owners
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed owner2 parse");
+        // init hotspots
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        // link gws to owners
+        let mut owners = HashMap::new();
+        owners.insert(gw1.clone(), owner1.clone());
+        owners.insert(gw2.clone(), owner2.clone());
+
+        let now = Utc::now();
+        let timestamp = now - Duration::minutes(20);
+
+        // init cells and cell_types
+        let c2 = "P27-SCE4255W".to_string(); // sercom indoor
+
+        // setup heartbeats
+        let heartbeat_keys = vec![
+            // add wifi  indoor HB
+            // with distance to asserted > than max allowed
+            // this results in reward scale dropping to 0.25
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1000),
+            },
+            // add sercomm indoor HB
+            HeartbeatRow {
+                cbsd_id: Some(c2.clone()),
+                hotspot_key: gw2.clone(),
+                cell_type: CellType::from_cbsd_id(&c2).unwrap(),
+                location_validation_timestamp: None,
+                distance_to_asserted: Some(1),
+            },
+        ];
+
+        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
+            .into_iter()
+            .map(HeartbeatReward::from)
+            .collect();
+
+        // setup speedtests
+        let last_speedtest = timestamp - Duration::hours(12);
+        let gw1_speedtests = vec![
+            acceptable_speedtest(gw1.clone(), last_speedtest),
+            acceptable_speedtest(gw1.clone(), timestamp),
+        ];
+        let gw2_speedtests = vec![
+            acceptable_speedtest(gw2.clone(), last_speedtest),
+            acceptable_speedtest(gw2.clone(), timestamp),
+        ];
+
+        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+        averages.insert(gw2.clone(), gw2_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
+
+        // calculate the rewards for the group
+        let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+        for mobile_reward in PocShares::aggregate(
+            stream::iter(heartbeat_rewards).map(Ok),
+            &speedtest_avgs,
+            true,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
+        {
+            let radio_reward = match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let owner = owners
+                .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
+                .expect("Could not find owner")
+                .clone();
+
+            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+        }
+
+        // wifi
+        let owner1_reward = *owner_rewards
+            .get(&owner1)
+            .expect("Could not fetch owner1 rewards");
+        assert_eq!(owner1_reward, 186289120715);
+
+        //sercomm
+        let owner2_reward = *owner_rewards
+            .get(&owner2)
+            .expect("Could not fetch owner2 rewards");
+        assert_eq!(owner2_reward, 1862891207153);
+
+        // confirm owner 1 reward is 0.1 of owner 2's reward
+        // owner 1 is a wifi indoor with a distance_to_asserted > max
+        // and so gets the reduced reward scale of 0.1 ( radio reward scale of 0.4 * location scale of 0.25)
+        // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
+        assert_eq!(owner1_reward, (owner2_reward as f64 * 0.1) as u64);
     }
 
     #[tokio::test]
