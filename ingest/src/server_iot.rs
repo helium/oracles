@@ -59,10 +59,7 @@ impl StreamState {
         }
     }
 
-    async fn send_offer(
-        &mut self,
-        tx: &Sender<Result<LoraStreamResponseV1, Status>>,
-    ) -> Result<(), Status> {
+    async fn send_offer(&mut self, tx: &Sender<Result<LoraStreamResponseV1, Status>>) -> bool {
         let nonce: Nonce = rand::random();
         self.nonce = Some(nonce);
         self.timeout = Instant::now() + self.session_key_offer_timeout;
@@ -73,7 +70,7 @@ impl StreamState {
             })),
         }))
         .await
-        .map_err(|_| Status::unknown("unable to send LoraStreamSessionOffer"))
+        .is_ok()
     }
 
     fn initialize(&mut self, init: LoraStreamSessionInitV1) -> Result<(), Status> {
@@ -106,7 +103,7 @@ impl StreamState {
                     timestamp,
                     report,
                     self.session_key.as_ref(),
-                    self.pub_key_bytes.as_ref(),
+                    self.pub_key_bytes.as_deref(),
                 )
                 .await
             }
@@ -116,7 +113,7 @@ impl StreamState {
                     timestamp,
                     report,
                     self.session_key.as_ref(),
-                    self.pub_key_bytes.as_ref(),
+                    self.pub_key_bytes.as_deref(),
                 )
                 .await
             }
@@ -133,7 +130,7 @@ impl StreamState {
         tx: Sender<Result<LoraStreamResponseV1, Status>>,
         in_stream: impl Stream<Item = Result<LoraStreamRequestV1, Status>>,
     ) {
-        if self.send_offer(&tx).await.is_err() {
+        if !self.send_offer(&tx).await {
             return;
         }
 
@@ -147,12 +144,13 @@ impl StreamState {
                 message = in_stream.next() => {
                     match message {
                         Some(Ok(message)) => {
-                            if self.handle_message(message).await.is_err() {
+                            if let Err(err) = self.handle_message(message).await {
+                                tracing::info!(?err, "error while handling message during stream_requests");
                                 break;
                             }
                         }
                         Some(Err(err)) => {
-                            tracing::info!(?err, "error in streaming requests");
+                            tracing::debug!(?err, "error in streaming requests");
                             break;
                         }
                         None => {
@@ -233,12 +231,12 @@ async fn handle_beacon_report(
     timestamp: u64,
     report: LoraBeaconReportReqV1,
     signing_key: Option<&PublicKey>,
-    expected_pubkey_bytes: Option<&Vec<u8>>,
+    expected_pubkey_bytes: Option<&[u8]>,
 ) -> Result<(), Status> {
     let ingest_report = verify_signature(signing_key, report)
         .and_then(|report| {
             expected_pubkey_bytes
-                .map(|bytes| bytes == &report.pub_key)
+                .map(|bytes| bytes == report.pub_key)
                 .unwrap_or(true)
                 .then_some(report)
                 .ok_or_else(|| Status::invalid_argument("incorrect pub_key"))
@@ -258,12 +256,12 @@ async fn handle_witness_report(
     timestamp: u64,
     report: LoraWitnessReportReqV1,
     session_key: Option<&PublicKey>,
-    expected_pubkey_bytes: Option<&Vec<u8>>,
+    expected_pubkey_bytes: Option<&[u8]>,
 ) -> Result<(), Status> {
     let ingest_report = verify_signature(session_key, report)
         .and_then(|report| {
             expected_pubkey_bytes
-                .map(|bytes| bytes == &report.pub_key)
+                .map(|bytes| bytes == report.pub_key)
                 .unwrap_or(true)
                 .then_some(report)
                 .ok_or_else(|| Status::invalid_argument("incorrect pub_key"))
