@@ -1056,32 +1056,32 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            471075937440
+            471_075_937_440
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            1413227812320
+            1_413_227_812_320
         );
 
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            84120703114
+            84_120_703_114
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let owner5_reward = *owner_rewards
             .get(&owner5)
             .expect("Could not fetch owner5 rewards");
-        assert_eq!(owner5_reward, 53837249993);
+        assert_eq!(owner5_reward, 53_837_249_993);
 
         let owner6_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner6 rewards");
-        assert_eq!(owner6_reward, 13459312498);
+        assert_eq!(owner6_reward, 13_459_312_498);
 
         // confirm owner 6 reward is 0.25 of owner 5's reward
         // this is due to owner 6's hotspot not having a validation location timestamp
@@ -1091,7 +1091,7 @@ mod test {
         let owner7_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner7 rewards");
-        assert_eq!(owner7_reward, 13459312498);
+        assert_eq!(owner7_reward, 13_459_312_498);
 
         // confirm owner 7 reward is 0.25 of owner 5's reward
         // owner 7's hotspot does have a validation location timestamp
@@ -1108,7 +1108,7 @@ mod test {
         for val in owner_rewards.values() {
             distributed_total_rewards += *val
         }
-        assert_eq!(distributed_total_rewards, 2049180327863);
+        assert_eq!(distributed_total_rewards, 2_049_180_327_863);
 
         let diff = expected_total_rewards - distributed_total_rewards;
         // the sum of rewards distributed should not exceed the epoch amount
@@ -1218,13 +1218,13 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 585480093676);
+        assert_eq!(owner1_reward, 585_480_093_676);
 
         //sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 1463700234192);
+        assert_eq!(owner2_reward, 1_463_700_234_192);
 
         // confirm owner 1 reward is 0.4 of owner 2's reward
         // owner 1 is a wifi indoor with a distance_to_asserted < max
@@ -1336,13 +1336,13 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 186289120715);
+        assert_eq!(owner1_reward, 186_289_120_715);
 
         //sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 1862891207153);
+        assert_eq!(owner2_reward, 1_862_891_207_153);
 
         // confirm owner 1 reward is 0.1 of owner 2's reward
         // owner 1 is a wifi indoor with a distance_to_asserted > max
