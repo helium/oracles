@@ -774,6 +774,9 @@ mod test {
         let owner6: PublicKeyBinary = "112WqD16uH8GLmCMhyRUrp6Rw5MTELzBdx7pSepySYUoSjixQoxJ"
             .parse()
             .expect("failed owner6 parse");
+        let owner7: PublicKeyBinary = "112WnYhq4qX3wdw6JTZT3w3A9FNGxeescJwJffcBN5jiZvovWRkQ"
+            .parse()
+            .expect("failed owner7 parse");
 
         // init hotspots
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -807,6 +810,9 @@ mod test {
         let gw10: PublicKeyBinary = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo"
             .parse()
             .expect("failed gw10 parse");
+        let gw11: PublicKeyBinary = "112WnYhq4qX3wdw6JTZT3w3A9FNGxeescJwJffcBN5jiZvovWRkQ"
+            .parse()
+            .expect("failed gw11 parse");
 
         // link gws to owners
         let mut owners = HashMap::new();
@@ -820,6 +826,7 @@ mod test {
         owners.insert(gw8.clone(), owner4.clone());
         owners.insert(gw9.clone(), owner5.clone());
         owners.insert(gw10.clone(), owner6.clone());
+        owners.insert(gw11.clone(), owner7.clone());
 
         // init cells and cell_types
         let c2 = "P27-SCE4255W2107CW5000015".to_string();
@@ -938,6 +945,13 @@ mod test {
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
             },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw11.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(10000),
+            },
         ];
 
         let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
@@ -976,12 +990,16 @@ mod test {
             poor_speedtest(gw7.clone(), timestamp),
         ];
         let gw9_speedtests = vec![
-            poor_speedtest(gw9.clone(), last_speedtest),
-            poor_speedtest(gw9.clone(), timestamp),
+            acceptable_speedtest(gw9.clone(), last_speedtest),
+            acceptable_speedtest(gw9.clone(), timestamp),
         ];
         let gw10_speedtests = vec![
-            poor_speedtest(gw10.clone(), last_speedtest),
-            poor_speedtest(gw10.clone(), timestamp),
+            acceptable_speedtest(gw10.clone(), last_speedtest),
+            acceptable_speedtest(gw10.clone(), timestamp),
+        ];
+        let gw11_speedtests = vec![
+            acceptable_speedtest(gw11.clone(), last_speedtest),
+            acceptable_speedtest(gw11.clone(), timestamp),
         ];
 
         let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
@@ -993,6 +1011,7 @@ mod test {
         let gw7_average = SpeedtestAverage::from(&gw7_speedtests);
         let gw9_average = SpeedtestAverage::from(&gw9_speedtests);
         let gw10_average = SpeedtestAverage::from(&gw10_speedtests);
+        let gw11_average = SpeedtestAverage::from(&gw11_speedtests);
         let mut averages = HashMap::new();
         averages.insert(gw1.clone(), gw1_average);
         averages.insert(gw2.clone(), gw2_average);
@@ -1003,6 +1022,7 @@ mod test {
         averages.insert(gw7.clone(), gw7_average);
         averages.insert(gw9.clone(), gw9_average);
         averages.insert(gw10.clone(), gw10_average);
+        averages.insert(gw11.clone(), gw11_average);
 
         let speedtest_avgs = SpeedtestAverages { averages };
 
@@ -1035,44 +1055,55 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            486_246_179_493
+                471075937440
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            1_458_738_538_478
+                1413227812320
         );
 
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            86_829_674_909
+                84120703114
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let owner5_reward = *owner_rewards
             .get(&owner5)
             .expect("Could not fetch owner5 rewards");
-        assert_eq!(owner5_reward, 13_892_747_985);
+        assert_eq!(owner5_reward, 53837249993);
 
         let owner6_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner6 rewards");
-        assert_eq!(owner6_reward, 3_473_186_996);
+        assert_eq!(owner6_reward, 13459312498);
 
         // confirm owner 6 reward is 0.25 of owner 5's reward
         // this is due to owner 6's hotspot not having a validation location timestamp
         // and thus its reward scale is reduced
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner6_reward);
 
+        let owner7_reward = *owner_rewards
+            .get(&owner6)
+            .expect("Could not fetch owner7 rewards");
+        assert_eq!(owner7_reward, 13459312498);
+
+        // confirm owner 7 reward is 0.25 of owner 5's reward
+        // owner 7's hotspot does have a validation location timestamp
+        // but its distance beyond the asserted location is too high
+        // and thus its reward scale is reduced
+        assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
+
         let mut total = 0;
         for val in owner_rewards.values() {
             total += *val
         }
 
-        assert_eq!(total, 2_049_180_327_861); // total emissions for 1 hour
+        assert_eq!(total, 2049180327863); // total emissions for 1 hour
     }
 
     #[tokio::test]
