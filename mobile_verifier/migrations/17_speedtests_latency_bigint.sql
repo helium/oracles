@@ -1,0 +1,1 @@
+ALTER TABLE speedtests ALTER COLUMN latency TYPE BIGINT;

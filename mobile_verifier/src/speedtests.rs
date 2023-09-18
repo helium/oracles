@@ -37,7 +37,7 @@ impl FromRow<'_, PgRow> for Speedtest {
                 upload_speed: row.get::<i64, &str>("upload_speed") as u64,
                 download_speed: row.get::<i64, &str>("download_speed") as u64,
                 timestamp: row.get::<DateTime<Utc>, &str>("timestamp"),
-                latency: row.get::<i32, &str>("latency") as u32,
+                latency: row.get::<i64, &str>("latency") as u32,
             },
         })
     }
