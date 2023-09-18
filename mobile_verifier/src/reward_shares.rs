@@ -281,7 +281,7 @@ impl PocShares {
                                 reward: Some(proto::mobile_reward_share::Reward::RadioReward(
                                     proto::RadioReward {
                                         hotspot_key,
-                                        cbsd_id: cbsd_id.unwrap_or(String::new()),
+                                        cbsd_id: cbsd_id.unwrap_or_default(),
                                         poc_reward: poc_reward
                                             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                                             .to_u64()
