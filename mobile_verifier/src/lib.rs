@@ -1,4 +1,4 @@
-pub mod cell_heartbeats;
+pub mod cbrs_heartbeats;
 pub mod cell_type;
 mod data_session;
 pub mod heartbeats_util;

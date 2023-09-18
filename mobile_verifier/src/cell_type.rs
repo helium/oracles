@@ -31,7 +31,7 @@ pub enum CellType {
 #[derive(PartialEq)]
 pub enum CellTypeLabel {
     CellTypeLabelNone = 0,
-    Cell = 1,
+    CBRS = 1,
     Wifi = 2,
 }
 
@@ -49,11 +49,11 @@ impl CellType {
 
     pub fn to_label(self) -> CellTypeLabel {
         match self {
-            Self::Nova436H => CellTypeLabel::Cell,
-            Self::Nova430I => CellTypeLabel::Cell,
-            Self::Neutrino430 => CellTypeLabel::Cell,
-            Self::SercommIndoor => CellTypeLabel::Cell,
-            Self::SercommOutdoor => CellTypeLabel::Cell,
+            Self::Nova436H => CellTypeLabel::CBRS,
+            Self::Nova430I => CellTypeLabel::CBRS,
+            Self::Neutrino430 => CellTypeLabel::CBRS,
+            Self::SercommIndoor => CellTypeLabel::CBRS,
+            Self::SercommOutdoor => CellTypeLabel::CBRS,
             Self::CellTypeNone => CellTypeLabel::CellTypeLabelNone,
             Self::NovaGenericWifiIndoor => CellTypeLabel::Wifi,
         }

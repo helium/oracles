@@ -10,3 +10,5 @@ CREATE TABLE wifi_heartbeats (
        distance_to_asserted BIGINT,
        PRIMARY KEY(hotspot_key, truncated_timestamp)
 );
+
+ALTER TABLE heartbeats RENAME TO cbrs_heartbeats;

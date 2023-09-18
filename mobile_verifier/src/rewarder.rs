@@ -105,7 +105,7 @@ impl Rewarder {
         // Check if we have heartbeats and speedtests past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
             if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM heartbeats WHERE latest_timestamp >= $1",
+                "SELECT COUNT(*) FROM cbrs_heartbeats WHERE latest_timestamp >= $1",
             )
             .bind(reward_period.end)
             .fetch_one(&self.pool)

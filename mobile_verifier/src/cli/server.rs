@@ -1,5 +1,5 @@
 use crate::{
-    cell_heartbeats::HeartbeatDaemon as CellHeartbeatDaemon, data_session::DataSessionIngestor,
+    cbrs_heartbeats::HeartbeatDaemon as CellHeartbeatDaemon, data_session::DataSessionIngestor,
     rewarder::Rewarder, speedtests::SpeedtestDaemon,
     subscriber_location::SubscriberLocationIngestor, telemetry,
     wifi_heartbeats::HeartbeatDaemon as WifiHeartbeatDaemon, Settings,

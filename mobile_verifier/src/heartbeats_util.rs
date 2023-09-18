@@ -124,7 +124,7 @@ impl From<HeartbeatRow> for HeartbeatReward {
 impl HeartbeatReward {
     pub fn id(&self) -> anyhow::Result<String> {
         match self.cell_type.to_label() {
-            CellTypeLabel::Cell => Ok(self
+            CellTypeLabel::CBRS => Ok(self
                 .cbsd_id
                 .clone()
                 .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?),
@@ -148,10 +148,10 @@ impl HeartbeatReward {
             r#"
             (WITH latest_hotspots AS (
                 SELECT t1.cbsd_id, t1.hotspot_key, t1.latest_timestamp
-                FROM heartbeats t1
+                FROM cbrs_heartbeats t1
                 WHERE t1.latest_timestamp = (
                       SELECT MAX(t2.latest_timestamp)
-                      FROM heartbeats t2
+                      FROM cbrs_heartbeats t2
                       WHERE t2.cbsd_id = t1.cbsd_id
                       AND truncated_timestamp >= $1
                       AND truncated_timestamp < $2
@@ -159,16 +159,16 @@ impl HeartbeatReward {
            )
            SELECT
              latest_hotspots.hotspot_key,
-             heartbeats.cbsd_id,
+             cbrs_heartbeats.cbsd_id,
              cell_type,
              NULL as location_validation_timestamp,
              NULL as distance_to_asserted
-           FROM heartbeats
-           JOIN latest_hotspots ON heartbeats.cbsd_id = latest_hotspots.cbsd_id
+           FROM cbrs_heartbeats
+           JOIN latest_hotspots ON cbrs_heartbeats.cbsd_id = latest_hotspots.cbsd_id
            WHERE truncated_timestamp >= $1
              AND truncated_timestamp < $2
            GROUP BY
-             heartbeats.cbsd_id,
+             cbrs_heartbeats.cbsd_id,
              latest_hotspots.hotspot_key,
              cell_type
            HAVING count(*) >= $3)
@@ -212,7 +212,7 @@ pub struct ValidatedHeartbeat {
 }
 
 impl ValidatedHeartbeat {
-    pub fn check_validity(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         self.validity == proto::HeartbeatValidity::Valid
     }
 
@@ -245,9 +245,9 @@ impl ValidatedHeartbeat {
         heartbeats
             .write(
                 proto::Heartbeat {
-                    cbsd_id: self.report.cbsd_id.clone().unwrap_or(String::new()),
+                    cbsd_id: self.report.cbsd_id.clone().unwrap_or_default(),
                     pub_key: self.report.hotspot_key.as_ref().into(),
-                    reward_multiplier: self.cell_type.reward_weight().to_f32().unwrap_or(0.0),
+                    reward_multiplier: self.cell_type.reward_weight().to_f32().unwrap_or_default(),
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
                     timestamp: self.report.timestamp.timestamp() as u64,
@@ -284,7 +284,7 @@ impl ValidatedHeartbeat {
         Ok(
             sqlx::query_as::<_, HeartbeatSaveResult>(
                 r#"
-                INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp)
+                INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
                 latest_timestamp = EXCLUDED.latest_timestamp
@@ -411,7 +411,7 @@ pub async fn process_heartbeat_stream<'a>(
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(file_sink).await?;
 
-        if !validated_heartbeat.check_validity() {
+        if !validated_heartbeat.is_valid() {
             continue;
         }
 
@@ -432,7 +432,7 @@ pub async fn clear_heartbeats(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1;")
+    sqlx::query("DELETE FROM cbrs_heartbeats WHERE truncated_timestamp < $1;")
         .bind(timestamp)
         .execute(&mut *tx)
         .await?;
