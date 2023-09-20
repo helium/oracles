@@ -1118,7 +1118,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#953da03fd03f1f655e7c27328f068fa9654d1954"
+source = "git+https://github.com/helium/proto?branch=bbalser/iot-stream-session-keys#2574462f378f3af7412156938de8f667ace158af"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1128,7 +1128,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -2966,7 +2966,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#953da03fd03f1f655e7c27328f068fa9654d1954"
+source = "git+https://github.com/helium/proto?branch=bbalser/iot-stream-session-keys#2574462f378f3af7412156938de8f667ace158af"
 dependencies = [
  "bytes",
  "prost",
@@ -3300,12 +3300,14 @@ dependencies = [
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "sha2 0.10.6",
  "task-manager",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tonic",
  "tracing",

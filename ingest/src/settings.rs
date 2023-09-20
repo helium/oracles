@@ -22,6 +22,12 @@ pub struct Settings {
     pub cache: String,
     /// Network required in all public keys:  mainnet | testnet
     pub network: Network,
+    /// Timeout of session key offer in seconds
+    #[serde(default = "default_session_key_offer_timeout")]
+    pub session_key_offer_timeout: u64,
+    /// Timeout of session key session in seconds
+    #[serde(default = "default_session_key_timeout")]
+    pub session_key_timeout: u64,
     /// Settings for exposed public API
     /// Target bucket for uploads
     pub output: file_store::Settings,
@@ -30,6 +36,14 @@ pub struct Settings {
     pub token: Option<String>,
     /// Target output bucket details Metrics settings
     pub metrics: poc_metrics::Settings,
+}
+
+pub fn default_session_key_timeout() -> u64 {
+    30 * 60
+}
+
+pub fn default_session_key_offer_timeout() -> u64 {
+    5
 }
 
 pub fn default_listen_addr() -> String {
@@ -78,5 +92,13 @@ impl Settings {
 
     pub fn listen_addr(&self) -> Result<SocketAddr, AddrParseError> {
         SocketAddr::from_str(&self.listen)
+    }
+
+    pub fn session_key_offer_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.session_key_offer_timeout)
+    }
+
+    pub fn session_key_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.session_key_timeout)
     }
 }
