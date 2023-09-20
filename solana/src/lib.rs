@@ -73,6 +73,7 @@ pub struct Settings {
     dnt_mint: String,
     #[serde(default)]
     payers_to_monitor: Vec<String>,
+    additional_sol_balances_to_monitor: Vec<String>,
 }
 
 impl Settings {
@@ -81,6 +82,16 @@ impl Settings {
             .iter()
             .map(|payer| PublicKeyBinary::from_str(payer))
             .collect::<Result<_, _>>()
+            .map_err(SolanaRpcError::from)
+    }
+
+    pub fn additional_sol_balances_to_monitor(
+        &self,
+    ) -> Result<Vec<solana_sdk::pubkey::Pubkey>, SolanaRpcError> {
+        self.additional_sol_balances_to_monitor
+            .iter()
+            .map(|pubkey_string| Pubkey::from_str(pubkey_string))
+            .collect::<Result<Vec<Pubkey>, ParsePubkeyError>>()
             .map_err(SolanaRpcError::from)
     }
 }

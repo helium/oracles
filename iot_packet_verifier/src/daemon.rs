@@ -107,7 +107,14 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = BalanceMonitor::new(env!("CARGO_PKG_NAME"), solana.clone())?;
+        let sol_balance_monitor = BalanceMonitor::new(
+            solana.clone(),
+            settings
+                .solana
+                .as_ref()
+                .map(|s| s.additional_sol_balances_to_monitor())
+                .unwrap_or_else(|| Ok(Vec::new()))?,
+        )?;
 
         // Set up the balance cache:
         let balances = BalanceCache::new(&mut pool.clone(), solana.clone()).await?;
