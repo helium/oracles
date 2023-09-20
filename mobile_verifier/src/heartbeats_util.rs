@@ -2,7 +2,7 @@ use crate::cell_type::{CellType, CellTypeLabel};
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
-    file_sink::FileSinkClient, heartbeat::CellHeartbeatIngestReport,
+    file_sink::FileSinkClient, heartbeat::CbrsHeartbeatIngestReport,
     wifi_heartbeat::WifiHeartbeatIngestReport,
 };
 use futures::stream::{Stream, StreamExt, TryStreamExt};
@@ -20,7 +20,7 @@ const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
 #[derive(Clone, PartialEq)]
 pub enum HBType {
-    Cell = 0,
+    Cbrs = 0,
     Wifi = 1,
 }
 
@@ -44,7 +44,7 @@ impl Heartbeat {
     pub fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
         let ts = self.truncated_timestamp()?;
         match self.hb_type {
-            HBType::Cell => {
+            HBType::Cbrs => {
                 let cbsd_id = self
                     .cbsd_id
                     .clone()
@@ -56,10 +56,10 @@ impl Heartbeat {
     }
 }
 
-impl From<CellHeartbeatIngestReport> for Heartbeat {
-    fn from(value: CellHeartbeatIngestReport) -> Self {
+impl From<CbrsHeartbeatIngestReport> for Heartbeat {
+    fn from(value: CbrsHeartbeatIngestReport) -> Self {
         Self {
-            hb_type: HBType::Cell,
+            hb_type: HBType::Cbrs,
             hotspot_key: value.report.pubkey,
             cbsd_id: Some(value.report.cbsd_id),
             operation_mode: value.report.operation_mode,
@@ -268,17 +268,17 @@ impl ValidatedHeartbeat {
 
     pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
         match self.report.hb_type {
-            HBType::Cell => self.save_cell_hb(exec).await,
+            HBType::Cbrs => self.save_cbrs_hb(exec).await,
             HBType::Wifi => self.save_wifi_hb(exec).await,
         }
     }
 
-    async fn save_cell_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
+    async fn save_cbrs_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
         let cbsd_id = self
             .report
             .cbsd_id
             .as_ref()
-            .ok_or_else(|| anyhow!("failed to save cell heartbeat, invalid cbsd_id"))?;
+            .ok_or_else(|| anyhow!("failed to save cbrs heartbeat, invalid cbsd_id"))?;
 
         let truncated_timestamp = self.truncated_timestamp()?;
         Ok(
@@ -333,7 +333,7 @@ pub async fn validate_heartbeat(
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<(CellType, proto::HeartbeatValidity, Option<i64>)> {
     let cell_type = match heartbeat.hb_type {
-        HBType::Cell => match heartbeat.cbsd_id.as_ref() {
+        HBType::Cbrs => match heartbeat.cbsd_id.as_ref() {
             Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
                 Some(ty) => ty,
                 _ => {

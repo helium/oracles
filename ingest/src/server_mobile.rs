@@ -247,7 +247,7 @@ pub async fn grpc_server(settings: &Settings) -> Result<()> {
     let store_base_path = Path::new(&settings.cache);
 
     let (heartbeat_report_sink, heartbeat_report_sink_server) = file_sink::FileSinkBuilder::new(
-        FileType::CellHeartbeatIngestReport,
+        FileType::CbrsHeartbeatIngestReport,
         store_base_path,
         concat!(env!("CARGO_PKG_NAME"), "_heartbeat_report"),
     )

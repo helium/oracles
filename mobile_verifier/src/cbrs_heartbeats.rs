@@ -2,7 +2,7 @@ use crate::heartbeats_util::{self, Heartbeat};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient,
-    heartbeat::CellHeartbeatIngestReport,
+    heartbeat::CbrsHeartbeatIngestReport,
 };
 use futures::{stream::StreamExt, TryFutureExt};
 use mobile_config::GatewayClient;
@@ -14,7 +14,7 @@ use tokio::sync::mpsc::Receiver;
 pub struct HeartbeatDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_client: GatewayClient,
-    heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
+    heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
     file_sink: FileSinkClient,
 }
 
@@ -22,7 +22,7 @@ impl HeartbeatDaemon {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_client: GatewayClient,
-        heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
+        heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
         file_sink: FileSinkClient,
     ) -> Self {
         Self {
@@ -65,7 +65,7 @@ impl HeartbeatDaemon {
 
     async fn process_file(
         &self,
-        file: FileInfoStream<CellHeartbeatIngestReport>,
+        file: FileInfoStream<CbrsHeartbeatIngestReport>,
         cache: &Cache<(String, DateTime<Utc>), ()>,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing CBRS heartbeat file {}", file.file_info.key);

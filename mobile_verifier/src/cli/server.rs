@@ -8,7 +8,7 @@ use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
     file_info_poller::LookbackBehavior, file_sink, file_source, file_upload,
-    heartbeat::CellHeartbeatIngestReport, mobile_subscriber::SubscriberLocationIngestReport,
+    heartbeat::CbrsHeartbeatIngestReport, mobile_subscriber::SubscriberLocationIngestReport,
     mobile_transfer::ValidDataTransferSession, speedtest::CellSpeedtestIngestReport,
     wifi_heartbeat::WifiHeartbeatIngestReport, FileStore, FileType,
 };
@@ -56,15 +56,17 @@ impl Cmd {
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        // Cell Heartbeats
-        let (heartbeats, heartbeats_server) =
-            file_source::continuous_source::<CellHeartbeatIngestReport>()
+        // CBRS Heartbeats
+        let (cbrs_heartbeats, cbrs_heartbeats_server) =
+            file_source::continuous_source::<CbrsHeartbeatIngestReport>()
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CellHeartbeatIngestReport)
+                .file_type(FileType::CbrsHeartbeatIngestReport)
                 .create()?;
-        let heartbeats_join_handle = heartbeats_server.start(shutdown_listener.clone()).await?;
+        let cbrs_heartbeats_join_handle = cbrs_heartbeats_server
+            .start(shutdown_listener.clone())
+            .await?;
 
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) =
@@ -89,10 +91,10 @@ impl Cmd {
         .create()
         .await?;
 
-        let cell_heartbeat_daemon = CellHeartbeatDaemon::new(
+        let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
             gateway_client.clone(),
-            heartbeats,
+            cbrs_heartbeats,
             valid_heartbeats.clone(),
         );
 
@@ -248,10 +250,10 @@ impl Cmd {
                 .run(data_session_ingest, shutdown_listener.clone())
                 .map_err(Error::from),
             tracker_process.map_err(Error::from),
-            heartbeats_join_handle.map_err(Error::from),
+            cbrs_heartbeats_join_handle.map_err(Error::from),
             wifi_heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
-            cell_heartbeat_daemon.run(shutdown_listener.clone()),
+            cbrs_heartbeat_daemon.run(shutdown_listener.clone()),
             wifi_heartbeat_daemon.run(shutdown_listener.clone()),
             speedtest_daemon.run(shutdown_listener.clone()),
             rewarder.run(shutdown_listener.clone()),

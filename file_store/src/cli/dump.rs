@@ -1,7 +1,7 @@
 use crate::{
     cli::print_json,
     file_source,
-    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
     mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
@@ -51,9 +51,9 @@ impl Cmd {
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
-                FileType::CellHeartbeat => {
+                FileType::CbrsHeartbeat => {
                     let dec_msg = CellHeartbeatReqV1::decode(msg)?;
-                    wtr.serialize(CellHeartbeat::try_from(dec_msg)?)?;
+                    wtr.serialize(CbrsHeartbeat::try_from(dec_msg)?)?;
                 }
                 FileType::WifiHeartbeatIngestReport => {
                     let msg = WifiHeartbeatIngestReport::decode(msg)?;
@@ -69,9 +69,9 @@ impl Cmd {
                     let dec_msg = SpeedtestReqV1::decode(msg)?;
                     wtr.serialize(CellSpeedtest::try_from(dec_msg)?)?;
                 }
-                FileType::CellHeartbeatIngestReport => {
+                FileType::CbrsHeartbeatIngestReport => {
                     let dec_msg = CellHeartbeatIngestReportV1::decode(msg)?;
-                    let ingest_report = CellHeartbeatIngestReport::try_from(dec_msg)?;
+                    let ingest_report = CbrsHeartbeatIngestReport::try_from(dec_msg)?;
                     print_json(&ingest_report)?;
                 }
                 FileType::CellSpeedtestIngestReport => {
