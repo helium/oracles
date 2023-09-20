@@ -35,7 +35,7 @@ impl HeartbeatDaemon {
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
-            tracing::info!("Starting Cell HeartbeatDaemon");
+            tracing::info!("Starting CBRS HeartbeatDaemon");
             let cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
 
             let cache_clone = cache.clone();
@@ -49,7 +49,7 @@ impl HeartbeatDaemon {
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
-                        tracing::info!("Cell HeartbeatDaemon shutting down");
+                        tracing::info!("CBRS HeartbeatDaemon shutting down");
                         break;
                     }
                     Some(file) = self.heartbeats.recv() => self.process_file(file, &cache).await?,
@@ -68,7 +68,7 @@ impl HeartbeatDaemon {
         file: FileInfoStream<CellHeartbeatIngestReport>,
         cache: &Cache<(String, DateTime<Utc>), ()>,
     ) -> anyhow::Result<()> {
-        tracing::info!("Processing cell heartbeat file {}", file.file_info.key);
+        tracing::info!("Processing CBRS heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));

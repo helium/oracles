@@ -68,7 +68,7 @@ impl HeartbeatDaemon {
         file: FileInfoStream<WifiHeartbeatIngestReport>,
         cache: &Cache<(String, DateTime<Utc>), ()>,
     ) -> anyhow::Result<()> {
-        tracing::info!("Processing wifi heartbeat file {}", file.file_info.key);
+        tracing::info!("Processing WIFI heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
