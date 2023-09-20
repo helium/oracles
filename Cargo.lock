@@ -1118,7 +1118,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=bbalser/wifi-heartbeats#b7d710082b017be5b49b3a1913b7e9c9d4833ef7"
+source = "git+https://github.com/helium/proto?branch=bbalser/wifi-heartbeats#0cc61853d00094daa0f36b4e93aa6664cc2f6055"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1128,7 +1128,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -2104,7 +2104,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "structopt",
  "thiserror",
  "tracing",
@@ -2537,7 +2537,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "strum",
  "strum_macros",
@@ -2966,7 +2966,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=bbalser/wifi-heartbeats#b7d710082b017be5b49b3a1913b7e9c9d4833ef7"
+source = "git+https://github.com/helium/proto?branch=bbalser/wifi-heartbeats#0cc61853d00094daa0f36b4e93aa6664cc2f6055"
 dependencies = [
  "bytes",
  "prost",
@@ -3303,7 +3303,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "task-manager",
  "thiserror",
  "tokio",
@@ -3454,7 +3454,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "task-manager",
  "thiserror",
@@ -4070,7 +4070,7 @@ dependencies = [
  "poc-metrics",
  "prost",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "solana",
  "sqlx",
  "thiserror",
@@ -4115,7 +4115,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -5333,7 +5333,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "sqlx",
  "thiserror",
  "tokio",
@@ -6006,7 +6006,7 @@ dependencies = [
  "helium-sub-daos",
  "metrics",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "solana-client",
  "solana-program",
  "solana-sdk",
