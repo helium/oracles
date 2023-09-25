@@ -404,6 +404,11 @@ pub fn do_witness_verifications(
         }
     };
     verify_denylist(&witness_report.report.pub_key, deny_list)?;
+    verify_edge_denylist(
+        &beacon_report.report.pub_key,
+        &witness_report.report.pub_key,
+        deny_list,
+    )?;
     verify_self_witness(
         &beacon_report.report.pub_key,
         &witness_report.report.pub_key,
@@ -489,6 +494,36 @@ fn verify_denylist(pub_key: &PublicKeyBinary, deny_list: &DenyList) -> GenericVe
     //
     Ok(())
 }
+
+/// verify if gateway-gateway edge is on the deny list
+/// note that the order of the gateway keys is unimportant as edges are not considered directional
+fn verify_edge_denylist(
+    beaconer: &PublicKeyBinary,
+    witness: &PublicKeyBinary,
+    deny_list: &DenyList,
+) -> GenericVerifyResult {
+    if deny_list.check_edge(beaconer.as_ref(), witness.as_ref()) {
+        tracing::debug!(
+            "report verification failed, reason: {:?}.
+            beacon: {}, witness {}, tagname: {}",
+            InvalidReason::DeniedEdge,
+            beaconer,
+            witness,
+            deny_list.tag_name
+        );
+        return Err(InvalidResponse {
+            reason: InvalidReason::DeniedEdge,
+            details: Some(InvalidDetails {
+                data: Some(invalid_details::Data::DenylistTag(
+                    deny_list.tag_name.to_string(),
+                )),
+            }),
+        });
+    }
+    //
+    Ok(())
+}
+
 /// verify remote entropy
 /// if received timestamp is outside of entopy start/end then return invalid
 fn verify_entropy(
@@ -926,6 +961,7 @@ mod tests {
     const PUBKEY1: &str = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf";
     const PUBKEY2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
     const DENIED_PUBKEY1: &str = "112bUGwooPd1dCDd3h3yZwskjxCzBsQNKeaJTuUF4hSgYedcsFa9";
+    const DENIED_PUBKEY2: &str = "13ABbtvMrRK8jgYrT3h6Y9Zu44nS6829kzsamiQn9Eefeu3VAZs";
 
     // hardcode beacon & entropy data taken from a beacon generated on a hotspot
     const LOCAL_ENTROPY: [u8; 4] = [233, 70, 25, 176];
@@ -1154,6 +1190,61 @@ mod tests {
                 }),
             }),
             verify_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+                &deny_list
+            )
+        );
+    }
+
+    #[test]
+    fn test_verify_edge_denylist() {
+        let deny_list: DenyList = vec![(
+            PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+            PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+        )]
+        .try_into()
+        .unwrap();
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::DeniedEdge,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
+            verify_edge_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+                &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+                &deny_list
+            )
+        );
+        // edges are not directional
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::DeniedEdge,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
+            verify_edge_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
                 &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
                 &deny_list
             )

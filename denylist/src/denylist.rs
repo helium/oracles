@@ -37,6 +37,24 @@ impl TryFrom<Vec<PublicKeyBinary>> for DenyList {
     }
 }
 
+impl TryFrom<Vec<(PublicKeyBinary, PublicKeyBinary)>> for DenyList {
+    type Error = Error;
+    fn try_from(v: Vec<(PublicKeyBinary, PublicKeyBinary)>) -> Result<Self> {
+        let keys: Vec<u64> = v
+            .into_iter()
+            .map(|e| edge_hash((e.0.as_ref(), e.1.as_ref())))
+            .collect();
+        let filter = Xor32::from(&keys);
+        let client = DenyListClient::new()?;
+        Ok(Self {
+            tag_name: 0,
+            client,
+            filter,
+            sign_keys: vec![],
+        })
+    }
+}
+
 impl DenyList {
     pub fn new(settings: &Settings) -> Result<Self> {
         tracing::debug!("initializing new denylist");
@@ -110,6 +128,17 @@ impl DenyList {
         }
         self.filter.contains(&public_key_hash(pub_key))
     }
+
+    pub fn check_edge(&self, beaconer: &[u8], witness: &[u8]) -> bool {
+        if self.filter.len() == 0 {
+            tracing::warn!("empty denylist filter, rejecting edge");
+            return true;
+        }
+        // sort both keys into lexiographic order, so edges are not considered directional
+        let mut a = [beaconer, witness];
+        a.sort();
+        self.filter.contains(&edge_hash((a[0], a[1])))
+    }
 }
 
 /// deconstruct bytes into the filter component parts
@@ -147,6 +176,13 @@ pub fn filter_from_bin(bin: &Vec<u8>, sign_keys: &[PublicKey]) -> Result<Xor32> 
 fn public_key_hash<R: AsRef<[u8]>>(public_key: R) -> u64 {
     let mut hasher = XxHash64::default();
     hasher.write(public_key.as_ref());
+    hasher.finish()
+}
+
+fn edge_hash(edge_key: (&[u8], &[u8])) -> u64 {
+    let mut hasher = XxHash64::default();
+    hasher.write(edge_key.0);
+    hasher.write(edge_key.1);
     hasher.finish()
 }
 
