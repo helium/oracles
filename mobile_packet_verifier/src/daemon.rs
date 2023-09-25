@@ -113,8 +113,14 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor =
-            solana::balance_monitor::BalanceMonitor::new(env!("CARGO_PKG_NAME"), solana.clone())?;
+        let sol_balance_monitor = solana::balance_monitor::BalanceMonitor::new(
+            solana.clone(),
+            settings
+                .solana
+                .as_ref()
+                .map(|s| s.additional_sol_balances_to_monitor())
+                .unwrap_or_else(|| Ok(Vec::new()))?,
+        )?;
 
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
