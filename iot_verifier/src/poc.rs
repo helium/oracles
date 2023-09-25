@@ -506,13 +506,13 @@ fn verify_edge_denylist(
         tracing::debug!(
             "report verification failed, reason: {:?}.
             beacon: {}, witness {}, tagname: {}",
-            InvalidReason::Denied,
+            InvalidReason::DeniedEdge,
             beaconer,
             witness,
             deny_list.tag_name
         );
         return Err(InvalidResponse {
-            reason: InvalidReason::Denied,
+            reason: InvalidReason::DeniedEdge,
             details: Some(InvalidDetails {
                 data: Some(invalid_details::Data::DenylistTag(
                     deny_list.tag_name.to_string(),
@@ -1198,15 +1198,33 @@ mod tests {
 
     #[test]
     fn test_verify_edge_denylist() {
-        let deny_list: DenyList = vec![(PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(), PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap())]
-            .try_into()
-            .unwrap();
-        assert!(verify_edge_denylist(&PublicKeyBinary::from_str(PUBKEY1).unwrap(), &PublicKeyBinary::from_str(PUBKEY2).unwrap(), &deny_list).is_ok());
-        assert!(verify_edge_denylist(&PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(), &PublicKeyBinary::from_str(PUBKEY2).unwrap(), &deny_list).is_ok());
-        assert!(verify_edge_denylist(&PublicKeyBinary::from_str(PUBKEY1).unwrap(), &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(), &deny_list).is_ok());
+        let deny_list: DenyList = vec![(
+            PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+            PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+        )]
+        .try_into()
+        .unwrap();
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
         assert_eq!(
             Err(InvalidResponse {
-                reason: InvalidReason::Denied,
+                reason: InvalidReason::DeniedEdge,
                 details: Some(InvalidDetails {
                     data: Some(invalid_details::Data::DenylistTag("0".to_string()))
                 }),
@@ -1220,7 +1238,7 @@ mod tests {
         // edges are not directional
         assert_eq!(
             Err(InvalidResponse {
-                reason: InvalidReason::Denied,
+                reason: InvalidReason::DeniedEdge,
                 details: Some(InvalidDetails {
                     data: Some(invalid_details::Data::DenylistTag("0".to_string()))
                 }),
@@ -1232,7 +1250,6 @@ mod tests {
             )
         );
     }
-
 
     #[test]
     fn test_verify_capability() {
