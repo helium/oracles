@@ -37,6 +37,22 @@ impl TryFrom<Vec<PublicKeyBinary>> for DenyList {
     }
 }
 
+impl TryFrom<Vec<(PublicKeyBinary, PublicKeyBinary)>> for DenyList {
+    type Error = Error;
+    fn try_from(v: Vec<(PublicKeyBinary, PublicKeyBinary)>) -> Result<Self> {
+        let keys: Vec<u64> = v.into_iter().map(|e| edge_hash((e.0.as_ref(), e.1.as_ref()))).collect();
+        let filter = Xor32::from(&keys);
+        let client = DenyListClient::new()?;
+        Ok(Self {
+            tag_name: 0,
+            client,
+            filter,
+            sign_keys: vec![],
+        })
+    }
+}
+
+
 impl DenyList {
     pub fn new(settings: &Settings) -> Result<Self> {
         tracing::debug!("initializing new denylist");

@@ -961,6 +961,7 @@ mod tests {
     const PUBKEY1: &str = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf";
     const PUBKEY2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
     const DENIED_PUBKEY1: &str = "112bUGwooPd1dCDd3h3yZwskjxCzBsQNKeaJTuUF4hSgYedcsFa9";
+    const DENIED_PUBKEY2: &str = "13ABbtvMrRK8jgYrT3h6Y9Zu44nS6829kzsamiQn9Eefeu3VAZs";
 
     // hardcode beacon & entropy data taken from a beacon generated on a hotspot
     const LOCAL_ENTROPY: [u8; 4] = [233, 70, 25, 176];
@@ -1194,6 +1195,44 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn test_verify_edge_denylist() {
+        let deny_list: DenyList = vec![(PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(), PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap())]
+            .try_into()
+            .unwrap();
+        assert!(verify_edge_denylist(&PublicKeyBinary::from_str(PUBKEY1).unwrap(), &PublicKeyBinary::from_str(PUBKEY2).unwrap(), &deny_list).is_ok());
+        assert!(verify_edge_denylist(&PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(), &PublicKeyBinary::from_str(PUBKEY2).unwrap(), &deny_list).is_ok());
+        assert!(verify_edge_denylist(&PublicKeyBinary::from_str(PUBKEY1).unwrap(), &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(), &deny_list).is_ok());
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::Denied,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
+            verify_edge_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+                &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+                &deny_list
+            )
+        );
+        // edges are not directional
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::Denied,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
+            verify_edge_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+                &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+                &deny_list
+            )
+        );
+    }
+
 
     #[test]
     fn test_verify_capability() {
