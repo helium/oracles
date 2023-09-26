@@ -417,7 +417,7 @@ fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
 }
 
 async fn connect_and_stream(port: u64) -> TestClient {
-    let mut client = (|| PocLoraClient::connect(format!("http://127.0.0.1:{}", port)))
+    let mut client = (|| PocLoraClient::connect(format!("http://127.0.0.1:{port}")))
         .retry(&ExponentialBuilder::default())
         .await
         .expect("client connect");

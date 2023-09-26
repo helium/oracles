@@ -139,19 +139,22 @@ impl StreamState {
         loop {
             tokio::select! {
                 _ = tokio::time::sleep_until(self.timeout) => {
-                    tracing::debug!("stream request timed out");
+                    let pub_key = self.pub_key_bytes.map(|b| bs58::encode(&b).into_string()).unwrap_or("".to_string());
+                    tracing::debug!(?pub_key, "stream request timed out");
                     break;
                 }
                 message = in_stream.next() => {
                     match message {
                         Some(Ok(message)) => {
                             if let Err(err) = self.handle_message(message).await {
-                                tracing::info!(?err, "error while handling message during stream_requests");
+                                let pub_key = self.pub_key_bytes.map(|b| bs58::encode(&b).into_string()).unwrap_or("".to_string());
+                                tracing::info!(?pub_key, ?err, "error while handling message during stream_requests");
                                 break;
                             }
                         }
                         Some(Err(err)) => {
-                            tracing::debug!(?err, "error in streaming requests");
+                            let pub_key = self.pub_key_bytes.map(|b| bs58::encode(&b).into_string()).unwrap_or("".to_string());
+                            tracing::debug!(?pub_key, ?err, "error in streaming requests");
                             break;
                         }
                         None => {
