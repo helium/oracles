@@ -1046,6 +1046,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "backon"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f34fac4d7cdaefa2deded0eda2d5d59dbfd43370ff3f856209e72340ae84c294"
+dependencies = [
+ "futures",
+ "pin-project",
+ "rand 0.8.5",
+ "tokio",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2948,7 +2960,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.1.16",
+ "getrandom 0.2.8",
  "k256",
  "lazy_static",
  "multihash",
@@ -3286,7 +3298,9 @@ name = "ingest"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "backon",
  "base64 0.21.0",
+ "bs58 0.4.0",
  "chrono",
  "clap 4.1.11",
  "config",
@@ -4699,7 +4713,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.0",
  "blake3",
- "bs58 0.4.0",
+ "bs58 0.5.0",
  "chrono",
  "clap 4.1.11",
  "config",
@@ -7550,7 +7564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
