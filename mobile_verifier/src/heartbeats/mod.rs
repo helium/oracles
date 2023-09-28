@@ -510,6 +510,23 @@ pub async fn validate_heartbeat(
         _ => None,
     };
 
+    // verify the HB cell type matches that on chain
+    // TODO: currently only handling wifi indoor
+    //       make this check generic and applicable to all cell types
+    //       when device data is available in the db
+    match (
+        heartbeat.hb_type.clone(),
+        CellType::from_asserted(&metadata.device_type),
+    ) {
+        (HbType::Wifi, Some(asserted_celltype)) if asserted_celltype != cell_type => {
+            return Ok((cell_type, distance_to_asserted, None, proto::HeartbeatValidity::BadCellType));
+        }
+        (HbType::Wifi, None) => {
+            return Ok((cell_type, distance_to_asserted, None, proto::HeartbeatValidity::BadCellType))
+        }
+        _ => (),
+    };
+
     /*
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
         return Ok((cell_type, None, proto::HeartbeatValidity::BadCoverageObject));
@@ -529,7 +546,6 @@ pub async fn validate_heartbeat(
 
     let Ok(latlng) = LatLng::new(heartbeat.report.lat, heartbeat.report.lon) else {
         return Ok((cell_type, None, proto::HeartbeatValidity::InvalidLatLon));
-    };
 
     if coverage.max_distance_km(latlng) > max_distance {
         return Ok((

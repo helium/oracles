@@ -3,12 +3,12 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
     GatewayInfo as GatewayInfoProto, GatewayMetadata as GatewayMetadataProto,
 };
-
 pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadata {
     pub location: u64,
+    pub device_type: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -32,12 +32,17 @@ pub trait GatewayInfoResolver {
 impl From<GatewayInfoProto> for GatewayInfo {
     fn from(info: GatewayInfoProto) -> Self {
         let metadata = if let Some(metadata) = info.metadata {
+            let device_type = metadata.device_type.parse().ok();
             u64::from_str_radix(&metadata.location, 16)
-                .map(|location| GatewayMetadata { location })
+                .map(|location| GatewayMetadata {
+                    location,
+                    device_type,
+                })
                 .ok()
         } else {
             None
         };
+
         Self {
             address: info.address.into(),
             metadata,
@@ -52,6 +57,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
         let metadata = if let Some(metadata) = info.metadata {
             Some(GatewayMetadataProto {
                 location: hextree::Cell::from_raw(metadata.location)?.to_string(),
+                device_type: metadata.device_type.unwrap_or_default(),
             })
         } else {
             None
@@ -67,11 +73,12 @@ pub(crate) mod db {
     use super::{GatewayInfo, GatewayMetadata};
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
+    use sqlx::types::Json;
     use sqlx::{PgExecutor, Row};
     use std::str::FromStr;
 
     const GET_METADATA_SQL: &str = r#"
-            select kta.entity_key, infos.location::bigint
+            select kta.entity_key, infos.location::bigint, infos.device_type
             from mobile_hotspot_infos infos
             join key_to_assets kta on infos.asset = kta.asset
         "#;
@@ -102,10 +109,14 @@ pub(crate) mod db {
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
+            let device_type = row
+                .get::<Option<Json<String>>, &str>("device_type")
+                .map(|s| s.to_string());
             let metadata = row
                 .get::<Option<i64>, &str>("location")
                 .map(|loc| GatewayMetadata {
                     location: loc as u64,
+                    device_type,
                 });
             Ok(Self {
                 address: PublicKeyBinary::from_str(

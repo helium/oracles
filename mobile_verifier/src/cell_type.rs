@@ -87,6 +87,15 @@ impl CellType {
             _ => dec!(1.0),
         }
     }
+
+    pub fn from_asserted(s: &Option<String>) -> Option<Self> {
+        // TODO: currently only handling wifi indoor, handle other cell types
+        //       when foundation device type values are in use
+        match s {
+            Some(s) if s.eq("wifiIndoor") => Some(CellType::NovaGenericWifiIndoor),
+            _ => None,
+        }
+    }
 }
 
 impl From<CellType> for CellTypeProto {
