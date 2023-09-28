@@ -110,6 +110,10 @@ where
                     })
                     .await
                     .map_err(VerificationError::InvalidPacketWriterError)?;
+                self.config_server
+                    .disable_org(report.oui)
+                    .await
+                    .map_err(VerificationError::ConfigError)?;
             }
         }
 
