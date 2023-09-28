@@ -8,7 +8,7 @@ pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
 #[derive(Clone, Debug)]
 pub struct GatewayMetadata {
     pub location: u64,
-    pub device_type: Option<String>,
+    pub device_type: String,
 }
 
 #[derive(Clone, Debug)]
@@ -32,11 +32,10 @@ pub trait GatewayInfoResolver {
 impl From<GatewayInfoProto> for GatewayInfo {
     fn from(info: GatewayInfoProto) -> Self {
         let metadata = if let Some(metadata) = info.metadata {
-            let device_type = metadata.device_type.parse().ok();
             u64::from_str_radix(&metadata.location, 16)
                 .map(|location| GatewayMetadata {
                     location,
-                    device_type,
+                    device_type: metadata.device_type,
                 })
                 .ok()
         } else {
@@ -57,7 +56,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
         let metadata = if let Some(metadata) = info.metadata {
             Some(GatewayMetadataProto {
                 location: hextree::Cell::from_raw(metadata.location)?.to_string(),
-                device_type: metadata.device_type.unwrap_or_default(),
+                device_type: metadata.device_type,
             })
         } else {
             None
@@ -109,9 +108,7 @@ pub(crate) mod db {
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            let device_type = row
-                .get::<Option<Json<String>>, &str>("device_type")
-                .map(|s| s.to_string());
+            let device_type = row.get::<Json<String>, &str>("device_type").to_string();
             let metadata = row
                 .get::<Option<i64>, &str>("location")
                 .map(|loc| GatewayMetadata {

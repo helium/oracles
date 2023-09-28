@@ -88,11 +88,11 @@ impl CellType {
         }
     }
 
-    pub fn from_asserted(s: &Option<String>) -> Option<Self> {
+    pub fn from_asserted(device_type: &String) -> Option<Self> {
         // TODO: currently only handling wifi indoor, handle other cell types
         //       when foundation device type values are in use
-        match s {
-            Some(s) if s.eq("wifiIndoor") => Some(CellType::NovaGenericWifiIndoor),
+        match device_type {
+            device_type if device_type.eq("wifiIndoor") => Some(CellType::NovaGenericWifiIndoor),
             _ => None,
         }
     }
