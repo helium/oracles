@@ -5,7 +5,10 @@ use file_store::{
 };
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket};
+use helium_proto::services::{
+    packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
+    router::packet_router_packet_report_v1::PacketType,
+};
 use iot_config::client::{ClientError, OrgClient};
 use solana::SolanaNetwork;
 use std::{
@@ -64,6 +67,10 @@ where
         tokio::pin!(reports);
 
         while let Some(report) = reports.next().await {
+            if PacketType::Uplink != report.packet_type {
+                continue;
+            }
+
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
 
             let payer = self
