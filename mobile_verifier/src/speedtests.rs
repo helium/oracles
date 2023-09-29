@@ -169,7 +169,7 @@ pub async fn save_speedtest(
     .bind(&speedtest.pubkey)
     .bind(speedtest.upload_speed as i64)
     .bind(speedtest.download_speed as i64)
-    .bind(speedtest.latency as i64)
+    .bind(speedtest.latency as i32)
     .bind(&speedtest.serial)
     .bind(speedtest.timestamp)
     .execute(exec)
