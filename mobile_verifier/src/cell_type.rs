@@ -3,6 +3,7 @@ use helium_proto::services::poc_mobile::CellType as CellTypeProto;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Serialize;
+use std::str::FromStr;
 
 pub const CELLTYPE_NOVA_436H: &str = "2AG32MBS3100196N";
 pub const CELLTYPE_NOVA_430I: &str = "2AG32PBS3101S";
@@ -87,15 +88,6 @@ impl CellType {
             _ => dec!(1.0),
         }
     }
-
-    pub fn from_asserted(device_type: &String) -> Option<Self> {
-        // TODO: currently only handling wifi indoor, handle other cell types
-        //       when foundation device type values are in use
-        match device_type {
-            device_type if device_type.eq("wifiIndoor") => Some(CellType::NovaGenericWifiIndoor),
-            _ => None,
-        }
-    }
 }
 
 impl From<CellType> for CellTypeProto {
@@ -111,3 +103,25 @@ impl From<CellType> for CellTypeProto {
         }
     }
 }
+
+impl CellTypeLabel {
+    pub fn from_asserted(device_type: &String) -> Option<Self> {
+        match device_type {
+            device_type if device_type.eq("wifiIndoor") => Some(CellTypeLabel::Wifi),
+            device_type if device_type.eq("cbrs") => Some(CellTypeLabel::CBRS),
+            _ => None,
+        }
+    }
+}
+
+impl FromStr for CellTypeLabel {
+    type Err = ();
+    fn from_str(input: &str) -> Result<CellTypeLabel, Self::Err> {
+        match input {
+            "wifiIndoor"  => Ok(CellTypeLabel::Wifi),
+            "cbrs"  => Ok(CellTypeLabel::CBRS),
+            _ => Err(())
+        }
+    }
+}
+

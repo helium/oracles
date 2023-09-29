@@ -14,11 +14,12 @@ mod telemetry;
 pub use settings::Settings;
 
 use async_trait::async_trait;
-
+// use helium_proto::services::mobile_config::GatewayMetadata;
+use mobile_config::gateway_info::GatewayMetadata;
 pub enum GatewayResolution {
     GatewayNotFound,
     GatewayNotAsserted,
-    AssertedLocation(u64),
+    GatewayAsserted(GatewayMetadata),
 }
 
 #[async_trait]
@@ -45,7 +46,7 @@ impl GatewayResolver for mobile_config::GatewayClient {
             Some(GatewayInfo {
                 metadata: Some(metadata),
                 ..
-            }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
+            }) => Ok(GatewayResolution::GatewayAsserted(metadata)),
             Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
         }
     }

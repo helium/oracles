@@ -29,8 +29,8 @@ const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 #[sqlx(type_name = "radio_type")]
 #[sqlx(rename_all = "lowercase")]
 pub enum HbType {
-    Cbrs,
-    Wifi,
+    Cbrs = 0,
+    Wifi = 1,
 }
 
 #[derive(Copy, Clone)]
@@ -504,15 +504,18 @@ pub async fn validate_heartbeat(
                 proto::HeartbeatValidity::GatewayNotAsserted,
             ))
         }
-        GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
+        GatewayResolution::GatewayAsserted(metadata) if heartbeat.hb_type == HbType::Wifi => {
+            // for wifi HBs, check the asserted device type matches that defined in the HB
+            let asserted_celltype_label = CellTypeLabel::from_str(&metadata.device_type)?;
+            if asserted_celltype_label == CellTypeLabel::Wifi
+                && cell_type.to_label() != asserted_celltype_label
+            {
+                return Ok((cell_type, None, None, proto::HeartbeatValidity::BadCellType));
+            };
             Some(heartbeat.asserted_distance(location)?)
         }
         _ => None,
     };
-
-    if CellType::from_asserted(&metadata.device_type) != Some(cell_type) {
-        return Ok((cell_type, distance_to_asserted, None, proto::HeartbeatValidity::BadCellType))
-    }
 
     /*
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
