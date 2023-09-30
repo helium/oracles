@@ -1140,7 +1140,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -1511,7 +1511,7 @@ dependencies = [
  "atty",
  "bitflags 1.3.2",
  "clap_lex 0.2.4",
- "indexmap",
+ "indexmap 1.9.2",
  "once_cell",
  "strsim 0.10.0",
  "termcolor",
@@ -2120,8 +2120,8 @@ dependencies = [
  "structopt",
  "thiserror",
  "tracing",
- "twox-hash",
  "xorf",
+ "xorf-generator",
 ]
 
 [[package]]
@@ -2461,6 +2461,12 @@ dependencies = [
  "regex",
  "termcolor",
 ]
+
+[[package]]
+name = "equivalent"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "errno"
@@ -2861,7 +2867,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap",
+ "indexmap 1.9.2",
  "slab",
  "tokio",
  "tokio-util",
@@ -2909,6 +2915,12 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
  "ahash 0.7.6",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dfda62a12f55daeae5015f81b0baea145391cb4520f86c248fc615d72640d12"
 
 [[package]]
 name = "hashlink"
@@ -3279,6 +3291,17 @@ checksum = "1885e79c1fc4b10f0e172c475f458b7f7b93061064d98c3293e98c5ba0c8b399"
 dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
+]
+
+[[package]]
+name = "indexmap"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8adf3ddd720272c6ea8bf59463c04e0f93d0bbf7c5439b691bca2987e0270897"
+dependencies = [
+ "equivalent",
+ "hashbrown 0.14.1",
+ "serde",
 ]
 
 [[package]]
@@ -3915,7 +3938,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8603921e1f54ef386189335f288441af761e0fc61bcb552168d9cedfe63ebc70"
 dependencies = [
  "hyper",
- "indexmap",
+ "indexmap 1.9.2",
  "ipnet",
  "metrics",
  "metrics-util",
@@ -4654,7 +4677,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5014253a1331579ce62aa67443b4a658c5e7dd03d4bc6d302b94474888143"
 dependencies = [
  "fixedbitset",
- "indexmap",
+ "indexmap 1.9.2",
 ]
 
 [[package]]
@@ -4713,7 +4736,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.0",
  "blake3",
- "bs58 0.5.0",
+ "bs58 0.3.1",
  "chrono",
  "clap 4.1.11",
  "config",
@@ -5796,7 +5819,7 @@ version = "0.8.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "578a7433b776b56a35785ed5ce9a7e777ac0598aac5a6dd1b4b18a307c7fc71b"
 dependencies = [
- "indexmap",
+ "indexmap 1.9.2",
  "ryu",
  "serde",
  "yaml-rust",
@@ -6129,7 +6152,7 @@ dependencies = [
  "enum_dispatch",
  "futures",
  "futures-util",
- "indexmap",
+ "indexmap 1.9.2",
  "indicatif",
  "itertools",
  "jsonrpc-core",
@@ -6512,7 +6535,7 @@ dependencies = [
  "crossbeam-channel",
  "futures-util",
  "histogram",
- "indexmap",
+ "indexmap 1.9.2",
  "itertools",
  "libc",
  "log",
@@ -6876,7 +6899,7 @@ dependencies = [
  "hex",
  "hkdf",
  "hmac 0.12.1",
- "indexmap",
+ "indexmap 1.9.2",
  "itoa 1.0.4",
  "libc",
  "log",
@@ -7410,7 +7433,7 @@ checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap",
+ "indexmap 1.9.2",
  "pin-project",
  "pin-project-lite",
  "rand 0.8.5",
@@ -8157,6 +8180,28 @@ dependencies = [
  "libm",
  "rand 0.8.5",
  "serde",
+]
+
+[[package]]
+name = "xorf-generator"
+version = "0.5.4"
+source = "git+https://github.com/helium/xorf-generator?branch=main#e216dfa46ce4487a852d22ad3df7c817032ea9d2"
+dependencies = [
+ "anyhow",
+ "base64 0.21.0",
+ "bincode",
+ "bytes",
+ "clap 4.1.11",
+ "csv",
+ "helium-crypto",
+ "indexmap 2.0.2",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.6",
+ "thiserror",
+ "twox-hash",
+ "xorf",
 ]
 
 [[package]]

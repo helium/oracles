@@ -474,7 +474,7 @@ fn verify_beacon_schedule(
 
 /// verify if gateway is on the deny list
 fn verify_denylist(pub_key: &PublicKeyBinary, deny_list: &DenyList) -> GenericVerifyResult {
-    if deny_list.check_key(pub_key) {
+    if deny_list.contains_key(pub_key) {
         tracing::debug!(
             "report verification failed, reason: {:?}.
             pubkey: {}, tagname: {}",
@@ -502,7 +502,7 @@ fn verify_edge_denylist(
     witness: &PublicKeyBinary,
     deny_list: &DenyList,
 ) -> GenericVerifyResult {
-    if deny_list.check_edge(beaconer.as_ref(), witness.as_ref()) {
+    if deny_list.contains_edge(beaconer, witness) {
         tracing::debug!(
             "report verification failed, reason: {:?}.
             beacon: {}, witness {}, tagname: {}",
