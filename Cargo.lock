@@ -8184,8 +8184,8 @@ dependencies = [
 
 [[package]]
 name = "xorf-generator"
-version = "0.5.4"
-source = "git+https://github.com/helium/xorf-generator?branch=main#e216dfa46ce4487a852d22ad3df7c817032ea9d2"
+version = "0.5.7"
+source = "git+https://github.com/helium/xorf-generator?branch=main#e30f08ee15af1b0c981d9392b7dd2cf81fe029b4"
 dependencies = [
  "anyhow",
  "base64 0.21.0",
