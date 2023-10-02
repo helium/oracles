@@ -128,7 +128,7 @@ impl Cmd {
         let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
             FileType::VerifiedSpeedtest,
             store_base_path,
-            concat!(env!("CARGO_PKG_NAME"), "verified_speedtest"),
+            concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
