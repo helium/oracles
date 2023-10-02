@@ -1140,7 +1140,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -2972,7 +2972,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.1.16",
+ "getrandom 0.2.8",
  "k256",
  "lazy_static",
  "multihash",
@@ -3343,6 +3343,7 @@ dependencies = [
  "sha2 0.10.6",
  "task-manager",
  "thiserror",
+ "tikv-jemallocator",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -4737,7 +4738,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.0",
  "blake3",
- "bs58 0.3.1",
+ "bs58 0.5.0",
  "chrono",
  "clap 4.1.11",
  "config",
@@ -7197,6 +7198,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "tikv-jemalloc-sys"
+version = "0.5.4+5.3.0-patched"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9402443cb8fd499b6f327e40565234ff34dbda27460c5b47db0db77443dd85d1"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "965fe0c26be5c56c94e38ba547249074803efd52adfb66de62107d95aab3eaca"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
 name = "time"
 version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7588,7 +7609,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -8199,7 +8220,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "twox-hash",
  "xorf",

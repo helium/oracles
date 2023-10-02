@@ -36,6 +36,7 @@ metrics = {workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 task-manager = { path = "../task_manager" }
 rand = { workspace = true }
+tikv-jemallocator = {version = "0.5", features = ["profiling"]}
 
 [dev-dependencies]
 backon = "0"

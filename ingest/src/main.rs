@@ -2,7 +2,11 @@ use anyhow::Result;
 use clap::Parser;
 use ingest::{server_iot, server_mobile, Mode, Settings};
 use std::path;
+use tikv_jemallocator::Jemalloc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Debug, clap::Parser)]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
