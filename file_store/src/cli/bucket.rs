@@ -1,5 +1,5 @@
 use crate::{
-    heartbeat::CellHeartbeat, iot_beacon_report::IotBeaconIngestReport, iot_valid_poc::IotPoc,
+    heartbeat::CbrsHeartbeat, iot_beacon_report::IotBeaconIngestReport, iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport, speedtest::CellSpeedtest, traits::MsgDecode, Error,
     FileInfoStream, FileStore, FileType, Result, Settings,
 };
@@ -204,8 +204,8 @@ impl Locate {
 fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_json::Value>> {
     let pub_key = gateway.to_vec();
     match FileType::from_str(prefix)? {
-        FileType::CellHeartbeat => {
-            CellHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
+        FileType::CbrsHeartbeat => {
+            CbrsHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         FileType::CellSpeedtest => {
             CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(pub_key))
@@ -254,7 +254,7 @@ where
     }
 }
 
-impl Gateway for CellHeartbeat {
+impl Gateway for CbrsHeartbeat {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.pubkey.as_ref() == pub_key
     }

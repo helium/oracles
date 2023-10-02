@@ -8,7 +8,7 @@ use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartb
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CellHeartbeat {
+pub struct CbrsHeartbeat {
     pub pubkey: PublicKeyBinary,
     pub hotspot_type: String,
     pub cell_id: u32,
@@ -21,20 +21,20 @@ pub struct CellHeartbeat {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CellHeartbeatIngestReport {
+pub struct CbrsHeartbeatIngestReport {
     pub received_timestamp: DateTime<Utc>,
-    pub report: CellHeartbeat,
+    pub report: CbrsHeartbeat,
 }
 
-impl MsgDecode for CellHeartbeat {
+impl MsgDecode for CbrsHeartbeat {
     type Msg = CellHeartbeatReqV1;
 }
 
-impl MsgDecode for CellHeartbeatIngestReport {
+impl MsgDecode for CbrsHeartbeatIngestReport {
     type Msg = CellHeartbeatIngestReportV1;
 }
 
-impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
+impl TryFrom<CellHeartbeatReqV1> for CbrsHeartbeat {
     type Error = Error;
     fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
         Ok(Self {
@@ -57,7 +57,7 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for CellHeartbeatReqV1 {
     }
 }
 
-impl TryFrom<CellHeartbeatIngestReportV1> for CellHeartbeatIngestReport {
+impl TryFrom<CellHeartbeatIngestReportV1> for CbrsHeartbeatIngestReport {
     type Error = Error;
     fn try_from(v: CellHeartbeatIngestReportV1) -> Result<Self> {
         Ok(Self {
@@ -108,17 +108,17 @@ mod tests {
 
         let buffer = report.encode_to_vec();
 
-        let cellheartbeatreport = CellHeartbeatIngestReport::decode(buffer.as_slice())
-            .expect("unable to decode into CellHeartbeat");
+        let heartbeatreport = CbrsHeartbeatIngestReport::decode(buffer.as_slice())
+            .expect("unable to decode into CbrsHeartbeat");
 
         assert_eq!(
-            cellheartbeatreport.received_timestamp,
+            heartbeatreport.received_timestamp,
             Utc.timestamp_millis_opt(now).unwrap()
         );
         assert_eq!(
             report.timestamp().expect("timestamp"),
-            cellheartbeatreport.received_timestamp
+            heartbeatreport.received_timestamp
         );
-        assert_eq!(cellheartbeatreport.report.cell_id, 123);
+        assert_eq!(heartbeatreport.report.cell_id, 123);
     }
 }
