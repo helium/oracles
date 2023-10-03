@@ -1140,7 +1140,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -2972,7 +2972,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.1.16",
+ "getrandom 0.2.8",
  "k256",
  "lazy_static",
  "multihash",
@@ -7588,7 +7588,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -8185,8 +8185,8 @@ dependencies = [
 
 [[package]]
 name = "xorf-generator"
-version = "0.5.9"
-source = "git+https://github.com/helium/xorf-generator?branch=main#76a896a91afeaba0c99afb9e50f76976e9aca85e"
+version = "0.6.0"
+source = "git+https://github.com/helium/xorf-generator?branch=main#d55057c88a0e6f40adfeae15197afa66729fb3d5"
 dependencies = [
  "anyhow",
  "base64 0.21.0",
@@ -8194,12 +8194,15 @@ dependencies = [
  "bytes",
  "clap 4.1.11",
  "csv",
+ "flate2",
  "helium-crypto",
  "indexmap 2.0.2",
+ "prost",
+ "prost-build",
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "twox-hash",
  "xorf",
