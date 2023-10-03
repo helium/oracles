@@ -99,7 +99,7 @@ impl SubscriberLocationIngestor {
                     self.verified_report_sink
                         .write(
                             verified_report_proto,
-                            &[("status", verified_report_status.as_str_name())],
+                            &[("report_status", verified_report_status.as_str_name())],
                         )
                         .await?;
 
