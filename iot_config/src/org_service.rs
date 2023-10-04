@@ -463,9 +463,7 @@ impl iot_config::Org for OrgService {
                     Status::internal(format!("org disable failed for: {}", request.oui))
                 })?;
 
-            tokio::select! {
-                result = self.stream_org_routes_enable_disable(request.oui) => result?
-            }
+            self.stream_org_routes_enable_disable(request.oui).await?
         }
 
         let mut resp = OrgDisableResV1 {
@@ -501,9 +499,7 @@ impl iot_config::Org for OrgService {
                     Status::internal(format!("org enable failed for: {}", request.oui))
                 })?;
 
-            tokio::select! {
-                result = self.stream_org_routes_enable_disable(request.oui) => result?
-            }
+            self.stream_org_routes_enable_disable(request.oui).await?
         }
 
         let mut resp = OrgEnableResV1 {

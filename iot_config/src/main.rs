@@ -130,7 +130,7 @@ impl ManagedTask for GrpcServer {
         shutdown: triggered::Listener,
     ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
         Box::pin(async move {
-            transport::Server::builder()
+            let grpc_server = transport::Server::builder()
                 .http2_keepalive_interval(Some(Duration::from_secs(250)))
                 .http2_keepalive_timeout(Some(Duration::from_secs(60)))
                 .layer(tower_http::trace::TraceLayer::new_for_grpc())
@@ -138,9 +138,24 @@ impl ManagedTask for GrpcServer {
                 .add_service(OrgServer::new(self.org_svc))
                 .add_service(RouteServer::new(self.route_svc))
                 .add_service(AdminServer::new(self.admin_svc))
-                .serve_with_shutdown(self.listen_addr, shutdown)
-                .map_err(Error::from)
-                .await
+                .serve(self.listen_addr)
+                .map_err(Error::from);
+
+            tokio::select! {
+                _ = shutdown => {
+                    tracing::warn!("grpc server shutting down");
+                    Ok(())
+                }
+                res = grpc_server => {
+                    match res {
+                        Ok(()) => Ok(()),
+                        Err(err) => {
+                            tracing::error!(?err, "grpc server failed with error");
+                            Err(anyhow::anyhow!("grpc server exiting with error"))
+                        }
+                    }
+                }
+            }
         })
     }
 }
