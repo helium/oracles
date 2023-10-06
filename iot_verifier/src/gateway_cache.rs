@@ -2,6 +2,7 @@ use crate::gateway_updater::MessageReceiver;
 use helium_crypto::PublicKeyBinary;
 use iot_config::gateway_info::GatewayInfo;
 
+#[derive(Clone)]
 pub struct GatewayCache {
     gateway_cache_receiver: MessageReceiver,
 }

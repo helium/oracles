@@ -8,14 +8,14 @@ use task_manager::ManagedTask;
 const DURATION: Duration = Duration::from_secs(43_200);
 
 pub enum BalanceMonitor {
-    Solana(String, Arc<SolanaRpc>, Pubkey),
+    Solana(Arc<SolanaRpc>, Vec<Pubkey>),
     Noop,
 }
 
 impl BalanceMonitor {
     pub fn new(
-        app_account: &str,
         solana: Option<Arc<SolanaRpc>>,
+        mut additional_pubkeys: Vec<Pubkey>,
     ) -> Result<Self, Box<SolanaRpcError>> {
         match solana {
             None => Ok(BalanceMonitor::Noop),
@@ -24,13 +24,9 @@ impl BalanceMonitor {
                     tracing::error!("sol monitor: keypair failed to deserialize");
                     return Err(Box::new(SolanaRpcError::InvalidKeypair));
                 };
-                let app_metric_name = format!("{app_account}-sol-balance");
 
-                Ok(BalanceMonitor::Solana(
-                    app_metric_name,
-                    rpc_client,
-                    keypair.pubkey(),
-                ))
+                additional_pubkeys.push(keypair.pubkey());
+                Ok(BalanceMonitor::Solana(rpc_client, additional_pubkeys))
             }
         }
     }
@@ -38,8 +34,8 @@ impl BalanceMonitor {
     pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         match self {
             Self::Noop => Ok(()),
-            Self::Solana(metric, solana, pubkey) => {
-                run(metric, solana, pubkey, shutdown).await;
+            Self::Solana(solana, pubkeys) => {
+                run(solana, pubkeys, shutdown).await;
                 Ok(())
             }
         }
@@ -61,12 +57,7 @@ impl ManagedTask for BalanceMonitor {
     }
 }
 
-async fn run(
-    metric_name: String,
-    solana: Arc<SolanaRpc>,
-    service_pubkey: Pubkey,
-    shutdown: triggered::Listener,
-) {
+async fn run(solana: Arc<SolanaRpc>, service_pubkeys: Vec<Pubkey>, shutdown: triggered::Listener) {
     tracing::info!("starting sol monitor");
 
     let mut trigger = tokio::time::interval(DURATION);
@@ -77,9 +68,11 @@ async fn run(
         tokio::select! {
             _ = shutdown => break,
             _ = trigger.tick() => {
-                match solana.provider.get_balance(&service_pubkey).await {
-                    Ok(balance) => metrics::gauge!(metric_name.clone(), balance as f64),
-                    Err(err) => tracing::error!("sol monitor: failed to get account balance: {:?}", err.kind()),
+                for service_pubkey in service_pubkeys.iter() {
+                    match solana.provider.get_balance(service_pubkey).await {
+                        Ok(balance) => metrics::gauge!("sol-balance", balance as f64, "pubkey" => service_pubkey.to_string()),
+                        Err(err) => tracing::error!("sol monitor: failed to get account balance: {:?}", err.kind()),
+                    }
                 }
             }
         }

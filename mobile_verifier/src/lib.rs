@@ -1,41 +1,53 @@
-mod cell_type;
+pub mod cell_type;
+pub mod cli;
 pub mod coverage;
 mod data_session;
 pub mod heartbeats;
-pub mod reward_shares;
+mod reward_shares;
+pub mod rewarder;
 mod settings;
 mod speedtests;
 mod speedtests_average;
 mod subscriber_location;
 mod telemetry;
 
-pub mod cli;
-pub mod rewarder;
-
 pub use settings::Settings;
 
 use async_trait::async_trait;
 
-#[async_trait]
-pub trait HasOwner {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    async fn has_owner(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-    ) -> Result<bool, Self::Error>;
+pub enum GatewayResolution {
+    GatewayNotFound,
+    GatewayNotAsserted,
+    AssertedLocation(u64),
 }
 
 #[async_trait]
-impl HasOwner for mobile_config::GatewayClient {
-    type Error = mobile_config::client::ClientError;
+pub trait GatewayResolver {
+    type Error: std::error::Error + Send + Sync + 'static;
 
-    async fn has_owner(
+    async fn resolve_gateway(
         &self,
         address: &helium_crypto::PublicKeyBinary,
-    ) -> Result<bool, Self::Error> {
-        use mobile_config::gateway_info::GatewayInfoResolver;
-        Ok(self.resolve_gateway_info(address).await?.is_some())
+    ) -> Result<GatewayResolution, Self::Error>;
+}
+
+#[async_trait]
+impl GatewayResolver for mobile_config::GatewayClient {
+    type Error = mobile_config::client::ClientError;
+
+    async fn resolve_gateway(
+        &self,
+        address: &helium_crypto::PublicKeyBinary,
+    ) -> Result<GatewayResolution, Self::Error> {
+        use mobile_config::gateway_info::{GatewayInfo, GatewayInfoResolver};
+        match self.resolve_gateway_info(address).await? {
+            None => Ok(GatewayResolution::GatewayNotFound),
+            Some(GatewayInfo {
+                metadata: Some(metadata),
+                ..
+            }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
+            Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
+        }
     }
 }
 

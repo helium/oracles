@@ -1,301 +1,280 @@
-//! Heartbeat storage
+pub mod cbrs;
+pub mod wifi;
 
 use crate::{
-    cell_type::CellType,
+    cell_type::{CellType, CellTypeLabel},
     coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
-    HasOwner,
+    GatewayResolution, GatewayResolver,
 };
+use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
 use file_store::{
-    file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient,
-    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    file_sink::FileSinkClient, heartbeat::CbrsHeartbeatIngestReport,
+    wifi_heartbeat::WifiHeartbeatIngestReport,
 };
-use futures::{
-    stream::{Stream, StreamExt, TryStreamExt},
-    TryFutureExt,
-};
+use futures::stream::{Stream, StreamExt, TryStreamExt};
+use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::GatewayClient;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
-use std::{ops::Range, pin::pin, sync::Arc, time};
-use tokio::sync::mpsc::Receiver;
+use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::FromRow)]
-pub struct HeartbeatKey {
-    coverage_object: Uuid,
-    hotspot_key: PublicKeyBinary,
-    cbsd_id: String,
-    cell_type: CellType,
-    latest_timestamp: DateTime<Utc>,
-}
-
-impl From<HeartbeatKey> for HeartbeatReward {
-    fn from(value: HeartbeatKey) -> Self {
-        Self {
-            coverage_object: value.coverage_object,
-            hotspot_key: value.hotspot_key,
-            cbsd_id: value.cbsd_id,
-            reward_weight: value.cell_type.reward_weight(),
-            latest_timestamp: value.latest_timestamp,
-        }
-    }
-}
-
-pub struct HeartbeatDaemon {
-    pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_client: GatewayClient,
-    heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
-    heartbeat_sink: FileSinkClient,
-    seniority_sink: FileSinkClient,
-    max_distance: f64,
-    modeled_coverage_start: DateTime<Utc>,
-}
-
-impl HeartbeatDaemon {
-    pub fn new(
-        pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_client: GatewayClient,
-        heartbeats: Receiver<FileInfoStream<CellHeartbeatIngestReport>>,
-        heartbeat_sink: FileSinkClient,
-        seniority_sink: FileSinkClient,
-        max_distance: f64,
-        modeled_coverage_start: DateTime<Utc>,
-    ) -> Self {
-        Self {
-            pool,
-            gateway_client,
-            heartbeats,
-            heartbeat_sink,
-            seniority_sink,
-            max_distance,
-            modeled_coverage_start,
-        }
-    }
-
-    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tokio::spawn(async move {
-            let heartbeat_cache =
-                Arc::new(Cache::<(String, DateTime<Utc>, Option<Uuid>), ()>::new());
-
-            let heartbeat_cache_clone = heartbeat_cache.clone();
-            tokio::spawn(async move {
-                heartbeat_cache_clone
-                    .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 3))
-                    .await
-            });
-
-            let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-            let covered_hex_cache = CoveredHexCache::new(&self.pool);
-
-            loop {
-                tokio::select! {
-                    _ = shutdown.clone() => {
-                        tracing::info!("HeartbeatDaemon shutting down");
-                        break;
-                    }
-                    Some(file) = self.heartbeats.recv() => {
-                        self.process_file(
-                            file,
-                            &heartbeat_cache,
-                            &coverage_claim_time_cache,
-                            &covered_hex_cache
-                        ).await?;
-                    }
-                }
-            }
-
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
-    }
-
-    async fn process_file(
-        &self,
-        file: FileInfoStream<CellHeartbeatIngestReport>,
-        heartbeat_cache: &Cache<(String, DateTime<Utc>, Option<Uuid>), ()>,
-        coverage_claim_time_cache: &CoverageClaimTimeCache,
-        covered_hex_cache: &CoveredHexCache,
-    ) -> anyhow::Result<()> {
-        tracing::info!("Processing heartbeat file {}", file.file_info.key);
-
-        let epoch = (file.file_info.timestamp - Duration::hours(3))
-            ..(file.file_info.timestamp + Duration::minutes(30));
-        let mut transaction = self.pool.begin().await?;
-        let reports = file.into_stream(&mut transaction).await?;
-
-        let mut validated_heartbeats = pin!(Heartbeat::validate_heartbeats(
-            &self.gateway_client,
-            covered_hex_cache,
-            reports,
-            &epoch,
-            self.max_distance,
-        ));
-
-        while let Some(heartbeat) = validated_heartbeats.next().await.transpose()? {
-            heartbeat.write(&self.heartbeat_sink).await?;
-
-            if !heartbeat.is_valid() {
-                continue;
-            }
-
-            if let Some(coverage_claim_time) = coverage_claim_time_cache
-                .fetch_coverage_claim_time(
-                    &heartbeat.heartbeat.cbsd_id,
-                    &heartbeat.coverage_object,
-                    &mut transaction,
-                )
-                .await?
-            {
-                let latest_seniority =
-                    Seniority::fetch_latest(&mut transaction, &heartbeat.heartbeat.cbsd_id).await?;
-                let seniority_update = SeniorityUpdate::determine_update_action(
-                    &heartbeat,
-                    coverage_claim_time,
-                    self.modeled_coverage_start,
-                    latest_seniority,
-                );
-                seniority_update.write(&self.seniority_sink).await?;
-                seniority_update.execute(&mut transaction).await?;
-            }
-
-            let key = (
-                heartbeat.heartbeat.cbsd_id.clone(),
-                heartbeat.truncated_timestamp()?,
-                heartbeat.coverage_object,
-            );
-            if heartbeat_cache.get(&key).await.is_none() {
-                heartbeat.save(&mut transaction).await?;
-                heartbeat_cache
-                    .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
-                    .await;
-            }
-        }
-
-        self.heartbeat_sink.commit().await?;
-        self.seniority_sink.commit().await?;
-        transaction.commit().await?;
-
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct HeartbeatReward {
-    pub coverage_object: Uuid,
-    pub hotspot_key: PublicKeyBinary,
-    pub cbsd_id: String,
-    pub reward_weight: Decimal,
-    pub latest_timestamp: DateTime<Utc>,
-}
-
 /// Minimum number of heartbeats required to give a reward to the hotspot.
-pub const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
+const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
+
+#[derive(Clone, PartialEq)]
+pub enum HBType {
+    Cbrs = 0,
+    Wifi = 1,
+}
+
+#[derive(Clone)]
+pub struct Heartbeat {
+    hb_type: HBType,
+    hotspot_key: PublicKeyBinary,
+    cbsd_id: Option<String>,
+    operation_mode: bool,
+    lat: f64,
+    lon: f64,
+    coverage_object: Option<Uuid>,
+    location_validation_timestamp: Option<DateTime<Utc>>,
+    timestamp: DateTime<Utc>,
+}
+
+impl Heartbeat {
+    pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
+        self.timestamp.duration_trunc(Duration::hours(1))
+    }
+
+    pub fn id(&self) -> anyhow::Result<(String, DateTime<Utc>)> {
+        let ts = self.truncated_timestamp()?;
+        match self.hb_type {
+            HBType::Cbrs => {
+                let cbsd_id = self
+                    .cbsd_id
+                    .clone()
+                    .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?;
+                Ok((cbsd_id, ts))
+            }
+            HBType::Wifi => Ok((self.hotspot_key.to_string(), ts)),
+        }
+    }
+
+    pub fn asserted_distance(&self, asserted_location: u64) -> anyhow::Result<i64> {
+        let asserted_latlng: LatLng = CellIndex::try_from(asserted_location)?.into();
+        let hb_latlng = LatLng::new(self.lat, self.lon)?;
+        Ok(asserted_latlng.distance_m(hb_latlng).round() as i64)
+    }
+}
+
+impl From<CbrsHeartbeatIngestReport> for Heartbeat {
+    fn from(value: CbrsHeartbeatIngestReport) -> Self {
+        Self {
+            hb_type: HBType::Cbrs,
+            coverage_object: value.report.coverage_object(),
+            hotspot_key: value.report.pubkey,
+            cbsd_id: Some(value.report.cbsd_id),
+            operation_mode: value.report.operation_mode,
+            lat: value.report.lat,
+            lon: value.report.lon,
+            location_validation_timestamp: None,
+            timestamp: value.received_timestamp,
+        }
+    }
+}
+
+impl From<WifiHeartbeatIngestReport> for Heartbeat {
+    fn from(value: WifiHeartbeatIngestReport) -> Self {
+        Self {
+            hb_type: HBType::Wifi,
+            hotspot_key: value.report.pubkey,
+            cbsd_id: None,
+            operation_mode: value.report.operation_mode,
+            lat: value.report.lat,
+            lon: value.report.lon,
+            location_validation_timestamp: value.report.location_validation_timestamp,
+            timestamp: value.received_timestamp,
+            coverage_object: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct HeartbeatRow {
+    pub hotspot_key: PublicKeyBinary,
+    // cell hb only
+    pub cbsd_id: Option<String>,
+    pub cell_type: CellType,
+    // wifi hb only
+    pub location_validation_timestamp: Option<DateTime<Utc>>,
+    pub distance_to_asserted: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeartbeatReward {
+    pub hotspot_key: PublicKeyBinary,
+    pub cell_type: CellType,
+    // cell hb only
+    pub cbsd_id: Option<String>,
+    pub reward_weight: Decimal,
+}
 
 impl HeartbeatReward {
+    pub fn id(&self) -> anyhow::Result<String> {
+        match self.cell_type.to_label() {
+            CellTypeLabel::CBRS => Ok(self
+                .cbsd_id
+                .clone()
+                .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?),
+            CellTypeLabel::Wifi => Ok(self.hotspot_key.to_string()),
+            _ => Err(anyhow!("failed to derive label from cell type")),
+        }
+    }
+
+    pub fn reward_weight(&self) -> Decimal {
+        self.reward_weight
+    }
+
     pub fn validated<'a>(
         exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
         epoch: &'a Range<DateTime<Utc>>,
+        max_distance_to_asserted: u32,
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
-        sqlx::query_as::<_, HeartbeatKey>(
+        sqlx::query_as::<_, HeartbeatRow>(
             r#"
             WITH coverage_objs AS (
                 SELECT t1.cbsd_id, t1.coverage_object, t1.latest_timestamp
-                FROM heartbeats t1
+                FROM cbrs_heartbeats t1
                 WHERE t1.latest_timestamp = (
                        SELECT MAX(t2.latest_timestamp)
-                       FROM heartbeats t2
+                       FROM cbrs_heartbeats t2
                        WHERE t2.cbsd_id = t1.cbsd_id
                          AND truncated_timestamp >= $1
                          AND truncated_timestamp < $2
                 )
             ), latest_hotspots AS (
-                 SELECT t1.cbsd_id, t1.hotspot_key, t1.latest_timestamp
-                 FROM heartbeats t1
-                 WHERE t1.latest_timestamp = (
-                       SELECT MAX(t2.latest_timestamp)
-                       FROM heartbeats t2
-                       WHERE t2.cbsd_id = t1.cbsd_id
-                         AND truncated_timestamp >= $1
-                         AND truncated_timestamp < $2
-                )
-            )
-            SELECT
-              latest_hotspots.hotspot_key,
-              heartbeats.cbsd_id,
-              cell_type,
-              coverage_objs.coverage_object,
-              coverage_objs.latest_timestamp
-            FROM heartbeats
-              LEFT JOIN latest_hotspots ON heartbeats.cbsd_id = latest_hotspots.cbsd_id
-              LEFT JOIN coverage_objs ON heartbeats.cbsd_id = coverage_objs.cbsd_id 
-            WHERE truncated_timestamp >= $1
-            	AND truncated_timestamp < $2
-            GROUP BY
-              heartbeats.cbsd_id,
-              latest_hotspots.hotspot_key,
-              cell_type,
-              coverage_objs.coverage_object,
-              coverage_objs.latest_timestamp
-            HAVING count(*) >= $3
+                SELECT t1.cbsd_id, t1.hotspot_key, t1.latest_timestamp
+                FROM cbrs_heartbeats t1
+                WHERE t1.latest_timestamp = (
+                      SELECT MAX(t2.latest_timestamp)
+                      FROM cbrs_heartbeats t2
+                      WHERE t2.cbsd_id = t1.cbsd_id
+                        AND truncated_timestamp >= $1
+                        AND truncated_timestamp < $2
+               )
+           )
+           SELECT
+             latest_hotspots.hotspot_key,
+             cbrs_heartbeats.cbsd_id,
+             cell_type,
+             coverage_objs.coverage_object,
+             coverage_objs.latest_timestamp,
+             NULL as location_validation_timestamp,
+             NULL as distance_to_asserted
+           FROM cbrs_heartbeats
+             LEFT JOIN latest_hotspots ON cbrs_heartbeats.cbsd_id = latest_hotspots.cbsd_id
+             LEFT JOIN coverage_objs ON cbrs_heartbeats.cbsd_id = coverage_objs.cbsd_id
+           WHERE truncated_timestamp >= $1
+             AND truncated_timestamp < $2
+           GROUP BY
+             cbrs_heartbeats.cbsd_id,
+             latest_hotspots.hotspot_key,
+             cell_type,
+             coverage_objs.coverage_object,
+             coverage_objs.latest_timestamp
+           HAVING count(*) >= $3
+           UNION
+           SELECT
+             grouped.hotspot_key,
+             NULL as cbsd_id,
+             NULL as coverage_object,
+             grouped.cell_type,
+             b.location_validation_timestamp,
+             b.distance_to_asserted
+           FROM
+           (
+                SELECT hotspot_key, cell_type
+                FROM wifi_heartbeats
+                WHERE truncated_timestamp >= $1
+                  AND truncated_timestamp < $2
+                GROUP BY hotspot_key, cell_type
+                HAVING count(*) >= $3
+            ) as grouped
+            LEFT JOIN (
+                SELECT hotspot_key, location_validation_timestamp, distance_to_asserted
+                FROM wifi_heartbeats
+                WHERE wifi_heartbeats.truncated_timestamp >= $1
+                  AND wifi_heartbeats.truncated_timestamp < $2
+            ) as b on b.hotspot_key = grouped.hotspot_key
             "#,
         )
         .bind(epoch.start)
         .bind(epoch.end)
         .bind(MINIMUM_HEARTBEAT_COUNT)
         .fetch(exec)
-        .map_ok(HeartbeatReward::from)
+        .map_ok(move |row| Self::from_heartbeat_row(row, max_distance_to_asserted))
+    }
+
+    pub fn from_heartbeat_row(value: HeartbeatRow, max_distance_to_asserted: u32) -> Self {
+        Self {
+            hotspot_key: value.hotspot_key,
+            cell_type: value.cell_type,
+            cbsd_id: value.cbsd_id,
+            reward_weight: value.cell_type.reward_weight()
+                * value.cell_type.location_weight(
+                    value.location_validation_timestamp,
+                    value.distance_to_asserted,
+                    max_distance_to_asserted,
+                ),
+        }
     }
 }
 
 #[derive(Clone)]
-pub struct Heartbeat {
-    pub heartbeat: CellHeartbeat,
-    pub cell_type: Option<CellType>,
-    pub coverage_object: Option<Uuid>,
-    pub received_timestamp: DateTime<Utc>,
-    pub validity: proto::HeartbeatValidity,
+pub struct ValidatedHeartbeat {
+    pub heartbeat: Heartbeat,
+    pub cell_type: CellType,
+    pub distance_to_asserted: Option<i64>,
     pub coverage_object_insertion_time: Option<DateTime<Utc>>,
+    pub validity: proto::HeartbeatValidity,
 }
 
-impl Heartbeat {
+impl ValidatedHeartbeat {
     pub fn is_valid(&self) -> bool {
         self.validity == proto::HeartbeatValidity::Valid
     }
 
     pub fn truncated_timestamp(&self) -> Result<DateTime<Utc>, RoundingError> {
-        self.received_timestamp.duration_trunc(Duration::hours(1))
+        self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
     pub fn validate_heartbeats<'a>(
-        gateway_client: &'a impl HasOwner,
-        covered_hex_cache: &'a CoveredHexCache,
-        heartbeats: impl Stream<Item = CellHeartbeatIngestReport> + 'a,
-        epoch: &'a Range<DateTime<Utc>>,
+        heartbeats: impl Stream<Item = Heartbeat> + 'a,
+        gateway_client: &'a impl GatewayResolver,
+        coverage_cache: &'a CoveredHexCache,
         max_distance: f64,
+        epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        heartbeats.then(move |heartbeat_report| async move {
-            let (cell_type, coverage_object_insertion_time, validity) = validate_heartbeat(
-                &heartbeat_report,
-                gateway_client,
-                covered_hex_cache,
-                epoch,
-                max_distance,
-            )
-            .await?;
-            Ok(Heartbeat {
-                coverage_object: heartbeat_report.report.coverage_object(),
-                heartbeat: heartbeat_report.report,
-                received_timestamp: heartbeat_report.received_timestamp,
+        heartbeats.then(move |heartbeat| async move {
+            let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
+                validate_heartbeat(
+                    &heartbeat,
+                    gateway_client,
+                    coverage_cache,
+                    epoch,
+                    max_distance,
+                )
+                .await?;
+
+            Ok(Self {
+                heartbeat,
                 cell_type,
-                validity,
+                distance_to_asserted,
                 coverage_object_insertion_time,
+                validity,
             })
         })
     }
@@ -304,20 +283,24 @@ impl Heartbeat {
         heartbeats
             .write(
                 proto::Heartbeat {
-                    cbsd_id: self.heartbeat.cbsd_id.clone(),
-                    pub_key: self.heartbeat.pubkey.clone().into(),
-                    reward_multiplier: self
-                        .cell_type
-                        .map_or(0.0, |ct| ct.reward_weight().to_f32().unwrap_or(0.0)),
-                    cell_type: self.cell_type.unwrap_or(CellType::Neutrino430) as i32, // Is this the right default?
+                    cbsd_id: self.heartbeat.cbsd_id.clone().unwrap_or_default(),
+                    pub_key: self.heartbeat.hotspot_key.as_ref().into(),
+                    reward_multiplier: self.cell_type.reward_weight().to_f32().unwrap_or_default(),
+                    cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
-                    timestamp: self.received_timestamp.timestamp() as u64,
-                    lat: self.heartbeat.lat,
-                    lon: self.heartbeat.lon,
+                    timestamp: self.heartbeat.timestamp.timestamp() as u64,
                     coverage_object: self
+                        .heartbeat
                         .coverage_object
                         .map(|x| Vec::from(x.into_bytes()))
                         .unwrap_or_default(),
+                    lat: self.heartbeat.lat,
+                    lon: self.heartbeat.lon,
+                    location_validation_timestamp: self
+                        .heartbeat
+                        .location_validation_timestamp
+                        .map_or(0, |v| v.timestamp() as u64),
+                    distance_to_asserted: self.distance_to_asserted.map_or(0, |v| v as u64),
                 },
                 &[("validity", self.validity.as_str_name())],
             )
@@ -326,35 +309,65 @@ impl Heartbeat {
     }
 
     pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+        /*
         // Invalidate all of the previous coverage objects
+        // TODO: What do we do about coverage objects for wifi hotspots?
         sqlx::query(
             "UPDATE hex_coverage SET invalidated_at = $1 WHERE inserted_at < $2 AND invalidated_at IS NULL AND cbsd_id = $3 AND uuid != $4"
         )
-        .bind(self.received_timestamp)
+        .bind(self.heartbeat.timestamp)
         .bind(self.coverage_object_insertion_time)
         .bind(&self.heartbeat.cbsd_id)
         .bind(self.coverage_object)
         .execute(&mut *exec)
         .await?;
+        */
+        match self.heartbeat.hb_type {
+            HBType::Cbrs => self.save_cbrs_hb(exec).await,
+            HBType::Wifi => self.save_wifi_hb(exec).await,
+        }
+    }
 
-        // Add the heartbeat to the heartbeats table
+    async fn save_cbrs_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let truncated_timestamp = self.truncated_timestamp()?;
-        sqlx::query_scalar(
+        sqlx::query(
             r#"
-            INSERT INTO heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
+            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
-            RETURNING (xmax = 0) as inserted
             "#
+            )
+            .bind(self.heartbeat.cbsd_id)
+            .bind(self.heartbeat.hotspot_key)
+            .bind(self.cell_type)
+            .bind(self.heartbeat.timestamp)
+            .bind(truncated_timestamp)
+            .bind(self.heartbeat.coverage_object)
+            .fetch_one(&mut *exec)
+            .await?;
+        Ok(())
+    }
+
+    async fn save_wifi_hb(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+        let truncated_timestamp = self.truncated_timestamp()?;
+        sqlx::query(
+            r#"
+            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, location_validation_timestamp, distance_to_asserted,
+                latest_timestamp, truncated_timestamp, coverage_object)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
+            latest_timestamp = EXCLUDED.latest_timestamp,
+            coverage_object = EXCLUDED.coverage_object
+            "#,
         )
-        .bind(self.heartbeat.cbsd_id)
-        .bind(self.heartbeat.pubkey)
-        .bind(self.cell_type.unwrap())
-        .bind(self.received_timestamp)
+        .bind(self.heartbeat.hotspot_key)
+        .bind(self.cell_type)
+        .bind(self.heartbeat.location_validation_timestamp)
+        .bind(self.distance_to_asserted)
+        .bind(self.heartbeat.timestamp)
         .bind(truncated_timestamp)
-        .bind(self.coverage_object)
         .fetch_one(&mut *exec)
         .await?;
         Ok(())
@@ -362,41 +375,91 @@ impl Heartbeat {
 }
 
 /// Validate a heartbeat in the given epoch.
-async fn validate_heartbeat(
-    heartbeat: &CellHeartbeatIngestReport,
-    gateway_client: &impl HasOwner,
+pub async fn validate_heartbeat(
+    heartbeat: &Heartbeat,
+    gateway_resolver: &impl GatewayResolver,
     _coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
     _max_distance: f64,
 ) -> anyhow::Result<(
-    Option<CellType>,
+    CellType,
+    Option<i64>,
     Option<DateTime<Utc>>,
     proto::HeartbeatValidity,
 )> {
-    let cell_type = match CellType::from_cbsd_id(&heartbeat.report.cbsd_id) {
-        Some(ty) => Some(ty),
-        _ => return Ok((None, None, proto::HeartbeatValidity::BadCbsdId)),
+    let cell_type = match heartbeat.hb_type {
+        HBType::Cbrs => match heartbeat.cbsd_id.as_ref() {
+            Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
+                Some(ty) => ty,
+                _ => {
+                    return Ok((
+                        CellType::CellTypeNone,
+                        None,
+                        None,
+                        proto::HeartbeatValidity::BadCbsdId,
+                    ))
+                }
+            },
+            None => {
+                return Ok((
+                    CellType::CellTypeNone,
+                    None,
+                    None,
+                    proto::HeartbeatValidity::BadCbsdId,
+                ))
+            }
+        },
+        // for wifi HBs temporary assume we have an indoor wifi spot
+        // this will be better/properly handled when coverage reports are live
+        HBType::Wifi => CellType::NovaGenericWifiIndoor,
     };
 
-    if !heartbeat.report.operation_mode {
-        return Ok((cell_type, None, proto::HeartbeatValidity::NotOperational));
-    }
-
-    if !epoch.contains(&heartbeat.received_timestamp) {
+    if !heartbeat.operation_mode {
         return Ok((
             cell_type,
+            None,
+            None,
+            proto::HeartbeatValidity::NotOperational,
+        ));
+    }
+
+    if !epoch.contains(&heartbeat.timestamp) {
+        return Ok((
+            cell_type,
+            None,
             None,
             proto::HeartbeatValidity::HeartbeatOutsideRange,
         ));
     }
 
-    if gateway_client.has_owner(&heartbeat.report.pubkey).await? {
-        return Ok((
-            cell_type,
-            None,
-            proto::HeartbeatValidity::GatewayOwnerNotFound,
-        ));
-    }
+    let distance_to_asserted = match gateway_resolver
+        .resolve_gateway(&heartbeat.hotspot_key)
+        .await?
+    {
+        GatewayResolution::GatewayNotFound => {
+            return Ok((
+                cell_type,
+                None,
+                None,
+                proto::HeartbeatValidity::GatewayNotFound,
+            ))
+        }
+        GatewayResolution::GatewayNotAsserted => {
+            return Ok((
+                cell_type,
+                None,
+                None,
+                proto::HeartbeatValidity::GatewayNotAsserted,
+            ))
+        }
+        GatewayResolution::AssertedLocation(location) => {
+            if heartbeat.hb_type == HBType::Wifi {
+                Some(heartbeat.asserted_distance(location)?)
+            } else {
+                None
+            }
+        }
+    };
 
     /*
     let Some(coverage_object) = heartbeat.report.coverage_object() else {
@@ -430,25 +493,84 @@ async fn validate_heartbeat(
 
     Ok((
         cell_type,
+        distance_to_asserted,
         None,
-        // Some(coverage.inserted_at),
         proto::HeartbeatValidity::Valid,
     ))
 }
 
+pub(crate) async fn process_validated_heartbeats(
+    validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
+    heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
+    coverage_claim_time_cache: &CoverageClaimTimeCache,
+    modeled_coverage_start: DateTime<Utc>,
+    heartbeat_sink: &FileSinkClient,
+    seniority_sink: &FileSinkClient,
+    transaction: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<()> {
+    let mut validated_heartbeats = pin!(validated_heartbeats);
+
+    while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
+        validated_heartbeat.write(heartbeat_sink).await?;
+
+        if !validated_heartbeat.is_valid() {
+            continue;
+        }
+        if let Some(coverage_claim_time) = coverage_claim_time_cache
+            .fetch_coverage_claim_time(
+                // What do here?
+                &validated_heartbeat.heartbeat.cbsd_id.as_ref().unwrap(),
+                &validated_heartbeat.heartbeat.coverage_object,
+                &mut *transaction,
+            )
+            .await?
+        {
+            let latest_seniority = Seniority::fetch_latest(
+                &mut *transaction,
+                &validated_heartbeat.heartbeat.cbsd_id.as_ref().unwrap(),
+            )
+            .await?;
+            let seniority_update = SeniorityUpdate::determine_update_action(
+                &validated_heartbeat,
+                coverage_claim_time,
+                modeled_coverage_start,
+                latest_seniority,
+            );
+            seniority_update.write(&seniority_sink).await?;
+            seniority_update.execute(&mut *transaction).await?;
+        }
+
+        let key = validated_heartbeat.heartbeat.id()?;
+        if heartbeat_cache.get(&key).await.is_none() {
+            validated_heartbeat.save(&mut *transaction).await?;
+            heartbeat_cache
+                .insert(key, (), time::Duration::from_secs(60 * 60 * 2))
+                .await;
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn clear_heartbeats(
-    tx: &mut Transaction<'_, Postgres>,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM heartbeats WHERE truncated_timestamp < $1")
+    sqlx::query("DELETE FROM cbrs_heartbeats WHERE truncated_timestamp < $1;")
         .bind(timestamp)
         .execute(&mut *tx)
         .await?;
+
+    sqlx::query("DELETE FROM wifi_heartbeats WHERE truncated_timestamp < $1;")
+        .bind(timestamp)
+        .execute(&mut *tx)
+        .await?;
+
     Ok(())
 }
 
 pub struct SeniorityUpdate<'a> {
-    heartbeat: &'a Heartbeat,
+    heartbeat: &'a ValidatedHeartbeat,
     action: SeniorityUpdateAction,
 }
 
@@ -465,12 +587,12 @@ enum SeniorityUpdateAction {
 }
 
 impl<'a> SeniorityUpdate<'a> {
-    fn new(heartbeat: &'a Heartbeat, action: SeniorityUpdateAction) -> Self {
+    fn new(heartbeat: &'a ValidatedHeartbeat, action: SeniorityUpdateAction) -> Self {
         Self { heartbeat, action }
     }
 
     pub fn determine_update_action(
-        heartbeat: &'a Heartbeat,
+        heartbeat: &'a ValidatedHeartbeat,
         coverage_claim_time: DateTime<Utc>,
         modeled_coverage_start: DateTime<Utc>,
         latest_seniority: Option<Seniority>,
@@ -478,7 +600,7 @@ impl<'a> SeniorityUpdate<'a> {
         use proto::SeniorityUpdateReason::*;
 
         if let Some(prev_seniority) = latest_seniority {
-            if heartbeat.coverage_object != Some(prev_seniority.uuid) {
+            if heartbeat.heartbeat.coverage_object != Some(prev_seniority.uuid) {
                 if prev_seniority.update_reason == HeartbeatNotSeen as i32
                     && coverage_claim_time < prev_seniority.seniority_ts
                 {
@@ -492,14 +614,14 @@ impl<'a> SeniorityUpdate<'a> {
                         },
                     )
                 }
-            } else if heartbeat.received_timestamp - prev_seniority.last_heartbeat
+            } else if heartbeat.heartbeat.timestamp - prev_seniority.last_heartbeat
                 > Duration::days(3)
-                && coverage_claim_time < heartbeat.received_timestamp
+                && coverage_claim_time < heartbeat.heartbeat.timestamp
             {
                 Self::new(
                     heartbeat,
                     SeniorityUpdateAction::Insert {
-                        new_seniority: heartbeat.received_timestamp,
+                        new_seniority: heartbeat.heartbeat.timestamp,
                         update_reason: HeartbeatNotSeen,
                     },
                 )
@@ -511,12 +633,12 @@ impl<'a> SeniorityUpdate<'a> {
                     },
                 )
             }
-        } else if heartbeat.received_timestamp - modeled_coverage_start > Duration::days(3) {
+        } else if heartbeat.heartbeat.timestamp - modeled_coverage_start > Duration::days(3) {
             // This will become the default case 72 hours after we launch modeled coverage
             Self::new(
                 heartbeat,
                 SeniorityUpdateAction::Insert {
-                    new_seniority: heartbeat.received_timestamp,
+                    new_seniority: heartbeat.heartbeat.timestamp,
                     update_reason: HeartbeatNotSeen,
                 },
             )
@@ -542,7 +664,13 @@ impl SeniorityUpdate<'_> {
             seniorities
                 .write(
                     proto::SeniorityUpdate {
-                        cbsd_id: self.heartbeat.heartbeat.cbsd_id.to_string(),
+                        cbsd_id: self
+                            .heartbeat
+                            .heartbeat
+                            .cbsd_id
+                            .as_ref()
+                            .unwrap()
+                            .to_string(),
                         new_seniority_timestamp: new_seniority.timestamp() as u64,
                         reason: update_reason as i32,
                     },
@@ -573,10 +701,10 @@ impl SeniorityUpdate<'_> {
                     "#,
                 )
                 .bind(&self.heartbeat.heartbeat.cbsd_id)
-                .bind(self.heartbeat.received_timestamp)
-                .bind(self.heartbeat.coverage_object)
+                .bind(self.heartbeat.heartbeat.timestamp)
+                .bind(self.heartbeat.heartbeat.coverage_object)
                 .bind(new_seniority)
-                .bind(self.heartbeat.received_timestamp)
+                .bind(self.heartbeat.heartbeat.timestamp)
                 .bind(update_reason as i32)
                 .execute(&mut *exec)
                 .await?;
@@ -591,7 +719,7 @@ impl SeniorityUpdate<'_> {
                       seniority_ts = $3
                     "#,
                 )
-                .bind(self.heartbeat.received_timestamp)
+                .bind(self.heartbeat.heartbeat.timestamp)
                 .bind(&self.heartbeat.heartbeat.cbsd_id)
                 .bind(curr_seniority)
                 .execute(&mut *exec)

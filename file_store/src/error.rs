@@ -64,6 +64,8 @@ pub enum DecodeError {
     UuidError(#[from] uuid::Error),
     #[error("Invalid cell index error: {0}")]
     InvalidCellIndexError(#[from] h3o::error::InvalidCellIndex),
+    #[error("unsupported packet type, type: {0}, value: {1}")]
+    UnsupportedPacketType(String, i32),
 }
 
 #[derive(Error, Debug)]
@@ -118,6 +120,10 @@ impl DecodeError {
 
     pub fn unsupported_datarate<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedDataRate(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_packet_type<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedPacketType(msg1.to_string(), msg2))
     }
 
     pub fn unsupported_participant_side<E: ToString>(msg1: E, msg2: i32) -> Error {

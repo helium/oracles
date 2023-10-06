@@ -167,6 +167,7 @@ impl FileStore {
                 .bucket(&self.bucket)
                 .key(file.file_name().map(|name| name.to_string_lossy()).unwrap())
                 .body(byte_stream)
+                .content_type("application/octet-stream")
                 .send()
                 .map_ok(|_| ())
                 .map_err(Error::s3_error)

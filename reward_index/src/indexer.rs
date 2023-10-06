@@ -62,6 +62,7 @@ impl Indexer {
 
         loop {
             tokio::select! {
+            biased;
             _ = shutdown.clone() => {
                     tracing::info!("Indexer shutting down");
                     return Ok(());

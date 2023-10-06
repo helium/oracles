@@ -98,6 +98,17 @@ impl TryFrom<SpeedtestIngestReportV1> for CellSpeedtestIngestReport {
     }
 }
 
+impl From<CellSpeedtestIngestReport> for SpeedtestIngestReportV1 {
+    fn from(v: CellSpeedtestIngestReport) -> Self {
+        let received_timestamp = v.timestamp();
+        let report: SpeedtestReqV1 = v.report.into();
+        Self {
+            received_timestamp,
+            report: Some(report),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

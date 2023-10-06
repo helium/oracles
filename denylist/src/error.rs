@@ -5,8 +5,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("request error")]
     Request(#[from] reqwest::Error),
-    #[error("unexpected binary")]
-    InvalidBinary(String),
+    #[error("filter error")]
+    InvalidFilter(String),
     #[error("unexpected value")]
     Value(serde_json::Value),
     #[error("invalid decimals in {0}, only 8 allowed")]
@@ -28,8 +28,8 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn invalid_binary<E: ToString>(msg: E) -> Self {
-        Self::InvalidBinary(msg.to_string())
+    pub fn invalid_filter<E: ToString>(msg: E) -> Self {
+        Self::InvalidFilter(msg.to_string())
     }
 
     pub fn value(value: serde_json::Value) -> Self {

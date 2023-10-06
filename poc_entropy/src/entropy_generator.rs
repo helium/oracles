@@ -125,10 +125,8 @@ impl EntropyGenerator {
         entropy_timer.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
-            if shutdown.is_triggered() {
-                break;
-            }
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = entropy_timer.tick() => match self.handle_entropy_tick(&file_sink).await {
                     Ok(()) => (),

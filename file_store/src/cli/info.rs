@@ -74,13 +74,13 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for PriceReportV1 {
 
 fn get_timestamp(file_type: &str, buf: &[u8]) -> Result<DateTime<Utc>> {
     let result = match FileType::from_str(file_type)? {
-        FileType::CellHeartbeat => CellHeartbeatReqV1::decode(buf)
+        FileType::CbrsHeartbeat => CellHeartbeatReqV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
         FileType::CellSpeedtest => SpeedtestReqV1::decode(buf)
             .map_err(Error::from)
             .and_then(|entry| entry.timestamp())?,
-        FileType::CellHeartbeatIngestReport => CellHeartbeatIngestReportV1::decode(buf)
+        FileType::CbrsHeartbeatIngestReport => CellHeartbeatIngestReportV1::decode(buf)
             .map_err(Error::from)
             .and_then(|ingest_report| {
                 ingest_report.report.ok_or_else(|| {
