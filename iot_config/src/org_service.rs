@@ -26,7 +26,6 @@ pub struct OrgService {
     route_update_tx: broadcast::Sender<RouteStreamResV1>,
     signing_key: Keypair,
     delegate_updater: watch::Sender<org::DelegateCache>,
-    shutdown: triggered::Listener,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,7 +41,6 @@ impl OrgService {
         pool: Pool<Postgres>,
         route_update_tx: broadcast::Sender<RouteStreamResV1>,
         delegate_updater: watch::Sender<org::DelegateCache>,
-        shutdown: triggered::Listener,
     ) -> Result<Self> {
         Ok(Self {
             auth_cache,
@@ -50,7 +48,6 @@ impl OrgService {
             route_update_tx,
             signing_key: settings.signing_keypair()?,
             delegate_updater,
-            shutdown,
         })
     }
 
@@ -236,7 +233,7 @@ impl iot_config::Org for OrgService {
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
-        tracing::debug!("create helium org request: {request:?}");
+        tracing::info!(?request, "create helium org");
 
         let net_id = request.net_id();
         let requested_addrs = if request.devaddrs >= 8 && request.devaddrs % 2 == 0 {
@@ -259,6 +256,7 @@ impl iot_config::Org for OrgService {
                 tracing::error!(?net_id, count = %requested_addrs, reason = ?err, "failed to retrieve available helium devaddrs");
                 Status::failed_precondition("helium addresses unavailable")
             })?;
+        tracing::info!(constraints = ?devaddr_constraints, "devaddr constraints issued");
         let helium_netid_field = helium_netids::HeliumNetId::from(net_id).id();
 
         let org = org::create_org(
@@ -285,16 +283,14 @@ impl iot_config::Org for OrgService {
 
         org.delegate_keys.as_ref().map(|keys| {
             self.delegate_updater.send_if_modified(|cache| {
-                keys.iter().fold(
-                    false,
-                    |acc, key| {
-                        if cache.insert(key.clone()) {
-                            true
-                        } else {
-                            acc
-                        }
-                    },
-                )
+                keys.iter().fold(false, |acc, key| {
+                    if cache.insert(key.clone()) {
+                        tracing::info!(%key, "delegate key authorized");
+                        true
+                    } else {
+                        acc
+                    }
+                })
             })
         });
 
@@ -341,12 +337,13 @@ impl iot_config::Org for OrgService {
             })
             .collect::<Result<Vec<PublicKey>, Status>>()?;
 
-        tracing::debug!("create roamer org request: {request:?}");
+        tracing::info!(?request, "create roamer org");
 
         let net_id = lora_field::net_id(request.net_id);
         let devaddr_range = net_id
             .full_range()
             .map_err(|_| Status::invalid_argument("invalid net_id"))?;
+        tracing::info!(constraints = ?devaddr_range, "roaming devaddr range");
 
         let org = org::create_org(
             request.owner.into(),
@@ -368,16 +365,14 @@ impl iot_config::Org for OrgService {
 
         org.delegate_keys.as_ref().map(|keys| {
             self.delegate_updater.send_if_modified(|cache| {
-                keys.iter().fold(
-                    false,
-                    |acc, key| {
-                        if cache.insert(key.clone()) {
-                            true
-                        } else {
-                            acc
-                        }
-                    },
-                )
+                keys.iter().fold(false, |acc, key| {
+                    if cache.insert(key.clone()) {
+                        tracing::info!(?key, "delegate key authorized");
+                        true
+                    } else {
+                        acc
+                    }
+                })
             })
         });
 
@@ -410,12 +405,18 @@ impl iot_config::Org for OrgService {
             .verify_update_request_signature(&signer, &request)
             .await?;
 
-        let org = org::update_org(request.oui, authorizer, request.updates, &self.pool)
-            .await
-            .map_err(|err| {
-                tracing::error!(reason = ?err, "org update failed");
-                Status::internal(format!("org update failed: {err:?}"))
-            })?;
+        let org = org::update_org(
+            request.oui,
+            authorizer,
+            request.updates,
+            &self.pool,
+            &self.delegate_updater,
+        )
+        .await
+        .map_err(|err| {
+            tracing::error!(reason = ?err, "org update failed");
+            Status::internal(format!("org update failed: {err:?}"))
+        })?;
 
         let net_id = org::get_org_netid(org.oui, &self.pool)
             .await
@@ -465,11 +466,9 @@ impl iot_config::Org for OrgService {
                     );
                     Status::internal(format!("org disable failed for: {}", request.oui))
                 })?;
+            tracing::info!(oui = request.oui, "org locked");
 
-            tokio::select! {
-                _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
-                result = self.stream_org_routes_enable_disable(request.oui) => result?
-            }
+            self.stream_org_routes_enable_disable(request.oui).await?
         }
 
         let mut resp = OrgDisableResV1 {
@@ -504,11 +503,9 @@ impl iot_config::Org for OrgService {
                     );
                     Status::internal(format!("org enable failed for: {}", request.oui))
                 })?;
+            tracing::info!(oui = request.oui, "org unlocked");
 
-            tokio::select! {
-                _ = self.shutdown.clone() => return Err(Status::unavailable("service shutting down")),
-                result = self.stream_org_routes_enable_disable(request.oui) => result?
-            }
+            self.stream_org_routes_enable_disable(request.oui).await?
         }
 
         let mut resp = OrgEnableResV1 {
