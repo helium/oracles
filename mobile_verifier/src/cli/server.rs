@@ -62,7 +62,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CbrsHeartbeatIngestReport)
+                .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
                 .create()?;
         let cbrs_heartbeats_join_handle = cbrs_heartbeats_server
             .start(shutdown_listener.clone())
@@ -74,7 +74,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::WifiHeartbeatIngestReport)
+                .prefix(FileType::WifiHeartbeatIngestReport.to_string())
                 .create()?;
         let wifi_heartbeats_join_handle = wifi_heartbeats_server
             .start(shutdown_listener.clone())
@@ -110,7 +110,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CellSpeedtestIngestReport)
+                .prefix(FileType::CellSpeedtestIngestReport.to_string())
                 .create()?;
         let speedtests_join_handle = speedtests_server.start(shutdown_listener.clone()).await?;
 
@@ -182,7 +182,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::SubscriberLocationIngestReport)
+                .prefix(FileType::SubscriberLocationIngestReport.to_string())
                 .create()?;
         let subscriber_location_ingest_join_handle = subscriber_location_ingest_server
             .start(shutdown_listener.clone())
@@ -213,7 +213,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(data_transfer_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::ValidDataTransferSession)
+                .prefix(FileType::ValidDataTransferSession.to_string())
                 .create()?;
         let data_session_ingest_join_handle = data_session_ingest_server
             .start(shutdown_listener.clone())
