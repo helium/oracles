@@ -223,6 +223,12 @@ pub async fn update_org(
         };
     }
 
+    let updated_org = get(oui, &mut txn)
+        .await?
+        .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
+
+    txn.commit().await?;
+
     for update in updates.iter() {
         if let Some(proto::Update::DelegateKey(ref delegate_key_update)) = update.update {
             match delegate_key_update.action() {
@@ -239,12 +245,6 @@ pub async fn update_org(
             }
         }
     }
-
-    let updated_org = get(oui, &mut txn)
-        .await?
-        .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
-
-    txn.commit().await?;
 
     Ok(updated_org)
 }
