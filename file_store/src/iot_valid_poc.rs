@@ -157,7 +157,7 @@ impl From<IotValidBeaconReport> for LoraValidBeaconReportV1 {
             location: v
                 .location
                 .map(|l| l.to_string())
-                .unwrap_or_else(String::new),
+                .unwrap_or_default(),
             gain: v.gain,
             elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
@@ -217,7 +217,7 @@ impl From<IotVerifiedWitnessReport> for LoraVerifiedWitnessReportV1 {
             location: v
                 .location
                 .map(|l| l.to_string())
-                .unwrap_or_else(String::new),
+                .unwrap_or_default(),
             gain: v.gain,
             elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),

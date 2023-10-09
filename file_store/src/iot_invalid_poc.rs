@@ -98,7 +98,7 @@ impl From<IotInvalidBeaconReport> for LoraInvalidBeaconReportV1 {
             location: v
                 .location
                 .map(|l| l.to_string())
-                .unwrap_or_else(String::new),
+                .unwrap_or_default(),
             gain: v.gain,
             elevation: v.elevation,
             invalid_details: v.invalid_details,
