@@ -154,10 +154,7 @@ impl From<IotValidBeaconReport> for LoraValidBeaconReportV1 {
 
         Self {
             received_timestamp,
-            location: v
-                .location
-                .map(|l| l.to_string())
-                .unwrap_or_default(),
+            location: v.location.map(|l| l.to_string()).unwrap_or_default(),
             gain: v.gain,
             elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
@@ -214,10 +211,7 @@ impl From<IotVerifiedWitnessReport> for LoraVerifiedWitnessReportV1 {
             received_timestamp,
             status: v.status.into(),
             report: Some(report),
-            location: v
-                .location
-                .map(|l| l.to_string())
-                .unwrap_or_default(),
+            location: v.location.map(|l| l.to_string()).unwrap_or_default(),
             gain: v.gain,
             elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
