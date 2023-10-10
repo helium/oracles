@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y protobuf-compiler
 COPY Cargo.toml Cargo.lock ./
 COPY db_store ./db_store/
 COPY file_store ./file_store/
+COPY task_manager ./task_manager/
 COPY metrics ./metrics/
 COPY iot_config/Cargo.toml ./iot_config/Cargo.toml
 
