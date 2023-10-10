@@ -159,7 +159,7 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(
                     Utc.timestamp_millis_opt(0).unwrap(),
                 ))
-                .file_type(FileType::DataTransferSessionIngestReport)
+                .prefix(FileType::DataTransferSessionIngestReport.to_string())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .create()?;
         let source_join_handle = reports_server.start(shutdown_listener.clone()).await?;

@@ -164,7 +164,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::IotPacketReport)
+                .prefix(FileType::IotPacketReport.to_string())
                 .create()?;
 
         let balance_store = balances.balances();
