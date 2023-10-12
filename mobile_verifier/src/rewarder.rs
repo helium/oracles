@@ -159,7 +159,6 @@ impl Rewarder {
         let transfer_rewards = TransferRewards::from_transfer_sessions(
             mobile_bone_price,
             data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
-            &poc_rewards,
             reward_period,
         )
         .await;
