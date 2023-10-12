@@ -127,6 +127,12 @@ impl TransferRewards {
                     },
                 )),
             })
+            .filter(|mobile_reward| match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::GatewayReward(ref gateway_reward)) => {
+                    gateway_reward.dc_transfer_reward > 0
+                }
+                _ => false,
+            })
     }
 }
 
