@@ -8,7 +8,7 @@ use crate::{
     reward_share::GatewayPocShare,
     telemetry, Settings,
 };
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::Utc;
 use denylist::DenyList;
 use file_store::{
     file_sink::FileSinkClient,
@@ -42,8 +42,7 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 pub struct Runner {
     pool: PgPool,
-    beacon_interval: ChronoDuration,
-    beacon_interval_tolerance: ChronoDuration,
+    beacon_interval: u64,
     max_witnesses_per_poc: u64,
     beacon_max_retries: u64,
     witness_max_retries: u64,
@@ -95,8 +94,7 @@ impl Runner {
         poc_sink: FileSinkClient,
         hex_density_map: HexDensityMap,
     ) -> anyhow::Result<Self> {
-        let beacon_interval = settings.beacon_interval();
-        let beacon_interval_tolerance = settings.beacon_interval_tolerance();
+        let beacon_interval = settings.beacon_interval;
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
         let beacon_max_retries = settings.beacon_max_retries;
         let witness_max_retries = settings.witness_max_retries;
@@ -119,7 +117,6 @@ impl Runner {
         Ok(Self {
             pool,
             beacon_interval,
-            beacon_interval_tolerance,
             max_witnesses_per_poc,
             gateway_cache,
             region_cache,
@@ -264,7 +261,6 @@ impl Runner {
                 &self.region_cache,
                 &self.pool,
                 self.beacon_interval,
-                self.beacon_interval_tolerance,
                 &self.deny_list,
             )
             .await?;
@@ -601,6 +597,7 @@ fn fire_invalid_witness_metric(witnesses: &[IotVerifiedWitnessReport]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration as ChronoDuration;
     use file_store::iot_witness_report::IotWitnessReport;
     use helium_crypto::PublicKeyBinary;
     use helium_proto::services::poc_lora::InvalidReason;
