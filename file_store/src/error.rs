@@ -60,6 +60,8 @@ pub enum DecodeError {
     InvalidTimestamp(u64),
     #[error("unsupported packet type, type: {0}, value: {1}")]
     UnsupportedPacketType(String, i32),
+    #[error("file stream try decode error: {0}")]
+    FileStreamTryDecode(String),
 }
 
 #[derive(Error, Debug)]
@@ -101,6 +103,10 @@ impl Error {
     {
         Self::from(err.into())
     }
+
+    pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
+        DecodeError::file_stream_try_decode(msg)
+    }
 }
 
 impl DecodeError {
@@ -134,6 +140,10 @@ impl DecodeError {
 
     pub fn unsupported_status_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
+    }
+
+    pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
+        Error::Decode(Self::FileStreamTryDecode(msg.to_string()))
     }
 }
 
