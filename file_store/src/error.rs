@@ -103,6 +103,10 @@ impl Error {
     {
         Self::from(err.into())
     }
+
+    pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
+        DecodeError::file_stream_try_decode(msg)
+    }
 }
 
 impl DecodeError {
