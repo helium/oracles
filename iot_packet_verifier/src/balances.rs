@@ -1,8 +1,4 @@
-use crate::{
-    pending_burns::{Burn, PendingBurns},
-    verifier::Debiter,
-};
-use futures_util::StreamExt;
+use crate::{pending::{Burn, PendingTables}, verifier::Debiter};
 use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
 use std::{
@@ -26,25 +22,23 @@ where
 {
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
-    pub async fn new<P>(pending_burns: &mut P, solana: S) -> anyhow::Result<Self>
-    where
-        P: PendingBurns,
-    {
+    pub async fn new(
+        pending_tables: &impl PendingTables,
+        solana: S,
+    ) -> anyhow::Result<Self> {
         let mut balances = HashMap::new();
-        let mut burns = pending_burns.fetch_all().await;
 
-        while let Some(Burn {
+        for Burn {
             payer,
             amount: burn_amount,
-            ..
-        }) = burns.next().await.transpose()?
+        } in pending_tables.fetch_all_pending_burns().await?
         {
             // Look up the current balance of the payer
             let balance = solana.payer_balance(&payer).await?;
             balances.insert(
                 payer,
                 PayerAccount {
-                    burned: burn_amount as u64,
+                    burned: burn_amount,
                     balance,
                 },
             );

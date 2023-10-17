@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use file_store::iot_packet::PacketRouterPacketReport;
-use futures::{Stream, StreamExt};
 use futures_util::stream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
@@ -14,10 +13,10 @@ use helium_proto::{
 use iot_packet_verifier::{
     balances::BalanceCache,
     burner::Burner,
-    pending_burns::{Burn, PendingBurns},
-    verifier::{payload_size_to_dc, ConfigServer, Debiter, Org, Verifier, BYTES_PER_DC},
+    pending::MockPendingTables,
+    verifier::{payload_size_to_dc, ConfigServer, Org, Verifier, BYTES_PER_DC},
 };
-use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 struct MockConfig {
@@ -76,60 +75,6 @@ impl ConfigServer for MockConfigServer {
                 locked: !config.enabled,
             })
             .collect())
-    }
-}
-
-#[derive(Clone)]
-struct InstantBurnedBalance(Arc<Mutex<HashMap<PublicKeyBinary, u64>>>);
-
-#[async_trait]
-impl Debiter for InstantBurnedBalance {
-    type Error = ();
-
-    async fn debit_if_sufficient(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-        _trigger_balance_check_threshold: u64,
-    ) -> Result<Option<u64>, ()> {
-        let map = self.0.lock().await;
-        let balance = map.get(payer).unwrap();
-        // Don't debit the amount if we're mocking. That is a job for the burner.
-        Ok((*balance >= amount).then(|| balance.saturating_sub(amount)))
-    }
-}
-
-#[async_trait::async_trait]
-impl PendingBurns for InstantBurnedBalance {
-    type Error = std::convert::Infallible;
-
-    async fn fetch_all<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Stream<Item = Result<Burn, Self::Error>> + Send + 'a>> {
-        stream::iter(std::iter::empty()).boxed()
-    }
-
-    async fn fetch_next(&mut self) -> Result<Option<Burn>, Self::Error> {
-        Ok(None)
-    }
-
-    async fn subtract_burned_amount(
-        &mut self,
-        _payer: &PublicKeyBinary,
-        _amount: u64,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    async fn add_burned_amount(
-        &mut self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<(), Self::Error> {
-        let mut map = self.0.lock().await;
-        let balance = map.get_mut(payer).unwrap();
-        *balance -= amount;
-        Ok(())
     }
 }
 
@@ -209,7 +154,7 @@ async fn test_config_unlocking() {
     let mut cache = HashMap::new();
     cache.insert(PublicKeyBinary::from(vec![0]), 3);
     let cache = Arc::new(Mutex::new(cache));
-    let balances = InstantBurnedBalance(cache.clone());
+    let balances = cache.clone();
     // Set up verifier:
     let mut verifier = Verifier {
         debiter: balances.clone(),
@@ -329,7 +274,7 @@ async fn test_verifier() {
     balances.insert(PublicKeyBinary::from(vec![0]), 3);
     balances.insert(PublicKeyBinary::from(vec![1]), 5);
     balances.insert(PublicKeyBinary::from(vec![2]), 2);
-    let balances = InstantBurnedBalance(Arc::new(Mutex::new(balances)));
+    let balances = Arc::new(Mutex::new(balances));
     // Set up output:
     let mut valid_packets = Vec::new();
     let mut invalid_packets = Vec::new();
@@ -380,9 +325,13 @@ async fn test_verifier() {
 async fn test_end_to_end() {
     let payer = PublicKeyBinary::from(vec![0]);
 
-    // Pending burns:
-    let mut pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>> =
+    // Pending tables:
+    let pending_burns: Arc<Mutex<HashMap<PublicKeyBinary, u64>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let pending_tables = MockPendingTables {
+        pending_txns: Default::default(),
+        pending_burns: pending_burns.clone(),
+    };
 
     // Solana network:
     let mut solana_network = HashMap::new();
@@ -390,13 +339,13 @@ async fn test_end_to_end() {
     let solana_network = Arc::new(Mutex::new(solana_network));
 
     // Balance cache:
-    let balance_cache = BalanceCache::new(&mut pending_burns, solana_network.clone())
+    let balance_cache = BalanceCache::new(&pending_tables, solana_network.clone())
         .await
         .unwrap();
 
     // Burner:
     let mut burner = Burner::new(
-        pending_burns.clone(),
+        pending_tables.clone(),
         &balance_cache,
         0, // Burn period does not matter, we manually burn
         solana_network.clone(),

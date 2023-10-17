@@ -1,4 +1,4 @@
-use crate::pending_burns::PendingBurns;
+use crate::pending::AddPendingBurn;
 use async_trait::async_trait;
 use file_store::{
     file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport, traits::MsgTimestamp,
@@ -29,13 +29,13 @@ pub struct Verifier<D, C> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError<DE, CE, BE, VPE, IPE> {
+pub enum VerificationError<DE, CE, VPE, IPE> {
     #[error("Debit error: {0}")]
     DebitError(DE),
     #[error("Config server error: {0}")]
     ConfigError(CE),
     #[error("Burn error: {0}")]
-    BurnError(BE),
+    BurnError(#[from] sqlx::Error),
     #[error("Valid packet writer error: {0}")]
     ValidPacketWriterError(VPE),
     #[error("Invalid packet writer error: {0}")]
@@ -55,9 +55,9 @@ where
         reports: R,
         mut valid_packets: VP,
         mut invalid_packets: IP,
-    ) -> Result<(), VerificationError<D::Error, C::Error, B::Error, VP::Error, IP::Error>>
+    ) -> Result<(), VerificationError<D::Error, C::Error, VP::Error, IP::Error>>
     where
-        B: PendingBurns,
+        B: AddPendingBurn,
         R: Stream<Item = PacketRouterPacketReport>,
         VP: PacketWriter<ValidPacket>,
         IP: PacketWriter<InvalidPacket>,

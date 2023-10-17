@@ -117,7 +117,7 @@ impl Cmd {
         )?;
 
         // Set up the balance cache:
-        let balances = BalanceCache::new(&mut pool.clone(), solana.clone()).await?;
+        let balances = BalanceCache::new(&pool, solana.clone()).await?;
 
         // Set up the balance burner:
         let burner = Burner::new(
