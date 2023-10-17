@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
+use solana::SolanaNetwork;
 use solana_sdk::signature::Signature;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 /// To avoid excessive burn transaction (which cost us money), we institute a minimum
@@ -39,6 +40,47 @@ pub trait PendingTables {
     ) -> Result<(), sqlx::Error>;
 
     async fn begin<'a>(&'a self) -> Result<Self::Transaction<'a>, sqlx::Error>;
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ConfirmPendingError<S> {
+    #[error("Sqlx error: {0}")]
+    SqlxError(#[from] sqlx::Error),
+    #[error("Solana error: {0}")]
+    SolanaError(S),
+}
+
+pub async fn confirm_pending_txns<S>(
+    pending_tables: &impl PendingTables,
+    solana: &S,
+) -> Result<(), ConfirmPendingError<S::Error>>
+where
+    S: SolanaNetwork,
+{
+    // Sleep one minute to let transactions confirm
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    // Fetch all pending transactions and confirm them
+    let pending = pending_tables.fetch_all_pending_txns().await?;
+    for pending in pending {
+        let mut txn = pending_tables.begin().await?;
+        // We remove the transaction regardless of whether it has been confirmed
+        // or not:
+        txn.confirm_txn(&pending.signature).await?;
+        // Check if the transaction has been confirmed. If it has, remove the
+        // amount from the pending burns table
+        if solana
+            .confirm_transaction(&pending.signature)
+            .await
+            .map_err(ConfirmPendingError::SolanaError)?
+        {
+            txn.subtract_burned_amount(&pending.payer, pending.amount)
+                .await?;
+        }
+        // Commit our work.
+        txn.commit().await?;
+    }
+
+    Ok(())
 }
 
 #[async_trait]
@@ -212,7 +254,7 @@ impl AddPendingBurn for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<(), sqlx::Error> {
-	let mut map = self.lock().await;
+        let mut map = self.lock().await;
         *map.entry(payer.clone()).or_default() += amount;
         Ok(())
     }

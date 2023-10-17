@@ -39,6 +39,8 @@ pub trait SolanaNetwork: Send + Sync + 'static {
     ) -> Result<Self::Transaction, Self::Error>;
 
     async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
+
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error>;
 }
 
 pub trait GetSignature {
@@ -260,6 +262,10 @@ impl SolanaNetwork for SolanaRpc {
 
         Ok(())
     }
+
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+        Ok(self.provider.confirm_transaction(txn).await?)
+    }
 }
 
 /// Cached pubkeys for the burn program
@@ -363,6 +369,14 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         }
         Ok(())
     }
+
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+        if let Some(ref rpc) = self {
+            rpc.confirm_transaction(txn).await
+        } else {
+            panic!("We will not confirm transactions when Solana is disabled");
+        }
+    }
 }
 
 pub struct MockTransaction {
@@ -401,6 +415,10 @@ impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
         *self.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
         Ok(())
+    }
+
+    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, Self::Error> {
+        Ok(true)
     }
 }
 

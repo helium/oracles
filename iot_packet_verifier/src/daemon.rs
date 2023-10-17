@@ -2,7 +2,7 @@ use crate::{
     balances::BalanceCache,
     burner::Burner,
     settings::Settings,
-    verifier::{CachedOrgClient, ConfigServer, Verifier},
+    verifier::{CachedOrgClient, ConfigServer, Verifier}, pending::confirm_pending_txns,
 };
 use anyhow::{bail, Result};
 use file_store::{
@@ -106,6 +106,8 @@ impl Cmd {
         } else {
             None
         };
+
+	confirm_pending_txns(&pool, &solana).await?;
 
         let sol_balance_monitor = BalanceMonitor::new(
             solana.clone(),
