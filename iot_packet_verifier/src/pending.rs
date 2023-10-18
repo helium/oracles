@@ -381,10 +381,12 @@ mod test {
         type Error = std::convert::Infallible;
         type Transaction = Signature;
 
+        #[allow(clippy::diverging_sub_expression)]
         async fn payer_balance(&self, _payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
             unreachable!()
         }
 
+        #[allow(clippy::diverging_sub_expression)]
         async fn make_burn_transaction(
             &self,
             _payer: &PublicKeyBinary,
@@ -393,6 +395,7 @@ mod test {
             unreachable!()
         }
 
+        #[allow(clippy::diverging_sub_expression)]
         async fn submit_transaction(
             &self,
             _transaction: &Self::Transaction,
