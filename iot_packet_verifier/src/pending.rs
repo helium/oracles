@@ -141,7 +141,7 @@ impl PendingTables for PgPool {
         sqlx::query(
             r#"
             INSERT INTO pending_txns (signature, payer, amount, time_of_submission)
-            VALUES ($1 $2, $3, $4)
+            VALUES ($1, $2, $3, $4)
             "#,
         )
         .bind(&signature.to_string())

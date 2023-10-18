@@ -389,9 +389,9 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
 }
 
 pub struct MockTransaction {
-    signature: Signature,
-    payer: PublicKeyBinary,
-    amount: u64,
+    pub signature: Signature,
+    pub payer: PublicKeyBinary,
+    pub amount: u64,
 }
 
 impl GetSignature for MockTransaction {

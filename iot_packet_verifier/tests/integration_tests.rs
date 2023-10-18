@@ -13,10 +13,17 @@ use helium_proto::{
 use iot_packet_verifier::{
     balances::BalanceCache,
     burner::Burner,
-    pending::{AddPendingBurn, MockPendingTables},
+    pending::{confirm_pending_txns, AddPendingBurn, Burn, MockPendingTables, PendingTables},
     verifier::{payload_size_to_dc, ConfigServer, Org, Verifier, BYTES_PER_DC},
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use solana::{GetSignature, MockTransaction, SolanaNetwork};
+use solana_sdk::signature::Signature;
+use sqlx::PgPool;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::Mutex;
 
 struct MockConfig {
@@ -480,4 +487,107 @@ async fn test_end_to_end() {
         invalid_packets,
         vec![invalid_packet(BYTES_PER_DC as u32, vec![5])]
     );
+}
+
+struct MockSolanaNetwork {
+    confirmed: Mutex<HashSet<Signature>>,
+    ledger: Arc<Mutex<HashMap<PublicKeyBinary, u64>>>,
+}
+
+impl MockSolanaNetwork {
+    fn new(ledger: HashMap<PublicKeyBinary, u64>) -> Self {
+        Self {
+            confirmed: Default::default(),
+            ledger: Arc::new(Mutex::new(ledger)),
+        }
+    }
+}
+
+#[async_trait]
+impl SolanaNetwork for MockSolanaNetwork {
+    type Error = std::convert::Infallible;
+    type Transaction = MockTransaction;
+
+    async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+        self.ledger.payer_balance(payer).await
+    }
+
+    async fn make_burn_transaction(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<MockTransaction, Self::Error> {
+        self.ledger.make_burn_transaction(payer, amount).await
+    }
+
+    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
+        self.confirmed.lock().await.insert(txn.signature);
+        self.ledger.submit_transaction(txn).await
+    }
+
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+        Ok(self.confirmed.lock().await.contains(txn))
+    }
+}
+
+#[sqlx::test]
+#[ignore]
+async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
+    const CONFIRMED_BURN_AMOUNT: u64 = 7;
+    const UNCONFIRMED_BURN_AMOUNT: u64 = 11;
+    let payer: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+        .parse()
+        .unwrap();
+    let mut ledger = HashMap::new();
+    ledger.insert(
+        payer.clone(),
+        CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
+    );
+    let mock_network = MockSolanaNetwork::new(ledger);
+
+    // Add both the burn amounts to the pending burns table
+    {
+        let mut transaction = pool.begin().await.unwrap();
+        (&mut transaction)
+            .add_burned_amount(&payer, CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+    }
+
+    // First transaction is confirmed
+    {
+        let txn = mock_network
+            .make_burn_transaction(&payer, CONFIRMED_BURN_AMOUNT)
+            .await
+            .unwrap();
+        pool.submit_txn(&payer, CONFIRMED_BURN_AMOUNT, txn.get_signature())
+            .await
+            .unwrap();
+        mock_network.submit_transaction(&txn).await.unwrap();
+    }
+
+    // Second is unconfirmed
+    {
+        let txn = mock_network
+            .make_burn_transaction(&payer, UNCONFIRMED_BURN_AMOUNT)
+            .await
+            .unwrap();
+        pool.submit_txn(&payer, UNCONFIRMED_BURN_AMOUNT, txn.get_signature())
+            .await
+            .unwrap();
+    }
+
+    // Confirm pending transactions
+    confirm_pending_txns(&pool, &mock_network).await.unwrap();
+
+    let pending_burn: Burn = sqlx::query_as("SELECT * FROM pending_burns LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    // The unconfirmed burn amount should be what's left
+    assert_eq!(pending_burn.amount, UNCONFIRMED_BURN_AMOUNT);
+
+    Ok(())
 }
