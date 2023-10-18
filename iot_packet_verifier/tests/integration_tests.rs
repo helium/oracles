@@ -13,7 +13,7 @@ use helium_proto::{
 use iot_packet_verifier::{
     balances::BalanceCache,
     burner::Burner,
-    pending::MockPendingTables,
+    pending::{AddPendingBurn, MockPendingTables},
     verifier::{payload_size_to_dc, ConfigServer, Org, Verifier, BYTES_PER_DC},
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -141,6 +141,23 @@ fn invalid_packet(payload_size: u32, payload_hash: Vec<u8>) -> InvalidPacket {
     }
 }
 
+#[derive(Clone)]
+struct InstantlyBurnedBalance(Arc<Mutex<HashMap<PublicKeyBinary, u64>>>);
+
+#[async_trait]
+impl AddPendingBurn for InstantlyBurnedBalance {
+    async fn add_burned_amount(
+        &mut self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), sqlx::Error> {
+        let mut map = self.0.lock().await;
+        let balance = map.get_mut(payer).unwrap();
+        *balance -= amount;
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn test_config_unlocking() {
     // Set up orgs:
@@ -154,10 +171,10 @@ async fn test_config_unlocking() {
     let mut cache = HashMap::new();
     cache.insert(PublicKeyBinary::from(vec![0]), 3);
     let cache = Arc::new(Mutex::new(cache));
-    let balances = cache.clone();
+    let balances = InstantlyBurnedBalance(cache.clone());
     // Set up verifier:
     let mut verifier = Verifier {
-        debiter: balances.clone(),
+        debiter: balances.0.clone(),
         config_server: orgs.clone(),
     };
     let mut valid_packets = Vec::new();
@@ -274,13 +291,13 @@ async fn test_verifier() {
     balances.insert(PublicKeyBinary::from(vec![0]), 3);
     balances.insert(PublicKeyBinary::from(vec![1]), 5);
     balances.insert(PublicKeyBinary::from(vec![2]), 2);
-    let balances = Arc::new(Mutex::new(balances));
+    let balances = InstantlyBurnedBalance(Arc::new(Mutex::new(balances)));
     // Set up output:
     let mut valid_packets = Vec::new();
     let mut invalid_packets = Vec::new();
     // Set up verifier:
     let mut verifier = Verifier {
-        debiter: balances.clone(),
+        debiter: balances.0.clone(),
         config_server: orgs,
     };
 
