@@ -109,7 +109,6 @@ impl Cmd {
         };
 
         // Sleep one minute to let transactions confirm
-        tokio::time::sleep(Duration::from_secs(60)).await;
         confirm_pending_txns(&pool, &solana).await?;
 
         let sol_balance_monitor = BalanceMonitor::new(

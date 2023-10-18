@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
 use solana_sdk::signature::Signature;
@@ -46,6 +46,8 @@ pub trait PendingTables {
 pub enum ConfirmPendingError<S> {
     #[error("Sqlx error: {0}")]
     SqlxError(#[from] sqlx::Error),
+    #[error("Chrono error: {0}")]
+    ChronoError(#[from] chrono::OutOfRangeError),
     #[error("Solana error: {0}")]
     SolanaError(S),
 }
@@ -60,6 +62,13 @@ where
     // Fetch all pending transactions and confirm them
     let pending = pending_tables.fetch_all_pending_txns().await?;
     for pending in pending {
+        // Sleep for at least a minute since the time of submission to
+        // give the transaction plenty of time to be confirmed
+        let time_since_submission = Utc::now() - pending.time_of_submission;
+        if Duration::minutes(1) > time_since_submission {
+            tokio::time::sleep((Duration::minutes(1) - time_since_submission).to_std()?).await;
+        }
+
         let mut txn = pending_tables.begin().await?;
         // We remove the transaction regardless of whether it has been confirmed
         // or not:
@@ -411,7 +420,7 @@ mod test {
             MockPendingTxn {
                 payer: payer.clone(),
                 amount: CONFIRMED_BURN_AMOUNT,
-                time_of_submission: Utc::now(),
+                time_of_submission: Utc::now() - Duration::minutes(1),
             },
         );
         pending_txns.insert(
@@ -419,7 +428,7 @@ mod test {
             MockPendingTxn {
                 payer: payer.clone(),
                 amount: UNCONFIRMED_BURN_AMOUNT,
-                time_of_submission: Utc::now(),
+                time_of_submission: Utc::now() - Duration::minutes(1),
             },
         );
         let mut pending_burns = HashMap::new();
