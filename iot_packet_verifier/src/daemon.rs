@@ -1,8 +1,9 @@
 use crate::{
     balances::BalanceCache,
     burner::Burner,
+    pending::confirm_pending_txns,
     settings::Settings,
-    verifier::{CachedOrgClient, ConfigServer, Verifier}, pending::confirm_pending_txns,
+    verifier::{CachedOrgClient, ConfigServer, Verifier},
 };
 use anyhow::{bail, Result};
 use file_store::{
@@ -107,7 +108,9 @@ impl Cmd {
             None
         };
 
-	confirm_pending_txns(&pool, &solana).await?;
+        // Sleep one minute to let transactions confirm
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        confirm_pending_txns(&pool, &solana).await?;
 
         let sol_balance_monitor = BalanceMonitor::new(
             solana.clone(),

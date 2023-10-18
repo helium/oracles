@@ -1,4 +1,7 @@
-use crate::{pending::{Burn, PendingTables}, verifier::Debiter};
+use crate::{
+    pending::{Burn, PendingTables},
+    verifier::Debiter,
+};
 use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
 use std::{
@@ -22,10 +25,7 @@ where
 {
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
-    pub async fn new(
-        pending_tables: &impl PendingTables,
-        solana: S,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(pending_tables: &impl PendingTables, solana: S) -> anyhow::Result<Self> {
         let mut balances = HashMap::new();
 
         for Burn {

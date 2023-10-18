@@ -4,7 +4,7 @@ use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
 use solana_sdk::signature::Signature;
 use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 /// To avoid excessive burn transaction (which cost us money), we institute a minimum
@@ -57,8 +57,6 @@ pub async fn confirm_pending_txns<S>(
 where
     S: SolanaNetwork,
 {
-    // Sleep one minute to let transactions confirm
-    tokio::time::sleep(Duration::from_secs(60)).await;
     // Fetch all pending transactions and confirm them
     let pending = pending_tables.fetch_all_pending_txns().await?;
     for pending in pending {
@@ -324,7 +322,7 @@ impl PendingTables for MockPendingTables {
         signature: &Signature,
     ) -> Result<(), sqlx::Error> {
         self.pending_txns.lock().await.insert(
-            signature.clone(),
+            *signature,
             MockPendingTxn {
                 payer: payer.clone(),
                 amount,
@@ -359,5 +357,99 @@ impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
 
     async fn commit(self) -> Result<(), sqlx::Error> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::collections::HashSet;
+
+    struct MockConfirmed(HashSet<Signature>);
+
+    #[async_trait]
+    impl SolanaNetwork for MockConfirmed {
+        type Error = std::convert::Infallible;
+        type Transaction = Signature;
+
+        async fn payer_balance(&self, _payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
+            unreachable!()
+        }
+
+        async fn make_burn_transaction(
+            &self,
+            _payer: &PublicKeyBinary,
+            _amount: u64,
+        ) -> Result<Self::Transaction, Self::Error> {
+            unreachable!()
+        }
+
+        async fn submit_transaction(
+            &self,
+            _transaction: &Self::Transaction,
+        ) -> Result<(), Self::Error> {
+            unreachable!()
+        }
+
+        async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+            Ok(self.0.contains(txn))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_confirm_pending_txns() {
+        let confirmed = Signature::new_unique();
+        let unconfirmed = Signature::new_unique();
+        let payer: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .unwrap();
+        let mut pending_txns = HashMap::new();
+        const CONFIRMED_BURN_AMOUNT: u64 = 7;
+        const UNCONFIRMED_BURN_AMOUNT: u64 = 11;
+        pending_txns.insert(
+            confirmed,
+            MockPendingTxn {
+                payer: payer.clone(),
+                amount: CONFIRMED_BURN_AMOUNT,
+                time_of_submission: Utc::now(),
+            },
+        );
+        pending_txns.insert(
+            unconfirmed,
+            MockPendingTxn {
+                payer: payer.clone(),
+                amount: UNCONFIRMED_BURN_AMOUNT,
+                time_of_submission: Utc::now(),
+            },
+        );
+        let mut pending_burns = HashMap::new();
+        pending_burns.insert(
+            payer.clone(),
+            CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
+        );
+        let pending_txns = Arc::new(Mutex::new(pending_txns));
+        let pending_burns = Arc::new(Mutex::new(pending_burns));
+        let pending_tables = MockPendingTables {
+            pending_txns,
+            pending_burns,
+        };
+        let mut confirmed_txns = HashSet::new();
+        confirmed_txns.insert(confirmed);
+        let confirmed = MockConfirmed(confirmed_txns);
+        // Confirm and resolve transactions:
+        confirm_pending_txns(&pending_tables, &confirmed)
+            .await
+            .unwrap();
+        // The amount left in the pending burns table should only be the unconfirmed
+        // burn amount:
+        assert_eq!(
+            *pending_tables
+                .pending_burns
+                .lock()
+                .await
+                .get(&payer)
+                .unwrap(),
+            UNCONFIRMED_BURN_AMOUNT,
+        );
     }
 }
