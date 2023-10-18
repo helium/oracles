@@ -264,7 +264,16 @@ impl SolanaNetwork for SolanaRpc {
     }
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
-        Ok(self.provider.confirm_transaction(txn).await?)
+        Ok(matches!(
+            self.provider
+                .get_signature_status_with_commitment_and_history(
+                    txn,
+                    CommitmentConfig::confirmed(),
+                    true,
+                )
+                .await?,
+            Some(Ok(()))
+        ))
     }
 }
 
