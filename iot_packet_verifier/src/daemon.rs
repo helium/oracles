@@ -108,7 +108,8 @@ impl Cmd {
             None
         };
 
-        // Sleep one minute to let transactions confirm
+        // Check if we have any left over pending transactions, and if we
+        // do check if they have been confirmed:
         confirm_pending_txns(&pool, &solana).await?;
 
         let sol_balance_monitor = BalanceMonitor::new(
