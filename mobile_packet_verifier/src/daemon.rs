@@ -8,13 +8,12 @@ use file_store::{
     mobile_session::DataTransferSessionIngestReport,
     FileSinkBuilder, FileStore, FileType,
 };
-use futures_util::TryFutureExt;
+
 use mobile_config::{client::AuthorizationClient, GatewayClient};
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{
-    signal,
     sync::mpsc::Receiver,
     time::{sleep_until, Duration, Instant},
 };
