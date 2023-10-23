@@ -15,7 +15,7 @@ use file_store::{
 };
 use futures_util::TryFutureExt;
 use iot_config::client::OrgClient;
-use solana::{balance_monitor::BalanceMonitor, SolanaRpc};
+use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -107,15 +107,6 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = BalanceMonitor::new(
-            solana.clone(),
-            settings
-                .solana
-                .as_ref()
-                .map(|s| s.additional_sol_balances_to_monitor())
-                .unwrap_or_else(|| Ok(Vec::new()))?,
-        )?;
-
         // Set up the balance cache:
         let balances = BalanceCache::new(&mut pool.clone(), solana.clone()).await?;
 
@@ -200,7 +191,6 @@ impl Cmd {
                     .map_err(anyhow::Error::from)
             })
             .add_task(verifier_daemon)
-            .add_task(sol_balance_monitor)
             .add_task(burner)
             .add_task(report_files_server)
             .start()

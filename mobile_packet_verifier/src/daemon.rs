@@ -113,15 +113,6 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = solana::balance_monitor::BalanceMonitor::new(
-            solana.clone(),
-            settings
-                .solana
-                .as_ref()
-                .map(|s| s.additional_sol_balances_to_monitor())
-                .unwrap_or_else(|| Ok(Vec::new()))?,
-        )?;
-
         let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
         let file_upload =
             file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
@@ -191,9 +182,6 @@ impl Cmd {
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
             daemon.run(&shutdown_listener).map_err(Error::from),
-            sol_balance_monitor
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
             event_id_purger.run(shutdown_listener.clone()),
         )?;
 
