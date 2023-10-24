@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy, rustfmt
 
@@ -49,7 +49,9 @@ jobs:
           access_token: ${{ github.token }}
 
       - name: Build
-        run: cargo build --all --release
+        env:
+          RUSTFLAGS: "-Z sanitizer=leak"
+        run: cargo +nightly build --all --release --target x86_64-unknown-linux-gnu
 
       - name: Check formatting
         run: cargo fmt  -- --check
