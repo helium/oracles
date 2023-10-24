@@ -164,7 +164,6 @@ impl Cmd {
                 .prefix(FileType::DataTransferSessionIngestReport.to_string())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .create()?;
-        // let source_join_handle = reports_server.start(shutdown_listener.clone()).await?;
 
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
