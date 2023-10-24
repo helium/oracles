@@ -94,7 +94,7 @@ impl Runner {
         poc_sink: FileSinkClient,
         hex_density_map: HexDensityMap,
     ) -> anyhow::Result<Self> {
-        let beacon_interval = settings.beacon_interval();
+        let beacon_interval = settings.beacon_interval()?;
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
         let beacon_max_retries = settings.beacon_max_retries;
         let witness_max_retries = settings.witness_max_retries;

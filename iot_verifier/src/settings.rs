@@ -1,3 +1,4 @@
+use anyhow::bail;
 use chrono::Duration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
@@ -247,7 +248,12 @@ impl Settings {
     pub fn region_params_refresh_interval(&self) -> time::Duration {
         time::Duration::from_secs(self.region_params_refresh_interval)
     }
-    pub fn beacon_interval(&self) -> Duration {
-        Duration::seconds(self.beacon_interval as i64)
+    pub fn beacon_interval(&self) -> anyhow::Result<Duration> {
+        // validate the beacon_interval value is a factor of 24, if not bail out
+        if (24 * 60 * 60) % self.beacon_interval != 0 {
+            bail!("beacon interval is not a factor of 24")
+        } else {
+            Ok(Duration::seconds(self.beacon_interval as i64))
+        }
     }
 }
