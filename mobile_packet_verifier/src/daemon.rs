@@ -1,5 +1,5 @@
 use crate::{burner::Burner, event_ids::EventIdPurger, settings::Settings};
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -8,12 +8,12 @@ use file_store::{
     mobile_session::DataTransferSessionIngestReport,
     FileSinkBuilder, FileStore, FileType,
 };
-use futures_util::TryFutureExt;
+
 use mobile_config::{client::AuthorizationClient, GatewayClient};
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
+use task_manager::{ManagedTask, TaskManager};
 use tokio::{
-    signal,
     sync::mpsc::Receiver,
     time::{sleep_until, Duration, Instant},
 };
@@ -50,11 +50,23 @@ impl<S> Daemon<S> {
     }
 }
 
+impl<S> ManagedTask for Daemon<S>
+where
+    S: SolanaNetwork,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures::future::LocalBoxFuture<'static, Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
 impl<S> Daemon<S>
 where
     S: SolanaNetwork,
 {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         // Set the initial burn period to one minute
         let mut burn_time = Instant::now() + Duration::from_secs(60);
         loop {
@@ -89,15 +101,6 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Set up the postgres pool:
         let pool = settings.database.connect("mobile-packet-verifier").await?;
         sqlx::migrate!().run(&pool).await?;
@@ -113,9 +116,8 @@ impl Cmd {
             None
         };
 
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
@@ -124,7 +126,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_data_transfer_session"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(true)
         .create()
         .await?;
@@ -134,7 +136,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_data_transfer_session"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -153,7 +155,6 @@ impl Cmd {
                 .prefix(FileType::DataTransferSessionIngestReport.to_string())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .create()?;
-        let source_join_handle = reports_server.start(shutdown_listener.clone()).await?;
 
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
@@ -170,21 +171,14 @@ impl Cmd {
 
         let event_id_purger = EventIdPurger::from_settings(pool, settings);
 
-        tokio::try_join!(
-            source_join_handle.map_err(Error::from),
-            valid_sessions_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            invalid_sessions_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            file_upload
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            daemon.run(&shutdown_listener).map_err(Error::from),
-            event_id_purger.run(shutdown_listener.clone()),
-        )?;
-
-        Ok(())
+        TaskManager::builder()
+            .add_task(file_upload_server)
+            .add_task(valid_sessions_server)
+            .add_task(invalid_sessions_server)
+            .add_task(reports_server)
+            .add_task(event_id_purger)
+            .add_task(daemon)
+            .start()
+            .await
     }
 }

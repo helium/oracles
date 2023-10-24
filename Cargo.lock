@@ -4108,6 +4108,7 @@ dependencies = [
  "sha2 0.10.6",
  "solana",
  "sqlx",
+ "task-manager",
  "thiserror",
  "tokio",
  "tonic",
