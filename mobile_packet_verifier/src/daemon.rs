@@ -116,15 +116,6 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = solana::balance_monitor::BalanceMonitor::new(
-            solana.clone(),
-            settings
-                .solana
-                .as_ref()
-                .map(|s| s.additional_sol_balances_to_monitor())
-                .unwrap_or_else(|| Ok(Vec::new()))?,
-        )?;
-
         let (file_upload, file_upload_server) =
             file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
@@ -185,7 +176,6 @@ impl Cmd {
             .add_task(valid_sessions_server)
             .add_task(invalid_sessions_server)
             .add_task(reports_server)
-            .add_task(sol_balance_monitor)
             .add_task(event_id_purger)
             .add_task(daemon)
             .start()
