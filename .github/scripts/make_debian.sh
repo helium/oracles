@@ -87,7 +87,7 @@ run_fpm()
         --deb-user helium \
         --deb-group helium \
         --config-files /opt/${ORACLE}/etc/settings.toml \
-        target/release/${ORACLE}=/opt/${ORACLE}/bin/${ORACLE} \
+        target/debug/${ORACLE}=/opt/${ORACLE}/bin/${ORACLE} \
         $CONF_PATH=/opt/${ORACLE}/etc/settings-example.toml
 
     # copy deb to /tmp for upload later
