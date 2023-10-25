@@ -561,7 +561,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
             .make_burn_transaction(&payer, CONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.submit_txn(&payer, CONFIRMED_BURN_AMOUNT, txn.get_signature())
+        pool.add_pending_transaction(&payer, CONFIRMED_BURN_AMOUNT, txn.get_signature())
             .await
             .unwrap();
         mock_network.submit_transaction(&txn).await.unwrap();
@@ -573,7 +573,7 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
             .make_burn_transaction(&payer, UNCONFIRMED_BURN_AMOUNT)
             .await
             .unwrap();
-        pool.submit_txn(&payer, UNCONFIRMED_BURN_AMOUNT, txn.get_signature())
+        pool.add_pending_transaction(&payer, UNCONFIRMED_BURN_AMOUNT, txn.get_signature())
             .await
             .unwrap();
     }

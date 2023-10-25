@@ -97,7 +97,7 @@ where
             .await
             .map_err(BurnError::SolanaError)?;
         self.pending_tables
-            .submit_txn(&payer, amount, txn.get_signature())
+            .add_pending_transaction(&payer, amount, txn.get_signature())
             .await?;
         self.solana
             .submit_transaction(&txn)
@@ -108,7 +108,9 @@ where
         // sync land, we can remove the amount burned:
         let mut pending_tables_txn = self.pending_tables.begin().await?;
 
-        pending_tables_txn.confirm_txn(txn.get_signature()).await?;
+        pending_tables_txn
+            .remove_pending_transaction(txn.get_signature())
+            .await?;
         pending_tables_txn
             .subtract_burned_amount(&payer, amount)
             .await?;

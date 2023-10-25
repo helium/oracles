@@ -32,7 +32,7 @@ pub trait PendingTables {
 
     async fn fetch_all_pending_txns(&self) -> Result<Vec<PendingTxn>, sqlx::Error>;
 
-    async fn submit_txn(
+    async fn add_pending_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
@@ -72,7 +72,7 @@ where
         let mut txn = pending_tables.begin().await?;
         // We remove the transaction regardless of whether it has been confirmed
         // or not:
-        txn.confirm_txn(&pending.signature).await?;
+        txn.remove_pending_transaction(&pending.signature).await?;
         // Check if the transaction has been confirmed. If it has, remove the
         // amount from the pending burns table
         if solana
@@ -92,7 +92,10 @@ where
 
 #[async_trait]
 pub trait PendingTablesTransaction<'a> {
-    async fn confirm_txn(&mut self, signature: &Signature) -> Result<(), sqlx::Error>;
+    async fn remove_pending_transaction(
+        &mut self,
+        signature: &Signature,
+    ) -> Result<(), sqlx::Error>;
 
     async fn subtract_burned_amount(
         &mut self,
@@ -132,7 +135,7 @@ impl PendingTables for PgPool {
             .await
     }
 
-    async fn submit_txn(
+    async fn add_pending_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
@@ -180,7 +183,10 @@ impl<'a> AddPendingBurn for &'_ mut Transaction<'a, Postgres> {
 
 #[async_trait]
 impl<'a> PendingTablesTransaction<'a> for Transaction<'a, Postgres> {
-    async fn confirm_txn(&mut self, signature: &Signature) -> Result<(), sqlx::Error> {
+    async fn remove_pending_transaction(
+        &mut self,
+        signature: &Signature,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
             .bind(&signature.to_string())
             .execute(self)
@@ -324,7 +330,7 @@ impl PendingTables for MockPendingTables {
             .collect())
     }
 
-    async fn submit_txn(
+    async fn add_pending_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
@@ -348,7 +354,10 @@ impl PendingTables for MockPendingTables {
 
 #[async_trait]
 impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
-    async fn confirm_txn(&mut self, signature: &Signature) -> Result<(), sqlx::Error> {
+    async fn remove_pending_transaction(
+        &mut self,
+        signature: &Signature,
+    ) -> Result<(), sqlx::Error> {
         self.pending_txns.lock().await.remove(signature);
         Ok(())
     }
