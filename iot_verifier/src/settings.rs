@@ -37,12 +37,11 @@ pub struct Settings {
     pub reward_offset_minutes: i64,
     #[serde(default = "default_max_witnesses_per_poc")]
     pub max_witnesses_per_poc: u64,
-    /// The cadence at which hotspots are permitted to beacon (in seconds)
+    /// The cadence at which hotspots are permitted to beacon (in hours)
+    /// this should be a factor of 24 so that we can have clear
+    /// beaconing bucket sizes
     #[serde(default = "default_beacon_interval")]
-    pub beacon_interval: i64,
-    /// Tolerance applied to beacon intervals within which beacons will be accepted (in seconds)
-    #[serde(default = "default_beacon_interval_tolerance")]
-    pub beacon_interval_tolerance: i64,
+    pub beacon_interval: u64,
     /// Trigger interval for generating a transmit scaling map
     #[serde(default = "default_transmit_scale_interval")]
     pub transmit_scale_interval: i64,
@@ -136,13 +135,8 @@ pub fn default_poc_loader_poll_time() -> u64 {
     5 * 60
 }
 
-// Default: 10 minutes
-pub fn default_beacon_interval_tolerance() -> i64 {
-    10 * 60
-}
-
 // Default: 6 hours
-pub fn default_beacon_interval() -> i64 {
+pub fn default_beacon_interval() -> u64 {
     6 * 60 * 60
 }
 
@@ -215,14 +209,6 @@ impl Settings {
 
     pub fn reward_offset_duration(&self) -> Duration {
         Duration::minutes(self.reward_offset_minutes)
-    }
-
-    pub fn beacon_interval(&self) -> Duration {
-        Duration::seconds(self.beacon_interval)
-    }
-
-    pub fn beacon_interval_tolerance(&self) -> Duration {
-        Duration::seconds(self.beacon_interval_tolerance)
     }
 
     pub fn poc_loader_window_width(&self) -> Duration {
