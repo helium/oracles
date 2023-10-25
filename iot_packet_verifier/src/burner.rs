@@ -83,14 +83,15 @@ where
     }
 
     pub async fn burn(&mut self) -> Result<(), BurnError<S::Error>> {
-        // Create burn transaction and execute it:
-
+        // Fetch the next payer and amount that should be burn. If no such burn
+        // exists, perform no action.
         let Some(Burn { payer, amount }) = self.pending_tables.fetch_next_burn().await? else {
             return Ok(());
         };
 
         tracing::info!(%amount, %payer, "Burning DC");
 
+        // Create a burn transaction and execute it:
         let txn = self
             .solana
             .make_burn_transaction(&payer, amount)
@@ -104,10 +105,10 @@ where
             .await
             .map_err(BurnError::SolanaError)?;
 
-        // Now that we have successfully executed the burn and are no longer in
-        // sync land, we can remove the amount burned:
+        // Removing the pending transaction and subtract the burn amount
+        // now that we have confirmation that the burn transaction is confirmed
+        // on chain:
         let mut pending_tables_txn = self.pending_tables.begin().await?;
-
         pending_tables_txn
             .remove_pending_transaction(txn.get_signature())
             .await?;
@@ -116,10 +117,11 @@ where
             .await?;
         pending_tables_txn.commit().await?;
 
+        // Remove the burned amount and reset the balance of the payer from the
+        // payer cache:
         let mut balance_lock = self.balances.lock().await;
         let payer_account = balance_lock.get_mut(&payer).unwrap();
         payer_account.burned -= amount;
-        // Reset the balance of the payer:
         payer_account.balance = self
             .solana
             .payer_balance(&payer)

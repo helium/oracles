@@ -59,22 +59,22 @@ pub async fn confirm_pending_txns<S>(
 where
     S: SolanaNetwork,
 {
-    // Fetch all pending transactions and confirm them
+    // Fetch all pending transactions and confirm them:
     let pending = pending_tables.fetch_all_pending_txns().await?;
     for pending in pending {
         // Sleep for at least a minute since the time of submission to
-        // give the transaction plenty of time to be confirmed
+        // give the transaction plenty of time to be confirmed:
         let time_since_submission = Utc::now() - pending.time_of_submission;
         if Duration::minutes(1) > time_since_submission {
             tokio::time::sleep((Duration::minutes(1) - time_since_submission).to_std()?).await;
         }
 
         let mut txn = pending_tables.begin().await?;
-        // We remove the transaction regardless of whether it has been confirmed
-        // or not:
+        // Remove the pending transaction from the pending transaction table
+        // regardless of whether or not it has been confirmed:
         txn.remove_pending_transaction(&pending.signature).await?;
         // Check if the transaction has been confirmed. If it has, remove the
-        // amount from the pending burns table
+        // amount from the pending burns table:
         if solana
             .confirm_transaction(&pending.signature)
             .await
@@ -83,7 +83,7 @@ where
             txn.subtract_burned_amount(&pending.payer, pending.amount)
                 .await?;
         }
-        // Commit our work.
+        // Commit our work:
         txn.commit().await?;
     }
 
