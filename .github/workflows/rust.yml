@@ -51,7 +51,7 @@ jobs:
       - name: Build
         env:
           RUSTFLAGS: "-Z sanitizer=leak"
-        run: cargo +nightly build --all --target x86_64-unknown-linux-gnu
+        run: cargo +nightly build --all --release --target x86_64-unknown-linux-gnu
 
       - name: Check formatting
         run: cargo fmt  -- --check
