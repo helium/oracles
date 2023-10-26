@@ -15,10 +15,7 @@ use task_manager::ManagedTask;
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncWriteExt, BufWriter},
-    sync::{
-        mpsc::{self, error::SendTimeoutError},
-        oneshot,
-    },
+    sync::{mpsc, oneshot},
     time,
 };
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedWrite};
@@ -53,11 +50,11 @@ pub enum Message {
     Rollback(oneshot::Sender<Result<FileManifest>>),
 }
 
-pub type MessageSender = mpsc::Sender<Message>;
-pub type MessageReceiver = mpsc::Receiver<Message>;
+pub type MessageSender = mpsc::UnboundedSender<Message>;
+pub type MessageReceiver = mpsc::UnboundedReceiver<Message>;
 
-fn message_channel(size: usize) -> (MessageSender, MessageReceiver) {
-    mpsc::channel(size)
+fn message_channel() -> (MessageSender, MessageReceiver) {
+    mpsc::unbounded_channel()
 }
 
 pub struct FileSinkBuilder {
@@ -136,7 +133,7 @@ impl FileSinkBuilder {
     }
 
     pub async fn create(self) -> Result<(FileSinkClient, FileSink)> {
-        let (tx, rx) = message_channel(50);
+        let (tx, rx) = message_channel();
 
         let client = FileSinkClient {
             sender: tx,
@@ -171,7 +168,6 @@ pub struct FileSinkClient {
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
 const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
-const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl FileSinkClient {
     pub async fn write<T: prost::Message>(
@@ -182,33 +178,30 @@ impl FileSinkClient {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let bytes = item.encode_to_vec();
         let labels = labels.into_iter().map(Label::from);
-        tokio::select! {
-            result = self.sender.send_timeout(Message::Data(on_write_tx, bytes), SEND_TIMEOUT) => match result {
-                Ok(_) => {
-                    metrics::increment_counter!(
-                        self.metric,
-                        labels
-                            .chain(std::iter::once(OK_LABEL))
-                            .collect::<Vec<Label>>()
-                    );
-                    tracing::debug!("file_sink write succeeded for {:?}", self.metric);
-                    Ok(on_write_rx)
-                }
-                Err(SendTimeoutError::Closed(_)) => {
-                    metrics::increment_counter!(
-                        self.metric,
-                        labels
-                            .chain(std::iter::once(ERROR_LABEL))
-                            .collect::<Vec<Label>>()
-                    );
-                    tracing::error!("file_sink write failed for {:?} channel closed", self.metric);
-                    Err(Error::channel())
-                }
-                Err(SendTimeoutError::Timeout(_)) => {
-                    tracing::error!("file_sink write failed due to send timeout");
-                    Err(Error::SendTimeout)
-                }
-            },
+        match self.sender.send(Message::Data(on_write_tx, bytes)) {
+            Ok(_) => {
+                metrics::increment_counter!(
+                    self.metric,
+                    labels
+                        .chain(std::iter::once(OK_LABEL))
+                        .collect::<Vec<Label>>()
+                );
+                tracing::debug!("file_sink write succeeded for {:?}", self.metric);
+                Ok(on_write_rx)
+            }
+            Err(_) => {
+                metrics::increment_counter!(
+                    self.metric,
+                    labels
+                        .chain(std::iter::once(ERROR_LABEL))
+                        .collect::<Vec<Label>>()
+                );
+                tracing::error!(
+                    "file_sink write failed for {:?} channel closed",
+                    self.metric
+                );
+                Err(Error::channel())
+            }
         }
     }
 
@@ -216,7 +209,6 @@ impl FileSinkClient {
         let (on_commit_tx, on_commit_rx) = oneshot::channel();
         self.sender
             .send(Message::Commit(on_commit_tx))
-            .await
             .map_err(|e| {
                 tracing::error!("file_sink failed to commit with {e:?}");
                 Error::channel()
@@ -228,7 +220,6 @@ impl FileSinkClient {
         let (on_rollback_tx, on_rollback_rx) = oneshot::channel();
         self.sender
             .send(Message::Rollback(on_rollback_tx))
-            .await
             .map_err(|e| {
                 tracing::error!("file_sink failed to rollback with {e:?}");
                 Error::channel()
