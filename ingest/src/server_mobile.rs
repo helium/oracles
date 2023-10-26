@@ -216,9 +216,9 @@ impl poc_mobile::PocMobile for GrpcServer {
 
     async fn submit_coverage_object(
         &self,
-        request: Request<CoverageObjectReqV1>,
+        _request: Request<CoverageObjectReqV1>,
     ) -> GrpcResult<CoverageObjectRespV1> {
-        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+	/*
         let event = request.into_inner();
 
         let report = self
@@ -231,7 +231,8 @@ impl poc_mobile::PocMobile for GrpcServer {
             })?;
 
         _ = self.coverage_object_report_sink.write(report, []).await;
-
+	*/
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let id = timestamp.to_string();
         Ok(Response::new(CoverageObjectRespV1 { id }))
     }
