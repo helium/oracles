@@ -143,6 +143,7 @@ impl FileSinkBuilder {
         metrics::register_counter!(client.metric, vec![OK_LABEL]);
 
         let mut sink = FileSink {
+            metric: self.metric,
             target_path: self.target_path,
             tmp_path: self.tmp_path,
             prefix: self.prefix,
@@ -178,8 +179,10 @@ impl FileSinkClient {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let bytes = item.encode_to_vec();
         let labels = labels.into_iter().map(Label::from);
+        let bytes_len = bytes.len();
         match self.sender.send(Message::Data(on_write_tx, bytes)) {
             Ok(_) => {
+                metrics::increment_gauge!(format!("{}_buffer_size", self.metric), bytes_len as f64);
                 metrics::increment_counter!(
                     self.metric,
                     labels
@@ -230,6 +233,8 @@ impl FileSinkClient {
 
 #[derive(Debug)]
 pub struct FileSink {
+    metric: &'static str,
+
     target_path: PathBuf,
     tmp_path: PathBuf,
     prefix: String,
@@ -361,6 +366,10 @@ impl FileSink {
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
                     Some(Message::Data(on_write_tx, bytes)) => {
+            metrics::decrement_gauge!(
+                format!("{}_buffer_size", self.metric),
+                bytes.len() as f64
+            );
                         let res = match self.write(Bytes::from(bytes)).await {
                             Ok(_) => Ok(()),
                             Err(err) => {
@@ -567,7 +576,7 @@ mod tests {
 
         file_sink_client
             .sender
-            .try_send(Message::Data(
+            .send(Message::Data(
                 on_write_tx,
                 String::into_bytes("hello".to_string()),
             ))
@@ -609,7 +618,7 @@ mod tests {
         let (on_write_tx, _on_write_rx) = oneshot::channel();
         file_sink_client
             .sender
-            .try_send(Message::Data(
+            .send(Message::Data(
                 on_write_tx,
                 String::into_bytes("hello".to_string()),
             ))
