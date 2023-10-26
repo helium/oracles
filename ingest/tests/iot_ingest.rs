@@ -370,7 +370,7 @@ async fn stream_stops_on_session_timeout() {
 }
 
 struct MockFileSinkReceiver {
-    receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
+    receiver: tokio::sync::mpsc::UnboundedReceiver<SinkMessage>,
 }
 
 impl MockFileSinkReceiver {
@@ -406,7 +406,7 @@ impl MockFileSinkReceiver {
 }
 
 fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
-    let (tx, rx) = tokio::sync::mpsc::channel(5);
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     (
         FileSinkClient {
             sender: tx,
