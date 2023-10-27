@@ -49,6 +49,8 @@ jobs:
           access_token: ${{ github.token }}
 
       - name: Build
+        env:
+          RUSTFLAGS: "--cfg tokio_unstable"
         run: cargo build --all --release
 
       - name: Check formatting

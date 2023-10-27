@@ -40,14 +40,9 @@ serde =  {version = "1", features=["derive"]}
 serde_json = "1"
 http-serde = "1"
 chrono = {version = "0", features = ["serde"]}
-tokio = { version = "1", default-features = false, features = [
-  "fs",
-  "macros",
-  "signal",
-  "rt-multi-thread",
-  "rt",
-  "process",
-  "time"
+tokio = { version = "1.33", default-features = false, features = [
+  "full",
+  "tracing"
 ] }
 tokio-stream = "0"
 sqlx = {version = "0", features = [
@@ -101,8 +96,9 @@ itertools = "*"
 data-credits = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
 helium-sub-daos = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
 price-oracle = {git = "https://github.com/helium/helium-program-library.git", tag = "v0.1.0"}
-tokio-util = "0"
+tokio-util = "0.7.10"
 tower-http = {version = "0", features = ["trace"]}
+console-subscriber = "0.2"
 
 [patch.crates-io]
 sqlx = { git = "https://github.com/helium/sqlx.git", rev = "92a2268f02e0cac6fccb34d3e926347071dbb88d" }
