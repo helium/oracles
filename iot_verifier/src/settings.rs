@@ -1,3 +1,4 @@
+use anyhow::bail;
 use chrono::Duration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
@@ -37,7 +38,7 @@ pub struct Settings {
     pub reward_offset_minutes: i64,
     #[serde(default = "default_max_witnesses_per_poc")]
     pub max_witnesses_per_poc: u64,
-    /// The cadence at which hotspots are permitted to beacon (in hours)
+    /// The cadence at which hotspots are permitted to beacon (in seconds)
     /// this should be a factor of 24 so that we can have clear
     /// beaconing bucket sizes
     #[serde(default = "default_beacon_interval")]
@@ -246,5 +247,13 @@ impl Settings {
     }
     pub fn region_params_refresh_interval(&self) -> time::Duration {
         time::Duration::from_secs(self.region_params_refresh_interval)
+    }
+    pub fn beacon_interval(&self) -> anyhow::Result<Duration> {
+        // validate the beacon_interval value is a factor of 24, if not bail out
+        if (24 * 60 * 60) % self.beacon_interval != 0 {
+            bail!("beacon interval is not a factor of 24")
+        } else {
+            Ok(Duration::seconds(self.beacon_interval as i64))
+        }
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     reward_share::GatewayPocShare,
     telemetry, Settings,
 };
-use chrono::Utc;
+use chrono::{Duration as ChronoDuration, Utc};
 use denylist::DenyList;
 use file_store::{
     file_sink::FileSinkClient,
@@ -42,7 +42,7 @@ const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 pub struct Runner {
     pool: PgPool,
-    beacon_interval: u64,
+    beacon_interval: ChronoDuration,
     max_witnesses_per_poc: u64,
     beacon_max_retries: u64,
     witness_max_retries: u64,
@@ -94,7 +94,7 @@ impl Runner {
         poc_sink: FileSinkClient,
         hex_density_map: HexDensityMap,
     ) -> anyhow::Result<Self> {
-        let beacon_interval = settings.beacon_interval;
+        let beacon_interval = settings.beacon_interval()?;
         let max_witnesses_per_poc = settings.max_witnesses_per_poc;
         let beacon_max_retries = settings.beacon_max_retries;
         let witness_max_retries = settings.witness_max_retries;
