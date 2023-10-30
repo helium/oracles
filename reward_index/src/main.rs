@@ -80,7 +80,7 @@ impl Server {
         let (receiver, server) = file_source::continuous_source::<RewardManifest>()
             .db(pool.clone())
             .store(file_store)
-            .file_type(FileType::RewardManifest)
+            .prefix(FileType::RewardManifest.to_string())
             .lookback(LookbackBehavior::StartAfter(
                 Utc.timestamp_opt(settings.start_after as i64, 0)
                     .single()

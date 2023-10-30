@@ -11,11 +11,8 @@ cache = "/var/data/iot-verified"
 #
 # denylist_url = "https://api.github.com/repos/helium/denylist/releases/latest"
 
-# Default beacon interval ( 6 hours) (in seconds)
-beacon_interval = 21600
-
-# Default beacon interval tolerance ( 10 minutes) (in seconds)
-beacon_interval_tolerance = 600
+# Default beacon interval in hours
+beacon_interval = 6
 
 # how often the ingestors write out to s3
 # this is used to pad the witness loading `after` and `before` periods

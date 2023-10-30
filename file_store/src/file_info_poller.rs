@@ -1,4 +1,4 @@
-use crate::{traits::MsgDecode, Error, FileInfo, FileStore, FileType, Result};
+use crate::{traits::MsgDecode, Error, FileInfo, FileStore, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt, TryFutureExt};
@@ -46,7 +46,7 @@ pub struct FileInfoPollerConfig<T> {
     poll_duration: Duration,
     db: sqlx::Pool<sqlx::Postgres>,
     store: FileStore,
-    file_type: FileType,
+    prefix: String,
     lookback: LookbackBehavior,
     #[builder(default = "Duration::minutes(10)")]
     offset: Duration,
@@ -114,11 +114,8 @@ where
         let mut poll_trigger = tokio::time::interval(self.poll_duration());
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
 
-        let mut latest_ts = db::latest_ts(&self.config.db, self.config.file_type).await?;
-        tracing::info!(
-            "starting FileInfoPoller for file type {}",
-            self.config.file_type
-        );
+        let mut latest_ts = db::latest_ts(&self.config.db, &self.config.prefix).await?;
+        tracing::info!(r#type = self.config.prefix, "starting FileInfoPoller",);
 
         loop {
             let after = self.after(latest_ts);
@@ -127,12 +124,12 @@ where
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
-                    tracing::info!("stopping FileInfoPoller for file type {}", self.config.file_type);
+                    tracing::info!(r#type = self.config.prefix, "stopping FileInfoPoller");
                     break;
                 }
                 _ = cleanup_trigger.tick() => self.clean(&cache).await?,
                 _ = poll_trigger.tick() => {
-                    let files = self.config.store.list_all(self.config.file_type.to_str(), after, before).await?;
+                    let files = self.config.store.list_all(&self.config.prefix, after, before).await?;
                     for file in files {
                         if !is_already_processed(&self.config.db, &cache, &file).await? {
                             if send_stream(&self.sender, &self.config.store, file.clone()).await? {
@@ -163,7 +160,7 @@ where
 
     async fn clean(&self, cache: &MemoryFileCache) -> Result {
         cache.purge(4, 0.25).await;
-        db::clean(&self.config.db, &self.config.file_type).await?;
+        db::clean(&self.config.db, &self.config.prefix).await?;
         Ok(())
     }
 
@@ -246,7 +243,7 @@ mod db {
 
     pub async fn latest_ts(
         db: impl sqlx::PgExecutor<'_>,
-        file_type: FileType,
+        file_type: &str,
     ) -> Result<Option<DateTime<Utc>>> {
         let default = Utc.timestamp_opt(0, 0).single().unwrap();
 
@@ -256,7 +253,7 @@ mod db {
         "#,
         )
         .bind(default)
-        .bind(file_type.to_str())
+        .bind(file_type)
         .fetch_one(db)
         .await?;
 
@@ -295,7 +292,7 @@ mod db {
         Ok(())
     }
 
-    pub async fn clean(db: impl sqlx::PgExecutor<'_>, file_type: &FileType) -> Result {
+    pub async fn clean(db: impl sqlx::PgExecutor<'_>, file_type: &str) -> Result {
         sqlx::query(
             r#"
         DELETE FROM files_processed where file_name in (
@@ -307,7 +304,7 @@ mod db {
         )
         "#,
         )
-        .bind(file_type.to_str())
+        .bind(file_type)
         .execute(db)
         .await?;
 

@@ -57,13 +57,11 @@ impl TransferRewards {
     pub async fn from_transfer_sessions(
         mobile_bone_price: Decimal,
         transfer_sessions: HotspotMap,
-        hotspots: &PocShares,
         epoch: &Range<DateTime<Utc>>,
     ) -> Self {
         let mut reward_sum = Decimal::ZERO;
         let rewards = transfer_sessions
             .into_iter()
-            .filter(|(pub_key, _)| hotspots.is_valid(pub_key))
             // Calculate rewards per hotspot
             .map(|(pub_key, dc_amount)| {
                 let bones = dc_to_mobile_bones(Decimal::from(dc_amount), mobile_bone_price);
@@ -128,6 +126,12 @@ impl TransferRewards {
                             .unwrap_or(0),
                     },
                 )),
+            })
+            .filter(|mobile_reward| match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::GatewayReward(ref gateway_reward)) => {
+                    gateway_reward.dc_transfer_reward > 0
+                }
+                _ => false,
             })
     }
 }
@@ -240,14 +244,6 @@ impl PocShares {
         Ok(poc_shares)
     }
 
-    pub fn is_valid(&self, hotspot: &PublicKeyBinary) -> bool {
-        if let Some(shares) = self.hotspot_shares.get(hotspot) {
-            !shares.total_shares().is_zero()
-        } else {
-            false
-        }
-    }
-
     pub fn total_shares(&self) -> Decimal {
         self.hotspot_shares
             .values()
@@ -335,12 +331,6 @@ mod test {
     use prost::Message;
     use std::collections::HashMap;
     use uuid::Uuid;
-
-    fn valid_shares() -> RadioShares {
-        let mut radio_shares: HashMap<Option<String>, Decimal> = Default::default();
-        radio_shares.insert(Some(String::new()), Decimal::ONE);
-        RadioShares { radio_shares }
-    }
 
     #[test]
     fn bytes_to_bones() {
@@ -436,10 +426,6 @@ mod test {
             data_transfer_session.num_dcs as u64,
         );
 
-        let mut hotspot_shares = HashMap::default();
-        hotspot_shares.insert(owner.clone(), valid_shares());
-        let poc_shares = PocShares { hotspot_shares };
-
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
         let total_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
@@ -451,13 +437,8 @@ mod test {
             dec!(49_180_327)
         );
 
-        let data_transfer_rewards = TransferRewards::from_transfer_sessions(
-            dec!(1.0),
-            data_transfer_map,
-            &poc_shares,
-            &epoch,
-        )
-        .await;
+        let data_transfer_rewards =
+            TransferRewards::from_transfer_sessions(dec!(1.0), data_transfer_map, &epoch).await;
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
         assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
@@ -500,14 +481,9 @@ mod test {
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
 
-        let mut hotspot_shares = HashMap::default();
-        hotspot_shares.insert(owner.clone(), valid_shares());
-        let poc_shares = PocShares { hotspot_shares };
-
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
             aggregated_data_transfer_sessions,
-            &poc_shares,
             &epoch,
         )
         .await;
