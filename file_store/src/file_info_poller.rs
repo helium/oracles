@@ -24,6 +24,10 @@ impl<T> FileInfoStream<T>
 where
     T: Send,
 {
+    pub fn new(file_info: FileInfo, stream: BoxStream<'static, T>) -> Self {
+        Self { file_info, stream }
+    }
+
     pub async fn into_stream(
         self,
         transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,

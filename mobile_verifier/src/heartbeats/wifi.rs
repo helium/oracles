@@ -5,29 +5,32 @@ use file_store::{
     wifi_heartbeat::WifiHeartbeatIngestReport,
 };
 use futures::{stream::StreamExt, TryFutureExt};
-use mobile_config::GatewayClient;
+use mobile_config::client::gateway_client::GatewayInfoResolver;
 use retainer::Cache;
 
 use std::{sync::Arc, time};
 use tokio::sync::mpsc::Receiver;
 
-pub struct HeartbeatDaemon {
+pub struct HeartbeatDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_client: GatewayClient,
+    gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
     file_sink: FileSinkClient,
 }
 
-impl HeartbeatDaemon {
+impl<GIR> HeartbeatDaemon<GIR>
+where
+    GIR: GatewayInfoResolver,
+{
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_client: GatewayClient,
+        gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
         file_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
-            gateway_client,
+            gateway_info_resolver,
             heartbeats,
             file_sink,
         }
@@ -79,7 +82,7 @@ impl HeartbeatDaemon {
             .map(Heartbeat::from);
         process_heartbeat_stream(
             reports,
-            &self.gateway_client,
+            &self.gateway_info_resolver,
             &self.file_sink,
             cache,
             transaction,

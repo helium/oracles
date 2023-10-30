@@ -12,7 +12,7 @@ use futures::stream::{Stream, StreamExt, TryStreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::client::gateway_client::GatewayInfoResolver;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{Postgres, Transaction};
@@ -236,16 +236,19 @@ impl ValidatedHeartbeat {
         self.report.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub async fn validate_heartbeats<'a>(
-        gateway_client: &'a GatewayClient,
+    pub async fn validate_heartbeats<'a, GIR>(
+        gateway_info_resolver: &'a GIR,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a
+    where
+        GIR: GatewayInfoResolver,
+    {
         heartbeats.then(move |report| {
-            let mut gateway_client = gateway_client.clone();
+            let mut gateway_info_resolver = gateway_info_resolver.clone();
             async move {
                 let (cell_type, validity, distance_to_asserted) =
-                    validate_heartbeat(&report, &mut gateway_client, epoch).await?;
+                    validate_heartbeat(&report, &mut gateway_info_resolver, epoch).await?;
 
                 Ok(Self {
                     report,
@@ -343,11 +346,14 @@ impl ValidatedHeartbeat {
 }
 
 /// Validate a heartbeat in the given epoch.
-pub async fn validate_heartbeat(
+pub async fn validate_heartbeat<GIR>(
     heartbeat: &Heartbeat,
-    gateway_client: &mut GatewayClient,
+    gateway_info_resolver: &mut GIR,
     epoch: &Range<DateTime<Utc>>,
-) -> anyhow::Result<(CellType, proto::HeartbeatValidity, Option<i64>)> {
+) -> anyhow::Result<(CellType, proto::HeartbeatValidity, Option<i64>)>
+where
+    GIR: GatewayInfoResolver,
+{
     let cell_type = match heartbeat.hb_type {
         HBType::Cbrs => match heartbeat.cbsd_id.as_ref() {
             Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
@@ -385,7 +391,7 @@ pub async fn validate_heartbeat(
         ));
     }
 
-    let Some(gateway_info) = gateway_client
+    let Some(gateway_info) = gateway_info_resolver
         .resolve_gateway_info(&heartbeat.hotspot_key)
         .await?
     else {
@@ -413,16 +419,19 @@ pub async fn validate_heartbeat(
     ))
 }
 
-pub(crate) async fn process_heartbeat_stream<'a>(
+pub(crate) async fn process_heartbeat_stream<'a, GIR>(
     reports: impl Stream<Item = Heartbeat> + 'a,
-    gateway_client: &'a GatewayClient,
+    gateway_info_resolver: &'a GIR,
     file_sink: &FileSinkClient,
     cache: &Cache<(String, DateTime<Utc>), ()>,
     mut transaction: Transaction<'_, Postgres>,
     epoch: &'a Range<DateTime<Utc>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    GIR: GatewayInfoResolver,
+{
     let mut validated_heartbeats =
-        pin!(ValidatedHeartbeat::validate_heartbeats(gateway_client, reports, epoch).await);
+        pin!(ValidatedHeartbeat::validate_heartbeats(gateway_info_resolver, reports, epoch).await);
 
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(file_sink).await?;
