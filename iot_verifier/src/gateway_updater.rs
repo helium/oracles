@@ -2,10 +2,7 @@ use crate::Settings;
 use chrono::Duration;
 use futures::{future::LocalBoxFuture, stream::StreamExt, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
-use iot_config::{
-    client::{Client as IotConfigClient, ClientError as IotConfigClientError},
-    gateway_info::{GatewayInfo, GatewayInfoResolver},
-};
+use iot_config::{client::Gateways, gateway_info::GatewayInfo};
 use std::collections::HashMap;
 use task_manager::ManagedTask;
 use tokio::sync::watch;
@@ -15,21 +12,24 @@ pub type GatewayMap = HashMap<PublicKeyBinary, GatewayInfo>;
 pub type MessageSender = watch::Sender<GatewayMap>;
 pub type MessageReceiver = watch::Receiver<GatewayMap>;
 
-pub struct GatewayUpdater {
-    iot_config_client: IotConfigClient,
+pub struct GatewayUpdater<G> {
+    gateways: G,
     refresh_interval: Duration,
     sender: MessageSender,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum GatewayUpdaterError {
-    #[error("error querying iot config service")]
-    IotConfigClient(#[from] IotConfigClientError),
+pub enum GatewayUpdaterError<GatewayError> {
+    #[error("error querying gateway api")]
+    GatewayApiError(GatewayError),
     #[error("error sending on channel")]
     SendError(#[from] watch::error::SendError<GatewayMap>),
 }
 
-impl ManagedTask for GatewayUpdater {
+impl<G> ManagedTask for GatewayUpdater<G>
+where
+    G: Gateways,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -43,17 +43,20 @@ impl ManagedTask for GatewayUpdater {
     }
 }
 
-impl GatewayUpdater {
+impl<G> GatewayUpdater<G>
+where
+    G: Gateways,
+{
     pub async fn from_settings(
         settings: &Settings,
-        mut iot_config_client: IotConfigClient,
-    ) -> Result<(MessageReceiver, Self), GatewayUpdaterError> {
-        let gateway_map = refresh_gateways(&mut iot_config_client).await?;
+        mut gateways: G,
+    ) -> Result<(MessageReceiver, Self), GatewayUpdaterError<G::Error>> {
+        let gateway_map = refresh_gateways(&mut gateways).await?;
         let (sender, receiver) = watch::channel(gateway_map);
         Ok((
             receiver,
             Self {
-                iot_config_client,
+                gateways,
                 refresh_interval: settings.gateway_refresh_interval(),
                 sender,
             },
@@ -78,9 +81,9 @@ impl GatewayUpdater {
         Ok(())
     }
 
-    async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError> {
+    async fn handle_refresh_tick(&mut self) -> Result<(), GatewayUpdaterError<G::Error>> {
         tracing::info!("handling refresh tick");
-        let updated_gateway_map = refresh_gateways(&mut self.iot_config_client).await?;
+        let updated_gateway_map = refresh_gateways(&mut self.gateways).await?;
         let gateway_count = updated_gateway_map.len();
         if gateway_count > 0 {
             tracing::info!("completed refreshing gateways, total gateways: {gateway_count}");
@@ -92,14 +95,20 @@ impl GatewayUpdater {
     }
 }
 
-pub async fn refresh_gateways(
-    iot_config_client: &mut IotConfigClient,
-) -> Result<GatewayMap, GatewayUpdaterError> {
+pub async fn refresh_gateways<G>(
+    gateways: &mut G,
+) -> Result<GatewayMap, GatewayUpdaterError<G::Error>>
+where
+    G: Gateways,
+{
     tracing::info!("refreshing gateways");
-    let mut gateways = GatewayMap::new();
-    let mut gw_stream = iot_config_client.stream_gateways_info().await?;
+    let mut gateway_map = GatewayMap::new();
+    let mut gw_stream = gateways
+        .stream_gateways_info()
+        .await
+        .map_err(GatewayUpdaterError::GatewayApiError)?;
     while let Some(gateway_info) = gw_stream.next().await {
-        gateways.insert(gateway_info.address.clone(), gateway_info);
+        gateway_map.insert(gateway_info.address.clone(), gateway_info);
     }
-    Ok(gateways)
+    Ok(gateway_map)
 }

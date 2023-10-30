@@ -408,10 +408,7 @@ impl MockFileSinkReceiver {
 fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
     let (tx, rx) = tokio::sync::mpsc::channel(5);
     (
-        FileSinkClient {
-            sender: tx,
-            metric: "metric",
-        },
+        FileSinkClient::new(tx, "metric"),
         MockFileSinkReceiver { receiver: rx },
     )
 }

@@ -6,28 +6,30 @@ use file_store::{
     wifi_heartbeat::WifiHeartbeatIngestReport,
 };
 use futures::{stream::StreamExt, TryFutureExt};
-use mobile_config::GatewayClient;
+use mobile_config::client::gateway_client::GatewayInfoResolver;
 use retainer::Cache;
-
 use std::{
     sync::Arc,
     time::{self, Instant},
 };
 use tokio::sync::mpsc::Receiver;
 
-pub struct HeartbeatDaemon {
+pub struct HeartbeatDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_client: GatewayClient,
+    gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
     modeled_coverage_start: DateTime<Utc>,
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
 }
 
-impl HeartbeatDaemon {
+impl<GIR> HeartbeatDaemon<GIR>
+where
+    GIR: GatewayInfoResolver,
+{
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_client: GatewayClient,
+        gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
         modeled_coverage_start: DateTime<Utc>,
         heartbeat_sink: FileSinkClient,
@@ -35,7 +37,7 @@ impl HeartbeatDaemon {
     ) -> Self {
         Self {
             pool,
-            gateway_client,
+            gateway_info_resolver,
             heartbeats,
             modeled_coverage_start,
             heartbeat_sink,
@@ -103,8 +105,8 @@ impl HeartbeatDaemon {
             .map(Heartbeat::from);
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
+                &self.gateway_info_resolver,
                 heartbeats,
-                &self.gateway_client,
                 covered_hex_cache,
                 &epoch,
             ),

@@ -14,6 +14,7 @@ mod telemetry;
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use std::error::Error;
 
 pub enum GatewayResolution {
     GatewayNotFound,
@@ -21,35 +22,37 @@ pub enum GatewayResolution {
     AssertedLocation(u64),
 }
 
-#[async_trait]
-pub trait GatewayResolver {
-    type Error: std::error::Error + Send + Sync + 'static;
+// #[async_trait::async_trait]
+// pub trait MobileGatewayInfoResolver: Clone + Send + Sync + 'static {
+//     type Error: Error + Send + Sync + 'static;
+//
+//     async fn resolve_gateway(
+//         &self,
+//         address: &PublicKeyBinary,
+//     ) -> Result<GatewayResolution, Self::Error>;
+//
+// }
 
-    async fn resolve_gateway(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error>;
-}
-
-#[async_trait]
-impl GatewayResolver for mobile_config::GatewayClient {
-    type Error = mobile_config::client::ClientError;
-
-    async fn resolve_gateway(
-        &self,
-        address: &helium_crypto::PublicKeyBinary,
-    ) -> Result<GatewayResolution, Self::Error> {
-        use mobile_config::gateway_info::{GatewayInfo, GatewayInfoResolver};
-        match self.resolve_gateway_info(address).await? {
-            None => Ok(GatewayResolution::GatewayNotFound),
-            Some(GatewayInfo {
-                metadata: Some(metadata),
-                ..
-            }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
-            Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
-        }
-    }
-}
+// #[async_trait]
+// impl MobileGatewayInfoResolver for mobile_config::GatewayClient {
+//     type Error = mobile_config::client::ClientError;
+//
+//     async fn resolve_gateway(
+//         &self,
+//         address: &PublicKeyBinary,
+//     ) -> Result<GatewayResolution, Self::Error> {
+//         use mobile_config::gateway_info::GatewayInfo;
+//         use mobile_config::client::gateway_client::GatewayInfoResolver;
+//         match self.resolve_gateway_info(address).await? {
+//             None => Ok(GatewayResolution::GatewayNotFound),
+//             Some(GatewayInfo {
+//                 metadata: Some(metadata),
+//                 ..
+//             }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
+//             Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
+//         }
+//     }
+// }
 
 #[async_trait]
 pub trait IsAuthorized {
@@ -71,6 +74,7 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
         address: &helium_crypto::PublicKeyBinary,
         role: helium_proto::services::mobile_config::NetworkKeyRole,
     ) -> Result<bool, Self::Error> {
+        use mobile_config::client::authorization_client::AuthorizationVerifier;
         self.verify_authorized_key(address, role).await
     }
 }

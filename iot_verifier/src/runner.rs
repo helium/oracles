@@ -24,7 +24,7 @@ use helium_proto::services::poc_lora::{
     InvalidParticipantSide, InvalidReason, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1,
     LoraPocV1, VerificationStatus,
 };
-use iot_config::client::Client as IotConfigClient;
+use iot_config::client::Gateways;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -40,7 +40,7 @@ const WITNESS_REDUNDANCY: u32 = 4;
 const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
-pub struct Runner {
+pub struct Runner<G> {
     pool: PgPool,
     beacon_interval: ChronoDuration,
     max_witnesses_per_poc: u64,
@@ -50,7 +50,7 @@ pub struct Runner {
     deny_list_trigger_interval: Duration,
     deny_list: DenyList,
     gateway_cache: GatewayCache,
-    region_cache: RegionCache,
+    region_cache: RegionCache<G>,
     invalid_beacon_sink: FileSinkClient,
     invalid_witness_sink: FileSinkClient,
     poc_sink: FileSinkClient,
@@ -68,7 +68,10 @@ pub enum FilterStatus {
     Include,
 }
 
-impl ManagedTask for Runner {
+impl<G> ManagedTask for Runner<G>
+where
+    G: Gateways,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -82,11 +85,14 @@ impl ManagedTask for Runner {
     }
 }
 
-impl Runner {
+impl<G> Runner<G>
+where
+    G: Gateways,
+{
     #[allow(clippy::too_many_arguments)]
     pub async fn from_settings(
         settings: &Settings,
-        iot_config_client: IotConfigClient,
+        gateways: G,
         pool: PgPool,
         gateway_cache: GatewayCache,
         invalid_beacon_sink: FileSinkClient,
@@ -100,7 +106,7 @@ impl Runner {
         let witness_max_retries = settings.witness_max_retries;
         let deny_list_latest_url = settings.denylist.denylist_url.clone();
         let mut deny_list = DenyList::new(&settings.denylist)?;
-        let region_cache = RegionCache::from_settings(settings, iot_config_client)?;
+        let region_cache = RegionCache::from_settings(settings, gateways)?;
         // force update to latest in order to update the tag name
         // when first run, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0

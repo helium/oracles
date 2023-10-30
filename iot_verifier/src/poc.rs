@@ -22,11 +22,14 @@ use helium_proto::{
     },
     BlockchainRegionParamV1, Region as ProtoRegion,
 };
-use iot_config::gateway_info::{GatewayInfo, GatewayMetadata};
+use iot_config::{
+    client::Gateways,
+    gateway_info::{GatewayInfo, GatewayMetadata},
+};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use std::f64::consts::PI;
+use std::{convert::Infallible, f64::consts::PI};
 
 pub type GenericVerifyResult<T = ()> = std::result::Result<T, InvalidResponse>;
 
@@ -78,7 +81,7 @@ pub struct VerifyWitnessesResult {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError {
+pub enum VerificationError<GatewayApiError> {
     #[error("not found: {0}")]
     NotFound(&'static str),
     #[error("last beacon error: {0}")]
@@ -88,7 +91,7 @@ pub enum VerificationError {
     #[error("error querying gateway info from iot config service")]
     GatewayCache(#[from] GatewayCacheError),
     #[error("error querying region info from iot config service")]
-    RegionCache(#[from] RegionCacheError),
+    RegionCache(#[from] RegionCacheError<GatewayApiError>),
 }
 
 impl Poc {
@@ -109,15 +112,18 @@ impl Poc {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn verify_beacon(
+    pub async fn verify_beacon<G>(
         &mut self,
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
-        region_cache: &RegionCache,
+        region_cache: &RegionCache<G>,
         pool: &PgPool,
         beacon_interval: Duration,
         deny_list: &DenyList,
-    ) -> Result<VerifyBeaconResult, VerificationError> {
+    ) -> Result<VerifyBeaconResult, VerificationError<G::Error>>
+    where
+        G: Gateways,
+    {
         let beacon = &self.beacon_report.report;
         let beaconer_pub_key = beacon.pub_key.clone();
         // get the beaconer info from our follower
@@ -179,7 +185,7 @@ impl Poc {
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
         deny_list: &DenyList,
-    ) -> Result<VerifyWitnessesResult, VerificationError> {
+    ) -> Result<VerifyWitnessesResult, VerificationError<Infallible>> {
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<IotWitnessIngestReport> = Vec::new();
         let mut existing_gateways: Vec<PublicKeyBinary> = Vec::new();
@@ -237,7 +243,7 @@ impl Poc {
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &HexDensityMap,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
+    ) -> Result<IotVerifiedWitnessReport, VerificationError<Infallible>> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower

@@ -14,23 +14,28 @@ use file_store::{
     FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use iot_config::client::OrgClient;
+use iot_config::client::{org_client::Orgs, OrgClient};
 use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::sync::{mpsc::Receiver, Mutex};
 
-struct Daemon {
+type SharedCachedOrgClient<T> = Arc<Mutex<CachedOrgClient<T>>>;
+
+struct Daemon<O> {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<CachedOrgClient>>>,
+    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, SharedCachedOrgClient<O>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
     minimum_allowed_balance: u64,
 }
 
-impl ManagedTask for Daemon {
+impl<O> ManagedTask for Daemon<O>
+where
+    O: Orgs,
+{
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
@@ -39,7 +44,10 @@ impl ManagedTask for Daemon {
     }
 }
 
-impl Daemon {
+impl<O> Daemon<O>
+where
+    O: Orgs,
+{
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("Starting verifier daemon");
         loop {

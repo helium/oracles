@@ -4,7 +4,7 @@ pub mod wifi;
 use crate::{
     cell_type::{CellType, CellTypeLabel},
     coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
-    GatewayResolution, GatewayResolver,
+    GatewayResolution,
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
@@ -16,6 +16,7 @@ use futures::stream::{Stream, StreamExt, TryStreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
+use mobile_config::client::gateway_client::GatewayInfoResolver;
 use retainer::Cache;
 use rust_decimal::Decimal;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
@@ -385,15 +386,19 @@ impl ValidatedHeartbeat {
         self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub fn validate_heartbeats<'a>(
+    pub fn validate_heartbeats<'a, GIR>(
+        gateway_info_resolver: &'a GIR,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
-        gateway_client: &'a impl GatewayResolver,
         coverage_cache: &'a CoveredHexCache,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a
+    where
+        GIR: GatewayInfoResolver,
+    {
         heartbeats.then(move |heartbeat| async move {
             let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
-                validate_heartbeat(&heartbeat, gateway_client, coverage_cache, epoch).await?;
+                validate_heartbeat(&heartbeat, gateway_info_resolver, coverage_cache, epoch)
+                    .await?;
 
             Ok(Self {
                 heartbeat,
@@ -500,9 +505,9 @@ impl ValidatedHeartbeat {
 }
 
 /// Validate a heartbeat in the given epoch.
-pub async fn validate_heartbeat(
+pub async fn validate_heartbeat<GIR>(
     heartbeat: &Heartbeat,
-    gateway_resolver: &impl GatewayResolver,
+    gateway_info_resolver: &GIR,
     coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<(
@@ -510,7 +515,10 @@ pub async fn validate_heartbeat(
     Option<i64>,
     Option<DateTime<Utc>>,
     proto::HeartbeatValidity,
-)> {
+)>
+where
+    GIR: GatewayInfoResolver,
+{
     let cell_type = match heartbeat.hb_type {
         HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
             Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
@@ -556,30 +564,31 @@ pub async fn validate_heartbeat(
         ));
     }
 
-    let distance_to_asserted = match gateway_resolver
-        .resolve_gateway(&heartbeat.hotspot_key)
+    let Some(gateway_info) = gateway_info_resolver
+        .resolve_gateway_info(&heartbeat.hotspot_key)
         .await?
-    {
-        GatewayResolution::GatewayNotFound => {
-            return Ok((
-                cell_type,
-                None,
-                None,
-                proto::HeartbeatValidity::GatewayNotFound,
-            ))
-        }
-        GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
-            return Ok((
-                cell_type,
-                None,
-                None,
-                proto::HeartbeatValidity::GatewayNotAsserted,
-            ))
-        }
-        GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
-            Some(heartbeat.asserted_distance(location)?)
-        }
-        _ => None,
+    else {
+        return Ok((
+            cell_type,
+            None,
+            None,
+            proto::HeartbeatValidity::GatewayNotFound,
+        ));
+    };
+
+    if heartbeat.hb_type == HbType::Wifi && gateway_info.metadata.is_none() {
+        return Ok((
+            cell_type,
+            None,
+            None,
+            proto::HeartbeatValidity::GatewayNotAsserted,
+        ));
+    }
+
+    let distance_to_asserted = if heartbeat.hb_type == HbType::Wifi {
+        Some(heartbeat.asserted_distance(gateway_info.metadata.unwrap().location)?)
+    } else {
+        None
     };
 
     let Some(coverage_object) = heartbeat.coverage_object else {
@@ -621,7 +630,6 @@ pub(crate) async fn process_validated_heartbeats(
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
     let mut validated_heartbeats = pin!(validated_heartbeats);
-
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
 
