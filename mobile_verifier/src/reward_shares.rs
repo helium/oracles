@@ -605,7 +605,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c1.clone()),
                 hotspot_key: g1.clone(),
-                coverage_object: cov_obj_1,
+                coverage_object: Some(cov_obj_1),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: c1ct,
                 location_validation_timestamp: None,
@@ -614,7 +614,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: g1.clone(),
-                coverage_object: cov_obj_2,
+                coverage_object: Some(cov_obj_2),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: c2ct,
                 location_validation_timestamp: None,
@@ -623,7 +623,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c3.clone()),
                 hotspot_key: g2.clone(),
-                coverage_object: cov_obj_3,
+                coverage_object: Some(cov_obj_3),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: c1ct,
                 location_validation_timestamp: None,
@@ -632,7 +632,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c4.clone()),
                 hotspot_key: g2.clone(),
-                coverage_object: cov_obj_4,
+                coverage_object: Some(cov_obj_4),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: c1ct,
                 location_validation_timestamp: None,
@@ -641,7 +641,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: g3.clone(),
-                coverage_object: cov_obj_5,
+                coverage_object: Some(cov_obj_5),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: g3ct,
                 location_validation_timestamp: Some(timestamp),
@@ -650,7 +650,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: g4.clone(),
-                coverage_object: cov_obj_6,
+                coverage_object: Some(cov_obj_6),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: g4ct,
                 location_validation_timestamp: None,
@@ -659,7 +659,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: g5.clone(),
-                coverage_object: cov_obj_7,
+                coverage_object: Some(cov_obj_7),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: g5ct,
                 location_validation_timestamp: Some(timestamp),
@@ -867,7 +867,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
-                coverage_object: cov_obj_2,
+                coverage_object: Some(cov_obj_2),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 location_validation_timestamp: None,
@@ -876,7 +876,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c4.clone()),
                 hotspot_key: gw3.clone(),
-                coverage_object: cov_obj_4,
+                coverage_object: Some(cov_obj_4),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c4).unwrap(),
                 location_validation_timestamp: None,
@@ -885,7 +885,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c5.clone()),
                 hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_5,
+                coverage_object: Some(cov_obj_5),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c5).unwrap(),
                 location_validation_timestamp: None,
@@ -894,7 +894,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c6.clone()),
                 hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_6,
+                coverage_object: Some(cov_obj_6),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c6).unwrap(),
                 location_validation_timestamp: None,
@@ -903,7 +903,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c7.clone()),
                 hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_7,
+                coverage_object: Some(cov_obj_7),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c7).unwrap(),
                 location_validation_timestamp: None,
@@ -912,7 +912,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c8.clone()),
                 hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_8,
+                coverage_object: Some(cov_obj_8),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c8).unwrap(),
                 location_validation_timestamp: None,
@@ -921,7 +921,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c9.clone()),
                 hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_9,
+                coverage_object: Some(cov_obj_9),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c9).unwrap(),
                 location_validation_timestamp: None,
@@ -930,7 +930,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c10.clone()),
                 hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_10,
+                coverage_object: Some(cov_obj_10),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c10).unwrap(),
                 location_validation_timestamp: None,
@@ -939,7 +939,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c11.clone()),
                 hotspot_key: gw4.clone(),
-                coverage_object: cov_obj_11,
+                coverage_object: Some(cov_obj_11),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c11).unwrap(),
                 location_validation_timestamp: None,
@@ -948,7 +948,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c12.clone()),
                 hotspot_key: gw5.clone(),
-                coverage_object: cov_obj_12,
+                coverage_object: Some(cov_obj_12),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c12).unwrap(),
                 location_validation_timestamp: None,
@@ -957,7 +957,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c13.clone()),
                 hotspot_key: gw6.clone(),
-                coverage_object: cov_obj_13,
+                coverage_object: Some(cov_obj_13),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c13).unwrap(),
                 location_validation_timestamp: None,
@@ -966,7 +966,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c14.clone()),
                 hotspot_key: gw7.clone(),
-                coverage_object: cov_obj_14,
+                coverage_object: Some(cov_obj_14),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
                 location_validation_timestamp: None,
@@ -976,7 +976,7 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: cov_obj_15,
+                coverage_object: Some(cov_obj_15),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1),
@@ -985,7 +985,7 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: cov_obj_16,
+                coverage_object: Some(cov_obj_16),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -994,7 +994,7 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: cov_obj_17,
+                coverage_object: Some(cov_obj_17),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(10000),
@@ -1199,7 +1199,7 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: g1_cov_obj,
+                coverage_object: Some(g1_cov_obj),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1),
@@ -1210,7 +1210,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                coverage_object: g2_cov_obj,
+                coverage_object: Some(g2_cov_obj),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
             },
@@ -1319,7 +1319,7 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: Uuid::new_v4(),
+                coverage_object: Some(Uuid::new_v4()),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1000),
@@ -1328,7 +1328,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
-                coverage_object: Uuid::new_v4(),
+                coverage_object: Some(Uuid::new_v4()),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 location_validation_timestamp: None,

@@ -50,7 +50,7 @@ VALUES
     .bind(&cbsd_id)
     .bind(&hotspot_1)
     .bind(&hotspot_2)
-     .bind(coverage_object)
+    .bind(coverage_object)
     .execute(&pool)
     .await?;
 
@@ -75,7 +75,7 @@ VALUES
             cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE,
             latest_timestamp,
-            coverage_object,
+            coverage_object: Some(coverage_object),
         }]
     );
 
@@ -137,7 +137,7 @@ VALUES
             cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE,
             latest_timestamp,
-            coverage_object,
+            coverage_object: Some(coverage_object),
         }]
     );
 

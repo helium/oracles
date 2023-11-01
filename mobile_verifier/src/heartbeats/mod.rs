@@ -224,7 +224,7 @@ pub struct HeartbeatRow {
     // wifi hb only
     pub location_validation_timestamp: Option<DateTime<Utc>>,
     pub distance_to_asserted: Option<i64>,
-    pub coverage_object: Uuid,
+    pub coverage_object: Option<Uuid>,
     pub latest_timestamp: DateTime<Utc>,
 }
 
@@ -235,7 +235,7 @@ pub struct HeartbeatReward {
     // cell hb only
     pub cbsd_id: Option<String>,
     pub reward_weight: Decimal,
-    pub coverage_object: Uuid,
+    pub coverage_object: Option<Uuid>,
     pub latest_timestamp: DateTime<Utc>,
 }
 
