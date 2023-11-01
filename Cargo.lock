@@ -1130,17 +1130,17 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#d94ed4b4046263eb78003d484d94ad3cbff7a55f"
+source = "git+https://github.com/helium/proto?branch=map/modeled-coverage-v2#02a0aae76e7ea9576af271582a071c24b31f0e53"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=master)",
+ "helium-proto",
  "prost",
  "rand 0.8.5",
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -2543,7 +2543,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "hex-literal",
  "http",
  "lazy_static",
@@ -3015,20 +3015,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "helium-proto"
-version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#d94ed4b4046263eb78003d484d94ad3cbff7a55f"
-dependencies = [
- "bytes",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
 name = "helium-sub-daos"
 version = "0.0.1"
 source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
@@ -3358,7 +3344,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "http",
  "metrics",
  "metrics-exporter-prometheus",
@@ -3424,7 +3410,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "hextree",
  "http",
  "http-serde",
@@ -3463,7 +3449,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "http",
  "http-serde",
  "iot-config",
@@ -3502,7 +3488,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "http-serde",
  "humantime",
  "iot-config",
@@ -4058,7 +4044,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "hextree",
  "http",
  "http-serde",
@@ -4094,7 +4080,7 @@ dependencies = [
  "futures",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "mobile-config",
  "prost",
  "rand 0.8.5",
@@ -4121,7 +4107,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "http",
  "http-serde",
  "metrics",
@@ -4157,7 +4143,7 @@ dependencies = [
  "futures-util",
  "h3o",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "http-serde",
  "humantime",
  "lazy_static",
@@ -4780,7 +4766,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "http",
  "hyper",
  "jsonrpsee",
@@ -4857,7 +4843,7 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
@@ -5401,7 +5387,7 @@ dependencies = [
  "futures",
  "futures-util",
  "helium-crypto",
- "helium-proto 0.1.0 (git+https://github.com/helium/proto?branch=map/modeled-coverage-v2)",
+ "helium-proto",
  "http-serde",
  "lazy_static",
  "metrics",
