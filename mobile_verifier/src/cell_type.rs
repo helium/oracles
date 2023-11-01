@@ -13,7 +13,6 @@ pub const CELLTYPE_SERCCOMM_OUTDOOR: &str = "P27-SCO4255PA10";
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone, Serialize, sqlx::Type)]
 #[sqlx(type_name = "cell_type")]
 #[sqlx(rename_all = "lowercase")]
-
 pub enum CellType {
     Nova436H = 0,
     Nova430I = 1,
@@ -23,6 +22,7 @@ pub enum CellType {
     CellTypeNone = 5,
     NovaGenericWifiIndoor = 6,
 }
+
 #[derive(PartialEq)]
 pub enum CellTypeLabel {
     CellTypeLabelNone = 0,

@@ -73,7 +73,7 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            reward_weight: Decimal::ONE
+            reward_weight: Decimal::ONE,
             latest_timestamp,
             coverage_object,
         }]

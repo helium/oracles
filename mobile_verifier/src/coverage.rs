@@ -7,8 +7,10 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use file_store::{
-    coverage::CoverageObjectIngestReport, file_info_poller::FileInfoStream,
-    file_sink::FileSinkClient, traits::TimestampEncode,
+    coverage::{self, CoverageObjectIngestReport},
+    file_info_poller::FileInfoStream,
+    file_sink::FileSinkClient,
+    traits::TimestampEncode,
 };
 use futures::{
     stream::{BoxStream, Stream, StreamExt},
@@ -28,7 +30,10 @@ use sqlx::{FromRow, Pool, Postgres, Transaction, Type};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
-use crate::IsAuthorized;
+use crate::{
+    heartbeats::{HbType, KeyType, OwnedKeyType},
+    IsAuthorized,
+};
 
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Type)]
 #[sqlx(type_name = "signal_level")]
@@ -130,6 +135,13 @@ impl CoverageObject {
         matches!(self.validity, CoverageObjectValidity::Valid)
     }
 
+    pub fn key(&self) -> KeyType<'_> {
+        match self.coverage_object.key_type {
+            coverage::KeyType::CbsdId(ref cbsd) => KeyType::Cbrs(cbsd.as_str()),
+            coverage::KeyType::HotspotKey(ref hotspot_key) => KeyType::Wifi(hotspot_key),
+        }
+    }
+
     pub fn validate_coverage_objects<'a>(
         auth_client: &'a impl IsAuthorized,
         coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
@@ -149,7 +161,7 @@ impl CoverageObject {
                     coverage_object: Some(proto::CoverageObjectReqV1 {
                         pub_key: self.coverage_object.pub_key.clone().into(),
                         uuid: Vec::from(self.coverage_object.uuid.into_bytes()),
-                        cbsd_id: self.coverage_object.cbsd_id.clone(),
+                        key_type: Some(self.coverage_object.key_type.clone().into()),
                         coverage_claim_time: self
                             .coverage_object
                             .coverage_claim_time
@@ -163,6 +175,7 @@ impl CoverageObject {
                             .map(Into::into)
                             .collect(),
                         signature: self.coverage_object.signature.clone(),
+                        trust_score: self.coverage_object.trust_score,
                     }),
                     validity: self.validity as i32,
                 },
@@ -174,12 +187,13 @@ impl CoverageObject {
 
     pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
+        let key = self.key().to_owned();
         for hex in self.coverage_object.coverage {
             let location: u64 = hex.location.into();
             sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
-                  (uuid, hex, indoor, cbsd_id, signal_level, coverage_claim_time, inserted_at)
+                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at)
                 VALUES
                   ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (uuid, hex) DO UPDATE SET
@@ -189,7 +203,7 @@ impl CoverageObject {
             .bind(self.coverage_object.uuid)
             .bind(location as i64)
             .bind(self.coverage_object.indoor)
-            .bind(&self.coverage_object.cbsd_id)
+            .bind(&key)
             .bind(SignalLevel::from(hex.signal_level))
             .bind(self.coverage_object.coverage_claim_time)
             .bind(insertion_time)
@@ -219,7 +233,7 @@ pub struct HexCoverage {
     pub uuid: Uuid,
     pub hex: i64,
     pub indoor: bool,
-    pub cbsd_id: String,
+    pub radio_key: OwnedKeyType,
     pub signal_level: SignalLevel,
     pub coverage_claim_time: DateTime<Utc>,
     pub inserted_at: DateTime<Utc>,
@@ -227,7 +241,7 @@ pub struct HexCoverage {
 
 #[derive(Eq)]
 struct CoverageLevel {
-    cbsd_id: String,
+    radio_key: OwnedKeyType,
     coverage_claim_time: DateTime<Utc>,
     hotspot: PublicKeyBinary,
     indoor: bool,
@@ -268,7 +282,7 @@ impl CoverageLevel {
 
 #[derive(PartialEq, Debug)]
 pub struct CoverageReward {
-    pub cbsd_id: String,
+    pub radio_key: OwnedKeyType,
     pub points: Decimal,
     pub hotspot: PublicKeyBinary,
 }
@@ -279,7 +293,7 @@ pub const MAX_RADIOS_PER_HEX: usize = 5;
 pub trait CoveredHexStream {
     async fn covered_hex_stream<'a>(
         &'a self,
-        cbsd_id: &'a str,
+        radio_key: KeyType<'a>,
         coverage_obj: &'a Uuid,
         period_end: DateTime<Utc>,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
@@ -296,13 +310,13 @@ pub struct Seniority {
 
 impl Seniority {
     pub async fn fetch_latest(
+        key: KeyType<'_>,
         exec: &mut Transaction<'_, Postgres>,
-        cbsd_id: &str,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as(
-            "SELECT * FROM seniority WHERE cbsd_id = $1 ORDER BY last_heartbeat DESC LIMIT 1",
+            "SELECT * FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC LIMIT 1",
         )
-        .bind(cbsd_id)
+        .bind(key)
         .fetch_optional(&mut *exec)
         .await
     }
@@ -312,7 +326,7 @@ impl Seniority {
 impl CoveredHexStream for Pool<Postgres> {
     async fn covered_hex_stream<'a>(
         &'a self,
-        cbsd_id: &'a str,
+        key: KeyType<'a>,
         coverage_obj: &'a Uuid,
         period_end: DateTime<Utc>,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
@@ -321,27 +335,27 @@ impl CoveredHexStream for Pool<Postgres> {
             r#"
             SELECT * FROM seniority
             WHERE
-              cbsd_id = $1 AND
+              radio_key = $1 AND
               inserted_at <= $2
             ORDER BY inserted_at DESC
             LIMIT 1
             "#,
         )
-        .bind(cbsd_id)
+        .bind(key)
         .bind(period_end)
         .fetch_one(self)
         .await?;
 
         // We can safely delete any seniority objects that appear before the latest in the reward period
-        sqlx::query("DELETE FROM seniority WHERE inserted_at < $1 AND cbsd_id = $2")
+        sqlx::query("DELETE FROM seniority WHERE inserted_at < $1 AND radio_key = $2")
             .bind(seniority.inserted_at)
-            .bind(cbsd_id)
+            .bind(key)
             .execute(self)
             .await?;
 
         Ok(
-            sqlx::query_as("SELECT * FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2")
-                .bind(cbsd_id)
+            sqlx::query_as("SELECT * FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
+                .bind(key)
                 .bind(coverage_obj)
                 .fetch(self)
                 .map_ok(move |hc| HexCoverage {
@@ -383,7 +397,7 @@ impl CoveredHexes {
             indoor,
             signal_level,
             coverage_claim_time,
-            cbsd_id,
+            radio_key,
             ..
         }) = covered_hexes.next().await.transpose()?
         {
@@ -393,7 +407,7 @@ impl CoveredHexes {
                 .entry(signal_level)
                 .or_default()
                 .push(CoverageLevel {
-                    cbsd_id,
+                    radio_key,
                     coverage_claim_time,
                     indoor,
                     signal_level,
@@ -418,7 +432,7 @@ impl CoveredHexes {
                             .map(|cl| CoverageReward {
                                 points: cl.coverage_points().unwrap(),
                                 hotspot: cl.hotspot,
-                                cbsd_id: cl.cbsd_id,
+                                radio_key: cl.radio_key,
                             })
                     })
                 })
@@ -429,7 +443,7 @@ impl CoveredHexes {
     }
 }
 
-type CoverageClaimTimeKey = (String, Option<Uuid>);
+type CoverageClaimTimeKey = ((String, HbType), Option<Uuid>);
 
 pub struct CoverageClaimTimeCache {
     cache: Arc<Cache<CoverageClaimTimeKey, DateTime<Utc>>>,
@@ -453,22 +467,22 @@ impl CoverageClaimTimeCache {
         Self { cache }
     }
 
-    pub async fn fetch_coverage_claim_time(
+    pub async fn fetch_coverage_claim_time<'a, 'b>(
         &self,
-        cbsd_id: &str,
-        coverage_object: &Option<Uuid>,
-        exec: &mut Transaction<'_, Postgres>,
+        radio_key: KeyType<'a>,
+        coverage_object: &'a Option<Uuid>,
+        exec: &mut Transaction<'b, Postgres>,
     ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
-        let key = (cbsd_id.to_string(), *coverage_object);
+        let key = (radio_key.to_id(), *coverage_object);
         if let Some(coverage_claim_time) = self.cache.get(&key).await {
             Ok(Some(*coverage_claim_time))
         } else {
             let coverage_claim_time: Option<DateTime<Utc>> = sqlx::query_scalar(
                 r#"
-                SELECT coverage_claim_time FROM hex_coverage WHERE cbsd_id = $1 AND uuid = $2 LIMIT 1
+                SELECT coverage_claim_time FROM hex_coverage WHERE key = $1 AND uuid = $2 LIMIT 1
                 "#,
             )
-            .bind(cbsd_id)
+            .bind(radio_key)
             .bind(coverage_object)
             .fetch_optional(&mut *exec)
             .await?;
@@ -523,8 +537,8 @@ impl CoveredHexCache {
         if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
             return Ok(Some(covered_hexes.clone()));
         }
-        let Some((cbsd_id, inserted_at)) = sqlx::query_scalar(
-            "SELECT cbsd_id, inserted_at FROM hex_coverage WHERE uuid = $1 LIMIT 1",
+        let Some((radio_key, inserted_at)) = sqlx::query_scalar(
+            "SELECT radio_key, inserted_at FROM hex_coverage WHERE uuid = $1 LIMIT 1",
         )
         .bind(uuid)
         .fetch_optional(&self.pool)
@@ -540,7 +554,7 @@ impl CoveredHexCache {
             .map(|HexCoverage { hex, .. }| CellIndex::try_from(hex as u64).unwrap())
             .collect();
         let cached_coverage = CachedCoverage {
-            cbsd_id,
+            radio_key,
             coverage,
             inserted_at,
         };
@@ -558,7 +572,7 @@ impl CoveredHexCache {
 
 #[derive(Clone)]
 pub struct CachedCoverage {
-    pub cbsd_id: String,
+    pub radio_key: OwnedKeyType,
     coverage: Vec<CellIndex>,
     pub inserted_at: DateTime<Utc>,
 }
@@ -583,7 +597,7 @@ mod test {
             uuid: Uuid::new_v4(),
             hex: 0x8a1fb46622dffff_u64 as i64,
             indoor: false,
-            cbsd_id: cbsd_id.to_string(),
+            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_level,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
@@ -617,7 +631,7 @@ mod test {
         assert_eq!(
             rewards,
             vec![CoverageReward {
-                cbsd_id: "4".to_string(),
+                radio_key: OwnedKeyType::Cbrs("4".to_string()),
                 hotspot: owner,
                 points: dec!(16)
             }]
@@ -643,7 +657,7 @@ mod test {
             uuid: Uuid::new_v4(),
             hex: 0x8a1fb46622dffff_u64 as i64,
             indoor: false,
-            cbsd_id: cbsd_id.to_string(),
+            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_level,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
@@ -721,27 +735,27 @@ mod test {
             rewards,
             vec![
                 CoverageReward {
-                    cbsd_id: "10".to_string(),
+                    radio_key: OwnedKeyType::Cbrs("10".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(16)
                 },
                 CoverageReward {
-                    cbsd_id: "8".to_string(),
+                    radio_key: OwnedKeyType::Cbrs("8".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(16)
                 },
                 CoverageReward {
-                    cbsd_id: "6".to_string(),
+                    radio_key: OwnedKeyType::Cbrs("6".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(16)
                 },
                 CoverageReward {
-                    cbsd_id: "4".to_string(),
+                    radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(16)
                 },
                 CoverageReward {
-                    cbsd_id: "2".to_string(),
+                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(16)
                 }

@@ -165,7 +165,7 @@ impl IotBeaconReport {
         Ok(beacon::Beacon {
             data: self.data.clone(),
             frequency: self.frequency,
-            datarate: self.datarate,
+            datarate: todo!(), // self.datarate,
             remote_entropy,
             local_entropy,
             conducted_power: self.tx_power as u32,

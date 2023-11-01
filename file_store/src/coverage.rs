@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{
-    CoverageObjectIngestReportV1, CoverageObjectReqV1,
+    coverage_object_req_v1, CoverageObjectIngestReportV1, CoverageObjectReqV1,
     RadioHexSignalLevel as RadioHexSignalLevelProto, SignalLevel,
 };
 use serde::{Deserialize, Serialize};
@@ -20,13 +20,29 @@ pub struct RadioHexSignalLevel {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum KeyType {
+    CbsdId(String),
+    HotspotKey(PublicKeyBinary),
+}
+
+impl From<KeyType> for coverage_object_req_v1::KeyType {
+    fn from(kt: KeyType) -> Self {
+        match kt {
+            KeyType::CbsdId(id) => coverage_object_req_v1::KeyType::CbsdId(id),
+            KeyType::HotspotKey(key) => coverage_object_req_v1::KeyType::HotspotKey(key.into()),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CoverageObject {
     pub pub_key: PublicKeyBinary,
     pub uuid: Uuid,
-    pub cbsd_id: String,
+    pub key_type: KeyType,
     pub coverage_claim_time: DateTime<Utc>,
-    pub indoor: bool,
     pub coverage: Vec<RadioHexSignalLevel>,
+    pub indoor: bool,
+    pub trust_score: u32,
     pub signature: Vec<u8>,
 }
 
@@ -70,10 +86,17 @@ impl TryFrom<CoverageObjectReqV1> for CoverageObject {
         Ok(Self {
             pub_key: v.pub_key.into(),
             uuid: Uuid::from_slice(&v.uuid).map_err(DecodeError::from)?,
-            cbsd_id: v.cbsd_id,
+            key_type: match v.key_type {
+                Some(coverage_object_req_v1::KeyType::CbsdId(id)) => KeyType::CbsdId(id),
+                Some(coverage_object_req_v1::KeyType::HotspotKey(key)) => {
+                    KeyType::HotspotKey(key.into())
+                }
+                None => return Err(Error::NotFound("key_type".to_string())),
+            },
             coverage_claim_time: v.coverage_claim_time.to_timestamp()?,
-            indoor: v.indoor,
             coverage: coverage?,
+            indoor: v.indoor,
+            trust_score: v.trust_score,
             signature: v.signature,
         })
     }

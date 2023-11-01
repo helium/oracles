@@ -171,7 +171,6 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CoverageObjectIngestReport)
                 .create()?;
         let coverage_objs_join_handle = coverage_objs_server
             .start(shutdown_listener.clone())
