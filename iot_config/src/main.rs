@@ -4,9 +4,9 @@ use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer};
 use iot_config::{
-    admin::AuthCache, admin_service::AdminService, gateway_service::GatewayService, org,
-    org_service::OrgService, region_map::RegionMapReader, route_service::RouteService,
-    settings::Settings, telemetry,
+    admin::AuthCache, admin_service::AdminService, db_cleaner::DbCleaner,
+    gateway_service::GatewayService, org, org_service::OrgService, region_map::RegionMapReader,
+    route_service::RouteService, settings::Settings, telemetry,
 };
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -112,7 +112,13 @@ impl Daemon {
             admin_svc,
         };
 
-        TaskManager::builder().add_task(grpc_server).start().await
+        let db_cleaner = DbCleaner::new(pool.clone(), settings.deleted_entry_retention());
+
+        TaskManager::builder()
+            .add_task(grpc_server)
+            .add_task(db_cleaner)
+            .start()
+            .await
     }
 }
 
