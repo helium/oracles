@@ -3498,6 +3498,7 @@ dependencies = [
  "task-manager",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tonic",
  "tracing",

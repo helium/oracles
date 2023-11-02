@@ -41,20 +41,20 @@ const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 pub struct Runner<G> {
-    pool: PgPool,
-    beacon_interval: u64,
-    max_witnesses_per_poc: u64,
-    beacon_max_retries: u64,
-    witness_max_retries: u64,
-    deny_list_latest_url: String,
-    deny_list_trigger_interval: Duration,
-    deny_list: DenyList,
-    gateway_cache: GatewayCache,
-    region_cache: RegionCache<G>,
-    invalid_beacon_sink: FileSinkClient,
-    invalid_witness_sink: FileSinkClient,
-    poc_sink: FileSinkClient,
-    hex_density_map: HexDensityMap,
+    pub pool: PgPool,
+    pub beacon_interval: u64,
+    pub max_witnesses_per_poc: u64,
+    pub beacon_max_retries: u64,
+    pub witness_max_retries: u64,
+    pub deny_list_latest_url: String,
+    pub deny_list_trigger_interval: Duration,
+    pub deny_list: DenyList,
+    pub gateway_cache: GatewayCache,
+    pub region_cache: RegionCache<G>,
+    pub invalid_beacon_sink: FileSinkClient,
+    pub invalid_witness_sink: FileSinkClient,
+    pub poc_sink: FileSinkClient,
+    pub hex_density_map: HexDensityMap,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -106,7 +106,7 @@ where
         let witness_max_retries = settings.witness_max_retries;
         let deny_list_latest_url = settings.denylist.denylist_url.clone();
         let mut deny_list = DenyList::new(&settings.denylist)?;
-        let region_cache = RegionCache::from_settings(settings, gateways)?;
+        let region_cache = RegionCache::new(settings.region_params_refresh_interval(), gateways)?;
         // force update to latest in order to update the tag name
         // when first run, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0
@@ -188,7 +188,7 @@ where
         Ok(())
     }
 
-    async fn handle_db_tick(&self) -> anyhow::Result<()> {
+    pub async fn handle_db_tick(&self) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
         let db_beacon_reports =
             Report::get_next_beacons(&self.pool, self.beacon_max_retries).await?;

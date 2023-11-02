@@ -1,4 +1,3 @@
-use crate::Settings;
 use chrono::Duration;
 use futures::{future::LocalBoxFuture, stream::StreamExt, TryFutureExt};
 use helium_crypto::PublicKeyBinary;
@@ -47,8 +46,8 @@ impl<G> GatewayUpdater<G>
 where
     G: Gateways,
 {
-    pub async fn from_settings(
-        settings: &Settings,
+    pub async fn new(
+        refresh_interval: Duration,
         mut gateways: G,
     ) -> Result<(MessageReceiver, Self), GatewayUpdaterError<G::Error>> {
         let gateway_map = refresh_gateways(&mut gateways).await?;
@@ -57,7 +56,7 @@ where
             receiver,
             Self {
                 gateways,
-                refresh_interval: settings.gateway_refresh_interval(),
+                refresh_interval,
                 sender,
             },
         ))

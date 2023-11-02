@@ -66,7 +66,7 @@ pub struct Poc {
     entropy_end: DateTime<Utc>,
     entropy_version: i32,
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: InvalidReason,

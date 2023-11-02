@@ -1,4 +1,3 @@
-use crate::Settings;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::Region as ProtoRegion;
 use iot_config::client::{Gateways, RegionParamsInfo};
@@ -29,8 +28,8 @@ impl<G> RegionCache<G>
 where
     G: Gateways,
 {
-    pub fn from_settings(
-        settings: &Settings,
+    pub fn new(
+        refresh_interval: Duration,
         gateways: G,
     ) -> Result<Self, RegionCacheError<G::Error>> {
         let cache = Arc::new(Cache::<ProtoRegion, RegionParamsInfo>::new());
@@ -40,7 +39,7 @@ where
         Ok(Self {
             gateways,
             cache,
-            refresh_interval: settings.region_params_refresh_interval(),
+            refresh_interval,
         })
     }
 
