@@ -64,6 +64,10 @@ pub enum DecodeError {
     UuidError(#[from] uuid::Error),
     #[error("Invalid cell index error: {0}")]
     InvalidCellIndexError(#[from] h3o::error::InvalidCellIndex),
+    #[error("unsupported packet type, type: {0}, value: {1}")]
+    UnsupportedPacketType(String, i32),
+    #[error("file stream try decode error: {0}")]
+    FileStreamTryDecode(String),
 }
 
 #[derive(Error, Debug)]
@@ -105,6 +109,10 @@ impl Error {
     {
         Self::from(err.into())
     }
+
+    pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
+        DecodeError::file_stream_try_decode(msg)
+    }
 }
 
 impl DecodeError {
@@ -118,6 +126,10 @@ impl DecodeError {
 
     pub fn unsupported_datarate<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedDataRate(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_packet_type<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedPacketType(msg1.to_string(), msg2))
     }
 
     pub fn unsupported_participant_side<E: ToString>(msg1: E, msg2: i32) -> Error {
@@ -138,6 +150,10 @@ impl DecodeError {
 
     pub fn unsupported_signal_level(msg1: impl ToString, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedSignalLevel(msg1.to_string(), msg2))
+    }
+
+    pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
+        Error::Decode(Self::FileStreamTryDecode(msg.to_string()))
     }
 }
 

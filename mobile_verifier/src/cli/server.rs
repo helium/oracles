@@ -1,17 +1,19 @@
 use crate::{
-    coverage::CoverageDaemon, data_session::DataSessionIngestor, heartbeats::HeartbeatDaemon,
-    rewarder::Rewarder, speedtests::SpeedtestDaemon,
-    subscriber_location::SubscriberLocationIngestor, telemetry, Settings,
+    coverage::CoverageDaemon, data_session::DataSessionIngestor,
+    heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
+    heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon, rewarder::Rewarder,
+    speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
+    Settings,
 };
 use anyhow::{Error, Result};
 use chrono::Duration;
 use file_store::{
     coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
-    file_source, file_upload, heartbeat::CellHeartbeatIngestReport,
+    file_source, file_upload, heartbeat::CbrsHeartbeatIngestReport,
     mobile_subscriber::SubscriberLocationIngestReport, mobile_transfer::ValidDataTransferSession,
-    speedtest::CellSpeedtestIngestReport, FileStore, FileType,
+    speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
+    FileType,
 };
-
 use futures_util::TryFutureExt;
 use mobile_config::client::{AuthorizationClient, EntityClient, GatewayClient};
 use price::PriceTracker;
@@ -56,15 +58,29 @@ impl Cmd {
         let (price_tracker, tracker_process) =
             PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
 
-        // Heartbeats
-        let (heartbeats, heartbeats_server) =
-            file_source::continuous_source::<CellHeartbeatIngestReport>()
+        // CBRS Heartbeats
+        let (cbrs_heartbeats, cbrs_heartbeats_server) =
+            file_source::continuous_source::<CbrsHeartbeatIngestReport>()
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CellHeartbeatIngestReport)
+                .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
                 .create()?;
-        let heartbeats_join_handle = heartbeats_server.start(shutdown_listener.clone()).await?;
+        let cbrs_heartbeats_join_handle = cbrs_heartbeats_server
+            .start(shutdown_listener.clone())
+            .await?;
+
+        // Wifi Heartbeats
+        let (wifi_heartbeats, wifi_heartbeats_server) =
+            file_source::continuous_source::<WifiHeartbeatIngestReport>()
+                .db(pool.clone())
+                .store(report_ingest.clone())
+                .lookback(LookbackBehavior::StartAfter(settings.start_after()))
+                .prefix(FileType::WifiHeartbeatIngestReport.to_string())
+                .create()?;
+        let wifi_heartbeats_join_handle = wifi_heartbeats_server
+            .start(shutdown_listener.clone())
+            .await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
@@ -89,14 +105,24 @@ impl Cmd {
         .create()
         .await?;
 
-        let heartbeat_daemon = HeartbeatDaemon::new(
+        let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
             gateway_client.clone(),
-            heartbeats,
-            valid_heartbeats,
-            seniority_updates,
+            cbrs_heartbeats,
             settings.max_heartbeat_distance_from_coverage_km,
             settings.modeled_coverage_start(),
+            valid_heartbeats.clone(),
+            seniority_updates.clone(),
+        );
+
+        let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
+            pool.clone(),
+            gateway_client.clone(),
+            wifi_heartbeats,
+            settings.max_heartbeat_distance_from_coverage_km,
+            settings.modeled_coverage_start(),
+            valid_heartbeats,
+            seniority_updates,
         );
 
         // Speedtests
@@ -105,14 +131,25 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CellSpeedtestIngestReport)
+                .prefix(FileType::CellSpeedtestIngestReport.to_string())
                 .create()?;
         let speedtests_join_handle = speedtests_server.start(shutdown_listener.clone()).await?;
 
-        let (valid_speedtests, valid_speedtests_server) = file_sink::FileSinkBuilder::new(
+        let (speedtests_avg, speedtests_avg_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
+        )
+        .deposits(Some(file_upload_tx.clone()))
+        .auto_commit(false)
+        .roll_time(Duration::minutes(15))
+        .create()
+        .await?;
+
+        let (speedtests_validity, speedtests_validity_server) = file_sink::FileSinkBuilder::new(
+            FileType::VerifiedSpeedtest,
+            store_base_path,
+            concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
         )
         .deposits(Some(file_upload_tx.clone()))
         .auto_commit(false)
@@ -124,7 +161,8 @@ impl Cmd {
             pool.clone(),
             gateway_client.clone(),
             speedtests,
-            valid_speedtests,
+            speedtests_avg,
+            speedtests_validity,
         );
 
         // Coverage objects
@@ -133,7 +171,6 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::CoverageObjectIngestReport)
                 .create()?;
         let coverage_objs_join_handle = coverage_objs_server
             .start(shutdown_listener.clone())
@@ -186,6 +223,7 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
+            settings.max_asserted_distance_deviation,
         );
 
         // subscriber location
@@ -194,7 +232,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::SubscriberLocationIngestReport)
+                .prefix(FileType::SubscriberLocationIngestReport.to_string())
                 .create()?;
         let subscriber_location_ingest_join_handle = subscriber_location_ingest_server
             .start(shutdown_listener.clone())
@@ -225,7 +263,7 @@ impl Cmd {
                 .db(pool.clone())
                 .store(data_transfer_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::ValidDataTransferSession)
+                .prefix(FileType::ValidDataTransferSession.to_string())
                 .create()?;
         let data_session_ingest_join_handle = data_session_ingest_server
             .start(shutdown_listener.clone())
@@ -237,7 +275,10 @@ impl Cmd {
             valid_heartbeats_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
-            valid_speedtests_server
+            speedtests_avg_server
+                .run(shutdown_listener.clone())
+                .map_err(Error::from),
+            speedtests_validity_server
                 .run(shutdown_listener.clone())
                 .map_err(Error::from),
             valid_coverage_objs_server
@@ -265,10 +306,12 @@ impl Cmd {
                 .run(data_session_ingest, shutdown_listener.clone())
                 .map_err(Error::from),
             tracker_process.map_err(Error::from),
-            heartbeats_join_handle.map_err(Error::from),
+            cbrs_heartbeats_join_handle.map_err(Error::from),
+            wifi_heartbeats_join_handle.map_err(Error::from),
             speedtests_join_handle.map_err(Error::from),
             coverage_objs_join_handle.map_err(Error::from),
-            heartbeat_daemon.run(shutdown_listener.clone()),
+            cbrs_heartbeat_daemon.run(shutdown_listener.clone()),
+            wifi_heartbeat_daemon.run(shutdown_listener.clone()),
             speedtest_daemon.run(shutdown_listener.clone()),
             coverage_daemon.run(shutdown_listener.clone()),
             rewarder.run(shutdown_listener.clone()),

@@ -3,13 +3,14 @@ use anchor_lang::AccountDeserialize;
 use anyhow::{anyhow, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::file_sink;
-use futures::TryFutureExt;
+use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use price_oracle::{calculate_current_price, PriceOracleV0};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
 use std::{path::PathBuf, str::FromStr};
+use task_manager::ManagedTask;
 use tokio::{fs, time};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +39,16 @@ pub struct PriceGenerator {
     default_price: Option<u64>,
     stale_price_duration: Duration,
     latest_price_file: PathBuf,
+    file_sink: Option<file_sink::FileSinkClient>,
+}
+
+impl ManagedTask for PriceGenerator {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run_tm(shutdown))
+    }
 }
 
 impl From<Price> for PriceReportV1 {
@@ -80,6 +91,27 @@ impl PriceGenerator {
             stale_price_duration: settings.stale_price_duration(),
             latest_price_file: PathBuf::from_str(&settings.cache)?
                 .join(format!("{token_type:?}.latest")),
+            file_sink: None,
+        })
+    }
+
+    pub async fn new_tm(
+        settings: &Settings,
+        token_type: BlockchainTokenTypeV1,
+        file_sink: file_sink::FileSinkClient,
+    ) -> Result<Self> {
+        let client = RpcClient::new(settings.source.clone());
+        Ok(Self {
+            last_price_opt: None,
+            token_type,
+            client,
+            key: settings.price_key(token_type)?,
+            default_price: settings.default_price(token_type),
+            interval_duration: settings.interval().to_std()?,
+            stale_price_duration: settings.stale_price_duration(),
+            latest_price_file: PathBuf::from_str(&settings.cache)?
+                .join(format!("{token_type:?}.latest")),
+            file_sink: Some(file_sink),
         })
     }
 
@@ -104,8 +136,25 @@ impl PriceGenerator {
         }
     }
 
+    pub async fn run_tm(mut self, shutdown: triggered::Listener) -> Result<()> {
+        match (self.key, self.default_price, self.file_sink.clone()) {
+            (Some(key), _, Some(file_sink)) => self.run_with_key(key, file_sink, &shutdown).await,
+            (None, Some(defaut_price), Some(file_sink)) => {
+                self.run_with_default(defaut_price, file_sink, &shutdown)
+                    .await
+            }
+            _ => {
+                tracing::warn!(
+                    "stopping price generator for {:?}, not configured",
+                    self.token_type
+                );
+                Ok(())
+            }
+        }
+    }
+
     async fn run_with_default(
-        &self,
+        &mut self,
         default_price: u64,
         file_sink: file_sink::FileSinkClient,
         shutdown: &triggered::Listener,
@@ -118,6 +167,7 @@ impl PriceGenerator {
 
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = trigger.tick() => {
                     let price = Price::new(Utc::now(), default_price, self.token_type);
@@ -144,6 +194,7 @@ impl PriceGenerator {
 
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = trigger.tick() => self.handle(&key, &file_sink).await?,
             }

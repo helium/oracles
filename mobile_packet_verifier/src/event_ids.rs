@@ -1,5 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use sqlx::{Pool, Postgres, Transaction};
+use task_manager::ManagedTask;
 
 use crate::settings::Settings;
 
@@ -21,6 +22,15 @@ pub struct EventIdPurger {
     conn: Pool<Postgres>,
     interval: Duration,
     max_age: Duration,
+}
+
+impl ManagedTask for EventIdPurger {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
 }
 
 impl EventIdPurger {

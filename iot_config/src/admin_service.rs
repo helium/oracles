@@ -94,13 +94,16 @@ impl iot_config::Admin for AdminService {
         admin::insert_key(request.pubkey.clone().into(), key_type, &self.pool)
             .and_then(|_| async move {
                 if self.auth_updater.send_if_modified(|cache| {
-                    if let std::collections::hash_map::Entry::Vacant(key) = cache.entry(pubkey) {
+                    if let std::collections::hash_map::Entry::Vacant(key) =
+                        cache.entry(pubkey.clone())
+                    {
                         key.insert(key_type);
                         true
                     } else {
                         false
                     }
                 }) {
+                    tracing::info!(%pubkey, %key_type, "key authorized");
                     Ok(())
                 } else {
                     Err(anyhow!("key already registered"))
@@ -108,7 +111,7 @@ impl iot_config::Admin for AdminService {
             })
             .map_err(|err| {
                 let pubkey: PublicKeyBinary = request.pubkey.into();
-                tracing::error!(pubkey = pubkey.to_string(), "pubkey add failed");
+                tracing::error!(%pubkey, "pubkey add failed");
                 Status::internal(format!("error saving requested key: {pubkey}, {err:?}"))
             })
             .await?;
@@ -135,10 +138,11 @@ impl iot_config::Admin for AdminService {
         admin::remove_key(request.pubkey.clone().into(), &self.pool)
             .and_then(|deleted| async move {
                 match deleted {
-                    Some((pubkey, _key_type)) => {
+                    Some((pubkey, key_type)) => {
                         self.auth_updater.send_modify(|cache| {
                             cache.remove(&pubkey);
                         });
+                        tracing::info!(%pubkey, %key_type,"key de-authorized");
                         Ok(())
                     }
                     None => Ok(()),
@@ -146,7 +150,7 @@ impl iot_config::Admin for AdminService {
             })
             .map_err(|_| {
                 let pubkey: PublicKeyBinary = request.pubkey.into();
-                tracing::error!(pubkey = pubkey.to_string(), "pubkey remove failed");
+                tracing::error!(%pubkey, "pubkey remove failed");
                 Status::internal(format!("error removing request key: {pubkey}"))
             })
             .await?;

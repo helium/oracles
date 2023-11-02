@@ -29,6 +29,7 @@ impl DataSessionIngestor {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
+                    biased;
                     _ = shutdown.clone() => {
                         tracing::info!("DataSessionIngestor shutting down");
                         break;

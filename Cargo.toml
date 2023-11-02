@@ -59,15 +59,15 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-crypto = {version = "0.8.0", features=["sqlx-postgres", "multisig"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "map/added-details-to-radio-rewards", features = ["services"]}
+helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "map/modeled-coverage-v2", features = ["services"]}
 hextree = "*"
 solana-client = "1.14"
 solana-sdk = "1.14"
 solana-program = "1.11"
 spl-token = "3.5.0"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
-beacon = { git = "https://github.com/helium/proto", branch = "map/added-details-to-radio-rewards" }
+beacon = { git = "https://github.com/helium/proto", branch = "map/modeled-coverage-v2" }
 humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"
@@ -76,7 +76,7 @@ tracing-subscriber = { version = "0", default-features=false, features = ["env-f
 rust_decimal = "1"
 rust_decimal_macros = "1"
 base64 = ">=0.21"
-sha2 = "*"
+sha2 = "0.10"
 tonic = {version = "0", features = ["tls", "tls-roots"]}
 http = "*"
 triggered = "0"

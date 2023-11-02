@@ -1,5 +1,5 @@
 use crate::{
-    data_session,
+    coverage, data_session,
     heartbeats::{self, HeartbeatReward},
     reward_shares::{CoveragePoints, MapperShares, TransferRewards},
     speedtests,
@@ -28,9 +28,11 @@ pub struct Rewarder {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
+    max_distance_to_asserted: u32,
 }
 
 impl Rewarder {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         reward_period_duration: Duration,
@@ -38,6 +40,7 @@ impl Rewarder {
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
+        max_distance_to_asserted: u32,
     ) -> Self {
         Self {
             pool,
@@ -46,6 +49,7 @@ impl Rewarder {
             mobile_rewards,
             reward_manifests,
             price_tracker,
+            max_distance_to_asserted,
         }
     }
 
@@ -77,6 +81,7 @@ impl Rewarder {
             );
 
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 _ = sleep(sleep_duration) => (),
             }
@@ -101,7 +106,7 @@ impl Rewarder {
         // Check if we have heartbeats and speedtests past the end of the reward period
         if reward_period.end >= self.disable_complete_data_checks_until().await? {
             if sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM heartbeats WHERE latest_timestamp >= $1",
+                "SELECT COUNT(*) FROM cbrs_heartbeats WHERE latest_timestamp >= $1",
             )
             .bind(reward_period.end)
             .fetch_one(&self.pool)
@@ -137,8 +142,8 @@ impl Rewarder {
             reward_period.end
         );
 
-        let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
-
+        let heartbeats =
+            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
         let coverage_points = CoveragePoints::aggregate_points(
@@ -160,7 +165,6 @@ impl Rewarder {
         let transfer_rewards = TransferRewards::from_transfer_sessions(
             mobile_bone_price,
             data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
-            &coverage_points,
             reward_period,
         )
         .await;
@@ -224,6 +228,7 @@ impl Rewarder {
         heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
         speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
         data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.end).await?;
+        coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();

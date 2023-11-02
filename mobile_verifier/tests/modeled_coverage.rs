@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
-    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     speedtest::CellSpeedtest,
 };
 use futures::stream::{self, StreamExt};
@@ -9,11 +9,11 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::{mobile_config::NetworkKeyRole, poc_mobile::SignalLevel};
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoveredHexCache, Seniority},
-    heartbeats::{Heartbeat, HeartbeatReward, SeniorityUpdate},
+    heartbeats::{Heartbeat, HeartbeatReward, SeniorityUpdate, ValidatedHeartbeat},
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
-    HasOwner, IsAuthorized,
+    GatewayResolution, GatewayResolver, IsAuthorized,
 };
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
@@ -24,11 +24,14 @@ use uuid::Uuid;
 struct AllOwnersValid;
 
 #[async_trait::async_trait]
-impl HasOwner for AllOwnersValid {
+impl GatewayResolver for AllOwnersValid {
     type Error = std::convert::Infallible;
 
-    async fn has_owner(&self, _address: &PublicKeyBinary) -> Result<bool, Self::Error> {
-        Ok(true)
+    async fn resolve_gateway(
+        &self,
+        _address: &PublicKeyBinary,
+    ) -> Result<GatewayResolution, Self::Error> {
+        todo!()
     }
 }
 
@@ -56,9 +59,9 @@ fn heartbeats<'a>(
     lon: f64,
     lat: f64,
     coverage_object: Uuid,
-) -> impl Iterator<Item = CellHeartbeatIngestReport> + 'a {
+) -> impl Iterator<Item = CbrsHeartbeatIngestReport> + 'a {
     (0..num).map(move |i| {
-        let report = CellHeartbeat {
+        let report = CbrsHeartbeat {
             pubkey: hotspot_key.clone(),
             lon,
             lat,
@@ -71,7 +74,7 @@ fn heartbeats<'a>(
             cbsd_category: String::new(),
             coverage_object: Vec::from(coverage_object.into_bytes()),
         };
-        CellHeartbeatIngestReport {
+        CbrsHeartbeatIngestReport {
             report,
             received_timestamp: start + Duration::hours(i as i64),
         }
@@ -146,7 +149,7 @@ async fn process_input(
     pool: &PgPool,
     epoch: &Range<DateTime<Utc>>,
     coverage_objs: impl Iterator<Item = CoverageObjectIngestReport>,
-    heartbeats: impl Iterator<Item = CellHeartbeatIngestReport>,
+    heartbeats: impl Iterator<Item = CbrsHeartbeatIngestReport>,
 ) -> anyhow::Result<()> {
     let covered_hex_cache = CoveredHexCache::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
@@ -162,23 +165,23 @@ async fn process_input(
     transaction.commit().await?;
 
     let mut transaction = pool.begin().await?;
-    let mut heartbeats = pin!(Heartbeat::validate_heartbeats(
+    let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
+        stream::iter(heartbeats.map(Heartbeat::from)),
         &AllOwnersValid,
         &covered_hex_cache,
-        stream::iter(heartbeats),
+        2.5,
         epoch,
-        2.5
     ));
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {
         let coverage_claim_time = coverage_claim_time_cache
             .fetch_coverage_claim_time(
-                &heartbeat.heartbeat.cbsd_id,
-                &heartbeat.coverage_object,
+                heartbeat.heartbeat.key(),
+                &heartbeat.heartbeat.coverage_object,
                 &mut transaction,
             )
             .await?;
         let latest_seniority =
-            Seniority::fetch_latest(&mut transaction, &heartbeat.heartbeat.cbsd_id).await?;
+            Seniority::fetch_latest(heartbeat.heartbeat.key(), &mut transaction).await?;
         let seniority_update = SeniorityUpdate::determine_update_action(
             &heartbeat,
             coverage_claim_time.unwrap(),
@@ -206,7 +209,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid,
-            cbsd_id: cbsd_id.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id.clone()),
             coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -219,6 +222,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
     let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
@@ -240,7 +244,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -266,7 +270,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            cbsd_id: cbsd_id_1.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_1.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -279,6 +283,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
     let coverage_object_2 = CoverageObjectIngestReport {
@@ -286,7 +291,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            cbsd_id: cbsd_id_2.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -299,6 +304,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a306481ff", SignalLevel::Low)?,
                 signal_level("8c2681a302991ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -331,7 +337,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -368,7 +374,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            cbsd_id: cbsd_id_1.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_1.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -381,6 +387,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -389,7 +396,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            cbsd_id: cbsd_id_2.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -402,6 +409,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -410,7 +418,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_3,
-            cbsd_id: cbsd_id_3.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_3.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -423,6 +431,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -431,7 +440,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_4,
-            cbsd_id: cbsd_id_4.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_4.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -444,6 +453,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -452,7 +462,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_5,
-            cbsd_id: cbsd_id_5.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_5.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -465,6 +475,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -473,7 +484,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_6,
-            cbsd_id: cbsd_id_6.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_6.clone()),
             coverage_claim_time: "2022-02-02 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -486,6 +497,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -559,7 +571,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -586,7 +598,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid,
-            cbsd_id: cbsd_id.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id.clone()),
             coverage_claim_time: "2022-01-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -602,6 +614,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a30648bff", SignalLevel::Low)?,
                 signal_level("8c2681a30646bff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
     let owner: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
@@ -623,7 +636,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -649,7 +662,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            cbsd_id: cbsd_id_1.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_1.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -663,6 +676,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a306493ff", SignalLevel::Low)?,
                 signal_level("8c2681a30659dff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
     let coverage_object_2 = CoverageObjectIngestReport {
@@ -670,7 +684,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            cbsd_id: cbsd_id_2.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -681,6 +695,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3066a5ff", SignalLevel::Low)?,
                 signal_level("8c2681a30640dff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -713,7 +728,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -753,7 +768,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            cbsd_id: cbsd_id_1.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_1.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -765,6 +780,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
                 signal_level("8c2681a30671bff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -773,7 +789,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            cbsd_id: cbsd_id_2.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -785,6 +801,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
                 signal_level("8c2681a30671bff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -793,7 +810,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_3,
-            cbsd_id: cbsd_id_3.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_3.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -805,6 +822,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
                 signal_level("8c2681a30671bff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -813,7 +831,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_4,
-            cbsd_id: cbsd_id_4.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_4.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -825,6 +843,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
                 signal_level("8c2681a30671bff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -833,7 +852,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_5,
-            cbsd_id: cbsd_id_5.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_5.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -845,6 +864,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
                 signal_level("8c2681a30671bff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -853,7 +873,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_6,
-            cbsd_id: cbsd_id_6.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_6.clone()),
             coverage_claim_time: "2022-02-02 00:00:00.000000000 UTC".parse()?,
             indoor: false,
             signature: Vec::new(),
@@ -865,6 +885,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
                 signal_level("8c2681a30671bff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -938,7 +959,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -988,7 +1009,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_1,
-            cbsd_id: cbsd_id_1.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_1.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -1001,6 +1022,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -1009,7 +1031,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_2,
-            cbsd_id: cbsd_id_2.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -1022,6 +1044,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -1030,7 +1053,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_3,
-            cbsd_id: cbsd_id_3.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_3.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -1043,6 +1066,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -1051,7 +1075,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_4,
-            cbsd_id: cbsd_id_4.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_4.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -1064,6 +1088,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -1072,7 +1097,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_5,
-            cbsd_id: cbsd_id_5.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_5.clone()),
             coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -1085,6 +1110,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -1093,7 +1119,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
         report: file_store::coverage::CoverageObject {
             pub_key: PublicKeyBinary::from(vec![1]),
             uuid: uuid_6,
-            cbsd_id: cbsd_id_6.clone(),
+            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_6.clone()),
             coverage_claim_time: "2022-02-02 00:00:00.000000000 UTC".parse()?,
             indoor: true,
             signature: Vec::new(),
@@ -1106,6 +1132,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
                 signal_level("8c2681a339a4bff", SignalLevel::Low)?,
                 signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
             ],
+            trust_score: 1000,
         },
     };
 
@@ -1179,7 +1206,7 @@ async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period);
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 

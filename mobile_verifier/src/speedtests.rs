@@ -10,6 +10,10 @@ use futures::{
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
+use helium_proto::services::poc_mobile::{
+    SpeedtestIngestReportV1, SpeedtestVerificationResult,
+    VerifiedSpeedtest as VerifiedSpeedtestProto,
+};
 use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
 use std::collections::HashMap;
@@ -43,7 +47,8 @@ pub struct SpeedtestDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_client: GatewayClient,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-    file_sink: FileSinkClient,
+    speedtest_avg_file_sink: FileSinkClient,
+    verified_speedtest_file_sink: FileSinkClient,
 }
 
 impl SpeedtestDaemon {
@@ -51,13 +56,15 @@ impl SpeedtestDaemon {
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_client: GatewayClient,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
-        file_sink: FileSinkClient,
+        speedtest_avg_file_sink: FileSinkClient,
+        verified_speedtest_file_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
             gateway_client,
             speedtests,
-            file_sink,
+            speedtest_avg_file_sink,
+            verified_speedtest_file_sink,
         }
     }
 
@@ -65,6 +72,7 @@ impl SpeedtestDaemon {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
+                    biased;
                     _ = shutdown.clone() => {
                         tracing::info!("SpeedtestDaemon shutting down");
                         break;
@@ -88,22 +96,61 @@ impl SpeedtestDaemon {
         let mut transaction = self.pool.begin().await?;
         let mut speedtests = file.into_stream(&mut transaction).await?;
         while let Some(speedtest_report) = speedtests.next().await {
-            let pubkey = &speedtest_report.report.pubkey;
-            if self
-                .gateway_client
-                .resolve_gateway_info(pubkey)
-                .await?
-                .is_some()
-            {
+            let result = self.validate_speedtest(&speedtest_report).await?;
+            if result == SpeedtestVerificationResult::SpeedtestValid {
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
-                let latest_speedtests =
-                    get_latest_speedtests_for_pubkey(pubkey, &mut transaction).await?;
+                let latest_speedtests = get_latest_speedtests_for_pubkey(
+                    &speedtest_report.report.pubkey,
+                    &mut transaction,
+                )
+                .await?;
                 let average = SpeedtestAverage::from(&latest_speedtests);
-                average.write(&self.file_sink, latest_speedtests).await?;
+                average
+                    .write(&self.speedtest_avg_file_sink, latest_speedtests)
+                    .await?;
             }
+            // write out paper trail of speedtest validity
+            self.write_verified_speedtest(speedtest_report, result)
+                .await?;
         }
-        self.file_sink.commit().await?;
+        self.speedtest_avg_file_sink.commit().await?;
+        self.verified_speedtest_file_sink.commit().await?;
         transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn validate_speedtest(
+        &self,
+        speedtest: &CellSpeedtestIngestReport,
+    ) -> anyhow::Result<SpeedtestVerificationResult> {
+        let pubkey = speedtest.report.pubkey.clone();
+        if self
+            .gateway_client
+            .resolve_gateway_info(&pubkey)
+            .await?
+            .is_some()
+        {
+            Ok(SpeedtestVerificationResult::SpeedtestValid)
+        } else {
+            Ok(SpeedtestVerificationResult::SpeedtestGatewayNotFound)
+        }
+    }
+
+    pub async fn write_verified_speedtest(
+        &self,
+        speedtest_report: CellSpeedtestIngestReport,
+        result: SpeedtestVerificationResult,
+    ) -> anyhow::Result<()> {
+        let ingest_report: SpeedtestIngestReportV1 = speedtest_report.try_into()?;
+        let timestamp: u64 = Utc::now().timestamp_millis() as u64;
+        let proto = VerifiedSpeedtestProto {
+            report: Some(ingest_report),
+            result: result as i32,
+            timestamp,
+        };
+        self.verified_speedtest_file_sink
+            .write(proto, &[("result", result.as_str_name())])
+            .await?;
         Ok(())
     }
 }
@@ -122,7 +169,7 @@ pub async fn save_speedtest(
     .bind(&speedtest.pubkey)
     .bind(speedtest.upload_speed as i64)
     .bind(speedtest.download_speed as i64)
-    .bind(speedtest.latency as i64)
+    .bind(speedtest.latency as i32)
     .bind(&speedtest.serial)
     .bind(speedtest.timestamp)
     .execute(exec)

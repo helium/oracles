@@ -7,7 +7,7 @@ use crate::{
     region_cache::{RegionCache, RegionCacheError},
 };
 use beacon;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, DurationRound, Utc};
 use denylist::denylist::DenyList;
 use file_store::{
     iot_beacon_report::{IotBeaconIngestReport, IotBeaconReport},
@@ -111,12 +111,11 @@ impl Poc {
     #[allow(clippy::too_many_arguments)]
     pub async fn verify_beacon(
         &mut self,
-        hex_density_map: impl HexDensityMap,
+        hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
         region_cache: &RegionCache,
         pool: &PgPool,
         beacon_interval: Duration,
-        beacon_interval_tolerance: Duration,
         deny_list: &DenyList,
     ) -> Result<VerifyBeaconResult, VerificationError> {
         let beacon = &self.beacon_report.report;
@@ -158,7 +157,6 @@ impl Poc {
             &beaconer_info,
             &beaconer_region_info.region_params,
             beacon_interval,
-            beacon_interval_tolerance,
         ) {
             Ok(()) => {
                 let tx_scale = hex_density_map
@@ -178,7 +176,7 @@ impl Poc {
     pub async fn verify_witnesses(
         &mut self,
         beacon_info: &GatewayInfo,
-        hex_density_map: impl HexDensityMap,
+        hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
         deny_list: &DenyList,
     ) -> Result<VerifyWitnessesResult, VerificationError> {
@@ -198,7 +196,7 @@ impl Poc {
                         &witness_report,
                         beacon_info,
                         gateway_cache,
-                        &hex_density_map,
+                        hex_density_map,
                     )
                     .await
                 {
@@ -238,7 +236,7 @@ impl Poc {
         witness_report: &IotWitnessIngestReport,
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
-        hex_density_map: &impl HexDensityMap,
+        hex_density_map: &HexDensityMap,
     ) -> Result<IotVerifiedWitnessReport, VerificationError> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
@@ -277,7 +275,7 @@ impl Poc {
             }
         };
         // to avoid assuming beaconer location is set and to avoid unwrap
-        // we explicity match location here again
+        // we explicitly match location here again
         let Some(ref beaconer_metadata) = beaconer_info.metadata else {
             return Ok(IotVerifiedWitnessReport::invalid(
                 InvalidReason::NotAsserted,
@@ -340,7 +338,6 @@ pub fn do_beacon_verifications(
     beaconer_info: &GatewayInfo,
     beaconer_region_params: &[BlockchainRegionParamV1],
     beacon_interval: Duration,
-    beacon_interval_tolerance: Duration,
 ) -> GenericVerifyResult {
     tracing::debug!(
         "verifying beacon from beaconer: {:?}",
@@ -359,12 +356,7 @@ pub fn do_beacon_verifications(
     verify_denylist(&beacon_report.report.pub_key, deny_list)?;
     verify_entropy(entropy_start, entropy_end, beacon_received_ts)?;
     verify_gw_capability(beaconer_info.is_full_hotspot)?;
-    verify_beacon_schedule(
-        &last_beacon,
-        beacon_received_ts,
-        beacon_interval,
-        beacon_interval_tolerance,
-    )?;
+    verify_beacon_schedule(&last_beacon, beacon_received_ts, beacon_interval)?;
     verify_beacon_payload(
         &beacon_report.report,
         beaconer_metadata.region,
@@ -404,6 +396,11 @@ pub fn do_witness_verifications(
         }
     };
     verify_denylist(&witness_report.report.pub_key, deny_list)?;
+    verify_edge_denylist(
+        &beacon_report.report.pub_key,
+        &witness_report.report.pub_key,
+        deny_list,
+    )?;
     verify_self_witness(
         &beacon_report.report.pub_key,
         &witness_report.report.pub_key,
@@ -443,16 +440,36 @@ fn verify_beacon_schedule(
     last_beacon: &Option<LastBeacon>,
     beacon_received_ts: DateTime<Utc>,
     beacon_interval: Duration,
-    beacon_interval_tolerance: Duration,
 ) -> GenericVerifyResult {
     match last_beacon {
         Some(last_beacon) => {
-            let interval_since_last_beacon = beacon_received_ts - last_beacon.timestamp;
-            if interval_since_last_beacon < (beacon_interval - beacon_interval_tolerance) {
+            let last_bucket = last_beacon
+                .timestamp
+                .duration_trunc(beacon_interval)
+                .map_err(|e| {
+                    // if we fail to cast to a valid bucket beacon interval is likely incorrectly set
+                    // rather than default all beacons to success or fail, bail out
+                    panic!(
+                        "failed to parse last bucket: {}, beacon_interval: {}, error: {}:",
+                        last_beacon.timestamp, beacon_interval, e
+                    )
+                })?;
+            let cur_bucket = beacon_received_ts
+                .duration_trunc(beacon_interval)
+                .map_err(|e| {
+                    // if we fail to cast to a valid bucket beacon interval is likely incorrectly set
+                    // rather than default all beacons to success or fail, bail out
+                    panic!(
+                        "failed to parse cur bucket: {}, beacon_interval: {}, error: {}:",
+                        beacon_received_ts, beacon_interval, e
+                    )
+                })?;
+            if cur_bucket <= last_bucket {
                 tracing::debug!(
                     "beacon verification failed, reason:
-                        IrregularInterval. Seconds since last beacon {:?}",
-                    interval_since_last_beacon.num_seconds()
+                        IrregularInterval. last_beacon_ts: {}, beacon_received_ts:{}",
+                    last_beacon.timestamp,
+                    beacon_received_ts
                 );
                 return Err(InvalidResponse {
                     reason: InvalidReason::IrregularInterval,
@@ -469,7 +486,7 @@ fn verify_beacon_schedule(
 
 /// verify if gateway is on the deny list
 fn verify_denylist(pub_key: &PublicKeyBinary, deny_list: &DenyList) -> GenericVerifyResult {
-    if deny_list.check_key(pub_key) {
+    if deny_list.contains_key(pub_key) {
         tracing::debug!(
             "report verification failed, reason: {:?}.
             pubkey: {}, tagname: {}",
@@ -489,6 +506,36 @@ fn verify_denylist(pub_key: &PublicKeyBinary, deny_list: &DenyList) -> GenericVe
     //
     Ok(())
 }
+
+/// verify if gateway-gateway edge is on the deny list
+/// note that the order of the gateway keys is unimportant as edges are not considered directional
+fn verify_edge_denylist(
+    beaconer: &PublicKeyBinary,
+    witness: &PublicKeyBinary,
+    deny_list: &DenyList,
+) -> GenericVerifyResult {
+    if deny_list.contains_edge(beaconer, witness) {
+        tracing::debug!(
+            "report verification failed, reason: {:?}.
+            beacon: {}, witness {}, tagname: {}",
+            InvalidReason::DeniedEdge,
+            beaconer,
+            witness,
+            deny_list.tag_name
+        );
+        return Err(InvalidResponse {
+            reason: InvalidReason::DeniedEdge,
+            details: Some(InvalidDetails {
+                data: Some(invalid_details::Data::DenylistTag(
+                    deny_list.tag_name.to_string(),
+                )),
+            }),
+        });
+    }
+    //
+    Ok(())
+}
+
 /// verify remote entropy
 /// if received timestamp is outside of entopy start/end then return invalid
 fn verify_entropy(
@@ -534,6 +581,7 @@ fn verify_beacon_payload(
         region: beacon_region,
         params: region_params.to_owned(),
         gain: Decimal::new(gain as i64, 1),
+        timestamp: 0,
     };
     // generate a gateway rs beacon from the generated entropy and the beaconers region data
     let generated_beacon = generate_beacon(
@@ -925,6 +973,7 @@ mod tests {
     const PUBKEY1: &str = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf";
     const PUBKEY2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
     const DENIED_PUBKEY1: &str = "112bUGwooPd1dCDd3h3yZwskjxCzBsQNKeaJTuUF4hSgYedcsFa9";
+    const DENIED_PUBKEY2: &str = "13ABbtvMrRK8jgYrT3h6Y9Zu44nS6829kzsamiQn9Eefeu3VAZs";
 
     // hardcode beacon & entropy data taken from a beacon generated on a hotspot
     const LOCAL_ENTROPY: [u8; 4] = [233, 70, 25, 176];
@@ -996,7 +1045,7 @@ mod tests {
         let region: ProtoRegion = ProtoRegion::Eu868;
 
         let region_params =
-            beacon::RegionParams::from_bytes(region.into(), gain as u64, EU868_PARAMS)
+            beacon::RegionParams::from_bytes(region.into(), gain as u64, EU868_PARAMS, 0)
                 .expect("region params");
 
         let generated_beacon = generate_beacon(
@@ -1050,32 +1099,25 @@ mod tests {
 
     #[test]
     fn test_verify_beacon_schedule() {
-        let now = Utc::now();
         let id: &str = "test_id";
-        let beacon_interval = Duration::hours(6);
-        let beacon_interval_tolerance = Duration::minutes(10);
+        let beacon_interval = Duration::seconds(21600); // 6 hours
+        let last_beacon_ts: DateTime<Utc> =
+            DateTime::parse_from_str("2023 Jan 02 00:00:01 +0000", "%Y %b %d %H:%M:%S %z")
+                .unwrap()
+                .into();
         let last_beacon = Some(LastBeacon {
             id: id.as_bytes().to_vec(),
-            timestamp: now - beacon_interval,
+            timestamp: last_beacon_ts,
         });
-        // last beacon was BEACON_INTERVAL in the past, expectation pass
+        // beacon is in a later bucket ( by one hour) after last beacon, expectation pass
         assert!(verify_beacon_schedule(
             &last_beacon,
-            now,
+            last_beacon_ts + beacon_interval + Duration::hours(1),
             beacon_interval,
-            beacon_interval_tolerance
         )
         .is_ok());
-        // last beacon was BEACON_INTERVAL + 1hr in the past, expectation pass
-        assert!(verify_beacon_schedule(
-            &last_beacon,
-            now + Duration::minutes(60),
-            beacon_interval,
-            beacon_interval_tolerance
-        )
-        .is_ok());
-        // last beacon was BEACON_INTERVAL - 1 hr, too soon after our last beacon,
-        // expectation fail
+
+        // beacon is in the same bucket as last beacon, expectation fail
         assert_eq!(
             Err(InvalidResponse {
                 reason: InvalidReason::IrregularInterval,
@@ -1083,13 +1125,12 @@ mod tests {
             }),
             verify_beacon_schedule(
                 &last_beacon,
-                now - Duration::minutes(60),
+                last_beacon_ts + (beacon_interval / 2),
                 beacon_interval,
-                beacon_interval_tolerance
             )
         );
-        // last beacon was just outside of our tolerance period by 2 mins
-        // therefore beacon too soon, expectation fail
+
+        // beacon is in an earlier bucket than last beacon, expectation fail
         assert_eq!(
             Err(InvalidResponse {
                 reason: InvalidReason::IrregularInterval,
@@ -1097,23 +1138,9 @@ mod tests {
             }),
             verify_beacon_schedule(
                 &last_beacon,
-                now - (beacon_interval_tolerance + Duration::minutes(2)),
+                last_beacon_ts - (beacon_interval + Duration::hours(1)),
                 beacon_interval,
-                beacon_interval_tolerance
             )
-        );
-        // last beacon was just inside of our tolerance period by 2 mins
-        // expectation pass
-        assert!(verify_beacon_schedule(
-            &last_beacon,
-            now - (beacon_interval_tolerance - Duration::minutes(2)),
-            beacon_interval,
-            beacon_interval_tolerance
-        )
-        .is_ok());
-        //we dont have any last beacon data, expectation pass
-        assert!(
-            verify_beacon_schedule(&None, now, beacon_interval, beacon_interval_tolerance).is_ok()
         );
     }
 
@@ -1153,6 +1180,61 @@ mod tests {
                 }),
             }),
             verify_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+                &deny_list
+            )
+        );
+    }
+
+    #[test]
+    fn test_verify_edge_denylist() {
+        let deny_list: DenyList = vec![(
+            PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+            PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+        )]
+        .try_into()
+        .unwrap();
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert!(verify_edge_denylist(
+            &PublicKeyBinary::from_str(PUBKEY1).unwrap(),
+            &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+            &deny_list
+        )
+        .is_ok());
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::DeniedEdge,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
+            verify_edge_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
+                &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
+                &deny_list
+            )
+        );
+        // edges are not directional
+        assert_eq!(
+            Err(InvalidResponse {
+                reason: InvalidReason::DeniedEdge,
+                details: Some(InvalidDetails {
+                    data: Some(invalid_details::Data::DenylistTag("0".to_string()))
+                }),
+            }),
+            verify_edge_denylist(
+                &PublicKeyBinary::from_str(DENIED_PUBKEY2).unwrap(),
                 &PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap(),
                 &deny_list
             )
@@ -1320,15 +1402,14 @@ mod tests {
         // in order to assert the presence of each expected verification
         // by confirming the beacon report is rendered as invalid
         // asserting the presence of each will guard against
-        // one of more verifications being accidently removed
+        // one of more verifications being accidentally removed
         // from `do_beacon_verifications`
 
         // create default data structs
         let beaconer_info = beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, true);
         let entropy_start = Utc.timestamp_millis_opt(ENTROPY_TIMESTAMP).unwrap();
         let entropy_end = entropy_start + Duration::minutes(3);
-        let beacon_interval = Duration::minutes(5);
-        let beacon_interval_tolerance = Duration::seconds(60);
+        let beacon_interval = Duration::seconds(21600); // 6 hours in secs
         let deny_list: DenyList = vec![PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap()]
             .try_into()
             .unwrap();
@@ -1346,7 +1427,6 @@ mod tests {
             &beaconer_info,
             &default_region_params(),
             beacon_interval,
-            beacon_interval_tolerance,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1358,7 +1438,7 @@ mod tests {
             resp1
         );
 
-        // test entropy lifepsan verification is active in the beacon validation list
+        // test entropy lifespan verification is active in the beacon validation list
         let beacon_report1 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(4));
         let resp1 = do_beacon_verifications(
             &deny_list,
@@ -1370,7 +1450,6 @@ mod tests {
             &beaconer_info,
             &default_region_params(),
             beacon_interval,
-            beacon_interval_tolerance,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1393,7 +1472,6 @@ mod tests {
             &beacon_info2,
             &default_region_params(),
             beacon_interval,
-            beacon_interval_tolerance,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1407,7 +1485,7 @@ mod tests {
         let beacon_report3 = valid_beacon_report(PUBKEY1, entropy_start + Duration::minutes(2));
         let last_beacon3 = LastBeacon {
             id: vec![],
-            timestamp: Utc::now() - Duration::minutes(5),
+            timestamp: Utc::now() - Duration::hours(5),
         };
         let resp3 = do_beacon_verifications(
             &deny_list,
@@ -1419,7 +1497,6 @@ mod tests {
             &beaconer_info,
             &default_region_params(),
             beacon_interval,
-            beacon_interval_tolerance,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1442,7 +1519,6 @@ mod tests {
             &beacon_info4,
             &default_region_params(),
             beacon_interval,
-            beacon_interval_tolerance,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1464,7 +1540,6 @@ mod tests {
             &beaconer_info,
             &default_region_params(),
             beacon_interval,
-            beacon_interval_tolerance,
         );
         assert_eq!(
             Err(InvalidResponse {
@@ -1486,7 +1561,6 @@ mod tests {
             &beaconer_info,
             &default_region_params(),
             beacon_interval,
-            beacon_interval_tolerance,
         );
         assert_eq!(Ok(()), resp6);
     }
@@ -1498,7 +1572,7 @@ mod tests {
         // in order to assert the presence of each expected verification
         // by confirming the witness report is rendered as invalid
         // asserting the presence of each will guard against
-        // one of more verifications being accidently removed
+        // one of more verifications being accidentally removed
         // from `do_witness_verifications`
 
         // create default data structs
@@ -1533,7 +1607,7 @@ mod tests {
             resp1
         );
 
-        // test entropy lifepsan verification is active in the witness validation list
+        // test entropy lifespan verification is active in the witness validation list
         let witness_report2 = valid_witness_report(PUBKEY2, entropy_start + Duration::minutes(5));
         let resp2 = do_witness_verifications(
             &deny_list,
@@ -1765,6 +1839,7 @@ mod tests {
             ProtoRegion::Eu868.into(),
             BEACONER_GAIN,
             EU868_PARAMS,
+            0,
         )
         .unwrap();
         region_params.params

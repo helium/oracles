@@ -2,12 +2,12 @@ use crate::{Error, Result};
 use helium_crypto::{PublicKey, Verify};
 use helium_proto::services::{
     iot_config, mobile_config,
-    poc_lora::{LoraBeaconReportReqV1, LoraWitnessReportReqV1},
+    poc_lora::{LoraBeaconReportReqV1, LoraStreamSessionInitV1, LoraWitnessReportReqV1},
 };
 use helium_proto::{
     services::poc_mobile::{
         CellHeartbeatReqV1, CoverageObjectReqV1, DataTransferSessionReqV1, SpeedtestReqV1,
-        SubscriberLocationReqV1,
+        SubscriberLocationReqV1, WifiHeartbeatReqV1,
     },
     Message,
 };
@@ -31,9 +31,11 @@ macro_rules! impl_msg_verify {
 }
 impl_msg_verify!(SubscriberLocationReqV1, signature);
 impl_msg_verify!(CellHeartbeatReqV1, signature);
+impl_msg_verify!(WifiHeartbeatReqV1, signature);
 impl_msg_verify!(SpeedtestReqV1, signature);
 impl_msg_verify!(LoraBeaconReportReqV1, signature);
 impl_msg_verify!(LoraWitnessReportReqV1, signature);
+impl_msg_verify!(LoraStreamSessionInitV1, signature);
 impl_msg_verify!(DataTransferSessionReqV1, signature);
 impl_msg_verify!(CoverageObjectReqV1, signature);
 impl_msg_verify!(iot_config::OrgCreateHeliumReqV1, signature);

@@ -5,7 +5,10 @@ use futures::{Stream, StreamExt};
 use futures_util::stream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
-    services::packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
+    services::{
+        packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
+        router::packet_router_packet_report_v1::PacketType,
+    },
     DataRate, Region,
 };
 use iot_packet_verifier::{
@@ -148,6 +151,29 @@ fn packet_report(
         gateway: PublicKeyBinary::from(vec![]),
         payload_hash,
         payload_size,
+        packet_type: PacketType::Uplink,
+    }
+}
+
+fn join_packet_report(
+    oui: u64,
+    timestamp: u64,
+    payload_size: u32,
+    payload_hash: Vec<u8>,
+) -> PacketRouterPacketReport {
+    PacketRouterPacketReport {
+        received_timestamp: Utc.timestamp_opt(timestamp as i64, 0).unwrap(),
+        oui,
+        net_id: 0,
+        rssi: 0,
+        frequency: 0,
+        snr: 0.0,
+        data_rate: DataRate::Fsk50,
+        region: Region::As9231,
+        gateway: PublicKeyBinary::from(vec![]),
+        payload_hash,
+        payload_size,
+        packet_type: PacketType::Join,
     }
 }
 
@@ -283,12 +309,15 @@ async fn test_verifier() {
         packet_report(0, 0, 24, vec![1]),
         packet_report(0, 1, 48, vec![2]),
         packet_report(0, 2, 1, vec![3]),
+        join_packet_report(0, 3, 1, vec![4]),
         // Packets for second OUI
         packet_report(1, 0, 24, vec![4]),
         packet_report(1, 1, 48, vec![5]),
         packet_report(1, 2, 1, vec![6]),
+        join_packet_report(1, 3, 1, vec![4]),
         // Packets for third OUI
         packet_report(2, 0, 24, vec![7]),
+        join_packet_report(2, 1, 1, vec![4]),
     ];
     // Set up orgs:
     let orgs = MockConfigServer::default();

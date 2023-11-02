@@ -1,20 +1,22 @@
 use crate::{
     gateway_updater::MessageReceiver,
-    hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap, SharedHexDensityMap},
+    hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap},
     last_beacon::LastBeacon,
     Settings,
 };
 use chrono::{DateTime, Duration, Utc};
+use futures::future::LocalBoxFuture;
 use helium_crypto::PublicKeyBinary;
 use sqlx::PgPool;
 use std::collections::HashMap;
+use task_manager::ManagedTask;
 
 // The number in minutes within which the gateway has registered a beacon
 // to the oracle for inclusion in transmit scaling density calculations
 const HIP_17_INTERACTIVITY_LIMIT: i64 = 3600;
 
 pub struct Server {
-    hex_density_map: SharedHexDensityMap,
+    pub hex_density_map: HexDensityMap,
     pool: PgPool,
     refresh_offset: Duration,
     gateway_cache_receiver: MessageReceiver,
@@ -28,14 +30,23 @@ pub enum TxScalerError {
     RecentActivity(#[from] sqlx::Error),
 }
 
+impl ManagedTask for Server {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
 impl Server {
     pub async fn from_settings(
         settings: &Settings,
         pool: PgPool,
         gateway_cache_receiver: MessageReceiver,
-    ) -> Result<Self, TxScalerError> {
+    ) -> anyhow::Result<Self> {
         let mut server = Self {
-            hex_density_map: SharedHexDensityMap::new(),
+            hex_density_map: HexDensityMap::new(),
             pool,
             refresh_offset: settings.loader_window_max_lookback_age(),
             gateway_cache_receiver,
@@ -46,27 +57,22 @@ impl Server {
         Ok(server)
     }
 
-    pub fn hex_density_map(&self) -> impl HexDensityMap {
-        self.hex_density_map.clone()
-    }
-
-    pub async fn run(&mut self, shutdown: &triggered::Listener) -> Result<(), TxScalerError> {
-        tracing::info!("density_scaler: starting transmit scaler process");
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("starting tx scaler process");
 
         loop {
-            if shutdown.is_triggered() {
-                tracing::info!("density_scaler: stopping transmit scaler");
-                return Ok(());
-            }
-
             tokio::select! {
+                biased;
+                _ = shutdown.clone() => break,
                 _ = self.gateway_cache_receiver.changed() => self.refresh_scaling_map().await?,
-                _ = shutdown.clone() => return Ok(()),
             }
         }
+
+        tracing::info!("stopping tx scaler process");
+        Ok(())
     }
 
-    pub async fn refresh_scaling_map(&mut self) -> Result<(), TxScalerError> {
+    pub async fn refresh_scaling_map(&mut self) -> anyhow::Result<()> {
         let refresh_start = Utc::now() - self.refresh_offset;
         tracing::info!("density_scaler: generating hex scaling map, starting at {refresh_start:?}");
         let mut global_map = GlobalHexMap::new();

@@ -1,9 +1,15 @@
+use anyhow::anyhow;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::{FileInfo, FileStore, FileType};
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::{
+    future::LocalBoxFuture,
+    stream::{StreamExt, TryStreamExt},
+};
 use helium_proto::{BlockchainTokenTypeV1, Message, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use task_manager::ManagedTask;
+use tokio;
 use tokio::sync::{mpsc, watch};
 
 #[derive(thiserror::Error, Debug)]
@@ -27,7 +33,7 @@ pub enum PriceTrackerError {
 }
 
 #[derive(Clone)]
-struct Price {
+pub struct Price {
     price: u64,
     timestamp: DateTime<Utc>,
 }
@@ -111,6 +117,29 @@ impl PriceTracker {
         }))
     }
 
+    pub async fn new_tm(settings: &Settings) -> anyhow::Result<(Self, PriceTrackerDaemon)> {
+        let file_store = FileStore::from_settings(&settings.file_store).await?;
+        let price_duration = settings.price_duration();
+        let (price_sender, price_receiver) = watch::channel(Prices::new());
+        let (task_kill_sender, task_kill_receiver) = mpsc::channel(1);
+        let initial_timestamp =
+            calculate_initial_prices(&file_store, price_duration, &price_sender).await?;
+
+        Ok((
+            Self {
+                price_duration: settings.price_duration(),
+                price_receiver,
+                task_killer: task_kill_sender,
+            },
+            PriceTrackerDaemon {
+                file_store,
+                price_sender,
+                task_killer: task_kill_receiver,
+                after: initial_timestamp,
+            },
+        ))
+    }
+
     pub async fn price(
         &self,
         token_type: &BlockchainTokenTypeV1,
@@ -164,6 +193,44 @@ async fn run(
     }
 
     Ok(())
+}
+
+pub struct PriceTrackerDaemon {
+    file_store: FileStore,
+    price_sender: watch::Sender<Prices>,
+    task_killer: mpsc::Receiver<String>,
+    after: DateTime<Utc>,
+}
+
+impl ManagedTask for PriceTrackerDaemon {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
+impl PriceTrackerDaemon {
+    async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("starting price tracker");
+        let mut trigger = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            let shutdown = shutdown.clone();
+            tokio::select! {
+                _ = shutdown => break,
+                _ = trigger.tick() => {
+                    let timestamp = process_files(&self.file_store, &self.price_sender, self.after).await?;
+                    self.after = timestamp.unwrap_or(self.after);
+                }
+                msg = self.task_killer.recv() => if let Some(error) = msg {
+                    return Err(anyhow!(error));
+            }
+            }
+        }
+        tracing::info!("stopping price tracker");
+        Ok(())
+    }
 }
 
 async fn calculate_initial_prices(

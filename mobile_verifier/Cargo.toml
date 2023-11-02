@@ -12,6 +12,7 @@ config = {workspace = true}
 thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
+h3o = {workspace = true, features = ["geo"]}
 http-serde = {workspace = true}
 clap = {workspace = true}
 sqlx = {workspace = true}
@@ -44,5 +45,4 @@ price = {path = "../price"}
 rand = {workspace = true}
 async-trait = {workspace = true}
 retainer = {workspace = true}
-h3o = {workspace = true}
 uuid = {workspace = true}
