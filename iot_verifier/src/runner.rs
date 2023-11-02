@@ -106,7 +106,7 @@ where
         let witness_max_retries = settings.witness_max_retries;
         let deny_list_latest_url = settings.denylist.denylist_url.clone();
         let mut deny_list = DenyList::new(&settings.denylist)?;
-        let region_cache = RegionCache::from_settings(settings, gateways)?;
+        let region_cache = RegionCache::new(settings.region_params_refresh_interval(), gateways)?;
         // force update to latest in order to update the tag name
         // when first run, the denylist will load the local filter
         // but we dont save the tag name so it defaults to 0
@@ -188,7 +188,7 @@ where
         Ok(())
     }
 
-    async fn handle_db_tick(&self) -> anyhow::Result<()> {
+    pub async fn handle_db_tick(&self) -> anyhow::Result<()> {
         tracing::info!("starting query get_next_beacons");
         let db_beacon_reports =
             Report::get_next_beacons(&self.pool, self.beacon_max_retries).await?;

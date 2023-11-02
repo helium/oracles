@@ -1,4 +1,4 @@
-use crate::{entropy::Entropy, poc_report::Report, telemetry, Settings};
+use crate::{entropy::Entropy, poc_report::Report, telemetry};
 use chrono::Duration;
 use file_store::{
     file_sink::FileSinkClient,
@@ -37,10 +37,13 @@ lazy_static! {
 }
 
 pub struct Purger {
-    pool: PgPool,
-    base_stale_period: Duration,
-    invalid_beacon_sink: FileSinkClient,
-    invalid_witness_sink: FileSinkClient,
+    pub pool: PgPool,
+    pub base_stale_period: Duration,
+    pub beacon_stale_period: Duration,
+    pub witness_stale_period: Duration,
+    pub entropy_stale_period: Duration,
+    pub invalid_beacon_sink: FileSinkClient,
+    pub invalid_witness_sink: FileSinkClient,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -57,16 +60,21 @@ impl ManagedTask for Purger {
 }
 
 impl Purger {
-    pub async fn from_settings(
-        settings: &Settings,
+    pub async fn new(
+        base_stale_period: Duration,
+        beacon_stale_period: Duration,
+        witness_stale_period: Duration,
+        entropy_stale_period: Duration,
         pool: PgPool,
         invalid_beacon_sink: FileSinkClient,
         invalid_witness_sink: FileSinkClient,
     ) -> Result<Self, NewPurgerError> {
-        let base_stale_period = settings.base_stale_period();
         Ok(Self {
             pool,
             base_stale_period,
+            beacon_stale_period,
+            witness_stale_period,
+            entropy_stale_period,
             invalid_beacon_sink,
             invalid_witness_sink,
         })
@@ -95,12 +103,12 @@ impl Purger {
         Ok(())
     }
 
-    async fn handle_db_tick(&self) -> anyhow::Result<()> {
+    pub async fn handle_db_tick(&self) -> anyhow::Result<()> {
         // pull stale beacons and witnesses
         // for each we have to write out an invalid report to S3
         // as these wont have previously resulted in a file going to s3
         // once the report is safely on s3 we can then proceed to purge from the db
-        let beacon_stale_period = self.base_stale_period + *BEACON_STALE_PERIOD;
+        let beacon_stale_period = self.base_stale_period + self.beacon_stale_period;
         tracing::info!(
             "starting query get_stale_pending_beacons with stale period: {beacon_stale_period}"
         );
@@ -122,7 +130,7 @@ impl Purger {
         self.invalid_beacon_sink.commit().await?;
         tx.into_inner().commit().await?;
 
-        let witness_stale_period = self.base_stale_period + *WITNESS_STALE_PERIOD;
+        let witness_stale_period = self.base_stale_period + self.witness_stale_period;
         tracing::info!(
             "starting query get_stale_pending_witnesses with stale period: {witness_stale_period}"
         );
@@ -147,7 +155,11 @@ impl Purger {
         tracing::info!("completed purging {num_stale_witnesses} stale witnesses");
 
         // purge any stale entropy, no need to output anything to s3 here
-        _ = Entropy::purge(&self.pool, self.base_stale_period + *ENTROPY_STALE_PERIOD).await;
+        _ = Entropy::purge(
+            &self.pool,
+            self.base_stale_period + self.entropy_stale_period,
+        )
+        .await;
         Ok(())
     }
 

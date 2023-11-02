@@ -19,6 +19,15 @@ pub struct Settings {
     /// in the event the verifier is down for an extended period of time
     #[serde(default = "default_base_stale_period")]
     pub base_stale_period: i64,
+    /// the period after which a beacon report in the DB will be deemed stale
+    #[serde(default = "default_beacon_stale_period")]
+    pub beacon_stale_period: i64,
+    /// the period after which a witness report in the DB will be deemed stale
+    #[serde(default = "default_witness_stale_period")]
+    pub witness_stale_period: i64,
+    /// the period after which an entropy report in the DB will be deemed stale
+    #[serde(default = "default_entropy_stale_period")]
+    pub entropy_stale_period: i64,
     pub database: db_store::Settings,
     pub iot_config_client: iot_config::client::Settings,
     pub ingest: file_store::Settings,
@@ -154,6 +163,18 @@ pub fn default_base_stale_period() -> i64 {
     0
 }
 
+pub fn default_beacon_stale_period() -> i64 {
+    60 * 45
+}
+
+pub fn default_witness_stale_period() -> i64 {
+    60 * 45
+}
+
+pub fn default_entropy_stale_period() -> i64 {
+    60 * 60
+}
+
 fn default_reward_period() -> i64 {
     24
 }
@@ -234,6 +255,18 @@ impl Settings {
 
     pub fn base_stale_period(&self) -> Duration {
         Duration::seconds(self.base_stale_period)
+    }
+
+    pub fn beacon_stale_period(&self) -> Duration {
+        Duration::seconds(self.beacon_stale_period)
+    }
+
+    pub fn witness_stale_period(&self) -> Duration {
+        Duration::seconds(self.witness_stale_period)
+    }
+
+    pub fn entropy_stale_period(&self) -> Duration {
+        Duration::seconds(self.entropy_stale_period)
     }
 
     pub fn entropy_interval(&self) -> Duration {
