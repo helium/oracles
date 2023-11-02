@@ -394,10 +394,10 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            let broadcast = stream_existing_routes(&pool, &since, &signing_key, tx.clone())
-                .and_then(|_| stream_existing_euis(&pool, &since, &signing_key, tx.clone()))
-                .and_then(|_| stream_existing_devaddrs(&pool, &since, &signing_key, tx.clone()))
-                .and_then(|_| stream_existing_skfs(&pool, &since, &signing_key, tx.clone()))
+            let broadcast = stream_existing_routes(&pool, since, &signing_key, tx.clone())
+                .and_then(|_| stream_existing_euis(&pool, since, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_devaddrs(&pool, since, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_skfs(&pool, since, &signing_key, tx.clone()))
                 .await;
             if let Err(error) = broadcast {
                 tracing::error!(
@@ -1069,14 +1069,14 @@ where
 
 async fn stream_existing_routes(
     pool: &Pool<Postgres>,
-    since: &DateTime<Utc>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
-    route::active_route_stream(pool, since)
+    route::route_stream(pool, since)
         .then(move |(route, deleted)| {
             let mut route_res = RouteStreamResV1 {
                 action: if deleted {
@@ -1104,7 +1104,7 @@ async fn stream_existing_routes(
 
 async fn stream_existing_euis(
     pool: &Pool<Postgres>,
-    since: &DateTime<Utc>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
@@ -1139,7 +1139,7 @@ async fn stream_existing_euis(
 
 async fn stream_existing_devaddrs(
     pool: &Pool<Postgres>,
-    since: &DateTime<Utc>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
@@ -1176,7 +1176,7 @@ async fn stream_existing_devaddrs(
 
 async fn stream_existing_skfs(
     pool: &Pool<Postgres>,
-    since: &DateTime<Utc>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {

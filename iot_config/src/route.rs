@@ -521,9 +521,9 @@ pub fn list_devaddr_ranges_for_route<'a>(
         .boxed())
 }
 
-pub fn active_route_stream<'a>(
+pub fn route_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a,
-    since: &'a DateTime<Utc>,
+    since: DateTime<Utc>,
 ) -> impl Stream<Item = (Route, bool)> + 'a {
     sqlx::query(
         r#"
@@ -548,13 +548,13 @@ pub fn active_route_stream<'a>(
             locked: route.locked,
             ignore_empty_skf: route.ignore_empty_skf,
         }, deleted))})
-    .filter_map(|route| async move { route.ok() })
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
 pub fn eui_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a + Copy,
-    since: &'a DateTime<Utc>,
+    since: DateTime<Utc>,
 ) -> impl Stream<Item = (EuiPair, bool)> + 'a {
     sqlx::query(
         r#"
@@ -566,13 +566,13 @@ pub fn eui_stream<'a>(
     .bind(since)
     .fetch(db)
     .and_then(|row| async move { EuiPair::from_row(&row).map(|eui| (eui, row.get("deleted"))) })
-    .filter_map(|eui| async move { eui.ok() })
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
 pub fn devaddr_range_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a + Copy,
-    since: &'a DateTime<Utc>,
+    since: DateTime<Utc>,
 ) -> impl Stream<Item = (DevAddrRange, bool)> + 'a {
     sqlx::query(
         r#"
@@ -586,13 +586,13 @@ pub fn devaddr_range_stream<'a>(
     .and_then(
         |row| async move { DevAddrRange::from_row(&row).map(|dar| (dar, row.get("deleted"))) },
     )
-    .filter_map(|devaddr| async move { devaddr.ok() })
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
 pub fn skf_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a + Copy,
-    since: &'a DateTime<Utc>,
+    since: DateTime<Utc>,
 ) -> impl Stream<Item = (Skf, bool)> + 'a {
     sqlx::query(
         r#"
@@ -604,7 +604,7 @@ pub fn skf_stream<'a>(
     .bind(since)
     .fetch(db)
     .and_then(|row| async move { Skf::from_row(&row).map(|skf| (skf, row.get("deleted"))) })
-    .filter_map(|skf| async move { skf.ok() })
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
