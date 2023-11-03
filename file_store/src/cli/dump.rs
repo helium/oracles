@@ -83,7 +83,7 @@ impl Cmd {
                     let dtr = DataTransferSessionIngestReport::decode(msg)?;
                     print_json(&json!({
                         "received_timestamp": dtr.received_timestamp,
-                        "reward_cancelled": dtr.report.reward_cancelled,
+                        "rewardable_bytes": dtr.report.rewardable_bytes,
                         "pub_key": dtr.report.data_transfer_usage.pub_key,
                         "upload_bytes": dtr.report.data_transfer_usage.upload_bytes,
                         "download_bytes": dtr.report.data_transfer_usage.download_bytes,
@@ -100,7 +100,7 @@ impl Cmd {
                         "invalid_reason": msg.reason,
                         "invalid_timestamp": msg.timestamp,
                         "received_timestamp": msg.report.received_timestamp,
-                        "reward_cancelled": msg.report.report.reward_cancelled,
+                        "rewardable_bytes": msg.report.report.rewardable_bytes,
                         "hotspot_key": PublicKey::try_from(msg.report.report.data_transfer_usage.pub_key)?,
                         "upload_bytes": msg.report.report.data_transfer_usage.upload_bytes,
                         "download_bytes": msg.report.report.data_transfer_usage.download_bytes,

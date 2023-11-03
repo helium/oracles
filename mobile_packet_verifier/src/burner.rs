@@ -12,6 +12,7 @@ pub struct DataTransferSession {
     payer: PublicKeyBinary,
     uploaded_bytes: i64,
     downloaded_bytes: i64,
+    rewardable_bytes: i64,
     first_timestamp: DateTime<Utc>,
     last_timestamp: DateTime<Utc>,
 }
@@ -24,7 +25,7 @@ pub struct PayerTotals {
 
 impl PayerTotals {
     fn push_sess(&mut self, sess: DataTransferSession) {
-        self.total_dcs += bytes_to_dc(sess.downloaded_bytes as u64 + sess.uploaded_bytes as u64);
+        self.total_dcs += bytes_to_dc(sess.rewardable_bytes as u64);
         self.sessions.push(sess);
     }
 }
@@ -116,8 +117,7 @@ where
                 .await?;
 
             for session in sessions {
-                let num_dcs =
-                    bytes_to_dc(session.uploaded_bytes as u64 + session.downloaded_bytes as u64);
+                let num_dcs = bytes_to_dc(session.rewardable_bytes as u64);
                 self.valid_sessions
                     .write(
                         ValidDataTransferSession {
@@ -125,6 +125,7 @@ where
                             payer: session.payer.into(),
                             upload_bytes: session.uploaded_bytes as u64,
                             download_bytes: session.downloaded_bytes as u64,
+                            rewardable_bytes: session.rewardable_bytes as u64,
                             num_dcs,
                             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
                             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
