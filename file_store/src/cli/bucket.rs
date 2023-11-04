@@ -214,9 +214,9 @@ fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_
         FileType::ValidatedHeartbeat => {
             ValidatedHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
-        FileType::SpeedtestAvg => SpeedtestAverage::decode(buf)
-            .map_err(Error::from)
-            .and_then(|event| event.to_value_if(pub_key)),
+        FileType::SpeedtestAvg => {
+            SpeedtestAverage::decode(buf).and_then(|event| event.to_value_if(pub_key))
+        }
         FileType::CellSpeedtest => {
             CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
