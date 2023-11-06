@@ -388,15 +388,15 @@ impl ValidatedHeartbeat {
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
             "#
-            )
-            .bind(self.heartbeat.cbsd_id)
-            .bind(self.heartbeat.hotspot_key)
-            .bind(self.cell_type)
-            .bind(self.heartbeat.timestamp)
-            .bind(truncated_timestamp)
-            .bind(self.heartbeat.coverage_object)
-            .fetch_one(&mut *exec)
-            .await?;
+        )
+        .bind(self.heartbeat.cbsd_id)
+        .bind(self.heartbeat.hotspot_key)
+        .bind(self.cell_type)
+        .bind(self.heartbeat.timestamp)
+        .bind(truncated_timestamp)
+        .bind(self.heartbeat.coverage_object)
+        .fetch_one(&mut *exec)
+        .await?;
         Ok(())
     }
 
@@ -418,6 +418,7 @@ impl ValidatedHeartbeat {
         .bind(self.distance_to_asserted)
         .bind(self.heartbeat.timestamp)
         .bind(truncated_timestamp)
+        .bind(self.heartbeat.coverage_object)
         .fetch_one(&mut *exec)
         .await?;
         Ok(())
@@ -733,21 +734,22 @@ impl SeniorityUpdate<'_> {
                 sqlx::query(
                     r#"
                     INSERT INTO seniority
-                      (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason)
+                      (radio_key, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason, radio_type)
                     VALUES
-                      ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (cbsd_id, seniority_ts) DO UPDATE SET
+                      ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (radio_key, radio_type, seniority_ts) DO UPDATE SET
                       uuid = EXCLUDED.uuid,
                       last_heartbeat = EXCLUDED.last_heartbeat,
                       update_reason = EXCLUDED.update_reason
                     "#,
                 )
-                .bind(&self.heartbeat.heartbeat.cbsd_id)
+                .bind(self.heartbeat.heartbeat.key())
                 .bind(self.heartbeat.heartbeat.timestamp)
                 .bind(self.heartbeat.heartbeat.coverage_object)
                 .bind(new_seniority)
                 .bind(self.heartbeat.heartbeat.timestamp)
                 .bind(update_reason as i32)
+                .bind(&self.heartbeat.heartbeat.hb_type)
                 .execute(&mut *exec)
                 .await?;
             }
@@ -757,12 +759,12 @@ impl SeniorityUpdate<'_> {
                     UPDATE seniority
                     SET last_heartbeat = $1
                     WHERE
-                      cbsd_id = $2 AND
+                      radio_key = $2 AND
                       seniority_ts = $3
                     "#,
                 )
                 .bind(self.heartbeat.heartbeat.timestamp)
-                .bind(&self.heartbeat.heartbeat.cbsd_id)
+                .bind(self.heartbeat.heartbeat.key())
                 .bind(curr_seniority)
                 .execute(&mut *exec)
                 .await?;
