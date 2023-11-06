@@ -187,15 +187,17 @@ impl CoverageObject {
 
     pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
-        let key = self.key().to_owned();
+        let key = self.key();
+        let hb_type = key.hb_type();
+        let key = key.to_owned();
         for hex in self.coverage_object.coverage {
             let location: u64 = hex.location.into();
             sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
-                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at)
+                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type)
                 VALUES
-                  ($1, $2, $3, $4, $5, $6, $7)
+                  ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (uuid, hex) DO UPDATE SET
                   inserted_at = EXCLUDED.inserted_at
                 "#,
@@ -207,6 +209,7 @@ impl CoverageObject {
             .bind(SignalLevel::from(hex.signal_level))
             .bind(self.coverage_object.coverage_claim_time)
             .bind(insertion_time)
+            .bind(hb_type)
             .execute(&mut *transaction)
             .await?;
         }

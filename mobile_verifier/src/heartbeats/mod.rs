@@ -25,7 +25,7 @@ use uuid::Uuid;
 /// Minimum number of heartbeats required to give a reward to the hotspot.
 const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type)]
 #[sqlx(type_name = "radio_type")]
 #[sqlx(rename_all = "lowercase")]
 pub enum HbType {
