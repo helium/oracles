@@ -26,10 +26,11 @@ use uuid::Uuid;
 const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type)]
-#[repr(i32)]
+#[sqlx(type_name = "radio_type")]
+#[sqlx(rename_all = "lowercase")]
 pub enum HbType {
-    Cbrs = 0,
-    Wifi = 1,
+    Cbrs,
+    Wifi,
 }
 
 #[derive(Copy, Clone)]

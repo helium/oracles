@@ -5,6 +5,11 @@ CREATE TYPE signal_level AS ENUM (
        'high'
 );
 
+CREATE TYPE radio_type as ENUM (
+       'cbrs',
+       'wifi'
+);
+
 CREATE TABLE hex_coverage (
        uuid UUID NOT NULL,
        hex BIGINT NOT NULL,
@@ -13,7 +18,7 @@ CREATE TABLE hex_coverage (
        signal_level signal_level NOT NULL,
        coverage_claim_time TIMESTAMPTZ NOT NULL,
        inserted_at TIMESTAMPTZ NOT NULL,
-       radio_type INT NOT NULL,
+       radio_type radio_type NOT NULL,
        PRIMARY KEY (uuid, hex)
 );
 
@@ -24,7 +29,7 @@ CREATE TABLE seniority (
        uuid UUID NOT NULL,
        update_reason INT NOT NULL,
        inserted_at TIMESTAMPTZ NOT NULL,
-       radio_type INT NOT NULL,
+       radio_type radio_type NOT NULL,
        PRIMARY KEY (radio_key, radio_type, seniority_ts)
 );
 
