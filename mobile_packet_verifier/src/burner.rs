@@ -129,7 +129,6 @@ where
                             num_dcs,
                             first_timestamp: session.first_timestamp.encode_timestamp_millis(),
                             last_timestamp: session.last_timestamp.encode_timestamp_millis(),
-                            rewardable_bytes: 0,
                         },
                         &[],
                     )
