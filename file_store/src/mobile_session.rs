@@ -191,7 +191,6 @@ impl MsgDecode for DataTransferSessionReq {
 impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
     type Error = Error;
 
-    #[allow(deprecated)]
     fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
         Ok(Self {
             reward_cancelled: v.reward_cancelled,
@@ -207,7 +206,6 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
 }
 
 impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
-    #[allow(deprecated)]
     fn from(v: DataTransferSessionReq) -> Self {
         let report: DataTransferEventProto = v.data_transfer_usage.into();
         Self {
