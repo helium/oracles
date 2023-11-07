@@ -371,7 +371,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.key())
         .bind(self.heartbeat.coverage_object)
         .execute(&mut *exec)
-            .await?;
+        .await?;
         // Save the heartbeat
         match self.heartbeat.hb_type {
             HbType::Cbrs => self.save_cbrs_hb(exec).await,
@@ -396,7 +396,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.timestamp)
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
-        .fetch_one(&mut *exec)
+        .execute(&mut *exec)
         .await?;
         Ok(())
     }
@@ -420,7 +420,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.timestamp)
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
-        .fetch_one(&mut *exec)
+        .execute(&mut *exec)
         .await?;
         Ok(())
     }
