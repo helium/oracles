@@ -317,7 +317,7 @@ impl Seniority {
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as(
-            "SELECT * FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC LIMIT 1",
+            "SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC LIMIT 1",
         )
         .bind(key)
         .fetch_optional(&mut *exec)
@@ -336,7 +336,7 @@ impl CoveredHexStream for Pool<Postgres> {
         // Adjust the coverage
         let seniority: Seniority = sqlx::query_as(
             r#"
-            SELECT * FROM seniority
+            SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority
             WHERE
               radio_key = $1 AND
               inserted_at <= $2
@@ -357,7 +357,7 @@ impl CoveredHexStream for Pool<Postgres> {
             .await?;
 
         Ok(
-            sqlx::query_as("SELECT * FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
+            sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
                 .bind(key)
                 .bind(coverage_obj)
                 .fetch(self)
@@ -549,7 +549,7 @@ impl CoveredHexCache {
         else {
             return Ok(None);
         };
-        let coverage: Vec<_> = sqlx::query_as("SELECT * FROM hex_coverage WHERE uuid = $1")
+        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE uuid = $1")
             .bind(uuid)
             .fetch_all(&self.pool)
             .await?
