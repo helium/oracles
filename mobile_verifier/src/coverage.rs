@@ -126,8 +126,8 @@ impl CoverageDaemon {
 }
 
 pub struct CoverageObject {
-    coverage_object: file_store::coverage::CoverageObject,
-    validity: CoverageObjectValidity,
+    pub coverage_object: file_store::coverage::CoverageObject,
+    pub validity: CoverageObjectValidity,
 }
 
 impl CoverageObject {
