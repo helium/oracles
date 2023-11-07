@@ -482,7 +482,7 @@ impl CoverageClaimTimeCache {
         } else {
             let coverage_claim_time: Option<DateTime<Utc>> = sqlx::query_scalar(
                 r#"
-                SELECT coverage_claim_time FROM hex_coverage WHERE key = $1 AND uuid = $2 LIMIT 1
+                SELECT coverage_claim_time FROM hex_coverage WHERE radio_key = $1 AND uuid = $2 LIMIT 1
                 "#,
             )
             .bind(radio_key)
