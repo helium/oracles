@@ -750,7 +750,7 @@ impl SeniorityUpdate<'_> {
                 .bind(new_seniority)
                 .bind(self.heartbeat.heartbeat.timestamp)
                 .bind(update_reason as i32)
-                .bind(&self.heartbeat.heartbeat.hb_type)
+                .bind(self.heartbeat.heartbeat.hb_type)
                 .execute(&mut *exec)
                 .await?;
             }
