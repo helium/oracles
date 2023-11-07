@@ -140,15 +140,15 @@ impl<'r> Decode<'r, Postgres> for OwnedKeyType {
 
 #[derive(Clone)]
 pub struct Heartbeat {
-    hb_type: HbType,
-    hotspot_key: PublicKeyBinary,
-    cbsd_id: Option<String>,
-    operation_mode: bool,
-    lat: f64,
-    lon: f64,
-    coverage_object: Option<Uuid>,
-    location_validation_timestamp: Option<DateTime<Utc>>,
-    timestamp: DateTime<Utc>,
+    pub hb_type: HbType,
+    pub hotspot_key: PublicKeyBinary,
+    pub cbsd_id: Option<String>,
+    pub operation_mode: bool,
+    pub lat: f64,
+    pub lon: f64,
+    pub coverage_object: Option<Uuid>,
+    pub location_validation_timestamp: Option<DateTime<Utc>>,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl Heartbeat {
@@ -570,7 +570,6 @@ pub(crate) async fn process_validated_heartbeats(
         }
         if let Some(coverage_claim_time) = coverage_claim_time_cache
             .fetch_coverage_claim_time(
-                // What do here?
                 validated_heartbeat.heartbeat.key(),
                 &validated_heartbeat.heartbeat.coverage_object,
                 &mut *transaction,
@@ -625,7 +624,7 @@ pub struct SeniorityUpdate<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-enum SeniorityUpdateAction {
+pub enum SeniorityUpdateAction {
     NoAction,
     Insert {
         new_seniority: DateTime<Utc>,
@@ -637,7 +636,7 @@ enum SeniorityUpdateAction {
 }
 
 impl<'a> SeniorityUpdate<'a> {
-    fn new(heartbeat: &'a ValidatedHeartbeat, action: SeniorityUpdateAction) -> Self {
+    pub fn new(heartbeat: &'a ValidatedHeartbeat, action: SeniorityUpdateAction) -> Self {
         Self { heartbeat, action }
     }
 
