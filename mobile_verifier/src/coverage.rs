@@ -541,7 +541,7 @@ impl CoveredHexCache {
             return Ok(Some(covered_hexes.clone()));
         }
         let Some((radio_key, inserted_at)) = sqlx::query_scalar(
-            "SELECT radio_key, inserted_at FROM hex_coverage WHERE uuid = $1 LIMIT 1",
+            "SELECT (radio_key, inserted_at) FROM hex_coverage WHERE uuid = $1 LIMIT 1",
         )
         .bind(uuid)
         .fetch_optional(&self.pool)
@@ -576,7 +576,7 @@ impl CoveredHexCache {
 #[derive(Clone)]
 pub struct CachedCoverage {
     pub radio_key: OwnedKeyType,
-    coverage: Vec<CellIndex>,
+    pub coverage: Vec<CellIndex>,
     pub inserted_at: DateTime<Utc>,
 }
 
