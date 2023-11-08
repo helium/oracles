@@ -23,7 +23,8 @@
 | :--- | :-- |
 | SpeedtestReqV1 | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L7) |
 | CellHeartbeatReqV1 | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L31) |
-| DataTransferSessionReqV1 | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L154) |
+| DataTransferSessionReqV1 | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L376) |
+| CoverageObjectReqV1 | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L136) |
 
 ### S3 Outputs
 
@@ -31,5 +32,6 @@
 | :--- | :-- | :-- |
 | CellHeartbeatIngestReport | heartbeat_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L50) |
 | CellSpeedtestIngestReport | speedtest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L25) |
-| DataTransferSessionIngestReport | data_transfer_session_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/149997d2a74e08679e56c2c892d7e46f2d0d1c46/src/service/poc_mobile.proto#L177) |
+| DataTransferSessionIngestReport | data_transfer_session_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L414) |
+| CoverageObjectIngestReport | coverage_object_ingest_report.\* | [Proto](https://github.com/helium/proto/blob/9fc57133ed1e760c3f1b65dd22d55c09c84832da/src/service/poc_mobile.proto#L157) |
 
