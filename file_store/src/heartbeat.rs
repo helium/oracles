@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CbrsHeartbeat {
@@ -18,6 +19,13 @@ pub struct CbrsHeartbeat {
     pub operation_mode: bool,
     pub cbsd_category: String,
     pub cbsd_id: String,
+    pub coverage_object: Vec<u8>,
+}
+
+impl CbrsHeartbeat {
+    pub fn coverage_object(&self) -> Option<Uuid> {
+        Uuid::from_slice(&self.coverage_object).ok()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -47,6 +55,7 @@ impl TryFrom<CellHeartbeatReqV1> for CbrsHeartbeat {
             operation_mode: v.operation_mode,
             cbsd_category: v.cbsd_category,
             cbsd_id: v.cbsd_id,
+            coverage_object: v.coverage_object,
         })
     }
 }

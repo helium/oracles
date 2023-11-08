@@ -1,4 +1,5 @@
-use super::{process_heartbeat_stream, Heartbeat};
+use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
+use crate::coverage::{CoverageClaimTimeCache, CoveredHexCache};
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -16,7 +17,10 @@ pub struct HeartbeatDaemon {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_client: GatewayClient,
     heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
-    file_sink: FileSinkClient,
+    max_distance: f64,
+    modeled_coverage_start: DateTime<Utc>,
+    heartbeat_sink: FileSinkClient,
+    seniority_sink: FileSinkClient,
 }
 
 impl HeartbeatDaemon {
@@ -24,27 +28,36 @@ impl HeartbeatDaemon {
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_client: GatewayClient,
         heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
-        file_sink: FileSinkClient,
+        max_distance: f64,
+        modeled_coverage_start: DateTime<Utc>,
+        heartbeat_sink: FileSinkClient,
+        seniority_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
             gateway_client,
             heartbeats,
-            file_sink,
+            max_distance,
+            modeled_coverage_start,
+            heartbeat_sink,
+            seniority_sink,
         }
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
             tracing::info!("Starting CBRS HeartbeatDaemon");
-            let cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+            let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
 
-            let cache_clone = cache.clone();
+            let heartbeat_cache_clone = heartbeat_cache.clone();
             tokio::spawn(async move {
-                cache_clone
+                heartbeat_cache_clone
                     .monitor(4, 0.25, time::Duration::from_secs(60 * 60 * 3))
                     .await
             });
+
+            let coverage_claim_time_cache = CoverageClaimTimeCache::new();
+            let covered_hex_cache = CoveredHexCache::new(&self.pool);
 
             loop {
                 tokio::select! {
@@ -53,7 +66,12 @@ impl HeartbeatDaemon {
                         tracing::info!("CBRS HeartbeatDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.heartbeats.recv() => self.process_file(file, &cache).await?,
+                    Some(file) = self.heartbeats.recv() => self.process_file(
+                        file,
+                        &heartbeat_cache,
+                        &coverage_claim_time_cache,
+                        &covered_hex_cache,
+                    ).await?,
                 }
             }
 
@@ -67,25 +85,37 @@ impl HeartbeatDaemon {
     async fn process_file(
         &self,
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
-        cache: &Cache<(String, DateTime<Utc>), ()>,
+        heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
+        coverage_claim_time_cache: &CoverageClaimTimeCache,
+        covered_hex_cache: &CoveredHexCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing CBRS heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
-        // map the ingest reports to our generic heartbeat  type
-        let reports = file
+        let heartbeats = file
             .into_stream(&mut transaction)
             .await?
             .map(Heartbeat::from);
-        process_heartbeat_stream(
-            reports,
-            &self.gateway_client,
-            &self.file_sink,
-            cache,
-            transaction,
-            &epoch,
+        process_validated_heartbeats(
+            ValidatedHeartbeat::validate_heartbeats(
+                heartbeats,
+                &self.gateway_client,
+                covered_hex_cache,
+                self.max_distance,
+                &epoch,
+            ),
+            heartbeat_cache,
+            coverage_claim_time_cache,
+            self.modeled_coverage_start,
+            &self.heartbeat_sink,
+            &self.seniority_sink,
+            &mut transaction,
         )
-        .await
+        .await?;
+        self.heartbeat_sink.commit().await?;
+        self.seniority_sink.commit().await?;
+        transaction.commit().await?;
+        Ok(())
     }
 }

@@ -141,7 +141,9 @@ pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
 pub const MAPPER_MSG: &str = "mapper_msg";
+pub const COVERAGE_OBJECT: &str = "coverage_object";
 pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
+pub const SENIORITY_UPDATE: &str = "seniority_update";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
@@ -177,7 +179,9 @@ pub enum FileType {
     SubscriberLocationIngestReport,
     VerifiedSubscriberLocationIngestReport,
     MapperMsg,
+    CoverageObject,
     CoverageObjectIngestReport,
+    SeniorityUpdate,
     VerifiedSpeedtest,
     WifiHeartbeat,
     WifiHeartbeatIngestReport,
@@ -224,7 +228,9 @@ impl fmt::Display for FileType {
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,
+            Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
+            Self::SeniorityUpdate => SENIORITY_UPDATE,
         };
         f.write_str(s)
     }
@@ -271,7 +277,9 @@ impl FileType {
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,
+            Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
+            Self::SeniorityUpdate => SENIORITY_UPDATE,
         }
     }
 }
@@ -318,7 +326,9 @@ impl FromStr for FileType {
             PRICE_REPORT => Self::PriceReport,
             MOBILE_REWARD_SHARE => Self::MobileRewardShare,
             MAPPER_MSG => Self::MapperMsg,
+            COVERAGE_OBJECT => Self::CoverageObject,
             COVERAGE_OBJECT_INGEST_REPORT => Self::CoverageObjectIngestReport,
+            SENIORITY_UPDATE => Self::SeniorityUpdate,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)
