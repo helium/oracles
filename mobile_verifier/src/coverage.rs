@@ -195,9 +195,9 @@ impl CoverageObject {
             sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
-                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type)
+                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type, signal_power)
                 VALUES
-                  ($1, $2, $3, $4, $5, $6, $7, $8)
+                  ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (uuid, hex) DO UPDATE SET
                   inserted_at = EXCLUDED.inserted_at
                 "#,
@@ -210,6 +210,7 @@ impl CoverageObject {
             .bind(self.coverage_object.coverage_claim_time)
             .bind(insertion_time)
             .bind(hb_type)
+            .bind(hex.signal_power)
             .execute(&mut *transaction)
             .await?;
         }
