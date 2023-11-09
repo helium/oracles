@@ -1,6 +1,6 @@
 use crate::{
     coverage::{CoverageReward, CoveredHexStream, CoveredHexes},
-    data_session::HotspotMap,
+    data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
@@ -9,8 +9,10 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile as proto;
-use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
+use helium_proto::services::{
+    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
+};
+use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
@@ -34,6 +36,9 @@ const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
 
 /// shares of the mappers pool allocated per eligible subscriber for discovery mapping
 const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
+
+// Percent of total emissions allocated for service provider rewards
+const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
 
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -194,6 +199,104 @@ impl MapperShares {
                 end_period: reward_period.end.encode_timestamp(),
                 reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
             })
+    }
+}
+
+#[derive(Default)]
+pub struct ServiceProviderShares {
+    pub shares: Vec<ServiceProviderDataSession>,
+}
+
+impl ServiceProviderShares {
+    pub fn new(shares: Vec<ServiceProviderDataSession>) -> Self {
+        Self { shares }
+    }
+
+    pub async fn from_payers_dc(
+        payer_shares: HashMap<String, u64>,
+        client: &dyn CarrierServiceVerifier<Error = ClientError>,
+    ) -> anyhow::Result<ServiceProviderShares> {
+        let mut shares = vec![];
+        for (payer, total_dcs) in payer_shares {
+            let entity_key = Self::payer_key_to_entity_key(&payer, client).await?;
+            shares.push(ServiceProviderDataSession {
+                service_provider_id: entity_key,
+                total_dcs: Decimal::from(total_dcs),
+            })
+        }
+        Ok(ServiceProviderShares { shares })
+    }
+
+    fn total_dc(&self) -> Decimal {
+        self.shares.iter().map(|v| v.total_dcs).sum()
+    }
+
+    pub fn get_scheduled_tokens_for_service_providers(&self, duration: Duration) -> Decimal {
+        get_total_scheduled_tokens(duration) * SERVICE_PROVIDER_PERCENT
+    }
+
+    pub fn rewards_per_share(
+        &self,
+        total_sp_rewards: Decimal,
+        mobile_bone_price: Decimal,
+    ) -> anyhow::Result<Decimal> {
+        let total_sp_dc = self.total_dc();
+        let total_sp_rewards_used = dc_to_mobile_bones(total_sp_dc, mobile_bone_price);
+        let capped_sp_rewards_used =
+            Self::maybe_cap_service_provider_rewards(total_sp_rewards_used, total_sp_rewards);
+        Ok(Self::calc_rewards_per_share(
+            capped_sp_rewards_used,
+            total_sp_dc,
+        ))
+    }
+
+    pub fn into_service_provider_rewards(
+        self,
+        reward_period: &'_ Range<DateTime<Utc>>,
+        reward_per_share: Decimal,
+    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+        self.shares
+            .into_iter()
+            .map(move |share| proto::ServiceProviderReward {
+                service_provider_id: share.service_provider_id,
+                amount: (share.total_dcs * reward_per_share)
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0),
+            })
+            .filter(|service_provider_reward| service_provider_reward.amount > 0)
+            .map(|service_provider_reward| proto::MobileRewardShare {
+                start_period: reward_period.start.encode_timestamp(),
+                end_period: reward_period.end.encode_timestamp(),
+                reward: Some(ProtoReward::ServiceProviderReward(service_provider_reward)),
+            })
+    }
+
+    fn maybe_cap_service_provider_rewards(
+        total_sp_rewards_used: Decimal,
+        total_sp_rewards: Decimal,
+    ) -> Decimal {
+        match total_sp_rewards_used <= total_sp_rewards {
+            true => total_sp_rewards_used,
+            false => total_sp_rewards,
+        }
+    }
+
+    fn calc_rewards_per_share(total_rewards: Decimal, total_shares: Decimal) -> Decimal {
+        if total_shares > Decimal::ZERO {
+            (total_rewards / total_shares)
+                .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
+        } else {
+            Decimal::ZERO
+        }
+    }
+
+    async fn payer_key_to_entity_key(
+        payer: &str,
+        client: &dyn CarrierServiceVerifier<Error = ClientError>,
+    ) -> anyhow::Result<String> {
+        tracing::info!("getting entity key for pubkey {:?}", payer);
+        Ok(client.key_to_rewardable_entity(payer).await?)
     }
 }
 
@@ -469,6 +572,12 @@ mod test {
             dc_to_mobile_bones(Decimal::from(2), dec!(1.0)),
             dec!(0.00002)
         );
+    }
+
+    fn mobile_bones_to_dc(mobile_bones_amount: Decimal, mobile_bones_price: Decimal) -> Decimal {
+        let mobile_value = mobile_bones_amount * mobile_bones_price;
+        (mobile_value / DC_USD_PRICE)
+            .round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
 
     #[tokio::test]
@@ -1694,5 +1803,156 @@ mod test {
         assert!(coverage_points
             .into_rewards(Decimal::ZERO, &epoch)
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_amounts() {
+        let mobile_bone_price = dec!(0.00001);
+
+        let sp1 = "sp1".to_string();
+        let sp2 = "sp2".to_string();
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+
+        let service_provider_sessions = vec![
+            ServiceProviderDataSession {
+                service_provider_id: sp1.clone(),
+                total_dcs: dec!(1000),
+            },
+            ServiceProviderDataSession {
+                service_provider_id: sp2.clone(),
+                total_dcs: dec!(5000),
+            },
+        ];
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let total_sp_rewards =
+            sp_shares.get_scheduled_tokens_for_service_providers(epoch.end - epoch.start);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::new();
+        for sp_reward in sp_shares.into_service_provider_rewards(&epoch, rewards_per_share) {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+            }
+        }
+
+        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        let sp2_reward_amount = *sp_rewards.get(&sp2).expect("Could not fetch sp2 shares");
+        assert_eq!(sp1_reward_amount, 1000);
+        assert_eq!(sp2_reward_amount, 5000);
+        // sp2 should be rewarded 5X that of sp1
+        assert_eq!(sp2_reward_amount, sp1_reward_amount * 5);
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_amounts_capped() {
+        let mobile_bone_price = dec!(1.0);
+        let sp1 = "sp1".to_string();
+        let sp2 = "sp2".to_string();
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+
+        let total_sp_rewards = dec!(600_000_000);
+        let total_rewards_value_in_dc = mobile_bones_to_dc(total_sp_rewards, mobile_bone_price);
+
+        let service_provider_sessions = vec![
+            ServiceProviderDataSession {
+                service_provider_id: sp1.clone(),
+                total_dcs: total_rewards_value_in_dc,
+            },
+            ServiceProviderDataSession {
+                service_provider_id: sp2.clone(),
+                total_dcs: total_rewards_value_in_dc
+                    .checked_div(dec!(2))
+                    .expect("failed to assign rewards"),
+            },
+        ];
+
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::new();
+        for sp_reward in sp_shares.into_service_provider_rewards(&epoch, rewards_per_share) {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+            }
+        }
+        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        let sp2_reward_amount = *sp_rewards.get(&sp2).expect("Could not fetch sp2 shares");
+
+        assert_eq!(
+            Decimal::from(sp1_reward_amount + sp2_reward_amount),
+            total_sp_rewards
+        );
+        assert_eq!(sp1_reward_amount, 400_000_000);
+        assert_eq!(sp2_reward_amount, 200_000_000);
+        // payer 1 should be rewarded 2X that of payer 2
+        assert!(sp1_reward_amount.abs_diff(sp2_reward_amount * 2) < 2);
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_hip87_ex1() {
+        let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
+        let sp1 = "sp1".to_string();
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+        let total_sp_rewards = dec!(500_000_000) * dec!(1_000_000);
+
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider_id: sp1.clone(),
+            total_dcs: dec!(100_000_000),
+        }];
+
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::new();
+        for sp_reward in sp_shares.into_service_provider_rewards(&epoch, rewards_per_share) {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+            }
+        }
+
+        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        assert_eq!(sp1_reward_amount, 10_000_000 * 1_000_000);
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_hip87_ex2() {
+        let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
+        let sp1 = "sp2".to_string();
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(24))..now;
+        let total_sp_rewards = dec!(500_000_000) * dec!(1_000_000);
+
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider_id: sp1.clone(),
+            total_dcs: dec!(100_000_000_000),
+        }];
+
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::new();
+        for sp_reward in sp_shares.into_service_provider_rewards(&epoch, rewards_per_share) {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+            }
+        }
+
+        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        assert_eq!(sp1_reward_amount, 500_000_000 * 1_000_000);
     }
 }

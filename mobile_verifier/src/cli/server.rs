@@ -15,7 +15,9 @@ use file_store::{
     FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_config::client::{entity_client::EntityClient, AuthorizationClient, GatewayClient};
+use mobile_config::client::{
+    entity_client::EntityClient, AuthorizationClient, CarrierServiceClient, GatewayClient,
+};
 use price::PriceTracker;
 use tokio::signal;
 
@@ -53,6 +55,7 @@ impl Cmd {
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
         let entity_client = EntityClient::from_settings(&settings.config_client)?;
+        let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
 
         // price tracker
         let (price_tracker, tracker_process) =
@@ -218,6 +221,7 @@ impl Cmd {
 
         let rewarder = Rewarder::new(
             pool.clone(),
+            carrier_client,
             Duration::hours(reward_period_hours),
             Duration::minutes(settings.reward_offset_minutes),
             mobile_rewards,

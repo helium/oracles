@@ -150,6 +150,13 @@ impl Indexer {
                         },
                         r.discovery_location_amount,
                     )),
+                    Some(MobileReward::ServiceProviderReward(r)) => Ok((
+                        RewardKey {
+                            key: r.service_provider_id,
+                            reward_type: RewardType::MobileSubscriber,
+                        },
+                        r.amount,
+                    )),
                     _ => bail!("got an invalid reward share"),
                 }
             }

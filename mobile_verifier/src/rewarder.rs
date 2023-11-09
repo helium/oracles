@@ -1,7 +1,7 @@
 use crate::{
     coverage, data_session,
     heartbeats::{self, HeartbeatReward},
-    reward_shares::{CoveragePoints, MapperShares, TransferRewards},
+    reward_shares::{CoveragePoints, MapperShares, ServiceProviderShares, TransferRewards},
     speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry,
@@ -11,6 +11,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_proto::RewardManifest;
+use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -21,8 +22,9 @@ use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder {
+pub struct Rewarder<A> {
     pool: Pool<Postgres>,
+    carrier_client: A,
     reward_period_duration: Duration,
     reward_offset: Duration,
     mobile_rewards: FileSinkClient,
@@ -31,10 +33,14 @@ pub struct Rewarder {
     max_distance_to_asserted: u32,
 }
 
-impl Rewarder {
+impl<A> Rewarder<A>
+where
+    A: CarrierServiceVerifier<Error = ClientError>,
+{
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
+        carrier_client: A,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient,
@@ -44,6 +50,7 @@ impl Rewarder {
     ) -> Self {
         Self {
             pool,
+            carrier_client,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
@@ -221,10 +228,25 @@ impl Rewarder {
                 .await??;
         }
 
+        // Service Provider rewards
+        let payer_dc_sessions =
+            data_session::sum_data_sessions_to_dc_by_payer(&self.pool, reward_period).await?;
+        let sp_shares =
+            ServiceProviderShares::from_payers_dc(payer_dc_sessions, &self.carrier_client).await?;
+        let total_sp_rewards = sp_shares
+            .get_scheduled_tokens_for_service_providers(reward_period.end - reward_period.start);
+        let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
+        // translate service provider shares into service provider rewards
+        for sp_share in sp_shares.into_service_provider_rewards(reward_period, rewards_per_share) {
+            self.mobile_rewards
+                .write(sp_share.clone(), [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
+        }
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
-
         // clear out the various db tables
         heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
         speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
