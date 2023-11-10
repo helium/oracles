@@ -1,9 +1,9 @@
 use crate::{
-    heartbeat::{CbrsHeartbeat, ValidatedHeartbeat},
+    heartbeat::{cli::ValidatedHeartbeat, CbrsHeartbeat},
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,
-    speedtest::{CellSpeedtest, SpeedtestAverage},
+    speedtest::{cli::SpeedtestAverage, CellSpeedtest},
     traits::MsgDecode,
     Error, FileInfoStream, FileStore, FileType, Result, Settings,
 };
