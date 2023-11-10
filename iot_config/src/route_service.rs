@@ -4,7 +4,6 @@ use crate::{
     org::{self, OrgStoreError},
     route::{self, Route, RouteStorageError},
     telemetry, update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
-    Settings,
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
@@ -47,13 +46,13 @@ enum OrgId<'a> {
 }
 
 impl RouteService {
-    pub fn new(settings: &Settings, auth_cache: AuthCache, pool: Pool<Postgres>) -> Result<Self> {
-        Ok(Self {
+    pub fn new(signing_keypair: Arc<Keypair>, auth_cache: AuthCache, pool: Pool<Postgres>) -> Self {
+        Self {
             auth_cache,
             pool,
             update_channel: update_channel(),
-            signing_key: Arc::new(settings.signing_keypair()?),
-        })
+            signing_key: signing_keypair,
+        }
     }
 
     fn subscribe_to_routes(&self) -> broadcast::Receiver<RouteStreamResV1> {
