@@ -1,10 +1,13 @@
 use crate::{
+    error::DecodeError,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode},
     Error, Result,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
+use helium_proto::services::poc_mobile::{
+    CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellType, Heartbeat, HeartbeatValidity,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -82,6 +85,57 @@ impl TryFrom<CellHeartbeatIngestReportV1> for CbrsHeartbeatIngestReport {
 impl MsgTimestamp<Result<DateTime<Utc>>> for CellHeartbeatIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
+    }
+}
+
+pub mod cli {
+    use super::*;
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct ValidatedHeartbeat {
+        pub cbsd_id: String,
+        pub pub_key: PublicKeyBinary,
+        pub reward_multiplier: f32,
+        pub timestamp: DateTime<Utc>,
+        pub cell_type: CellType,
+        pub validity: HeartbeatValidity,
+        pub lat: f64,
+        pub lon: f64,
+        pub coverage_object: Vec<u8>,
+        pub location_validation_timestamp: DateTime<Utc>,
+        pub distance_to_asserted: u64,
+    }
+
+    impl TryFrom<Heartbeat> for ValidatedHeartbeat {
+        type Error = Error;
+
+        fn try_from(v: Heartbeat) -> Result<Self> {
+            Ok(Self {
+                cbsd_id: v.cbsd_id.clone(),
+                pub_key: v.pub_key.clone().into(),
+                reward_multiplier: v.reward_multiplier,
+                timestamp: Utc
+                    .timestamp_opt(v.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| DecodeError::invalid_timestamp(v.timestamp))?,
+                cell_type: v.cell_type(),
+                validity: v.validity(),
+                lat: v.lat,
+                lon: v.lon,
+                coverage_object: v.coverage_object,
+                location_validation_timestamp: Utc
+                    .timestamp_opt(v.location_validation_timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        DecodeError::invalid_timestamp(v.location_validation_timestamp)
+                    })?,
+                distance_to_asserted: v.distance_to_asserted,
+            })
+        }
+    }
+
+    impl MsgDecode for ValidatedHeartbeat {
+        type Msg = Heartbeat;
     }
 }
 
