@@ -1,6 +1,7 @@
 mod common;
 use async_trait::async_trait;
-use chrono::{Duration as ChronoDuration, TimeZone, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, TimeZone, Utc};
+use common::MockFileSinkReceiver;
 use denylist::DenyList;
 use futures_util::{stream, StreamExt as FuturesStreamExt};
 use helium_crypto::PublicKeyBinary;
@@ -50,70 +51,91 @@ impl Gateways for MockIotConfigClient {
     }
 }
 
+struct TestContext {
+    runner: Runner<MockIotConfigClient>,
+    valid_pocs: MockFileSinkReceiver,
+    invalid_beacons: MockFileSinkReceiver,
+    invalid_witnesses: MockFileSinkReceiver,
+    entropy_ts: DateTime<Utc>,
+}
+
+impl TestContext {
+    async fn setup(pool: PgPool) -> anyhow::Result<Self> {
+        // setup file sinks
+        let (invalid_beacon_client, invalid_beacons) = common::create_file_sink();
+        let (invalid_witness_client, invalid_witnesses) = common::create_file_sink();
+        let (valid_poc_client, valid_pocs) = common::create_file_sink();
+
+        // create our mock iot config client
+        let iot_config_client = MockIotConfigClient {
+            resolve_gateway: common::valid_gateway(),
+            stream_gateways: common::valid_gateway_stream(),
+            region_params: common::valid_region_params(),
+        };
+
+        // setup runner resources
+        let deny_list: DenyList = vec![PublicKeyBinary::from_str(common::DENIED_PUBKEY1).unwrap()]
+            .try_into()
+            .unwrap();
+        let refresh_interval = ChronoDuration::seconds(30);
+        let (gateway_updater_receiver, _gateway_updater_server) =
+            GatewayUpdater::new(refresh_interval, iot_config_client.clone()).await?;
+        let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
+        let density_scaler =
+            DensityScaler::new(refresh_interval, pool.clone(), gateway_updater_receiver).await?;
+        let region_cache = RegionCache::new(Duration::from_secs(60), iot_config_client.clone())?;
+
+        // create the runner
+        let runner = Runner {
+            pool: pool.clone(),
+            beacon_interval: 21600,
+            max_witnesses_per_poc: 16,
+            beacon_max_retries: 2,
+            witness_max_retries: 2,
+            deny_list_latest_url: "https://api.github.com/repos/helium/denylist/releases/latest"
+                .to_string(),
+            deny_list_trigger_interval: Duration::from_secs(60),
+            deny_list,
+            gateway_cache: gateway_cache.clone(),
+            region_cache,
+            invalid_beacon_sink: invalid_beacon_client,
+            invalid_witness_sink: invalid_witness_client,
+            poc_sink: valid_poc_client,
+            hex_density_map: density_scaler.hex_density_map.clone(),
+        };
+
+        // generate a datetime based on a hardcoded timestamp
+        // this is the time the entropy is valid from
+        // and all beacon and witness reports will be created
+        // with a received_ts based on an offset from this ts
+        let entropy_ts = Utc.timestamp_millis_opt(common::ENTROPY_TIMESTAMP).unwrap();
+        let report_ts = entropy_ts + ChronoDuration::minutes(1);
+        // add the entropy to the DB
+        common::inject_entropy_report(pool.clone(), entropy_ts).await?;
+
+        Ok(Self {
+            runner,
+            valid_pocs,
+            invalid_beacons,
+            invalid_witnesses,
+            entropy_ts: report_ts,
+        })
+    }
+}
+
 #[sqlx::test]
-async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
-    // setup file sinks
-    let (invalid_beacon_client, mut invalid_beacons) = common::create_file_sink();
-    let (invalid_witness_client, mut invalid_witnesses) = common::create_file_sink();
-    let (valid_poc_client, mut valid_pocs) = common::create_file_sink();
+async fn valid_beacon_and_witness(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone()).await?;
 
-    // create our mock iot config client
-    let iot_config_client = MockIotConfigClient {
-        resolve_gateway: common::valid_gateway(),
-        stream_gateways: common::valid_gateway_stream(),
-        region_params: common::valid_region_params(),
-    };
-
-    // setup runner resources
-    let deny_list: DenyList = vec![PublicKeyBinary::from_str(common::DENIED_PUBKEY1).unwrap()]
-        .try_into()
-        .unwrap();
-    let refresh_interval = ChronoDuration::seconds(30);
-    let (gateway_updater_receiver, _gateway_updater_server) =
-        GatewayUpdater::new(refresh_interval, iot_config_client.clone()).await?;
-    let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
-    let density_scaler =
-        DensityScaler::new(refresh_interval, pool.clone(), gateway_updater_receiver).await?;
-    let region_cache = RegionCache::new(Duration::from_secs(60), iot_config_client.clone())?;
-
-    // create the runner
-    let runner = Runner {
-        pool: pool.clone(),
-        beacon_interval: 21600,
-        max_witnesses_per_poc: 16,
-        beacon_max_retries: 2,
-        witness_max_retries: 2,
-        deny_list_latest_url: "https://api.github.com/repos/helium/denylist/releases/latest"
-            .to_string(),
-        deny_list_trigger_interval: Duration::from_secs(60),
-        deny_list,
-        gateway_cache: gateway_cache.clone(),
-        region_cache,
-        invalid_beacon_sink: invalid_beacon_client,
-        invalid_witness_sink: invalid_witness_client,
-        poc_sink: valid_poc_client,
-        hex_density_map: density_scaler.hex_density_map.clone(),
-    };
-
-    // generate a datetime based on a hardcoded timestamp
-    // this is the time the entropy is valid from
-    // and all beacon and witness reports will be created
-    // with a received_ts based on an offset from this ts
-    let entropy_ts = Utc.timestamp_millis_opt(common::ENTROPY_TIMESTAMP).unwrap();
-    let report_ts = entropy_ts + ChronoDuration::minutes(1);
-    // add the entropy to the DB
-    common::inject_entropy_report(pool.clone(), entropy_ts).await?;
-
-    //
     // test with a valid beacon and a valid witness
     //
-    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, report_ts);
-    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, report_ts);
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
     common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
-    runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
 
-    let valid_poc = valid_pocs.receive_valid_poc().await;
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
     assert_eq!(1, valid_poc.selected_witnesses.len());
     assert_eq!(0, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -139,18 +161,24 @@ async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
         LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
 
+    Ok(())
+}
+
+#[sqlx::test]
+async fn invalid_beacon_gateway_not_found(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone()).await?;
     //
     // test with a valid beacon and an invalid witness
     // witness is invalid due to not found in iot config
     //
-    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER2, report_ts);
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER2, ctx.entropy_ts);
     let witness_to_inject =
-        common::create_valid_witness_report(common::UNKNOWN_GATEWAY1, report_ts);
+        common::create_valid_witness_report(common::UNKNOWN_GATEWAY1, ctx.entropy_ts);
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
     common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
-    runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
 
-    let valid_poc = valid_pocs.receive_valid_poc().await;
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
     assert_eq!(0, valid_poc.selected_witnesses.len());
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -186,18 +214,24 @@ async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
         LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
 
+    Ok(())
+}
+
+#[sqlx::test]
+async fn invalid_witness_no_metadata(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone()).await?;
     //
     // test with a valid beacon and an invalid witness
     // witness is invalid due no metadata in iot config
     //
-    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER3, report_ts);
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER3, ctx.entropy_ts);
     let witness_to_inject =
-        common::create_valid_witness_report(common::NO_METADATA_GATEWAY1, report_ts);
+        common::create_valid_witness_report(common::NO_METADATA_GATEWAY1, ctx.entropy_ts);
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
     common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
-    runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
 
-    let valid_poc = valid_pocs.receive_valid_poc().await;
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
     assert_eq!(0, valid_poc.selected_witnesses.len());
     assert_eq!(1, valid_poc.unselected_witnesses.len());
     let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
@@ -233,18 +267,25 @@ async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
         LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
 
+    Ok(())
+}
+
+#[sqlx::test]
+async fn invalid_beacon_no_gateway_found(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone()).await?;
     //
     // test with an invalid beacon & 1 witness
     // beacon is invalid as GW is unknown
     //
-    let beacon_to_inject = common::create_valid_beacon_report(common::UNKNOWN_GATEWAY1, report_ts);
-    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, report_ts);
+    let beacon_to_inject =
+        common::create_valid_beacon_report(common::UNKNOWN_GATEWAY1, ctx.entropy_ts);
+    let witness_to_inject = common::create_valid_witness_report(common::WITNESS1, ctx.entropy_ts);
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
     common::inject_witness_report(pool.clone(), witness_to_inject.clone()).await?;
-    runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
 
-    let invalid_beacon_report = invalid_beacons.receive_invalid_beacon().await;
-    let invalid_witness_report = invalid_witnesses.receive_invalid_witness().await;
+    let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
+    let invalid_witness_report = ctx.invalid_witnesses.receive_invalid_witness().await;
     let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
     let invalid_witness = invalid_witness_report.report.clone().unwrap();
     // assert the pubkeys in the outputted reports
@@ -281,15 +322,22 @@ async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
         LoraWitnessReportReqV1::from(witness_to_inject.clone())
     );
 
+    Ok(())
+}
+
+#[sqlx::test]
+async fn invalid_beacon_gateway_not_found_no_witnesses(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone()).await?;
     //
     // test with an invalid beacon, no witnesses
     // beacon is invalid as GW is unknown
     //
-    let beacon_to_inject = common::create_valid_beacon_report(common::UNKNOWN_GATEWAY1, report_ts);
+    let beacon_to_inject =
+        common::create_valid_beacon_report(common::UNKNOWN_GATEWAY1, ctx.entropy_ts);
     common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
-    runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
 
-    let invalid_beacon_report = invalid_beacons.receive_invalid_beacon().await;
+    let invalid_beacon_report = ctx.invalid_beacons.receive_invalid_beacon().await;
     let invalid_beacon = invalid_beacon_report.report.clone().unwrap();
     // assert the pubkeys in the outputted reports
     // match those which we injected
@@ -309,6 +357,12 @@ async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
         LoraBeaconReportReqV1::from(beacon_to_inject.clone())
     );
 
+    Ok(())
+}
+
+#[sqlx::test]
+async fn invalid_beacon_bad_payload(pool: PgPool) -> anyhow::Result<()> {
+    let ctx = TestContext::setup(pool.clone()).await?;
     //
     // test with an invalid beacon, no witnesses
     // the beacon will have an invalid payload, resulting in an error
@@ -316,13 +370,13 @@ async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
     // when it exceeds max retries it will no longer be selected
     // for processing by the runner
     //
-    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER4, report_ts);
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER4, ctx.entropy_ts);
     common::inject_invalid_beacon_report(pool.clone(), beacon_to_inject).await?;
-    runner.handle_db_tick().await?;
-    runner.handle_db_tick().await?;
-    runner.handle_db_tick().await?;
-    runner.handle_db_tick().await?;
-    runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
+    ctx.runner.handle_db_tick().await?;
     tokio::time::sleep(Duration::from_secs(3)).await;
     let mut txn = pool.begin().await?;
     let beacon_report = Report::get_stale_beacons(&mut txn, ChronoDuration::seconds(1)).await?;
@@ -331,9 +385,9 @@ async fn test_runner(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(2, beacon_report[0].attempts);
     // confirm no outputs to filestore, the report will remain in the DB
     // until the purger removes it
-    valid_pocs.assert_no_messages();
-    invalid_beacons.assert_no_messages();
-    invalid_witnesses.assert_no_messages();
+    ctx.valid_pocs.assert_no_messages();
+    ctx.invalid_beacons.assert_no_messages();
+    ctx.invalid_witnesses.assert_no_messages();
 
     Ok(())
 }
