@@ -166,7 +166,7 @@ impl GatewayResolver for AllOwnersValid {
         &self,
         _address: &PublicKeyBinary,
     ) -> Result<GatewayResolution, Self::Error> {
-        todo!()
+        Ok(GatewayResolution::AssertedLocation(1000))
     }
 }
 
