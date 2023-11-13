@@ -6,7 +6,9 @@ use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_client::{
+    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
@@ -124,10 +126,19 @@ impl SolanaNetwork for SolanaRpc {
             &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
             &data_credits::ID,
         );
-        let Ok(account_data) = self.provider.get_account_data(&escrow_account).await else {
-            // If the account is empty, it has no DC
-            tracing::info!(%payer, "Account not found, therefore no balance");
-            return Ok(0);
+        let account_data = match self
+            .provider
+            .get_account_with_commitment(&escrow_account, CommitmentConfig::finalized())
+            .await?
+        {
+            Response { value: None, .. } => {
+                tracing::info!(%payer, "Account not found, therefore no balance");
+                return Ok(0);
+            }
+            Response {
+                value: Some(account),
+                ..
+            } => account.data,
         };
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
 
