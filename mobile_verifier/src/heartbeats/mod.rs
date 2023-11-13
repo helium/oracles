@@ -25,11 +25,12 @@ use uuid::Uuid;
 /// Minimum number of heartbeats required to give a reward to the hotspot.
 const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type)]
-#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type)]
+#[sqlx(type_name = "radio_type")]
+#[sqlx(rename_all = "lowercase")]
 pub enum HbType {
-    Cbrs = 0,
-    Wifi = 1,
+    Cbrs,
+    Wifi,
 }
 
 #[derive(Copy, Clone)]
@@ -154,15 +155,15 @@ impl<'r> Decode<'r, Postgres> for OwnedKeyType {
 
 #[derive(Clone)]
 pub struct Heartbeat {
-    hb_type: HbType,
-    hotspot_key: PublicKeyBinary,
-    cbsd_id: Option<String>,
-    operation_mode: bool,
-    lat: f64,
-    lon: f64,
+    pub hb_type: HbType,
+    pub hotspot_key: PublicKeyBinary,
+    pub cbsd_id: Option<String>,
+    pub operation_mode: bool,
+    pub lat: f64,
+    pub lon: f64,
     pub coverage_object: Option<Uuid>,
-    location_validation_timestamp: Option<DateTime<Utc>>,
-    timestamp: DateTime<Utc>,
+    pub location_validation_timestamp: Option<DateTime<Utc>>,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl Heartbeat {
@@ -392,7 +393,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.key())
         .bind(self.heartbeat.coverage_object)
         .execute(&mut *exec)
-            .await?;
+        .await?;
         // Save the heartbeat
         match self.heartbeat.hb_type {
             HbType::Cbrs => self.save_cbrs_hb(exec).await,
@@ -410,15 +411,15 @@ impl ValidatedHeartbeat {
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
             "#
-            )
-            .bind(self.heartbeat.cbsd_id)
-            .bind(self.heartbeat.hotspot_key)
-            .bind(self.cell_type)
-            .bind(self.heartbeat.timestamp)
-            .bind(truncated_timestamp)
-            .bind(self.heartbeat.coverage_object)
-            .fetch_one(&mut *exec)
-            .await?;
+        )
+        .bind(self.heartbeat.cbsd_id)
+        .bind(self.heartbeat.hotspot_key)
+        .bind(self.cell_type)
+        .bind(self.heartbeat.timestamp)
+        .bind(truncated_timestamp)
+        .bind(self.heartbeat.coverage_object)
+        .execute(&mut *exec)
+        .await?;
         Ok(())
     }
 
@@ -440,7 +441,8 @@ impl ValidatedHeartbeat {
         .bind(self.distance_to_asserted)
         .bind(self.heartbeat.timestamp)
         .bind(truncated_timestamp)
-        .fetch_one(&mut *exec)
+        .bind(self.heartbeat.coverage_object)
+        .execute(&mut *exec)
         .await?;
         Ok(())
     }
@@ -602,7 +604,6 @@ pub(crate) async fn process_validated_heartbeats(
         }
         if let Some(coverage_claim_time) = coverage_claim_time_cache
             .fetch_coverage_claim_time(
-                // What do here?
                 validated_heartbeat.heartbeat.key(),
                 &validated_heartbeat.heartbeat.coverage_object,
                 &mut *transaction,
@@ -657,7 +658,7 @@ pub struct SeniorityUpdate<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-enum SeniorityUpdateAction {
+pub enum SeniorityUpdateAction {
     NoAction,
     Insert {
         new_seniority: DateTime<Utc>,
@@ -669,7 +670,7 @@ enum SeniorityUpdateAction {
 }
 
 impl<'a> SeniorityUpdate<'a> {
-    fn new(heartbeat: &'a ValidatedHeartbeat, action: SeniorityUpdateAction) -> Self {
+    pub fn new(heartbeat: &'a ValidatedHeartbeat, action: SeniorityUpdateAction) -> Self {
         Self { heartbeat, action }
     }
 
@@ -767,21 +768,22 @@ impl SeniorityUpdate<'_> {
                 sqlx::query(
                     r#"
                     INSERT INTO seniority
-                      (cbsd_id, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason)
+                      (radio_key, last_heartbeat, uuid, seniority_ts, inserted_at, update_reason, radio_type)
                     VALUES
-                      ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (cbsd_id, seniority_ts) DO UPDATE SET
+                      ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (radio_key, radio_type, seniority_ts) DO UPDATE SET
                       uuid = EXCLUDED.uuid,
                       last_heartbeat = EXCLUDED.last_heartbeat,
                       update_reason = EXCLUDED.update_reason
                     "#,
                 )
-                .bind(&self.heartbeat.heartbeat.cbsd_id)
+                .bind(self.heartbeat.heartbeat.key())
                 .bind(self.heartbeat.heartbeat.timestamp)
                 .bind(self.heartbeat.heartbeat.coverage_object)
                 .bind(new_seniority)
                 .bind(self.heartbeat.heartbeat.timestamp)
                 .bind(update_reason as i32)
+                .bind(self.heartbeat.heartbeat.hb_type)
                 .execute(&mut *exec)
                 .await?;
             }
@@ -791,12 +793,12 @@ impl SeniorityUpdate<'_> {
                     UPDATE seniority
                     SET last_heartbeat = $1
                     WHERE
-                      cbsd_id = $2 AND
+                      radio_key = $2 AND
                       seniority_ts = $3
                     "#,
                 )
                 .bind(self.heartbeat.heartbeat.timestamp)
-                .bind(&self.heartbeat.heartbeat.cbsd_id)
+                .bind(self.heartbeat.heartbeat.key())
                 .bind(curr_seniority)
                 .execute(&mut *exec)
                 .await?;

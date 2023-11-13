@@ -1,10 +1,13 @@
 use crate::{
+    error::DecodeError,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode, TimestampEncode},
     Error, Result,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{SpeedtestIngestReportV1, SpeedtestReqV1};
+use helium_proto::services::poc_mobile::{
+    Speedtest, SpeedtestAvg, SpeedtestAvgValidity, SpeedtestIngestReportV1, SpeedtestReqV1,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
@@ -106,6 +109,74 @@ impl From<CellSpeedtestIngestReport> for SpeedtestIngestReportV1 {
             received_timestamp,
             report: Some(report),
         }
+    }
+}
+
+pub mod cli {
+    use super::*;
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct SpeedtestAverageEntry {
+        pub upload_speed_bps: u64,
+        pub download_speed_bps: u64,
+        pub latency_ms: u32,
+        pub timestamp: DateTime<Utc>,
+    }
+
+    impl TryFrom<Speedtest> for SpeedtestAverageEntry {
+        type Error = Error;
+
+        fn try_from(v: Speedtest) -> Result<Self> {
+            Ok(Self {
+                upload_speed_bps: v.upload_speed_bps,
+                download_speed_bps: v.download_speed_bps,
+                latency_ms: v.latency_ms,
+                timestamp: Utc
+                    .timestamp_opt(v.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| DecodeError::invalid_timestamp(v.timestamp))?,
+            })
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct SpeedtestAverage {
+        pub pub_key: PublicKeyBinary,
+        pub upload_speed_avg_bps: u64,
+        pub download_speed_avg_bps: u64,
+        pub latency_avg_ms: u32,
+        pub validity: SpeedtestAvgValidity,
+        pub speedtests: Vec<SpeedtestAverageEntry>,
+        pub timestamp: DateTime<Utc>,
+        pub reward_multiplier: f32,
+    }
+
+    impl TryFrom<SpeedtestAvg> for SpeedtestAverage {
+        type Error = Error;
+
+        fn try_from(v: SpeedtestAvg) -> Result<Self> {
+            Ok(Self {
+                pub_key: v.pub_key.clone().into(),
+                upload_speed_avg_bps: v.upload_speed_avg_bps,
+                download_speed_avg_bps: v.download_speed_avg_bps,
+                latency_avg_ms: v.latency_avg_ms,
+                validity: v.validity(),
+                speedtests: v
+                    .speedtests
+                    .into_iter()
+                    .map(SpeedtestAverageEntry::try_from)
+                    .collect::<Result<Vec<_>>>()?,
+                timestamp: Utc
+                    .timestamp_opt(v.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| DecodeError::invalid_timestamp(v.timestamp))?,
+                reward_multiplier: v.reward_multiplier,
+            })
+        }
+    }
+
+    impl MsgDecode for SpeedtestAverage {
+        type Msg = SpeedtestAvg;
     }
 }
 

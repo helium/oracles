@@ -181,6 +181,7 @@ pub struct DataTransferSessionReq {
     pub reward_cancelled: bool,
     pub pub_key: PublicKeyBinary,
     pub signature: Vec<u8>,
+    pub rewardable_bytes: u64,
 }
 
 impl MsgDecode for DataTransferSessionReq {
@@ -199,6 +200,7 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
                 .ok_or_else(|| Error::not_found("data transfer usage"))?
                 .try_into()?,
             pub_key: v.pub_key.into(),
+            rewardable_bytes: v.rewardable_bytes,
         })
     }
 }
@@ -211,6 +213,7 @@ impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
             reward_cancelled: v.reward_cancelled,
             pub_key: v.pub_key.into(),
             signature: v.signature,
+            rewardable_bytes: v.rewardable_bytes,
         }
     }
 }

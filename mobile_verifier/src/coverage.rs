@@ -126,8 +126,8 @@ impl CoverageDaemon {
 }
 
 pub struct CoverageObject {
-    coverage_object: file_store::coverage::CoverageObject,
-    validity: CoverageObjectValidity,
+    pub coverage_object: file_store::coverage::CoverageObject,
+    pub validity: CoverageObjectValidity,
 }
 
 impl CoverageObject {
@@ -187,15 +187,17 @@ impl CoverageObject {
 
     pub async fn save(self, transaction: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
         let insertion_time = Utc::now();
-        let key = self.key().to_owned();
+        let key = self.key();
+        let hb_type = key.hb_type();
+        let key = key.to_owned();
         for hex in self.coverage_object.coverage {
             let location: u64 = hex.location.into();
             sqlx::query(
                 r#"
                 INSERT INTO hex_coverage
-                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at)
+                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type, signal_power)
                 VALUES
-                  ($1, $2, $3, $4, $5, $6, $7)
+                  ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (uuid, hex) DO UPDATE SET
                   inserted_at = EXCLUDED.inserted_at
                 "#,
@@ -207,6 +209,8 @@ impl CoverageObject {
             .bind(SignalLevel::from(hex.signal_level))
             .bind(self.coverage_object.coverage_claim_time)
             .bind(insertion_time)
+            .bind(hb_type)
+            .bind(hex.signal_power)
             .execute(&mut *transaction)
             .await?;
         }
@@ -305,7 +309,7 @@ pub trait CoveredHexStream {
     ) -> Result<Seniority, sqlx::Error>;
 }
 
-#[derive(Clone, sqlx::FromRow)]
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
 pub struct Seniority {
     pub uuid: Uuid,
     pub seniority_ts: DateTime<Utc>,
@@ -320,7 +324,7 @@ impl Seniority {
         exec: &mut Transaction<'_, Postgres>,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as(
-            "SELECT * FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC LIMIT 1",
+            "SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority WHERE radio_key = $1 ORDER BY last_heartbeat DESC LIMIT 1",
         )
         .bind(key)
         .fetch_optional(&mut *exec)
@@ -336,7 +340,8 @@ impl CoveredHexStream for Pool<Postgres> {
         coverage_obj: &'a Uuid,
         seniority: &'a Seniority,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
-        // We can safely delete any seniority objects that appear before the latest in the reward period
+        // Adjust the coverage. We can safely delete any seniority objects that appear
+        // before the latest in the reward period:
         sqlx::query("DELETE FROM seniority WHERE inserted_at < $1 AND radio_key = $2")
             .bind(seniority.inserted_at)
             .bind(key)
@@ -344,7 +349,7 @@ impl CoveredHexStream for Pool<Postgres> {
             .await?;
 
         Ok(
-            sqlx::query_as("SELECT * FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
+            sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
                 .bind(key)
                 .bind(coverage_obj)
                 .fetch(self)
@@ -363,9 +368,9 @@ impl CoveredHexStream for Pool<Postgres> {
     ) -> Result<Seniority, sqlx::Error> {
         sqlx::query_as(
             r#"
-            SELECT * FROM seniority
+            SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority
             WHERE
-              cbsd_id = $1 AND
+              radio_key = $1 AND
               inserted_at <= $2
             ORDER BY inserted_at DESC
             LIMIT 1
@@ -490,7 +495,7 @@ impl CoverageClaimTimeCache {
         } else {
             let coverage_claim_time: Option<DateTime<Utc>> = sqlx::query_scalar(
                 r#"
-                SELECT coverage_claim_time FROM hex_coverage WHERE key = $1 AND uuid = $2 LIMIT 1
+                SELECT coverage_claim_time FROM hex_coverage WHERE radio_key = $1 AND uuid = $2 LIMIT 1
                 "#,
             )
             .bind(radio_key)
@@ -549,7 +554,7 @@ impl CoveredHexCache {
             return Ok(Some(covered_hexes.clone()));
         }
         let Some((radio_key, inserted_at)) = sqlx::query_scalar(
-            "SELECT radio_key, inserted_at FROM hex_coverage WHERE uuid = $1 LIMIT 1",
+            "SELECT (radio_key, inserted_at) FROM hex_coverage WHERE uuid = $1 LIMIT 1",
         )
         .bind(uuid)
         .fetch_optional(&self.pool)
@@ -557,7 +562,7 @@ impl CoveredHexCache {
         else {
             return Ok(None);
         };
-        let coverage: Vec<_> = sqlx::query_as("SELECT * FROM hex_coverage WHERE uuid = $1")
+        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE uuid = $1")
             .bind(uuid)
             .fetch_all(&self.pool)
             .await?
@@ -584,7 +589,7 @@ impl CoveredHexCache {
 #[derive(Clone)]
 pub struct CachedCoverage {
     pub radio_key: OwnedKeyType,
-    coverage: Vec<CellIndex>,
+    pub coverage: Vec<CellIndex>,
     pub inserted_at: DateTime<Utc>,
 }
 
