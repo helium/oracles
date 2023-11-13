@@ -485,23 +485,6 @@ mod test {
         );
     }
 
-    fn valid_points() -> HotspotPoints {
-        let mut radio_points: HashMap<Option<String>, RadioPoints> = Default::default();
-        radio_points.insert(
-            None,
-            RadioPoints {
-                heartbeat_multiplier: Decimal::ONE,
-                seniority: DateTime::default(),
-                coverage_object: Uuid::new_v4(),
-                points: Decimal::ONE,
-            },
-        );
-        HotspotPoints {
-            speedtest_multiplier: Decimal::ONE,
-            radio_points,
-        }
-    }
-
     #[tokio::test]
     async fn discover_mapping_amount() {
         // test based on example defined at https://github.com/helium/oracles/issues/422
@@ -585,10 +568,6 @@ mod test {
             data_transfer_session.num_dcs as u64,
         );
 
-        let mut coverage_points = HashMap::default();
-        coverage_points.insert(owner.clone(), valid_points());
-        let coverage_points = CoveragePoints { coverage_points };
-
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
         let total_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
@@ -644,10 +623,6 @@ mod test {
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
-
-        let mut coverage_points = HashMap::default();
-        coverage_points.insert(owner.clone(), valid_points());
-        let coverage_points = CoveragePoints { coverage_points };
 
         let data_transfer_rewards = TransferRewards::from_transfer_sessions(
             dec!(1.0),
@@ -887,6 +862,18 @@ mod test {
             (OwnedKeyType::from(c4.clone()), cov_obj_4),
             simple_hex_coverage(&c4, 0x8a1fb46632dffff),
         );
+        hex_coverage.insert(
+            (OwnedKeyType::from(g3.clone()), cov_obj_5),
+            simple_hex_coverage(&g3, 0x8a1fb46662dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(g4.clone()), cov_obj_6),
+            simple_hex_coverage(&g4, 0x8a1fb46522dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(g5.clone()), cov_obj_7),
+            simple_hex_coverage(&g5, 0x8a1fb46682dffff),
+        );
 
         let last_timestamp = timestamp - Duration::hours(12);
         let g1_speedtests = vec![
@@ -958,29 +945,35 @@ mod test {
             .expect("Could not fetch gateway5 shares")
             .total_points();
 
+        // For the following assertions, we multiply each expected points
+        // by four, as that is the amount of coverage points given to an outdoor
+        // radio with a low signal level.
+
         // The owner with two hotspots gets more rewards
-        assert_eq!(gw1_shares, dec!(3.50));
-        assert_eq!(gw2_shares, dec!(2.00));
+        assert_eq!(gw1_shares, dec!(3.50) * dec!(4));
+        assert_eq!(gw2_shares, dec!(2.00) * dec!(4));
         assert!(gw1_shares > gw2_shares);
 
         // gw3 has wifi HBs and has location validation timestamp
         // gets the full 0.4 reward weight
-        assert_eq!(gw3_shares, dec!(0.40));
+        assert_eq!(gw3_shares, dec!(0.40) * dec!(4));
         // gw4 has wifi HBs and DOES NOT have a location validation timestamp
         // gets 0.25 of the full reward weight
-        assert_eq!(gw4_shares, dec!(0.1));
+        assert_eq!(gw4_shares, dec!(0.1) * dec!(4));
         // gw4 has wifi HBs and does have a location validation timestamp
         // but the HB distance is too far from the asserted location
         // gets 0.25 of the full reward weight
-        assert_eq!(gw5_shares, dec!(0.1));
+        assert_eq!(gw5_shares, dec!(0.1) * dec!(4));
     }
 
-    fn simple_hex_coverage(cbsd_id: &str, hex: u64) -> Vec<HexCoverage> {
+    fn simple_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
+        let key = key.into();
+        let radio_key = key.to_owned();
         vec![HexCoverage {
             uuid: Uuid::new_v4(),
             hex: hex as i64,
             indoor: false,
-            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
+            radio_key,
             signal_level: crate::coverage::SignalLevel::Low,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
@@ -1286,6 +1279,18 @@ mod test {
             (OwnedKeyType::from(c14.clone()), cov_obj_14),
             simple_hex_coverage(&c14, 0x8a1fb466d2dffff),
         );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw9.clone()), cov_obj_15),
+            simple_hex_coverage(&gw9, 0x8c2681a30641dff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw10.clone()), cov_obj_16),
+            simple_hex_coverage(&gw10, 0x8c2681a3065d3ff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw11.clone()), cov_obj_17),
+            simple_hex_coverage(&gw11, 0x8c2681a306607ff),
+        );
 
         let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
             .into_iter()
@@ -1528,7 +1533,15 @@ mod test {
         averages.insert(gw2.clone(), gw2_average);
 
         let speedtest_avgs = SpeedtestAverages { averages };
-        let hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = todo!();
+        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            simple_hex_coverage(&gw1, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c2.clone()), g2_cov_obj),
+            simple_hex_coverage(&c2, 0x8a1fb46642dffff),
+        );
 
         // calculate the rewards for the group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
@@ -1604,6 +1617,9 @@ mod test {
         // init cells and cell_types
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
+        let g1_cov_obj = Uuid::new_v4();
+        let g2_cov_obj = Uuid::new_v4();
+
         // setup heartbeats
         let heartbeat_keys = vec![
             // add wifi  indoor HB
@@ -1613,7 +1629,7 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
-                coverage_object: Uuid::new_v4(),
+                coverage_object: g1_cov_obj,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1000),
@@ -1622,7 +1638,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
-                coverage_object: Uuid::new_v4(),
+                coverage_object: g2_cov_obj,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 location_validation_timestamp: None,
@@ -1654,7 +1670,15 @@ mod test {
 
         let speedtest_avgs = SpeedtestAverages { averages };
 
-        let hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = todo!();
+        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            simple_hex_coverage(&gw1, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c2.clone()), g2_cov_obj),
+            simple_hex_coverage(&c2, 0x8a1fb46642dffff),
+        );
 
         // calculate the rewards for the group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();

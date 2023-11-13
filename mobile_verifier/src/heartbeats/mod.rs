@@ -77,6 +77,13 @@ impl<'a> From<&'a str> for KeyType<'a> {
     }
 }
 
+// This sucks, but it makes our life easier
+impl<'a> From<&'a String> for KeyType<'a> {
+    fn from(cbrs: &'a String) -> Self {
+        Self::Cbrs(cbrs.as_str())
+    }
+}
+
 impl<'a> From<&'a PublicKeyBinary> for KeyType<'a> {
     fn from(wifi: &'a PublicKeyBinary) -> Self {
         Self::Wifi(wifi)
@@ -119,6 +126,12 @@ impl OwnedKeyType {
 impl From<String> for OwnedKeyType {
     fn from(s: String) -> Self {
         Self::Cbrs(s)
+    }
+}
+
+impl From<PublicKeyBinary> for OwnedKeyType {
+    fn from(w: PublicKeyBinary) -> Self {
+        Self::Wifi(w)
     }
 }
 
