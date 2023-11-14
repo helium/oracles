@@ -46,12 +46,12 @@ enum OrgId<'a> {
 }
 
 impl RouteService {
-    pub fn new(signing_keypair: Arc<Keypair>, auth_cache: AuthCache, pool: Pool<Postgres>) -> Self {
+    pub fn new(signing_key: Arc<Keypair>, auth_cache: AuthCache, pool: Pool<Postgres>) -> Self {
         Self {
             auth_cache,
             pool,
             update_channel: update_channel(),
-            signing_key: signing_keypair,
+            signing_key,
         }
     }
 

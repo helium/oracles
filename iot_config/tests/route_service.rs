@@ -22,7 +22,7 @@ use tonic::{
 };
 
 #[sqlx::test]
-async fn brian(pool: Pool<Postgres>) {
+async fn stream_sends_all_data_when_since_is_0(pool: Pool<Postgres>) {
     let signing_keypair = Arc::new(generate_keypair());
     let admin_keypair = generate_keypair();
     let client_keypair = generate_keypair();
@@ -123,6 +123,114 @@ async fn brian(pool: Pool<Postgres>) {
     .await;
 }
 
+#[sqlx::test]
+async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
+    let signing_keypair = Arc::new(generate_keypair());
+    let admin_keypair = generate_keypair();
+    let client_keypair = generate_keypair();
+
+    let port = get_port();
+
+    let auth_cache = create_auth_cache(
+        admin_keypair.public_key().clone(),
+        client_keypair.public_key().clone(),
+        &pool,
+    )
+    .await;
+
+    let _handle = start_server(port, signing_keypair, auth_cache, pool.clone()).await;
+    let mut client = connect_client(port).await;
+
+    let org_res_v1 = create_org(port, &admin_keypair).await;
+
+    let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
+        panic!("invalid OrgResV1")
+    };
+
+    let route1 = create_route(&mut client, &org, &admin_keypair).await;
+
+    create_euis(&mut client, &route1, vec![(200, 201)], &admin_keypair).await;
+
+    let constraint = org_res_v1.devaddr_constraints.first().unwrap();
+    create_devaddr_ranges(
+        &mut client,
+        &route1,
+        vec![(constraint.start_addr, constraint.start_addr + 1)],
+        &admin_keypair,
+    )
+    .await;
+
+    create_skf(
+        &mut client,
+        &route1,
+        vec![(constraint.start_addr, "key-1")],
+        &admin_keypair,
+    )
+    .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    let since = Utc::now();
+    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+
+    let route2 = create_route(&mut client, &org, &admin_keypair).await;
+
+    create_euis(&mut client, &route1, vec![(202, 203)], &admin_keypair).await;
+
+    create_devaddr_ranges(
+        &mut client,
+        &route1,
+        vec![(constraint.start_addr + 2, constraint.start_addr + 3)],
+        &admin_keypair,
+    )
+    .await;
+
+    create_skf(
+        &mut client,
+        &route1,
+        vec![(constraint.start_addr + 2, "key-2")],
+        &admin_keypair,
+    )
+    .await;
+
+    let response = client
+        .stream(route_stream_req_v1(
+            &client_keypair,
+            since.timestamp_millis() as u64,
+        ))
+        .await
+        .expect("stream request");
+    let mut response_stream = response.into_inner();
+
+    assert_route_received(&mut response_stream, proto::ActionV1::Add, &route2.id).await;
+
+    assert_eui_pair(
+        &mut response_stream,
+        proto::ActionV1::Add,
+        &route1.id,
+        202,
+        203,
+    )
+    .await;
+
+    assert_devaddr_range(
+        &mut response_stream,
+        proto::ActionV1::Add,
+        &route1.id,
+        constraint.start_addr + 2,
+        constraint.start_addr + 3,
+    )
+    .await;
+
+    assert_skf(
+        &mut response_stream,
+        proto::ActionV1::Add,
+        &route1.id,
+        constraint.start_addr + 2,
+        "key-2",
+    )
+    .await;
+}
+
 async fn assert_route_received(
     stream: &mut Streaming<proto::RouteStreamResV1>,
     expected_action: proto::ActionV1,
@@ -210,9 +318,13 @@ async fn assert_skf(
 async fn receive<F, T>(future: F) -> T
 where
     F: Future<Output = Option<T>>,
+    T: std::fmt::Debug,
 {
     match tokio::time::timeout(std::time::Duration::from_secs(5), future).await {
-        Ok(Some(t)) => t,
+        Ok(Some(t)) => {
+            dbg!(&t);
+            t
+        }
         _other => panic!("message was not received within 5 seconds"),
     }
 }
