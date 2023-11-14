@@ -496,7 +496,7 @@ pub async fn validate_heartbeat(
                 proto::HeartbeatValidity::GatewayNotFound,
             ))
         }
-        GatewayResolution::GatewayNotAsserted => {
+        GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
             return Ok((
                 cell_type,
                 None,
@@ -504,13 +504,10 @@ pub async fn validate_heartbeat(
                 proto::HeartbeatValidity::GatewayNotAsserted,
             ))
         }
-        GatewayResolution::AssertedLocation(location) => {
-            if heartbeat.hb_type == HbType::Wifi {
-                Some(heartbeat.asserted_distance(location)?)
-            } else {
-                None
-            }
+        GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
+            Some(heartbeat.asserted_distance(location)?)
         }
+        _ => None,
     };
 
     /*
