@@ -280,7 +280,7 @@ impl ServiceProviderShares {
             })
     }
 
-    pub fn unallocated_reward(
+    pub fn into_unallocated_reward(
         unallocated_amount: Decimal,
         reward_period: &'_ Range<DateTime<Utc>>,
     ) -> anyhow::Result<proto::MobileRewardShare> {

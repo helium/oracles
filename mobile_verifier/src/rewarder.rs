@@ -253,12 +253,16 @@ where
 
         // write out any unallocated service provider reward
         let unallocated_sp_reward_amount = total_sp_rewards - Decimal::from(allocated_sp_rewards);
-        let unallocated_sp_reward =
-            ServiceProviderShares::unallocated_reward(unallocated_sp_reward_amount, reward_period)?;
-        self.mobile_rewards
-            .write(unallocated_sp_reward, [])
-            .await?
-            .await??;
+        if unallocated_sp_reward_amount > dec!(0) {
+            let unallocated_sp_reward = ServiceProviderShares::into_unallocated_reward(
+                unallocated_sp_reward_amount,
+                reward_period,
+            )?;
+            self.mobile_rewards
+                .write(unallocated_sp_reward, [])
+                .await?
+                .await??;
+        }
 
         let written_files = self.mobile_rewards.commit().await?.await??;
 
