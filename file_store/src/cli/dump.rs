@@ -63,6 +63,7 @@ impl Cmd {
                         "operation_mode": msg.report.operation_mode,
                         "location_validation_timestamp": msg.report.location_validation_timestamp,
                     });
+                    // print_json(&msg)?;
                     print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {
@@ -228,6 +229,10 @@ impl Cmd {
                         }))?,
                         Some(Reward::ServiceProviderReward(reward)) => print_json(&json!({
                             "service_provider": reward.service_provider_id,
+                            "amount": reward.amount,
+                        }))?,
+                        Some(Reward::UnallocatedReward(reward)) => print_json(&json!({
+                            "unallocated_reward_type": reward.reward_type,
                             "amount": reward.amount,
                         }))?,
                         _ => (),

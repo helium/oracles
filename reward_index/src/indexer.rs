@@ -23,6 +23,7 @@ pub struct Indexer {
     verifier_store: FileStore,
     mode: settings::Mode,
     op_fund_key: String,
+    unallocated_reward_key: String,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -33,6 +34,7 @@ pub enum RewardType {
     IotOperational,
     MobileSubscriber,
     MobileServiceProvider,
+    MobileUnallocated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -53,6 +55,9 @@ impl Indexer {
                     .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
                 settings::Mode::Mobile => String::new(),
             },
+            unallocated_reward_key: settings
+                .unallocated_reward_entity_key()
+                .ok_or_else(|| anyhow!("missing unallocated reward key"))?,
         })
     }
 
@@ -157,7 +162,7 @@ impl Indexer {
                         if let Some(sp) = ServiceProvider::from_i32(r.service_provider_id) {
                             Ok((
                                 RewardKey {
-                                    key: sp.as_str_name().to_string(),
+                                    key: service_provider_to_entity_key(sp)?,
                                     reward_type: RewardType::MobileServiceProvider,
                                 },
                                 r.amount,
@@ -166,6 +171,13 @@ impl Indexer {
                             bail!("failed to decode service provider")
                         }
                     }
+                    Some(MobileReward::UnallocatedReward(r)) => Ok((
+                        RewardKey {
+                            key: self.unallocated_reward_key.clone(),
+                            reward_type: RewardType::MobileUnallocated,
+                        },
+                        r.amount,
+                    )),
                     _ => bail!("got an invalid reward share"),
                 }
             }
@@ -190,5 +202,11 @@ impl Indexer {
                 }
             }
         }
+    }
+}
+
+fn service_provider_to_entity_key(sp: ServiceProvider) -> anyhow::Result<String> {
+    match sp {
+        ServiceProvider::HeliumMobile => Ok("Helium Mobile".to_string()),
     }
 }
