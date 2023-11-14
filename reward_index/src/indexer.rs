@@ -23,6 +23,7 @@ pub struct Indexer {
     verifier_store: FileStore,
     mode: settings::Mode,
     op_fund_key: String,
+    unallocated_reward_key: String,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -52,6 +53,12 @@ impl Indexer {
                     .operation_fund_key()
                     .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
                 settings::Mode::Mobile => String::new(),
+            },
+            unallocated_reward_key: match settings.mode {
+                settings::Mode::Mobile => settings
+                    .unallocated_reward_entity_key()
+                    .ok_or_else(|| anyhow!("unallocated reward key is required for MOBILE mode"))?,
+                settings::Mode::Iot => String::new(),
             },
         })
     }
@@ -165,7 +172,14 @@ impl Indexer {
                         } else {
                             bail!("failed to decode service provider")
                         }
-                    }
+                    },
+                    Some(MobileReward::UnallocatedReward(r)) => Ok((
+                        RewardKey {
+                            key: self.unallocated_reward_key.clone(),
+                            reward_type: RewardType::MobileSubscriber,
+                        },
+                        r.amount,
+                    )),
                     _ => bail!("got an invalid reward share"),
                 }
             }
