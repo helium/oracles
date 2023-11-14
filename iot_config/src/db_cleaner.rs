@@ -34,6 +34,7 @@ impl DbCleaner {
     async fn run(self, mut shutdown: triggered::Listener) -> anyhow::Result<()> {
         loop {
             tokio::select! {
+                biased;
                 _ = &mut shutdown => {
                     tracing::warn!("db cleaner shutting down");
                     return Ok(());
