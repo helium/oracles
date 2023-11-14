@@ -497,12 +497,16 @@ pub async fn validate_heartbeat(
             ))
         }
         GatewayResolution::GatewayNotAsserted => {
-            return Ok((
-                cell_type,
-                None,
-                None,
-                proto::HeartbeatValidity::GatewayNotAsserted,
-            ))
+            if heartbeat.hb_type == HbType::Cbrs {
+                None
+            } else {
+                return Ok((
+                    cell_type,
+                    None,
+                    None,
+                    proto::HeartbeatValidity::GatewayNotAsserted,
+                ))
+            }
         }
         GatewayResolution::AssertedLocation(location) => {
             if heartbeat.hb_type == HbType::Wifi {
