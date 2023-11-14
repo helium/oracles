@@ -41,7 +41,7 @@ impl ManagedTask for Daemon {
 
 impl Daemon {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
-        tracing::info!("starting daemon");
+        tracing::info!("Starting verifier daemon");
         loop {
             tokio::select! {
                 biased;
@@ -56,7 +56,7 @@ impl Daemon {
 
             }
         }
-        tracing::info!("stopping daemon");
+        tracing::info!("Stopping verifier daemon");
         Ok(())
     }
 
