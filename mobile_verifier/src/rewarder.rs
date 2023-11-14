@@ -10,6 +10,7 @@ use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
+
 use helium_proto::RewardManifest;
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use price::PriceTracker;
@@ -237,13 +238,28 @@ where
             .get_scheduled_tokens_for_service_providers(reward_period.end - reward_period.start);
         let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
         // translate service provider shares into service provider rewards
-        for sp_share in sp_shares.into_service_provider_rewards(reward_period, rewards_per_share) {
+        // track the amount of allocated reward value as we go
+        let mut allocated_sp_rewards = 0_u64;
+        for (amount, sp_share) in
+            sp_shares.into_service_provider_rewards(reward_period, rewards_per_share)
+        {
+            allocated_sp_rewards += amount;
             self.mobile_rewards
                 .write(sp_share.clone(), [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
         }
+
+        // write out any unallocated service provider reward
+        let unallocated_sp_reward_amount = total_sp_rewards - Decimal::from(allocated_sp_rewards);
+        let unallocated_sp_reward =
+            ServiceProviderShares::unallocated_reward(unallocated_sp_reward_amount, reward_period)?;
+        self.mobile_rewards
+            .write(unallocated_sp_reward, [])
+            .await?
+            .await??;
+
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;

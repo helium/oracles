@@ -13,6 +13,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::ServiceProvider;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
+    poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
 };
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
@@ -256,7 +257,7 @@ impl ServiceProviderShares {
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
         reward_per_share: Decimal,
-    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         self.shares
             .into_iter()
             .map(move |share| proto::ServiceProviderReward {
@@ -267,11 +268,34 @@ impl ServiceProviderShares {
                     .unwrap_or(0),
             })
             .filter(|service_provider_reward| service_provider_reward.amount > 0)
-            .map(|service_provider_reward| proto::MobileRewardShare {
-                start_period: reward_period.start.encode_timestamp(),
-                end_period: reward_period.end.encode_timestamp(),
-                reward: Some(ProtoReward::ServiceProviderReward(service_provider_reward)),
+            .map(|service_provider_reward| {
+                (
+                    service_provider_reward.amount,
+                    proto::MobileRewardShare {
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
+                        reward: Some(ProtoReward::ServiceProviderReward(service_provider_reward)),
+                    },
+                )
             })
+    }
+
+    pub fn unallocated_reward(
+        unallocated_amount: Decimal,
+        reward_period: &'_ Range<DateTime<Utc>>,
+    ) -> anyhow::Result<proto::MobileRewardShare> {
+        let reward = UnallocatedReward {
+            reward_type: UnallocatedRewardType::ServiceProvider as i32,
+            amount: unallocated_amount
+                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                .to_u64()
+                .unwrap_or(0),
+        };
+        Ok(proto::MobileRewardShare {
+            start_period: reward_period.start.encode_timestamp(),
+            end_period: reward_period.end.encode_timestamp(),
+            reward: Some(ProtoReward::UnallocatedReward(reward)),
+        })
     }
 
     fn maybe_cap_service_provider_rewards(

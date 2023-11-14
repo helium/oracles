@@ -230,6 +230,10 @@ impl Cmd {
                             "service_provider": reward.service_provider_id,
                             "amount": reward.amount,
                         }))?,
+                        Some(Reward::UnallocatedReward(reward)) => print_json(&json!({
+                            "unallocated_reward_type": reward.reward_type,
+                            "amount": reward.amount,
+                        }))?,
                         _ => (),
                     }
                 }
