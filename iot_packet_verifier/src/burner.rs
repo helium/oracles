@@ -64,7 +64,7 @@ where
         mut self,
         shutdown: triggered::Listener,
     ) -> Result<(), BurnError<P::Error, S::Error>> {
-        tracing::info!("starting burner");
+        tracing::info!("Starting burner");
         let mut burn_timer = time::interval(self.burn_period);
         burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -76,12 +76,12 @@ where
                     match self.burn().await {
                     Ok(()) => (),
                     Err(err) => {
-                        tracing::error!("error whilst handling denylist tick: {err:?}");
+                        tracing::error!("Error while attempting to burn: {err:?}");
                     }
                 }
             }
         }
-        tracing::info!("stopping burner");
+        tracing::info!("Stopping burner");
         Ok(())
     }
 
@@ -115,13 +115,10 @@ where
 
         let mut balance_lock = self.balances.lock().await;
         let payer_account = balance_lock.get_mut(&payer).unwrap();
-        payer_account.burned -= amount;
-        // Reset the balance of the payer:
-        payer_account.balance = self
-            .solana
-            .payer_balance(&payer)
-            .await
-            .map_err(BurnError::SolanaError)?;
+        // Reduce the pending burn amount and the payer's balance by the amount
+        // we've burned.
+        payer_account.burned = payer_account.burned.saturating_sub(amount);
+        payer_account.balance = payer_account.balance.saturating_sub(amount);
 
         metrics::counter!("burned", amount, "payer" => payer.to_string());
 
