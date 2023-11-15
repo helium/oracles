@@ -946,24 +946,24 @@ mod test {
             .total_points();
 
         // For the following assertions, we multiply each expected points
-        // by four, as that is the amount of coverage points given to an outdoor
+        // by 100, as that is the amount of coverage points given to an indoor
         // radio with a low signal level.
 
         // The owner with two hotspots gets more rewards
-        assert_eq!(gw1_shares, dec!(3.50) * dec!(4));
-        assert_eq!(gw2_shares, dec!(2.00) * dec!(4));
+        assert_eq!(gw1_shares, dec!(3.50) * dec!(100));
+        assert_eq!(gw2_shares, dec!(2.00) * dec!(100));
         assert!(gw1_shares > gw2_shares);
 
         // gw3 has wifi HBs and has location validation timestamp
         // gets the full 0.4 reward weight
-        assert_eq!(gw3_shares, dec!(0.40) * dec!(4));
+        assert_eq!(gw3_shares, dec!(0.40) * dec!(100));
         // gw4 has wifi HBs and DOES NOT have a location validation timestamp
         // gets 0.25 of the full reward weight
-        assert_eq!(gw4_shares, dec!(0.1) * dec!(4));
+        assert_eq!(gw4_shares, dec!(0.1) * dec!(100));
         // gw4 has wifi HBs and does have a location validation timestamp
         // but the HB distance is too far from the asserted location
         // gets 0.25 of the full reward weight
-        assert_eq!(gw5_shares, dec!(0.1) * dec!(4));
+        assert_eq!(gw5_shares, dec!(0.1) * dec!(100));
     }
 
     fn simple_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
@@ -972,9 +972,10 @@ mod test {
         vec![HexCoverage {
             uuid: Uuid::new_v4(),
             hex: hex as i64,
-            indoor: false,
+            indoor: true,
             radio_key,
             signal_level: crate::coverage::SignalLevel::Low,
+            signal_power: 0,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
         }]

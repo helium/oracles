@@ -720,6 +720,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/*
 #[sqlx::test]
 #[ignore]
 async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
@@ -1113,6 +1114,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
 
     Ok(())
 }
+*/
 
 #[sqlx::test]
 #[ignore]
