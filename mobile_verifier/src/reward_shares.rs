@@ -13,8 +13,8 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::ServiceProvider;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
-    poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
 };
+use helium_proto::services::poc_mobile::{UnallocatedReward, UnallocatedRewardType};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -61,6 +61,10 @@ impl TransferRewards {
     #[cfg(test)]
     fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
         self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.reward_scale
+    }
+
+    pub fn total(&self) -> Decimal {
+        self.rewards.values().map(|v| v * self.reward_scale).sum()
     }
 
     pub async fn from_transfer_sessions(
@@ -113,7 +117,7 @@ impl TransferRewards {
     pub fn into_rewards(
         self,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         let Self {
             reward_scale,
             rewards,
@@ -123,25 +127,26 @@ impl TransferRewards {
         let end_period = epoch.end.encode_timestamp();
         rewards
             .into_iter()
-            .map(move |(hotspot_key, reward)| proto::MobileRewardShare {
-                start_period,
-                end_period,
-                reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
-                    proto::GatewayReward {
-                        hotspot_key: hotspot_key.into(),
-                        dc_transfer_reward: (reward * reward_scale)
-                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                            .to_u64()
-                            .unwrap_or(0),
+            .map(move |(hotspot_key, reward)| {
+                let dc_transfer_reward = (reward * reward_scale)
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0);
+                (
+                    dc_transfer_reward,
+                    proto::MobileRewardShare {
+                        start_period,
+                        end_period,
+                        reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
+                            proto::GatewayReward {
+                                hotspot_key: hotspot_key.into(),
+                                dc_transfer_reward,
+                            },
+                        )),
                     },
-                )),
+                )
             })
-            .filter(|mobile_reward| match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::GatewayReward(ref gateway_reward)) => {
-                    gateway_reward.dc_transfer_reward > 0
-                }
-                _ => false,
-            })
+            .filter(|(dc_transfer_reward, _mobile_reward)| *dc_transfer_reward > 0)
     }
 }
 
@@ -157,17 +162,11 @@ impl MapperShares {
         }
     }
 
-    pub fn rewards_per_share(
-        &self,
-        reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> anyhow::Result<Decimal> {
+    pub fn rewards_per_share(&self, total_mappers_pool: Decimal) -> anyhow::Result<Decimal> {
         // note: currently rewards_per_share calculation only takes into
         // consideration discovery mapping shares
         // in the future it will also need to take into account
         // verification mapping shares
-        let duration: Duration = reward_period.end - reward_period.start;
-        let total_mappers_pool = get_scheduled_tokens_for_mappers(duration);
-
         // the number of subscribers eligible for discovery location rewards
         let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
 
@@ -186,7 +185,7 @@ impl MapperShares {
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
         reward_per_share: Decimal,
-    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         self.discovery_mapping_shares
             .into_iter()
             .map(move |subscriber_id| proto::SubscriberReward {
@@ -197,10 +196,15 @@ impl MapperShares {
                     .unwrap_or(0),
             })
             .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
-            .map(|subscriber_reward| proto::MobileRewardShare {
-                start_period: reward_period.start.encode_timestamp(),
-                end_period: reward_period.end.encode_timestamp(),
-                reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
+            .map(|subscriber_reward| {
+                (
+                    subscriber_reward.discovery_location_amount,
+                    proto::MobileRewardShare {
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
+                        reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
+                    },
+                )
             })
     }
 }
@@ -232,10 +236,6 @@ impl ServiceProviderShares {
 
     fn total_dc(&self) -> Decimal {
         self.shares.iter().map(|v| v.total_dcs).sum()
-    }
-
-    pub fn get_scheduled_tokens_for_service_providers(&self, duration: Duration) -> Decimal {
-        get_total_scheduled_tokens(duration) * SERVICE_PROVIDER_PERCENT
     }
 
     pub fn rewards_per_share(
@@ -472,13 +472,11 @@ impl CoveragePoints {
 
     pub fn into_rewards(
         self,
-        transfer_rewards_sum: Decimal,
+        available_poc_rewards: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> Option<impl Iterator<Item = proto::MobileRewardShare> + '_> {
+    ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
         let total_shares = self.total_shares();
-        let available_poc_rewards =
-            get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start) - transfer_rewards_sum;
-        available_poc_rewards
+            available_poc_rewards
             .checked_div(total_shares)
             .map(|poc_rewards_per_share| {
                 tracing::info!(%poc_rewards_per_share);
@@ -496,12 +494,7 @@ impl CoveragePoints {
                             hotspot_points.radio_points.into_iter(),
                         )
                     })
-                    .filter(|mobile_reward| match mobile_reward.reward {
-                        Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
-                            radio_reward.poc_reward > 0
-                        }
-                        _ => false,
-                    })
+                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0)
             })
     }
 }
@@ -513,7 +506,7 @@ fn radio_points_into_rewards(
     poc_rewards_per_share: Decimal,
     speedtest_multiplier: Decimal,
     radio_points: impl Iterator<Item = (Option<String>, RadioPoints)>,
-) -> impl Iterator<Item = proto::MobileRewardShare> {
+) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> {
     radio_points.map(move |(cbsd_id, radio_points)| {
         new_radio_reward(
             cbsd_id,
@@ -535,31 +528,32 @@ fn new_radio_reward(
     poc_rewards_per_share: Decimal,
     speedtest_multiplier: Decimal,
     radio_points: RadioPoints,
-) -> proto::MobileRewardShare {
+) -> (u64, proto::MobileRewardShare) {
     let poc_reward = poc_rewards_per_share
         * speedtest_multiplier
         * radio_points.heartbeat_multiplier
         * radio_points.points;
     let hotspot_key: Vec<u8> = hotspot_key.clone().into();
     let cbsd_id = cbsd_id.unwrap_or_default();
-    proto::MobileRewardShare {
+    let poc_reward = poc_reward
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0);
+    (poc_reward, proto::MobileRewardShare {
         start_period,
         end_period,
         reward: Some(proto::mobile_reward_share::Reward::RadioReward(
             proto::RadioReward {
                 hotspot_key,
                 cbsd_id,
-                poc_reward: poc_reward
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0),
+                poc_reward,
                 coverage_points: radio_points.points.to_u64().unwrap_or(0),
                 seniority_timestamp: radio_points.seniority.encode_timestamp(),
                 coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
                 ..Default::default()
             },
         )),
-    }
+    })
 }
 
 pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
@@ -567,12 +561,16 @@ pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
         * Decimal::from(duration.num_seconds())
 }
 
-pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
+pub fn get_scheduled_tokens_for_poc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
 pub fn get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * MAPPERS_REWARDS_PERCENT
+}
+
+pub fn get_scheduled_tokens_for_service_providers(duration: Duration) -> Decimal {
+    get_total_scheduled_tokens(duration) * SERVICE_PROVIDER_PERCENT
 }
 
 #[cfg(test)]
@@ -584,6 +582,7 @@ mod test {
         data_session,
         data_session::HotspotDataSession,
         heartbeats::{HeartbeatReward, HeartbeatRow, KeyType, OwnedKeyType},
+        reward_shares,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
@@ -636,7 +635,11 @@ mod test {
 
         // translate location shares into discovery mapping shares
         let mapping_shares = MapperShares::new(location_shares);
-        let rewards_per_share = mapping_shares.rewards_per_share(&epoch).unwrap();
+        let total_mappers_pool =
+            reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start);
+        let rewards_per_share = mapping_shares
+            .rewards_per_share(total_mappers_pool)
+            .unwrap();
 
         // verify total rewards for the epoch
         let total_epoch_rewards = get_total_scheduled_tokens(epoch.end - epoch.start)
@@ -656,10 +659,13 @@ mod test {
 
         // get the summed rewards allocated to subscribers for discovery location
         let mut total_discovery_mapping_rewards = 0_u64;
-        for subscriber_share in mapping_shares.into_subscriber_rewards(&epoch, rewards_per_share) {
+        for (reward_amount, subscriber_share) in
+            mapping_shares.into_subscriber_rewards(&epoch, rewards_per_share)
+        {
             if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
                 total_discovery_mapping_rewards += r.discovery_location_amount;
                 assert_eq!(expected_reward_per_subscriber, r.discovery_location_amount);
+                assert_eq!(reward_amount, r.discovery_location_amount);
             }
         }
 
@@ -701,7 +707,7 @@ mod test {
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
-        let total_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
+        let total_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
 
         // confirm our hourly rewards add up to expected 24hr amount
         // total_rewards will be in bones
@@ -715,7 +721,7 @@ mod test {
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
         assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
-        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
+        let available_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
         assert_eq!(
             available_poc_rewards,
@@ -766,7 +772,7 @@ mod test {
         // allotted reward amount for data transfer, which is 40% of the daily tokens. We check to
         // ensure that amount of tokens remaining for POC is no less than 20% of the rewards allocated
         // for POC and data transfer (which is 60% of the daily total emissions).
-        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
+        let available_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
         assert_eq!(available_poc_rewards.trunc(), dec!(16_393_442_622_950));
         assert_eq!(
@@ -1264,7 +1270,7 @@ mod test {
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let epoch = (now - Duration::hours(1))..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1335,9 +1341,7 @@ mod test {
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
 
         // total emissions for 1 hour
-        let expected_total_rewards = get_scheduled_tokens_for_poc_and_dc(Duration::hours(1))
-            .to_u64()
-            .unwrap();
+        let expected_total_rewards = get_scheduled_tokens_for_poc(duration).to_u64().unwrap();
         // the emissions actually distributed for the hour
         let mut distributed_total_rewards = 0;
         for val in owner_rewards.values() {
@@ -1444,7 +1448,7 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1466,6 +1470,7 @@ mod test {
 
             *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
         }
+        println!("owner rewards {:?}", owner_rewards);
 
         // These were different, now they are the same:
 
@@ -1577,7 +1582,8 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1817,7 +1823,7 @@ mod test {
         let coverage_points = CoveragePoints { coverage_points };
         let epoch = now - Duration::hours(1)..now;
         let expected_hotspot = gw1;
-        for mobile_reward in coverage_points.into_rewards(Decimal::ZERO, &epoch).unwrap() {
+        for (_reward_amount, mobile_reward) in coverage_points.into_rewards(Decimal::ZERO, &epoch).unwrap() {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
                 _ => unreachable!(),
