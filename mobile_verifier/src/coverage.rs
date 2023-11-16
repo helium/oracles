@@ -388,7 +388,7 @@ impl CoveredHexStream for Pool<Postgres> {
             .await?;
 
         Ok(
-            sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
+            sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, signal_power FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
                 .bind(key)
                 .bind(coverage_obj)
                 .fetch(self)
@@ -629,7 +629,7 @@ impl CoveredHexCache {
         else {
             return Ok(None);
         };
-        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE uuid = $1")
+        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, signal_power FROM hex_coverage WHERE uuid = $1")
             .bind(uuid)
             .fetch_all(&self.pool)
             .await?
