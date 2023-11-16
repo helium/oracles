@@ -280,6 +280,14 @@ fn signal_level(hex: &str, signal_level: SignalLevel) -> anyhow::Result<RadioHex
     })
 }
 
+fn signal_power(hex: &str, signal_level: SignalLevel, signal_power: i32) -> anyhow::Result<RadioHexSignalLevel> {
+    Ok(RadioHexSignalLevel {
+        location: hex.parse()?,
+        signal_level,
+        signal_power,
+    })
+}
+
 async fn process_input(
     pool: &PgPool,
     epoch: &Range<DateTime<Utc>>,
@@ -720,7 +728,6 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/*
 #[sqlx::test]
 #[ignore]
 async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
@@ -739,16 +746,16 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3064d9ff", SignalLevel::High)?,
-                signal_level("8c2681a3065d3ff", SignalLevel::High)?,
-                signal_level("8c2681a306635ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3066e7ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3065adff", SignalLevel::Medium)?,
-                signal_level("8c2681a339a4bff", SignalLevel::Low)?,
-                signal_level("8c2681a3065d7ff", SignalLevel::Low)?,
-                signal_level("8c2681a306481ff", SignalLevel::Low)?,
-                signal_level("8c2681a30648bff", SignalLevel::Low)?,
-                signal_level("8c2681a30646bff", SignalLevel::Low)?,
+                signal_power("8c2681a3064d9ff", SignalLevel::High, -9400)?,
+                signal_power("8c2681a3065d3ff", SignalLevel::High, -9400)?,
+                signal_power("8c2681a306635ff", SignalLevel::Medium, -10000)?,
+                signal_power("8c2681a3066e7ff", SignalLevel::Medium, -10000)?,
+                signal_power("8c2681a3065adff", SignalLevel::Medium, -10000)?,
+                signal_power("8c2681a339a4bff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a3065d7ff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a306481ff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a30648bff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a30646bff", SignalLevel::Low, -11000)?,
             ],
             trust_score: 1000,
         },
@@ -803,14 +810,14 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a302991ff", SignalLevel::High)?,
-                signal_level("8c2681a306601ff", SignalLevel::High)?,
-                signal_level("8c2681a306697ff", SignalLevel::High)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3064c1ff", SignalLevel::Medium)?,
-                signal_level("8c2681a30671bff", SignalLevel::Low)?,
-                signal_level("8c2681a306493ff", SignalLevel::Low)?,
-                signal_level("8c2681a30659dff", SignalLevel::Low)?,
+                signal_power("8c2681a302991ff", SignalLevel::High, -9400)?,
+                signal_power("8c2681a306601ff", SignalLevel::High, -9400)?,
+                signal_power("8c2681a306697ff", SignalLevel::High, -9400)?,
+                signal_power("8c2681a3028a7ff", SignalLevel::Medium, -10000)?,
+                signal_power("8c2681a3064c1ff", SignalLevel::Medium, -10000)?,
+                signal_power("8c2681a30671bff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a306493ff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a30659dff", SignalLevel::Low, -11000)?,
             ],
             trust_score: 1000,
         },
@@ -825,11 +832,11 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
             indoor: false,
             signature: Vec::new(),
             coverage: vec![
-                signal_level("8c2681a3066abff", SignalLevel::High)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Medium)?, // Second hex is shared
-                signal_level("8c2681a3066a9ff", SignalLevel::Low)?,    // Third hex is shared
-                signal_level("8c2681a3066a5ff", SignalLevel::Low)?,
-                signal_level("8c2681a30640dff", SignalLevel::Low)?,
+                signal_power("8c2681a3066abff", SignalLevel::High, -9400)?,
+                signal_power("8c2681a3028a7ff", SignalLevel::Medium, -10500)?, // Second hex is shared
+                signal_power("8c2681a3066a9ff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a3066a5ff", SignalLevel::Low, -11000)?,
+                signal_power("8c2681a30640dff", SignalLevel::Low, -11000)?,
             ],
             trust_score: 1000,
         },
@@ -872,7 +879,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         coverage_points.hotspot_points(&owner_1),
         dec!(76) * dec!(0.5)
     );
-    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(36));
+    assert_eq!(coverage_points.hotspot_points(&owner_2), dec!(34));
 
     Ok(())
 }
@@ -880,245 +887,6 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 #[ignore]
 async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
-    let start: DateTime<Utc> = "2022-02-01 00:00:00.000000000 UTC".parse()?;
-    let end: DateTime<Utc> = "2022-02-02 00:00:00.000000000 UTC".parse()?;
-
-    let uuid_1 = Uuid::new_v4();
-    let uuid_2 = Uuid::new_v4();
-    let uuid_3 = Uuid::new_v4();
-    let uuid_4 = Uuid::new_v4();
-    let uuid_5 = Uuid::new_v4();
-    let uuid_6 = Uuid::new_v4();
-
-    let cbsd_id_1 = "P27-SCE4255W120200039521XGB0105".to_string();
-    let cbsd_id_2 = "P27-SCE4255W120200039521XGB0106".to_string();
-    let cbsd_id_3 = "P27-SCE4255W120200039521XGB0107".to_string();
-    let cbsd_id_4 = "P27-SCE4255W120200039521XGB0108".to_string();
-    let cbsd_id_5 = "P27-SCE4255W120200039521XGB0109".to_string();
-    let cbsd_id_6 = "P27-SCE4255W120200039521XGB0110".to_string();
-
-    // All coverage objects share the same hexes
-
-    let coverage_object_1 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_1,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_1.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a302991ff", SignalLevel::High)?,
-                signal_level("8c2681a306601ff", SignalLevel::Medium)?,
-                signal_level("8c2681a306697ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Low)?,
-                signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
-                signal_level("8c2681a30671bff", SignalLevel::Low)?,
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let coverage_object_2 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_2,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_2.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a302991ff", SignalLevel::High)?,
-                signal_level("8c2681a306601ff", SignalLevel::Medium)?,
-                signal_level("8c2681a306697ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Low)?,
-                signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
-                signal_level("8c2681a30671bff", SignalLevel::Low)?,
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let coverage_object_3 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_3,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_3.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a302991ff", SignalLevel::High)?,
-                signal_level("8c2681a306601ff", SignalLevel::Medium)?,
-                signal_level("8c2681a306697ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Low)?,
-                signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
-                signal_level("8c2681a30671bff", SignalLevel::Low)?,
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let coverage_object_4 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_4,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_4.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a302991ff", SignalLevel::High)?,
-                signal_level("8c2681a306601ff", SignalLevel::Medium)?,
-                signal_level("8c2681a306697ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Low)?,
-                signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
-                signal_level("8c2681a30671bff", SignalLevel::Low)?,
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let coverage_object_5 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_5,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_5.clone()),
-            coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a302991ff", SignalLevel::High)?,
-                signal_level("8c2681a306601ff", SignalLevel::Medium)?,
-                signal_level("8c2681a306697ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Low)?,
-                signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
-                signal_level("8c2681a30671bff", SignalLevel::Low)?,
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let coverage_object_6 = CoverageObjectIngestReport {
-        received_timestamp: Utc::now(),
-        report: file_store::coverage::CoverageObject {
-            pub_key: PublicKeyBinary::from(vec![1]),
-            uuid: uuid_6,
-            key_type: file_store::coverage::KeyType::CbsdId(cbsd_id_6.clone()),
-            coverage_claim_time: "2022-02-02 00:00:00.000000000 UTC".parse()?,
-            indoor: false,
-            signature: Vec::new(),
-            coverage: vec![
-                signal_level("8c2681a302991ff", SignalLevel::High)?,
-                signal_level("8c2681a306601ff", SignalLevel::Medium)?,
-                signal_level("8c2681a306697ff", SignalLevel::Medium)?,
-                signal_level("8c2681a3028a7ff", SignalLevel::Low)?,
-                signal_level("8c2681a3064c1ff", SignalLevel::Low)?,
-                signal_level("8c2681a30671bff", SignalLevel::Low)?,
-            ],
-            trust_score: 1000,
-        },
-    };
-
-    let owner_1: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9".parse()?;
-    let owner_2: PublicKeyBinary = "11PGVtgW9aM9ynfvns5USUsynYQ7EsMpxVqWuDKqFogKQX7etkR".parse()?;
-    let owner_3: PublicKeyBinary = "11ibmJmQXTL6qMh4cq9pJ7tUtrpafWaVjjT6qhY7CNvjyvY9g1".parse()?;
-    let owner_4: PublicKeyBinary = "11Kgx4nqN7VpZXobEubLaTvJWkzHf1w1SrUUYK1CTiLFPgiQRHW".parse()?;
-    let owner_5: PublicKeyBinary = "11Bn2erjB83zdCBrE248pTVBpTXSuN8Lur4v4mWFnf5Rpd8XK7n".parse()?;
-    let owner_6: PublicKeyBinary = "11d5KySrfiMgaDoZ7B5CDm3meE1gQhUJ5EHuJvzwiWjdSUGhBsZ".parse()?;
-
-    let heartbeats_1 = heartbeats(12, start, &owner_1, &cbsd_id_1, 0.0, 0.0, uuid_1);
-    let heartbeats_2 = heartbeats(12, start, &owner_2, &cbsd_id_2, 0.0, 0.0, uuid_2);
-    let heartbeats_3 = heartbeats(12, start, &owner_3, &cbsd_id_3, 0.0, 0.0, uuid_3);
-    let heartbeats_4 = heartbeats(12, start, &owner_4, &cbsd_id_4, 0.0, 0.0, uuid_4);
-    let heartbeats_5 = heartbeats(12, start, &owner_5, &cbsd_id_5, 0.0, 0.0, uuid_5);
-    let heartbeats_6 = heartbeats(12, start, &owner_6, &cbsd_id_6, 0.0, 0.0, uuid_6);
-
-    process_input(
-        &pool,
-        &(start..end),
-        vec![
-            coverage_object_1,
-            coverage_object_2,
-            coverage_object_3,
-            coverage_object_4,
-            coverage_object_5,
-            coverage_object_6,
-        ]
-        .into_iter(),
-        heartbeats_1
-            .chain(heartbeats_2)
-            .chain(heartbeats_3)
-            .chain(heartbeats_4)
-            .chain(heartbeats_5)
-            .chain(heartbeats_6),
-    )
-    .await?;
-
-    let last_timestamp = end - Duration::hours(12);
-    let speedtests_1 = vec![
-        poor_speedtest(owner_1.clone(), last_timestamp),
-        poor_speedtest(owner_1.clone(), end),
-    ];
-    let speedtests_2 = vec![
-        poor_speedtest(owner_2.clone(), last_timestamp),
-        poor_speedtest(owner_2.clone(), end),
-    ];
-    let speedtests_3 = vec![
-        acceptable_speedtest(owner_3.clone(), last_timestamp),
-        acceptable_speedtest(owner_3.clone(), end),
-    ];
-    let speedtests_4 = vec![
-        acceptable_speedtest(owner_4.clone(), last_timestamp),
-        acceptable_speedtest(owner_4.clone(), end),
-    ];
-    let speedtests_5 = vec![
-        failed_speedtest(owner_5.clone(), last_timestamp),
-        failed_speedtest(owner_5.clone(), end),
-    ];
-    let speedtests_6 = vec![
-        acceptable_speedtest(owner_6.clone(), last_timestamp),
-        acceptable_speedtest(owner_6.clone(), end),
-    ];
-    let mut averages = HashMap::new();
-    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
-    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
-    averages.insert(owner_3.clone(), SpeedtestAverage::from(&speedtests_3));
-    averages.insert(owner_4.clone(), SpeedtestAverage::from(&speedtests_4));
-    averages.insert(owner_5.clone(), SpeedtestAverage::from(&speedtests_5));
-    averages.insert(owner_6.clone(), SpeedtestAverage::from(&speedtests_6));
-    let speedtest_avgs = SpeedtestAverages { averages };
-
-    let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
-    let coverage_points =
-        CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
-
-    assert_eq!(
-        coverage_points.hotspot_points(&owner_1),
-        dec!(44) * dec!(0.25)
-    );
-    assert_eq!(
-        coverage_points.hotspot_points(&owner_2),
-        dec!(44) * dec!(0.25)
-    );
-    assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(44));
-    assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(44));
-    assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(0));
-    assert_eq!(coverage_points.hotspot_points(&owner_6), dec!(44));
-
-    Ok(())
-}
-*/
-
-#[sqlx::test]
-#[ignore]
-async fn scenario_seven(pool: PgPool) -> anyhow::Result<()> {
     let start: DateTime<Utc> = "2022-02-01 00:00:00.000000000 UTC".parse()?;
     let end: DateTime<Utc> = "2022-02-02 00:00:00.000000000 UTC".parse()?;
 
