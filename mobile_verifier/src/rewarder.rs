@@ -471,19 +471,3 @@ async fn save_next_rewarded_end_time(
 ) -> db_store::Result<()> {
     meta::store(exec, "next_rewarded_end_time", value.timestamp()).await
 }
-
-pub fn create_unallocated_reward(
-    unallocated_type: UnallocatedRewardType,
-    unallocated_amount: u64,
-    reward_period: &'_ Range<DateTime<Utc>>,
-) -> anyhow::Result<proto::MobileRewardShare> {
-    let reward = UnallocatedReward {
-        reward_type: unallocated_type as i32,
-        amount: unallocated_amount,
-    };
-    Ok(proto::MobileRewardShare {
-        start_period: reward_period.start.encode_timestamp(),
-        end_period: reward_period.end.encode_timestamp(),
-        reward: Some(ProtoReward::UnallocatedReward(reward)),
-    })
-}
