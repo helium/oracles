@@ -278,17 +278,12 @@ where
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-            if unallocated_poc_reward_amount > 0 {
-                let unallocated_poc_reward = create_unallocated_reward(
-                    UnallocatedRewardType::Poc,
-                    unallocated_poc_reward_amount,
-                    reward_period,
-                )?;
-                self.mobile_rewards
-                    .write(unallocated_poc_reward, [])
-                    .await?
-                    .await??;
-            }
+            self.write_unallocated_reward(
+                UnallocatedRewardType::Poc,
+                unallocated_poc_reward_amount,
+                reward_period,
+            )
+            .await?;
         };
         Ok(())
     }
@@ -315,20 +310,12 @@ where
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        tracing::info!(
-            "total_dc_rewards: {total_dc_rewards}, allocated_dc_rewards: {allocated_dc_rewards}"
-        );
-        if unallocated_dc_reward_amount > 0 {
-            let unallocated_dc_reward = create_unallocated_reward(
-                UnallocatedRewardType::Data,
-                unallocated_dc_reward_amount,
-                reward_period,
-            )?;
-            self.mobile_rewards
-                .write(unallocated_dc_reward, [])
-                .await?
-                .await??;
-        };
+        self.write_unallocated_reward(
+            UnallocatedRewardType::Data,
+            unallocated_dc_reward_amount,
+            reward_period,
+        )
+        .await?;
         Ok(())
     }
 
@@ -364,17 +351,12 @@ where
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        if unallocated_sp_reward_amount > 0 {
-            let unallocated_sp_reward = create_unallocated_reward(
-                UnallocatedRewardType::ServiceProvider,
-                unallocated_sp_reward_amount,
-                reward_period,
-            )?;
-            self.mobile_rewards
-                .write(unallocated_sp_reward, [])
-                .await?
-                .await??;
-        };
+        self.write_unallocated_reward(
+            UnallocatedRewardType::ServiceProvider,
+            unallocated_sp_reward_amount,
+            reward_period,
+        )
+        .await?;
         Ok(())
     }
 
@@ -411,17 +393,12 @@ where
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        if unallocated_mapping_reward_amount > 0 {
-            let unallocated_mapping_reward = create_unallocated_reward(
-                UnallocatedRewardType::Mapper,
-                unallocated_mapping_reward_amount,
-                reward_period,
-            )?;
-            self.mobile_rewards
-                .write(unallocated_mapping_reward, [])
-                .await?
-                .await??;
-        };
+        self.write_unallocated_reward(
+            UnallocatedRewardType::Mapper,
+            unallocated_mapping_reward_amount,
+            reward_period,
+        )
+        .await?;
         Ok(())
     }
 
@@ -436,14 +413,32 @@ where
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        if unallocated_oracle_reward_amount > 0 {
-            let unallocated_oracle_reward = create_unallocated_reward(
-                UnallocatedRewardType::Oracle,
-                unallocated_oracle_reward_amount,
-                reward_period,
-            )?;
+        self.write_unallocated_reward(
+            UnallocatedRewardType::Oracle,
+            unallocated_oracle_reward_amount,
+            reward_period,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn write_unallocated_reward(
+        &self,
+        unallocated_type: UnallocatedRewardType,
+        unallocated_amount: u64,
+        reward_period: &'_ Range<DateTime<Utc>>,
+    ) -> anyhow::Result<()> {
+        if unallocated_amount > 0 {
+            let unallocated_reward = proto::MobileRewardShare {
+                start_period: reward_period.start.encode_timestamp(),
+                end_period: reward_period.end.encode_timestamp(),
+                reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
+                    reward_type: unallocated_type as i32,
+                    amount: unallocated_amount,
+                })),
+            };
             self.mobile_rewards
-                .write(unallocated_oracle_reward, [])
+                .write(unallocated_reward, [])
                 .await?
                 .await??;
         };
