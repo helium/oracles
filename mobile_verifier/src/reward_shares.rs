@@ -661,26 +661,26 @@ mod test {
         let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
 
         // get the summed rewards allocated to subscribers for discovery location
-        let mut total_discovery_mapping_rewards = 0_u64;
+        let mut allocated_mapper_rewards = 0_u64;
         for (reward_amount, subscriber_share) in
             mapping_shares.into_subscriber_rewards(&epoch, rewards_per_share)
         {
             if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
-                total_discovery_mapping_rewards += r.discovery_location_amount;
                 assert_eq!(expected_reward_per_subscriber, r.discovery_location_amount);
                 assert_eq!(reward_amount, r.discovery_location_amount);
+                allocated_mapper_rewards += reward_amount;
             }
         }
 
-        // verify the total rewards awared for discovery mapping
-        assert_eq!(16_393_442_620_000, total_discovery_mapping_rewards);
+        // verify the total rewards awarded for discovery mapping
+        assert_eq!(16_393_442_620_000, allocated_mapper_rewards);
 
-        // the sum of rewards distributed should not exceed the epoch amount
-        // but due to rounding whilst going to u64 for each subscriber,
-        // we will be some bones short of the full epoch amount
-        // the difference in bones cannot be more than the total number of subscribers ( 10 k)
-        let diff = total_mapper_rewards - total_discovery_mapping_rewards;
-        assert!(diff < NUM_SUBSCRIBERS);
+        // confirm the unallocated service provider reward amounts
+        // this should not be more than the total number of subscribers ( 10 k)
+        // as we can at max drop one bone per subscriber due to rounding
+        let unallocated_mapper_reward_amount = total_mapper_rewards - allocated_mapper_rewards;
+        assert_eq!(unallocated_mapper_reward_amount, 2950);
+        assert!(unallocated_mapper_reward_amount < NUM_SUBSCRIBERS);
     }
 
     /// Test to ensure that the correct data transfer amount is rewarded.
