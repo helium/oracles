@@ -135,6 +135,16 @@ impl From<PublicKeyBinary> for OwnedKeyType {
     }
 }
 
+impl PartialEq<KeyType<'_>> for OwnedKeyType {
+    fn eq(&self, rhs: &KeyType<'_>) -> bool {
+        match (self, rhs) {
+            (Self::Cbrs(lhs), KeyType::Cbrs(rhs)) => lhs == rhs,
+            (Self::Wifi(lhs), KeyType::Wifi(rhs)) => lhs == *rhs,
+            _ => false,
+        }
+    }
+}
+
 impl Type<Postgres> for OwnedKeyType {
     fn type_info() -> PgTypeInfo {
         PgTypeInfo::with_name("TEXT")
@@ -563,11 +573,14 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    /*
-    if coverage.cbsd_id != heartbeat.cbsd_id {
-        return Ok((cell_type, distance_to_asserted, Some(coverage.inserted_at), proto::HeartbeatValidity::BadCoverageObject));
+    if coverage.radio_key != heartbeat.key() {
+        return Ok((
+            cell_type,
+            distance_to_asserted,
+            Some(coverage.inserted_at),
+            proto::HeartbeatValidity::BadCoverageObject,
+        ));
     }
-    */
 
     let Ok(latlng) = LatLng::new(heartbeat.lat, heartbeat.lon) else {
         return Ok((

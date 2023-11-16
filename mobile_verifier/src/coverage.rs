@@ -298,7 +298,7 @@ impl PartialEq for OutdoorCoverageLevel {
 
 impl PartialOrd for OutdoorCoverageLevel {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 
@@ -875,11 +875,11 @@ mod test {
             .aggregate_coverage(
                 &owner,
                 iter(vec![
-                    anyhow::Ok(outdoor_hex_coverage("1", -9469, date(2022, 08, 01))),
-                    anyhow::Ok(outdoor_hex_coverage("2", -9360, date(2022, 12, 05))),
-                    anyhow::Ok(outdoor_hex_coverage("3", -8875, date(2022, 12, 02))),
-                    anyhow::Ok(outdoor_hex_coverage("4", -8875, date(2022, 12, 01))),
-                    anyhow::Ok(outdoor_hex_coverage("5", -7733, date(2023, 05, 01))),
+                    anyhow::Ok(outdoor_hex_coverage("1", -9469, date(2022, 8, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("2", -9360, date(2022, 12, 5))),
+                    anyhow::Ok(outdoor_hex_coverage("3", -8875, date(2022, 12, 2))),
+                    anyhow::Ok(outdoor_hex_coverage("4", -8875, date(2022, 12, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("5", -7733, date(2023, 5, 1))),
                 ]),
             )
             .await
