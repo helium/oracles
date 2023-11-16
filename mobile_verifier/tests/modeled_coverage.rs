@@ -280,7 +280,11 @@ fn signal_level(hex: &str, signal_level: SignalLevel) -> anyhow::Result<RadioHex
     })
 }
 
-fn signal_power(hex: &str, signal_level: SignalLevel, signal_power: i32) -> anyhow::Result<RadioHexSignalLevel> {
+fn signal_power(
+    hex: &str,
+    signal_level: SignalLevel,
+    signal_power: i32,
+) -> anyhow::Result<RadioHexSignalLevel> {
     Ok(RadioHexSignalLevel {
         location: hex.parse()?,
         signal_level,
