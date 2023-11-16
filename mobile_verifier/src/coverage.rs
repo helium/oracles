@@ -496,9 +496,9 @@ impl CoveredHexes {
                 .into_sorted_vec()
                 .into_iter()
                 .take(MAX_OUTDOOR_RADIOS_PER_HEX)
-                .enumerate()
-                .map(|(rank, cl)| CoverageReward {
-                    points: cl.coverage_points() * OUTDOOR_REWARD_WEIGHTS[rank],
+                .zip(OUTDOOR_REWARD_WEIGHTS)
+                .map(|(cl, rank)| CoverageReward {
+                    points: cl.coverage_points() * rank,
                     hotspot: cl.hotspot,
                     radio_key: cl.radio_key,
                 })
