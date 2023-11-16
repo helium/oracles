@@ -10,11 +10,10 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::ServiceProvider;
+use helium_proto::services::poc_mobile::{ServiceProvider, UnallocatedReward, UnallocatedRewardType};
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
 };
-use helium_proto::services::poc_mobile::{UnallocatedReward, UnallocatedRewardType};
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -42,6 +41,9 @@ const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 
 // Percent of total emissions allocated for service provider rewards
 const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
+
+// Percent of total emissions allocated for oracles
+const ORACLES_PERCENT: Decimal = dec!(0.8);
 
 pub struct TransferRewards {
     reward_scale: Decimal,
@@ -479,7 +481,7 @@ impl CoveragePoints {
         epoch: &'_ Range<DateTime<Utc>>,
     ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
         let total_shares = self.total_shares();
-            available_poc_rewards
+        available_poc_rewards
             .checked_div(total_shares)
             .map(|poc_rewards_per_share| {
                 tracing::info!(%poc_rewards_per_share);
@@ -539,24 +541,27 @@ fn new_radio_reward(
     let hotspot_key: Vec<u8> = hotspot_key.clone().into();
     let cbsd_id = cbsd_id.unwrap_or_default();
     let poc_reward = poc_reward
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0);
-    (poc_reward, proto::MobileRewardShare {
-        start_period,
-        end_period,
-        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-            proto::RadioReward {
-                hotspot_key,
-                cbsd_id,
-                poc_reward,
-                coverage_points: radio_points.points.to_u64().unwrap_or(0),
-                seniority_timestamp: radio_points.seniority.encode_timestamp(),
-                coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
-                ..Default::default()
-            },
-        )),
-    })
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+    (
+        poc_reward,
+        proto::MobileRewardShare {
+            start_period,
+            end_period,
+            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                proto::RadioReward {
+                    hotspot_key,
+                    cbsd_id,
+                    poc_reward,
+                    coverage_points: radio_points.points.to_u64().unwrap_or(0),
+                    seniority_timestamp: radio_points.seniority.encode_timestamp(),
+                    coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
+                    ..Default::default()
+                },
+            )),
+        },
+    )
 }
 
 pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
@@ -574,6 +579,10 @@ pub fn get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
 
 pub fn get_scheduled_tokens_for_service_providers(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * SERVICE_PROVIDER_PERCENT
+}
+
+pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
+    get_total_scheduled_tokens(duration) * ORACLES_PERCENT
 }
 
 #[cfg(test)]
@@ -1831,7 +1840,10 @@ mod test {
         let epoch = now - Duration::hours(1)..now;
         let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         let expected_hotspot = gw1;
-        for (_reward_amount, mobile_reward) in coverage_points.into_rewards(total_poc_rewards, &epoch).unwrap() {
+        for (_reward_amount, mobile_reward) in coverage_points
+            .into_rewards(total_poc_rewards, &epoch)
+            .unwrap()
+        {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
                 _ => unreachable!(),

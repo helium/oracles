@@ -63,6 +63,7 @@ impl Cmd {
                         "operation_mode": msg.report.operation_mode,
                         "location_validation_timestamp": msg.report.location_validation_timestamp,
                     });
+                    // print_json(&msg)?;
                     print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {

@@ -154,6 +154,94 @@ where
             reward_period.end
         );
 
+        let mobile_price = self
+            .price_tracker
+            .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
+            .await?;
+
+        // Mobile prices are supplied in 10^6, so we must convert them to Decimal
+        let mobile_bone_price = Decimal::from(mobile_price)
+                / dec!(1_000_000)  // Per Mobile token
+                / dec!(1_000_000); // Per Bone
+
+        // process rewards for poc and data transfer
+        self.reward_poc_and_dc(reward_period, mobile_bone_price)
+            .await?;
+
+        // process rewards for mappers
+        self.reward_mappers(reward_period).await?;
+
+        // process rewards for service providers
+        self.reward_service_providers(reward_period, mobile_bone_price)
+            .await?;
+
+        // process rewards for oracles
+        self.reward_oracles(reward_period).await?;
+
+        let written_files = self.mobile_rewards.commit().await?.await??;
+
+        let mut transaction = self.pool.begin().await?;
+        // clear out the various db tables
+        heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
+        speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
+        data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.end).await?;
+        coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
+        // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
+
+        let next_reward_period = scheduler.next_reward_period();
+        save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;
+        save_next_rewarded_end_time(&mut transaction, &next_reward_period.end).await?;
+        transaction.commit().await?;
+
+        // now that the db has been purged, safe to write out the manifest
+        self.reward_manifests
+            .write(
+                RewardManifest {
+                    start_timestamp: reward_period.start.encode_timestamp(),
+                    end_timestamp: reward_period.end.encode_timestamp(),
+                    written_files,
+                },
+                [],
+            )
+            .await?
+            .await??;
+
+        self.reward_manifests.commit().await?;
+        telemetry::last_rewarded_end_time(next_reward_period.start);
+        Ok(())
+    }
+
+    async fn reward_poc_and_dc(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+        mobile_bone_price: Decimal,
+    ) -> anyhow::Result<()> {
+        let transfer_rewards = TransferRewards::from_transfer_sessions(
+            mobile_bone_price,
+            data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
+            reward_period,
+        )
+        .await;
+        let transfer_rewards_sum = transfer_rewards.reward_sum();
+
+        // It's important to gauge the scale metric. If this value is < 1.0, we are in
+        // big trouble.
+        let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
+            bail!("The data transfer rewards scale cannot be converted to a float");
+        };
+        telemetry::data_transfer_rewards_scale(scale);
+
+        self.reward_poc(reward_period, transfer_rewards_sum).await?;
+        self.reward_dc(reward_period, transfer_rewards).await?;
+
+        Ok(())
+    }
+
+    async fn reward_poc(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+        transfer_reward_sum: Decimal,
+    ) -> anyhow::Result<()> {
         let heartbeats =
             HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted)
                 .await?;
@@ -166,32 +254,10 @@ where
             reward_period.end,
         )
         .await?;
-        let mobile_price = self
-            .price_tracker
-            .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
-            .await?;
-
-        // Mobile prices are supplied in 10^6, so we must convert them to Decimal
-        let mobile_bone_price = Decimal::from(mobile_price)
-                / dec!(1_000_000)  // Per Mobile token
-                / dec!(1_000_000); // Per Bone
-        let transfer_rewards = TransferRewards::from_transfer_sessions(
-            mobile_bone_price,
-            data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
-            reward_period,
-        )
-        .await;
-
-        // It's important to gauge the scale metric. If this value is < 1.0, we are in
-        // big trouble.
-        let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
-            bail!("The data transfer rewards scale cannot be converted to a float");
-        };
-        telemetry::data_transfer_rewards_scale(scale);
 
         let total_poc_rewards =
             reward_shares::get_scheduled_tokens_for_poc(reward_period.end - reward_period.start)
-                - transfer_rewards.reward_sum();
+                - transfer_reward_sum;
 
         if let Some(mobile_reward_shares) =
             coverage_points.into_rewards(total_poc_rewards, reward_period)
@@ -223,85 +289,54 @@ where
                     .await?
                     .await??;
             }
+        };
+        Ok(())
+    }
 
-            // handle dc reward outputs
-            let mut allocated_dc_rewards = 0_u64;
-            let total_dc_rewards = transfer_rewards.total();
-            for (dc_reward_amount, mobile_reward_share) in
-                transfer_rewards.into_rewards(reward_period)
-            {
-                allocated_dc_rewards += dc_reward_amount;
-                self.mobile_rewards
-                    .write(mobile_reward_share, [])
-                    .await?
-                    // Await the returned one shot to ensure that we wrote the file
-                    .await??;
-            }
-            // write out any unallocated dc reward
-            let unallocated_dc_reward_amount = (total_dc_rewards
-                - Decimal::from(allocated_dc_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
-            tracing::info!("total_dc_rewards: {total_dc_rewards}, allocated_dc_rewards: {allocated_dc_rewards}");
-            if unallocated_dc_reward_amount > 0 {
-                let unallocated_dc_reward = create_unallocated_reward(
-                    UnallocatedRewardType::Data,
-                    unallocated_dc_reward_amount,
-                    reward_period,
-                )?;
-                self.mobile_rewards
-                    .write(unallocated_dc_reward, [])
-                    .await?
-                    .await??;
-            }
-        }
-
-        // Mapper rewards currently include rewards for discovery mapping only.
-        // Verification mapping rewards to be added
-        // get subscriber location shares this epoch
-        let location_shares =
-            subscriber_location::aggregate_location_shares(&self.pool, reward_period).await?;
-
-        // determine mapping shares based on location shares and data transferred
-        let mapping_shares = MapperShares::new(location_shares);
-        let total_mappers_pool = reward_shares::get_scheduled_tokens_for_mappers(
-            reward_period.end - reward_period.start,
-        );
-        let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
-
-        // translate discovery mapping shares into subscriber rewards
-        let mut allocated_mapping_rewards = 0_u64;
-        for (reward_amount, mapping_share) in
-            mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
+    async fn reward_dc(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+        transfer_rewards: TransferRewards,
+    ) -> anyhow::Result<()> {
+        // handle dc reward outputs
+        let mut allocated_dc_rewards = 0_u64;
+        let total_dc_rewards = transfer_rewards.total();
+        for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_period)
         {
-            allocated_mapping_rewards += reward_amount;
+            allocated_dc_rewards += dc_reward_amount;
             self.mobile_rewards
-                .write(mapping_share.clone(), [])
+                .write(mobile_reward_share, [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
         }
-
-        // write out any unallocated mapping rewards
-        let unallocated_mapping_reward_amount = (total_poc_rewards
-            - Decimal::from(allocated_mapping_rewards))
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .unwrap_or(0);
-        if unallocated_mapping_reward_amount > 0 {
-            let unallocated_mapping_reward = create_unallocated_reward(
-                UnallocatedRewardType::Mapper,
-                unallocated_mapping_reward_amount,
+        // write out any unallocated dc reward
+        let unallocated_dc_reward_amount = (total_dc_rewards - Decimal::from(allocated_dc_rewards))
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0);
+        tracing::info!(
+            "total_dc_rewards: {total_dc_rewards}, allocated_dc_rewards: {allocated_dc_rewards}"
+        );
+        if unallocated_dc_reward_amount > 0 {
+            let unallocated_dc_reward = create_unallocated_reward(
+                UnallocatedRewardType::Data,
+                unallocated_dc_reward_amount,
                 reward_period,
             )?;
             self.mobile_rewards
-                .write(unallocated_mapping_reward, [])
+                .write(unallocated_dc_reward, [])
                 .await?
                 .await??;
-        }
+        };
+        Ok(())
+    }
 
-        // Service Provider rewards
+    async fn reward_service_providers(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+        mobile_bone_price: Decimal,
+    ) -> anyhow::Result<()> {
         let payer_dc_sessions =
             data_session::sum_data_sessions_to_dc_by_payer(&self.pool, reward_period).await?;
         let sp_shares =
@@ -339,38 +374,79 @@ where
                 .write(unallocated_sp_reward, [])
                 .await?
                 .await??;
+        };
+        Ok(())
+    }
+
+    async fn reward_mappers(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
+        // Mapper rewards currently include rewards for discovery mapping only.
+        // Verification mapping rewards to be added
+        // get subscriber location shares this epoch
+        let location_shares =
+            subscriber_location::aggregate_location_shares(&self.pool, reward_period).await?;
+
+        // determine mapping shares based on location shares and data transferred
+        let mapping_shares = MapperShares::new(location_shares);
+        let total_mappers_pool = reward_shares::get_scheduled_tokens_for_mappers(
+            reward_period.end - reward_period.start,
+        );
+        let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
+
+        // translate discovery mapping shares into subscriber rewards
+        let mut allocated_mapping_rewards = 0_u64;
+        for (reward_amount, mapping_share) in
+            mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
+        {
+            allocated_mapping_rewards += reward_amount;
+            self.mobile_rewards
+                .write(mapping_share.clone(), [])
+                .await?
+                // Await the returned one shot to ensure that we wrote the file
+                .await??;
         }
 
-        let written_files = self.mobile_rewards.commit().await?.await??;
+        // write out any unallocated mapping rewards
+        let unallocated_mapping_reward_amount = (total_mappers_pool
+            - Decimal::from(allocated_mapping_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        if unallocated_mapping_reward_amount > 0 {
+            let unallocated_mapping_reward = create_unallocated_reward(
+                UnallocatedRewardType::Mapper,
+                unallocated_mapping_reward_amount,
+                reward_period,
+            )?;
+            self.mobile_rewards
+                .write(unallocated_mapping_reward, [])
+                .await?
+                .await??;
+        };
+        Ok(())
+    }
 
-        let mut transaction = self.pool.begin().await?;
-        // clear out the various db tables
-        heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
-        speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
-        data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.end).await?;
-        coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
-        // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
-
-        let next_reward_period = scheduler.next_reward_period();
-        save_last_rewarded_end_time(&mut transaction, &next_reward_period.start).await?;
-        save_next_rewarded_end_time(&mut transaction, &next_reward_period.end).await?;
-        transaction.commit().await?;
-
-        // now that the db has been purged, safe to write out the manifest
-        self.reward_manifests
-            .write(
-                RewardManifest {
-                    start_timestamp: reward_period.start.encode_timestamp(),
-                    end_timestamp: reward_period.end.encode_timestamp(),
-                    written_files,
-                },
-                [],
-            )
-            .await?
-            .await??;
-
-        self.reward_manifests.commit().await?;
-        telemetry::last_rewarded_end_time(next_reward_period.start);
+    async fn reward_oracles(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
+        // atm 100% of oracle rewards are assigned to 'unallocated'
+        let total_oracle_rewards = reward_shares::get_scheduled_tokens_for_oracles(
+            reward_period.end - reward_period.start,
+        );
+        let allocated_oracle_rewards = 0_u64;
+        let unallocated_oracle_reward_amount = (total_oracle_rewards
+            - Decimal::from(allocated_oracle_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        if unallocated_oracle_reward_amount > 0 {
+            let unallocated_oracle_reward = create_unallocated_reward(
+                UnallocatedRewardType::Oracle,
+                unallocated_oracle_reward_amount,
+                reward_period,
+            )?;
+            self.mobile_rewards
+                .write(unallocated_oracle_reward, [])
+                .await?
+                .await??;
+        };
         Ok(())
     }
 }
