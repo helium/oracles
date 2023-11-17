@@ -19,8 +19,7 @@ use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
-use std::str::FromStr;
-use std::{ops::Range, pin::pin, time};
+use std::{ops::Range, pin::pin, str::FromStr, time};
 use uuid::Uuid;
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
@@ -30,8 +29,8 @@ const MINIMUM_HEARTBEAT_COUNT: i64 = 12;
 #[sqlx(type_name = "radio_type")]
 #[sqlx(rename_all = "lowercase")]
 pub enum HbType {
-    Cbrs = 0,
-    Wifi = 1,
+    Cbrs,
+    Wifi,
 }
 
 #[derive(Copy, Clone)]

@@ -14,7 +14,7 @@ mod telemetry;
 pub use settings::Settings;
 
 use async_trait::async_trait;
-// use helium_proto::services::mobile_config::GatewayMetadata;
+
 use mobile_config::gateway_info::GatewayMetadata;
 pub enum GatewayResolution {
     GatewayNotFound,
