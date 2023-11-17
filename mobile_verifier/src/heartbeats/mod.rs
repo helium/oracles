@@ -19,6 +19,7 @@ use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
+use std::str::FromStr;
 use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
@@ -247,7 +248,7 @@ impl HeartbeatReward {
                 .cbsd_id
                 .clone()
                 .ok_or_else(|| anyhow!("expected cbsd_id, found none"))?),
-            CellTypeLabel::Wifi => Ok(self.hotspot_key.to_string()),
+            CellTypeLabel::WifiIndoor => Ok(self.hotspot_key.to_string()),
             _ => Err(anyhow!("failed to derive label from cell type")),
         }
     }
@@ -507,12 +508,12 @@ pub async fn validate_heartbeat(
         GatewayResolution::GatewayAsserted(metadata) if heartbeat.hb_type == HbType::Wifi => {
             // for wifi HBs, check the asserted device type matches that defined in the HB
             let asserted_celltype_label = CellTypeLabel::from_str(&metadata.device_type)?;
-            if asserted_celltype_label == CellTypeLabel::Wifi
+            if asserted_celltype_label == CellTypeLabel::WifiIndoor
                 && cell_type.to_label() != asserted_celltype_label
             {
                 return Ok((cell_type, None, None, proto::HeartbeatValidity::BadCellType));
             };
-            Some(heartbeat.asserted_distance(location)?)
+            Some(heartbeat.asserted_distance(metadata.location)?)
         }
         _ => None,
     };

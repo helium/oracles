@@ -28,7 +28,7 @@ pub enum CellType {
 pub enum CellTypeLabel {
     CellTypeLabelNone = 0,
     CBRS = 1,
-    Wifi = 2,
+    WifiIndoor = 2,
 }
 
 impl CellType {
@@ -51,7 +51,7 @@ impl CellType {
             Self::SercommIndoor => CellTypeLabel::CBRS,
             Self::SercommOutdoor => CellTypeLabel::CBRS,
             Self::CellTypeNone => CellTypeLabel::CellTypeLabelNone,
-            Self::NovaGenericWifiIndoor => CellTypeLabel::Wifi,
+            Self::NovaGenericWifiIndoor => CellTypeLabel::WifiIndoor,
         }
     }
 
@@ -104,24 +104,13 @@ impl From<CellType> for CellTypeProto {
     }
 }
 
-impl CellTypeLabel {
-    pub fn from_asserted(device_type: &String) -> Option<Self> {
-        match device_type {
-            device_type if device_type.eq("wifiIndoor") => Some(CellTypeLabel::Wifi),
-            device_type if device_type.eq("cbrs") => Some(CellTypeLabel::CBRS),
-            _ => None,
-        }
-    }
-}
-
 impl FromStr for CellTypeLabel {
-    type Err = ();
-    fn from_str(input: &str) -> Result<CellTypeLabel, Self::Err> {
-        match input {
-            "wifiIndoor"  => Ok(CellTypeLabel::Wifi),
-            "cbrs"  => Ok(CellTypeLabel::CBRS),
-            _ => Err(())
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> anyhow::Result<CellTypeLabel> {
+        match s {
+            "wifiIndoor" => Ok(CellTypeLabel::WifiIndoor),
+            "cbrs" => Ok(CellTypeLabel::CBRS),
+            _ => anyhow::bail!("unknown cell type"),
         }
     }
 }
-
