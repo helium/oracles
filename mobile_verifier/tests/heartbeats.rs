@@ -316,7 +316,7 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            reward_weight: dec!(0.4),
+            reward_weight: dec!(1.0),
             latest_timestamp,
             coverage_object: latest_coverage_object,
         }]

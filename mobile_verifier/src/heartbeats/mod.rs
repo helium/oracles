@@ -17,7 +17,7 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
 use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
@@ -319,12 +319,11 @@ impl HeartbeatReward {
             hotspot_key: value.hotspot_key,
             cell_type: value.cell_type,
             cbsd_id: value.cbsd_id,
-            reward_weight: value.cell_type.reward_weight()
-                * value.cell_type.location_weight(
-                    value.location_validation_timestamp,
-                    value.distance_to_asserted,
-                    max_distance_to_asserted,
-                ),
+            reward_weight: value.cell_type.location_weight(
+                value.location_validation_timestamp,
+                value.distance_to_asserted,
+                max_distance_to_asserted,
+            ),
             coverage_object: value.coverage_object,
             latest_timestamp: value.latest_timestamp,
         }
@@ -383,7 +382,7 @@ impl ValidatedHeartbeat {
                 proto::Heartbeat {
                     cbsd_id: self.heartbeat.cbsd_id.clone().unwrap_or_default(),
                     pub_key: self.heartbeat.hotspot_key.as_ref().into(),
-                    reward_multiplier: self.cell_type.reward_weight().to_f32().unwrap_or_default(),
+                    reward_multiplier: 1.0,
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
                     timestamp: self.heartbeat.timestamp.timestamp() as u64,

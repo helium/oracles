@@ -54,18 +54,6 @@ impl CellType {
         }
     }
 
-    pub fn reward_weight(&self) -> Decimal {
-        match self {
-            Self::Nova436H => dec!(4.0),
-            Self::Nova430I => dec!(2.5),
-            Self::Neutrino430 => dec!(1.0),
-            Self::SercommIndoor => dec!(1.0),
-            Self::SercommOutdoor => dec!(2.5),
-            Self::CellTypeNone => dec!(0.0),
-            Self::NovaGenericWifiIndoor => dec!(0.4),
-        }
-    }
-
     pub fn location_weight(
         &self,
         location_validation_timestamp: Option<DateTime<Utc>>,
