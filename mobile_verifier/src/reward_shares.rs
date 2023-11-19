@@ -207,21 +207,23 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 
 pub struct Share {
     cell_type_weight: Decimal,
-    location_trust_weight: Decimal,
     speed_multiplier: Decimal,
-    count: Decimal,
+    aggregated_location_trust_weight: Decimal,
+    aggregated_hb_count: Decimal,
 }
 
 impl Share {
     fn update(&mut self, heartbeat_reward: HeartbeatReward, speed_multiplier: Decimal) {
         self.cell_type_weight = heartbeat_reward.cell_type_weight;
         self.speed_multiplier = speed_multiplier;
-        self.location_trust_weight += heartbeat_reward.locatation_weight;
-        self.count += dec!(1)
+        self.aggregated_location_trust_weight += heartbeat_reward.locatation_weight;
+        self.aggregated_hb_count += dec!(1)
     }
 
     fn total(&self) -> Decimal {
-        self.cell_type_weight * (self.location_trust_weight / self.count) * self.speed_multiplier
+        self.cell_type_weight
+            * (self.aggregated_location_trust_weight / self.aggregated_hb_count)
+            * self.speed_multiplier
     }
 }
 #[derive(Default)]
@@ -1486,9 +1488,9 @@ mod test {
                     Some(c1),
                     Share {
                         cell_type_weight: dec!(0.4),
-                        location_trust_weight: dec!(1),
+                        aggregated_location_trust_weight: dec!(1),
                         speed_multiplier: dec!(1),
-                        count: dec!(1),
+                        aggregated_hb_count: dec!(1),
                     },
                 )]
                 .into_iter()
@@ -1503,18 +1505,18 @@ mod test {
                         Some(c2),
                         Share {
                             cell_type_weight: dec!(0.4),
-                            location_trust_weight: dec!(1),
+                            aggregated_location_trust_weight: dec!(1),
                             speed_multiplier: dec!(0),
-                            count: dec!(1),
+                            aggregated_hb_count: dec!(1),
                         },
                     ),
                     (
                         Some(c3),
                         Share {
                             cell_type_weight: dec!(0.4),
-                            location_trust_weight: dec!(1),
+                            aggregated_location_trust_weight: dec!(1),
                             speed_multiplier: dec!(0),
-                            count: dec!(1),
+                            aggregated_hb_count: dec!(1),
                         },
                     ),
                 ]
