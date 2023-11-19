@@ -150,6 +150,8 @@ VALUES
             cell_type,
             cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE,
+            cell_type_weight: dec!(1),
+            locatation_weight: dec!(1),
             latest_timestamp,
             coverage_object: Some(coverage_object),
         }]
@@ -212,6 +214,8 @@ VALUES
             cell_type,
             cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE,
+            cell_type_weight: dec!(1),
+            locatation_weight: dec!(1),
             latest_timestamp,
             coverage_object: Some(coverage_object),
         }]
@@ -317,6 +321,8 @@ VALUES
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
             reward_weight: dec!(0.4),
+            cell_type_weight: dec!(0.4),
+            locatation_weight: dec!(1),
             latest_timestamp,
             coverage_object: Some(latest_coverage_object),
         }]

@@ -203,16 +203,37 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
+#[derive(Default, Debug)]
+
+pub struct Share {
+    cell_type_weight: Decimal,
+    location_trust_weight: Decimal,
+    speed_multiplier: Decimal,
+    count: Decimal,
+}
+
+impl Share {
+    fn update(&mut self, heartbeat_reward: HeartbeatReward, speed_multiplier: Decimal) {
+        self.cell_type_weight = heartbeat_reward.cell_type_weight;
+        self.speed_multiplier = speed_multiplier;
+        self.location_trust_weight += heartbeat_reward.locatation_weight;
+        self.count += dec!(1)
+    }
+
+    fn total(&self) -> Decimal {
+        self.cell_type_weight * (self.location_trust_weight / self.count) * self.speed_multiplier
+    }
+}
 #[derive(Default)]
 pub struct RadioShares {
-    radio_shares: HashMap<Option<String>, Decimal>,
+    radio_shares: HashMap<Option<String>, Share>,
 }
 
 impl RadioShares {
     fn total_shares(&self) -> Decimal {
         self.radio_shares
             .values()
-            .fold(Decimal::ZERO, |sum, amount| sum + amount)
+            .fold(Decimal::ZERO, |sum, share| sum + share.total())
     }
 }
 
@@ -233,13 +254,14 @@ impl PocShares {
                 .get_average(&heartbeat_reward.hotspot_key)
                 .as_ref()
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
-            *poc_shares
+            poc_shares
                 .hotspot_shares
                 .entry(heartbeat_reward.hotspot_key.clone())
                 .or_default()
                 .radio_shares
                 .entry(heartbeat_reward.cbsd_id.clone())
-                .or_default() += heartbeat_reward.reward_weight() * speedmultiplier;
+                .or_default()
+                .update(heartbeat_reward, speedmultiplier);
         }
         Ok(poc_shares)
     }
@@ -267,8 +289,9 @@ impl PocShares {
                 self.hotspot_shares
                     .into_iter()
                     .flat_map(move |(hotspot_key, RadioShares { radio_shares })| {
-                        radio_shares.into_iter().map(move |(cbsd_id, amount)| {
-                            let poc_reward = poc_rewards_per_share * amount;
+                        radio_shares.into_iter().map(move |(cbsd_id, share)| {
+                            println!("share: {:?}", share);
+                            let poc_reward = poc_rewards_per_share * share.total();
                             let hotspot_key: Vec<u8> = hotspot_key.clone().into();
                             proto::MobileRewardShare {
                                 start_period,
@@ -1194,7 +1217,44 @@ mod test {
 
         // setup heartbeats
         let heartbeat_keys = vec![
-            // add wifi indoor HB
+            // add 4 wifi indoor HBs from same gateway
+            // all with full location trust score
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(g1_cov_obj),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(g1_cov_obj),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(g1_cov_obj),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(g1_cov_obj),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
@@ -1422,15 +1482,44 @@ mod test {
         hotspot_shares.insert(
             gw1.clone(),
             RadioShares {
-                radio_shares: vec![(Some(c1), dec!(10.0))].into_iter().collect(),
+                radio_shares: vec![(
+                    Some(c1),
+                    Share {
+                        cell_type_weight: dec!(0.4),
+                        location_trust_weight: dec!(1),
+                        speed_multiplier: dec!(1),
+                        count: dec!(1),
+                    },
+                )]
+                .into_iter()
+                .collect(),
             },
         );
         hotspot_shares.insert(
             gw2,
             RadioShares {
-                radio_shares: vec![(Some(c2), dec!(-1.0)), (Some(c3), dec!(0.0))]
-                    .into_iter()
-                    .collect(),
+                radio_shares: vec![
+                    (
+                        Some(c2),
+                        Share {
+                            cell_type_weight: dec!(0.4),
+                            location_trust_weight: dec!(1),
+                            speed_multiplier: dec!(0),
+                            count: dec!(1),
+                        },
+                    ),
+                    (
+                        Some(c3),
+                        Share {
+                            cell_type_weight: dec!(0.4),
+                            location_trust_weight: dec!(1),
+                            speed_multiplier: dec!(0),
+                            count: dec!(1),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
             },
         );
 
