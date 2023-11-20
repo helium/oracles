@@ -235,7 +235,6 @@ pub struct HeartbeatReward {
     pub cell_type: CellType,
     // cell hb only
     pub cbsd_id: Option<String>,
-    pub reward_weight: Decimal,
     pub cell_type_weight: Decimal,
     pub location_weight: Decimal,
     pub coverage_object: Option<Uuid>,
@@ -252,10 +251,6 @@ impl HeartbeatReward {
             CellTypeLabel::Wifi => Ok(self.hotspot_key.to_string()),
             _ => Err(anyhow!("failed to derive label from cell type")),
         }
-    }
-
-    pub fn reward_weight(&self) -> Decimal {
-        self.reward_weight
     }
 
     pub fn validated<'a>(
@@ -276,12 +271,6 @@ impl HeartbeatReward {
             hotspot_key: value.hotspot_key,
             cell_type: value.cell_type,
             cbsd_id: value.cbsd_id,
-            reward_weight: value.cell_type.reward_weight()
-                * value.cell_type.location_weight(
-                    value.location_validation_timestamp,
-                    value.distance_to_asserted,
-                    max_distance_to_asserted,
-                ),
             cell_type_weight: value.cell_type.reward_weight(),
             location_weight: value.cell_type.location_weight(
                 value.location_validation_timestamp,

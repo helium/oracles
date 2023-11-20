@@ -4,7 +4,6 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::HeartbeatValidity;
 use mobile_verifier::cell_type::CellType;
 use mobile_verifier::heartbeats::{HbType, Heartbeat, HeartbeatReward, ValidatedHeartbeat};
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -149,7 +148,6 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            reward_weight: Decimal::ONE,
             cell_type_weight: dec!(1),
             location_weight: dec!(1),
             latest_timestamp,
@@ -213,7 +211,6 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            reward_weight: Decimal::ONE,
             cell_type_weight: dec!(1),
             location_weight: dec!(1),
             latest_timestamp,
@@ -320,7 +317,6 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            reward_weight: dec!(0.4),
             cell_type_weight: dec!(0.4),
             location_weight: dec!(1),
             latest_timestamp,
