@@ -274,11 +274,6 @@ impl CoveragePoints {
                 .get_average(&heartbeat.hotspot_key)
                 .as_ref()
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
-
-            if speedtest_multiplier.is_zero() {
-                continue;
-            }
-
             let seniority = hex_streams
                 .fetch_seniority(heartbeat.key(), period_end)
                 .await?;
@@ -321,16 +316,6 @@ impl CoveragePoints {
 
         Ok(Self { coverage_points })
     }
-
-    /*
-    pub fn is_valid(&self, hotspot: &PublicKeyBinary) -> bool {
-        if let Some(coverage_points) = self.coverage_points.get(hotspot) {
-            !coverage_points.total_points().is_zero()
-        } else {
-            false
-        }
-    }
-     */
 
     /// Only used for testing
     pub fn hotspot_points(&self, hotspot: &PublicKeyBinary) -> Decimal {
