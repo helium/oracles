@@ -237,7 +237,7 @@ pub struct HeartbeatReward {
     pub cbsd_id: Option<String>,
     pub reward_weight: Decimal,
     pub cell_type_weight: Decimal,
-    pub locatation_weight: Decimal,
+    pub location_weight: Decimal,
     pub coverage_object: Option<Uuid>,
     pub latest_timestamp: DateTime<Utc>,
 }
@@ -283,7 +283,7 @@ impl HeartbeatReward {
                     max_distance_to_asserted,
                 ),
             cell_type_weight: value.cell_type.reward_weight(),
-            locatation_weight: value.cell_type.location_weight(
+            location_weight: value.cell_type.location_weight(
                 value.location_validation_timestamp,
                 value.distance_to_asserted,
                 max_distance_to_asserted,

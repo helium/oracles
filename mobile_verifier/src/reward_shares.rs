@@ -204,7 +204,6 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 }
 
 #[derive(Default, Debug)]
-
 pub struct Share {
     cell_type_weight: Decimal,
     speed_multiplier: Decimal,
@@ -216,7 +215,7 @@ impl Share {
     fn update(&mut self, heartbeat_reward: HeartbeatReward, speed_multiplier: Decimal) {
         self.cell_type_weight = heartbeat_reward.cell_type_weight;
         self.speed_multiplier = speed_multiplier;
-        self.aggregated_location_trust_weight += heartbeat_reward.locatation_weight;
+        self.aggregated_location_trust_weight += heartbeat_reward.location_weight;
         self.aggregated_hb_count += dec!(1)
     }
 
@@ -292,8 +291,8 @@ impl PocShares {
                     .into_iter()
                     .flat_map(move |(hotspot_key, RadioShares { radio_shares })| {
                         radio_shares.into_iter().map(move |(cbsd_id, share)| {
-                            println!("share: {:?}", share);
                             let poc_reward = poc_rewards_per_share * share.total();
+                            println!("share: {:?}", share);
                             let hotspot_key: Vec<u8> = hotspot_key.clone().into();
                             proto::MobileRewardShare {
                                 start_period,
@@ -1218,9 +1217,19 @@ mod test {
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
         // setup heartbeats
+        // add 4 wifi indoor HBs
+        // all with a valid location timestamp and a distance to asserted < max
+        // this results in a final location trust score of 1.0, made up as follows:
+        // HB1 location score = 1.0
+        // HB2 location score = 1.0
+        // HB3 location score = 1.0
+        // HB4 location score = 1.0
+        // 1.0 + 1.0 + 1.0 + 1.0 = 4.0 / 4 ( Num of HBs ) =  1
         let heartbeat_keys = vec![
             // add 4 wifi indoor HBs from same gateway
             // all with full location trust score
+            // this will result in a final location trust score of 1.0
+            // and thus the gateway will get the full 0.4 reward
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
@@ -1325,22 +1334,23 @@ mod test {
             *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
         }
 
-        // wifi
+        // wifi gateway
+        // by default a wifi gateway has a cell type weight of 0.4
+        // this is then multiplied by the location trust score of 1.0
+        // giving us a final weight of 0.4
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
         assert_eq!(owner1_reward, 585_480_093_676);
 
-        //sercomm
+        //sercomm gateway
+        // by default a sercomm gateway has a cell type weight of 1.0
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
         assert_eq!(owner2_reward, 1_463_700_234_192);
 
         // confirm owner 1 reward is 0.4 of owner 2's reward
-        // owner 1 is a wifi indoor with a distance_to_asserted < max
-        // and so gets the full reward scale of 0.4
-        // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
         assert_eq!(owner1_reward, (owner2_reward as f64 * 0.4) as u64);
     }
 
@@ -1373,10 +1383,22 @@ mod test {
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
         // setup heartbeats
+        // add 2 wifi indoor HBs
+        // 2 with a valid location timestamp but a distance to asserted > max
+        // this results in a final location trust score of 0.25, made up as follows:
+        // HB1 location score = 0.25
+        // HB1 location score = 0.25
+        // 0.25 + 0.25 = 0.5 / 2 ( Num of HBs )  0.25
         let heartbeat_keys = vec![
-            // add wifi  indoor HB
-            // with distance to asserted > than max allowed
-            // this results in reward scale dropping to 0.25
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(Uuid::new_v4()),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1000),
+            },
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
@@ -1445,23 +1467,178 @@ mod test {
             *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
         }
 
-        // wifi
+        // wifi gateway
+        // by default a wifi gateway has a cell type weight of 0.4
+        // this is then multiplied by the location trust score of 0.25
+        // giving us a final weight of 0.1
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
         assert_eq!(owner1_reward, 186_289_120_715);
 
-        //sercomm
+        //sercomm gateway
+        // by default a sercomm gateway has a cell type weight of 1.0
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
         assert_eq!(owner2_reward, 1_862_891_207_153);
 
         // confirm owner 1 reward is 0.1 of owner 2's reward
-        // owner 1 is a wifi indoor with a distance_to_asserted > max
-        // and so gets the reduced reward scale of 0.1 ( radio reward scale of 0.4 * location scale of 0.25)
-        // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
         assert_eq!(owner1_reward, (owner2_reward as f64 * 0.1) as u64);
+    }
+
+    #[tokio::test]
+    async fn mixed_wifi_indoor_vs_sercomm_indoor_reward_shares() {
+        // init owners
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed owner2 parse");
+        // init hotspots
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        // link gws to owners
+        let mut owners = HashMap::new();
+        owners.insert(gw1.clone(), owner1.clone());
+        owners.insert(gw2.clone(), owner2.clone());
+
+        let now = Utc::now();
+        let timestamp = now - Duration::minutes(20);
+        let max_asserted_distance_deviation: u32 = 300;
+
+        // init cells and cell_types
+        let c2 = "P27-SCE4255W".to_string(); // sercom indoor
+
+        // setup heartbeats
+        // add 4 wifi indoor HBs
+        // 2 with a valid location timestamp and a distance to asserted < max
+        // 2 with a valid location timestamp but a distance to asserted > max
+        // this results in a final location trust score of 0.625, made up as follows:
+        // HB1 location score = 1.0
+        // HB2 location score = 1.0
+        // HB3 location score = 0.25
+        // HB4 location score = 0.25
+        // 1.0 + 1.0 + 0.25 + 0.25 = 2.5 / 4 ( Num of HBs )  0.625
+        let heartbeat_keys = vec![
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(Uuid::new_v4()),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(Uuid::new_v4()),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(Uuid::new_v4()),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1000),
+            },
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: Some(Uuid::new_v4()),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1000),
+            },
+            // add sercomm indoor HB
+            HeartbeatRow {
+                cbsd_id: Some(c2.clone()),
+                hotspot_key: gw2.clone(),
+                coverage_object: Some(Uuid::new_v4()),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                cell_type: CellType::from_cbsd_id(&c2).unwrap(),
+                location_validation_timestamp: None,
+                distance_to_asserted: Some(1),
+            },
+        ];
+
+        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
+            .into_iter()
+            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
+            .collect();
+
+        // setup speedtests
+        let last_speedtest = timestamp - Duration::hours(12);
+        let gw1_speedtests = vec![
+            acceptable_speedtest(gw1.clone(), last_speedtest),
+            acceptable_speedtest(gw1.clone(), timestamp),
+        ];
+        let gw2_speedtests = vec![
+            acceptable_speedtest(gw2.clone(), last_speedtest),
+            acceptable_speedtest(gw2.clone(), timestamp),
+        ];
+
+        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+        averages.insert(gw2.clone(), gw2_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
+
+        // calculate the rewards for the group
+        let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+        for mobile_reward in
+            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
+                .await
+                .unwrap()
+                .into_rewards(Decimal::ZERO, &epoch)
+                .unwrap()
+        {
+            let radio_reward = match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let owner = owners
+                .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
+                .expect("Could not find owner")
+                .clone();
+
+            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+        }
+
+        // wifi gateway
+        // by default a wifi gateway has a cell type weight of 0.4
+        // this is then multiplied by the location trust score of 0.625
+        // giving us a final weight of 0.25
+        let owner1_reward = *owner_rewards
+            .get(&owner1)
+            .expect("Could not fetch owner1 rewards");
+        assert_eq!(owner1_reward, 409_836_065_573); //186_289_120_715
+
+        //sercomm gateway
+        // by default a sercomm gateway has a cell type weight of 1.0
+        let owner2_reward = *owner_rewards
+            .get(&owner2)
+            .expect("Could not fetch owner2 rewards");
+        assert_eq!(owner2_reward, 1_639_344_262_295); //1_862_891_207_153
+
+        // confirm owner 1 reward is 0.25 of owner 2's reward
+        assert_eq!(owner1_reward, (owner2_reward as f64 * 0.25) as u64);
     }
 
     #[tokio::test]

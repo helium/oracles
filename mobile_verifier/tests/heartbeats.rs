@@ -151,7 +151,7 @@ VALUES
             cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE,
             cell_type_weight: dec!(1),
-            locatation_weight: dec!(1),
+            location_weight: dec!(1),
             latest_timestamp,
             coverage_object: Some(coverage_object),
         }]
@@ -215,7 +215,7 @@ VALUES
             cbsd_id: Some(cbsd_id),
             reward_weight: Decimal::ONE,
             cell_type_weight: dec!(1),
-            locatation_weight: dec!(1),
+            location_weight: dec!(1),
             latest_timestamp,
             coverage_object: Some(coverage_object),
         }]
@@ -322,7 +322,7 @@ VALUES
             cbsd_id: None,
             reward_weight: dec!(0.4),
             cell_type_weight: dec!(0.4),
-            locatation_weight: dec!(1),
+            location_weight: dec!(1),
             latest_timestamp,
             coverage_object: Some(latest_coverage_object),
         }]
