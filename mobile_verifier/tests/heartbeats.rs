@@ -269,7 +269,7 @@ VALUES
 }
 
 #[sqlx::test]
-#[ignore]
+
 async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
     let early_coverage_object = Uuid::new_v4();
     let latest_coverage_object = Uuid::new_v4();
@@ -310,19 +310,20 @@ VALUES
     )
     .try_collect()
     .await?;
-
-    assert_eq!(
-        heartbeat_reward,
-        vec![HeartbeatReward {
-            hotspot_key: hotspot,
-            cell_type: CellType::NovaGenericWifiIndoor,
-            cbsd_id: None,
-            cell_type_weight: dec!(0.4),
-            location_weight: dec!(1),
-            latest_timestamp,
-            coverage_object: Some(latest_coverage_object),
-        }]
-    );
-
+    assert_eq!(heartbeat_reward.len(), 12);
+    for n in 0..11 {
+        assert_eq!(
+            heartbeat_reward[n],
+            HeartbeatReward {
+                hotspot_key: hotspot.clone(),
+                cell_type: CellType::NovaGenericWifiIndoor,
+                cbsd_id: None,
+                cell_type_weight: dec!(0.4),
+                location_weight: dec!(1),
+                latest_timestamp,
+                coverage_object: Some(latest_coverage_object),
+            }
+        );
+    }
     Ok(())
 }
