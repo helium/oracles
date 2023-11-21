@@ -1384,7 +1384,8 @@ mod test {
 
         // setup heartbeats
         // add 2 wifi indoor HBs
-        // 2 with a valid location timestamp but a distance to asserted > max
+        // 1 with an invalid location timestamp
+        // 1 with a valid location timestamp but a distance to asserted > max
         // this results in a final location trust score of 0.25, made up as follows:
         // HB1 location score = 0.25
         // HB1 location score = 0.25
@@ -1396,8 +1397,8 @@ mod test {
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: Some(Uuid::new_v4()),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1000),
+                location_validation_timestamp: None,
+                distance_to_asserted: None,
             },
             HeartbeatRow {
                 cbsd_id: None,
@@ -1518,7 +1519,8 @@ mod test {
         // setup heartbeats
         // add 4 wifi indoor HBs
         // 2 with a valid location timestamp and a distance to asserted < max
-        // 2 with a valid location timestamp but a distance to asserted > max
+        // 1 with an invalid location timestamp
+        // 1 with a valid location timestamp but a distance to asserted > max
         // this results in a final location trust score of 0.625, made up as follows:
         // HB1 location score = 1.0
         // HB2 location score = 1.0
@@ -1559,8 +1561,8 @@ mod test {
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: Some(Uuid::new_v4()),
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1000),
+                location_validation_timestamp: None,
+                distance_to_asserted: None,
             },
             // add sercomm indoor HB
             HeartbeatRow {
