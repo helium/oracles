@@ -311,10 +311,10 @@ VALUES
     .try_collect()
     .await?;
     assert_eq!(heartbeat_reward.len(), 12);
-    for n in 0..11 {
+    for hb in heartbeat_reward.iter().take(11) {
         assert_eq!(
-            heartbeat_reward[n],
-            HeartbeatReward {
+            hb,
+            &HeartbeatReward {
                 hotspot_key: hotspot.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 cbsd_id: None,
