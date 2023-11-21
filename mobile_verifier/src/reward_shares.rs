@@ -291,7 +291,7 @@ impl CoveragePoints {
                 .insert(
                     opt_cbsd_id,
                     RadioPoints::new(
-                        heartbeat.reward_weight,
+                        heartbeat.location_trust_score_multiplier,
                         heartbeat.coverage_object,
                         seniority.seniority_ts,
                     ),

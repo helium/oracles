@@ -273,7 +273,7 @@ pub struct HeartbeatReward {
     pub cell_type: CellType,
     // cell hb only
     pub cbsd_id: Option<String>,
-    pub reward_weight: Decimal,
+    pub location_trust_score_multiplier: Decimal,
     pub coverage_object: Uuid,
     pub latest_timestamp: DateTime<Utc>,
 }
@@ -298,7 +298,7 @@ impl HeartbeatReward {
     }
 
     pub fn reward_weight(&self) -> Decimal {
-        self.reward_weight
+        self.location_trust_score_multiplier
     }
 
     pub fn validated<'a>(
@@ -319,7 +319,7 @@ impl HeartbeatReward {
             hotspot_key: value.hotspot_key,
             cell_type: value.cell_type,
             cbsd_id: value.cbsd_id,
-            reward_weight: value.cell_type.location_weight(
+            location_trust_score_multiplier: value.cell_type.location_weight(
                 value.location_validation_timestamp,
                 value.distance_to_asserted,
                 max_distance_to_asserted,
