@@ -260,7 +260,7 @@ impl PartialEq for IndoorCoverageLevel {
 
 impl PartialOrd for IndoorCoverageLevel {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.coverage_claim_time.cmp(&other.coverage_claim_time))
+        Some(self.cmp(&other))
     }
 }
 
@@ -328,9 +328,6 @@ pub struct CoverageReward {
     pub points: Decimal,
     pub hotspot: PublicKeyBinary,
 }
-
-pub const MAX_INDOOR_RADIOS_PER_HEX: usize = 5;
-pub const MAX_OUTDOOR_RADIOS_PER_HEX: usize = 3;
 
 #[async_trait::async_trait]
 pub trait CoveredHexStream {
@@ -440,7 +437,9 @@ pub struct CoveredHexes {
     outdoor: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
 }
 
-const OUTDOOR_REWARD_WEIGHTS: [Decimal; 3] = [dec!(1.0), dec!(0.75), dec!(0.25)];
+pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 5;
+pub const MAX_OUTDOOR_RADIOS_PER_RES12_HEX: usize = 3;
+pub const OUTDOOR_REWARD_WEIGHTS: [Decimal; 3] = [dec!(1.0), dec!(0.75), dec!(0.25)];
 
 impl CoveredHexes {
     pub async fn aggregate_coverage<E>(
@@ -495,7 +494,7 @@ impl CoveredHexes {
             radios
                 .into_sorted_vec()
                 .into_iter()
-                .take(MAX_OUTDOOR_RADIOS_PER_HEX)
+                .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
                 .zip(OUTDOOR_REWARD_WEIGHTS)
                 .map(|(cl, rank)| CoverageReward {
                     points: cl.coverage_points() * rank,
@@ -511,7 +510,7 @@ impl CoveredHexes {
                     radios
                         .into_sorted_vec()
                         .into_iter()
-                        .take(MAX_INDOOR_RADIOS_PER_HEX)
+                        .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                         .map(|cl| CoverageReward {
                             points: cl.coverage_points(),
                             hotspot: cl.hotspot,
