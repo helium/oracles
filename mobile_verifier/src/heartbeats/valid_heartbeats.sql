@@ -74,7 +74,7 @@ GROUP BY
     cbrs_coverage_objs.latest_timestamp
 HAVING
     count(*) >= $3
-UNION
+UNION ALL
 SELECT
     wifi_grouped.hotspot_key,
     NULL AS cbsd_id,
