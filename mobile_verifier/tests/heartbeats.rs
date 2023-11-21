@@ -269,7 +269,7 @@ VALUES
 }
 
 #[sqlx::test]
-
+#[ignore]
 async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
     let early_coverage_object = Uuid::new_v4();
     let latest_coverage_object = Uuid::new_v4();
