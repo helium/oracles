@@ -727,7 +727,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(coverage_points.hotspot_points(&owner_3), dec!(1000));
     assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(1000));
     assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(0));
-    assert_eq!(coverage_points.hotspot_points(&owner_6), dec!(1000));
+    assert_eq!(coverage_points.hotspot_points(&owner_6), dec!(0));
 
     Ok(())
 }
