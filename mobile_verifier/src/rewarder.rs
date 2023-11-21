@@ -143,7 +143,8 @@ impl Rewarder {
         );
 
         let heartbeats =
-            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted);
+            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted)
+                .await?;
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
         let coverage_points = CoveragePoints::aggregate_points(

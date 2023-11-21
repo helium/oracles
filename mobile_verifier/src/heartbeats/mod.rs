@@ -19,7 +19,7 @@ use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use rust_decimal::Decimal;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
-use std::{ops::Range, pin::pin, time};
+use std::{collections::HashMap, ops::Range, pin::pin, time};
 use uuid::Uuid;
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
@@ -301,17 +301,54 @@ impl HeartbeatReward {
         self.reward_weight
     }
 
-    pub fn validated<'a>(
+    pub async fn validated<'a>(
         exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
         epoch: &'a Range<DateTime<Utc>>,
         max_distance_to_asserted: u32,
-    ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
-        sqlx::query_as::<_, HeartbeatRow>(include_str!("valid_heartbeats.sql"))
-            .bind(epoch.start)
-            .bind(epoch.end)
-            .bind(MINIMUM_HEARTBEAT_COUNT)
-            .fetch(exec)
-            .map_ok(move |row| Self::from_heartbeat_row(row, max_distance_to_asserted))
+    ) -> anyhow::Result<impl Stream<Item = HeartbeatReward> + 'a> {
+        let heartbeat_rows =
+            sqlx::query_as::<_, HeartbeatRow>(include_str!("valid_heartbeats.sql"))
+                .bind(epoch.start)
+                .bind(epoch.end)
+                .bind(MINIMUM_HEARTBEAT_COUNT)
+                .fetch(exec)
+                .try_fold(
+                    HashMap::<(PublicKeyBinary, Option<String>), Vec<HeartbeatRow>>::new(),
+                    |mut map, row| async move {
+                        map.entry((row.hotspot_key.clone(), row.cbsd_id.clone()))
+                            .or_default()
+                            .push(row);
+
+                        Ok(map)
+                    },
+                )
+                .await?;
+
+        Ok(
+            futures::stream::iter(heartbeat_rows).map(move |((hotspot_key, cbsd_id), rows)| {
+                let first = rows.first().unwrap();
+                let average_location_trust_score = rows
+                    .iter()
+                    .map(|row| {
+                        row.cell_type.location_weight(
+                            row.location_validation_timestamp,
+                            row.distance_to_asserted,
+                            max_distance_to_asserted,
+                        )
+                    })
+                    .sum::<Decimal>()
+                    / Decimal::new(rows.len() as i64, 0);
+
+                HeartbeatReward {
+                    hotspot_key,
+                    cell_type: first.cell_type,
+                    cbsd_id,
+                    reward_weight: average_location_trust_score,
+                    coverage_object: first.coverage_object,
+                    latest_timestamp: first.latest_timestamp,
+                }
+            }),
+        )
     }
 
     pub fn from_heartbeat_row(value: HeartbeatRow, max_distance_to_asserted: u32) -> Self {

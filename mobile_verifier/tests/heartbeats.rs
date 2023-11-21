@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
-use futures_util::TryStreamExt;
+use file_store::coverage::CoverageObject;
+use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::HeartbeatValidity;
+use helium_proto::services::poc_mobile::{CoverageObjectValidity, HeartbeatValidity};
 use mobile_verifier::cell_type::CellType;
+use mobile_verifier::coverage::{self, CoverageClaimTimeCache};
 use mobile_verifier::heartbeats::{HbType, Heartbeat, HeartbeatReward, ValidatedHeartbeat};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -140,8 +142,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert_eq!(
         heartbeat_reward,
@@ -202,8 +205,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert_eq!(
         heartbeat_reward,
@@ -259,8 +263,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert!(heartbeat_reward.is_empty());
 
@@ -307,8 +312,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert_eq!(
         heartbeat_reward,
