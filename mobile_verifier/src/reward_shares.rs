@@ -262,14 +262,14 @@ pub struct CoveragePoints {
 impl CoveragePoints {
     pub async fn aggregate_points(
         hex_streams: &impl CoveredHexStream,
-        heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
+        heartbeats: impl Stream<Item = HeartbeatReward>,
         speedtests: &SpeedtestAverages,
         period_end: DateTime<Utc>,
     ) -> Result<Self, sqlx::Error> {
         let mut heartbeats = std::pin::pin!(heartbeats);
         let mut covered_hexes = CoveredHexes::default();
         let mut coverage_points = HashMap::new();
-        while let Some(heartbeat) = heartbeats.next().await.transpose()? {
+        while let Some(heartbeat) = heartbeats.next().await {
             let speedtest_multiplier = speedtests
                 .get_average(&heartbeat.hotspot_key)
                 .as_ref()
@@ -1120,7 +1120,7 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
         for mobile_reward in CoveragePoints::aggregate_points(
             &hex_coverage,
-            stream::iter(heartbeat_rewards).map(Ok),
+            stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             // Field isn't used:
             DateTime::<Utc>::MIN_UTC,
@@ -1300,7 +1300,7 @@ mod test {
         let epoch = (now - duration)..now;
         for mobile_reward in CoveragePoints::aggregate_points(
             &hex_coverage,
-            stream::iter(heartbeat_rewards).map(Ok),
+            stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             DateTime::<Utc>::MIN_UTC,
         )
@@ -1433,7 +1433,7 @@ mod test {
         let epoch = (now - duration)..now;
         for mobile_reward in CoveragePoints::aggregate_points(
             &hex_coverage,
-            stream::iter(heartbeat_rewards).map(Ok),
+            stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             DateTime::<Utc>::MIN_UTC,
         )
