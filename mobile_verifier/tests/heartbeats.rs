@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use futures_util::TryStreamExt;
+use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::HeartbeatValidity;
 use mobile_verifier::cell_type::CellType;
@@ -140,8 +140,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert_eq!(
         heartbeat_reward,
@@ -202,8 +203,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert_eq!(
         heartbeat_reward,
@@ -259,8 +261,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert!(heartbeat_reward.is_empty());
 
@@ -307,8 +310,9 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .try_collect()
-    .await?;
+    .await?
+    .collect()
+    .await;
 
     assert_eq!(
         heartbeat_reward,
@@ -317,6 +321,65 @@ VALUES
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
             reward_weight: dec!(0.4),
+            latest_timestamp,
+            coverage_object: Some(latest_coverage_object),
+        }]
+    );
+
+    Ok(())
+}
+
+#[sqlx::test]
+#[ignore]
+async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> anyhow::Result<()> {
+    let early_coverage_object = Uuid::new_v4();
+    let latest_coverage_object = Uuid::new_v4();
+    let hotspot: PublicKeyBinary =
+        "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
+    sqlx::query(
+        r#"
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, location_validation_timestamp, distance_to_asserted, coverage_object)
+VALUES
+    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', null, 300, $3)
+"#,
+    )
+    .bind(&hotspot)
+    .bind(early_coverage_object)
+    .bind(latest_coverage_object)
+    .execute(&pool)
+    .await?;
+
+    let start_period: DateTime<Utc> = "2023-08-25 00:00:00.000000000 UTC".parse()?;
+    let end_period: DateTime<Utc> = "2023-08-26 00:00:00.000000000 UTC".parse()?;
+    let latest_timestamp: DateTime<Utc> = "2023-08-25 11:00:00.000000000 UTC".parse()?;
+    let max_asserted_distance_deviation: u32 = 300;
+    let heartbeat_reward: Vec<_> = HeartbeatReward::validated(
+        &pool,
+        &(start_period..end_period),
+        max_asserted_distance_deviation,
+    )
+    .await?
+    .collect()
+    .await;
+
+    assert_eq!(
+        heartbeat_reward,
+        vec![HeartbeatReward {
+            hotspot_key: hotspot,
+            cell_type: CellType::NovaGenericWifiIndoor,
+            cbsd_id: None,
+            reward_weight: dec!(0.3),
             latest_timestamp,
             coverage_object: Some(latest_coverage_object),
         }]
