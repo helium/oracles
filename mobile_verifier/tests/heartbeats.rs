@@ -379,7 +379,7 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            location_trust_score_multiplier: dec!(0.3),
+            location_trust_score_multiplier: dec!(0.75),
             latest_timestamp,
             coverage_object: latest_coverage_object,
         }]
