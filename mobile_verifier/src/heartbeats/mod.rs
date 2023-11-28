@@ -204,6 +204,7 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
     fn from(value: WifiHeartbeatIngestReport) -> Self {
         Self {
             hb_type: HbType::Wifi,
+            coverage_object: value.report.coverage_object(),
             hotspot_key: value.report.pubkey,
             cbsd_id: None,
             operation_mode: value.report.operation_mode,
@@ -211,7 +212,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
             lon: value.report.lon,
             location_validation_timestamp: value.report.location_validation_timestamp,
             timestamp: value.received_timestamp,
-            coverage_object: None,
         }
     }
 }
