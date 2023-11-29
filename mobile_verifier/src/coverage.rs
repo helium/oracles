@@ -252,14 +252,14 @@ pub struct HexCoverage {
 #[derive(Eq, Debug)]
 struct IndoorCoverageLevel {
     radio_key: OwnedKeyType,
-    coverage_claim_time: DateTime<Utc>,
+    seniority_timestamp: DateTime<Utc>,
     hotspot: PublicKeyBinary,
     signal_level: SignalLevel,
 }
 
 impl PartialEq for IndoorCoverageLevel {
     fn eq(&self, other: &Self) -> bool {
-        self.coverage_claim_time == other.coverage_claim_time
+        self.seniority_timestamp == other.seniority_timestamp
     }
 }
 
@@ -271,7 +271,7 @@ impl PartialOrd for IndoorCoverageLevel {
 
 impl Ord for IndoorCoverageLevel {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.coverage_claim_time.cmp(&other.coverage_claim_time)
+        self.seniority_timestamp.cmp(&other.seniority_timestamp)
     }
 }
 
@@ -288,7 +288,7 @@ impl IndoorCoverageLevel {
 #[derive(Eq, Debug)]
 struct OutdoorCoverageLevel {
     radio_key: OwnedKeyType,
-    coverage_claim_time: DateTime<Utc>,
+    seniority_timestamp: DateTime<Utc>,
     hotspot: PublicKeyBinary,
     signal_power: i32,
     signal_level: SignalLevel,
@@ -297,7 +297,7 @@ struct OutdoorCoverageLevel {
 impl PartialEq for OutdoorCoverageLevel {
     fn eq(&self, other: &Self) -> bool {
         self.signal_power == other.signal_power
-            && self.coverage_claim_time == other.coverage_claim_time
+            && self.seniority_timestamp == other.seniority_timestamp
     }
 }
 
@@ -312,7 +312,7 @@ impl Ord for OutdoorCoverageLevel {
         self.signal_power
             .cmp(&other.signal_power)
             .reverse()
-            .then_with(|| self.coverage_claim_time.cmp(&other.coverage_claim_time))
+            .then_with(|| self.seniority_timestamp.cmp(&other.seniority_timestamp))
     }
 }
 
@@ -472,7 +472,7 @@ impl CoveredHexes {
                     .or_default()
                     .push(IndoorCoverageLevel {
                         radio_key,
-                        coverage_claim_time,
+                        seniority_timestamp: coverage_claim_time,
                         signal_level,
                         hotspot: hotspot.clone(),
                     });
@@ -482,7 +482,7 @@ impl CoveredHexes {
                     .or_default()
                     .push(OutdoorCoverageLevel {
                         radio_key,
-                        coverage_claim_time,
+                        seniority_timestamp: coverage_claim_time,
                         signal_level,
                         signal_power,
                         hotspot: hotspot.clone(),
