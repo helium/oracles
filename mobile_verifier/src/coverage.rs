@@ -199,7 +199,12 @@ impl CoverageObject {
                 VALUES
                   ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (uuid, hex) DO UPDATE SET
-                  inserted_at = EXCLUDED.inserted_at
+                  indoor = EXCLUDED.indoor,
+                  signal_level = EXCLUDED.signal_level,
+                  coverage_claim_time = EXCLUDED.coverage_claim_time,
+                  inserted_at = EXCLUDED.inserted_at,
+                  radio_type = EXCLUDED.radio_type,
+                  signal_power = EXCLUDED.signal_power
                 "#,
             )
             .bind(self.coverage_object.uuid)

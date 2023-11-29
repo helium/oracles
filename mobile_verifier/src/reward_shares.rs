@@ -344,6 +344,7 @@ impl CoveragePoints {
         available_poc_rewards
             .checked_div(total_shares)
             .map(|poc_rewards_per_share| {
+                tracing::info!(%poc_rewards_per_share);
                 let start_period = epoch.start.encode_timestamp();
                 let end_period = epoch.end.encode_timestamp();
                 self.coverage_points

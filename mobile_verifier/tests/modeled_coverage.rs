@@ -155,6 +155,74 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[sqlx::test]
+#[ignore]
+async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
+    let cache = CoveredHexCache::new(&pool);
+    let uuid = Uuid::new_v4();
+    let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
+
+    assert!(cache.fetch_coverage(&uuid).await?.is_none());
+
+    let co1 = file_store::coverage::CoverageObject {
+        pub_key: PublicKeyBinary::from(vec![1]),
+        uuid,
+        key_type: file_store::coverage::KeyType::CbsdId(
+            "P27-SCE4255W120200039521XGB0103".to_string(),
+        ),
+        coverage_claim_time,
+        coverage: vec![file_store::coverage::RadioHexSignalLevel {
+            location: "8a1fb46622dffff".parse().unwrap(),
+            signal_level: SignalLevel::High,
+            signal_power: 1000,
+        }],
+        indoor: true,
+        trust_score: 1000,
+        signature: Vec::new(),
+    };
+    let co1 = CoverageObject {
+        coverage_object: co1,
+        validity: CoverageObjectValidity::Valid,
+    };
+
+    let mut transaction = pool.begin().await?;
+    co1.save(&mut transaction).await?;
+    transaction.commit().await?;
+
+    let co2 = file_store::coverage::CoverageObject {
+        pub_key: PublicKeyBinary::from(vec![1]),
+        uuid,
+        key_type: file_store::coverage::KeyType::CbsdId(
+            "P27-SCE4255W120200039521XGB0103".to_string(),
+        ),
+        coverage_claim_time,
+        coverage: vec![file_store::coverage::RadioHexSignalLevel {
+            location: "8a1fb46622dffff".parse().unwrap(),
+            signal_level: SignalLevel::Low,
+            signal_power: 5,
+        }],
+        indoor: true,
+        trust_score: 1000,
+        signature: Vec::new(),
+    };
+    let co2 = CoverageObject {
+        coverage_object: co2,
+        validity: CoverageObjectValidity::Valid,
+    };
+
+    let mut transaction = pool.begin().await?;
+    co2.save(&mut transaction).await?;
+    transaction.commit().await?;
+
+    let new_signal_power: i32 = sqlx::query_scalar("SELECT signal_power FROM hex_coverage")
+        .fetch_one(&pool)
+        .await?;
+
+    assert_eq!(new_signal_power, 5);
+
+    Ok(())
+}
+
 #[derive(Copy, Clone)]
 struct AllOwnersValid;
 
