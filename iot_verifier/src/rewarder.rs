@@ -1,11 +1,14 @@
 use crate::{
-    reward_share::{operational_rewards, GatewayShares},
+    reward_share::{self, GatewayShares},
     telemetry,
 };
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink, traits::TimestampEncode};
 use futures::future::LocalBoxFuture;
+use helium_proto::services::poc_lora as proto;
+use helium_proto::services::poc_lora::iot_reward_share::Reward as ProtoReward;
+use helium_proto::services::poc_lora::{UnallocatedReward, UnallocatedRewardType};
 use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
@@ -107,26 +110,16 @@ impl Rewarder {
         scheduler: &Scheduler,
         iot_price: Decimal,
     ) -> anyhow::Result<()> {
-        let gateway_reward_shares =
-            GatewayShares::aggregate(&self.pool, &scheduler.reward_period).await?;
+        let reward_period = &scheduler.reward_period;
 
-        for reward_share in
-            gateway_reward_shares.into_iot_reward_shares(&scheduler.reward_period, iot_price)
-        {
-            self.rewards_sink
-                .write(reward_share, [])
-                .await?
-                // Await the returned oneshot to ensure we wrote the file
-                .await??;
-        }
-
-        self.rewards_sink
-            .write(operational_rewards::compute(&scheduler.reward_period), [])
-            .await?
-            // Await the returned oneshot to ensure we wrote the file
-            .await??;
+        // process rewards for poc and dc
+        self.reward_poc_and_dc(reward_period, iot_price).await?;
+        // process rewards for the operational fund
+        self.reward_operational(reward_period).await?;
+        // commit the filesink
         let written_files = self.rewards_sink.commit().await?.await??;
 
+        // purge db
         let mut transaction = self.pool.begin().await?;
         // Clear gateway shares table period to end of reward period
         GatewayShares::clear_rewarded_shares(&mut transaction, scheduler.reward_period.end).await?;
@@ -158,6 +151,109 @@ impl Rewarder {
             .await??;
         self.reward_manifests_sink.commit().await?;
         telemetry::last_rewarded_end_time(scheduler.reward_period.end);
+        Ok(())
+    }
+
+    async fn reward_poc_and_dc(
+        &self,
+        reward_period: &Range<DateTime<Utc>>,
+        iot_price: Decimal,
+    ) -> anyhow::Result<()> {
+        // aggregate the poc and dc data per gateway
+        let mut gateway_reward_shares = GatewayShares::aggregate(&self.pool, reward_period).await?;
+
+        // work out rewards per share and sum up total usage for poc and dc
+        gateway_reward_shares.calculate_rewards_per_share_and_total_usage(reward_period, iot_price);
+        let total_gateway_reward_allocation = gateway_reward_shares.total_rewards_for_poc_and_dc;
+
+        let mut allocated_gateway_rewards = 0_u64;
+        for (gateway_reward_amount, reward_share) in
+            gateway_reward_shares.into_iot_reward_shares(reward_period)
+        {
+            self.rewards_sink
+                .write(reward_share, [])
+                .await?
+                // Await the returned oneshot to ensure we wrote the file
+                .await??;
+            allocated_gateway_rewards += gateway_reward_amount;
+        }
+        // write out any unallocated poc reward
+        let unallocated_poc_reward_amount = (total_gateway_reward_allocation
+            - Decimal::from(allocated_gateway_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        self.write_unallocated_reward(
+            UnallocatedRewardType::Poc,
+            unallocated_poc_reward_amount,
+            reward_period,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn reward_operational(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
+        let total_operational_rewards =
+            reward_share::get_scheduled_ops_fund_tokens(reward_period.end - reward_period.start);
+        let allocated_operational_rewards = total_operational_rewards
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0);
+        let op_fund_reward = proto::OperationalReward {
+            amount: allocated_operational_rewards,
+        };
+        self.rewards_sink
+            .write(
+                proto::IotRewardShare {
+                    start_period: reward_period.start.encode_timestamp(),
+                    end_period: reward_period.end.encode_timestamp(),
+                    reward: Some(ProtoReward::OperationalReward(op_fund_reward)),
+                },
+                [],
+            )
+            .await?
+            // Await the returned oneshot to ensure we wrote the file
+            .await??;
+        // write out any unallocated mapping rewards
+        // which for the operational fund can only relate to rounding issue
+        // in practice this should always be zero as there can be a max of
+        // one bone lost due to rounding when going from decimal to u64
+        // but we run it anyway and if it is indeed zero nothing gets
+        // written out anyway
+        let unallocated_operation_reward_amount = (total_operational_rewards
+            - Decimal::from(allocated_operational_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        self.write_unallocated_reward(
+            UnallocatedRewardType::Oracle,
+            unallocated_operation_reward_amount,
+            reward_period,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn write_unallocated_reward(
+        &self,
+        unallocated_type: UnallocatedRewardType,
+        unallocated_amount: u64,
+        reward_period: &'_ Range<DateTime<Utc>>,
+    ) -> anyhow::Result<()> {
+        if unallocated_amount > 0 {
+            let unallocated_reward = proto::IotRewardShare {
+                start_period: reward_period.start.encode_timestamp(),
+                end_period: reward_period.end.encode_timestamp(),
+                reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
+                    reward_type: unallocated_type as i32,
+                    amount: unallocated_amount,
+                })),
+            };
+            self.rewards_sink
+                .write(unallocated_reward, [])
+                .await?
+                .await??;
+        };
         Ok(())
     }
 
