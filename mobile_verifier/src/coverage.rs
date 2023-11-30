@@ -26,7 +26,7 @@ use mobile_config::client::AuthorizationClient;
 use retainer::Cache;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlx::{FromRow, Pool, Postgres, Transaction, Type};
+use sqlx::{FromRow, Pool, Postgres, QueryBuilder, Transaction, Type};
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
@@ -190,35 +190,34 @@ impl CoverageObject {
         let key = self.key();
         let hb_type = key.hb_type();
         let key = key.to_owned();
-        for hex in self.coverage_object.coverage {
-            let location: u64 = hex.location.into();
-            sqlx::query(
-                r#"
-                INSERT INTO hex_coverage
-                  (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type, signal_power)
-                VALUES
-                  ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT (uuid, hex) DO UPDATE SET
-                  indoor = EXCLUDED.indoor,
-                  signal_level = EXCLUDED.signal_level,
-                  coverage_claim_time = EXCLUDED.coverage_claim_time,
-                  inserted_at = EXCLUDED.inserted_at,
-                  radio_type = EXCLUDED.radio_type,
-                  signal_power = EXCLUDED.signal_power
-                "#,
-            )
-            .bind(self.coverage_object.uuid)
-            .bind(location as i64)
-            .bind(self.coverage_object.indoor)
-            .bind(&key)
-            .bind(SignalLevel::from(hex.signal_level))
-            .bind(self.coverage_object.coverage_claim_time)
-            .bind(insertion_time)
-            .bind(hb_type)
-            .bind(hex.signal_power)
-            .execute(&mut *transaction)
+
+        QueryBuilder::new("INSERT INTO hex_coverage (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type, signal_power)")
+            .push_values(self.coverage_object.coverage, |mut b, hex| {
+                let location: u64 = hex.location.into();
+
+                b.push_bind(self.coverage_object.uuid)
+                    .push_bind(location as i64)
+                    .push_bind(self.coverage_object.indoor)
+                    .push_bind(&key)
+                    .push_bind(SignalLevel::from(hex.signal_level))
+                    .push_bind(self.coverage_object.coverage_claim_time)
+                    .push_bind(insertion_time)
+                    .push_bind(hb_type)
+                    .push_bind(hex.signal_power);
+            })
+            .push(r#"
+                    ON CONFLICT (uuid, hex) DO UPDATE SET
+                      indoor = EXCLUDED.indoor,
+                      signal_level = EXCLUDED.signal_level,
+                      coverage_claim_time = EXCLUDED.coverage_claim_time,
+                      inserted_at = EXCLUDED.inserted_at,
+                      radio_type = EXCLUDED.radio_type,
+                      signal_power = EXCLUDED.signal_power
+            "#)
+            .build()
+            .execute(transaction)
             .await?;
-        }
+
         Ok(())
     }
 }
