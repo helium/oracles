@@ -77,11 +77,20 @@ impl GatewayService {
 
     fn verify_location_request(&self, request: &GatewayLocationReqV1) -> Result<(), Status> {
         let signature_bytes = request.signer.clone();
+        let signer_pubkey = verify_public_key(&signature_bytes)?;
+
+        if self
+            .auth_cache
+            .verify_signature(&signer_pubkey, request)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
         self.delegate_cache
             .borrow()
             .contains(&signature_bytes.clone().into())
             .then(|| {
-                let signer_pubkey = verify_public_key(&signature_bytes)?;
                 request
                     .verify(&signer_pubkey)
                     .map_err(|_| Status::invalid_argument("bad request signature"))
