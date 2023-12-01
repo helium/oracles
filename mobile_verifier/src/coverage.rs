@@ -35,6 +35,8 @@ use crate::{
     IsAuthorized,
 };
 
+const COVERAGE_MAX_BATCH_ENTRIES: usize = (u16::MAX / 9) as usize;
+
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
 #[sqlx(type_name = "signal_level")]
 #[sqlx(rename_all = "lowercase")]
@@ -191,8 +193,13 @@ impl CoverageObject {
         let hb_type = key.hb_type();
         let key = key.to_owned();
 
-        QueryBuilder::new("INSERT INTO hex_coverage (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type, signal_power)")
-            .push_values(self.coverage_object.coverage, |mut b, hex| {
+        for hexes in self
+            .coverage_object
+            .coverage
+            .chunks(COVERAGE_MAX_BATCH_ENTRIES)
+        {
+            QueryBuilder::new("INSERT INTO hex_coverage (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type, signal_power)")
+            .push_values(hexes, |mut b, hex| {
                 let location: u64 = hex.location.into();
 
                 b.push_bind(self.coverage_object.uuid)
@@ -215,8 +222,9 @@ impl CoverageObject {
                       signal_power = EXCLUDED.signal_power
             "#)
             .build()
-            .execute(transaction)
+            .execute(&mut *transaction)
             .await?;
+        }
 
         Ok(())
     }
