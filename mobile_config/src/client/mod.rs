@@ -24,7 +24,7 @@ pub enum ClientError {
     VerificationError(#[from] file_store::Error),
     #[error("error parsing gateway location {0}")]
     LocationParseError(#[from] std::num::ParseIntError),
-    #[error("unknown service provider")]
+    #[error("unknown service provider name")]
     UnknownServiceProvider,
 }
 

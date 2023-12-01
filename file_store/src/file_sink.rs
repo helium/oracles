@@ -165,8 +165,8 @@ impl FileSinkBuilder {
 
 #[derive(Debug, Clone)]
 pub struct FileSinkClient {
-    sender: MessageSender,
-    metric: &'static str,
+    pub sender: MessageSender,
+    pub metric: &'static str,
 }
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");

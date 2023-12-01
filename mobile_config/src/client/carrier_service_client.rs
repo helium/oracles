@@ -46,6 +46,9 @@ impl CarrierServiceVerifier for CarrierServiceClient {
                 response.verify(&self.config_pubkey)?;
                 response.entity_key
             }
+            Err(status) if status.code() == tonic::Code::NotFound => {
+                Err(ClientError::UnknownServiceProvider)?
+            }
             Err(status) => Err(status)?,
         };
         self.cache

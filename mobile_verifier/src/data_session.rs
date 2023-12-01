@@ -116,6 +116,7 @@ impl HotspotDataSession {
         .await?;
         Ok(())
     }
+
     fn from_valid_data_session(
         v: ValidDataTransferSession,
         received_timestamp: DateTime<Utc>,
