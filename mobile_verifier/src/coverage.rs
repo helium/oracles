@@ -35,8 +35,6 @@ use crate::{
     IsAuthorized,
 };
 
-const COVERAGE_MAX_BATCH_ENTRIES: usize = (u16::MAX / 9) as usize;
-
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
 #[sqlx(type_name = "signal_level")]
 #[sqlx(rename_all = "lowercase")]
@@ -192,6 +190,9 @@ impl CoverageObject {
         let key = self.key();
         let hb_type = key.hb_type();
         let key = key.to_owned();
+
+        const NUMBER_OF_FIELDS_IN_QUERY: u16 = 9;
+        const COVERAGE_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
 
         for hexes in self
             .coverage_object
