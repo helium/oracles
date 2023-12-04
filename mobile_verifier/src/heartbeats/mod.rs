@@ -618,24 +618,22 @@ pub async fn validate_heartbeat(
         ));
     }
 
-    if heartbeat.hb_type == HbType::Cbrs {
-        let Ok(latlng) = LatLng::new(heartbeat.lat, heartbeat.lon) else {
-            return Ok((
-                cell_type,
-                distance_to_asserted,
-                Some(coverage.inserted_at),
-                proto::HeartbeatValidity::InvalidLatLon,
-            ));
-        };
+    let Ok(latlng) = LatLng::new(heartbeat.lat, heartbeat.lon) else {
+        return Ok((
+            cell_type,
+            distance_to_asserted,
+            Some(coverage.inserted_at),
+            proto::HeartbeatValidity::InvalidLatLon,
+        ));
+    };
 
-        if coverage.max_distance_km(latlng) > max_distance {
-            return Ok((
-                cell_type,
-                distance_to_asserted,
-                Some(coverage.inserted_at),
-                proto::HeartbeatValidity::TooFarFromCoverage,
-            ));
-        }
+    if coverage.max_distance_km(latlng) > max_distance {
+        return Ok((
+            cell_type,
+            distance_to_asserted,
+            Some(coverage.inserted_at),
+            proto::HeartbeatValidity::TooFarFromCoverage,
+        ));
     }
 
     Ok((
