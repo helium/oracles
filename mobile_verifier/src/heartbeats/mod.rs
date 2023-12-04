@@ -389,11 +389,19 @@ impl ValidatedHeartbeat {
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         gateway_client: &'a impl GatewayResolver,
         coverage_cache: &'a CoveredHexCache,
+        max_distance: f64,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
             let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
-                validate_heartbeat(&heartbeat, gateway_client, coverage_cache, epoch).await?;
+                validate_heartbeat(
+                    &heartbeat,
+                    gateway_client,
+                    coverage_cache,
+                    epoch,
+                    max_distance,
+                )
+                .await?;
 
             Ok(Self {
                 heartbeat,
@@ -505,6 +513,7 @@ pub async fn validate_heartbeat(
     gateway_resolver: &impl GatewayResolver,
     coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
+    max_distance: f64,
 ) -> anyhow::Result<(
     CellType,
     Option<i64>,
@@ -606,6 +615,24 @@ pub async fn validate_heartbeat(
             distance_to_asserted,
             Some(coverage.inserted_at),
             proto::HeartbeatValidity::BadCoverageObject,
+        ));
+    }
+
+    let Ok(latlng) = LatLng::new(heartbeat.lat, heartbeat.lon) else {
+        return Ok((
+            cell_type,
+            distance_to_asserted,
+            Some(coverage.inserted_at),
+            proto::HeartbeatValidity::InvalidLatLon,
+        ));
+    };
+
+    if coverage.max_distance_km(latlng) > max_distance {
+        return Ok((
+            cell_type,
+            distance_to_asserted,
+            Some(coverage.inserted_at),
+            proto::HeartbeatValidity::TooFarFromCoverage,
         ));
     }
 
