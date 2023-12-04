@@ -17,7 +17,7 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
 use std::{collections::HashMap, ops::Range, pin::pin, time};
 use uuid::Uuid;
@@ -77,6 +77,13 @@ impl<'a> From<&'a str> for KeyType<'a> {
     }
 }
 
+// This sucks, but it makes our life easier
+impl<'a> From<&'a String> for KeyType<'a> {
+    fn from(cbrs: &'a String) -> Self {
+        Self::Cbrs(cbrs.as_str())
+    }
+}
+
 impl<'a> From<&'a PublicKeyBinary> for KeyType<'a> {
     fn from(wifi: &'a PublicKeyBinary) -> Self {
         Self::Wifi(wifi)
@@ -105,6 +112,37 @@ impl<'a> Encode<'a, Postgres> for KeyType<'a> {
 pub enum OwnedKeyType {
     Cbrs(String),
     Wifi(PublicKeyBinary),
+}
+
+impl OwnedKeyType {
+    pub fn into_cbsd_id(self) -> Option<String> {
+        match self {
+            Self::Cbrs(cbsd_id) => Some(cbsd_id),
+            _ => None,
+        }
+    }
+}
+
+impl From<String> for OwnedKeyType {
+    fn from(s: String) -> Self {
+        Self::Cbrs(s)
+    }
+}
+
+impl From<PublicKeyBinary> for OwnedKeyType {
+    fn from(w: PublicKeyBinary) -> Self {
+        Self::Wifi(w)
+    }
+}
+
+impl PartialEq<KeyType<'_>> for OwnedKeyType {
+    fn eq(&self, rhs: &KeyType<'_>) -> bool {
+        match (self, rhs) {
+            (Self::Cbrs(lhs), KeyType::Cbrs(rhs)) => lhs == rhs,
+            (Self::Wifi(lhs), KeyType::Wifi(rhs)) => lhs == *rhs,
+            _ => false,
+        }
+    }
 }
 
 impl Type<Postgres> for OwnedKeyType {
@@ -225,7 +263,7 @@ pub struct HeartbeatRow {
     // wifi hb only
     pub location_validation_timestamp: Option<DateTime<Utc>>,
     pub distance_to_asserted: Option<i64>,
-    pub coverage_object: Option<Uuid>,
+    pub coverage_object: Uuid,
     pub latest_timestamp: DateTime<Utc>,
 }
 
@@ -235,12 +273,19 @@ pub struct HeartbeatReward {
     pub cell_type: CellType,
     // cell hb only
     pub cbsd_id: Option<String>,
-    pub reward_weight: Decimal,
-    pub coverage_object: Option<Uuid>,
+    pub location_trust_score_multiplier: Decimal,
+    pub coverage_object: Uuid,
     pub latest_timestamp: DateTime<Utc>,
 }
 
 impl HeartbeatReward {
+    pub fn key(&self) -> KeyType<'_> {
+        match self.cbsd_id {
+            Some(ref id) => KeyType::Cbrs(id),
+            _ => KeyType::Wifi(&self.hotspot_key),
+        }
+    }
+
     pub fn id(&self) -> anyhow::Result<String> {
         match self.cell_type.to_label() {
             CellTypeLabel::CBRS => Ok(self
@@ -253,7 +298,7 @@ impl HeartbeatReward {
     }
 
     pub fn reward_weight(&self) -> Decimal {
-        self.reward_weight
+        self.location_trust_score_multiplier
     }
 
     pub async fn validated<'a>(
@@ -298,7 +343,7 @@ impl HeartbeatReward {
                     hotspot_key,
                     cell_type: first.cell_type,
                     cbsd_id,
-                    reward_weight: first.cell_type.reward_weight() * average_location_trust_score,
+                    location_trust_score_multiplier: average_location_trust_score,
                     coverage_object: first.coverage_object,
                     latest_timestamp: first.latest_timestamp,
                 }
@@ -311,12 +356,11 @@ impl HeartbeatReward {
             hotspot_key: value.hotspot_key,
             cell_type: value.cell_type,
             cbsd_id: value.cbsd_id,
-            reward_weight: value.cell_type.reward_weight()
-                * value.cell_type.location_weight(
-                    value.location_validation_timestamp,
-                    value.distance_to_asserted,
-                    max_distance_to_asserted,
-                ),
+            location_trust_score_multiplier: value.cell_type.location_weight(
+                value.location_validation_timestamp,
+                value.distance_to_asserted,
+                max_distance_to_asserted,
+            ),
             coverage_object: value.coverage_object,
             latest_timestamp: value.latest_timestamp,
         }
@@ -345,19 +389,11 @@ impl ValidatedHeartbeat {
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         gateway_client: &'a impl GatewayResolver,
         coverage_cache: &'a CoveredHexCache,
-        max_distance: f64,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
             let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
-                validate_heartbeat(
-                    &heartbeat,
-                    gateway_client,
-                    coverage_cache,
-                    epoch,
-                    max_distance,
-                )
-                .await?;
+                validate_heartbeat(&heartbeat, gateway_client, coverage_cache, epoch).await?;
 
             Ok(Self {
                 heartbeat,
@@ -375,7 +411,7 @@ impl ValidatedHeartbeat {
                 proto::Heartbeat {
                     cbsd_id: self.heartbeat.cbsd_id.clone().unwrap_or_default(),
                     pub_key: self.heartbeat.hotspot_key.as_ref().into(),
-                    reward_multiplier: self.cell_type.reward_weight().to_f32().unwrap_or_default(),
+                    reward_multiplier: 1.0,
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
                     timestamp: self.heartbeat.timestamp.timestamp() as u64,
@@ -467,9 +503,8 @@ impl ValidatedHeartbeat {
 pub async fn validate_heartbeat(
     heartbeat: &Heartbeat,
     gateway_resolver: &impl GatewayResolver,
-    _coverage_cache: &CoveredHexCache,
+    coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
-    _max_distance: f64,
 ) -> anyhow::Result<(
     CellType,
     Option<i64>,
@@ -547,40 +582,37 @@ pub async fn validate_heartbeat(
         _ => None,
     };
 
-    /*
-    let Some(coverage_object) = heartbeat.report.coverage_object() else {
-        return Ok((cell_type, None, proto::HeartbeatValidity::BadCoverageObject));
+    let Some(coverage_object) = heartbeat.coverage_object else {
+        return Ok((
+            cell_type,
+            distance_to_asserted,
+            None,
+            proto::HeartbeatValidity::BadCoverageObject,
+        ));
     };
 
     let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await? else {
         return Ok((
             cell_type,
+            distance_to_asserted,
             None,
             proto::HeartbeatValidity::NoSuchCoverageObject,
         ));
     };
 
-    if coverage.cbsd_id != heartbeat.report.cbsd_id {
-        return Ok((cell_type, None, proto::HeartbeatValidity::BadCoverageObject));
-    }
-
-    let Ok(latlng) = LatLng::new(heartbeat.report.lat, heartbeat.report.lon) else {
-        return Ok((cell_type, None, proto::HeartbeatValidity::InvalidLatLon));
-    };
-
-    if coverage.max_distance_km(latlng) > max_distance {
+    if coverage.radio_key != heartbeat.key() {
         return Ok((
             cell_type,
-            None,
-            proto::HeartbeatValidity::TooFarFromCoverage,
+            distance_to_asserted,
+            Some(coverage.inserted_at),
+            proto::HeartbeatValidity::BadCoverageObject,
         ));
     }
-     */
 
     Ok((
         cell_type,
         distance_to_asserted,
-        None,
+        Some(coverage.inserted_at),
         proto::HeartbeatValidity::Valid,
     ))
 }

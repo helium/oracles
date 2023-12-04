@@ -25,8 +25,6 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
-    #[serde(default = "default_max_heartbeat_distance_from_coverage_km")]
-    pub max_heartbeat_distance_from_coverage_km: f64,
     pub modeled_coverage_start: u64,
     // Max distance in meters between the asserted location of a WIFI hotspot
     // and the lat/lng defined in a heartbeat
@@ -53,10 +51,6 @@ pub fn default_reward_period() -> i64 {
 
 pub fn default_reward_offset_minutes() -> i64 {
     30
-}
-
-pub fn default_max_heartbeat_distance_from_coverage_km() -> f64 {
-    2.5
 }
 
 impl Settings {

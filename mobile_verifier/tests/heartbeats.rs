@@ -150,9 +150,9 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            reward_weight: Decimal::ONE,
+            location_trust_score_multiplier: Decimal::ONE,
             latest_timestamp,
-            coverage_object: Some(coverage_object),
+            coverage_object,
         }]
     );
 
@@ -213,9 +213,9 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            reward_weight: Decimal::ONE,
+            location_trust_score_multiplier: Decimal::ONE,
             latest_timestamp,
-            coverage_object: Some(coverage_object),
+            coverage_object,
         }]
     );
 
@@ -320,9 +320,9 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            reward_weight: dec!(0.4),
+            location_trust_score_multiplier: dec!(1.0),
             latest_timestamp,
-            coverage_object: Some(latest_coverage_object),
+            coverage_object: latest_coverage_object,
         }]
     );
 
@@ -379,9 +379,9 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            reward_weight: dec!(0.3),
+            location_trust_score_multiplier: dec!(0.75),
             latest_timestamp,
-            coverage_object: Some(latest_coverage_object),
+            coverage_object: latest_coverage_object,
         }]
     );
 

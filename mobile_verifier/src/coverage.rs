@@ -35,7 +35,7 @@ use crate::{
     IsAuthorized,
 };
 
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Type)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
 #[sqlx(type_name = "signal_level")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SignalLevel {
@@ -199,7 +199,12 @@ impl CoverageObject {
                 VALUES
                   ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (uuid, hex) DO UPDATE SET
-                  inserted_at = EXCLUDED.inserted_at
+                  indoor = EXCLUDED.indoor,
+                  signal_level = EXCLUDED.signal_level,
+                  coverage_claim_time = EXCLUDED.coverage_claim_time,
+                  inserted_at = EXCLUDED.inserted_at,
+                  radio_type = EXCLUDED.radio_type,
+                  signal_power = EXCLUDED.signal_power
                 "#,
             )
             .bind(self.coverage_object.uuid)
@@ -239,48 +244,86 @@ pub struct HexCoverage {
     pub indoor: bool,
     pub radio_key: OwnedKeyType,
     pub signal_level: SignalLevel,
+    pub signal_power: i32,
     pub coverage_claim_time: DateTime<Utc>,
     pub inserted_at: DateTime<Utc>,
 }
 
-#[derive(Eq)]
-struct CoverageLevel {
+#[derive(Eq, Debug)]
+struct IndoorCoverageLevel {
     radio_key: OwnedKeyType,
-    coverage_claim_time: DateTime<Utc>,
+    seniority_timestamp: DateTime<Utc>,
     hotspot: PublicKeyBinary,
-    indoor: bool,
     signal_level: SignalLevel,
 }
 
-impl PartialEq for CoverageLevel {
+impl PartialEq for IndoorCoverageLevel {
     fn eq(&self, other: &Self) -> bool {
-        self.coverage_claim_time == other.coverage_claim_time
+        self.seniority_timestamp == other.seniority_timestamp
     }
 }
 
-impl PartialOrd for CoverageLevel {
+impl PartialOrd for IndoorCoverageLevel {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.coverage_claim_time.cmp(&other.coverage_claim_time))
+        Some(self.cmp(other))
     }
 }
 
-impl Ord for CoverageLevel {
+impl Ord for IndoorCoverageLevel {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.coverage_claim_time.cmp(&other.coverage_claim_time)
+        self.seniority_timestamp.cmp(&other.seniority_timestamp)
     }
 }
 
-impl CoverageLevel {
-    fn coverage_points(&self) -> anyhow::Result<Decimal> {
-        Ok(match (self.indoor, self.signal_level) {
-            (true, SignalLevel::High) => dec!(400),
-            (true, SignalLevel::Low) => dec!(100),
-            (false, SignalLevel::High) => dec!(16),
-            (false, SignalLevel::Medium) => dec!(8),
-            (false, SignalLevel::Low) => dec!(4),
-            (_, SignalLevel::None) => dec!(0),
-            _ => anyhow::bail!("Indoor radio cannot have a signal level of medium"),
-        })
+impl IndoorCoverageLevel {
+    fn coverage_points(&self) -> Decimal {
+        match self.signal_level {
+            SignalLevel::High => dec!(400),
+            SignalLevel::Low => dec!(100),
+            _ => dec!(0),
+        }
+    }
+}
+
+#[derive(Eq, Debug)]
+struct OutdoorCoverageLevel {
+    radio_key: OwnedKeyType,
+    seniority_timestamp: DateTime<Utc>,
+    hotspot: PublicKeyBinary,
+    signal_power: i32,
+    signal_level: SignalLevel,
+}
+
+impl PartialEq for OutdoorCoverageLevel {
+    fn eq(&self, other: &Self) -> bool {
+        self.signal_power == other.signal_power
+            && self.seniority_timestamp == other.seniority_timestamp
+    }
+}
+
+impl PartialOrd for OutdoorCoverageLevel {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for OutdoorCoverageLevel {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.signal_power
+            .cmp(&other.signal_power)
+            .reverse()
+            .then_with(|| self.seniority_timestamp.cmp(&other.seniority_timestamp))
+    }
+}
+
+impl OutdoorCoverageLevel {
+    fn coverage_points(&self) -> Decimal {
+        match self.signal_level {
+            SignalLevel::High => dec!(16),
+            SignalLevel::Medium => dec!(8),
+            SignalLevel::Low => dec!(4),
+            SignalLevel::None => dec!(0),
+        }
     }
 }
 
@@ -291,16 +334,20 @@ pub struct CoverageReward {
     pub hotspot: PublicKeyBinary,
 }
 
-pub const MAX_RADIOS_PER_HEX: usize = 5;
-
 #[async_trait::async_trait]
 pub trait CoveredHexStream {
     async fn covered_hex_stream<'a>(
         &'a self,
         radio_key: KeyType<'a>,
         coverage_obj: &'a Uuid,
-        period_end: DateTime<Utc>,
+        seniority: &'a Seniority,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error>;
+
+    async fn fetch_seniority(
+        &self,
+        key: KeyType<'_>,
+        period_end: DateTime<Utc>,
+    ) -> Result<Seniority, sqlx::Error>;
 }
 
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
@@ -332,10 +379,35 @@ impl CoveredHexStream for Pool<Postgres> {
         &'a self,
         key: KeyType<'a>,
         coverage_obj: &'a Uuid,
-        period_end: DateTime<Utc>,
+        seniority: &'a Seniority,
     ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
-        // Adjust the coverage
-        let seniority: Seniority = sqlx::query_as(
+        // Adjust the coverage. We can safely delete any seniority objects that appear
+        // before the latest in the reward period:
+        sqlx::query("DELETE FROM seniority WHERE inserted_at < $1 AND radio_key = $2")
+            .bind(seniority.inserted_at)
+            .bind(key)
+            .execute(self)
+            .await?;
+
+        Ok(
+            sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, signal_power FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
+                .bind(key)
+                .bind(coverage_obj)
+                .fetch(self)
+                .map_ok(move |hc| HexCoverage {
+                    coverage_claim_time: seniority.seniority_ts,
+                    ..hc
+                })
+                .boxed(),
+        )
+    }
+
+    async fn fetch_seniority(
+        &self,
+        key: KeyType<'_>,
+        period_end: DateTime<Utc>,
+    ) -> Result<Seniority, sqlx::Error> {
+        sqlx::query_as(
             r#"
             SELECT uuid, seniority_ts, last_heartbeat, inserted_at, update_reason FROM seniority
             WHERE
@@ -348,26 +420,7 @@ impl CoveredHexStream for Pool<Postgres> {
         .bind(key)
         .bind(period_end)
         .fetch_one(self)
-        .await?;
-
-        // We can safely delete any seniority objects that appear before the latest in the reward period
-        sqlx::query("DELETE FROM seniority WHERE inserted_at < $1 AND radio_key = $2")
-            .bind(seniority.inserted_at)
-            .bind(key)
-            .execute(self)
-            .await?;
-
-        Ok(
-            sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
-                .bind(key)
-                .bind(coverage_obj)
-                .fetch(self)
-                .map_ok(move |hc| HexCoverage {
-                    coverage_claim_time: seniority.seniority_ts,
-                    ..hc
-                })
-                .boxed(),
-        )
+        .await
     }
 }
 
@@ -383,10 +436,15 @@ pub async fn clear_coverage_objects(
     Ok(())
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct CoveredHexes {
-    hexes: HashMap<CellIndex, [BTreeMap<SignalLevel, BinaryHeap<CoverageLevel>>; 2]>,
+    indoor: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
+    outdoor: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
 }
+
+pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 5;
+pub const MAX_OUTDOOR_RADIOS_PER_RES12_HEX: usize = 3;
+pub const OUTDOOR_REWARD_WEIGHTS: [Decimal; 3] = [dec!(1.0), dec!(0.75), dec!(0.25)];
 
 impl CoveredHexes {
     pub async fn aggregate_coverage<E>(
@@ -402,21 +460,34 @@ impl CoveredHexes {
             signal_level,
             coverage_claim_time,
             radio_key,
+            signal_power,
             ..
         }) = covered_hexes.next().await.transpose()?
         {
-            self.hexes
-                .entry(CellIndex::try_from(hex as u64).unwrap())
-                .or_default()[indoor as usize]
-                .entry(signal_level)
-                .or_default()
-                .push(CoverageLevel {
-                    radio_key,
-                    coverage_claim_time,
-                    indoor,
-                    signal_level,
-                    hotspot: hotspot.clone(),
-                });
+            if indoor {
+                self.indoor
+                    .entry(CellIndex::try_from(hex as u64).unwrap())
+                    .or_default()
+                    .entry(signal_level)
+                    .or_default()
+                    .push(IndoorCoverageLevel {
+                        radio_key,
+                        seniority_timestamp: coverage_claim_time,
+                        signal_level,
+                        hotspot: hotspot.clone(),
+                    });
+            } else {
+                self.outdoor
+                    .entry(CellIndex::try_from(hex as u64).unwrap())
+                    .or_default()
+                    .push(OutdoorCoverageLevel {
+                        radio_key,
+                        seniority_timestamp: coverage_claim_time,
+                        signal_level,
+                        signal_power,
+                        hotspot: hotspot.clone(),
+                    });
+            }
         }
 
         Ok(())
@@ -424,25 +495,37 @@ impl CoveredHexes {
 
     /// Returns the radios that should be rewarded for giving coverage.
     pub fn into_coverage_rewards(self) -> impl Iterator<Item = CoverageReward> {
-        self.hexes
+        let outdoor_rewards = self.outdoor.into_values().flat_map(|radios| {
+            radios
+                .into_sorted_vec()
+                .into_iter()
+                .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
+                .zip(OUTDOOR_REWARD_WEIGHTS)
+                .map(|(cl, rank)| CoverageReward {
+                    points: cl.coverage_points() * rank,
+                    hotspot: cl.hotspot,
+                    radio_key: cl.radio_key,
+                })
+        });
+        let indoor_rewards = self
+            .indoor
             .into_values()
-            .flat_map(|radios| {
-                radios.into_iter().map(|mut radios| {
-                    radios.pop_last().map(|(_, radios)| {
-                        radios
-                            .into_sorted_vec()
-                            .into_iter()
-                            .take(MAX_RADIOS_PER_HEX)
-                            .map(|cl| CoverageReward {
-                                points: cl.coverage_points().unwrap(),
-                                hotspot: cl.hotspot,
-                                radio_key: cl.radio_key,
-                            })
-                    })
+            .flat_map(|mut radios| {
+                radios.pop_last().map(|(_, radios)| {
+                    radios
+                        .into_sorted_vec()
+                        .into_iter()
+                        .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
+                        .map(|cl| CoverageReward {
+                            points: cl.coverage_points(),
+                            hotspot: cl.hotspot,
+                            radio_key: cl.radio_key,
+                        })
                 })
             })
-            .flatten()
-            .flatten()
+            .flatten();
+        outdoor_rewards
+            .chain(indoor_rewards)
             .filter(|r| r.points > Decimal::ZERO)
     }
 }
@@ -550,7 +633,7 @@ impl CoveredHexCache {
         else {
             return Ok(None);
         };
-        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at FROM hex_coverage WHERE uuid = $1")
+        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, signal_power FROM hex_coverage WHERE uuid = $1")
             .bind(uuid)
             .fetch_all(&self.pool)
             .await?
@@ -596,13 +679,15 @@ mod test {
     use chrono::NaiveDate;
     use futures::stream::iter;
 
-    fn default_hex_coverage(cbsd_id: &str, signal_level: SignalLevel) -> HexCoverage {
+    fn default_indoor_hex_coverage(cbsd_id: &str, signal_level: SignalLevel) -> HexCoverage {
         HexCoverage {
             uuid: Uuid::new_v4(),
             hex: 0x8a1fb46622dffff_u64 as i64,
-            indoor: false,
+            indoor: true,
             radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_level,
+            // Signal power is ignored for indoor radios:
+            signal_power: 0,
             coverage_claim_time: DateTime::<Utc>::MIN_UTC,
             inserted_at: DateTime::<Utc>::MIN_UTC,
         }
@@ -620,13 +705,11 @@ mod test {
             .aggregate_coverage(
                 &owner,
                 iter(vec![
-                    anyhow::Ok(default_hex_coverage("1", SignalLevel::None)),
-                    anyhow::Ok(default_hex_coverage("2", SignalLevel::Low)),
-                    anyhow::Ok(default_hex_coverage("3", SignalLevel::Medium)),
-                    anyhow::Ok(default_hex_coverage("4", SignalLevel::High)),
-                    anyhow::Ok(default_hex_coverage("5", SignalLevel::Medium)),
-                    anyhow::Ok(default_hex_coverage("6", SignalLevel::Low)),
-                    anyhow::Ok(default_hex_coverage("7", SignalLevel::None)),
+                    anyhow::Ok(default_indoor_hex_coverage("1", SignalLevel::None)),
+                    anyhow::Ok(default_indoor_hex_coverage("2", SignalLevel::Low)),
+                    anyhow::Ok(default_indoor_hex_coverage("3", SignalLevel::High)),
+                    anyhow::Ok(default_indoor_hex_coverage("4", SignalLevel::Low)),
+                    anyhow::Ok(default_indoor_hex_coverage("5", SignalLevel::None)),
                 ]),
             )
             .await
@@ -635,9 +718,9 @@ mod test {
         assert_eq!(
             rewards,
             vec![CoverageReward {
-                radio_key: OwnedKeyType::Cbrs("4".to_string()),
+                radio_key: OwnedKeyType::Cbrs("3".to_string()),
                 hotspot: owner,
-                points: dec!(16)
+                points: dec!(400)
             }]
         );
     }
@@ -652,7 +735,7 @@ mod test {
         )
     }
 
-    fn hex_coverage_with_date(
+    fn indoor_hex_coverage_with_date(
         cbsd_id: &str,
         signal_level: SignalLevel,
         coverage_claim_time: DateTime<Utc>,
@@ -660,9 +743,11 @@ mod test {
         HexCoverage {
             uuid: Uuid::new_v4(),
             hex: 0x8a1fb46622dffff_u64 as i64,
-            indoor: false,
+            indoor: true,
             radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_level,
+            // Signal power is ignored for indoor radios:
+            signal_power: 0,
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
         }
@@ -680,52 +765,52 @@ mod test {
             .aggregate_coverage(
                 &owner,
                 iter(vec![
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "1",
                         SignalLevel::High,
                         date(1980, 1, 1),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "2",
                         SignalLevel::High,
                         date(1970, 1, 5),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "3",
                         SignalLevel::High,
                         date(1990, 2, 2),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "4",
                         SignalLevel::High,
                         date(1970, 1, 4),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "5",
                         SignalLevel::High,
                         date(1975, 3, 3),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "6",
                         SignalLevel::High,
                         date(1970, 1, 3),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "7",
                         SignalLevel::High,
                         date(1974, 2, 2),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "8",
                         SignalLevel::High,
                         date(1970, 1, 2),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "9",
                         SignalLevel::High,
                         date(1976, 5, 2),
                     )),
-                    anyhow::Ok(hex_coverage_with_date(
+                    anyhow::Ok(indoor_hex_coverage_with_date(
                         "10",
                         SignalLevel::High,
                         date(1970, 1, 1),
@@ -741,27 +826,86 @@ mod test {
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("10".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(16)
+                    points: dec!(400)
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("8".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(16)
+                    points: dec!(400)
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("6".to_string()),
+                    hotspot: owner.clone(),
+                    points: dec!(400)
+                },
+                CoverageReward {
+                    radio_key: OwnedKeyType::Cbrs("4".to_string()),
+                    hotspot: owner.clone(),
+                    points: dec!(400)
+                },
+                CoverageReward {
+                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
+                    hotspot: owner.clone(),
+                    points: dec!(400)
+                }
+            ]
+        );
+    }
+
+    fn outdoor_hex_coverage(
+        cbsd_id: &str,
+        signal_power: i32,
+        coverage_claim_time: DateTime<Utc>,
+    ) -> HexCoverage {
+        HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: 0x8a1fb46622dffff_u64 as i64,
+            indoor: false,
+            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
+            signal_power,
+            signal_level: SignalLevel::High,
+            coverage_claim_time,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_outdoor_radios_ranked_by_power() {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let mut covered_hexes = CoveredHexes::default();
+        covered_hexes
+            .aggregate_coverage(
+                &owner,
+                iter(vec![
+                    anyhow::Ok(outdoor_hex_coverage("1", -9469, date(2022, 8, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("2", -9360, date(2022, 12, 5))),
+                    anyhow::Ok(outdoor_hex_coverage("3", -8875, date(2022, 12, 2))),
+                    anyhow::Ok(outdoor_hex_coverage("4", -8875, date(2022, 12, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("5", -7733, date(2023, 5, 1))),
+                ]),
+            )
+            .await
+            .unwrap();
+        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
+        assert_eq!(
+            rewards,
+            vec![
+                CoverageReward {
+                    radio_key: OwnedKeyType::Cbrs("5".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(16)
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(16)
+                    points: dec!(12)
                 },
                 CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(16)
+                    radio_key: OwnedKeyType::Cbrs("3".to_string()),
+                    hotspot: owner,
+                    points: dec!(4)
                 }
             ]
         );
