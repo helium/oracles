@@ -384,6 +384,7 @@ async fn process_input(
         stream::iter(heartbeats.map(Heartbeat::from)),
         &AllOwnersValid,
         &covered_hex_cache,
+        2.5,
         epoch,
     ));
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {
