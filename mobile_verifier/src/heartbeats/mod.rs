@@ -627,15 +627,6 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    if coverage.max_distance_km(latlng) > max_distance {
-        return Ok((
-            cell_type,
-            distance_to_asserted,
-            Some(coverage.inserted_at),
-            proto::HeartbeatValidity::TooFarFromCoverage,
-        ));
-    }
-
     Ok((
         cell_type,
         distance_to_asserted,
