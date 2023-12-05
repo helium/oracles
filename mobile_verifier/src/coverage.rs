@@ -191,6 +191,13 @@ impl CoverageObject {
         let hb_type = key.hb_type();
         let key = key.to_owned();
 
+	sqlx::query("INSERT INTO coverage_insertion_time (radio_key, inserted_at, uuid) VALUES ($1, $2, $3)")
+	    .bind(&key)
+	    .bind(insertion_time)
+	    .bind(self.coverage_object.uuid)
+	    .execute(&mut *transaction)
+	    .await?;
+
         const NUMBER_OF_FIELDS_IN_QUERY: u16 = 9;
         const COVERAGE_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
 
@@ -610,7 +617,7 @@ impl CoveredHexCache {
         key: KeyType<'_>,
     ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
         let found: Option<DateTime<Utc>> = sqlx::query_scalar(
-	    "SELECT inserted_at FROM hex_coverage WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
+	    "SELECT inserted_at FROM coverage_insertion_time WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
 	)
 	    .bind(uuid)
 	    .bind(key)
