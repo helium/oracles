@@ -12,7 +12,7 @@ use futures::{
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
-        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamResV1,
+        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamResV1, GatewayInfoBatchReqV1,
     },
     Message,
 };
@@ -95,6 +95,31 @@ impl mobile_config::Gateway for GatewayService {
     }
 
     type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
+    async fn info_batch(
+        &self,
+        request: Request<GatewayInfoBatchReqV1>
+    ) -> GrpcResult<Self::info_streamStream> {
+        let request = request.into_inner();
+        telemetry::count_request("gateway", "info-batch");
+
+        let signer = verify_public_key(&request.signer)?;
+        self.verify_request_signature(&signer, &request)?;
+
+        tracing::debug!(batch = request.addresses.len() , "fetching gateways' info batch");
+
+        let pool = self.metadata_pool.clone();
+        let signing_key = self.signing_key.clone();
+        let batch_size = request.batch_size;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        tokio::spawn(async move {
+            stream_batch_gateways_info(&pool, tx.clone(), signing_key.clone(), batch_size).await
+        });
+
+        Ok(Response::new(GrpcStreamResult::new(rx)))
+    }
+
     async fn info_stream(
         &self,
         request: Request<GatewayInfoStreamReqV1>,
