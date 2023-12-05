@@ -65,7 +65,7 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
-                .queue_size(5)
+                .queue_size(1)
                 .create()?;
         let cbrs_heartbeats_join_handle = cbrs_heartbeats_server
             .start(shutdown_listener.clone())
