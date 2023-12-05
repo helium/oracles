@@ -7,7 +7,6 @@ use file_store::{
     heartbeat::CbrsHeartbeatIngestReport,
 };
 use futures::{stream::StreamExt, TryFutureExt};
-use futures_util::future::BoxFuture;
 use mobile_config::GatewayClient;
 use retainer::Cache;
 
