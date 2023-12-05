@@ -591,7 +591,10 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await? else {
+    let Some(inserted_at) = coverage_cache
+        .inserted_at(&coverage_object, heartbeat.key())
+        .await?
+    else {
         return Ok((
             cell_type,
             distance_to_asserted,
@@ -600,19 +603,10 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    if coverage.radio_key != heartbeat.key() {
-        return Ok((
-            cell_type,
-            distance_to_asserted,
-            Some(coverage.inserted_at),
-            proto::HeartbeatValidity::BadCoverageObject,
-        ));
-    }
-
     Ok((
         cell_type,
         distance_to_asserted,
-        Some(coverage.inserted_at),
+        Some(inserted_at),
         proto::HeartbeatValidity::Valid,
     ))
 }
@@ -626,9 +620,10 @@ pub(crate) async fn process_validated_heartbeats(
     seniority_sink: &FileSinkClient,
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
-    let mut validated_heartbeats = pin!(validated_heartbeats);
+    let validated_heartbeats = pin!(validated_heartbeats);
+    let heartbeats: Vec<_> = validated_heartbeats.try_collect().await?;
 
-    while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
+    for validated_heartbeat in heartbeats {
         validated_heartbeat.write(heartbeat_sink).await?;
 
         if !validated_heartbeat.is_valid() {

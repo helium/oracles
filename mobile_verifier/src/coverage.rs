@@ -597,71 +597,26 @@ impl CoverageClaimTimeCache {
 
 pub struct CoveredHexCache {
     pool: Pool<Postgres>,
-    covered_hexes: Arc<Cache<Uuid, CachedCoverage>>,
 }
 
 impl CoveredHexCache {
     pub fn new(pool: &Pool<Postgres>) -> Self {
-        let cache = Arc::new(Cache::new());
-        let cache_clone = cache.clone();
-        tokio::spawn(async move {
-            cache_clone
-                .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 24 * 2))
-                .await
-        });
-
-        Self {
-            covered_hexes: cache,
-            pool: pool.clone(),
-        }
+        Self { pool: pool.clone() }
     }
 
-    pub async fn fetch_coverage(&self, uuid: &Uuid) -> Result<Option<CachedCoverage>, sqlx::Error> {
-        // Check (as quickly as possible) if the coverage object has become invalidated
-        if sqlx::query_scalar(
-            "SELECT TRUE FROM hex_coverage WHERE uuid = $1 AND invalidated_at IS NOT NULL LIMIT 1",
-        )
-        .bind(uuid)
-        .fetch_optional(&self.pool)
-        .await?
-        .unwrap_or(false)
-        {
-            return Ok(None);
-        }
-        // Check the cache if the coverage object has already been fetch
-        if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
-            return Ok(Some(covered_hexes.clone()));
-        }
-        let Some((radio_key, inserted_at)) = sqlx::query_scalar(
-            "SELECT (radio_key, inserted_at) FROM hex_coverage WHERE uuid = $1 LIMIT 1",
-        )
-        .bind(uuid)
-        .fetch_optional(&self.pool)
-        .await?
-        else {
-            return Ok(None);
-        };
-        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, signal_power FROM hex_coverage WHERE uuid = $1")
-            .bind(uuid)
-            .fetch_all(&self.pool)
-            .await?
-            .into_iter()
-            .map(|HexCoverage { hex, .. }| CellIndex::try_from(hex as u64).unwrap())
-            .collect();
-        let cached_coverage = CachedCoverage {
-            radio_key,
-            coverage,
-            inserted_at,
-        };
-        let _ = self
-            .covered_hexes
-            .insert(
-                *uuid,
-                cached_coverage.clone(),
-                std::time::Duration::from_secs(60 * 60 * 24),
-            )
-            .await;
-        Ok(Some(cached_coverage))
+    pub async fn inserted_at(
+        &self,
+        uuid: &Uuid,
+        key: KeyType<'_>,
+    ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+        let found: Option<DateTime<Utc>> = sqlx::query_scalar(
+	    "SELECT inserted_at FROM hex_coverage WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
+	)
+	    .bind(uuid)
+	    .bind(key)
+	    .fetch_optional(&self.pool)
+	    .await?;
+        Ok(found)
     }
 }
 
