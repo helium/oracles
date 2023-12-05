@@ -1,5 +1,5 @@
 use crate::{
-    heartbeat::{cli::ValidatedHeartbeat, CbrsHeartbeat},
+    heartbeat::{cli::ValidatedHeartbeat, CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_beacon_report::IotBeaconIngestReport,
     iot_valid_poc::IotPoc,
     iot_witness_report::IotWitnessIngestReport,
@@ -208,6 +208,9 @@ impl Locate {
 fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_json::Value>> {
     let pub_key = gateway.to_vec();
     match FileType::from_str(prefix)? {
+	FileType::CbrsHeartbeatIngestReport => {
+	    CbrsHeartbeatIngestReport::decode(buf).and_then(|event| event.to_value_if(pub_key))
+	}
         FileType::CbrsHeartbeat => {
             CbrsHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
@@ -261,6 +264,12 @@ where
     {
         self.serialize(serde_json::value::Serializer)
             .map_err(Error::from)
+    }
+}
+
+impl Gateway for CbrsHeartbeatIngestReport {
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+	self.report.pubkey.as_ref() == pub_key
     }
 }
 
