@@ -620,10 +620,9 @@ pub(crate) async fn process_validated_heartbeats(
     seniority_sink: &FileSinkClient,
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
-    let validated_heartbeats = pin!(validated_heartbeats);
-    let heartbeats: Vec<_> = validated_heartbeats.try_collect().await?;
+    let mut validated_heartbeats = pin!(validated_heartbeats);
 
-    for validated_heartbeat in heartbeats {
+    while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
 
         if !validated_heartbeat.is_valid() {
