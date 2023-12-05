@@ -191,7 +191,28 @@ impl CoverageObject {
         let hb_type = key.hb_type();
         let key = key.to_owned();
 
-        const NUMBER_OF_FIELDS_IN_QUERY: u16 = 10;
+        sqlx::query(r#"
+            INSERT INTO coverage_objects(uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            ON CONFLICT (uuid) DO UPDATE SET
+                radio_type = EXCLUDED.radio_type,
+                radio_key = EXCLUDED.radio_key,
+                indoor = EXCLUDED.indoor,
+                coverage_claim_time = EXCLUDED.coverage_claim_time,
+                trust_score = EXCLUDED.trust_score,
+                inserted_at = EXCLUDED.inserted_at
+        "#)
+        .bind(self.coverage_object.uuid)
+        .bind(hb_type)
+        .bind(&key)
+        .bind(self.coverage_object.indoor)
+        .bind(self.coverage_object.coverage_claim_time)
+        .bind(self.coverage_object.trust_score as i32)
+        .bind(insertion_time)
+        .execute(&mut *transaction)
+        .await?;
+
+        const NUMBER_OF_FIELDS_IN_QUERY: u16 = 4;
         const COVERAGE_MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
 
         for hexes in self
@@ -199,34 +220,25 @@ impl CoverageObject {
             .coverage
             .chunks(COVERAGE_MAX_BATCH_ENTRIES)
         {
-            QueryBuilder::new("INSERT INTO hex_coverage (uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, radio_type, signal_power, trust_score)")
-            .push_values(hexes, |mut b, hex| {
-                let location: u64 = hex.location.into();
+            QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power)")
+                .push_values(hexes, |mut b, hex| {
+                    let location: u64 = hex.location.into();
 
-                b.push_bind(self.coverage_object.uuid)
-                    .push_bind(location as i64)
-                    .push_bind(self.coverage_object.indoor)
-                    .push_bind(&key)
-                    .push_bind(SignalLevel::from(hex.signal_level))
-                    .push_bind(self.coverage_object.coverage_claim_time)
-                    .push_bind(insertion_time)
-                    .push_bind(hb_type)
-                    .push_bind(hex.signal_power)
-                    .push_bind(self.coverage_object.trust_score as i32);
-            })
-            .push(r#"
+                    b.push_bind(self.coverage_object.uuid)
+                        .push_bind(location as i64)
+                        .push_bind(SignalLevel::from(hex.signal_level))
+                        .push_bind(hex.signal_power);
+                })
+                .push(
+                    r#"
                     ON CONFLICT (uuid, hex) DO UPDATE SET
-                      indoor = EXCLUDED.indoor,
                       signal_level = EXCLUDED.signal_level,
-                      coverage_claim_time = EXCLUDED.coverage_claim_time,
-                      inserted_at = EXCLUDED.inserted_at,
-                      radio_type = EXCLUDED.radio_type,
-                      signal_power = EXCLUDED.signal_power,
-                      trust_score = EXCLUDED.trust_score
-            "#)
-            .build()
-            .execute(&mut *transaction)
-            .await?;
+                      signal_power = EXCLUDED.signal_power
+                    "#,
+                )
+                .build()
+                .execute(&mut *transaction)
+                .await?;
         }
 
         Ok(())
@@ -400,15 +412,23 @@ impl CoveredHexStream for Pool<Postgres> {
             .await?;
 
         Ok(
-            sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, signal_power FROM hex_coverage WHERE radio_key = $1 AND uuid = $2")
-                .bind(key)
-                .bind(coverage_obj)
-                .fetch(self)
-                .map_ok(move |hc| HexCoverage {
-                    coverage_claim_time: seniority.seniority_ts,
-                    ..hc
-                })
-                .boxed(),
+            sqlx::query_as(
+                r#"
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, co.coverage_claim_time, co.inserted_at)
+                FROM coverage_objects co
+                    INNER JOIN hexes h on co.uuid = h.uuid
+                WHERE co.radio_key = $1
+                    AND co.uuid = $2
+                "#,
+            )
+            .bind(key)
+            .bind(coverage_obj)
+            .fetch(self)
+            .map_ok(move |hc| HexCoverage {
+                coverage_claim_time: seniority.seniority_ts,
+                ..hc
+            })
+            .boxed(),
         )
     }
 
@@ -439,7 +459,20 @@ pub async fn clear_coverage_objects(
     timestamp: &DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     // Delete any hex coverage objects that were invalidated before the given timestamp
-    sqlx::query("DELETE FROM hex_coverage WHERE invalidated_at < $1")
+    sqlx::query(
+        r#"
+        DELETE FROM hexes WHERE uuid IN (
+            SELECT uuid
+            FROM coverage_objects
+            WHERE invalidated_at < $1
+        )
+        "#,
+    )
+    .bind(timestamp)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM coverage_objects WHERE invalidated_at < $1")
         .bind(timestamp)
         .execute(&mut *tx)
         .await?;
@@ -576,7 +609,7 @@ impl CoverageClaimTimeCache {
         } else {
             let coverage_claim_time: Option<DateTime<Utc>> = sqlx::query_scalar(
                 r#"
-                SELECT coverage_claim_time FROM hex_coverage WHERE radio_key = $1 AND uuid = $2 LIMIT 1
+                SELECT coverage_claim_time FROM coverage_objects WHERE radio_key = $1 AND uuid = $2
                 "#,
             )
             .bind(radio_key)
@@ -621,7 +654,7 @@ impl CoveredHexCache {
     pub async fn fetch_coverage(&self, uuid: &Uuid) -> Result<Option<CachedCoverage>, sqlx::Error> {
         // Check (as quickly as possible) if the coverage object has become invalidated
         if sqlx::query_scalar(
-            "SELECT TRUE FROM hex_coverage WHERE uuid = $1 AND invalidated_at IS NOT NULL LIMIT 1",
+            "SELECT TRUE FROM coverage_objects WHERE uuid = $1 AND invalidated_at IS NOT NULL",
         )
         .bind(uuid)
         .fetch_optional(&self.pool)
@@ -634,8 +667,9 @@ impl CoveredHexCache {
         if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
             return Ok(Some(covered_hexes.clone()));
         }
+
         let Some((radio_key, inserted_at)) = sqlx::query_scalar(
-            "SELECT (radio_key, inserted_at) FROM hex_coverage WHERE uuid = $1 LIMIT 1",
+            "SELECT (radio_key, inserted_at) FROM coverage_objects WHERE uuid = $1",
         )
         .bind(uuid)
         .fetch_optional(&self.pool)
@@ -643,7 +677,14 @@ impl CoveredHexCache {
         else {
             return Ok(None);
         };
-        let coverage: Vec<_> = sqlx::query_as("SELECT uuid, hex, indoor, radio_key, signal_level, coverage_claim_time, inserted_at, signal_power FROM hex_coverage WHERE uuid = $1")
+
+        let coverage: Vec<_> = 
+            sqlx::query_as(r#"
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, co.coverage_claim_time, co.inserted_at, h.signal_power
+                FROM coverage_objects co
+                    INNER JOIN hexes h on co.uuid = h.uuid
+                WHERE co.uuid = $1
+                "#)
             .bind(uuid)
             .fetch_all(&self.pool)
             .await?
