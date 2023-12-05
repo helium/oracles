@@ -98,7 +98,7 @@ impl HeartbeatDaemon {
             .filter(move |h| {
                 let hb_cache = heartbeat_cache_clone.clone();
                 let id = h.id().unwrap();
-                async move { hb_cache.get(&id).await.is_some() }
+                async move { hb_cache.get(&id).await.is_none() }
             });
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
