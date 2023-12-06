@@ -59,7 +59,7 @@ impl HeartbeatDaemon {
             let covered_hex_cache = CoveredHexCache::new(&self.pool);
 
             loop {
-		#[rustfmt::skip]
+                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {

@@ -28,7 +28,7 @@ impl DataSessionIngestor {
         tracing::info!("starting DataSessionIngestor");
         tokio::spawn(async move {
             loop {
-		#[rustfmt::skip]
+                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
