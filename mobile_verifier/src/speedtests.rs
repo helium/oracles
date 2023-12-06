@@ -16,7 +16,7 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -77,7 +77,11 @@ impl SpeedtestDaemon {
                         tracing::info!("SpeedtestDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.speedtests.recv() => self.process_file(file).await?,
+                    Some(file) = self.speedtests.recv() => {
+			let start = Instant::now();
+			self.process_file(file).await?;
+			metrics::histogram!("speedtest_processing_time", Instant::now() - start);
+                    }
                 }
             }
 

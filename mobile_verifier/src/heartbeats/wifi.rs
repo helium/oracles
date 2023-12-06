@@ -9,7 +9,10 @@ use futures::{stream::StreamExt, TryFutureExt};
 use mobile_config::GatewayClient;
 use retainer::Cache;
 
-use std::{sync::Arc, time};
+use std::{
+    sync::Arc,
+    time::{self, Instant},
+};
 use tokio::sync::mpsc::Receiver;
 
 pub struct HeartbeatDaemon {
@@ -62,12 +65,16 @@ impl HeartbeatDaemon {
                         tracing::info!("Wifi HeartbeatDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.heartbeats.recv() => self.process_file(
-                        file,
-                        &heartbeat_cache,
-                        &coverage_claim_time_cache,
-                        &covered_hex_cache,
-                    ).await?,
+                    Some(file) = self.heartbeats.recv() => {
+			let start = Instant::now();
+			self.process_file(
+                            file,
+                            &heartbeat_cache,
+                            &coverage_claim_time_cache,
+                            &covered_hex_cache,
+			).await?;
+			metrics::histogram!("wifi_heartbeat_processing_time", Instant::now() - start);
+                    }
                 }
             }
 
