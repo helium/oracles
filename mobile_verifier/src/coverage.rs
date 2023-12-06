@@ -91,7 +91,7 @@ impl CoverageDaemon {
                     Some(file) = self.coverage_objs.recv() => {
 			let start = Instant::now();
 			self.process_file(file).await?;
-			metrics::histogram!("coverage_object_processing_time", Instant::now() - start);
+			metrics::histogram!("coverage_object_processing_time", start.elapsed());
                     }
                 }
             }

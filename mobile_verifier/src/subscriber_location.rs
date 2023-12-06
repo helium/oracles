@@ -57,7 +57,7 @@ impl SubscriberLocationIngestor {
                     self.process_file(file).await?;
 		    metrics::histogram!(
 			"subscriber_location_processing_time",
-			Instant::now() - start
+			start.elapsed()
 		    );
                 }
             }

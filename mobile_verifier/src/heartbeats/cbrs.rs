@@ -75,7 +75,7 @@ impl HeartbeatDaemon {
                             &coverage_claim_time_cache,
                             &covered_hex_cache,
 			).await?;
-			metrics::histogram!("cbrs_heartbeat_processing_time", Instant::now() - start);
+			metrics::histogram!("cbrs_heartbeat_processing_time", start.elapsed());
                     }
                 }
             }

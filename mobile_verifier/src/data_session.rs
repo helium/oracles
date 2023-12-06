@@ -40,7 +40,7 @@ impl DataSessionIngestor {
 			self.process_file(file).await?;
 			metrics::histogram!(
 			    "valid_data_transfer_session_processing_time",
-			    Instant::now() - start
+			    start.elapsed()
 			);
                     }
                 }

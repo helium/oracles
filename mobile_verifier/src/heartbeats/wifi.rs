@@ -74,7 +74,7 @@ impl HeartbeatDaemon {
                             &coverage_claim_time_cache,
                             &covered_hex_cache,
 			).await?;
-			metrics::histogram!("wifi_heartbeat_processing_time", Instant::now() - start);
+			metrics::histogram!("wifi_heartbeat_processing_time", start.elapsed());
                     }
                 }
             }

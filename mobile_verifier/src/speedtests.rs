@@ -81,7 +81,7 @@ impl SpeedtestDaemon {
                     Some(file) = self.speedtests.recv() => {
 			let start = Instant::now();
 			self.process_file(file).await?;
-			metrics::histogram!("speedtest_processing_time", Instant::now() - start);
+			metrics::histogram!("speedtest_processing_time", start.elapsed());
                     }
                 }
             }
