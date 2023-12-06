@@ -48,6 +48,7 @@ impl SubscriberLocationIngestor {
     }
     pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         loop {
+	    #[rustfmt::skip]
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,

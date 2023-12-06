@@ -71,6 +71,7 @@ impl SpeedtestDaemon {
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
             loop {
+		#[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
