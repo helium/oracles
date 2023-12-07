@@ -178,10 +178,9 @@ impl From<DataTransferEvent> for DataTransferEventProto {
 #[derive(Serialize, Clone, Debug)]
 pub struct DataTransferSessionReq {
     pub data_transfer_usage: DataTransferEvent,
-    pub reward_cancelled: bool,
+    pub rewardable_bytes: u64,
     pub pub_key: PublicKeyBinary,
     pub signature: Vec<u8>,
-    pub rewardable_bytes: u64,
 }
 
 impl MsgDecode for DataTransferSessionReq {
@@ -193,27 +192,27 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
 
     fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
         Ok(Self {
-            reward_cancelled: v.reward_cancelled,
+            rewardable_bytes: v.rewardable_bytes,
             signature: v.signature,
             data_transfer_usage: v
                 .data_transfer_usage
                 .ok_or_else(|| Error::not_found("data transfer usage"))?
                 .try_into()?,
             pub_key: v.pub_key.into(),
-            rewardable_bytes: v.rewardable_bytes,
         })
     }
 }
 
+#[allow(deprecated)]
 impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
     fn from(v: DataTransferSessionReq) -> Self {
         let report: DataTransferEventProto = v.data_transfer_usage.into();
         Self {
             data_transfer_usage: Some(report),
-            reward_cancelled: v.reward_cancelled,
+            rewardable_bytes: v.rewardable_bytes,
             pub_key: v.pub_key.into(),
             signature: v.signature,
-            rewardable_bytes: v.rewardable_bytes,
+            ..Default::default()
         }
     }
 }
