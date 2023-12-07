@@ -27,8 +27,12 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
     let cache = CoveredHexCache::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
+    let key: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
+        .parse()
+        .unwrap();
+    let key = KeyType::from(&key);
 
-    assert!(cache.fetch_coverage(&uuid).await?.is_none());
+    assert!(cache.inserted_at(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -70,10 +74,6 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     // Test coverage claim time
     let cctc = CoverageClaimTimeCache::new();
-    let key: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
-        .parse()
-        .unwrap();
-    let key = KeyType::from(&key);
     let expected_coverage_claim_time = cctc
         .fetch_coverage_claim_time(key, &Some(uuid), &mut transaction)
         .await?
@@ -83,9 +83,12 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     transaction.commit().await?;
 
-    let coverage = cache.fetch_coverage(&uuid).await?.unwrap();
+    /*
+    let coverage = cache.inserted_at(&uuid).await?.unwrap();
 
     assert_eq!(coverage.coverage.len(), 3);
+     */
+    assert!(cache.inserted_at(&uuid, key).await?.is_some());
 
     Ok(())
 }
@@ -96,8 +99,10 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
     let cache = CoveredHexCache::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
+    let key = "P27-SCE4255W120200039521XGB0103";
+    let key = KeyType::from(key);
 
-    assert!(cache.fetch_coverage(&uuid).await?.is_none());
+    assert!(cache.inserted_at(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -137,8 +142,6 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     // Test coverage claim time
     let cctc = CoverageClaimTimeCache::new();
-    let key = "P27-SCE4255W120200039521XGB0103";
-    let key = KeyType::from(key);
     let expected_coverage_claim_time = cctc
         .fetch_coverage_claim_time(key, &Some(uuid), &mut transaction)
         .await?
@@ -148,9 +151,12 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     transaction.commit().await?;
 
+    /*
     let coverage = cache.fetch_coverage(&uuid).await?.unwrap();
 
     assert_eq!(coverage.coverage.len(), 3);
+     */
+    assert!(cache.inserted_at(&uuid, key).await?.is_some());
 
     Ok(())
 }
@@ -161,8 +167,10 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     let cache = CoveredHexCache::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
+    let key = "P27-SCE4255W120200039521XGB0103";
+    let key = KeyType::from(key);
 
-    assert!(cache.fetch_coverage(&uuid).await?.is_none());
+    assert!(cache.inserted_at(&uuid, key).await?.is_none());
 
     let co1 = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),

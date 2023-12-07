@@ -47,7 +47,6 @@ denylist = {path = "../denylist"}
 reward-scheduler = {path = "../reward_scheduler"}
 rust_decimal = {workspace = true, features = ["maths"]}
 rust_decimal_macros = {workspace = true}
-humantime = {workspace = true}
 twox-hash = {workspace = true}
 itertools = {workspace = true}
 rand = {workspace = true}

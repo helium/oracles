@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, BinaryHeap, HashMap},
     pin::pin,
     sync::Arc,
+    time::Instant,
 };
 
 use chrono::{DateTime, Utc};
@@ -81,12 +82,17 @@ impl CoverageDaemon {
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
             loop {
+                #[rustfmt::skip]
                 tokio::select! {
                     _ = shutdown.clone() => {
                         tracing::info!("CoverageDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.coverage_objs.recv() => self.process_file(file).await?,
+                    Some(file) = self.coverage_objs.recv() => {
+			let start = Instant::now();
+			self.process_file(file).await?;
+			metrics::histogram!("coverage_object_processing_time", start.elapsed());
+                    }
                 }
             }
 
@@ -632,79 +638,26 @@ impl CoverageClaimTimeCache {
 
 pub struct CoveredHexCache {
     pool: Pool<Postgres>,
-    covered_hexes: Arc<Cache<Uuid, CachedCoverage>>,
 }
 
 impl CoveredHexCache {
     pub fn new(pool: &Pool<Postgres>) -> Self {
-        let cache = Arc::new(Cache::new());
-        let cache_clone = cache.clone();
-        tokio::spawn(async move {
-            cache_clone
-                .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 24 * 2))
-                .await
-        });
-
-        Self {
-            covered_hexes: cache,
-            pool: pool.clone(),
-        }
+        Self { pool: pool.clone() }
     }
 
-    pub async fn fetch_coverage(&self, uuid: &Uuid) -> Result<Option<CachedCoverage>, sqlx::Error> {
-        // Check (as quickly as possible) if the coverage object has become invalidated
-        if sqlx::query_scalar(
-            "SELECT TRUE FROM coverage_objects WHERE uuid = $1 AND invalidated_at IS NOT NULL",
-        )
-        .bind(uuid)
-        .fetch_optional(&self.pool)
-        .await?
-        .unwrap_or(false)
-        {
-            return Ok(None);
-        }
-        // Check the cache if the coverage object has already been fetch
-        if let Some(covered_hexes) = self.covered_hexes.get(uuid).await {
-            return Ok(Some(covered_hexes.clone()));
-        }
-
-        let Some((radio_key, inserted_at)) = sqlx::query_scalar(
-            "SELECT (radio_key, inserted_at) FROM coverage_objects WHERE uuid = $1",
-        )
-        .bind(uuid)
-        .fetch_optional(&self.pool)
-        .await?
-        else {
-            return Ok(None);
-        };
-
-        let coverage: Vec<_> = 
-            sqlx::query_as(r#"
-                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, co.coverage_claim_time, co.inserted_at, h.signal_power
-                FROM coverage_objects co
-                    INNER JOIN hexes h on co.uuid = h.uuid
-                WHERE co.uuid = $1
-                "#)
-            .bind(uuid)
-            .fetch_all(&self.pool)
-            .await?
-            .into_iter()
-            .map(|HexCoverage { hex, .. }| CellIndex::try_from(hex as u64).unwrap())
-            .collect();
-        let cached_coverage = CachedCoverage {
-            radio_key,
-            coverage,
-            inserted_at,
-        };
-        let _ = self
-            .covered_hexes
-            .insert(
-                *uuid,
-                cached_coverage.clone(),
-                std::time::Duration::from_secs(60 * 60 * 24),
-            )
-            .await;
-        Ok(Some(cached_coverage))
+    pub async fn inserted_at(
+        &self,
+        uuid: &Uuid,
+        key: KeyType<'_>,
+    ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+        let found: Option<DateTime<Utc>> = sqlx::query_scalar(
+	    "SELECT inserted_at FROM coverage_objects WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
+	)
+	    .bind(uuid)
+	    .bind(key)
+	    .fetch_optional(&self.pool)
+	    .await?;
+        Ok(found)
     }
 }
 
@@ -777,13 +730,11 @@ mod test {
     }
 
     fn date(year: i32, month: u32, day: u32) -> DateTime<Utc> {
-        DateTime::<Utc>::from_utc(
-            NaiveDate::from_ymd_opt(year, month, day)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            Utc,
-        )
+        NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
     }
 
     fn indoor_hex_coverage_with_date(

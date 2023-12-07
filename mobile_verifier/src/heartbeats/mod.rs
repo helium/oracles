@@ -597,7 +597,10 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    let Some(coverage) = coverage_cache.fetch_coverage(&coverage_object).await? else {
+    let Some(inserted_at) = coverage_cache
+        .inserted_at(&coverage_object, heartbeat.key())
+        .await?
+    else {
         return Ok((
             cell_type,
             distance_to_asserted,
@@ -606,19 +609,10 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    if coverage.radio_key != heartbeat.key() {
-        return Ok((
-            cell_type,
-            distance_to_asserted,
-            Some(coverage.inserted_at),
-            proto::HeartbeatValidity::BadCoverageObject,
-        ));
-    }
-
     Ok((
         cell_type,
         distance_to_asserted,
-        Some(coverage.inserted_at),
+        Some(inserted_at),
         proto::HeartbeatValidity::Valid,
     ))
 }

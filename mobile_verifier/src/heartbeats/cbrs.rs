@@ -10,7 +10,10 @@ use futures::{stream::StreamExt, TryFutureExt};
 use mobile_config::GatewayClient;
 use retainer::Cache;
 
-use std::{sync::Arc, time};
+use std::{
+    sync::Arc,
+    time::{self, Instant},
+};
 use tokio::sync::mpsc::Receiver;
 
 pub struct HeartbeatDaemon {
@@ -57,18 +60,23 @@ impl HeartbeatDaemon {
             let covered_hex_cache = CoveredHexCache::new(&self.pool);
 
             loop {
+                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
                         tracing::info!("CBRS HeartbeatDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.heartbeats.recv() => self.process_file(
-                        file,
-                        &heartbeat_cache,
-                        &coverage_claim_time_cache,
-                        &covered_hex_cache,
-                    ).await?,
+                    Some(file) = self.heartbeats.recv() => {
+			let start = Instant::now();
+			self.process_file(
+                            file,
+                            &heartbeat_cache,
+                            &coverage_claim_time_cache,
+                            &covered_hex_cache,
+			).await?;
+			metrics::histogram!("cbrs_heartbeat_processing_time", start.elapsed());
+                    }
                 }
             }
 
@@ -82,7 +90,7 @@ impl HeartbeatDaemon {
     async fn process_file(
         &self,
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
-        heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
+        heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
         covered_hex_cache: &CoveredHexCache,
     ) -> anyhow::Result<()> {
@@ -90,10 +98,16 @@ impl HeartbeatDaemon {
         let mut transaction = self.pool.begin().await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
+        let heartbeat_cache_clone = heartbeat_cache.clone();
         let heartbeats = file
             .into_stream(&mut transaction)
             .await?
-            .map(Heartbeat::from);
+            .map(Heartbeat::from)
+            .filter(move |h| {
+                let hb_cache = heartbeat_cache_clone.clone();
+                let id = h.id().unwrap();
+                async move { hb_cache.get(&id).await.is_none() }
+            });
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
                 heartbeats,

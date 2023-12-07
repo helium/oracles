@@ -15,7 +15,7 @@ use helium_proto::services::poc_mobile::{
 };
 use mobile_config::client::{AuthorizationClient, EntityClient};
 use sqlx::{PgPool, Postgres, Transaction};
-use std::ops::Range;
+use std::{ops::Range, time::Instant};
 use tokio::sync::mpsc::Receiver;
 
 const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
@@ -48,17 +48,17 @@ impl SubscriberLocationIngestor {
     }
     pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
         loop {
+            #[rustfmt::skip]
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,
-                msg = self.reports_receiver.recv() => if let Some(stream) =  msg {
-                    match self.process_file(stream).await {
-                        Ok(()) => {
-                            self.verified_report_sink.commit().await?;
-                        },
-                        Err(err) => { return Err(err)}
-                    }
-
+                Some(file) = self.reports_receiver.recv() => {
+		    let start = Instant::now();
+                    self.process_file(file).await?;
+		    metrics::histogram!(
+			"subscriber_location_processing_time",
+			start.elapsed()
+		    );
                 }
             }
         }
@@ -109,6 +109,7 @@ impl SubscriberLocationIngestor {
             .await?
             .commit()
             .await?;
+        self.verified_report_sink.commit().await?;
         Ok(())
     }
 

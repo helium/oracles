@@ -282,7 +282,6 @@ const fn mbps(mbps: u64) -> u64 {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::TimeZone;
     use file_store::speedtest::CellSpeedtest;
 
     impl SpeedtestAverage {
@@ -297,8 +296,9 @@ mod test {
     }
 
     fn parse_dt(dt: &str) -> DateTime<Utc> {
-        Utc.datetime_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
+        DateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
             .expect("unable_to_parse")
+            .with_timezone(&Utc)
     }
 
     fn bytes_per_s(mbps: u64) -> u64 {
