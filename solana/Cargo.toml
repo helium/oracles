@@ -23,9 +23,7 @@ solana-client = {workspace = true}
 solana-program = {workspace = true}
 solana-sdk = {workspace = true}
 spl-token = {workspace = true}
-task-manager = { path = "../task_manager" }
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-util = { workspace = true }
 tracing = {workspace = true}
-triggered = {workspace = true}

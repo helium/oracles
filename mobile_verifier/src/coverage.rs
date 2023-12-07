@@ -695,13 +695,11 @@ mod test {
     }
 
     fn date(year: i32, month: u32, day: u32) -> DateTime<Utc> {
-        DateTime::<Utc>::from_utc(
-            NaiveDate::from_ymd_opt(year, month, day)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            Utc,
-        )
+        NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
     }
 
     fn indoor_hex_coverage_with_date(
