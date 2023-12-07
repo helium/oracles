@@ -4,7 +4,7 @@ pub mod wifi;
 use crate::{
     cell_type::{CellType, CellTypeLabel},
     coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
-    GatewayResolution,
+    GatewayResolution, GatewayResolver
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};
@@ -16,7 +16,6 @@ use futures::stream::{Stream, StreamExt, TryStreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::client::gateway_client::GatewayInfoResolver;
 use retainer::Cache;
 use rust_decimal::Decimal;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
@@ -393,7 +392,7 @@ impl ValidatedHeartbeat {
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a
     where
-        GIR: GatewayInfoResolver,
+        GIR: GatewayResolver,
     {
         heartbeats.then(move |heartbeat| async move {
             let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
@@ -517,7 +516,7 @@ pub async fn validate_heartbeat<GIR>(
     proto::HeartbeatValidity,
 )>
 where
-    GIR: GatewayInfoResolver,
+    GIR: GatewayResolver,
 {
     let cell_type = match heartbeat.hb_type {
         HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
@@ -564,31 +563,30 @@ where
         ));
     }
 
-    let Some(gateway_info) = gateway_info_resolver
-        .resolve_gateway_info(&heartbeat.hotspot_key)
+    let distance_to_asserted = match gateway_info_resolver
+        .resolve_gateway(&heartbeat.hotspot_key)
         .await?
-    else {
-        return Ok((
-            cell_type,
-            None,
-            None,
-            proto::HeartbeatValidity::GatewayNotFound,
-        ));
-    };
-
-    if heartbeat.hb_type == HbType::Wifi && gateway_info.metadata.is_none() {
-        return Ok((
-            cell_type,
-            None,
-            None,
-            proto::HeartbeatValidity::GatewayNotAsserted,
-        ));
-    }
-
-    let distance_to_asserted = if heartbeat.hb_type == HbType::Wifi {
-        Some(heartbeat.asserted_distance(gateway_info.metadata.unwrap().location)?)
-    } else {
-        None
+    {
+        GatewayResolution::GatewayNotFound => {
+            return Ok((
+                cell_type,
+                None,
+                None,
+                proto::HeartbeatValidity::GatewayNotFound,
+            ))
+        }
+        GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
+            return Ok((
+                cell_type,
+                None,
+                None,
+                proto::HeartbeatValidity::GatewayNotAsserted,
+            ))
+        }
+        GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
+            Some(heartbeat.asserted_distance(location)?)
+        }
+        _ => None,
     };
 
     let Some(coverage_object) = heartbeat.coverage_object else {

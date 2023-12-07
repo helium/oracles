@@ -1,5 +1,5 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
-use crate::coverage::{CoverageClaimTimeCache, CoveredHexCache};
+use crate::{coverage::{CoverageClaimTimeCache, CoveredHexCache}, GatewayResolver};
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -7,7 +7,6 @@ use file_store::{
     heartbeat::CbrsHeartbeatIngestReport,
 };
 use futures::{stream::StreamExt, TryFutureExt};
-use mobile_config::client::gateway_client::GatewayInfoResolver;
 use retainer::Cache;
 use std::{
     sync::Arc,
@@ -26,7 +25,7 @@ pub struct HeartbeatDaemon<GIR> {
 
 impl<GIR> HeartbeatDaemon<GIR>
 where
-    GIR: GatewayInfoResolver,
+    GIR: GatewayResolver,
 {
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,

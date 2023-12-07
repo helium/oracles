@@ -22,37 +22,37 @@ pub enum GatewayResolution {
     AssertedLocation(u64),
 }
 
-// #[async_trait::async_trait]
-// pub trait MobileGatewayInfoResolver: Clone + Send + Sync + 'static {
-//     type Error: Error + Send + Sync + 'static;
-//
-//     async fn resolve_gateway(
-//         &self,
-//         address: &PublicKeyBinary,
-//     ) -> Result<GatewayResolution, Self::Error>;
-//
-// }
+#[async_trait::async_trait]
+pub trait GatewayResolver: Clone + Send + Sync + 'static {
+    type Error: Error + Send + Sync + 'static;
 
-// #[async_trait]
-// impl MobileGatewayInfoResolver for mobile_config::GatewayClient {
-//     type Error = mobile_config::client::ClientError;
-//
-//     async fn resolve_gateway(
-//         &self,
-//         address: &PublicKeyBinary,
-//     ) -> Result<GatewayResolution, Self::Error> {
-//         use mobile_config::gateway_info::GatewayInfo;
-//         use mobile_config::client::gateway_client::GatewayInfoResolver;
-//         match self.resolve_gateway_info(address).await? {
-//             None => Ok(GatewayResolution::GatewayNotFound),
-//             Some(GatewayInfo {
-//                 metadata: Some(metadata),
-//                 ..
-//             }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
-//             Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
-//         }
-//     }
-// }
+    async fn resolve_gateway(
+        &self,
+        address: &helium_crypto::PublicKeyBinary,
+    ) -> Result<GatewayResolution, Self::Error>;
+
+}
+
+#[async_trait]
+impl GatewayResolver for mobile_config::GatewayClient {
+    type Error = mobile_config::client::ClientError;
+
+    async fn resolve_gateway(
+        &self,
+        address: &helium_crypto::PublicKeyBinary,
+    ) -> Result<GatewayResolution, Self::Error> {
+        use mobile_config::gateway_info::GatewayInfo;
+        use mobile_config::client::gateway_client::GatewayInfoResolver;
+        match self.resolve_gateway_info(address).await? {
+            None => Ok(GatewayResolution::GatewayNotFound),
+            Some(GatewayInfo {
+                metadata: Some(metadata),
+                ..
+            }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
+            Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
+        }
+    }
+}
 
 #[async_trait]
 pub trait IsAuthorized {
