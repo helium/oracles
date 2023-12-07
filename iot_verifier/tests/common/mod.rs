@@ -40,6 +40,7 @@ pub struct MockFileSinkReceiver {
     pub receiver: tokio::sync::mpsc::Receiver<SinkMessage>,
 }
 
+#[allow(dead_code)]
 impl MockFileSinkReceiver {
     pub async fn receive(&mut self) -> SinkMessage {
         match timeout(seconds(2), self.receiver.recv()).await {
@@ -107,6 +108,7 @@ pub fn create_valid_beacon_report(
     )
 }
 
+#[allow(dead_code)]
 pub fn create_valid_witness_report(
     pubkey: &str,
     received_timestamp: DateTime<Utc>,
@@ -127,6 +129,7 @@ pub fn create_valid_witness_report(
     )
 }
 
+#[allow(dead_code)]
 pub fn beacon_report_to_ingest_report(
     report: IotBeaconReport,
     received_timestamp: DateTime<Utc>,
@@ -137,6 +140,7 @@ pub fn beacon_report_to_ingest_report(
     }
 }
 
+#[allow(dead_code)]
 pub fn witness_report_to_ingest_report(
     report: IotWitnessReport,
     received_timestamp: DateTime<Utc>,
@@ -147,6 +151,7 @@ pub fn witness_report_to_ingest_report(
     }
 }
 
+#[allow(dead_code)]
 pub async fn inject_beacon_report(
     pool: PgPool,
     beacon: IotBeaconIngestReport,
@@ -175,6 +180,7 @@ pub async fn inject_beacon_report(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn inject_invalid_beacon_report(
     pool: PgPool,
     beacon: IotBeaconIngestReport,
@@ -203,6 +209,7 @@ pub async fn inject_invalid_beacon_report(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn inject_witness_report(
     pool: PgPool,
     witness: IotWitnessIngestReport,
@@ -231,6 +238,7 @@ pub async fn inject_witness_report(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn inject_entropy_report(pool: PgPool, ts: DateTime<Utc>) -> anyhow::Result<()> {
     let data = REMOTE_ENTROPY.to_vec();
     let id = hash(&data).as_bytes().to_vec();
@@ -240,6 +248,7 @@ pub async fn inject_entropy_report(pool: PgPool, ts: DateTime<Utc>) -> anyhow::R
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn valid_gateway() -> GatewayInfo {
     GatewayInfo {
         address: PublicKeyBinary::from_str(BEACONER1).unwrap(),
@@ -248,6 +257,7 @@ pub fn valid_gateway() -> GatewayInfo {
     }
 }
 
+#[allow(dead_code)]
 pub fn valid_gateway_stream() -> Vec<GatewayInfo> {
     vec![
         GatewayInfo {
@@ -308,6 +318,7 @@ pub fn valid_gateway_stream() -> Vec<GatewayInfo> {
     ]
 }
 
+#[allow(dead_code)]
 pub fn valid_region_params() -> RegionParamsInfo {
     let region_params =
         beacon::RegionParams::from_bytes(ProtoRegion::Eu868.into(), 60, EU868_PARAMS, 0)
@@ -318,15 +329,18 @@ pub fn valid_region_params() -> RegionParamsInfo {
     }
 }
 
+#[allow(dead_code)]
 pub const BEACONER1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6";
 pub const BEACONER2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
 pub const BEACONER3: &str = "1ZPNnNd9k5qiQXXigKifQpCPiy5HTbszQDSyLM56ywk7ihNRvt6";
 pub const BEACONER4: &str = "1ZAxCrEsigGVbLUM37Jki6p88kyZ5NVqjVC6oHSbqu49t7bQDym";
 
 pub const WITNESS1: &str = "13ABbtvMrRK8jgYrT3h6Y9Zu44nS6829kzsamiQn9Eefeu3VAZs";
+#[allow(dead_code)]
 pub const UNKNOWN_GATEWAY1: &str = "1YiZUsuCwxE7xyxjke1ogehv5WSuYZ9o7uM2ZKvRpytyqb8Be63";
 pub const NO_METADATA_GATEWAY1: &str = "1YpopKVbRDELWGR3nMd1MAU8a5GxP1uQSDj9AeXHEi3fHSsWGRi";
 
+#[allow(dead_code)]
 pub const DENIED_PUBKEY1: &str = "112bUGwooPd1dCDd3h3yZwskjxCzBsQNKeaJTuUF4hSgYedcsFa9";
 
 pub const LOCAL_ENTROPY: [u8; 4] = [233, 70, 25, 176];

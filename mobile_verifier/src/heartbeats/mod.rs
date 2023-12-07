@@ -4,7 +4,7 @@ pub mod wifi;
 use crate::{
     cell_type::{CellType, CellTypeLabel},
     coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
-    GatewayResolution, GatewayResolver
+    GatewayResolution, GatewayResolver,
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, DurationRound, RoundingError, Utc};

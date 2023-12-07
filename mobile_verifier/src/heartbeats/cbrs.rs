@@ -1,5 +1,8 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
-use crate::{coverage::{CoverageClaimTimeCache, CoveredHexCache}, GatewayResolver};
+use crate::{
+    coverage::{CoverageClaimTimeCache, CoveredHexCache},
+    GatewayResolver,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::{

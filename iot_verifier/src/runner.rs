@@ -41,20 +41,20 @@ const POC_REWARD_DECAY_RATE: Decimal = dec!(0.8);
 const HIP15_TX_REWARD_UNIT_CAP: Decimal = Decimal::TWO;
 
 pub struct Runner<G> {
-    pool: PgPool,
-    beacon_interval: ChronoDuration,
-    max_witnesses_per_poc: u64,
-    beacon_max_retries: u64,
-    witness_max_retries: u64,
-    deny_list_latest_url: String,
-    deny_list_trigger_interval: Duration,
-    deny_list: DenyList,
-    gateway_cache: GatewayCache,
-    region_cache: RegionCache<G>,
-    invalid_beacon_sink: FileSinkClient,
-    invalid_witness_sink: FileSinkClient,
-    poc_sink: FileSinkClient,
-    hex_density_map: HexDensityMap,
+    pub pool: PgPool,
+    pub beacon_interval: ChronoDuration,
+    pub max_witnesses_per_poc: u64,
+    pub beacon_max_retries: u64,
+    pub witness_max_retries: u64,
+    pub deny_list_latest_url: String,
+    pub deny_list_trigger_interval: Duration,
+    pub deny_list: DenyList,
+    pub gateway_cache: GatewayCache,
+    pub region_cache: RegionCache<G>,
+    pub invalid_beacon_sink: FileSinkClient,
+    pub invalid_witness_sink: FileSinkClient,
+    pub poc_sink: FileSinkClient,
+    pub hex_density_map: HexDensityMap,
 }
 
 #[derive(thiserror::Error, Debug)]

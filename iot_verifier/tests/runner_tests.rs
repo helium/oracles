@@ -88,7 +88,7 @@ impl TestContext {
         // create the runner
         let runner = Runner {
             pool: pool.clone(),
-            beacon_interval: 21600,
+            beacon_interval: ChronoDuration::seconds(21600),
             max_witnesses_per_poc: 16,
             beacon_max_retries: 2,
             witness_max_retries: 2,
