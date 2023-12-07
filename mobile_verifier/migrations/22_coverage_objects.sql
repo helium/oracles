@@ -18,14 +18,15 @@ CREATE TABLE hexes (
     PRIMARY KEY (uuid, hex)
 );
 
-
 INSERT INTO coverage_objects(uuid, radio_type, radio_key, indoor, coverage_claim_time, inserted_at, invalidated_at)
 SELECT distinct uuid, radio_type, radio_key, indoor, coverage_claim_time, inserted_at, invalidated_at
 FROM hex_coverage;
 
 INSERT INTO hexes(uuid, hex, signal_level, signal_power)
 SELECT uuid, hex, signal_level, signal_power
-from hex_coverage;
+FROM hex_coverage;
 
 ALTER TABLE hex_coverage RENAME TO old_hex_coverage;
+
+ALTER TYPE cell_type RENAME VALUE 'novagenericwifiindoor' TO 'novagenericwifi';
 
