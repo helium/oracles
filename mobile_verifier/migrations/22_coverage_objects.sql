@@ -19,7 +19,7 @@ CREATE TABLE hexes (
 );
 
 INSERT INTO coverage_objects(uuid, radio_type, radio_key, indoor, coverage_claim_time, inserted_at, invalidated_at)
-SELECT distinct uuid, radio_type, radio_key, indoor, coverage_claim_time, inserted_at, invalidated_at
+SELECT DISTINCT uuid, radio_type, radio_key, indoor, coverage_claim_time, inserted_at, invalidated_at
 FROM hex_coverage;
 
 INSERT INTO hexes(uuid, hex, signal_level, signal_power)
