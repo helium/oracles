@@ -451,7 +451,7 @@ impl ValidatedHeartbeat {
             "#,
         )
         .bind(self.heartbeat.timestamp)
-        .bind(self.coverage_info.as_ref().unwrap().inserted_at) // Guaranteed not to panic
+        .bind(self.coverage_info.as_ref().map(|x| x.inserted_at)) // Guaranteed not to be NULL
         .bind(self.heartbeat.key())
         .bind(self.heartbeat.coverage_object)
         .execute(&mut *exec)

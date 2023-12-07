@@ -281,18 +281,18 @@ async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
         r#"
 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, location_validation_timestamp, distance_to_asserted, coverage_object)
 VALUES
-    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', NOW(), 300, $3)
+    ($1, 'novagenericwifi', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', NOW(), 300, $3)
 "#,
     )
     .bind(&hotspot)
@@ -340,18 +340,18 @@ async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> 
         r#"
 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, location_validation_timestamp, distance_to_asserted, coverage_object)
 VALUES
-    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', null, 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', null, 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', null, 300, $2),
-    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', null, 300, $3)
+    ($1, 'novagenericwifi', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifi', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', null, 300, $3)
 "#,
     )
     .bind(&hotspot)
