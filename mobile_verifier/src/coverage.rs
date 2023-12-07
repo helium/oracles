@@ -198,8 +198,8 @@ impl CoverageObject {
         let key = key.to_owned();
 
         sqlx::query(r#"
-            INSERT INTO coverage_objects(uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (uuid) DO UPDATE SET
                 radio_type = EXCLUDED.radio_type,
                 radio_key = EXCLUDED.radio_key,
@@ -420,7 +420,7 @@ impl CoveredHexStream for Pool<Postgres> {
         Ok(
             sqlx::query_as(
                 r#"
-                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, co.coverage_claim_time, co.inserted_at)
+                SELECT co.uuid, h.hex, co.indoor, co.radio_key, h.signal_level, co.coverage_claim_time, co.inserted_at
                 FROM coverage_objects co
                     INNER JOIN hexes h on co.uuid = h.uuid
                 WHERE co.radio_key = $1

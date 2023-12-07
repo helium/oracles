@@ -222,7 +222,7 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     co2.save(&mut transaction).await?;
     transaction.commit().await?;
 
-    let new_signal_power: i32 = sqlx::query_scalar("SELECT signal_power FROM hex_coverage")
+    let new_signal_power: i32 = sqlx::query_scalar("SELECT signal_power FROM hexes")
         .fetch_one(&pool)
         .await?;
 
