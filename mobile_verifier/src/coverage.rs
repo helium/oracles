@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, BinaryHeap, HashMap},
     pin::pin,
     sync::Arc,
+    time::Instant,
 };
 
 use chrono::{DateTime, Utc};
@@ -81,12 +82,17 @@ impl CoverageDaemon {
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
             loop {
+                #[rustfmt::skip]
                 tokio::select! {
                     _ = shutdown.clone() => {
                         tracing::info!("CoverageDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.coverage_objs.recv() => self.process_file(file).await?,
+                    Some(file) = self.coverage_objs.recv() => {
+			let start = Instant::now();
+			self.process_file(file).await?;
+			metrics::histogram!("coverage_object_processing_time", start.elapsed());
+                    }
                 }
             }
 

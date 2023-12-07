@@ -10,7 +10,10 @@ use futures::{stream::StreamExt, TryFutureExt};
 use mobile_config::GatewayClient;
 use retainer::Cache;
 
-use std::{sync::Arc, time};
+use std::{
+    sync::Arc,
+    time::{self, Instant},
+};
 use tokio::sync::mpsc::Receiver;
 
 pub struct HeartbeatDaemon {
@@ -57,18 +60,23 @@ impl HeartbeatDaemon {
             let covered_hex_cache = CoveredHexCache::new(&self.pool);
 
             loop {
+                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
                         tracing::info!("CBRS HeartbeatDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.heartbeats.recv() => self.process_file(
-                        file,
-                        &heartbeat_cache,
-                        &coverage_claim_time_cache,
-                        &covered_hex_cache,
-                    ).await?,
+                    Some(file) = self.heartbeats.recv() => {
+			let start = Instant::now();
+			self.process_file(
+                            file,
+                            &heartbeat_cache,
+                            &coverage_claim_time_cache,
+                            &covered_hex_cache,
+			).await?;
+			metrics::histogram!("cbrs_heartbeat_processing_time", start.elapsed());
+                    }
                 }
             }
 
@@ -79,12 +87,12 @@ impl HeartbeatDaemon {
         .await
     }
 
-    async fn process_file<'a>(
-        &'a self,
+    async fn process_file(
+        &self,
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
         heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
-        coverage_claim_time_cache: &'a CoverageClaimTimeCache,
-        covered_hex_cache: &'a CoveredHexCache,
+        coverage_claim_time_cache: &CoverageClaimTimeCache,
+        covered_hex_cache: &CoveredHexCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing CBRS heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
