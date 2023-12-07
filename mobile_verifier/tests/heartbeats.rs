@@ -29,7 +29,7 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
-        coverage_object_insertion_time: None,
+        coverage_info: None,
         validity: HeartbeatValidity::Valid,
     };
 
@@ -66,7 +66,7 @@ async fn test_save_cbrs_heartbeat(pool: PgPool) -> anyhow::Result<()> {
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
-        coverage_object_insertion_time: None,
+        coverage_info: None,
         validity: HeartbeatValidity::Valid,
     };
 
@@ -318,7 +318,7 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot,
-            cell_type: CellType::NovaGenericWifiIndoor,
+            cell_type: CellType::NovaGenericWifi,
             cbsd_id: None,
             location_trust_score_multiplier: dec!(1.0),
             latest_timestamp,
@@ -377,7 +377,7 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot,
-            cell_type: CellType::NovaGenericWifiIndoor,
+            cell_type: CellType::NovaGenericWifi,
             cbsd_id: None,
             location_trust_score_multiplier: dec!(0.75),
             latest_timestamp,

@@ -3,7 +3,7 @@ pub mod wifi;
 
 use crate::{
     cell_type::{CellType, CellTypeLabel},
-    coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageInfo, CoverageObjects, Seniority},
     GatewayResolution, GatewayResolver,
 };
 use anyhow::anyhow;
@@ -372,7 +372,7 @@ pub struct ValidatedHeartbeat {
     pub heartbeat: Heartbeat,
     pub cell_type: CellType,
     pub distance_to_asserted: Option<i64>,
-    pub coverage_object_insertion_time: Option<DateTime<Utc>>,
+    pub coverage_info: Option<CoverageInfo>,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -388,18 +388,18 @@ impl ValidatedHeartbeat {
     pub fn validate_heartbeats<'a>(
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         gateway_client: &'a impl GatewayResolver,
-        coverage_cache: &'a CoveredHexCache,
+        coverage_cache: &'a CoverageObjects,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
-            let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
+            let (cell_type, distance_to_asserted, coverage_info, validity) =
                 validate_heartbeat(&heartbeat, gateway_client, coverage_cache, epoch).await?;
 
             Ok(Self {
                 heartbeat,
                 cell_type,
                 distance_to_asserted,
-                coverage_object_insertion_time,
+                coverage_info,
                 validity,
             })
         })
@@ -412,7 +412,12 @@ impl ValidatedHeartbeat {
                     cbsd_id: self.heartbeat.cbsd_id.clone().unwrap_or_default(),
                     pub_key: self.heartbeat.hotspot_key.as_ref().into(),
                     reward_multiplier: 1.0,
-                    cell_type: self.cell_type as i32,
+                    cell_type: self.cell_type.to_proto(
+                        self.coverage_info
+                            .as_ref()
+                            .map(|x| x.indoor)
+                            .unwrap_or_default(), // Should this be outdoor by default? Or add an unknown type?
+                    ) as i32,
                     validity: self.validity as i32,
                     timestamp: self.heartbeat.timestamp.timestamp() as u64,
                     coverage_object: self
@@ -446,7 +451,7 @@ impl ValidatedHeartbeat {
             "#,
         )
         .bind(self.heartbeat.timestamp)
-        .bind(self.coverage_object_insertion_time)
+        .bind(self.coverage_info.as_ref().unwrap().inserted_at) // Guaranteed not to panic
         .bind(self.heartbeat.key())
         .bind(self.heartbeat.coverage_object)
         .execute(&mut *exec)
@@ -509,12 +514,12 @@ impl ValidatedHeartbeat {
 pub async fn validate_heartbeat(
     heartbeat: &Heartbeat,
     gateway_resolver: &impl GatewayResolver,
-    coverage_cache: &CoveredHexCache,
+    coverage_cache: &CoverageObjects,
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<(
     CellType,
     Option<i64>,
-    Option<DateTime<Utc>>,
+    Option<CoverageInfo>,
     proto::HeartbeatValidity,
 )> {
     let cell_type = match heartbeat.hb_type {
@@ -539,9 +544,7 @@ pub async fn validate_heartbeat(
                 ))
             }
         },
-        // for wifi HBs temporary assume we have an indoor wifi spot
-        // this will be better/properly handled when coverage reports are live
-        HbType::Wifi => CellType::NovaGenericWifiIndoor,
+        HbType::Wifi => CellType::NovaGenericWifi,
     };
 
     if !heartbeat.operation_mode {
@@ -597,8 +600,8 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    let Some(inserted_at) = coverage_cache
-        .inserted_at(&coverage_object, heartbeat.key())
+    let Some(coverage_info) = coverage_cache
+        .coverage_info(&coverage_object, heartbeat.key())
         .await?
     else {
         return Ok((
@@ -612,7 +615,7 @@ pub async fn validate_heartbeat(
     Ok((
         cell_type,
         distance_to_asserted,
-        Some(inserted_at),
+        Some(coverage_info),
         proto::HeartbeatValidity::Valid,
     ))
 }
@@ -861,7 +864,7 @@ mod test {
             },
             validity: Default::default(),
             distance_to_asserted: None,
-            coverage_object_insertion_time: None,
+            coverage_info: None,
         }
     }
 

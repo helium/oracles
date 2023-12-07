@@ -20,7 +20,7 @@ pub enum CellType {
     SercommIndoor = 3,
     SercommOutdoor = 4,
     CellTypeNone = 5,
-    NovaGenericWifiIndoor = 6,
+    NovaGenericWifi = 6,
 }
 
 #[derive(PartialEq)]
@@ -49,8 +49,21 @@ impl CellType {
             Self::Neutrino430 => CellTypeLabel::CBRS,
             Self::SercommIndoor => CellTypeLabel::CBRS,
             Self::SercommOutdoor => CellTypeLabel::CBRS,
+            Self::NovaGenericWifi => CellTypeLabel::Wifi,
             Self::CellTypeNone => CellTypeLabel::CellTypeLabelNone,
-            Self::NovaGenericWifiIndoor => CellTypeLabel::Wifi,
+        }
+    }
+
+    pub fn to_proto(&self, indoor: bool) -> CellTypeProto {
+        match self {
+            Self::Nova436H => CellTypeProto::Nova436h,
+            Self::Nova430I => CellTypeProto::Nova430i,
+            Self::Neutrino430 => CellTypeProto::Neutrino430,
+            Self::SercommIndoor => CellTypeProto::SercommIndoor,
+            Self::SercommOutdoor => CellTypeProto::SercommOutdoor,
+            Self::NovaGenericWifi if indoor => CellTypeProto::NovaGenericWifiIndoor,
+            Self::NovaGenericWifi => CellTypeProto::NovaGenericWifiOutdoor,
+            Self::CellTypeNone => CellTypeProto::None,
         }
     }
 
@@ -61,32 +74,16 @@ impl CellType {
         max_distance_to_asserted: u32,
     ) -> Decimal {
         match (self, distance, location_validation_timestamp.is_some()) {
-            (Self::NovaGenericWifiIndoor, Some(dist), true)
+            (Self::NovaGenericWifi, Some(dist), true)
                 if dist <= max_distance_to_asserted as i64 =>
             {
                 dec!(1.0)
             }
-            (Self::NovaGenericWifiIndoor, Some(dist), true)
-                if dist > max_distance_to_asserted as i64 =>
-            {
+            (Self::NovaGenericWifi, Some(dist), true) if dist > max_distance_to_asserted as i64 => {
                 dec!(0.25)
             }
-            (Self::NovaGenericWifiIndoor, _, _) => dec!(0.25),
+            (Self::NovaGenericWifi, _, _) => dec!(0.25),
             _ => dec!(1.0),
-        }
-    }
-}
-
-impl From<CellType> for CellTypeProto {
-    fn from(ct: CellType) -> Self {
-        match ct {
-            CellType::Nova436H => Self::Nova436h,
-            CellType::Nova430I => Self::Nova430i,
-            CellType::Neutrino430 => Self::Neutrino430,
-            CellType::SercommIndoor => Self::SercommIndoor,
-            CellType::SercommOutdoor => Self::SercommOutdoor,
-            CellType::CellTypeNone => Self::None,
-            CellType::NovaGenericWifiIndoor => Self::NovaGenericWifiIndoor,
         }
     }
 }

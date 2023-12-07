@@ -1,5 +1,5 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
-use crate::coverage::{CoverageClaimTimeCache, CoveredHexCache};
+use crate::coverage::{CoverageClaimTimeCache, CoverageObjects};
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
     file_info_poller::FileInfoStream, file_sink::FileSinkClient,
@@ -56,7 +56,7 @@ impl HeartbeatDaemon {
             });
 
             let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-            let covered_hex_cache = CoveredHexCache::new(&self.pool);
+            let coverage_objects = CoverageObjects::new(&self.pool);
 
             loop {
                 #[rustfmt::skip]
@@ -72,7 +72,7 @@ impl HeartbeatDaemon {
                             file,
                             &heartbeat_cache,
                             &coverage_claim_time_cache,
-                            &covered_hex_cache,
+                            &coverage_objects,
 			).await?;
 			metrics::histogram!("wifi_heartbeat_processing_time", start.elapsed());
                     }
@@ -91,7 +91,7 @@ impl HeartbeatDaemon {
         file: FileInfoStream<WifiHeartbeatIngestReport>,
         heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
-        covered_hex_cache: &CoveredHexCache,
+        coverage_objects: &CoverageObjects,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing WIFI heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
@@ -105,7 +105,7 @@ impl HeartbeatDaemon {
             ValidatedHeartbeat::validate_heartbeats(
                 heartbeats,
                 &self.gateway_client,
-                covered_hex_cache,
+                coverage_objects,
                 &epoch,
             ),
             heartbeat_cache,

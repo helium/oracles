@@ -636,29 +636,34 @@ impl CoverageClaimTimeCache {
     }
 }
 
-pub struct CoveredHexCache {
+pub struct CoverageObjects {
     pool: Pool<Postgres>,
 }
 
-impl CoveredHexCache {
+impl CoverageObjects {
     pub fn new(pool: &Pool<Postgres>) -> Self {
         Self { pool: pool.clone() }
     }
 
-    pub async fn inserted_at(
+    pub async fn coverage_info(
         &self,
         uuid: &Uuid,
         key: KeyType<'_>,
-    ) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
-        let found: Option<DateTime<Utc>> = sqlx::query_scalar(
-	    "SELECT inserted_at FROM coverage_objects WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
+    ) -> Result<Option<CoverageInfo>, sqlx::Error> {
+        sqlx::query_as(
+	    "SELECT inserted_at, indoor FROM coverage_objects WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
 	)
-	    .bind(uuid)
-	    .bind(key)
-	    .fetch_optional(&self.pool)
-	    .await?;
-        Ok(found)
+	.bind(uuid)
+	.bind(key)
+	.fetch_optional(&self.pool)
+	.await
     }
+}
+
+#[derive(Clone, FromRow)]
+pub struct CoverageInfo {
+    pub inserted_at: DateTime<Utc>,
+    pub indoor: bool,
 }
 
 #[derive(Clone)]

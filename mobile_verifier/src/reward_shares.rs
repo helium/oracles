@@ -955,7 +955,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
-                cell_type: CellType::NovaGenericWifiIndoor,
+                cell_type: CellType::NovaGenericWifi,
                 coverage_object: cov_obj_15,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
@@ -964,7 +964,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
-                cell_type: CellType::NovaGenericWifiIndoor,
+                cell_type: CellType::NovaGenericWifi,
                 coverage_object: cov_obj_16,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: None,
@@ -973,7 +973,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
-                cell_type: CellType::NovaGenericWifiIndoor,
+                cell_type: CellType::NovaGenericWifi,
                 coverage_object: cov_obj_17,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
@@ -1244,7 +1244,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
-                cell_type: CellType::NovaGenericWifiIndoor,
+                cell_type: CellType::NovaGenericWifi,
                 coverage_object: g1_cov_obj,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
@@ -1376,7 +1376,7 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
-                cell_type: CellType::NovaGenericWifiIndoor,
+                cell_type: CellType::NovaGenericWifi,
                 coverage_object: g1_cov_obj,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
