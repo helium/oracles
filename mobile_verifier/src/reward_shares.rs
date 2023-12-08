@@ -1898,12 +1898,13 @@ mod test {
 
     #[tokio::test]
     async fn service_provider_reward_hip87_ex1() {
+        // mobile price from hip example and converted to bones
         let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
         let sp1 = "sp1".to_string();
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
-        let total_sp_rewards = dec!(500_000_000) * dec!(1_000_000);
+        let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
             service_provider_id: sp1.clone(),
@@ -1912,7 +1913,7 @@ mod test {
 
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
         let rewards_per_share = sp_shares
-            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
             .unwrap();
 
         let mut sp_rewards = HashMap::new();
@@ -1922,18 +1923,21 @@ mod test {
             }
         }
 
-        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
-        assert_eq!(sp1_reward_amount, 10_000_000 * 1_000_000);
+        let sp1_reward_amount_in_bones = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        // example in HIP gives expected reward amount in mobile whereas we use bones
+        // assert expected value in bones
+        assert_eq!(sp1_reward_amount_in_bones, 10_000_000 * 1_000_000);
     }
 
     #[tokio::test]
     async fn service_provider_reward_hip87_ex2() {
+        // mobile price from hip example and converted to bones
         let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
         let sp1 = "sp2".to_string();
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
-        let total_sp_rewards = dec!(500_000_000) * dec!(1_000_000);
+        let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
             service_provider_id: sp1.clone(),
@@ -1942,7 +1946,7 @@ mod test {
 
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
         let rewards_per_share = sp_shares
-            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
             .unwrap();
 
         let mut sp_rewards = HashMap::new();
@@ -1952,7 +1956,9 @@ mod test {
             }
         }
 
-        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
-        assert_eq!(sp1_reward_amount, 500_000_000 * 1_000_000);
+        let sp1_reward_amount_in_bones = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        // example in HIP gives expected reward amount in mobile whereas we use bones
+        // assert expected value in bones
+        assert_eq!(sp1_reward_amount_in_bones, 500_000_000 * 1_000_000);
     }
 }
