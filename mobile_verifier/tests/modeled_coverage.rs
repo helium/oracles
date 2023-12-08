@@ -389,8 +389,8 @@ async fn process_input(
 
     let mut transaction = pool.begin().await?;
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
-        stream::iter(heartbeats.map(Heartbeat::from)),
         &AllOwnersValid,
+        stream::iter(heartbeats.map(Heartbeat::from)),
         &covered_hex_cache,
         epoch,
     ));

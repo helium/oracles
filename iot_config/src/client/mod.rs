@@ -1,4 +1,4 @@
-use crate::gateway_info;
+use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -24,6 +24,23 @@ pub enum ClientError {
     Verification(#[from] file_store::Error),
     #[error("error resolving region params: {0}")]
     UndefinedRegionParams(String),
+}
+
+#[async_trait::async_trait]
+pub trait Gateways: Clone + Send + Sync + 'static {
+    type Error: std::fmt::Debug + Send + Sync + 'static;
+
+    async fn resolve_gateway_info(
+        &mut self,
+        address: &PublicKeyBinary,
+    ) -> Result<Option<GatewayInfo>, Self::Error>;
+
+    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
+
+    async fn resolve_region_params(
+        &mut self,
+        region: Region,
+    ) -> Result<RegionParamsInfo, Self::Error>;
 }
 
 #[derive(Clone, Debug)]
@@ -76,8 +93,13 @@ impl Client {
             batch_size: settings.batch_size,
         })
     }
+}
 
-    pub async fn resolve_region_params(
+#[async_trait::async_trait]
+impl Gateways for Client {
+    type Error = ClientError;
+
+    async fn resolve_region_params(
         &mut self,
         region: Region,
     ) -> Result<RegionParamsInfo, ClientError> {
@@ -98,11 +120,6 @@ impl Client {
                 .region_params,
         })
     }
-}
-
-#[async_trait::async_trait]
-impl gateway_info::GatewayInfoResolver for Client {
-    type Error = ClientError;
 
     async fn resolve_gateway_info(
         &mut self,

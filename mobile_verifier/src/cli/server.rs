@@ -15,7 +15,7 @@ use file_store::{
     FileType,
 };
 use futures_util::TryFutureExt;
-use mobile_config::client::{AuthorizationClient, EntityClient, GatewayClient};
+use mobile_config::client::{entity_client::EntityClient, AuthorizationClient, GatewayClient};
 use price::PriceTracker;
 use tokio::signal;
 
@@ -158,7 +158,7 @@ impl Cmd {
 
         let speedtest_daemon = SpeedtestDaemon::new(
             pool.clone(),
-            gateway_client.clone(),
+            gateway_client,
             speedtests,
             speedtests_avg,
             speedtests_validity,
@@ -252,7 +252,7 @@ impl Cmd {
         let subscriber_location_ingestor = SubscriberLocationIngestor::new(
             pool.clone(),
             auth_client.clone(),
-            entity_client.clone(),
+            entity_client,
             subscriber_location_ingest,
             verified_subscriber_location,
         );

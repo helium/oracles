@@ -385,15 +385,19 @@ impl ValidatedHeartbeat {
         self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub fn validate_heartbeats<'a>(
+    pub fn validate_heartbeats<'a, GIR>(
+        gateway_info_resolver: &'a GIR,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
-        gateway_client: &'a impl GatewayResolver,
         coverage_cache: &'a CoveredHexCache,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a
+    where
+        GIR: GatewayResolver,
+    {
         heartbeats.then(move |heartbeat| async move {
             let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
-                validate_heartbeat(&heartbeat, gateway_client, coverage_cache, epoch).await?;
+                validate_heartbeat(&heartbeat, gateway_info_resolver, coverage_cache, epoch)
+                    .await?;
 
             Ok(Self {
                 heartbeat,
@@ -500,9 +504,9 @@ impl ValidatedHeartbeat {
 }
 
 /// Validate a heartbeat in the given epoch.
-pub async fn validate_heartbeat(
+pub async fn validate_heartbeat<GIR>(
     heartbeat: &Heartbeat,
-    gateway_resolver: &impl GatewayResolver,
+    gateway_info_resolver: &GIR,
     coverage_cache: &CoveredHexCache,
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<(
@@ -510,7 +514,10 @@ pub async fn validate_heartbeat(
     Option<i64>,
     Option<DateTime<Utc>>,
     proto::HeartbeatValidity,
-)> {
+)>
+where
+    GIR: GatewayResolver,
+{
     let cell_type = match heartbeat.hb_type {
         HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
             Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
@@ -556,7 +563,7 @@ pub async fn validate_heartbeat(
         ));
     }
 
-    let distance_to_asserted = match gateway_resolver
+    let distance_to_asserted = match gateway_info_resolver
         .resolve_gateway(&heartbeat.hotspot_key)
         .await?
     {
@@ -621,7 +628,6 @@ pub(crate) async fn process_validated_heartbeats(
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
     let mut validated_heartbeats = pin!(validated_heartbeats);
-
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
 

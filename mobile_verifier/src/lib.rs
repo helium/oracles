@@ -14,6 +14,7 @@ mod telemetry;
 pub use settings::Settings;
 
 use async_trait::async_trait;
+use std::error::Error;
 
 pub enum GatewayResolution {
     GatewayNotFound,
@@ -21,9 +22,9 @@ pub enum GatewayResolution {
     AssertedLocation(u64),
 }
 
-#[async_trait]
-pub trait GatewayResolver {
-    type Error: std::error::Error + Send + Sync + 'static;
+#[async_trait::async_trait]
+pub trait GatewayResolver: Clone + Send + Sync + 'static {
+    type Error: Error + Send + Sync + 'static;
 
     async fn resolve_gateway(
         &self,
@@ -39,7 +40,8 @@ impl GatewayResolver for mobile_config::GatewayClient {
         &self,
         address: &helium_crypto::PublicKeyBinary,
     ) -> Result<GatewayResolution, Self::Error> {
-        use mobile_config::gateway_info::{GatewayInfo, GatewayInfoResolver};
+        use mobile_config::client::gateway_client::GatewayInfoResolver;
+        use mobile_config::gateway_info::GatewayInfo;
         match self.resolve_gateway_info(address).await? {
             None => Ok(GatewayResolution::GatewayNotFound),
             Some(GatewayInfo {
@@ -71,6 +73,7 @@ impl IsAuthorized for mobile_config::client::AuthorizationClient {
         address: &helium_crypto::PublicKeyBinary,
         role: helium_proto::services::mobile_config::NetworkKeyRole,
     ) -> Result<bool, Self::Error> {
+        use mobile_config::client::authorization_client::AuthorizationVerifier;
         self.verify_authorized_key(address, role).await
     }
 }

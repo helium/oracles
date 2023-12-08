@@ -2,7 +2,7 @@ pub mod entropy;
 pub mod entropy_loader;
 pub mod gateway_cache;
 pub mod gateway_updater;
-mod hex_density;
+pub mod hex_density;
 pub mod last_beacon;
 pub mod loader;
 pub mod meta;
