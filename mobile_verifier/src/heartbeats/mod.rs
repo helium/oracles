@@ -18,6 +18,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
 use std::{collections::HashMap, ops::Range, pin::pin, time};
 use uuid::Uuid;
@@ -262,6 +263,7 @@ pub struct HeartbeatRow {
     pub cell_type: CellType,
     // wifi hb only
     pub location_validation_timestamp: Option<DateTime<Utc>>,
+    pub indoor: bool,
     pub distance_to_asserted: Option<i64>,
     pub coverage_object: Uuid,
     pub latest_timestamp: DateTime<Utc>,
@@ -327,17 +329,20 @@ impl HeartbeatReward {
         Ok(
             futures::stream::iter(heartbeat_rows).map(move |((hotspot_key, cbsd_id), rows)| {
                 let first = rows.first().unwrap();
-                let average_location_trust_score = rows
-                    .iter()
-                    .map(|row| {
-                        row.cell_type.location_weight(
-                            row.location_validation_timestamp,
-                            row.distance_to_asserted,
-                            max_distance_to_asserted,
-                        )
-                    })
-                    .sum::<Decimal>()
-                    / Decimal::new(rows.len() as i64, 0);
+                let average_location_trust_score = if first.indoor {
+                    rows.iter()
+                        .map(|row| {
+                            row.cell_type.location_weight(
+                                row.location_validation_timestamp,
+                                row.distance_to_asserted,
+                                max_distance_to_asserted,
+                            )
+                        })
+                        .sum::<Decimal>()
+                        / Decimal::new(rows.len() as i64, 0)
+                } else {
+                    dec!(1.0)
+                };
 
                 HeartbeatReward {
                     hotspot_key,
@@ -356,11 +361,15 @@ impl HeartbeatReward {
             hotspot_key: value.hotspot_key,
             cell_type: value.cell_type,
             cbsd_id: value.cbsd_id,
-            location_trust_score_multiplier: value.cell_type.location_weight(
-                value.location_validation_timestamp,
-                value.distance_to_asserted,
-                max_distance_to_asserted,
-            ),
+            location_trust_score_multiplier: if value.indoor {
+                value.cell_type.location_weight(
+                    value.location_validation_timestamp,
+                    value.distance_to_asserted,
+                    max_distance_to_asserted,
+                )
+            } else {
+                dec!(1.0)
+            },
             coverage_object: value.coverage_object,
             latest_timestamp: value.latest_timestamp,
         }

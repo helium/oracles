@@ -94,6 +94,17 @@ async fn only_fetch_latest_hotspot(pool: PgPool) -> anyhow::Result<()> {
     let hotspot_2: PublicKeyBinary =
         "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
     sqlx::query(
+	r#"
+        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
+        VALUES ($1, 'cbrs', $2, true, NOW(), 1, NOW(), NULL);
+        "#
+    )
+    .bind(coverage_object)
+    .bind(&cbsd_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
         r#"
 INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
 VALUES
@@ -169,6 +180,17 @@ async fn ensure_hotspot_does_not_affect_count(pool: PgPool) -> anyhow::Result<()
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     let hotspot_2: PublicKeyBinary =
         "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
+    sqlx::query(
+	r#"
+        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
+        VALUES ($1, 'cbrs', $2, true, NOW(), 1, NOW(), NULL);
+        "#
+    )
+    .bind(coverage_object)
+    .bind(&cbsd_id)
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"
 INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
@@ -278,6 +300,17 @@ async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
+	r#"
+        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
+        VALUES ($1, 'wifi', $2, true, NOW(), 1, NOW(), NULL);
+        "#
+    )
+    .bind(latest_coverage_object)
+    .bind(&hotspot)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
         r#"
 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, location_validation_timestamp, distance_to_asserted, coverage_object)
 VALUES
@@ -336,6 +369,17 @@ async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> 
     let latest_coverage_object = Uuid::new_v4();
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
+    sqlx::query(
+	r#"
+        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
+        VALUES ($1, 'wifi', $2, true, NOW(), 1, NOW(), NULL);
+        "#
+    )
+    .bind(latest_coverage_object)
+    .bind(&hotspot)
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"
 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, location_validation_timestamp, distance_to_asserted, coverage_object)

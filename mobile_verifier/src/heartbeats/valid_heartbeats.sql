@@ -58,11 +58,13 @@ SELECT
     cbrs_coverage_objs.coverage_object,
     cbrs_coverage_objs.latest_timestamp,
     NULL AS location_validation_timestamp,
-    NULL AS distance_to_asserted
+    NULL AS distance_to_asserted,
+    coverage_objects.indoor
 FROM
     cbrs_heartbeats
-    LEFT JOIN latest_hotspots ON cbrs_heartbeats.cbsd_id = latest_hotspots.cbsd_id
-    LEFT JOIN cbrs_coverage_objs ON cbrs_heartbeats.cbsd_id = cbrs_coverage_objs.cbsd_id
+    INNER JOIN latest_hotspots ON cbrs_heartbeats.cbsd_id = latest_hotspots.cbsd_id
+    INNER JOIN cbrs_coverage_objs ON cbrs_heartbeats.cbsd_id = cbrs_coverage_objs.cbsd_id
+    INNER JOIN coverage_objects ON coverage_objects.uuid = cbrs_coverage_objs.coverage_object
 WHERE
     truncated_timestamp >= $1
     AND truncated_timestamp < $2
@@ -71,7 +73,8 @@ GROUP BY
     latest_hotspots.hotspot_key,
     cell_type,
     cbrs_coverage_objs.coverage_object,
-    cbrs_coverage_objs.latest_timestamp
+    cbrs_coverage_objs.latest_timestamp,
+    coverage_objects.indoor
 HAVING
     count(*) >= $3
 UNION ALL
@@ -82,7 +85,8 @@ SELECT
     wifi_coverage_objs.coverage_object,
     wifi_coverage_objs.latest_timestamp,
     b.location_validation_timestamp,
-    b.distance_to_asserted
+    b.distance_to_asserted,
+    coverage_objects.indoor
 FROM (
     SELECT
         hotspot_key,
@@ -97,7 +101,7 @@ FROM (
         cell_type
     HAVING
         count(*) >= $3) AS wifi_grouped
-    LEFT JOIN (
+    INNER JOIN (
         SELECT
             hotspot_key,
             location_validation_timestamp,
@@ -107,4 +111,5 @@ FROM (
         WHERE
             wifi_heartbeats.truncated_timestamp >= $1
             AND wifi_heartbeats.truncated_timestamp < $2) AS b ON b.hotspot_key = wifi_grouped.hotspot_key
-    LEFT JOIN wifi_coverage_objs ON wifi_grouped.hotspot_key = wifi_coverage_objs.hotspot_key
+    INNER JOIN wifi_coverage_objs ON wifi_grouped.hotspot_key = wifi_coverage_objs.hotspot_key
+    INNER JOIN coverage_objects ON coverage_objects.uuid = wifi_coverage_objs.coverage_object
