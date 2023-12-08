@@ -9,12 +9,9 @@ use file_store::{
     FileSinkBuilder, FileStore, FileType,
 };
 
-use mobile_config::{
-    client::{
-        authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
-        AuthorizationClient,
-    },
-    GatewayClient,
+use mobile_config::client::{
+    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
+    AuthorizationClient, GatewayClient,
 };
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};

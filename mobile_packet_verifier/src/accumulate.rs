@@ -10,8 +10,9 @@ use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
     InvalidDataTransferIngestReportV1,
 };
-use mobile_config::client::authorization_client::AuthorizationVerifier;
-use mobile_config::client::gateway_client::GatewayInfoResolver;
+use mobile_config::client::{
+    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
+};
 use sqlx::{Postgres, Transaction};
 
 use crate::event_ids;
