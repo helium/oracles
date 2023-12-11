@@ -1,13 +1,12 @@
 CREATE TABLE coverage_objects (
-    uuid UUID NOT NULL,
+    uuid UUID PRIMARY KEY,
     radio_type radio_type NOT NULL,
     radio_key TEXT NOT NULL,
     indoor BOOLEAN NOT NULL,
     coverage_claim_time TIMESTAMPTZ NOT NULL,
     trust_score INTEGER,
     inserted_at TIMESTAMPTZ NOT NULL,
-    invalidated_at TIMESTAMPTZ,
-    PRIMARY KEY (uuid)
+    invalidated_at TIMESTAMPTZ
 );
 
 CREATE TABLE hexes (
