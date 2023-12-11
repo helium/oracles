@@ -218,15 +218,15 @@ impl ServiceProviderShares {
         payer_shares: HashMap<String, u64>,
         client: &dyn CarrierServiceVerifier<Error = ClientError>,
     ) -> anyhow::Result<ServiceProviderShares> {
-        let mut shares = vec![];
+        let mut sp_shares = ServiceProviderShares::default();
         for (payer, total_dcs) in payer_shares {
             let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
-            shares.push(ServiceProviderDataSession {
+            sp_shares.shares.push(ServiceProviderDataSession {
                 service_provider,
                 total_dcs: Decimal::from(total_dcs),
             })
         }
-        Ok(ServiceProviderShares { shares })
+        Ok(sp_shares)
     }
 
     fn total_dc(&self) -> Decimal {

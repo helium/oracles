@@ -32,6 +32,7 @@ pub enum RewardType {
     IotGateway,
     IotOperational,
     MobileSubscriber,
+    MobileServiceProvider,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -157,7 +158,7 @@ impl Indexer {
                             Ok((
                                 RewardKey {
                                     key: sp.as_str_name().to_string(),
-                                    reward_type: RewardType::MobileSubscriber,
+                                    reward_type: RewardType::MobileServiceProvider,
                                 },
                                 r.amount,
                             ))
