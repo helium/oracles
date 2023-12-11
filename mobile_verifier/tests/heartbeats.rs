@@ -94,17 +94,6 @@ async fn only_fetch_latest_hotspot(pool: PgPool) -> anyhow::Result<()> {
     let hotspot_2: PublicKeyBinary =
         "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
     sqlx::query(
-	r#"
-        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
-        VALUES ($1, 'cbrs', $2, true, NOW(), 1, NOW(), NULL);
-        "#
-    )
-    .bind(coverage_object)
-    .bind(&cbsd_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
         r#"
 INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
 VALUES
@@ -180,17 +169,6 @@ async fn ensure_hotspot_does_not_affect_count(pool: PgPool) -> anyhow::Result<()
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     let hotspot_2: PublicKeyBinary =
         "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp".parse()?;
-    sqlx::query(
-	r#"
-        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
-        VALUES ($1, 'cbrs', $2, true, NOW(), 1, NOW(), NULL);
-        "#
-    )
-    .bind(coverage_object)
-    .bind(&cbsd_id)
-    .execute(&pool)
-    .await
-    .unwrap();
     sqlx::query(
         r#"
 INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
@@ -300,32 +278,21 @@ async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
-	r#"
-        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
-        VALUES ($1, 'wifi', $2, true, NOW(), 1, NOW(), NULL);
-        "#
-    )
-    .bind(latest_coverage_object)
-    .bind(&hotspot)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
         r#"
 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, location_validation_timestamp, distance_to_asserted, coverage_object)
 VALUES
-    ($1, 'novagenericwifi', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', NOW(), 300, $3)
+    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', NOW(), 300, $3)
 "#,
     )
     .bind(&hotspot)
@@ -351,7 +318,7 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot,
-            cell_type: CellType::NovaGenericWifi,
+            cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
             location_trust_score_multiplier: dec!(1.0),
             latest_timestamp,
@@ -370,32 +337,21 @@ async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> 
     let hotspot: PublicKeyBinary =
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
-	r#"
-        INSERT INTO coverage_objects (uuid, radio_type, radio_key, indoor, coverage_claim_time, trust_score, inserted_at, invalidated_at)
-        VALUES ($1, 'wifi', $2, true, NOW(), 1, NOW(), NULL);
-        "#
-    )
-    .bind(latest_coverage_object)
-    .bind(&hotspot)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
         r#"
 INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, location_validation_timestamp, distance_to_asserted, coverage_object)
 VALUES
-    ($1, 'novagenericwifi', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', null, 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', null, 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', null, 300, $2),
-    ($1, 'novagenericwifi', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', null, 300, $3)
+    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', NOW(), 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', null, 300, $2),
+    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', null, 300, $3)
 "#,
     )
     .bind(&hotspot)
@@ -421,7 +377,7 @@ VALUES
         heartbeat_reward,
         vec![HeartbeatReward {
             hotspot_key: hotspot,
-            cell_type: CellType::NovaGenericWifi,
+            cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
             location_trust_score_multiplier: dec!(0.75),
             latest_timestamp,

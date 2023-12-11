@@ -852,7 +852,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c4.clone()),
@@ -862,7 +861,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c4).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c5.clone()),
@@ -872,7 +870,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c5).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c6.clone()),
@@ -882,7 +879,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c6).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c7.clone()),
@@ -892,7 +888,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c7).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c8.clone()),
@@ -902,7 +897,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c8).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c9.clone()),
@@ -912,7 +906,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c9).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c10.clone()),
@@ -922,7 +915,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c10).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c11.clone()),
@@ -932,7 +924,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c11).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c12.clone()),
@@ -942,7 +933,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c12).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c13.clone()),
@@ -952,7 +942,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c13).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: Some(c14.clone()),
@@ -962,37 +951,33 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
-                cell_type: CellType::NovaGenericWifi,
+                cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_15,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
-                cell_type: CellType::NovaGenericWifi,
+                cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_16,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
-                cell_type: CellType::NovaGenericWifi,
+                cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_17,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(10000),
-                indoor: true,
             },
         ];
 
@@ -1259,12 +1244,11 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
-                cell_type: CellType::NovaGenericWifi,
+                cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
             // add sercomm indoor HB
             HeartbeatRow {
@@ -1275,7 +1259,6 @@ mod test {
                 coverage_object: g2_cov_obj,
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
         ];
 
@@ -1393,12 +1376,11 @@ mod test {
             HeartbeatRow {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
-                cell_type: CellType::NovaGenericWifi,
+                cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
                 latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1000),
-                indoor: true,
             },
             // add sercomm indoor HB
             HeartbeatRow {
@@ -1409,7 +1391,6 @@ mod test {
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
-                indoor: true,
             },
         ];
 

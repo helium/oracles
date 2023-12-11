@@ -28,5 +28,4 @@ FROM hex_coverage;
 
 ALTER TABLE hex_coverage RENAME TO old_hex_coverage;
 
-ALTER TYPE cell_type RENAME VALUE 'novagenericwifiindoor' TO 'novagenericwifi';
-
+ALTER TYPE cell_type ADD VALUE 'novagenericwifioutdoor' AFTER 'novagenericwifiindoor';
