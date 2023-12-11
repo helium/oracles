@@ -63,17 +63,17 @@ impl CellType {
         max_distance_to_asserted: u32,
     ) -> Decimal {
         match (self, distance, location_validation_timestamp.is_some()) {
-            (Self::NovaGenericWifiIndoor, Some(dist), true)
+            (Self::NovaGenericWifiIndoor | Self::NovaGenericWifiOutdoor, Some(dist), true)
                 if dist <= max_distance_to_asserted as i64 =>
             {
                 dec!(1.0)
             }
-            (Self::NovaGenericWifiIndoor, Some(dist), true)
+            (Self::NovaGenericWifiIndoor | Self::NovaGenericWifiOutdoor, Some(dist), true)
                 if dist > max_distance_to_asserted as i64 =>
             {
                 dec!(0.25)
             }
-            (Self::NovaGenericWifiIndoor, _, _) => dec!(0.25),
+            (Self::NovaGenericWifiIndoor | Self::NovaGenericWifiOutdoor, _, _) => dec!(0.25),
             _ => dec!(1.0),
         }
     }
