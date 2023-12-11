@@ -5,6 +5,7 @@ use crate::{
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
 };
+use anyhow::bail;
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
@@ -219,9 +220,9 @@ impl ServiceProviderShares {
     ) -> anyhow::Result<ServiceProviderShares> {
         let mut shares = vec![];
         for (payer, total_dcs) in payer_shares {
-            let service_provider_id = Self::payer_key_to_entity_key(&payer, client).await?;
+            let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
             shares.push(ServiceProviderDataSession {
-                service_provider_id,
+                service_provider,
                 total_dcs: Decimal::from(total_dcs),
             })
         }
@@ -259,7 +260,7 @@ impl ServiceProviderShares {
         self.shares
             .into_iter()
             .map(move |share| proto::ServiceProviderReward {
-                service_provider_id: share.service_provider_id as i32,
+                service_provider_id: share.service_provider as i32,
                 amount: (share.total_dcs * reward_per_share)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
@@ -292,12 +293,20 @@ impl ServiceProviderShares {
         }
     }
 
-    async fn payer_key_to_entity_key(
+    async fn payer_key_to_service_provider(
         payer: &str,
         client: &dyn CarrierServiceVerifier<Error = ClientError>,
     ) -> anyhow::Result<ServiceProvider> {
         tracing::info!("getting entity key for pubkey {:?}", payer);
-        Ok(client.key_to_rewardable_entity(payer).await?)
+        let entity_key = client.key_to_rewardable_entity(payer).await?;
+        Self::entity_key_to_service_provider(&entity_key)
+    }
+
+    fn entity_key_to_service_provider(key: &str) -> anyhow::Result<ServiceProvider> {
+        match key {
+            "helium_mobile" => Ok(ServiceProvider::HeliumMobile),
+            _ => bail!("invalid service provider name"),
+        }
     }
 }
 
@@ -1818,7 +1827,7 @@ mod test {
         let epoch = (now - Duration::hours(1))..now;
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1,
+            service_provider: sp1,
             total_dcs: dec!(1000),
         }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
@@ -1854,7 +1863,7 @@ mod test {
             mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: ServiceProvider::HeliumMobile,
+            service_provider: ServiceProvider::HeliumMobile,
             // force the service provider to have spend more DC than total rewardable
             total_dcs: total_rewards_value_in_dc * dec!(2.0),
         }];
@@ -1889,7 +1898,7 @@ mod test {
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1,
+            service_provider: sp1,
             total_dcs: dec!(100_000_000),
         }];
 
@@ -1924,7 +1933,7 @@ mod test {
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1,
+            service_provider: sp1,
             total_dcs: dec!(100_000_000_000),
         }];
 
