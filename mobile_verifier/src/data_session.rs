@@ -5,6 +5,7 @@ use futures::{
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
+use helium_proto::services::poc_mobile::ServiceProvider;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
@@ -16,7 +17,7 @@ pub struct DataSessionIngestor {
 
 #[derive(Clone, Debug)]
 pub struct ServiceProviderDataSession {
-    pub service_provider_id: String,
+    pub service_provider_id: ServiceProvider,
     pub total_dcs: Decimal,
 }
 

@@ -8,7 +8,9 @@ use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
-    services::poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
+    services::poc_mobile::{
+        mobile_reward_share::Reward as MobileReward, MobileRewardShare, ServiceProvider,
+    },
     Message,
 };
 use poc_metrics::record_duration;
@@ -150,13 +152,19 @@ impl Indexer {
                         },
                         r.discovery_location_amount,
                     )),
-                    Some(MobileReward::ServiceProviderReward(r)) => Ok((
-                        RewardKey {
-                            key: r.service_provider_id,
-                            reward_type: RewardType::MobileSubscriber,
-                        },
-                        r.amount,
-                    )),
+                    Some(MobileReward::ServiceProviderReward(r)) => {
+                        if let Some(sp) = ServiceProvider::from_i32(r.service_provider_id) {
+                            Ok((
+                                RewardKey {
+                                    key: sp.as_str_name().to_string(),
+                                    reward_type: RewardType::MobileSubscriber,
+                                },
+                                r.amount,
+                            ))
+                        } else {
+                            bail!("failed to decode service provider")
+                        }
+                    }
                     _ => bail!("got an invalid reward share"),
                 }
             }

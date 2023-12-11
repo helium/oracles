@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
-    services::{mobile_config, Channel},
+    services::{mobile_config, poc_mobile::ServiceProvider, Channel},
     Message,
 };
 use retainer::Cache;
@@ -12,15 +12,17 @@ use std::{sync::Arc, time::Duration};
 #[async_trait]
 pub trait CarrierServiceVerifier {
     type Error;
-    async fn key_to_rewardable_entity<'a>(&self, entity_id: &'a str)
-        -> Result<String, Self::Error>;
+    async fn key_to_rewardable_entity<'a>(
+        &self,
+        entity_id: &'a str,
+    ) -> Result<ServiceProvider, Self::Error>;
 }
 #[derive(Clone)]
 pub struct CarrierServiceClient {
     client: mobile_config::CarrierServiceClient<Channel>,
     signing_key: Arc<Keypair>,
     config_pubkey: PublicKey,
-    cache: Arc<Cache<String, String>>,
+    cache: Arc<Cache<String, ServiceProvider>>,
     cache_ttl: Duration,
 }
 
@@ -28,9 +30,12 @@ pub struct CarrierServiceClient {
 impl CarrierServiceVerifier for CarrierServiceClient {
     type Error = ClientError;
 
-    async fn key_to_rewardable_entity<'a>(&self, pubkey: &'a str) -> Result<String, ClientError> {
+    async fn key_to_rewardable_entity<'a>(
+        &self,
+        pubkey: &'a str,
+    ) -> Result<ServiceProvider, ClientError> {
         if let Some(carrier_found) = self.cache.get(&pubkey.to_string()).await {
-            return Ok(carrier_found.value().clone());
+            return Ok(*carrier_found.value());
         }
 
         let mut request = mobile_config::CarrierKeyToEntityReqV1 {
@@ -44,12 +49,12 @@ impl CarrierServiceVerifier for CarrierServiceClient {
             Ok(verify_res) => {
                 let response = verify_res.into_inner();
                 response.verify(&self.config_pubkey)?;
-                response.entity_key
+                to_service_provider(&response.entity_key)?
             }
             Err(status) => Err(status)?,
         };
         self.cache
-            .insert(pubkey.to_string(), response.clone(), self.cache_ttl)
+            .insert(pubkey.to_string(), response, self.cache_ttl)
             .await;
         Ok(response)
     }
@@ -72,5 +77,12 @@ impl CarrierServiceClient {
             cache_ttl: settings.cache_ttl(),
             cache,
         })
+    }
+}
+
+fn to_service_provider(key: &str) -> Result<ServiceProvider, ClientError> {
+    match key {
+        "helium_mobile" => Ok(ServiceProvider::HeliumMobile),
+        _ => Err(ClientError::UnknownServiceProvider)?,
     }
 }

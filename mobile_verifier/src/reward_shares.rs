@@ -9,6 +9,7 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
+use helium_proto::services::poc_mobile::ServiceProvider;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
 };
@@ -218,9 +219,9 @@ impl ServiceProviderShares {
     ) -> anyhow::Result<ServiceProviderShares> {
         let mut shares = vec![];
         for (payer, total_dcs) in payer_shares {
-            let entity_key = Self::payer_key_to_entity_key(&payer, client).await?;
+            let service_provider_id = Self::payer_key_to_entity_key(&payer, client).await?;
             shares.push(ServiceProviderDataSession {
-                service_provider_id: entity_key,
+                service_provider_id,
                 total_dcs: Decimal::from(total_dcs),
             })
         }
@@ -258,7 +259,7 @@ impl ServiceProviderShares {
         self.shares
             .into_iter()
             .map(move |share| proto::ServiceProviderReward {
-                service_provider_id: share.service_provider_id,
+                service_provider_id: share.service_provider_id as i32,
                 amount: (share.total_dcs * reward_per_share)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
@@ -294,7 +295,7 @@ impl ServiceProviderShares {
     async fn payer_key_to_entity_key(
         payer: &str,
         client: &dyn CarrierServiceVerifier<Error = ClientError>,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<ServiceProvider> {
         tracing::info!("getting entity key for pubkey {:?}", payer);
         Ok(client.key_to_rewardable_entity(payer).await?)
     }
@@ -557,7 +558,9 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
+    use helium_proto::services::{
+        poc_mobile::mobile_reward_share::Reward as MobileReward, poc_mobile::ServiceProvider,
+    };
     use prost::Message;
     use std::collections::HashMap;
     use uuid::Uuid;
@@ -1809,22 +1812,15 @@ mod test {
     async fn service_provider_reward_amounts() {
         let mobile_bone_price = dec!(0.00001);
 
-        let sp1 = "sp1".to_string();
-        let sp2 = "sp2".to_string();
+        let sp1 = ServiceProvider::HeliumMobile;
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
 
-        let service_provider_sessions = vec![
-            ServiceProviderDataSession {
-                service_provider_id: sp1.clone(),
-                total_dcs: dec!(1000),
-            },
-            ServiceProviderDataSession {
-                service_provider_id: sp2.clone(),
-                total_dcs: dec!(5000),
-            },
-        ];
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider_id: sp1,
+            total_dcs: dec!(1000),
+        }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
         let total_sp_rewards =
             sp_shares.get_scheduled_tokens_for_service_providers(epoch.end - epoch.start);
@@ -1832,49 +1828,40 @@ mod test {
             .rewards_per_share(total_sp_rewards, mobile_bone_price)
             .unwrap();
 
-        let mut sp_rewards = HashMap::new();
+        let mut sp_rewards = HashMap::<i32, u64>::new();
         for sp_reward in sp_shares.into_service_provider_rewards(&epoch, rewards_per_share) {
             if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
                 sp_rewards.insert(r.service_provider_id, r.amount);
             }
         }
 
-        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
-        let sp2_reward_amount = *sp_rewards.get(&sp2).expect("Could not fetch sp2 shares");
+        let sp1_reward_amount = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
         assert_eq!(sp1_reward_amount, 1000);
-        assert_eq!(sp2_reward_amount, 5000);
-        // sp2 should be rewarded 5X that of sp1
-        assert_eq!(sp2_reward_amount, sp1_reward_amount * 5);
     }
 
     #[tokio::test]
     async fn service_provider_reward_amounts_capped() {
         let mobile_bone_price = dec!(1.0);
-        let sp1 = "sp1".to_string();
-        let sp2 = "sp2".to_string();
+        let sp1 = ServiceProvider::HeliumMobile;
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
 
-        let total_sp_rewards = dec!(600_000_000);
-        let total_rewards_value_in_dc = mobile_bones_to_dc(total_sp_rewards, mobile_bone_price);
+        let total_sp_rewards_in_bones = dec!(100_000_000);
+        let total_rewards_value_in_dc =
+            mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
 
-        let service_provider_sessions = vec![
-            ServiceProviderDataSession {
-                service_provider_id: sp1.clone(),
-                total_dcs: total_rewards_value_in_dc,
-            },
-            ServiceProviderDataSession {
-                service_provider_id: sp2.clone(),
-                total_dcs: total_rewards_value_in_dc
-                    .checked_div(dec!(2))
-                    .expect("failed to assign rewards"),
-            },
-        ];
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider_id: ServiceProvider::HeliumMobile,
+            // force the service provider to have spend more DC than total rewardable
+            total_dcs: total_rewards_value_in_dc * dec!(2.0),
+        }];
 
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
         let rewards_per_share = sp_shares
-            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
             .unwrap();
 
         let mut sp_rewards = HashMap::new();
@@ -1883,31 +1870,26 @@ mod test {
                 sp_rewards.insert(r.service_provider_id, r.amount);
             }
         }
-        let sp1_reward_amount = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
-        let sp2_reward_amount = *sp_rewards.get(&sp2).expect("Could not fetch sp2 shares");
+        let sp1_reward_amount = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
 
-        assert_eq!(
-            Decimal::from(sp1_reward_amount + sp2_reward_amount),
-            total_sp_rewards
-        );
-        assert_eq!(sp1_reward_amount, 400_000_000);
-        assert_eq!(sp2_reward_amount, 200_000_000);
-        // payer 1 should be rewarded 2X that of payer 2
-        assert!(sp1_reward_amount.abs_diff(sp2_reward_amount * 2) < 2);
+        assert_eq!(Decimal::from(sp1_reward_amount), total_sp_rewards_in_bones);
+        assert_eq!(sp1_reward_amount, 100_000_000);
     }
 
     #[tokio::test]
     async fn service_provider_reward_hip87_ex1() {
         // mobile price from hip example and converted to bones
         let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
-        let sp1 = "sp1".to_string();
+        let sp1 = ServiceProvider::HeliumMobile;
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1.clone(),
+            service_provider_id: sp1,
             total_dcs: dec!(100_000_000),
         }];
 
@@ -1923,7 +1905,9 @@ mod test {
             }
         }
 
-        let sp1_reward_amount_in_bones = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        let sp1_reward_amount_in_bones = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
         // example in HIP gives expected reward amount in mobile whereas we use bones
         // assert expected value in bones
         assert_eq!(sp1_reward_amount_in_bones, 10_000_000 * 1_000_000);
@@ -1933,14 +1917,14 @@ mod test {
     async fn service_provider_reward_hip87_ex2() {
         // mobile price from hip example and converted to bones
         let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
-        let sp1 = "sp2".to_string();
+        let sp1 = ServiceProvider::HeliumMobile;
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(24))..now;
         let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
 
         let service_provider_sessions = vec![ServiceProviderDataSession {
-            service_provider_id: sp1.clone(),
+            service_provider_id: sp1,
             total_dcs: dec!(100_000_000_000),
         }];
 
@@ -1956,7 +1940,9 @@ mod test {
             }
         }
 
-        let sp1_reward_amount_in_bones = *sp_rewards.get(&sp1).expect("Could not fetch sp1 shares");
+        let sp1_reward_amount_in_bones = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
         // example in HIP gives expected reward amount in mobile whereas we use bones
         // assert expected value in bones
         assert_eq!(sp1_reward_amount_in_bones, 500_000_000 * 1_000_000);
