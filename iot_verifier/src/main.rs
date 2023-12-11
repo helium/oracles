@@ -80,8 +80,11 @@ impl Server {
         // *
         // setup caches
         // *
-        let (gateway_updater_receiver, gateway_updater_server) =
-            GatewayUpdater::from_settings(settings, iot_config_client.clone()).await?;
+        let (gateway_updater_receiver, gateway_updater_server) = GatewayUpdater::new(
+            settings.gateway_refresh_interval(),
+            iot_config_client.clone(),
+        )
+        .await?;
         let gateway_cache = GatewayCache::new(gateway_updater_receiver.clone());
 
         // *
@@ -98,8 +101,12 @@ impl Server {
         // *
         // setup the density scaler requirements
         // *
-        let density_scaler =
-            DensityScaler::from_settings(settings, pool.clone(), gateway_updater_receiver).await?;
+        let density_scaler = DensityScaler::new(
+            settings.loader_window_max_lookback_age(),
+            pool.clone(),
+            gateway_updater_receiver,
+        )
+        .await?;
 
         // *
         // setup the rewarder requirements
@@ -219,8 +226,15 @@ impl Server {
             .create()
             .await?;
 
-        let purger = purger::Purger::from_settings(
-            settings,
+        let base_stale_period = settings.base_stale_period();
+        let beacon_stale_period = settings.beacon_stale_period();
+        let witness_stale_period = settings.witness_stale_period();
+        let entropy_stale_period = settings.entropy_stale_period();
+        let purger = purger::Purger::new(
+            base_stale_period,
+            beacon_stale_period,
+            witness_stale_period,
+            entropy_stale_period,
             pool.clone(),
             purger_invalid_beacon_sink,
             purger_invalid_witness_sink,

@@ -2,7 +2,6 @@ use crate::{
     gateway_updater::MessageReceiver,
     hex_density::{compute_hex_density_map, GlobalHexMap, HexDensityMap},
     last_beacon::LastBeacon,
-    Settings,
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::future::LocalBoxFuture;
@@ -40,15 +39,15 @@ impl ManagedTask for Server {
 }
 
 impl Server {
-    pub async fn from_settings(
-        settings: &Settings,
+    pub async fn new(
+        refresh_offset: Duration,
         pool: PgPool,
         gateway_cache_receiver: MessageReceiver,
     ) -> anyhow::Result<Self> {
         let mut server = Self {
             hex_density_map: HexDensityMap::new(),
             pool,
-            refresh_offset: settings.loader_window_max_lookback_age(),
+            refresh_offset,
             gateway_cache_receiver,
         };
 

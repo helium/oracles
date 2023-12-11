@@ -1,5 +1,8 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
-use crate::coverage::{CoverageClaimTimeCache, CoverageObjects};
+use crate::{
+    coverage::{CoverageClaimTimeCache, CoverageObjects},
+    GatewayResolver,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use file_store::{
@@ -7,28 +10,29 @@ use file_store::{
     heartbeat::CbrsHeartbeatIngestReport,
 };
 use futures::{stream::StreamExt, TryFutureExt};
-use mobile_config::GatewayClient;
 use retainer::Cache;
-
 use std::{
     sync::Arc,
     time::{self, Instant},
 };
 use tokio::sync::mpsc::Receiver;
 
-pub struct HeartbeatDaemon {
+pub struct HeartbeatDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_client: GatewayClient,
+    gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
     modeled_coverage_start: DateTime<Utc>,
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
 }
 
-impl HeartbeatDaemon {
+impl<GIR> HeartbeatDaemon<GIR>
+where
+    GIR: GatewayResolver,
+{
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_client: GatewayClient,
+        gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
         modeled_coverage_start: DateTime<Utc>,
         heartbeat_sink: FileSinkClient,
@@ -36,7 +40,7 @@ impl HeartbeatDaemon {
     ) -> Self {
         Self {
             pool,
-            gateway_client,
+            gateway_info_resolver,
             heartbeats,
             modeled_coverage_start,
             heartbeat_sink,
@@ -110,8 +114,8 @@ impl HeartbeatDaemon {
             });
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
+                &self.gateway_info_resolver,
                 heartbeats,
-                &self.gateway_client,
                 coverage_objects,
                 &epoch,
             ),

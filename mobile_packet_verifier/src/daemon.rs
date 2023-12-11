@@ -9,7 +9,10 @@ use file_store::{
     FileSinkBuilder, FileStore, FileType,
 };
 
-use mobile_config::{client::AuthorizationClient, GatewayClient};
+use mobile_config::client::{
+    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
+    AuthorizationClient, GatewayClient,
+};
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
@@ -18,24 +21,24 @@ use tokio::{
     time::{sleep_until, Duration, Instant},
 };
 
-pub struct Daemon<S> {
+pub struct Daemon<S, GIR, AV> {
     pool: Pool<Postgres>,
     burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
-    gateway_client: GatewayClient,
-    auth_client: AuthorizationClient,
+    gateway_info_resolver: GIR,
+    authorization_verifier: AV,
     invalid_data_session_report_sink: FileSinkClient,
 }
 
-impl<S> Daemon<S> {
+impl<S, GIR, AV> Daemon<S, GIR, AV> {
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         burner: Burner<S>,
-        gateway_client: GatewayClient,
-        auth_client: AuthorizationClient,
+        gateway_info_resolver: GIR,
+        authorization_verifier: AV,
         invalid_data_session_report_sink: FileSinkClient,
     ) -> Self {
         Self {
@@ -43,16 +46,18 @@ impl<S> Daemon<S> {
             burner,
             reports,
             burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
-            gateway_client,
-            auth_client,
+            gateway_info_resolver,
+            authorization_verifier,
             invalid_data_session_report_sink,
         }
     }
 }
 
-impl<S> ManagedTask for Daemon<S>
+impl<S, GIR, AV> ManagedTask for Daemon<S, GIR, AV>
 where
     S: SolanaNetwork,
+    GIR: GatewayInfoResolver,
+    AV: AuthorizationVerifier + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -62,9 +67,11 @@ where
     }
 }
 
-impl<S> Daemon<S>
+impl<S, GIR, AV> Daemon<S, GIR, AV>
 where
     S: SolanaNetwork,
+    GIR: GatewayInfoResolver,
+    AV: AuthorizationVerifier,
 {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         // Set the initial burn period to one minute
@@ -79,7 +86,7 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.gateway_client, &self.auth_client, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&self.gateway_info_resolver, &self.authorization_verifier, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
                     transaction.commit().await?;
                     self.invalid_data_session_report_sink.commit().await?;
                 },

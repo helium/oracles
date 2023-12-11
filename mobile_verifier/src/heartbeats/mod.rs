@@ -386,14 +386,15 @@ impl ValidatedHeartbeat {
     }
 
     pub fn validate_heartbeats<'a>(
+        gateway_info_resolver: &'a impl GatewayResolver,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
-        gateway_client: &'a impl GatewayResolver,
         coverage_cache: &'a CoverageObjects,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
             let (cell_type, distance_to_asserted, coverage_info, validity) =
-                validate_heartbeat(&heartbeat, gateway_client, coverage_cache, epoch).await?;
+                validate_heartbeat(&heartbeat, gateway_info_resolver, coverage_cache, epoch)
+                    .await?;
 
             Ok(Self {
                 heartbeat,
@@ -509,7 +510,7 @@ impl ValidatedHeartbeat {
 // TODO(map): This needs to be changed to provide a struct instead of a tuple.
 pub async fn validate_heartbeat(
     heartbeat: &Heartbeat,
-    gateway_resolver: &impl GatewayResolver,
+    gateway_info_resolver: &impl GatewayResolver,
     coverage_cache: &CoverageObjects,
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<(
@@ -588,7 +589,7 @@ pub async fn validate_heartbeat(
         ));
     }
 
-    let distance_to_asserted = match gateway_resolver
+    let distance_to_asserted = match gateway_info_resolver
         .resolve_gateway(&heartbeat.hotspot_key)
         .await?
     {
@@ -632,7 +633,6 @@ pub(crate) async fn process_validated_heartbeats(
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
     let mut validated_heartbeats = pin!(validated_heartbeats);
-
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
         validated_heartbeat.write(heartbeat_sink).await?;
 

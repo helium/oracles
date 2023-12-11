@@ -10,17 +10,16 @@ use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
     InvalidDataTransferIngestReportV1,
 };
-use mobile_config::{
-    client::{AuthorizationClient, GatewayClient},
-    gateway_info::GatewayInfoResolver,
+use mobile_config::client::{
+    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
 };
 use sqlx::{Postgres, Transaction};
 
 use crate::event_ids;
 
 pub async fn accumulate_sessions(
-    gateway_client: &GatewayClient,
-    auth_client: &AuthorizationClient,
+    gateway_info_resolver: &impl GatewayInfoResolver,
+    authorization_verifier: &impl AuthorizationVerifier,
     conn: &mut Transaction<'_, Postgres>,
     invalid_data_session_report_sink: &FileSinkClient,
     curr_file_ts: DateTime<Utc>,
@@ -41,7 +40,8 @@ pub async fn accumulate_sessions(
             continue;
         }
 
-        let report_validity = verify_report(conn, gateway_client, auth_client, &report).await?;
+        let report_validity =
+            verify_report(conn, gateway_info_resolver, authorization_verifier, &report).await?;
         if report_validity != DataTransferIngestReportStatus::Valid {
             write_invalid_report(invalid_data_session_report_sink, report_validity, report).await?;
             continue;
@@ -73,35 +73,43 @@ pub async fn accumulate_sessions(
 
 async fn verify_report(
     txn: &mut Transaction<'_, Postgres>,
-    gateway_client: &GatewayClient,
-    auth_client: &AuthorizationClient,
+    gateway_info_resolver: &impl GatewayInfoResolver,
+    authorization_verifier: &impl AuthorizationVerifier,
     report: &DataTransferSessionIngestReport,
 ) -> anyhow::Result<DataTransferIngestReportStatus> {
     if is_duplicate(txn, report).await? {
         return Ok(DataTransferIngestReportStatus::Duplicate);
     }
 
-    if !verify_gateway(gateway_client, &report.report.data_transfer_usage.pub_key).await {
+    if !verify_gateway(
+        gateway_info_resolver,
+        &report.report.data_transfer_usage.pub_key,
+    )
+    .await
+    {
         return Ok(DataTransferIngestReportStatus::InvalidGatewayKey);
     };
-    if !verify_known_routing_key(auth_client, &report.report.pub_key).await {
+    if !verify_known_routing_key(authorization_verifier, &report.report.pub_key).await {
         return Ok(DataTransferIngestReportStatus::InvalidRoutingKey);
     };
     Ok(DataTransferIngestReportStatus::Valid)
 }
 
-async fn verify_gateway(gateway_client: &GatewayClient, public_key: &PublicKeyBinary) -> bool {
-    match gateway_client.resolve_gateway_info(public_key).await {
+async fn verify_gateway(
+    gateway_info_resolver: &impl GatewayInfoResolver,
+    public_key: &PublicKeyBinary,
+) -> bool {
+    match gateway_info_resolver.resolve_gateway_info(public_key).await {
         Ok(res) => res.is_some(),
         Err(_err) => false,
     }
 }
 
 async fn verify_known_routing_key(
-    auth_client: &AuthorizationClient,
+    authorization_verifier: &impl AuthorizationVerifier,
     public_key: &PublicKeyBinary,
 ) -> bool {
-    match auth_client
+    match authorization_verifier
         .verify_authorized_key(public_key, NetworkKeyRole::MobileRouter)
         .await
     {

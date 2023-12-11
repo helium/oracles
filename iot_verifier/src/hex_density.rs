@@ -94,6 +94,12 @@ pub struct GlobalHexMap {
     asserted_hexes: Vec<CellIndex>,
 }
 
+impl Default for GlobalHexMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GlobalHexMap {
     pub fn new() -> Self {
         Self {
