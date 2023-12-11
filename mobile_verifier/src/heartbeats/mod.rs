@@ -3,7 +3,7 @@ pub mod wifi;
 
 use crate::{
     cell_type::{CellType, CellTypeLabel},
-    coverage::{CoverageClaimTimeCache, CoverageInfo, CoverageObjects, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObjectSummary, CoverageObjects, Seniority},
     GatewayResolution, GatewayResolver,
 };
 use anyhow::anyhow;
@@ -372,7 +372,7 @@ pub struct ValidatedHeartbeat {
     pub heartbeat: Heartbeat,
     pub cell_type: CellType,
     pub distance_to_asserted: Option<i64>,
-    pub coverage_info: Option<CoverageInfo>,
+    pub coverage_summary: Option<CoverageObjectSummary>,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -392,7 +392,7 @@ impl ValidatedHeartbeat {
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
-            let (cell_type, distance_to_asserted, coverage_info, validity) =
+            let (cell_type, distance_to_asserted, coverage_summary, validity) =
                 validate_heartbeat(&heartbeat, gateway_info_resolver, coverage_cache, epoch)
                     .await?;
 
@@ -400,7 +400,7 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 distance_to_asserted,
-                coverage_info,
+                coverage_summary,
                 validity,
             })
         })
@@ -447,7 +447,7 @@ impl ValidatedHeartbeat {
             "#,
         )
         .bind(self.heartbeat.timestamp)
-        .bind(self.coverage_info.as_ref().map(|x| x.inserted_at)) // Guaranteed not to be NULL
+        .bind(self.coverage_summary.as_ref().map(|x| x.inserted_at)) // Guaranteed not to be NULL
         .bind(self.heartbeat.key())
         .bind(self.heartbeat.coverage_object)
         .execute(&mut *exec)
@@ -516,7 +516,7 @@ pub async fn validate_heartbeat(
 ) -> anyhow::Result<(
     CellType,
     Option<i64>,
-    Option<CoverageInfo>,
+    Option<CoverageObjectSummary>,
     proto::HeartbeatValidity,
 )> {
     let Some(coverage_object) = heartbeat.coverage_object else {
@@ -528,8 +528,8 @@ pub async fn validate_heartbeat(
         ));
     };
 
-    let Some(coverage_info) = coverage_cache
-        .coverage_info(&coverage_object, heartbeat.key())
+    let Some(coverage_summary) = coverage_cache
+        .coverage_summary(&coverage_object, heartbeat.key())
         .await?
     else {
         return Ok((
@@ -548,7 +548,7 @@ pub async fn validate_heartbeat(
                     return Ok((
                         CellType::CellTypeNone,
                         None,
-                        Some(coverage_info),
+                        Some(coverage_summary),
                         proto::HeartbeatValidity::BadCbsdId,
                     ))
                 }
@@ -557,13 +557,13 @@ pub async fn validate_heartbeat(
                 return Ok((
                     CellType::CellTypeNone,
                     None,
-                    Some(coverage_info),
+                    Some(coverage_summary),
                     proto::HeartbeatValidity::BadCbsdId,
                 ))
             }
         },
         HbType::Wifi => {
-            if coverage_info.indoor {
+            if coverage_summary.indoor {
                 CellType::NovaGenericWifiIndoor
             } else {
                 CellType::NovaGenericWifiOutdoor
@@ -575,7 +575,7 @@ pub async fn validate_heartbeat(
         return Ok((
             cell_type,
             None,
-            Some(coverage_info),
+            Some(coverage_summary),
             proto::HeartbeatValidity::NotOperational,
         ));
     }
@@ -584,7 +584,7 @@ pub async fn validate_heartbeat(
         return Ok((
             cell_type,
             None,
-            Some(coverage_info),
+            Some(coverage_summary),
             proto::HeartbeatValidity::HeartbeatOutsideRange,
         ));
     }
@@ -597,7 +597,7 @@ pub async fn validate_heartbeat(
             return Ok((
                 cell_type,
                 None,
-                Some(coverage_info),
+                Some(coverage_summary),
                 proto::HeartbeatValidity::GatewayNotFound,
             ))
         }
@@ -605,7 +605,7 @@ pub async fn validate_heartbeat(
             return Ok((
                 cell_type,
                 None,
-                Some(coverage_info),
+                Some(coverage_summary),
                 proto::HeartbeatValidity::GatewayNotAsserted,
             ))
         }
@@ -618,7 +618,7 @@ pub async fn validate_heartbeat(
     Ok((
         cell_type,
         distance_to_asserted,
-        Some(coverage_info),
+        Some(coverage_summary),
         proto::HeartbeatValidity::Valid,
     ))
 }
@@ -866,7 +866,7 @@ mod test {
             },
             validity: Default::default(),
             distance_to_asserted: None,
-            coverage_info: None,
+            coverage_summary: None,
         }
     }
 

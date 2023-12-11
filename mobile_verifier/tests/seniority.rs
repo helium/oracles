@@ -28,7 +28,7 @@ async fn test_seniority_updates(pool: PgPool) -> anyhow::Result<()> {
         },
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
-        coverage_info: None,
+        coverage_summary: None,
         validity: HeartbeatValidity::Valid,
     };
     let mut transaction = pool.begin().await?;

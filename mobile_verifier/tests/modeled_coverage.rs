@@ -32,7 +32,7 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
         .unwrap();
     let key = KeyType::from(&key);
 
-    assert!(cache.coverage_info(&uuid, key).await?.is_none());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -88,7 +88,7 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(coverage.coverage.len(), 3);
      */
-    assert!(cache.coverage_info(&uuid, key).await?.is_some());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_some());
 
     Ok(())
 }
@@ -102,7 +102,7 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
     let key = "P27-SCE4255W120200039521XGB0103";
     let key = KeyType::from(key);
 
-    assert!(cache.coverage_info(&uuid, key).await?.is_none());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -156,7 +156,7 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(coverage.coverage.len(), 3);
      */
-    assert!(cache.coverage_info(&uuid, key).await?.is_some());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_some());
 
     Ok(())
 }
@@ -170,7 +170,7 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     let key = "P27-SCE4255W120200039521XGB0103";
     let key = KeyType::from(key);
 
-    assert!(cache.coverage_info(&uuid, key).await?.is_none());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
 
     let co1 = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),

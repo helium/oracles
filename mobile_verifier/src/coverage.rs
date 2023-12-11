@@ -645,11 +645,11 @@ impl CoverageObjects {
         Self { pool: pool.clone() }
     }
 
-    pub async fn coverage_info(
+    pub async fn coverage_summary(
         &self,
         uuid: &Uuid,
         key: KeyType<'_>,
-    ) -> Result<Option<CoverageInfo>, sqlx::Error> {
+    ) -> Result<Option<CoverageObjectSummary>, sqlx::Error> {
         sqlx::query_as(
 	    "SELECT inserted_at, indoor FROM coverage_objects WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
 	)
@@ -661,7 +661,7 @@ impl CoverageObjects {
 }
 
 #[derive(Clone, FromRow)]
-pub struct CoverageInfo {
+pub struct CoverageObjectSummary {
     pub inserted_at: DateTime<Utc>,
     pub indoor: bool,
 }
