@@ -262,7 +262,7 @@ impl SolanaNetwork for SolanaRpc {
                     payer = %payer,
                     amount = %amount,
                     "Data credit burn failed: {err:?}");
-                return Err(SolanaRpcError::RpcClientError(err));
+                Err(SolanaRpcError::RpcClientError(err))
             }
         }
     }
