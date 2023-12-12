@@ -228,12 +228,20 @@ impl CoverageObject {
         {
             QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power)")
                 .push_values(hexes, |mut b, hex| {
+                    // If this is an outdoor Wifi radio, we adjust the signal power by -30 in order
+                    // to more properly reflect signal strength.
+                    let signal_power = if hb_type == HbType::Wifi && !self.coverage_object.indoor {
+                        hex.signal_power - 30
+                    } else {
+                        hex.signal_power
+                    };
+
                     let location: u64 = hex.location.into();
 
                     b.push_bind(self.coverage_object.uuid)
                         .push_bind(location as i64)
                         .push_bind(SignalLevel::from(hex.signal_level))
-                        .push_bind(hex.signal_power);
+                        .push_bind(signal_power);
                 })
                 .push(
                     r#"
