@@ -231,7 +231,7 @@ impl CoverageObject {
                     // If this is an outdoor Wifi radio, we adjust the signal power by -30 in order
                     // to more properly reflect signal strength.
                     let signal_power = if hb_type == HbType::Wifi && !self.coverage_object.indoor {
-                        hex.signal_power - 30
+                        hex.signal_power - 3000
                     } else {
                         hex.signal_power
                     };
