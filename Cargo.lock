@@ -1197,7 +1197,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#9fc57133ed1e760c3f1b65dd22d55c09c84832da"
+source = "git+https://github.com/helium/proto?branch=master#28364f652beffad14cda6b3e7c7e4c49ad4d2b73"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1207,7 +1207,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -3047,7 +3047,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#9fc57133ed1e760c3f1b65dd22d55c09c84832da"
+source = "git+https://github.com/helium/proto?branch=master#28364f652beffad14cda6b3e7c7e4c49ad4d2b73"
 dependencies = [
  "bytes",
  "prost",
@@ -3438,6 +3438,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "backon",
  "base64 0.21.0",
  "bs58 0.4.0",
  "chrono",
@@ -3457,6 +3458,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "poc-metrics",
  "prost",
+ "rand 0.8.5",
  "retainer",
  "serde",
  "serde_json",
@@ -8325,7 +8327,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "twox-hash",
  "xorf",

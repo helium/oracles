@@ -4,10 +4,9 @@ use crate::{
     org::{self, OrgStoreError},
     route::{self, Route, RouteStorageError},
     telemetry, update_channel, verify_public_key, GrpcResult, GrpcStreamRequest, GrpcStreamResult,
-    Settings,
 };
 use anyhow::{anyhow, Result};
-use chrono::Utc;
+use chrono::{DateTime, TimeZone, Utc};
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
     future::TryFutureExt,
@@ -47,13 +46,13 @@ enum OrgId<'a> {
 }
 
 impl RouteService {
-    pub fn new(settings: &Settings, auth_cache: AuthCache, pool: Pool<Postgres>) -> Result<Self> {
-        Ok(Self {
+    pub fn new(signing_key: Arc<Keypair>, auth_cache: AuthCache, pool: Pool<Postgres>) -> Self {
+        Self {
             auth_cache,
             pool,
             update_channel: update_channel(),
-            signing_key: Arc::new(settings.signing_keypair()?),
-        })
+            signing_key,
+        }
     }
 
     fn subscribe_to_routes(&self) -> broadcast::Receiver<RouteStreamResV1> {
@@ -381,6 +380,11 @@ impl iot_config::Route for RouteService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_stream_request_signature(&signer, &request)?;
 
+        let since = Utc
+            .timestamp_millis_opt(request.since as i64)
+            .single()
+            .ok_or_else(|| Status::invalid_argument("unable to parse since timestamp"))?;
+
         tracing::info!("client subscribed to route stream");
         let pool = self.pool.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(20);
@@ -389,10 +393,10 @@ impl iot_config::Route for RouteService {
         let mut route_updates = self.subscribe_to_routes();
 
         tokio::spawn(async move {
-            let broadcast = stream_existing_routes(&pool, &signing_key, tx.clone())
-                .and_then(|_| stream_existing_euis(&pool, &signing_key, tx.clone()))
-                .and_then(|_| stream_existing_devaddrs(&pool, &signing_key, tx.clone()))
-                .and_then(|_| stream_existing_skfs(&pool, &signing_key, tx.clone()))
+            let broadcast = stream_existing_routes(&pool, since, &signing_key, tx.clone())
+                .and_then(|_| stream_existing_euis(&pool, since, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_devaddrs(&pool, since, &signing_key, tx.clone()))
+                .and_then(|_| stream_existing_skfs(&pool, since, &signing_key, tx.clone()))
                 .await;
             if let Err(error) = broadcast {
                 tracing::error!(
@@ -1064,16 +1068,22 @@ where
 
 async fn stream_existing_routes(
     pool: &Pool<Postgres>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
-    route::active_route_stream(pool)
-        .then(move |route| {
+    route::route_stream(pool, since)
+        .then(move |(route, deleted)| {
             let mut route_res = RouteStreamResV1 {
-                action: ActionV1::Add.into(),
+                action: if deleted {
+                    ActionV1::Remove
+                } else {
+                    ActionV1::Add
+                }
+                .into(),
                 data: Some(route_stream_res_v1::Data::Route(route.into())),
                 timestamp,
                 signer: signer.clone(),
@@ -1093,16 +1103,22 @@ async fn stream_existing_routes(
 
 async fn stream_existing_euis(
     pool: &Pool<Postgres>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
-    route::eui_stream(pool)
-        .then(move |eui_pair| {
+    route::eui_stream(pool, since)
+        .then(move |(eui_pair, deleted)| {
             let mut eui_pair_res = RouteStreamResV1 {
-                action: ActionV1::Add.into(),
+                action: if deleted {
+                    ActionV1::Remove
+                } else {
+                    ActionV1::Add
+                }
+                .into(),
                 data: Some(route_stream_res_v1::Data::EuiPair(eui_pair.into())),
                 timestamp,
                 signer: signer.clone(),
@@ -1122,16 +1138,22 @@ async fn stream_existing_euis(
 
 async fn stream_existing_devaddrs(
     pool: &Pool<Postgres>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
-    route::devaddr_range_stream(pool)
-        .then(move |devaddr_range| {
+    route::devaddr_range_stream(pool, since)
+        .then(move |(devaddr_range, deleted)| {
             let mut devaddr_range_res = RouteStreamResV1 {
-                action: ActionV1::Add.into(),
+                action: if deleted {
+                    ActionV1::Remove
+                } else {
+                    ActionV1::Add
+                }
+                .into(),
                 data: Some(route_stream_res_v1::Data::DevaddrRange(
                     devaddr_range.into(),
                 )),
@@ -1153,15 +1175,21 @@ async fn stream_existing_devaddrs(
 
 async fn stream_existing_skfs(
     pool: &Pool<Postgres>,
+    since: DateTime<Utc>,
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
-    route::skf_stream(pool)
-        .then(|skf| {
+    route::skf_stream(pool, since)
+        .then(|(skf, deleted)| {
             let mut skf_res = RouteStreamResV1 {
-                action: ActionV1::Add.into(),
+                action: if deleted {
+                    ActionV1::Remove
+                } else {
+                    ActionV1::Add
+                }
+                .into(),
                 data: Some(route_stream_res_v1::Data::Skf(skf.into())),
                 timestamp,
                 signer: signer.clone(),
