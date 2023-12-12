@@ -228,20 +228,12 @@ impl CoverageObject {
         {
             QueryBuilder::new("INSERT INTO hexes (uuid, hex, signal_level, signal_power)")
                 .push_values(hexes, |mut b, hex| {
-                    // If this is an outdoor Wifi radio, we adjust the signal power by -30 in order
-                    // to more properly reflect signal strength.
-                    let signal_power = if hb_type == HbType::Wifi && !self.coverage_object.indoor {
-                        hex.signal_power - 3000
-                    } else {
-                        hex.signal_power
-                    };
-
                     let location: u64 = hex.location.into();
 
                     b.push_bind(self.coverage_object.uuid)
                         .push_bind(location as i64)
                         .push_bind(SignalLevel::from(hex.signal_level))
-                        .push_bind(signal_power);
+                        .push_bind(hex.signal_power);
                 })
                 .push(
                     r#"
@@ -534,6 +526,14 @@ impl CoveredHexes {
                         hotspot: hotspot.clone(),
                     });
             } else {
+                // If this is an outdoor Wifi radio, we adjust the signal power by -30dbm in order
+                // to more properly reflect signal strength.
+                let signal_power = if radio_key.is_wifi() {
+                    signal_power + 3000
+                } else {
+                    signal_power
+                };
+
                 self.outdoor
                     .entry(CellIndex::try_from(hex as u64).unwrap())
                     .or_default()
@@ -919,6 +919,64 @@ mod test {
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("3".to_string()),
+                    hotspot: owner,
+                    points: dec!(4)
+                }
+            ]
+        );
+    }
+
+    fn outdoor_wifi_hex_coverage(
+        pub_key: &PublicKeyBinary,
+        signal_power: i32,
+        coverage_claim_time: DateTime<Utc>,
+    ) -> HexCoverage {
+        HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: 0x8a1fb46622dffff_u64 as i64,
+            indoor: false,
+            radio_key: OwnedKeyType::Wifi(pub_key.clone()),
+            signal_power,
+            signal_level: SignalLevel::High,
+            coverage_claim_time,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_outdoor_wifi_radios_adjusted() {
+        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner parse");
+        let mut covered_hexes = CoveredHexes::default();
+        covered_hexes
+            .aggregate_coverage(
+                &owner,
+                iter(vec![
+                    anyhow::Ok(outdoor_hex_coverage("1", -6470, date(2022, 8, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("2", -9360, date(2022, 12, 5))),
+                    anyhow::Ok(outdoor_wifi_hex_coverage(&owner, -9469, date(2022, 12, 2))),
+                ]),
+            )
+            .await
+            .unwrap();
+	//panic!("{:#?}", covered_hexes);
+        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
+        assert_eq!(
+            rewards,
+            vec![
+                CoverageReward {
+                    radio_key: OwnedKeyType::Wifi(owner.clone()),
+                    hotspot: owner.clone(),
+                    points: dec!(16)
+                },
+                CoverageReward {
+                    radio_key: OwnedKeyType::Cbrs("1".to_string()),
+                    hotspot: owner.clone(),
+                    points: dec!(12)
+                },
+                CoverageReward {
+                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
                     hotspot: owner,
                     points: dec!(4)
                 }
