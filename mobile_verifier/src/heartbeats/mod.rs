@@ -123,11 +123,11 @@ impl OwnedKeyType {
     }
 
     pub fn is_cbrs(&self) -> bool {
-	matches!(self, Self::Cbrs(_))
+        matches!(self, Self::Cbrs(_))
     }
 
     pub fn is_wifi(&self) -> bool {
-	matches!(self, Self::Wifi(_))
+        matches!(self, Self::Wifi(_))
     }
 }
 

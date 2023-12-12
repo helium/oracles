@@ -529,7 +529,7 @@ impl CoveredHexes {
                 // If this is an outdoor Wifi radio, we adjust the signal power by -30dbm in order
                 // to more properly reflect signal strength.
                 let signal_power = if radio_key.is_wifi() {
-                    signal_power + 3000
+                    signal_power - 300
                 } else {
                     signal_power
                 };
@@ -894,11 +894,11 @@ mod test {
             .aggregate_coverage(
                 &owner,
                 iter(vec![
-                    anyhow::Ok(outdoor_hex_coverage("1", -9469, date(2022, 8, 1))),
-                    anyhow::Ok(outdoor_hex_coverage("2", -9360, date(2022, 12, 5))),
-                    anyhow::Ok(outdoor_hex_coverage("3", -8875, date(2022, 12, 2))),
-                    anyhow::Ok(outdoor_hex_coverage("4", -8875, date(2022, 12, 1))),
-                    anyhow::Ok(outdoor_hex_coverage("5", -7733, date(2023, 5, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("1", -946, date(2022, 8, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("2", -936, date(2022, 12, 5))),
+                    anyhow::Ok(outdoor_hex_coverage("3", -887, date(2022, 12, 2))),
+                    anyhow::Ok(outdoor_hex_coverage("4", -887, date(2022, 12, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("5", -773, date(2023, 5, 1))),
                 ]),
             )
             .await
@@ -953,33 +953,32 @@ mod test {
             .aggregate_coverage(
                 &owner,
                 iter(vec![
-                    anyhow::Ok(outdoor_hex_coverage("1", -6470, date(2022, 8, 1))),
-                    anyhow::Ok(outdoor_hex_coverage("2", -9360, date(2022, 12, 5))),
-                    anyhow::Ok(outdoor_wifi_hex_coverage(&owner, -9469, date(2022, 12, 2))),
+                    anyhow::Ok(outdoor_hex_coverage("1", -936, date(2022, 8, 1))),
+                    anyhow::Ok(outdoor_hex_coverage("2", -946, date(2022, 12, 5))),
+                    anyhow::Ok(outdoor_wifi_hex_coverage(&owner, -647, date(2022, 12, 2))),
                 ]),
             )
             .await
             .unwrap();
-	//panic!("{:#?}", covered_hexes);
         let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
         assert_eq!(
             rewards,
             vec![
                 CoverageReward {
-                    radio_key: OwnedKeyType::Wifi(owner.clone()),
+                    radio_key: OwnedKeyType::Cbrs("1".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(16)
                 },
                 CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("1".to_string()),
+                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
                     hotspot: owner.clone(),
                     points: dec!(12)
                 },
                 CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
+                    radio_key: OwnedKeyType::Wifi(owner.clone()),
                     hotspot: owner,
                     points: dec!(4)
-                }
+                },
             ]
         );
     }
