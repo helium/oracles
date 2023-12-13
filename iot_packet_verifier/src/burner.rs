@@ -75,9 +75,7 @@ where
                 _ = burn_timer.tick() =>
                     match self.burn().await {
                     Ok(()) => (),
-                    Err(err) => {
-                        tracing::error!("Error while attempting to burn: {err:?}");
-                    }
+                    Err(_err) => ()
                 }
             }
         }
