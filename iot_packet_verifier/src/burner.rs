@@ -72,11 +72,7 @@ where
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,
-                _ = burn_timer.tick() =>
-                    match self.burn().await {
-                    Ok(()) => (),
-                    Err(_err) => ()
-                }
+                _ = burn_timer.tick() => { let _ = self.burn().await; }
             }
         }
         tracing::info!("Stopping burner");
