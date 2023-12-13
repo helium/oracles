@@ -4079,6 +4079,7 @@ dependencies = [
  "hextree",
  "http",
  "http-serde",
+ "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",

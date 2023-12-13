@@ -6,13 +6,14 @@ use crate::{
 use chrono::Utc;
 use file_store::traits::{MsgVerify, TimestampEncode};
 use futures::{
-    stream::{StreamExt, TryStreamExt},
+    stream::{Stream, StreamExt, TryStreamExt},
     TryFutureExt,
 };
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
     services::mobile_config::{
-        self, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1, GatewayInfoStreamResV1, GatewayInfoBatchReqV1,
+        self, GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamReqV1,
+        GatewayInfoStreamResV1,
     },
     Message,
 };
@@ -94,10 +95,10 @@ impl mobile_config::Gateway for GatewayService {
             )
     }
 
-    type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
+    type info_batchStream = GrpcStreamResult<GatewayInfoStreamResV1>;
     async fn info_batch(
         &self,
-        request: Request<GatewayInfoBatchReqV1>
+        request: Request<GatewayInfoBatchReqV1>,
     ) -> GrpcResult<Self::info_streamStream> {
         let request = request.into_inner();
         telemetry::count_request("gateway", "info-batch");
@@ -105,21 +106,31 @@ impl mobile_config::Gateway for GatewayService {
         let signer = verify_public_key(&request.signer)?;
         self.verify_request_signature(&signer, &request)?;
 
-        tracing::debug!(batch = request.addresses.len() , "fetching gateways' info batch");
+        tracing::debug!(
+            batch = request.addresses.len(),
+            "fetching gateways' info batch"
+        );
 
         let pool = self.metadata_pool.clone();
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
+        let addresses = request
+            .addresses
+            .into_iter()
+            .map(|key| key.into())
+            .collect::<Vec<PublicKeyBinary>>();
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            stream_batch_gateways_info(&pool, tx.clone(), signing_key.clone(), batch_size).await
+            let stream = gateway_info::db::batch_info_stream(&pool, &addresses);
+            stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
 
+    type info_streamStream = GrpcStreamResult<GatewayInfoStreamResV1>;
     async fn info_stream(
         &self,
         request: Request<GatewayInfoStreamReqV1>,
@@ -139,22 +150,23 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            stream_all_gateways_info(&pool, tx.clone(), signing_key.clone(), batch_size).await
+            let stream = gateway_info::db::all_info_stream(&pool);
+            stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 
         Ok(Response::new(GrpcStreamResult::new(rx)))
     }
 }
 
-async fn stream_all_gateways_info(
-    pool: &Pool<Postgres>,
+async fn stream_multi_gateways_info(
+    stream: impl Stream<Item = GatewayInfo>,
     tx: tokio::sync::mpsc::Sender<Result<GatewayInfoStreamResV1, Status>>,
     signing_key: Arc<Keypair>,
     batch_size: u32,
 ) -> anyhow::Result<()> {
     let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
-    Ok(gateway_info::db::all_info_stream(pool)
+    Ok(stream
         .map(Ok::<GatewayInfo, sqlx::Error>)
         .try_filter_map(|info| async move {
             let result: Option<mobile_config::GatewayInfo> = info.try_into().ok();

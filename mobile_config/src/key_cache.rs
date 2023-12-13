@@ -35,7 +35,7 @@ impl KeyCache {
         if (cached_keys.contains(&(signer.clone(), KeyRole::Administrator))
             || cached_keys.contains(&(signer.clone(), KeyRole::Oracle)))
             || cached_keys.contains(&(signer.clone(), KeyRole::Carrier))
-            && request.verify(signer).is_ok()
+                && request.verify(signer).is_ok()
         {
             tracing::debug!(pubkey = signer.to_string(), "request authorized");
             Ok(())
