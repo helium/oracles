@@ -32,7 +32,7 @@ impl EntropyLoader {
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting entropy_loader");
         loop {
-                tokio::select! {
+            tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,
                 msg = self.file_receiver.recv() => if let Some(stream) =  msg {
