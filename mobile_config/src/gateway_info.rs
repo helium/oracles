@@ -103,6 +103,11 @@ pub(crate) mod db {
             from mobile_hotspot_infos infos
             join key_to_assets kta on infos.asset = kta.asset
         "#;
+    const BATCH_SQL_WHERE_SNIPPET: &str = "where kta.entity_key = any($1)";
+
+    lazy_static::lazy_static! {
+        static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
+    }
 
     pub async fn get_info(
         db: impl PgExecutor<'_>,
@@ -117,6 +122,17 @@ pub(crate) mod db {
             .bind(entity_key)
             .fetch_optional(db)
             .await?)
+    }
+
+    pub fn batch_info_stream<'a>(
+        db: impl PgExecutor<'a> + 'a,
+        addresses: &'a [PublicKeyBinary],
+    ) -> impl Stream<Item = GatewayInfo> + 'a {
+        sqlx::query_as::<_, GatewayInfo>(&BATCH_METADATA_SQL)
+            .bind(addresses)
+            .fetch(db)
+            .filter_map(|metadata| async move { metadata.ok() })
+            .boxed()
     }
 
     pub fn all_info_stream<'a>(

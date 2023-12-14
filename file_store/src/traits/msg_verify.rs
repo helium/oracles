@@ -82,6 +82,7 @@ impl_msg_verify!(mobile_config::EntityVerifyResV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoResV1, signature);
+impl_msg_verify!(mobile_config::GatewayInfoBatchReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamResV1, signature);
 
 #[cfg(test)]
