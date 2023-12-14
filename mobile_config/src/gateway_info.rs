@@ -1,34 +1,46 @@
 use futures::stream::BoxStream;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::{
-    GatewayInfo as GatewayInfoProto, GatewayMetadata as GatewayMetadataProto,
+    DeviceType as DeviceTypeProto, GatewayInfo as GatewayInfoProto,
+    GatewayMetadata as GatewayMetadataProto,
 };
 
 pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadata {
-    pub location: u64,
+    pub device_type: DeviceType,
+    pub location: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
 pub struct GatewayInfo {
     pub address: PublicKeyBinary,
-    pub metadata: Option<GatewayMetadata>,
+    pub metadata: GatewayMetadata,
 }
 
 impl From<GatewayInfoProto> for GatewayInfo {
     fn from(info: GatewayInfoProto) -> Self {
-        let metadata = if let Some(metadata) = info.metadata {
-            u64::from_str_radix(&metadata.location, 16)
-                .map(|location| GatewayMetadata { location })
-                .ok()
-        } else {
+        let location = if info
+            .metadata
+            .as_ref()
+            .is_some_and(|meta| meta.location.is_empty())
+        {
             None
+        } else {
+            info.metadata
+                .as_ref()
+                .and_then(|meta| u64::from_str_radix(&meta.location, 16).ok())
         };
         Self {
             address: info.address.into(),
-            metadata,
+            metadata: GatewayMetadata {
+                location,
+                device_type: info
+                    .metadata
+                    .map(|meta| meta.device_type().into())
+                    .unwrap_or(DeviceType::Cbrs),
+            },
         }
     }
 }
@@ -37,29 +49,67 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
     type Error = hextree::Error;
 
     fn try_from(info: GatewayInfo) -> Result<Self, Self::Error> {
-        let metadata = if let Some(metadata) = info.metadata {
-            Some(GatewayMetadataProto {
-                location: hextree::Cell::from_raw(metadata.location)?.to_string(),
-            })
-        } else {
-            None
-        };
+        let location = info
+            .metadata
+            .location
+            .map(hextree::Cell::from_raw)
+            .transpose()?
+            .map(|cell| cell.to_string())
+            .unwrap_or_default();
         Ok(Self {
             address: info.address.into(),
-            metadata,
+            metadata: Some(GatewayMetadataProto {
+                location,
+                device_type: info.metadata.device_type as i32,
+            }),
         })
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum DeviceType {
+    Cbrs,
+    WifiIndoor,
+    WifiOutdoor,
+}
+
+impl From<DeviceTypeProto> for DeviceType {
+    fn from(dtp: DeviceTypeProto) -> Self {
+        match dtp {
+            DeviceTypeProto::Cbrs => DeviceType::Cbrs,
+            DeviceTypeProto::WifiIndoor => DeviceType::WifiIndoor,
+            DeviceTypeProto::WifiOutdoor => DeviceType::WifiOutdoor,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid device type string")]
+pub struct DeviceTypeParseError;
+
+impl std::str::FromStr for DeviceType {
+    type Err = DeviceTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let result = match s {
+            "cbrs" => Self::Cbrs,
+            "wifi_indoor" => Self::WifiIndoor,
+            "wifi_outdoor" => Self::WifiOutdoor,
+            _ => return Err(DeviceTypeParseError),
+        };
+        Ok(result)
+    }
+}
+
 pub(crate) mod db {
-    use super::{GatewayInfo, GatewayMetadata};
+    use super::{DeviceType, GatewayInfo, GatewayMetadata};
     use futures::stream::{Stream, StreamExt};
     use helium_crypto::PublicKeyBinary;
-    use sqlx::{PgExecutor, Row};
+    use sqlx::{types::Json, PgExecutor, Row};
     use std::str::FromStr;
 
     const GET_METADATA_SQL: &str = r#"
-            select kta.entity_key, infos.location::bigint
+            select kta.entity_key, infos.location::bigint, infos.device_type
             from mobile_hotspot_infos infos
             join key_to_assets kta on infos.asset = kta.asset
         "#;
@@ -90,11 +140,17 @@ pub(crate) mod db {
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            let metadata = row
-                .get::<Option<i64>, &str>("location")
-                .map(|loc| GatewayMetadata {
-                    location: loc as u64,
-                });
+            let metadata = GatewayMetadata {
+                location: row
+                    .get::<Option<i64>, &str>("location")
+                    .map(|loc| loc as u64),
+                device_type: DeviceType::from_str(
+                    row.get::<Json<String>, &str>("device_type")
+                        .to_string()
+                        .as_ref(),
+                )
+                .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
+            };
             Ok(Self {
                 address: PublicKeyBinary::from_str(
                     &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
