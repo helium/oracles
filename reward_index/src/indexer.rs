@@ -54,12 +54,9 @@ impl Indexer {
                     .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
                 settings::Mode::Mobile => String::new(),
             },
-            unallocated_reward_key: match settings.mode {
-                settings::Mode::Mobile => settings
-                    .unallocated_reward_entity_key()
-                    .ok_or_else(|| anyhow!("unallocated reward key is required for MOBILE mode"))?,
-                settings::Mode::Iot => String::new(),
-            },
+            unallocated_reward_key: settings
+                .unallocated_reward_entity_key()
+                .ok_or_else(|| anyhow!("missing unallocated reward key"))?,
         })
     }
 
