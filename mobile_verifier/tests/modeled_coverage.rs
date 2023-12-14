@@ -9,7 +9,7 @@ use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{CoverageObjectValidity, SignalLevel};
 use mobile_verifier::{
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoveredHexCache, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjects, Seniority},
     heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
@@ -24,7 +24,7 @@ use uuid::Uuid;
 #[sqlx::test]
 #[ignore]
 async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
-    let cache = CoveredHexCache::new(&pool);
+    let cache = CoverageObjects::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
     let key: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
@@ -32,7 +32,7 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
         .unwrap();
     let key = KeyType::from(&key);
 
-    assert!(cache.inserted_at(&uuid, key).await?.is_none());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -88,7 +88,7 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(coverage.coverage.len(), 3);
      */
-    assert!(cache.inserted_at(&uuid, key).await?.is_some());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_some());
 
     Ok(())
 }
@@ -96,13 +96,13 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 #[ignore]
 async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
-    let cache = CoveredHexCache::new(&pool);
+    let cache = CoverageObjects::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
     let key = "P27-SCE4255W120200039521XGB0103";
     let key = KeyType::from(key);
 
-    assert!(cache.inserted_at(&uuid, key).await?.is_none());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -156,7 +156,7 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     assert_eq!(coverage.coverage.len(), 3);
      */
-    assert!(cache.inserted_at(&uuid, key).await?.is_some());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_some());
 
     Ok(())
 }
@@ -164,13 +164,13 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 #[ignore]
 async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
-    let cache = CoveredHexCache::new(&pool);
+    let cache = CoverageObjects::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
     let key = "P27-SCE4255W120200039521XGB0103";
     let key = KeyType::from(key);
 
-    assert!(cache.inserted_at(&uuid, key).await?.is_none());
+    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
 
     let co1 = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -222,7 +222,7 @@ async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
     co2.save(&mut transaction).await?;
     transaction.commit().await?;
 
-    let new_signal_power: i32 = sqlx::query_scalar("SELECT signal_power FROM hex_coverage")
+    let new_signal_power: i32 = sqlx::query_scalar("SELECT signal_power FROM hexes")
         .fetch_one(&pool)
         .await?;
 
@@ -374,7 +374,7 @@ async fn process_input(
     coverage_objs: impl Iterator<Item = CoverageObjectIngestReport>,
     heartbeats: impl Iterator<Item = CbrsHeartbeatIngestReport>,
 ) -> anyhow::Result<()> {
-    let covered_hex_cache = CoveredHexCache::new(pool);
+    let coverage_objects = CoverageObjects::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
 
     let mut transaction = pool.begin().await?;
@@ -391,7 +391,7 @@ async fn process_input(
     let mut heartbeats = pin!(ValidatedHeartbeat::validate_heartbeats(
         &AllOwnersValid,
         stream::iter(heartbeats.map(Heartbeat::from)),
-        &covered_hex_cache,
+        &coverage_objects,
         epoch,
     ));
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {

@@ -1,6 +1,6 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
 use crate::{
-    coverage::{CoverageClaimTimeCache, CoveredHexCache},
+    coverage::{CoverageClaimTimeCache, CoverageObjects},
     GatewayResolver,
 };
 
@@ -61,7 +61,7 @@ where
             });
 
             let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-            let covered_hex_cache = CoveredHexCache::new(&self.pool);
+            let coverage_objects = CoverageObjects::new(&self.pool);
 
             loop {
                 #[rustfmt::skip]
@@ -77,7 +77,7 @@ where
                             file,
                             &heartbeat_cache,
                             &coverage_claim_time_cache,
-                            &covered_hex_cache,
+                            &coverage_objects,
 			).await?;
 			metrics::histogram!("cbrs_heartbeat_processing_time", start.elapsed());
                     }
@@ -96,7 +96,7 @@ where
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
         heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
-        covered_hex_cache: &CoveredHexCache,
+        coverage_objects: &CoverageObjects,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing CBRS heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
@@ -116,7 +116,7 @@ where
             ValidatedHeartbeat::validate_heartbeats(
                 &self.gateway_info_resolver,
                 heartbeats,
-                covered_hex_cache,
+                coverage_objects,
                 &epoch,
             ),
             heartbeat_cache,

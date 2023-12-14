@@ -3,7 +3,7 @@ pub mod wifi;
 
 use crate::{
     cell_type::{CellType, CellTypeLabel},
-    coverage::{CoverageClaimTimeCache, CoveredHexCache, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObjectSummary, CoverageObjects, Seniority},
     GatewayResolution, GatewayResolver,
 };
 use anyhow::anyhow;
@@ -120,6 +120,14 @@ impl OwnedKeyType {
             Self::Cbrs(cbsd_id) => Some(cbsd_id),
             _ => None,
         }
+    }
+
+    pub fn is_cbrs(&self) -> bool {
+        matches!(self, Self::Cbrs(_))
+    }
+
+    pub fn is_wifi(&self) -> bool {
+        matches!(self, Self::Wifi(_))
     }
 }
 
@@ -372,7 +380,7 @@ pub struct ValidatedHeartbeat {
     pub heartbeat: Heartbeat,
     pub cell_type: CellType,
     pub distance_to_asserted: Option<i64>,
-    pub coverage_object_insertion_time: Option<DateTime<Utc>>,
+    pub coverage_summary: Option<CoverageObjectSummary>,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -385,17 +393,14 @@ impl ValidatedHeartbeat {
         self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
-    pub fn validate_heartbeats<'a, GIR>(
-        gateway_info_resolver: &'a GIR,
+    pub fn validate_heartbeats<'a>(
+        gateway_info_resolver: &'a impl GatewayResolver,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
-        coverage_cache: &'a CoveredHexCache,
+        coverage_cache: &'a CoverageObjects,
         epoch: &'a Range<DateTime<Utc>>,
-    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a
-    where
-        GIR: GatewayResolver,
-    {
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
-            let (cell_type, distance_to_asserted, coverage_object_insertion_time, validity) =
+            let (cell_type, distance_to_asserted, coverage_summary, validity) =
                 validate_heartbeat(&heartbeat, gateway_info_resolver, coverage_cache, epoch)
                     .await?;
 
@@ -403,7 +408,7 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 distance_to_asserted,
-                coverage_object_insertion_time,
+                coverage_summary,
                 validity,
             })
         })
@@ -439,12 +444,18 @@ impl ValidatedHeartbeat {
     }
 
     pub async fn save(self, exec: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
-        // Invalidate all of the previous coverage objects
         sqlx::query(
-            "UPDATE hex_coverage SET invalidated_at = $1 WHERE inserted_at < $2 AND invalidated_at IS NULL AND radio_key = $3 AND uuid != $4"
+            r#"
+            UPDATE coverage_objects
+            SET invalidated_at = $1
+            WHERE inserted_at < $2
+                AND invalidated_at IS NULL
+                AND radio_key = $3
+                AND uuid != $4
+            "#,
         )
         .bind(self.heartbeat.timestamp)
-        .bind(self.coverage_object_insertion_time)
+        .bind(self.coverage_summary.as_ref().map(|x| x.inserted_at)) // Guaranteed not to be NULL
         .bind(self.heartbeat.key())
         .bind(self.heartbeat.coverage_object)
         .execute(&mut *exec)
@@ -504,20 +515,39 @@ impl ValidatedHeartbeat {
 }
 
 /// Validate a heartbeat in the given epoch.
-pub async fn validate_heartbeat<GIR>(
+// TODO(map): This needs to be changed to provide a struct instead of a tuple.
+pub async fn validate_heartbeat(
     heartbeat: &Heartbeat,
-    gateway_info_resolver: &GIR,
-    coverage_cache: &CoveredHexCache,
+    gateway_info_resolver: &impl GatewayResolver,
+    coverage_cache: &CoverageObjects,
     epoch: &Range<DateTime<Utc>>,
 ) -> anyhow::Result<(
     CellType,
     Option<i64>,
-    Option<DateTime<Utc>>,
+    Option<CoverageObjectSummary>,
     proto::HeartbeatValidity,
-)>
-where
-    GIR: GatewayResolver,
-{
+)> {
+    let Some(coverage_object) = heartbeat.coverage_object else {
+        return Ok((
+            CellType::CellTypeNone,
+            None,
+            None,
+            proto::HeartbeatValidity::BadCoverageObject,
+        ));
+    };
+
+    let Some(coverage_summary) = coverage_cache
+        .coverage_summary(&coverage_object, heartbeat.key())
+        .await?
+    else {
+        return Ok((
+            CellType::CellTypeNone,
+            None,
+            None,
+            proto::HeartbeatValidity::NoSuchCoverageObject,
+        ));
+    };
+
     let cell_type = match heartbeat.hb_type {
         HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
             Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
@@ -526,7 +556,7 @@ where
                     return Ok((
                         CellType::CellTypeNone,
                         None,
-                        None,
+                        Some(coverage_summary),
                         proto::HeartbeatValidity::BadCbsdId,
                     ))
                 }
@@ -535,21 +565,25 @@ where
                 return Ok((
                     CellType::CellTypeNone,
                     None,
-                    None,
+                    Some(coverage_summary),
                     proto::HeartbeatValidity::BadCbsdId,
                 ))
             }
         },
-        // for wifi HBs temporary assume we have an indoor wifi spot
-        // this will be better/properly handled when coverage reports are live
-        HbType::Wifi => CellType::NovaGenericWifiIndoor,
+        HbType::Wifi => {
+            if coverage_summary.indoor {
+                CellType::NovaGenericWifiIndoor
+            } else {
+                CellType::NovaGenericWifiOutdoor
+            }
+        }
     };
 
     if !heartbeat.operation_mode {
         return Ok((
             cell_type,
             None,
-            None,
+            Some(coverage_summary),
             proto::HeartbeatValidity::NotOperational,
         ));
     }
@@ -558,7 +592,7 @@ where
         return Ok((
             cell_type,
             None,
-            None,
+            Some(coverage_summary),
             proto::HeartbeatValidity::HeartbeatOutsideRange,
         ));
     }
@@ -571,7 +605,7 @@ where
             return Ok((
                 cell_type,
                 None,
-                None,
+                Some(coverage_summary),
                 proto::HeartbeatValidity::GatewayNotFound,
             ))
         }
@@ -579,7 +613,7 @@ where
             return Ok((
                 cell_type,
                 None,
-                None,
+                Some(coverage_summary),
                 proto::HeartbeatValidity::GatewayNotAsserted,
             ))
         }
@@ -589,31 +623,10 @@ where
         _ => None,
     };
 
-    let Some(coverage_object) = heartbeat.coverage_object else {
-        return Ok((
-            cell_type,
-            distance_to_asserted,
-            None,
-            proto::HeartbeatValidity::BadCoverageObject,
-        ));
-    };
-
-    let Some(inserted_at) = coverage_cache
-        .inserted_at(&coverage_object, heartbeat.key())
-        .await?
-    else {
-        return Ok((
-            cell_type,
-            distance_to_asserted,
-            None,
-            proto::HeartbeatValidity::NoSuchCoverageObject,
-        ));
-    };
-
     Ok((
         cell_type,
         distance_to_asserted,
-        Some(inserted_at),
+        Some(coverage_summary),
         proto::HeartbeatValidity::Valid,
     ))
 }
@@ -861,7 +874,7 @@ mod test {
             },
             validity: Default::default(),
             distance_to_asserted: None,
-            coverage_object_insertion_time: None,
+            coverage_summary: None,
         }
     }
 

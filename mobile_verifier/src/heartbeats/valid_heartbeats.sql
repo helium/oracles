@@ -61,8 +61,8 @@ SELECT
     NULL AS distance_to_asserted
 FROM
     cbrs_heartbeats
-    LEFT JOIN latest_hotspots ON cbrs_heartbeats.cbsd_id = latest_hotspots.cbsd_id
-    LEFT JOIN cbrs_coverage_objs ON cbrs_heartbeats.cbsd_id = cbrs_coverage_objs.cbsd_id
+    INNER JOIN latest_hotspots ON cbrs_heartbeats.cbsd_id = latest_hotspots.cbsd_id
+    INNER JOIN cbrs_coverage_objs ON cbrs_heartbeats.cbsd_id = cbrs_coverage_objs.cbsd_id
 WHERE
     truncated_timestamp >= $1
     AND truncated_timestamp < $2
@@ -97,7 +97,7 @@ FROM (
         cell_type
     HAVING
         count(*) >= $3) AS wifi_grouped
-    LEFT JOIN (
+    INNER JOIN (
         SELECT
             hotspot_key,
             location_validation_timestamp,
@@ -107,4 +107,4 @@ FROM (
         WHERE
             wifi_heartbeats.truncated_timestamp >= $1
             AND wifi_heartbeats.truncated_timestamp < $2) AS b ON b.hotspot_key = wifi_grouped.hotspot_key
-    LEFT JOIN wifi_coverage_objs ON wifi_grouped.hotspot_key = wifi_coverage_objs.hotspot_key
+    INNER JOIN wifi_coverage_objs ON wifi_grouped.hotspot_key = wifi_coverage_objs.hotspot_key
