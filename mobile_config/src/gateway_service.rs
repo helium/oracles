@@ -74,7 +74,7 @@ impl mobile_config::Gateway for GatewayService {
                     Err(Status::not_found(pubkey.to_string()))
                 },
                 |info| {
-                    if info.metadata.location.is_some() {
+                    if info.metadata.is_some() {
                         telemetry::count_gateway_chain_lookup("asserted");
                     } else {
                         telemetry::count_gateway_chain_lookup("not-asserted");

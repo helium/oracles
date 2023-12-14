@@ -41,17 +41,13 @@ impl GatewayResolver for mobile_config::GatewayClient {
         address: &helium_crypto::PublicKeyBinary,
     ) -> Result<GatewayResolution, Self::Error> {
         use mobile_config::client::gateway_client::GatewayInfoResolver;
-        use mobile_config::gateway_info::{GatewayInfo, GatewayMetadata};
+        use mobile_config::gateway_info::GatewayInfo;
         match self.resolve_gateway_info(address).await? {
             None => Ok(GatewayResolution::GatewayNotFound),
             Some(GatewayInfo {
-                metadata:
-                    GatewayMetadata {
-                        location: Some(location),
-                        ..
-                    },
+                metadata: Some(metadata),
                 ..
-            }) => Ok(GatewayResolution::AssertedLocation(location)),
+            }) => Ok(GatewayResolution::AssertedLocation(metadata.location)),
             Some(_) => Ok(GatewayResolution::GatewayNotAsserted),
         }
     }

@@ -1197,7 +1197,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/verify-hb-cell-type#867ca9cc1e53edf96345e378a27f2497e04ecd07"
+source = "git+https://github.com/helium/proto?branch=master#de51ede124884329e89b99b43d5d8c7bb7cc3012"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -3047,7 +3047,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/verify-hb-cell-type#867ca9cc1e53edf96345e378a27f2497e04ecd07"
+source = "git+https://github.com/helium/proto?branch=master#de51ede124884329e89b99b43d5d8c7bb7cc3012"
 dependencies = [
  "bytes",
  "prost",

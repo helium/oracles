@@ -9,38 +9,30 @@ pub type GatewayInfoStream = BoxStream<'static, GatewayInfo>;
 
 #[derive(Clone, Debug)]
 pub struct GatewayMetadata {
-    pub device_type: DeviceType,
-    pub location: Option<u64>,
+    pub location: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct GatewayInfo {
     pub address: PublicKeyBinary,
-    pub metadata: GatewayMetadata,
+    pub metadata: Option<GatewayMetadata>,
+    pub device_type: DeviceType,
 }
 
 impl From<GatewayInfoProto> for GatewayInfo {
     fn from(info: GatewayInfoProto) -> Self {
-        let location = if info
-            .metadata
-            .as_ref()
-            .is_some_and(|meta| meta.location.is_empty())
-        {
-            None
+        let metadata = if let Some(ref metadata) = info.metadata {
+            u64::from_str_radix(&metadata.location, 26)
+                .map(|location| GatewayMetadata { location })
+                .ok()
         } else {
-            info.metadata
-                .as_ref()
-                .and_then(|meta| u64::from_str_radix(&meta.location, 16).ok())
+            None
         };
+        let device_type = info.device_type().into();
         Self {
             address: info.address.into(),
-            metadata: GatewayMetadata {
-                location,
-                device_type: info
-                    .metadata
-                    .map(|meta| meta.device_type().into())
-                    .unwrap_or(DeviceType::Cbrs),
-            },
+            metadata,
+            device_type,
         }
     }
 }
@@ -49,19 +41,17 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
     type Error = hextree::Error;
 
     fn try_from(info: GatewayInfo) -> Result<Self, Self::Error> {
-        let location = info
-            .metadata
-            .location
-            .map(hextree::Cell::from_raw)
-            .transpose()?
-            .map(|cell| cell.to_string())
-            .unwrap_or_default();
+        let metadata = if let Some(metadata) = info.metadata {
+            Some(GatewayMetadataProto {
+                location: hextree::Cell::from_raw(metadata.location)?.to_string(),
+            })
+        } else {
+            None
+        };
         Ok(Self {
             address: info.address.into(),
-            metadata: Some(GatewayMetadataProto {
-                location,
-                device_type: info.metadata.device_type as i32,
-            }),
+            metadata,
+            device_type: info.device_type as i32,
         })
     }
 }
@@ -93,8 +83,8 @@ impl std::str::FromStr for DeviceType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let result = match s {
             "cbrs" => Self::Cbrs,
-            "wifi_indoor" => Self::WifiIndoor,
-            "wifi_outdoor" => Self::WifiOutdoor,
+            "wifiIndoor" => Self::WifiIndoor,
+            "wifiOutdoor" => Self::WifiOutdoor,
             _ => return Err(DeviceTypeParseError),
         };
         Ok(result)
@@ -140,23 +130,24 @@ pub(crate) mod db {
 
     impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for GatewayInfo {
         fn from_row(row: &sqlx::postgres::PgRow) -> sqlx::Result<Self> {
-            let metadata = GatewayMetadata {
-                location: row
-                    .get::<Option<i64>, &str>("location")
-                    .map(|loc| loc as u64),
-                device_type: DeviceType::from_str(
-                    row.get::<Json<String>, &str>("device_type")
-                        .to_string()
-                        .as_ref(),
-                )
-                .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
-            };
+            let metadata = row
+                .get::<Option<i64>, &str>("location")
+                .map(|loc| GatewayMetadata {
+                    location: loc as u64,
+                });
+            let device_type = DeviceType::from_str(
+                row.get::<Json<String>, &str>("device_type")
+                    .to_string()
+                    .as_ref(),
+            )
+            .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
             Ok(Self {
                 address: PublicKeyBinary::from_str(
                     &bs58::encode(row.get::<&[u8], &str>("entity_key")).into_string(),
                 )
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
                 metadata,
+                device_type,
             })
         }
     }
