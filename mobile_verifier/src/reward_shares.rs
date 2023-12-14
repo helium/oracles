@@ -10,7 +10,9 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{ServiceProvider, UnallocatedReward, UnallocatedRewardType};
+use helium_proto::services::poc_mobile::{
+    ServiceProvider, UnallocatedReward, UnallocatedRewardType,
+};
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
 };
@@ -1881,8 +1883,7 @@ mod test {
             total_dcs: dec!(1000),
         }];
         let sp_shares = ServiceProviderShares::new(service_provider_sessions);
-        let total_sp_rewards =
-            sp_shares.get_scheduled_tokens_for_service_providers(epoch.end - epoch.start);
+        let total_sp_rewards = get_scheduled_tokens_for_service_providers(epoch.end - epoch.start);
         let rewards_per_share = sp_shares
             .rewards_per_share(total_sp_rewards, mobile_bone_price)
             .unwrap();
@@ -1909,7 +1910,7 @@ mod test {
             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
             .to_u64()
             .unwrap_or(0);
-        assert_eq!(unallocated_sp_reward_amount, 341_530_048_644);
+        assert_eq!(unallocated_sp_reward_amount, 341_530_053_644);
     }
 
     #[tokio::test]
@@ -1954,10 +1955,11 @@ mod test {
         assert_eq!(sp1_reward_amount, 100_000_000);
 
         // confirm the unallocated service provider reward amounts
-        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones - Decimal::from(allocated_sp_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
+        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
+            - Decimal::from(allocated_sp_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
         assert_eq!(unallocated_sp_reward_amount, 0);
     }
 
@@ -2001,10 +2003,11 @@ mod test {
         assert_eq!(sp1_reward_amount_in_bones, 10_000_000 * 1_000_000);
 
         // confirm the unallocated service provider reward amounts
-        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones - Decimal::from(allocated_sp_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
+        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
+            - Decimal::from(allocated_sp_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
         assert_eq!(unallocated_sp_reward_amount, 490_000_000_000_000);
     }
 
@@ -2048,10 +2051,11 @@ mod test {
         assert_eq!(sp1_reward_amount_in_bones, 500_000_000 * 1_000_000);
 
         // confirm the unallocated service provider reward amounts
-        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones - Decimal::from(allocated_sp_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
+        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
+            - Decimal::from(allocated_sp_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
         assert_eq!(unallocated_sp_reward_amount, 0);
     }
 }

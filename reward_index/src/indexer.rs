@@ -169,7 +169,7 @@ impl Indexer {
                         } else {
                             bail!("failed to decode service provider")
                         }
-                    },
+                    }
                     Some(MobileReward::UnallocatedReward(r)) => Ok((
                         RewardKey {
                             key: self.unallocated_reward_key.clone(),
