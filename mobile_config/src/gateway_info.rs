@@ -22,7 +22,7 @@ pub struct GatewayInfo {
 impl From<GatewayInfoProto> for GatewayInfo {
     fn from(info: GatewayInfoProto) -> Self {
         let metadata = if let Some(ref metadata) = info.metadata {
-            u64::from_str_radix(&metadata.location, 26)
+            u64::from_str_radix(&metadata.location, 16)
                 .map(|location| GatewayMetadata { location })
                 .ok()
         } else {
