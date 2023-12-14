@@ -21,7 +21,7 @@ use std::convert::Infallible;
 use std::{collections::HashMap, str::FromStr};
 use std::{
     sync::Arc,
-    time::{SystemTime, SystemTimeError},
+    time::{Duration, SystemTime, SystemTimeError},
 };
 use tokio::sync::Mutex;
 
@@ -36,6 +36,26 @@ pub trait SolanaNetwork: Send + Sync + 'static {
         payer: &PublicKeyBinary,
         amount: u64,
     ) -> Result<(), Self::Error>;
+}
+
+macro_rules! send_with_retry {
+    ($rpc:expr) => {{
+        let mut attempt = 1;
+        loop {
+            match $rpc.await {
+                Ok(resp) => break Ok(resp),
+                Err(err) => {
+                    if attempt < 5 {
+                        attempt += 1;
+                        tokio::time::sleep(Duration::from_secs(attempt)).await;
+                        continue;
+                    } else {
+                        break Err(err);
+                    }
+                }
+            }
+        }
+    }};
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -227,14 +247,24 @@ impl SolanaNetwork for SolanaRpc {
             blockhash,
         );
 
-        let signature = self.provider.send_and_confirm_transaction(&tx).await?;
-
-        tracing::info!(
-            transaction = %signature,
-            "Successfully burned data credits",
-        );
-
-        Ok(())
+        match send_with_retry!(self.provider.send_and_confirm_transaction(&tx)) {
+            Ok(signature) => {
+                tracing::info!(
+                    transaction = %signature,
+                    payer = %payer,
+                    amount = %amount,
+                    "Data credit burn successful",
+                );
+                Ok(())
+            }
+            Err(err) => {
+                tracing::error!(
+                    payer = %payer,
+                    amount = %amount,
+                    "Data credit burn failed: {err:?}");
+                Err(SolanaRpcError::RpcClientError(err))
+            }
+        }
     }
 }
 
