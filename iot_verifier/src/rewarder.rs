@@ -216,9 +216,11 @@ pub async fn reward_poc_and_dc(
     for (gateway_reward_amount, reward_share) in
         gateway_reward_shares.into_iot_reward_shares(reward_period)
     {
-        rewards_sink.write(reward_share, []).await?;
-        // Await the returned oneshot to ensure we wrote the file
-        // .await??;
+        rewards_sink
+            .write(reward_share, [])
+            .await?
+            // Await the returned oneshot to ensure we wrote the file
+            .await??;
         allocated_gateway_rewards += gateway_reward_amount;
     }
     // write out any unallocated poc reward
@@ -259,9 +261,8 @@ pub async fn reward_operational(
             },
             [],
         )
-        .await?;
-    // Await the returned oneshot to ensure we wrote the file
-    // .await??;
+        .await?
+        .await??;
     // write out any unallocated mapping rewards
     // which for the operational fund can only relate to rounding issue
     // in practice this should always be zero as there can be a max of
@@ -298,8 +299,7 @@ async fn write_unallocated_reward(
                 amount: unallocated_amount,
             })),
         };
-        rewards_sink.write(unallocated_reward, []).await?;
-        // .await??;
+        rewards_sink.write(unallocated_reward, []).await?.await??;
     };
     Ok(())
 }

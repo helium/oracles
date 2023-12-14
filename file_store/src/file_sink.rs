@@ -169,6 +169,13 @@ pub struct FileSinkClient {
     metric: &'static str,
 }
 
+// #[async_trait]
+// pub trait FileSinkClientTrait {
+//     type Error;
+//     async fn new<'a>(sender: MessageSender, metric:  &'static str)
+//         -> Self;
+// }
+
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
 const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -195,7 +202,7 @@ impl FileSinkClient {
                             .chain(std::iter::once(OK_LABEL))
                             .collect::<Vec<Label>>()
                     );
-                    tracing::debug!("file_sink write succeeded for {:?}", self.metric);
+                    tracing::info!("file_sink write succeeded for {:?}", self.metric);
                     Ok(on_write_rx)
                 }
                 Err(SendTimeoutError::Closed(_)) => {
@@ -536,7 +543,7 @@ impl FileSink {
     }
 }
 
-fn file_name(path_buf: &Path) -> Result<String> {
+pub fn file_name(path_buf: &Path) -> Result<String> {
     path_buf
         .file_name()
         .map(|os_str| os_str.to_string_lossy().to_string())

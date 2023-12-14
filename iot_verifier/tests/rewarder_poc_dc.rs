@@ -1,7 +1,8 @@
 mod common;
+use crate::common::MockFileSinkReceiver;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_lora::UnallocatedRewardType;
+use helium_proto::services::poc_lora::{GatewayReward, UnallocatedReward, UnallocatedRewardType};
 use iot_verifier::{
     poc_report::ReportType,
     reward_share::{self, GatewayDCShare, GatewayPocShare},
@@ -31,14 +32,91 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    rewarder::reward_poc_and_dc(&pool.clone(), &iot_rewards_client, &epoch, dec!(0.0001)).await?;
+    tokio::select!(
+        _ = rewarder::reward_poc_and_dc(&pool, &iot_rewards_client, &epoch, dec!(0.0001)) => {},
+        Ok((gateway_rewards, unallocated_poc_reward)) = receive_expected_rewards(&mut iot_rewards) => {
 
-    // assert poc outputs from rewards run
-    // we will have 3 gateway rewards
+            // assert the gateway rewards
+            assert_eq!(
+                gateway_rewards[0].hotspot_key,
+                PublicKeyBinary::from_str(HOTSPOT_1).unwrap().as_ref()
+            );
+            assert_eq!(gateway_rewards[0].beacon_amount, 1775956284153);
+            assert_eq!(gateway_rewards[0].witness_amount, 0);
+            assert_eq!(gateway_rewards[0].dc_transfer_amount, 14799635701275);
+
+            assert_eq!(
+                gateway_rewards[1].hotspot_key,
+                PublicKeyBinary::from_str(HOTSPOT_2).unwrap().as_ref()
+            );
+            assert_eq!(gateway_rewards[1].beacon_amount, 0);
+            assert_eq!(gateway_rewards[1].witness_amount, 8524590163934);
+            assert_eq!(gateway_rewards[1].dc_transfer_amount, 29599271402550);
+            // hotspot 2 should have double the dc rewards of hotspot 1
+            assert_eq!(
+                gateway_rewards[1].dc_transfer_amount,
+                gateway_rewards[0].dc_transfer_amount * 2
+            );
+
+            assert_eq!(
+                gateway_rewards[2].hotspot_key,
+                PublicKeyBinary::from_str(HOTSPOT_3).unwrap().as_ref()
+            );
+            // hotspot 2 has double reward scale of hotspot 1 and thus double the beacon  amount
+            assert_eq!(gateway_rewards[2].beacon_amount, 3551912568306);
+            assert_eq!(
+                gateway_rewards[2].beacon_amount,
+                gateway_rewards[0].beacon_amount * 2
+            );
+            assert_eq!(gateway_rewards[2].witness_amount, 0);
+            assert_eq!(gateway_rewards[2].dc_transfer_amount, 0);
+
+            assert_eq!(
+                gateway_rewards[3].hotspot_key,
+                PublicKeyBinary::from_str(HOTSPOT_4).unwrap().as_ref()
+            );
+            assert_eq!(gateway_rewards[3].beacon_amount, 0);
+            assert_eq!(gateway_rewards[3].witness_amount, 12786885245901);
+            assert_eq!(gateway_rewards[3].dc_transfer_amount, 0);
+
+            // assert our unallocated reward
+            assert_eq!(
+                UnallocatedRewardType::Poc as i32,
+                unallocated_poc_reward.reward_type
+            );
+            assert_eq!(1, unallocated_poc_reward.amount);
+
+            // confirm the total rewards allocated matches expectations
+            let poc_sum: u64 = gateway_rewards
+                .iter()
+                .map(|r| r.beacon_amount + r.witness_amount)
+                .sum();
+            let dc_sum: u64 = gateway_rewards.iter().map(|r| r.dc_transfer_amount).sum();
+            let unallocated_sum: u64 = unallocated_poc_reward.amount;
+
+            let expected_dc = reward_share::get_scheduled_dc_tokens(epoch.end - epoch.start);
+            let (expected_beacon_sum, expected_witness_sum) =
+                reward_share::get_scheduled_poc_tokens(epoch.end - epoch.start, expected_dc);
+            let expected_total =
+                expected_beacon_sum.to_u64().unwrap() + expected_witness_sum.to_u64().unwrap();
+            assert_eq!(expected_total, poc_sum + dc_sum + unallocated_sum);
+        }
+    );
+    Ok(())
+}
+
+async fn receive_expected_rewards(
+    iot_rewards: &mut MockFileSinkReceiver,
+) -> anyhow::Result<(Vec<GatewayReward>, UnallocatedReward)> {
+    // get the filestore outputs from rewards run
+    // we will have 3 gateway rewards and one unallocated reward
     let gateway_reward1 = iot_rewards.receive_gateway_reward().await;
     let gateway_reward2 = iot_rewards.receive_gateway_reward().await;
     let gateway_reward3 = iot_rewards.receive_gateway_reward().await;
     let gateway_reward4 = iot_rewards.receive_gateway_reward().await;
+    let unallocated_poc_reward = iot_rewards.receive_unallocated_reward().await;
+    // should be no further msgs
+    iot_rewards.assert_no_messages();
 
     // ordering is not guaranteed, so stick the rewards into a vec and sort
     let mut gateway_rewards = vec![
@@ -48,78 +126,8 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
         gateway_reward4,
     ];
     gateway_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
-
-    assert_eq!(
-        gateway_rewards[0].hotspot_key,
-        PublicKeyBinary::from_str(HOTSPOT_1).unwrap().as_ref()
-    );
-    assert_eq!(gateway_rewards[0].beacon_amount, 1775956284153);
-    assert_eq!(gateway_rewards[0].witness_amount, 0);
-    assert_eq!(gateway_rewards[0].dc_transfer_amount, 14799635701275);
-
-    assert_eq!(
-        gateway_rewards[1].hotspot_key,
-        PublicKeyBinary::from_str(HOTSPOT_2).unwrap().as_ref()
-    );
-    assert_eq!(gateway_rewards[1].beacon_amount, 0);
-    assert_eq!(gateway_rewards[1].witness_amount, 8524590163934);
-    assert_eq!(gateway_rewards[1].dc_transfer_amount, 29599271402550);
-    // hotspot 2 should have double the dc rewards of hotspot 1
-    assert_eq!(
-        gateway_rewards[1].dc_transfer_amount,
-        gateway_rewards[0].dc_transfer_amount * 2
-    );
-
-    assert_eq!(
-        gateway_rewards[2].hotspot_key,
-        PublicKeyBinary::from_str(HOTSPOT_3).unwrap().as_ref()
-    );
-    // hotspot 2 has double reward scale of hotspot 1 and thus double the beacon  amount
-    assert_eq!(gateway_rewards[2].beacon_amount, 3551912568306);
-    assert_eq!(
-        gateway_rewards[2].beacon_amount,
-        gateway_rewards[0].beacon_amount * 2
-    );
-    assert_eq!(gateway_rewards[2].witness_amount, 0);
-    assert_eq!(gateway_rewards[2].dc_transfer_amount, 0);
-
-    assert_eq!(
-        gateway_rewards[3].hotspot_key,
-        PublicKeyBinary::from_str(HOTSPOT_4).unwrap().as_ref()
-    );
-    assert_eq!(gateway_rewards[3].beacon_amount, 0);
-    assert_eq!(gateway_rewards[3].witness_amount, 12786885245901);
-    assert_eq!(gateway_rewards[3].dc_transfer_amount, 0);
-
-    // confirm our unallocated amount
-    let unallocated_poc_reward = iot_rewards.receive_unallocated_reward().await;
-    assert_eq!(
-        UnallocatedRewardType::Poc as i32,
-        unallocated_poc_reward.reward_type
-    );
-    assert_eq!(1, unallocated_poc_reward.amount);
-
-    // should be no further msgs
-    iot_rewards.assert_no_messages();
-
-    // confirm the total rewards allocated matches expectations
-    let poc_sum: u64 = gateway_rewards
-        .iter()
-        .map(|r| r.beacon_amount + r.witness_amount)
-        .sum();
-    let dc_sum: u64 = gateway_rewards.iter().map(|r| r.dc_transfer_amount).sum();
-    let unallocated_sum: u64 = unallocated_poc_reward.amount;
-
-    let expected_dc = reward_share::get_scheduled_dc_tokens(epoch.end - epoch.start);
-    let (expected_beacon_sum, expected_witness_sum) =
-        reward_share::get_scheduled_poc_tokens(epoch.end - epoch.start, expected_dc);
-    let expected_total =
-        expected_beacon_sum.to_u64().unwrap() + expected_witness_sum.to_u64().unwrap();
-    assert_eq!(expected_total, poc_sum + dc_sum + unallocated_sum);
-
-    Ok(())
+    Ok((gateway_rewards, unallocated_poc_reward))
 }
-
 async fn seed_pocs(ts: DateTime<Utc>, txn: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
     let poc_beacon_1 = GatewayPocShare {
         hotspot_key: HOTSPOT_1.to_string().parse().unwrap(),
