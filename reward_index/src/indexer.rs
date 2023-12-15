@@ -21,6 +21,7 @@ pub struct Indexer {
     verifier_store: FileStore,
     mode: settings::Mode,
     op_fund_key: String,
+    unallocated_reward_key: String,
 }
 
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Hash)]
@@ -30,6 +31,7 @@ pub enum RewardType {
     IotGateway,
     IotOperational,
     MobileSubscriber,
+    IotUnallocated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -50,6 +52,9 @@ impl Indexer {
                     .ok_or_else(|| anyhow!("operation fund key is required for IOT mode"))?,
                 settings::Mode::Mobile => String::new(),
             },
+            unallocated_reward_key: settings
+                .unallocated_reward_entity_key()
+                .ok_or_else(|| anyhow!("missing unallocated reward key"))?,
         })
     }
 
@@ -167,6 +172,13 @@ impl Indexer {
                         RewardKey {
                             key: self.op_fund_key.clone(),
                             reward_type: RewardType::IotOperational,
+                        },
+                        r.amount,
+                    )),
+                    Some(IotReward::UnallocatedReward(r)) => Ok((
+                        RewardKey {
+                            key: self.unallocated_reward_key.clone(),
+                            reward_type: RewardType::IotUnallocated,
                         },
                         r.amount,
                     )),
