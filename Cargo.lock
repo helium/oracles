@@ -1197,7 +1197,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/iot-unallocated-rewards#e7763c24b5e4d0767d889950ab743795115b0e72"
+source = "git+https://github.com/helium/proto?branch=andymck/iot-unallocated-rewards#bfb7ac55ad0d2bcb06c7d9100aecb9feeb280ad9"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -3047,7 +3047,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/iot-unallocated-rewards#e7763c24b5e4d0767d889950ab743795115b0e72"
+source = "git+https://github.com/helium/proto?branch=andymck/iot-unallocated-rewards#bfb7ac55ad0d2bcb06c7d9100aecb9feeb280ad9"
 dependencies = [
  "bytes",
  "prost",

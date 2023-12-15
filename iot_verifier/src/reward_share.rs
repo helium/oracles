@@ -572,10 +572,7 @@ mod test {
                 let gateway_reward_total = gateway_reward.beacon_amount
                     + gateway_reward.witness_amount
                     + gateway_reward.dc_transfer_amount;
-                rewards.insert(
-                    gateway_reward.hotspot_key.clone().into(),
-                    gateway_reward,
-                );
+                rewards.insert(gateway_reward.hotspot_key.clone().into(), gateway_reward);
                 assert_eq!(reward_amount, gateway_reward_total);
                 allocated_gateway_rewards += reward_amount;
             }
@@ -766,10 +763,7 @@ mod test {
                 let gateway_reward_total = gateway_reward.beacon_amount
                     + gateway_reward.witness_amount
                     + gateway_reward.dc_transfer_amount;
-                rewards.insert(
-                    gateway_reward.hotspot_key.clone().into(),
-                    gateway_reward,
-                );
+                rewards.insert(gateway_reward.hotspot_key.clone().into(), gateway_reward);
                 assert_eq!(reward_amount, gateway_reward_total);
                 allocated_gateway_rewards += reward_amount;
             }
@@ -944,10 +938,7 @@ mod test {
                 let gateway_reward_total = gateway_reward.beacon_amount
                     + gateway_reward.witness_amount
                     + gateway_reward.dc_transfer_amount;
-                rewards.insert(
-                    gateway_reward.hotspot_key.clone().into(),
-                    gateway_reward,
-                );
+                rewards.insert(gateway_reward.hotspot_key.clone().into(), gateway_reward);
                 assert_eq!(reward_amount, gateway_reward_total);
                 allocated_gateway_rewards += reward_amount;
             }
