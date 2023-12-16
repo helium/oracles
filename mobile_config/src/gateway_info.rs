@@ -138,10 +138,7 @@ pub(crate) mod db {
         Ok(sqlx::query_as::<_, GatewayInfo>(&BATCH_METADATA_SQL)
             .bind(entity_keys)
             .fetch(db)
-            .filter_map(|metadata| async move {
-                println!("{metadata:?}");
-                metadata.ok()
-            })
+            .filter_map(|metadata| async move { metadata.ok() })
             .boxed())
     }
 
