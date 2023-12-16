@@ -123,7 +123,7 @@ impl mobile_config::Gateway for GatewayService {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
         tokio::spawn(async move {
-            let stream = gateway_info::db::batch_info_stream(&pool, &addresses);
+            let stream = gateway_info::db::batch_info_stream(&pool, &addresses)?;
             stream_multi_gateways_info(stream, tx.clone(), signing_key.clone(), batch_size).await
         });
 

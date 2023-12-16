@@ -7,6 +7,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY db_store ./db_store/
 COPY file_store ./file_store/
 COPY metrics ./metrics/
+COPY task_manager ./task_manager/
 COPY mobile_config/Cargo.toml ./mobile_config/Cargo.toml
 
 # Enable sparse registry to avoid crates indexing infinite loop
