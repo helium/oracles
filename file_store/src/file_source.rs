@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 use tokio::{fs::File, io::BufReader};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, FramedRead};
 
-pub fn continuous_source<T>() -> FileInfoPollerConfigBuilder<T>
+pub fn continuous_source<T, S>() -> FileInfoPollerConfigBuilder<T, S>
 where
     T: Clone,
 {
-    FileInfoPollerConfigBuilder::<T>::default()
+    FileInfoPollerConfigBuilder::<T, S>::default()
 }
 
 pub fn source<I, P>(paths: I) -> BytesMutStream

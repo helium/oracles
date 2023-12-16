@@ -15,7 +15,7 @@ chrono = {workspace = true}
 db-store = {path = "../db_store"}
 futures = {workspace = true}
 futures-util = {workspace = true}
-file-store = {path = "../file_store"}
+file-store = {path = "../file_store", features = ["sqlx-postgres"]}
 helium-proto = {workspace = true}
 helium-crypto = {workspace = true, features = ["sqlx-postgres", "multisig", "solana"]}
 metrics = {workspace = true}

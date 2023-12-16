@@ -37,7 +37,7 @@ tonic = {workspace = true}
 metrics = {workspace = true}
 metrics-exporter-prometheus = {workspace = true}
 mobile-config = {path = "../mobile_config"}
-file-store = {path = "../file_store"}
+file-store = {path = "../file_store", features = ["sqlx-postgres"]}
 db-store = {path = "../db_store"}
 poc-metrics = {path = "../metrics"}
 reward-scheduler = {path = "../reward_scheduler"}
