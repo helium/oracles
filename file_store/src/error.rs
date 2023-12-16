@@ -35,9 +35,6 @@ pub enum Error {
     #[cfg(feature = "sqlx-postgres")]
     #[error("db error")]
     DbError(#[from] sqlx::Error),
-    #[cfg(feature = "sqlx-postgres")]
-    #[error("migration error")]
-    MigrationError(#[from] sqlx::migrate::MigrateError),
 }
 
 #[derive(Error, Debug)]
