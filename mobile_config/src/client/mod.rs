@@ -20,6 +20,8 @@ pub enum ClientError {
     GrpcError(#[from] tonic::Status),
     #[error("error verifying response signature {0}")]
     VerificationError(#[from] file_store::Error),
+    #[error("error parsing gateway location {0}")]
+    LocationParseError(#[from] std::num::ParseIntError),
 }
 
 macro_rules! call_with_retry {

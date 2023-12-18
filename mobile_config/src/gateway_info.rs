@@ -19,21 +19,24 @@ pub struct GatewayInfo {
     pub device_type: DeviceType,
 }
 
-impl From<GatewayInfoProto> for GatewayInfo {
-    fn from(info: GatewayInfoProto) -> Self {
+impl TryFrom<GatewayInfoProto> for GatewayInfo {
+    type Error = std::num::ParseIntError;
+
+    fn try_from(info: GatewayInfoProto) -> Result<Self, Self::Error> {
         let metadata = if let Some(ref metadata) = info.metadata {
-            u64::from_str_radix(&metadata.location, 16)
-                .map(|location| GatewayMetadata { location })
-                .ok()
+            Some(
+                u64::from_str_radix(&metadata.location, 16)
+                    .map(|location| GatewayMetadata { location })?,
+            )
         } else {
             None
         };
         let device_type = info.device_type().into();
-        Self {
+        Ok(Self {
             address: info.address.into(),
             metadata,
             device_type,
-        }
+        })
     }
 }
 
@@ -56,7 +59,7 @@ impl TryFrom<GatewayInfo> for GatewayInfoProto {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub enum DeviceType {
     Cbrs,
     WifiIndoor,
@@ -103,7 +106,7 @@ pub(crate) mod db {
             from mobile_hotspot_infos infos
             join key_to_assets kta on infos.asset = kta.asset
         "#;
-    const BATCH_SQL_WHERE_SNIPPET: &str = "where kta.entity_key = any($1)";
+    const BATCH_SQL_WHERE_SNIPPET: &str = " where kta.entity_key = any($1::bytea[]) ";
 
     lazy_static::lazy_static! {
         static ref BATCH_METADATA_SQL: String = format!("{GET_METADATA_SQL} {BATCH_SQL_WHERE_SNIPPET}");
@@ -127,12 +130,16 @@ pub(crate) mod db {
     pub fn batch_info_stream<'a>(
         db: impl PgExecutor<'a> + 'a,
         addresses: &'a [PublicKeyBinary],
-    ) -> impl Stream<Item = GatewayInfo> + 'a {
-        sqlx::query_as::<_, GatewayInfo>(&BATCH_METADATA_SQL)
-            .bind(addresses)
+    ) -> anyhow::Result<impl Stream<Item = GatewayInfo> + 'a> {
+        let entity_keys = addresses
+            .iter()
+            .map(|address| bs58::decode(address.to_string()).into_vec())
+            .collect::<Result<Vec<_>, bs58::decode::Error>>()?;
+        Ok(sqlx::query_as::<_, GatewayInfo>(&BATCH_METADATA_SQL)
+            .bind(entity_keys)
             .fetch(db)
             .filter_map(|metadata| async move { metadata.ok() })
-            .boxed()
+            .boxed())
     }
 
     pub fn all_info_stream<'a>(

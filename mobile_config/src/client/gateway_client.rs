@@ -76,7 +76,10 @@ impl GatewayInfoResolver for GatewayClient {
             Ok(info_res) => {
                 let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;
-                response.info.map(gateway_info::GatewayInfo::from)
+                response
+                    .info
+                    .map(gateway_info::GatewayInfo::try_from)
+                    .transpose()?
             }
             Err(status) if status.code() == tonic::Code::NotFound => None,
             Err(status) => Err(status)?,
@@ -111,7 +114,8 @@ impl GatewayInfoResolver for GatewayClient {
                 }
             })
             .flat_map(|res| stream::iter(res.gateways))
-            .map(gateway_info::GatewayInfo::from)
+            .map(gateway_info::GatewayInfo::try_from)
+            .filter_map(|gateway| async move { gateway.ok() })
             .boxed();
 
         Ok(res_stream)
