@@ -560,7 +560,8 @@ pub fn eui_stream<'a>(
         r#"
         select eui.route_id, eui.app_eui, eui.dev_eui, eui.deleted
         from route_eui_pairs eui
-        where eui.updated_at >= $1
+        join routes r on eui.route_id = r.id
+        where eui.updated_at >= $1 and r.deleted = false
         "#,
     )
     .bind(since)
@@ -578,7 +579,8 @@ pub fn devaddr_range_stream<'a>(
         r#"
         select devaddr.route_id, devaddr.start_addr, devaddr.end_addr, devaddr.deleted
         from route_devaddr_ranges devaddr
-        where devaddr.updated_at >= $1
+        join routes r on devaddr.route_id = r.id
+        where devaddr.updated_at >= $1 and r.deleted = false
         "#,
     )
     .bind(since)
@@ -598,7 +600,8 @@ pub fn skf_stream<'a>(
         r#"
         select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies, skf.deleted
         from route_session_key_filters skf
-        where skf.updated_at >= $1
+        join routes r on skf.route_id = r.id
+        where skf.updated_at >= $1 and r.deleted = false
         "#,
     )
     .bind(since)
