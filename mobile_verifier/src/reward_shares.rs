@@ -406,14 +406,14 @@ pub struct CoveragePoints {
 impl CoveragePoints {
     pub async fn aggregate_points(
         hex_streams: &impl CoveredHexStream,
-        heartbeats: impl Stream<Item = HeartbeatReward>,
+        heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: &SpeedtestAverages,
         period_end: DateTime<Utc>,
     ) -> Result<Self, sqlx::Error> {
         let mut heartbeats = std::pin::pin!(heartbeats);
         let mut covered_hexes = CoveredHexes::default();
         let mut coverage_points = HashMap::new();
-        while let Some(heartbeat) = heartbeats.next().await {
+        while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let speedtest_multiplier = speedtests
                 .get_average(&heartbeat.hotspot_key)
                 .as_ref()
@@ -435,7 +435,7 @@ impl CoveragePoints {
                 .insert(
                     opt_cbsd_id,
                     RadioPoints::new(
-                        heartbeat.location_trust_score_multiplier,
+                        heartbeat.location_trust_multiplier,
                         heartbeat.coverage_object,
                         seniority.seniority_ts,
                     ),
@@ -595,8 +595,7 @@ mod test {
         coverage::{CoveredHexStream, HexCoverage, Seniority},
         data_session,
         data_session::HotspotDataSession,
-        heartbeats::{HeartbeatReward, HeartbeatRow, KeyType, OwnedKeyType},
-        reward_shares,
+        heartbeats::{HeartbeatReward, KeyType, OwnedKeyType}, reward_shares,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
@@ -1005,146 +1004,118 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         // setup heartbeats
-        let heartbeat_keys = vec![
-            HeartbeatRow {
+        let heartbeat_rewards = vec![
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 coverage_object: cov_obj_2,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c4.clone()),
                 hotspot_key: gw3.clone(),
                 coverage_object: cov_obj_4,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c4).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c5.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_5,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c5).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c6.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_6,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c6).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c7.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_7,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c7).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c8.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_8,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c8).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c9.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_9,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c9).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c10.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_10,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c10).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c11.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_11,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c11).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c12.clone()),
                 hotspot_key: gw5.clone(),
                 coverage_object: cov_obj_12,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c12).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c13.clone()),
                 hotspot_key: gw6.clone(),
                 coverage_object: cov_obj_13,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c13).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c14.clone()),
                 hotspot_key: gw7.clone(),
                 coverage_object: cov_obj_14,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_15,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_16,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(0.25),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_17,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(10000),
+                location_trust_multiplier: dec!(0.25),
             },
-        ];
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // Setup hex coverages
         let mut hex_coverage = HashMap::new();
@@ -1208,11 +1179,6 @@ mod test {
             (OwnedKeyType::from(gw11.clone()), cov_obj_17),
             simple_hex_coverage(&gw11, 0x8c2681a306607ff),
         );
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -1396,7 +1362,6 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         let g1_cov_obj = Uuid::new_v4();
         let g2_cov_obj = Uuid::new_v4();
@@ -1405,33 +1370,27 @@ mod test {
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
         // setup heartbeats
-        let heartbeat_keys = vec![
+        let heartbeat_rewards = vec![
             // add wifi indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 coverage_object: g2_cov_obj,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-        ];
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -1528,7 +1487,6 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         // init cells and cell_types
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
@@ -1537,35 +1495,29 @@ mod test {
         let g2_cov_obj = Uuid::new_v4();
 
         // setup heartbeats
-        let heartbeat_keys = vec![
+        let heartbeat_rewards = vec![
             // add wifi  indoor HB
             // with distance to asserted > than max allowed
             // this results in reward scale dropping to 0.25
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1000),
+                location_trust_multiplier: dec!(0.25),
             },
             // add sercomm indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 coverage_object: g2_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-        ];
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -1664,7 +1616,6 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         let g1_cov_obj = Uuid::new_v4();
         let g2_cov_obj = Uuid::new_v4();
@@ -1673,33 +1624,27 @@ mod test {
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
         // setup heartbeats
-        let heartbeat_keys = vec![
+        let heartbeat_rewards = vec![
             // add wifi indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g1_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 coverage_object: g2_cov_obj,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_multiplier: dec!(1.0),
             },
-        ];
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);

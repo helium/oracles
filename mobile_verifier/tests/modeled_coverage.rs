@@ -466,7 +466,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000).await?;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -559,7 +559,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000).await?;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -793,7 +793,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000).await?;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -858,7 +858,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000).await?;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -950,7 +950,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000).await?;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 
@@ -1190,7 +1190,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
-    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000).await?;
+    let heartbeats = HeartbeatReward::validated(&pool, &reward_period, 1000);
     let coverage_points =
         CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_avgs, end).await?;
 

@@ -12,14 +12,14 @@ use file_store::{
     file_sink::FileSinkClient, heartbeat::CbrsHeartbeatIngestReport,
     wifi_heartbeat::WifiHeartbeatIngestReport,
 };
-use futures::stream::{Stream, StreamExt, TryStreamExt};
+use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
 use rust_decimal::Decimal;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
-use std::{collections::HashMap, ops::Range, pin::pin, time};
+use std::{ops::Range, pin::pin, time};
 use uuid::Uuid;
 
 /// Minimum number of heartbeats required to give a reward to the hotspot.
@@ -262,28 +262,24 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
     }
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct HeartbeatRow {
-    pub hotspot_key: PublicKeyBinary,
-    // cell hb only
-    pub cbsd_id: Option<String>,
-    pub cell_type: CellType,
-    // wifi hb only
-    pub location_validation_timestamp: Option<DateTime<Utc>>,
-    pub distance_to_asserted: Option<i64>,
-    pub coverage_object: Uuid,
-    pub latest_timestamp: DateTime<Utc>,
-}
+// #[derive(Debug, Clone, sqlx::FromRow)]
+// pub struct HeartbeatRow {
+//     pub hotspot_key: PublicKeyBinary,
+//     //cell hb only
+//     pub cbsd_id: Option<String>,
+//     pub cell_type: CellType,
+//     pub location_trust_multiplier: Decimal,
+//     pub coverage_object: Uuid,
+// }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
-    pub cell_type: CellType,
     // cell hb only
     pub cbsd_id: Option<String>,
-    pub location_trust_score_multiplier: Decimal,
+    pub cell_type: CellType,
+    pub location_trust_multiplier: Decimal,
     pub coverage_object: Uuid,
-    pub latest_timestamp: DateTime<Utc>,
 }
 
 impl HeartbeatReward {
@@ -306,72 +302,20 @@ impl HeartbeatReward {
     }
 
     pub fn reward_weight(&self) -> Decimal {
-        self.location_trust_score_multiplier
+        self.location_trust_multiplier
     }
 
-    pub async fn validated<'a>(
+    pub fn validated<'a>(
         exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
         epoch: &'a Range<DateTime<Utc>>,
         max_distance_to_asserted: u32,
-    ) -> anyhow::Result<impl Stream<Item = HeartbeatReward> + 'a> {
-        let heartbeat_rows =
-            sqlx::query_as::<_, HeartbeatRow>(include_str!("valid_heartbeats.sql"))
-                .bind(epoch.start)
-                .bind(epoch.end)
-                .bind(MINIMUM_HEARTBEAT_COUNT)
-                .fetch(exec)
-                .try_fold(
-                    HashMap::<(PublicKeyBinary, Option<String>), Vec<HeartbeatRow>>::new(),
-                    |mut map, row| async move {
-                        map.entry((row.hotspot_key.clone(), row.cbsd_id.clone()))
-                            .or_default()
-                            .push(row);
-
-                        Ok(map)
-                    },
-                )
-                .await?;
-
-        Ok(
-            futures::stream::iter(heartbeat_rows).map(move |((hotspot_key, cbsd_id), rows)| {
-                let first = rows.first().unwrap();
-                let average_location_trust_score = rows
-                    .iter()
-                    .map(|row| {
-                        row.cell_type.location_weight(
-                            row.location_validation_timestamp,
-                            row.distance_to_asserted,
-                            max_distance_to_asserted,
-                        )
-                    })
-                    .sum::<Decimal>()
-                    / Decimal::new(rows.len() as i64, 0);
-
-                HeartbeatReward {
-                    hotspot_key,
-                    cell_type: first.cell_type,
-                    cbsd_id,
-                    location_trust_score_multiplier: average_location_trust_score,
-                    coverage_object: first.coverage_object,
-                    latest_timestamp: first.latest_timestamp,
-                }
-            }),
-        )
-    }
-
-    pub fn from_heartbeat_row(value: HeartbeatRow, max_distance_to_asserted: u32) -> Self {
-        Self {
-            hotspot_key: value.hotspot_key,
-            cell_type: value.cell_type,
-            cbsd_id: value.cbsd_id,
-            location_trust_score_multiplier: value.cell_type.location_weight(
-                value.location_validation_timestamp,
-                value.distance_to_asserted,
-                max_distance_to_asserted,
-            ),
-            coverage_object: value.coverage_object,
-            latest_timestamp: value.latest_timestamp,
-        }
+    ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
+        sqlx::query_as::<_, HeartbeatReward>(include_str!("valid_radios.sql"))
+            .bind(epoch.start)
+            .bind(epoch.end)
+            .bind(MINIMUM_HEARTBEAT_COUNT)
+            .bind(max_distance_to_asserted as i32)
+            .fetch(exec)
     }
 }
 
