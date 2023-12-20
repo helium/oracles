@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::{WifiHeartbeatIngestReportV1, WifiHeartbeatReqV1};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WifiHeartbeat {
@@ -16,6 +17,12 @@ pub struct WifiHeartbeat {
     pub location_validation_timestamp: Option<DateTime<Utc>>,
     pub coverage_object: Vec<u8>,
     pub timestamp: DateTime<Utc>,
+}
+
+impl WifiHeartbeat {
+    pub fn coverage_object(&self) -> Option<Uuid> {
+        Uuid::from_slice(&self.coverage_object).ok()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

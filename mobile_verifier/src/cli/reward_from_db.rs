@@ -1,11 +1,11 @@
 use crate::{
     heartbeats::HeartbeatReward,
-    reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares},
+    reward_shares::{get_scheduled_tokens_for_poc_and_dc, CoveragePoints},
     speedtests_average::SpeedtestAverages,
     Settings,
 };
 use anyhow::Result;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
@@ -25,8 +25,8 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         let Self { start, end } = self;
 
-        let start = DateTime::from_utc(start, Utc);
-        let end = DateTime::from_utc(end, Utc);
+        let start = start.and_utc();
+        let end = end.and_utc();
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
@@ -36,10 +36,12 @@ impl Cmd {
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
 
         let heartbeats =
-            HeartbeatReward::validated(&pool, &epoch, settings.max_asserted_distance_deviation);
+            HeartbeatReward::validated(&pool, &epoch, settings.max_asserted_distance_deviation)
+                .await?;
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
-        let reward_shares = PocShares::aggregate(heartbeats, &speedtest_averages).await?;
+        let reward_shares =
+            CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_averages, end).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();

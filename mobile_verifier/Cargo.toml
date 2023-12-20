@@ -45,3 +45,4 @@ price = {path = "../price"}
 rand = {workspace = true}
 async-trait = {workspace = true}
 retainer = {workspace = true}
+uuid = {workspace = true}

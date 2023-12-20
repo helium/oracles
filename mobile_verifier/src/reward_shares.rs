@@ -1,4 +1,5 @@
 use crate::{
+    coverage::{CoverageReward, CoveredHexStream, CoveredHexes},
     data_session::HotspotMap,
     heartbeats::HeartbeatReward,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
@@ -12,8 +13,8 @@ use helium_proto::services::poc_mobile as proto;
 use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use std::collections::HashMap;
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
+use uuid::Uuid;
 
 /// Total tokens emissions pool per 365 days or 366 days for a leap year
 const TOTAL_EMISSIONS_POOL: Decimal = dec!(30_000_000_000_000_000);
@@ -28,7 +29,7 @@ const DC_USD_PRICE: Decimal = dec!(0.00001);
 /// Default precision used for rounding
 const DEFAULT_PREC: u32 = 15;
 
-// Percent of total emissions allocated for mapper rewards
+/// Percent of total emissions allocated for mapper rewards
 const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
 
 /// shares of the mappers pool allocated per eligible subscriber for discovery mapping
@@ -203,52 +204,132 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
         .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::ToPositiveInfinity)
 }
 
-#[derive(Default)]
-pub struct RadioShares {
-    radio_shares: HashMap<Option<String>, Decimal>,
+#[derive(Debug)]
+struct RadioPoints {
+    heartbeat_multiplier: Decimal,
+    coverage_object: Uuid,
+    seniority: DateTime<Utc>,
+    points: Decimal,
 }
 
-impl RadioShares {
-    fn total_shares(&self) -> Decimal {
-        self.radio_shares
-            .values()
-            .fold(Decimal::ZERO, |sum, amount| sum + amount)
+impl RadioPoints {
+    fn new(heartbeat_multiplier: Decimal, coverage_object: Uuid, seniority: DateTime<Utc>) -> Self {
+        Self {
+            heartbeat_multiplier,
+            seniority,
+            coverage_object,
+            points: Decimal::ZERO,
+        }
+    }
+
+    fn points(&self) -> Decimal {
+        (self.heartbeat_multiplier * self.points).max(Decimal::ZERO)
     }
 }
 
-#[derive(Default)]
-pub struct PocShares {
-    pub hotspot_shares: HashMap<PublicKeyBinary, RadioShares>,
+#[derive(Debug, Default)]
+struct HotspotPoints {
+    /// Points are multiplied by the multiplier to get shares.
+    /// Multiplier should never be zero.
+    speedtest_multiplier: Decimal,
+    radio_points: HashMap<Option<String>, RadioPoints>,
 }
 
-impl PocShares {
-    pub async fn aggregate(
-        heartbeat_rewards: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
-        speedtest_averages: &SpeedtestAverages,
-    ) -> anyhow::Result<Self> {
-        let mut poc_shares = Self::default();
-        let mut heartbeat_rewards = std::pin::pin!(heartbeat_rewards);
-        while let Some(heartbeat_reward) = heartbeat_rewards.next().await.transpose()? {
-            let speedmultiplier = speedtest_averages
-                .get_average(&heartbeat_reward.hotspot_key)
+impl HotspotPoints {
+    pub fn new(speedtest_multiplier: Decimal) -> Self {
+        Self {
+            speedtest_multiplier,
+            radio_points: HashMap::new(),
+        }
+    }
+}
+
+impl HotspotPoints {
+    pub fn total_points(&self) -> Decimal {
+        self.speedtest_multiplier
+            * self
+                .radio_points
+                .values()
+                .fold(Decimal::ZERO, |sum, radio| sum + radio.points())
+    }
+}
+
+#[derive(Debug)]
+pub struct CoveragePoints {
+    coverage_points: HashMap<PublicKeyBinary, HotspotPoints>,
+}
+
+impl CoveragePoints {
+    pub async fn aggregate_points(
+        hex_streams: &impl CoveredHexStream,
+        heartbeats: impl Stream<Item = HeartbeatReward>,
+        speedtests: &SpeedtestAverages,
+        period_end: DateTime<Utc>,
+    ) -> Result<Self, sqlx::Error> {
+        let mut heartbeats = std::pin::pin!(heartbeats);
+        let mut covered_hexes = CoveredHexes::default();
+        let mut coverage_points = HashMap::new();
+        while let Some(heartbeat) = heartbeats.next().await {
+            let speedtest_multiplier = speedtests
+                .get_average(&heartbeat.hotspot_key)
                 .as_ref()
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
-            *poc_shares
-                .hotspot_shares
-                .entry(heartbeat_reward.hotspot_key.clone())
-                .or_default()
-                .radio_shares
-                .entry(heartbeat_reward.cbsd_id.clone())
-                .or_default() += heartbeat_reward.reward_weight() * speedmultiplier;
+            let seniority = hex_streams
+                .fetch_seniority(heartbeat.key(), period_end)
+                .await?;
+            let covered_hex_stream = hex_streams
+                .covered_hex_stream(heartbeat.key(), &heartbeat.coverage_object, &seniority)
+                .await?;
+            covered_hexes
+                .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
+                .await?;
+            let opt_cbsd_id = heartbeat.key().to_owned().into_cbsd_id();
+            coverage_points
+                .entry(heartbeat.hotspot_key)
+                .or_insert_with(|| HotspotPoints::new(speedtest_multiplier))
+                .radio_points
+                .insert(
+                    opt_cbsd_id,
+                    RadioPoints::new(
+                        heartbeat.location_trust_score_multiplier,
+                        heartbeat.coverage_object,
+                        seniority.seniority_ts,
+                    ),
+                );
         }
-        Ok(poc_shares)
+
+        for CoverageReward {
+            radio_key,
+            points,
+            hotspot,
+        } in covered_hexes.into_coverage_rewards()
+        {
+            // Guaranteed that points contains the given hotspot.
+            coverage_points
+                .get_mut(&hotspot)
+                .unwrap()
+                .radio_points
+                .get_mut(&radio_key.into_cbsd_id())
+                .unwrap()
+                .points += points;
+        }
+
+        Ok(Self { coverage_points })
+    }
+
+    /// Only used for testing
+    pub fn hotspot_points(&self, hotspot: &PublicKeyBinary) -> Decimal {
+        self.coverage_points
+            .get(hotspot)
+            .map(HotspotPoints::total_points)
+            .unwrap_or(Decimal::ZERO)
     }
 
     pub fn total_shares(&self) -> Decimal {
-        self.hotspot_shares
+        self.coverage_points
             .values()
-            .fold(Decimal::ZERO, |sum, radio_shares| {
-                sum + radio_shares.total_shares()
+            .fold(Decimal::ZERO, |sum, radio_points| {
+                sum + radio_points.total_points()
             })
     }
 
@@ -260,43 +341,87 @@ impl PocShares {
         let total_shares = self.total_shares();
         let available_poc_rewards =
             get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start) - transfer_rewards_sum;
-        if let Some(poc_rewards_per_share) = available_poc_rewards.checked_div(total_shares) {
-            let start_period = epoch.start.encode_timestamp();
-            let end_period = epoch.end.encode_timestamp();
-            Some(
-                self.hotspot_shares
+        available_poc_rewards
+            .checked_div(total_shares)
+            .map(|poc_rewards_per_share| {
+                tracing::info!(%poc_rewards_per_share);
+                let start_period = epoch.start.encode_timestamp();
+                let end_period = epoch.end.encode_timestamp();
+                self.coverage_points
                     .into_iter()
-                    .flat_map(move |(hotspot_key, RadioShares { radio_shares })| {
-                        radio_shares.into_iter().map(move |(cbsd_id, amount)| {
-                            let poc_reward = poc_rewards_per_share * amount;
-                            let hotspot_key: Vec<u8> = hotspot_key.clone().into();
-                            proto::MobileRewardShare {
-                                start_period,
-                                end_period,
-                                reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-                                    proto::RadioReward {
-                                        hotspot_key,
-                                        cbsd_id: cbsd_id.unwrap_or_default(),
-                                        poc_reward: poc_reward
-                                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                                            .to_u64()
-                                            .unwrap_or(0),
-                                        ..Default::default()
-                                    },
-                                )),
-                            }
-                        })
+                    .flat_map(move |(hotspot_key, hotspot_points)| {
+                        radio_points_into_rewards(
+                            hotspot_key,
+                            start_period,
+                            end_period,
+                            poc_rewards_per_share,
+                            hotspot_points.speedtest_multiplier,
+                            hotspot_points.radio_points.into_iter(),
+                        )
                     })
                     .filter(|mobile_reward| match mobile_reward.reward {
                         Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
                             radio_reward.poc_reward > 0
                         }
                         _ => false,
-                    }),
-            )
-        } else {
-            None
-        }
+                    })
+            })
+    }
+}
+
+fn radio_points_into_rewards(
+    hotspot_key: PublicKeyBinary,
+    start_period: u64,
+    end_period: u64,
+    poc_rewards_per_share: Decimal,
+    speedtest_multiplier: Decimal,
+    radio_points: impl Iterator<Item = (Option<String>, RadioPoints)>,
+) -> impl Iterator<Item = proto::MobileRewardShare> {
+    radio_points.map(move |(cbsd_id, radio_points)| {
+        new_radio_reward(
+            cbsd_id,
+            &hotspot_key,
+            start_period,
+            end_period,
+            poc_rewards_per_share,
+            speedtest_multiplier,
+            radio_points,
+        )
+    })
+}
+
+fn new_radio_reward(
+    cbsd_id: Option<String>,
+    hotspot_key: &PublicKeyBinary,
+    start_period: u64,
+    end_period: u64,
+    poc_rewards_per_share: Decimal,
+    speedtest_multiplier: Decimal,
+    radio_points: RadioPoints,
+) -> proto::MobileRewardShare {
+    let poc_reward = poc_rewards_per_share
+        * speedtest_multiplier
+        * radio_points.heartbeat_multiplier
+        * radio_points.points;
+    let hotspot_key: Vec<u8> = hotspot_key.clone().into();
+    let cbsd_id = cbsd_id.unwrap_or_default();
+    proto::MobileRewardShare {
+        start_period,
+        end_period,
+        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+            proto::RadioReward {
+                hotspot_key,
+                cbsd_id,
+                poc_reward: poc_reward
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0),
+                coverage_points: radio_points.points.to_u64().unwrap_or(0),
+                seniority_timestamp: radio_points.seniority.encode_timestamp(),
+                coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
+                ..Default::default()
+            },
+        )),
     }
 }
 
@@ -318,21 +443,24 @@ mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
+        coverage::{CoveredHexStream, HexCoverage, Seniority},
         data_session,
         data_session::HotspotDataSession,
-        heartbeats::{HeartbeatReward, HeartbeatRow},
+        heartbeats::{HeartbeatReward, HeartbeatRow, KeyType, OwnedKeyType},
         speedtests::Speedtest,
+        speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
     };
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
-    use futures::stream;
+    use futures::stream::{self, BoxStream};
     use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
     use prost::Message;
     use std::collections::HashMap;
+    use uuid::Uuid;
 
     #[test]
-    fn bytes_to_bones() {
+    fn ensure_correct_conversion_of_bytes_to_bones() {
         assert_eq!(
             dc_to_mobile_bones(Decimal::from(1), dec!(1.0)),
             dec!(0.00001)
@@ -401,8 +529,9 @@ mod test {
         assert!(diff < NUM_SUBSCRIBERS);
     }
 
+    /// Test to ensure that the correct data transfer amount is rewarded.
     #[tokio::test]
-    async fn transfer_reward_amount() {
+    async fn ensure_data_correct_transfer_reward_amount() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
@@ -450,8 +579,9 @@ mod test {
         );
     }
 
+    /// Test to ensure that excess transfer rewards are properly scaled down.
     #[tokio::test]
-    async fn transfer_reward_scale() {
+    async fn ensure_excess_transfer_rewards_scale() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
@@ -558,177 +688,53 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn test_radio_weights() {
-        let g1: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
-            .parse()
-            .expect("unable to construct pubkey");
-        let g2: PublicKeyBinary = "118SPA16MX8WrUKcuXxsg6SH8u5dWszAySiUAJX6tTVoQVy7nWc"
-            .parse()
-            .expect("unable to construct pubkey");
-        let g3: PublicKeyBinary = "112bUuQaE7j73THS9ABShHGokm46Miip9L361FSyWv7zSYn8hZWf"
-            .parse()
-            .expect("unable to construct pubkey");
-        let g4: PublicKeyBinary = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo"
-            .parse()
-            .expect("unable to construct pubkey");
-        let g5: PublicKeyBinary = "113HRxtzxFbFUjDEJJpyeMRZRtdAW38LAUnB5mshRwi6jt7uFbt"
-            .parse()
-            .expect("unable to construct pubkey");
-
-        let max_asserted_distance_deviation: u32 = 300;
-
-        let c1 = "P27-SCE4255W2107CW5000014".to_string();
-        let c2 = "2AG32PBS3101S1202000464223GY0153".to_string();
-        let c1ct = CellType::from_cbsd_id(&c1).expect("unable to get cell_type");
-        let c2ct = CellType::from_cbsd_id(&c2).expect("unable to get cell_type");
-
-        let g3ct = CellType::NovaGenericWifiIndoor;
-        let g4ct = CellType::NovaGenericWifiIndoor;
-        let g5ct = CellType::NovaGenericWifiIndoor;
-
-        let timestamp = Utc::now();
-
-        let heartbeat_keys = vec![
-            HeartbeatRow {
-                cbsd_id: Some(c1.clone()),
-                hotspot_key: g1.clone(),
-                cell_type: c1ct,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
-            },
-            HeartbeatRow {
-                cbsd_id: Some(c2.clone()),
-                hotspot_key: g1.clone(),
-                cell_type: c2ct,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
-            },
-            HeartbeatRow {
-                cbsd_id: Some(c1.clone()),
-                hotspot_key: g2.clone(),
-                cell_type: c1ct,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
-            },
-            HeartbeatRow {
-                cbsd_id: Some(c1.clone()),
-                hotspot_key: g2.clone(),
-                cell_type: c1ct,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
-            },
-            HeartbeatRow {
-                cbsd_id: None,
-                hotspot_key: g3.clone(),
-                cell_type: g3ct,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1),
-            },
-            HeartbeatRow {
-                cbsd_id: None,
-                hotspot_key: g4.clone(),
-                cell_type: g4ct,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
-            },
-            HeartbeatRow {
-                cbsd_id: None,
-                hotspot_key: g5.clone(),
-                cell_type: g5ct,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(100000),
-            },
-        ];
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
-
-        let last_timestamp = timestamp - Duration::hours(12);
-        let g1_speedtests = vec![
-            acceptable_speedtest(g1.clone(), last_timestamp),
-            acceptable_speedtest(g1.clone(), timestamp),
-        ];
-        let g2_speedtests = vec![
-            acceptable_speedtest(g2.clone(), last_timestamp),
-            acceptable_speedtest(g2.clone(), timestamp),
-        ];
-        let g3_speedtests = vec![
-            acceptable_speedtest(g3.clone(), last_timestamp),
-            acceptable_speedtest(g3.clone(), timestamp),
-        ];
-        let g4_speedtests = vec![
-            acceptable_speedtest(g4.clone(), last_timestamp),
-            acceptable_speedtest(g4.clone(), timestamp),
-        ];
-        let g5_speedtests = vec![
-            acceptable_speedtest(g5.clone(), last_timestamp),
-            acceptable_speedtest(g5.clone(), timestamp),
-        ];
-        let g1_average = SpeedtestAverage::from(&g1_speedtests);
-        let g2_average = SpeedtestAverage::from(&g2_speedtests);
-        let g3_average = SpeedtestAverage::from(&g3_speedtests);
-        let g4_average = SpeedtestAverage::from(&g4_speedtests);
-        let g5_average = SpeedtestAverage::from(&g5_speedtests);
-        let mut averages = HashMap::new();
-        averages.insert(g1.clone(), g1_average);
-        averages.insert(g2.clone(), g2_average);
-        averages.insert(g3.clone(), g3_average);
-        averages.insert(g4.clone(), g4_average);
-        averages.insert(g5.clone(), g5_average);
-        let speedtest_avgs = SpeedtestAverages { averages };
-
-        let rewards =
-            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
-                .await
-                .unwrap();
-
-        let gw1_shares = rewards
-            .hotspot_shares
-            .get(&g1)
-            .expect("Could not fetch gateway1 shares")
-            .total_shares();
-        let gw2_shares = rewards
-            .hotspot_shares
-            .get(&g2)
-            .expect("Could not fetch gateway1 shares")
-            .total_shares();
-        let gw3_shares = rewards
-            .hotspot_shares
-            .get(&g3)
-            .expect("Could not fetch gateway3 shares")
-            .total_shares();
-        let gw4_shares = rewards
-            .hotspot_shares
-            .get(&g4)
-            .expect("Could not fetch gateway4 shares")
-            .total_shares();
-        let gw5_shares = rewards
-            .hotspot_shares
-            .get(&g5)
-            .expect("Could not fetch gateway5 shares")
-            .total_shares();
-
-        // The owner with two hotspots gets more rewards
-        assert_eq!(gw1_shares, dec!(3.50));
-        assert_eq!(gw2_shares, dec!(2.00));
-        assert!(gw1_shares > gw2_shares);
-
-        // gw3 has wifi HBs and has location validation timestamp
-        // gets the full 0.4 reward weight
-        assert_eq!(gw3_shares, dec!(0.40));
-        // gw4 has wifi HBs and DOES NOT have a location validation timestamp
-        // gets 0.25 of the full reward weight
-        assert_eq!(gw4_shares, dec!(0.1));
-        // gw4 has wifi HBs and does have a location validation timestamp
-        // but the HB distance is too far from the asserted location
-        // gets 0.25 of the full reward weight
-        assert_eq!(gw5_shares, dec!(0.1));
+    #[async_trait::async_trait]
+    impl CoveredHexStream for HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> {
+        async fn covered_hex_stream<'a>(
+            &'a self,
+            key: KeyType<'a>,
+            coverage_obj: &'a Uuid,
+            _seniority: &'a Seniority,
+        ) -> Result<BoxStream<'a, Result<HexCoverage, sqlx::Error>>, sqlx::Error> {
+            Ok(
+                stream::iter(self.get(&(key.to_owned(), *coverage_obj)).unwrap().clone())
+                    .map(Ok)
+                    .boxed(),
+            )
+        }
+        async fn fetch_seniority(
+            &self,
+            _key: KeyType<'_>,
+            _period_end: DateTime<Utc>,
+        ) -> Result<Seniority, sqlx::Error> {
+            Ok(Seniority {
+                uuid: Uuid::new_v4(),
+                seniority_ts: DateTime::default(),
+                last_heartbeat: DateTime::default(),
+                inserted_at: DateTime::default(),
+                update_reason: 0,
+            })
+        }
     }
 
+    fn simple_hex_coverage<'a>(key: impl Into<KeyType<'a>>, hex: u64) -> Vec<HexCoverage> {
+        let key = key.into();
+        let radio_key = key.to_owned();
+        vec![HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: hex as i64,
+            indoor: true,
+            radio_key,
+            signal_level: crate::coverage::SignalLevel::Low,
+            signal_power: 0,
+            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+        }]
+    }
+
+    /// Test to ensure that different speedtest averages correctly afferct reward shares.
     #[tokio::test]
-    async fn reward_shares_with_speed_multiplier() {
+    async fn ensure_speedtest_averages_affect_reward_shares() {
         // init owners
         let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -816,6 +822,22 @@ mod test {
         let c13 = "P27-SCE4255W2107CW5000022".to_string();
         let c14 = "2AG32PBS3101S1202000464223GY0157".to_string();
 
+        let cov_obj_2 = Uuid::new_v4();
+        let cov_obj_4 = Uuid::new_v4();
+        let cov_obj_5 = Uuid::new_v4();
+        let cov_obj_6 = Uuid::new_v4();
+        let cov_obj_7 = Uuid::new_v4();
+        let cov_obj_8 = Uuid::new_v4();
+        let cov_obj_9 = Uuid::new_v4();
+        let cov_obj_10 = Uuid::new_v4();
+        let cov_obj_11 = Uuid::new_v4();
+        let cov_obj_12 = Uuid::new_v4();
+        let cov_obj_13 = Uuid::new_v4();
+        let cov_obj_14 = Uuid::new_v4();
+        let cov_obj_15 = Uuid::new_v4();
+        let cov_obj_16 = Uuid::new_v4();
+        let cov_obj_17 = Uuid::new_v4();
+
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
         let max_asserted_distance_deviation: u32 = 300;
@@ -825,6 +847,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
+                coverage_object: cov_obj_2,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -832,6 +856,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c4.clone()),
                 hotspot_key: gw3.clone(),
+                coverage_object: cov_obj_4,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c4).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -839,6 +865,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c5.clone()),
                 hotspot_key: gw4.clone(),
+                coverage_object: cov_obj_5,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c5).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -846,6 +874,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c6.clone()),
                 hotspot_key: gw4.clone(),
+                coverage_object: cov_obj_6,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c6).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -853,6 +883,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c7.clone()),
                 hotspot_key: gw4.clone(),
+                coverage_object: cov_obj_7,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c7).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -860,6 +892,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c8.clone()),
                 hotspot_key: gw4.clone(),
+                coverage_object: cov_obj_8,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c8).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -867,6 +901,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c9.clone()),
                 hotspot_key: gw4.clone(),
+                coverage_object: cov_obj_9,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c9).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -874,6 +910,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c10.clone()),
                 hotspot_key: gw4.clone(),
+                coverage_object: cov_obj_10,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c10).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -881,6 +919,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c11.clone()),
                 hotspot_key: gw4.clone(),
+                coverage_object: cov_obj_11,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c11).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -888,6 +928,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c12.clone()),
                 hotspot_key: gw5.clone(),
+                coverage_object: cov_obj_12,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c12).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -895,6 +937,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c13.clone()),
                 hotspot_key: gw6.clone(),
+                coverage_object: cov_obj_13,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c13).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -902,6 +946,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c14.clone()),
                 hotspot_key: gw7.clone(),
+                coverage_object: cov_obj_14,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -910,6 +956,8 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: cov_obj_15,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1),
             },
@@ -917,6 +965,8 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: cov_obj_16,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
             },
@@ -924,10 +974,75 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: cov_obj_17,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(10000),
             },
         ];
+
+        // Setup hex coverages
+        let mut hex_coverage = HashMap::new();
+        hex_coverage.insert(
+            (OwnedKeyType::from(c2.clone()), cov_obj_2),
+            simple_hex_coverage(&c2, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c4.clone()), cov_obj_4),
+            simple_hex_coverage(&c4, 0x8a1fb46632dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c5.clone()), cov_obj_5),
+            simple_hex_coverage(&c5, 0x8a1fb46642dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c6.clone()), cov_obj_6),
+            simple_hex_coverage(&c6, 0x8a1fb46652dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c7.clone()), cov_obj_7),
+            simple_hex_coverage(&c7, 0x8a1fb46662dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c8.clone()), cov_obj_8),
+            simple_hex_coverage(&c8, 0x8a1fb46522dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c9.clone()), cov_obj_9),
+            simple_hex_coverage(&c9, 0x8a1fb46682dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c10.clone()), cov_obj_10),
+            simple_hex_coverage(&c10, 0x8a1fb46692dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c11.clone()), cov_obj_11),
+            simple_hex_coverage(&c11, 0x8a1fb466a2dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c12.clone()), cov_obj_12),
+            simple_hex_coverage(&c12, 0x8a1fb466b2dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c13.clone()), cov_obj_13),
+            simple_hex_coverage(&c13, 0x8a1fb466c2dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c14.clone()), cov_obj_14),
+            simple_hex_coverage(&c14, 0x8a1fb466d2dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw9.clone()), cov_obj_15),
+            simple_hex_coverage(&gw9, 0x8c2681a30641dff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw10.clone()), cov_obj_16),
+            simple_hex_coverage(&gw10, 0x8c2681a3065d3ff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw11.clone()), cov_obj_17),
+            simple_hex_coverage(&gw11, 0x8c2681a306607ff),
+        );
 
         let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
             .into_iter()
@@ -1003,14 +1118,18 @@ mod test {
 
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
-        let duration = Duration::hours(1);
-        let epoch = (now - duration)..now;
-        for mobile_reward in
-            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
-                .await
-                .unwrap()
-                .into_rewards(Decimal::ZERO, &epoch)
-                .unwrap()
+        let epoch = (now - Duration::hours(1))..now;
+        for mobile_reward in CoveragePoints::aggregate_points(
+            &hex_coverage,
+            stream::iter(heartbeat_rewards),
+            &speedtest_avgs,
+            // Field isn't used:
+            DateTime::<Utc>::MIN_UTC,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1028,32 +1147,31 @@ mod test {
             *owner_rewards
                 .get(&owner1)
                 .expect("Could not fetch owner1 rewards"),
-            471_075_937_440
+            364_298_724_954
         );
         assert_eq!(
             *owner_rewards
                 .get(&owner2)
                 .expect("Could not fetch owner2 rewards"),
-            1_413_227_812_320
+            1_366_120_218_577
         );
-
         assert_eq!(
             *owner_rewards
                 .get(&owner3)
                 .expect("Could not fetch owner3 rewards"),
-            84_120_703_114
+            45_537_340_619
         );
         assert_eq!(owner_rewards.get(&owner4), None);
 
         let owner5_reward = *owner_rewards
             .get(&owner5)
             .expect("Could not fetch owner5 rewards");
-        assert_eq!(owner5_reward, 53_837_249_993);
+        assert_eq!(owner5_reward, 182_149_362_477);
 
         let owner6_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner6 rewards");
-        assert_eq!(owner6_reward, 13_459_312_498);
+        assert_eq!(owner6_reward, 45_537_340_619);
 
         // confirm owner 6 reward is 0.25 of owner 5's reward
         // this is due to owner 6's hotspot not having a validation location timestamp
@@ -1063,7 +1181,7 @@ mod test {
         let owner7_reward = *owner_rewards
             .get(&owner6)
             .expect("Could not fetch owner7 rewards");
-        assert_eq!(owner7_reward, 13_459_312_498);
+        assert_eq!(owner7_reward, 45_537_340_619);
 
         // confirm owner 7 reward is 0.25 of owner 5's reward
         // owner 7's hotspot does have a validation location timestamp
@@ -1072,7 +1190,7 @@ mod test {
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
 
         // total emissions for 1 hour
-        let expected_total_rewards = get_scheduled_tokens_for_poc_and_dc(duration)
+        let expected_total_rewards = get_scheduled_tokens_for_poc_and_dc(Duration::hours(1))
             .to_u64()
             .unwrap();
         // the emissions actually distributed for the hour
@@ -1080,13 +1198,13 @@ mod test {
         for val in owner_rewards.values() {
             distributed_total_rewards += *val
         }
-        assert_eq!(distributed_total_rewards, 2_049_180_327_863);
+        assert_eq!(distributed_total_rewards, 2_049_180_327_865);
 
-        let diff = expected_total_rewards - distributed_total_rewards;
+        let diff = expected_total_rewards as i128 - distributed_total_rewards as i128;
         // the sum of rewards distributed should not exceed the epoch amount
         // but due to rounding whilst going to u64 when computing rewards,
         // is permitted to be a few bones less
-        assert_eq!(diff, 5);
+        assert!(diff.abs() <= 5);
     }
 
     #[tokio::test]
@@ -1114,6 +1232,9 @@ mod test {
         let timestamp = now - Duration::minutes(20);
         let max_asserted_distance_deviation: u32 = 300;
 
+        let g1_cov_obj = Uuid::new_v4();
+        let g2_cov_obj = Uuid::new_v4();
+
         // init cells and cell_types
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
@@ -1124,6 +1245,8 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: g1_cov_obj,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1),
             },
@@ -1132,6 +1255,8 @@ mod test {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                coverage_object: g2_cov_obj,
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
             },
@@ -1160,17 +1285,30 @@ mod test {
         averages.insert(gw2.clone(), gw2_average);
 
         let speedtest_avgs = SpeedtestAverages { averages };
+        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            simple_hex_coverage(&gw1, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c2.clone()), g2_cov_obj),
+            simple_hex_coverage(&c2, 0x8a1fb46642dffff),
+        );
 
         // calculate the rewards for the group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in
-            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
-                .await
-                .unwrap()
-                .into_rewards(Decimal::ZERO, &epoch)
-                .unwrap()
+        for mobile_reward in CoveragePoints::aggregate_points(
+            &hex_coverage,
+            stream::iter(heartbeat_rewards),
+            &speedtest_avgs,
+            DateTime::<Utc>::MIN_UTC,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1184,23 +1322,19 @@ mod test {
             *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
         }
 
+        // These were different, now they are the same:
+
         // wifi
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 585_480_093_676);
+        assert_eq!(owner1_reward, 1_024_590_163_934);
 
-        //sercomm
+        // sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 1_463_700_234_192);
-
-        // confirm owner 1 reward is 0.4 of owner 2's reward
-        // owner 1 is a wifi indoor with a distance_to_asserted < max
-        // and so gets the full reward scale of 0.4
-        // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
-        assert_eq!(owner1_reward, (owner2_reward as f64 * 0.4) as u64);
+        assert_eq!(owner2_reward, 1_024_590_163_934);
     }
 
     #[tokio::test]
@@ -1231,6 +1365,9 @@ mod test {
         // init cells and cell_types
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
+        let g1_cov_obj = Uuid::new_v4();
+        let g2_cov_obj = Uuid::new_v4();
+
         // setup heartbeats
         let heartbeat_keys = vec![
             // add wifi  indoor HB
@@ -1240,6 +1377,8 @@ mod test {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
+                coverage_object: g1_cov_obj,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 location_validation_timestamp: Some(timestamp),
                 distance_to_asserted: Some(1000),
             },
@@ -1247,6 +1386,8 @@ mod test {
             HeartbeatRow {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
+                coverage_object: g2_cov_obj,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 location_validation_timestamp: None,
                 distance_to_asserted: Some(1),
@@ -1277,16 +1418,30 @@ mod test {
 
         let speedtest_avgs = SpeedtestAverages { averages };
 
+        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            simple_hex_coverage(&gw1, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c2.clone()), g2_cov_obj),
+            simple_hex_coverage(&c2, 0x8a1fb46642dffff),
+        );
+
         // calculate the rewards for the group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in
-            PocShares::aggregate(stream::iter(heartbeat_rewards).map(Ok), &speedtest_avgs)
-                .await
-                .unwrap()
-                .into_rewards(Decimal::ZERO, &epoch)
-                .unwrap()
+        for mobile_reward in CoveragePoints::aggregate_points(
+            &hex_coverage,
+            stream::iter(heartbeat_rewards),
+            &speedtest_avgs,
+            DateTime::<Utc>::MIN_UTC,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
@@ -1304,23 +1459,152 @@ mod test {
         let owner1_reward = *owner_rewards
             .get(&owner1)
             .expect("Could not fetch owner1 rewards");
-        assert_eq!(owner1_reward, 186_289_120_715);
 
-        //sercomm
+        // sercomm
         let owner2_reward = *owner_rewards
             .get(&owner2)
             .expect("Could not fetch owner2 rewards");
-        assert_eq!(owner2_reward, 1_862_891_207_153);
 
         // confirm owner 1 reward is 0.1 of owner 2's reward
         // owner 1 is a wifi indoor with a distance_to_asserted > max
         // and so gets the reduced reward scale of 0.1 ( radio reward scale of 0.4 * location scale of 0.25)
         // owner 2 is a cbrs sercomm indoor which has a reward scale of 1.0
-        assert_eq!(owner1_reward, (owner2_reward as f64 * 0.1) as u64);
+        assert_eq!(owner1_reward, (owner2_reward as f64 * 0.25) as u64);
     }
 
     #[tokio::test]
-    async fn dont_write_zero_rewards() {
+    async fn full_wifi_outdoor_vs_sercomm_indoor_reward_shares() {
+        // init owners
+        let owner1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed owner1 parse");
+        let owner2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed owner2 parse");
+        // init hotspots
+        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        let gw2: PublicKeyBinary = "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+            .parse()
+            .expect("failed gw2 parse");
+        // link gws to owners
+        let mut owners = HashMap::new();
+        owners.insert(gw1.clone(), owner1.clone());
+        owners.insert(gw2.clone(), owner2.clone());
+
+        let now = Utc::now();
+        let timestamp = now - Duration::minutes(20);
+        let max_asserted_distance_deviation: u32 = 300;
+
+        let g1_cov_obj = Uuid::new_v4();
+        let g2_cov_obj = Uuid::new_v4();
+
+        // init cells and cell_types
+        let c2 = "P27-SCE4255W".to_string(); // sercom indoor
+
+        // setup heartbeats
+        let heartbeat_keys = vec![
+            // add wifi indoor HB
+            HeartbeatRow {
+                cbsd_id: None,
+                hotspot_key: gw1.clone(),
+                cell_type: CellType::NovaGenericWifiOutdoor,
+                coverage_object: g1_cov_obj,
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                location_validation_timestamp: Some(timestamp),
+                distance_to_asserted: Some(1),
+            },
+            // add sercomm indoor HB
+            HeartbeatRow {
+                cbsd_id: Some(c2.clone()),
+                hotspot_key: gw2.clone(),
+                cell_type: CellType::from_cbsd_id(&c2).unwrap(),
+                latest_timestamp: DateTime::<Utc>::MIN_UTC,
+                coverage_object: g2_cov_obj,
+                location_validation_timestamp: None,
+                distance_to_asserted: Some(1),
+            },
+        ];
+
+        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
+            .into_iter()
+            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
+            .collect();
+
+        // setup speedtests
+        let last_speedtest = timestamp - Duration::hours(12);
+        let gw1_speedtests = vec![
+            acceptable_speedtest(gw1.clone(), last_speedtest),
+            acceptable_speedtest(gw1.clone(), timestamp),
+        ];
+        let gw2_speedtests = vec![
+            acceptable_speedtest(gw2.clone(), last_speedtest),
+            acceptable_speedtest(gw2.clone(), timestamp),
+        ];
+
+        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let mut averages = HashMap::new();
+        averages.insert(gw1.clone(), gw1_average);
+        averages.insert(gw2.clone(), gw2_average);
+
+        let speedtest_avgs = SpeedtestAverages { averages };
+        let mut hex_coverage: HashMap<(OwnedKeyType, Uuid), Vec<HexCoverage>> = Default::default();
+        hex_coverage.insert(
+            (OwnedKeyType::from(gw1.clone()), g1_cov_obj),
+            simple_hex_coverage(&gw1, 0x8a1fb46622dffff),
+        );
+        hex_coverage.insert(
+            (OwnedKeyType::from(c2.clone()), g2_cov_obj),
+            simple_hex_coverage(&c2, 0x8a1fb46642dffff),
+        );
+
+        // calculate the rewards for the group
+        let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+        for mobile_reward in CoveragePoints::aggregate_points(
+            &hex_coverage,
+            stream::iter(heartbeat_rewards),
+            &speedtest_avgs,
+            DateTime::<Utc>::MIN_UTC,
+        )
+        .await
+        .unwrap()
+        .into_rewards(Decimal::ZERO, &epoch)
+        .unwrap()
+        {
+            let radio_reward = match mobile_reward.reward {
+                Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
+                _ => unreachable!(),
+            };
+            let owner = owners
+                .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
+                .expect("Could not find owner")
+                .clone();
+
+            *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
+        }
+
+        // These were different, now they are the same:
+
+        // wifi
+        let owner1_reward = *owner_rewards
+            .get(&owner1)
+            .expect("Could not fetch owner1 rewards");
+        assert_eq!(owner1_reward, 1_024_590_163_934);
+
+        // sercomm
+        let owner2_reward = *owner_rewards
+            .get(&owner2)
+            .expect("Could not fetch owner2 rewards");
+        assert_eq!(owner2_reward, 1_024_590_163_934);
+    }
+
+    /// Test to ensure that rewards that are zeroed are not written out.
+    #[tokio::test]
+    async fn ensure_zeroed_rewards_are_not_written() {
         use rust_decimal_macros::dec;
 
         let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -1334,30 +1618,61 @@ mod test {
         let c2 = "P27-SCE4255W2107CW5000015".to_string();
         let c3 = "2AG32PBS3101S1202000464223GY0153".to_string();
 
-        let mut hotspot_shares = HashMap::new();
+        let mut coverage_points = HashMap::new();
 
-        hotspot_shares.insert(
+        coverage_points.insert(
             gw1.clone(),
-            RadioShares {
-                radio_shares: vec![(Some(c1), dec!(10.0))].into_iter().collect(),
+            HotspotPoints {
+                speedtest_multiplier: dec!(1.0),
+                radio_points: vec![(
+                    Some(c1),
+                    RadioPoints {
+                        heartbeat_multiplier: dec!(1.0),
+                        seniority: DateTime::default(),
+                        coverage_object: Uuid::new_v4(),
+                        points: dec!(10.0),
+                    },
+                )]
+                .into_iter()
+                .collect(),
             },
         );
-        hotspot_shares.insert(
+        coverage_points.insert(
             gw2,
-            RadioShares {
-                radio_shares: vec![(Some(c2), dec!(-1.0)), (Some(c3), dec!(0.0))]
-                    .into_iter()
-                    .collect(),
+            HotspotPoints {
+                speedtest_multiplier: dec!(1.0),
+                radio_points: vec![
+                    (
+                        Some(c2),
+                        RadioPoints {
+                            heartbeat_multiplier: dec!(1.0),
+                            seniority: DateTime::default(),
+                            coverage_object: Uuid::new_v4(),
+                            points: dec!(-1.0),
+                        },
+                    ),
+                    (
+                        Some(c3),
+                        RadioPoints {
+                            heartbeat_multiplier: dec!(1.0),
+                            points: dec!(0.0),
+                            seniority: DateTime::default(),
+                            coverage_object: Uuid::new_v4(),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
             },
         );
 
         let now = Utc::now();
         // We should never see any radio shares from owner2, since all of them are
         // less than or equal to zero.
-        let owner_shares = PocShares { hotspot_shares };
+        let coverage_points = CoveragePoints { coverage_points };
         let epoch = now - Duration::hours(1)..now;
         let expected_hotspot = gw1;
-        for mobile_reward in owner_shares.into_rewards(Decimal::ZERO, &epoch).unwrap() {
+        for mobile_reward in coverage_points.into_rewards(Decimal::ZERO, &epoch).unwrap() {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
                 _ => unreachable!(),
@@ -1369,13 +1684,15 @@ mod test {
 
     #[tokio::test]
     async fn skip_empty_radio_rewards() {
-        let owner_shares = PocShares {
-            hotspot_shares: HashMap::new(),
+        let coverage_points = CoveragePoints {
+            coverage_points: HashMap::new(),
         };
 
         let now = Utc::now();
         let epoch = now - Duration::hours(1)..now;
 
-        assert!(owner_shares.into_rewards(Decimal::ZERO, &epoch).is_none());
+        assert!(coverage_points
+            .into_rewards(Decimal::ZERO, &epoch)
+            .is_none());
     }
 }

@@ -25,6 +25,7 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
+    pub modeled_coverage_start: u64,
     // Max distance in meters between the asserted location of a WIFI hotspot
     // and the lat/lng defined in a heartbeat
     // beyond which its location weight will be reduced
@@ -77,6 +78,12 @@ impl Settings {
 
     pub fn start_after(&self) -> DateTime<Utc> {
         Utc.timestamp_opt(self.start_after as i64, 0)
+            .single()
+            .unwrap()
+    }
+
+    pub fn modeled_coverage_start(&self) -> DateTime<Utc> {
+        Utc.timestamp_opt(self.modeled_coverage_start as i64, 0)
             .single()
             .unwrap()
     }

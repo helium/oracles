@@ -165,8 +165,8 @@ impl FileSinkBuilder {
 
 #[derive(Debug, Clone)]
 pub struct FileSinkClient {
-    pub sender: MessageSender,
-    pub metric: &'static str,
+    sender: MessageSender,
+    metric: &'static str,
 }
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
@@ -174,6 +174,10 @@ const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl FileSinkClient {
+    pub fn new(sender: MessageSender, metric: &'static str) -> Self {
+        Self { sender, metric }
+    }
+
     pub async fn write<T: prost::Message>(
         &self,
         item: T,

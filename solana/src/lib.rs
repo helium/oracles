@@ -6,7 +6,9 @@ use helium_crypto::PublicKeyBinary;
 use helium_sub_daos::{DaoV0, SubDaoV0};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_client::{
+    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
@@ -19,7 +21,7 @@ use std::convert::Infallible;
 use std::{collections::HashMap, str::FromStr};
 use std::{
     sync::Arc,
-    time::{SystemTime, SystemTimeError},
+    time::{Duration, SystemTime, SystemTimeError},
 };
 use tokio::sync::Mutex;
 
@@ -55,6 +57,26 @@ impl GetSignature for Signature {
     fn get_signature(&self) -> &Signature {
         self
     }
+}
+
+macro_rules! send_with_retry {
+    ($rpc:expr) => {{
+        let mut attempt = 1;
+        loop {
+            match $rpc.await {
+                Ok(resp) => break Ok(resp),
+                Err(err) => {
+                    if attempt < 5 {
+                        attempt += 1;
+                        tokio::time::sleep(Duration::from_secs(attempt)).await;
+                        continue;
+                    } else {
+                        break Err(err);
+                    }
+                }
+            }
+        }
+    }};
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -146,10 +168,19 @@ impl SolanaNetwork for SolanaRpc {
             &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
             &data_credits::ID,
         );
-        let Ok(account_data) = self.provider.get_account_data(&escrow_account).await else {
-            // If the account is empty, it has no DC
-            tracing::info!(%payer, "Account not found, therefore no balance");
-            return Ok(0);
+        let account_data = match self
+            .provider
+            .get_account_with_commitment(&escrow_account, CommitmentConfig::finalized())
+            .await?
+        {
+            Response { value: None, .. } => {
+                tracing::info!(%payer, "Account not found, therefore no balance");
+                return Ok(0);
+            }
+            Response {
+                value: Some(account),
+                ..
+            } => account.data,
         };
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
 
@@ -240,14 +271,23 @@ impl SolanaNetwork for SolanaRpc {
     }
 
     async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), Self::Error> {
-        let signature = self.provider.send_and_confirm_transaction(tx).await?;
-
-        tracing::info!(
-            transaction = %signature,
-            "Successfully burned data credits",
-        );
-
-        Ok(())
+        match send_with_retry!(self.provider.send_and_confirm_transaction(tx)) {
+            Ok(signature) => {
+                tracing::info!(
+                    transaction = %signature,
+                    "Data credit burn successful",
+                );
+                Ok(())
+            }
+            Err(err) => {
+                let signature = tx.get_signature();
+                tracing::error!(
+                    transaction = %signature,
+                    "Data credit burn failed: {err:?}"
+                );
+                Err(SolanaRpcError::RpcClientError(err))
+            }
+        }
     }
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {

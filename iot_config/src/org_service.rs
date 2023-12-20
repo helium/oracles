@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use crate::{
     admin::{AuthCache, KeyType},
     broadcast_update, helium_netids, lora_field, org,
     route::list_routes,
-    telemetry, verify_public_key, GrpcResult, Settings,
+    telemetry, verify_public_key, GrpcResult,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -24,7 +26,7 @@ pub struct OrgService {
     auth_cache: AuthCache,
     pool: Pool<Postgres>,
     route_update_tx: broadcast::Sender<RouteStreamResV1>,
-    signing_key: Keypair,
+    signing_key: Arc<Keypair>,
     delegate_updater: watch::Sender<org::DelegateCache>,
 }
 
@@ -36,7 +38,7 @@ pub enum UpdateAuthorizer {
 
 impl OrgService {
     pub fn new(
-        settings: &Settings,
+        signing_key: Arc<Keypair>,
         auth_cache: AuthCache,
         pool: Pool<Postgres>,
         route_update_tx: broadcast::Sender<RouteStreamResV1>,
@@ -46,7 +48,7 @@ impl OrgService {
             auth_cache,
             pool,
             route_update_tx,
-            signing_key: settings.signing_keypair()?,
+            signing_key,
             delegate_updater,
         })
     }

@@ -1,4 +1,3 @@
-use crate::settings::Settings;
 use anyhow::anyhow;
 use file_store::traits::MsgVerify;
 use helium_crypto::{PublicKey, PublicKeyBinary};
@@ -17,16 +16,14 @@ pub struct AuthCache {
 
 impl AuthCache {
     pub async fn new(
-        settings: &Settings,
+        config_admin_key: PublicKey,
         db: impl sqlx::PgExecutor<'_> + Copy,
     ) -> anyhow::Result<(watch::Sender<CacheKeys>, Self)> {
-        let config_admin = settings.admin_pubkey()?;
-
         let mut stored_keys = fetch_stored_keys(db)
             .await?
             .into_iter()
             .collect::<CacheKeys>();
-        stored_keys.insert(config_admin, KeyType::Administrator);
+        stored_keys.insert(config_admin_key, KeyType::Administrator);
 
         let (cache_sender, cache_receiver) = watch::channel(stored_keys);
 

@@ -14,9 +14,9 @@ use helium_proto::services::poc_mobile::{
     SpeedtestIngestReportV1, SpeedtestVerificationResult,
     VerifiedSpeedtest as VerifiedSpeedtestProto,
 };
-use mobile_config::{gateway_info::GatewayInfoResolver, GatewayClient};
+use mobile_config::client::gateway_client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -43,25 +43,28 @@ impl FromRow<'_, PgRow> for Speedtest {
     }
 }
 
-pub struct SpeedtestDaemon {
+pub struct SpeedtestDaemon<GIR> {
     pool: sqlx::Pool<sqlx::Postgres>,
-    gateway_client: GatewayClient,
+    gateway_info_resolver: GIR,
     speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
     speedtest_avg_file_sink: FileSinkClient,
     verified_speedtest_file_sink: FileSinkClient,
 }
 
-impl SpeedtestDaemon {
+impl<GIR> SpeedtestDaemon<GIR>
+where
+    GIR: GatewayInfoResolver,
+{
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
-        gateway_client: GatewayClient,
+        gateway_info_resolver: GIR,
         speedtests: Receiver<FileInfoStream<CellSpeedtestIngestReport>>,
         speedtest_avg_file_sink: FileSinkClient,
         verified_speedtest_file_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
-            gateway_client,
+            gateway_info_resolver,
             speedtests,
             speedtest_avg_file_sink,
             verified_speedtest_file_sink,
@@ -71,13 +74,18 @@ impl SpeedtestDaemon {
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tokio::spawn(async move {
             loop {
+                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
                         tracing::info!("SpeedtestDaemon shutting down");
                         break;
                     }
-                    Some(file) = self.speedtests.recv() => self.process_file(file).await?,
+                    Some(file) = self.speedtests.recv() => {
+			let start = Instant::now();
+			self.process_file(file).await?;
+			metrics::histogram!("speedtest_processing_time", start.elapsed());
+                    }
                 }
             }
 
@@ -125,7 +133,7 @@ impl SpeedtestDaemon {
     ) -> anyhow::Result<SpeedtestVerificationResult> {
         let pubkey = speedtest.report.pubkey.clone();
         if self
-            .gateway_client
+            .gateway_info_resolver
             .resolve_gateway_info(&pubkey)
             .await?
             .is_some()

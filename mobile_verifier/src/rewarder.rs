@@ -1,7 +1,7 @@
 use crate::{
-    data_session,
-    heartbeats::{clear_heartbeats, HeartbeatReward},
-    reward_shares::{MapperShares, PocShares, TransferRewards},
+    coverage, data_session,
+    heartbeats::{self, HeartbeatReward},
+    reward_shares::{CoveragePoints, MapperShares, TransferRewards},
     speedtests,
     speedtests_average::SpeedtestAverages,
     subscriber_location, telemetry,
@@ -143,10 +143,17 @@ impl Rewarder {
         );
 
         let heartbeats =
-            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted);
+            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted)
+                .await?;
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
-        let poc_rewards = PocShares::aggregate(heartbeats, &speedtest_averages).await?;
+        let coverage_points = CoveragePoints::aggregate_points(
+            &self.pool,
+            heartbeats,
+            &speedtest_averages,
+            reward_period.end,
+        )
+        .await?;
         let mobile_price = self
             .price_tracker
             .price(&helium_proto::BlockchainTokenTypeV1::Mobile)
@@ -171,7 +178,7 @@ impl Rewarder {
         telemetry::data_transfer_rewards_scale(scale);
 
         if let Some(mobile_reward_shares) =
-            poc_rewards.into_rewards(transfer_rewards.reward_sum(), reward_period)
+            coverage_points.into_rewards(transfer_rewards.reward_sum(), reward_period)
         {
             for mobile_reward_share in mobile_reward_shares {
                 self.mobile_rewards
@@ -219,9 +226,10 @@ impl Rewarder {
         let mut transaction = self.pool.begin().await?;
 
         // clear out the various db tables
-        clear_heartbeats(&mut transaction, &reward_period.start).await?;
+        heartbeats::clear_heartbeats(&mut transaction, &reward_period.start).await?;
         speedtests::clear_speedtests(&mut transaction, &reward_period.start).await?;
-        data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.start).await?;
+        data_session::clear_hotspot_data_sessions(&mut transaction, &reward_period.end).await?;
+        coverage::clear_coverage_objects(&mut transaction, &reward_period.start).await?;
         // subscriber_location::clear_location_shares(&mut transaction, &reward_period.end).await?;
 
         let next_reward_period = scheduler.next_reward_period();

@@ -61,7 +61,7 @@ where
     S: SolanaNetwork,
 {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<(), BurnError<S::Error>> {
-        tracing::info!("starting burner");
+        tracing::info!("Starting burner");
         let mut burn_timer = time::interval(self.burn_period);
         burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -69,16 +69,10 @@ where
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,
-                _ = burn_timer.tick() =>
-                    match self.burn().await {
-                    Ok(()) => (),
-                    Err(err) => {
-                        tracing::error!("error whilst handling denylist tick: {err:?}");
-                    }
-                }
+                _ = burn_timer.tick() => { let _ = self.burn().await; }
             }
         }
-        tracing::info!("stopping burner");
+        tracing::info!("Stopping burner");
         Ok(())
     }
 
@@ -117,16 +111,12 @@ where
             .await?;
         pending_tables_txn.commit().await?;
 
-        // Remove the burned amount and reset the balance of the payer from the
-        // payer cache:
         let mut balance_lock = self.balances.lock().await;
         let payer_account = balance_lock.get_mut(&payer).unwrap();
-        payer_account.burned -= amount;
-        payer_account.balance = self
-            .solana
-            .payer_balance(&payer)
-            .await
-            .map_err(BurnError::SolanaError)?;
+        // Reduce the pending burn amount and the payer's balance by the amount
+        // we've burned.
+        payer_account.burned = payer_account.burned.saturating_sub(amount);
+        payer_account.balance = payer_account.balance.saturating_sub(amount);
 
         metrics::counter!("burned", amount, "payer" => payer.to_string());
 

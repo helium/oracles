@@ -42,3 +42,7 @@ tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 triggered = {workspace = true}
 task-manager = { path = "../task_manager" }
+
+[dev-dependencies]
+rand = { workspace = true }
+backon = "0"

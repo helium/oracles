@@ -10,17 +10,16 @@ use helium_proto::services::poc_mobile::{
     invalid_data_transfer_ingest_report_v1::DataTransferIngestReportStatus,
     InvalidDataTransferIngestReportV1,
 };
-use mobile_config::{
-    client::{AuthorizationClient, GatewayClient},
-    gateway_info::GatewayInfoResolver,
+use mobile_config::client::{
+    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
 };
 use sqlx::{Postgres, Transaction};
 
 use crate::event_ids;
 
 pub async fn accumulate_sessions(
-    gateway_client: &GatewayClient,
-    auth_client: &AuthorizationClient,
+    gateway_info_resolver: &impl GatewayInfoResolver,
+    authorization_verifier: &impl AuthorizationVerifier,
     conn: &mut Transaction<'_, Postgres>,
     invalid_data_session_report_sink: &FileSinkClient,
     curr_file_ts: DateTime<Utc>,
@@ -31,7 +30,7 @@ pub async fn accumulate_sessions(
     while let Some(report) = reports.next().await {
         // If the reward has been cancelled or it fails verification checks then skip
         // the report and write it out to s3 as invalid
-        if report.report.reward_cancelled {
+        if report.report.rewardable_bytes == 0 {
             write_invalid_report(
                 invalid_data_session_report_sink,
                 DataTransferIngestReportStatus::Cancelled,
@@ -41,7 +40,8 @@ pub async fn accumulate_sessions(
             continue;
         }
 
-        let report_validity = verify_report(conn, gateway_client, auth_client, &report).await?;
+        let report_validity =
+            verify_report(conn, gateway_info_resolver, authorization_verifier, &report).await?;
         if report_validity != DataTransferIngestReportStatus::Valid {
             write_invalid_report(invalid_data_session_report_sink, report_validity, report).await?;
             continue;
@@ -49,11 +49,12 @@ pub async fn accumulate_sessions(
         let event = report.report.data_transfer_usage;
         sqlx::query(
             r#"
-            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, first_timestamp, last_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $5)
+            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
+            VALUES ($1, $2, $3, $4, $5, $6, $6)
             ON CONFLICT (pub_key, payer) DO UPDATE SET
             uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
             downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
+            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
             last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
             "#
         )
@@ -61,6 +62,7 @@ pub async fn accumulate_sessions(
             .bind(event.payer)
             .bind(event.upload_bytes as i64)
             .bind(event.download_bytes as i64)
+            .bind(report.report.rewardable_bytes as i64)
             .bind(curr_file_ts)
             .execute(&mut *conn)
             .await?;
@@ -71,35 +73,43 @@ pub async fn accumulate_sessions(
 
 async fn verify_report(
     txn: &mut Transaction<'_, Postgres>,
-    gateway_client: &GatewayClient,
-    auth_client: &AuthorizationClient,
+    gateway_info_resolver: &impl GatewayInfoResolver,
+    authorization_verifier: &impl AuthorizationVerifier,
     report: &DataTransferSessionIngestReport,
 ) -> anyhow::Result<DataTransferIngestReportStatus> {
     if is_duplicate(txn, report).await? {
         return Ok(DataTransferIngestReportStatus::Duplicate);
     }
 
-    if !verify_gateway(gateway_client, &report.report.data_transfer_usage.pub_key).await {
+    if !verify_gateway(
+        gateway_info_resolver,
+        &report.report.data_transfer_usage.pub_key,
+    )
+    .await
+    {
         return Ok(DataTransferIngestReportStatus::InvalidGatewayKey);
     };
-    if !verify_known_routing_key(auth_client, &report.report.pub_key).await {
+    if !verify_known_routing_key(authorization_verifier, &report.report.pub_key).await {
         return Ok(DataTransferIngestReportStatus::InvalidRoutingKey);
     };
     Ok(DataTransferIngestReportStatus::Valid)
 }
 
-async fn verify_gateway(gateway_client: &GatewayClient, public_key: &PublicKeyBinary) -> bool {
-    match gateway_client.resolve_gateway_info(public_key).await {
+async fn verify_gateway(
+    gateway_info_resolver: &impl GatewayInfoResolver,
+    public_key: &PublicKeyBinary,
+) -> bool {
+    match gateway_info_resolver.resolve_gateway_info(public_key).await {
         Ok(res) => res.is_some(),
         Err(_err) => false,
     }
 }
 
 async fn verify_known_routing_key(
-    auth_client: &AuthorizationClient,
+    authorization_verifier: &impl AuthorizationVerifier,
     public_key: &PublicKeyBinary,
 ) -> bool {
-    match auth_client
+    match authorization_verifier
         .verify_authorized_key(public_key, NetworkKeyRole::MobileRouter)
         .await
     {

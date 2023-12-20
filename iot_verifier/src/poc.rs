@@ -22,11 +22,14 @@ use helium_proto::{
     },
     BlockchainRegionParamV1, Region as ProtoRegion,
 };
-use iot_config::gateway_info::{GatewayInfo, GatewayMetadata};
+use iot_config::{
+    client::Gateways,
+    gateway_info::{GatewayInfo, GatewayMetadata},
+};
 use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use std::f64::consts::PI;
+use std::{convert::Infallible, f64::consts::PI};
 
 pub type GenericVerifyResult<T = ()> = std::result::Result<T, InvalidResponse>;
 
@@ -63,7 +66,7 @@ pub struct Poc {
     entropy_end: DateTime<Utc>,
     entropy_version: i32,
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VerifyBeaconResult {
     pub result: VerificationStatus,
     pub invalid_reason: InvalidReason,
@@ -78,7 +81,7 @@ pub struct VerifyWitnessesResult {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError {
+pub enum VerificationError<GatewayApiError> {
     #[error("not found: {0}")]
     NotFound(&'static str),
     #[error("last beacon error: {0}")]
@@ -88,7 +91,7 @@ pub enum VerificationError {
     #[error("error querying gateway info from iot config service")]
     GatewayCache(#[from] GatewayCacheError),
     #[error("error querying region info from iot config service")]
-    RegionCache(#[from] RegionCacheError),
+    RegionCache(#[from] RegionCacheError<GatewayApiError>),
 }
 
 impl Poc {
@@ -109,15 +112,18 @@ impl Poc {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn verify_beacon(
+    pub async fn verify_beacon<G>(
         &mut self,
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
-        region_cache: &RegionCache,
+        region_cache: &RegionCache<G>,
         pool: &PgPool,
-        beacon_interval: u64,
+        beacon_interval: Duration,
         deny_list: &DenyList,
-    ) -> Result<VerifyBeaconResult, VerificationError> {
+    ) -> Result<VerifyBeaconResult, VerificationError<G::Error>>
+    where
+        G: Gateways,
+    {
         let beacon = &self.beacon_report.report;
         let beaconer_pub_key = beacon.pub_key.clone();
         // get the beaconer info from our follower
@@ -179,7 +185,7 @@ impl Poc {
         hex_density_map: &HexDensityMap,
         gateway_cache: &GatewayCache,
         deny_list: &DenyList,
-    ) -> Result<VerifyWitnessesResult, VerificationError> {
+    ) -> Result<VerifyWitnessesResult, VerificationError<Infallible>> {
         let mut verified_witnesses: Vec<IotVerifiedWitnessReport> = Vec::new();
         let mut failed_witnesses: Vec<IotWitnessIngestReport> = Vec::new();
         let mut existing_gateways: Vec<PublicKeyBinary> = Vec::new();
@@ -237,7 +243,7 @@ impl Poc {
         beaconer_info: &GatewayInfo,
         gateway_cache: &GatewayCache,
         hex_density_map: &HexDensityMap,
-    ) -> Result<IotVerifiedWitnessReport, VerificationError> {
+    ) -> Result<IotVerifiedWitnessReport, VerificationError<Infallible>> {
         let witness = &witness_report.report;
         let witness_pub_key = witness.pub_key.clone();
         // pull the witness info from our follower
@@ -337,7 +343,7 @@ pub fn do_beacon_verifications(
     beacon_report: &IotBeaconIngestReport,
     beaconer_info: &GatewayInfo,
     beaconer_region_params: &[BlockchainRegionParamV1],
-    beacon_interval: u64,
+    beacon_interval: Duration,
 ) -> GenericVerifyResult {
     tracing::debug!(
         "verifying beacon from beaconer: {:?}",
@@ -439,13 +445,13 @@ pub fn do_witness_verifications(
 fn verify_beacon_schedule(
     last_beacon: &Option<LastBeacon>,
     beacon_received_ts: DateTime<Utc>,
-    beacon_interval: u64,
+    beacon_interval: Duration,
 ) -> GenericVerifyResult {
     match last_beacon {
         Some(last_beacon) => {
             let last_bucket = last_beacon
                 .timestamp
-                .duration_trunc(Duration::hours(beacon_interval as i64))
+                .duration_trunc(beacon_interval)
                 .map_err(|e| {
                     // if we fail to cast to a valid bucket beacon interval is likely incorrectly set
                     // rather than default all beacons to success or fail, bail out
@@ -455,7 +461,7 @@ fn verify_beacon_schedule(
                     )
                 })?;
             let cur_bucket = beacon_received_ts
-                .duration_trunc(Duration::hours(beacon_interval as i64))
+                .duration_trunc(beacon_interval)
                 .map_err(|e| {
                     // if we fail to cast to a valid bucket beacon interval is likely incorrectly set
                     // rather than default all beacons to success or fail, bail out
@@ -1100,7 +1106,7 @@ mod tests {
     #[test]
     fn test_verify_beacon_schedule() {
         let id: &str = "test_id";
-        let beacon_interval = 6_u64;
+        let beacon_interval = Duration::seconds(21600); // 6 hours
         let last_beacon_ts: DateTime<Utc> =
             DateTime::parse_from_str("2023 Jan 02 00:00:01 +0000", "%Y %b %d %H:%M:%S %z")
                 .unwrap()
@@ -1112,7 +1118,7 @@ mod tests {
         // beacon is in a later bucket ( by one hour) after last beacon, expectation pass
         assert!(verify_beacon_schedule(
             &last_beacon,
-            last_beacon_ts + Duration::hours(beacon_interval as i64 + 1),
+            last_beacon_ts + beacon_interval + Duration::hours(1),
             beacon_interval,
         )
         .is_ok());
@@ -1125,7 +1131,7 @@ mod tests {
             }),
             verify_beacon_schedule(
                 &last_beacon,
-                last_beacon_ts + Duration::hours(beacon_interval as i64 / 2),
+                last_beacon_ts + (beacon_interval / 2),
                 beacon_interval,
             )
         );
@@ -1138,7 +1144,7 @@ mod tests {
             }),
             verify_beacon_schedule(
                 &last_beacon,
-                last_beacon_ts - Duration::hours(beacon_interval as i64 + 1),
+                last_beacon_ts - (beacon_interval + Duration::hours(1)),
                 beacon_interval,
             )
         );
@@ -1409,7 +1415,7 @@ mod tests {
         let beaconer_info = beaconer_gateway_info(Some(LOC0), ProtoRegion::Eu868, true);
         let entropy_start = Utc.timestamp_millis_opt(ENTROPY_TIMESTAMP).unwrap();
         let entropy_end = entropy_start + Duration::minutes(3);
-        let beacon_interval = 5;
+        let beacon_interval = Duration::seconds(21600); // 6 hours in secs
         let deny_list: DenyList = vec![PublicKeyBinary::from_str(DENIED_PUBKEY1).unwrap()]
             .try_into()
             .unwrap();

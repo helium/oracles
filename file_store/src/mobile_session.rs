@@ -178,7 +178,7 @@ impl From<DataTransferEvent> for DataTransferEventProto {
 #[derive(Serialize, Clone, Debug)]
 pub struct DataTransferSessionReq {
     pub data_transfer_usage: DataTransferEvent,
-    pub reward_cancelled: bool,
+    pub rewardable_bytes: u64,
     pub pub_key: PublicKeyBinary,
     pub signature: Vec<u8>,
 }
@@ -192,7 +192,7 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
 
     fn try_from(v: DataTransferSessionReqV1) -> Result<Self> {
         Ok(Self {
-            reward_cancelled: v.reward_cancelled,
+            rewardable_bytes: v.rewardable_bytes,
             signature: v.signature,
             data_transfer_usage: v
                 .data_transfer_usage
@@ -203,14 +203,16 @@ impl TryFrom<DataTransferSessionReqV1> for DataTransferSessionReq {
     }
 }
 
+#[allow(deprecated)]
 impl From<DataTransferSessionReq> for DataTransferSessionReqV1 {
     fn from(v: DataTransferSessionReq) -> Self {
         let report: DataTransferEventProto = v.data_transfer_usage.into();
         Self {
             data_transfer_usage: Some(report),
-            reward_cancelled: v.reward_cancelled,
+            rewardable_bytes: v.rewardable_bytes,
             pub_key: v.pub_key.into(),
             signature: v.signature,
+            ..Default::default()
         }
     }
 }

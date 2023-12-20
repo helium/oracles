@@ -6,7 +6,7 @@ use futures::{
 };
 use helium_crypto::PublicKeyBinary;
 use sqlx::{PgPool, Postgres, Transaction};
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range, time::Instant};
 use tokio::sync::mpsc::Receiver;
 
 pub struct DataSessionIngestor {
@@ -28,13 +28,21 @@ impl DataSessionIngestor {
         tracing::info!("starting DataSessionIngestor");
         tokio::spawn(async move {
             loop {
+                #[rustfmt::skip]
                 tokio::select! {
                     biased;
                     _ = shutdown.clone() => {
                         tracing::info!("DataSessionIngestor shutting down");
                         break;
                     }
-                    Some(file) = receiver.recv() => self.process_file(file).await?,
+                    Some(file) = receiver.recv() => {
+			let start = Instant::now();
+			self.process_file(file).await?;
+			metrics::histogram!(
+			    "valid_data_transfer_session_processing_time",
+			    start.elapsed()
+			);
+                    }
                 }
             }
 
