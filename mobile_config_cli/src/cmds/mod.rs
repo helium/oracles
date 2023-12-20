@@ -155,7 +155,7 @@ pub struct GetHotspot {
 #[derive(Debug, Args)]
 pub struct GetHotspotBatch {
     #[arg(long)]
-    pub hotspots: Vec<PublicKey>,
+    pub hotspot: Vec<PublicKey>,
     #[arg(short, long, default_value = "5")]
     pub batch_size: u32,
     #[arg(from_global)]

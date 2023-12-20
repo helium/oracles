@@ -44,7 +44,7 @@ pub async fn info(args: GetHotspot) -> Result<Msg> {
 pub async fn info_batch(args: GetHotspotBatch) -> Result<Msg> {
     let mut client = client::GatewayClient::new(&args.config_host, &args.config_pubkey).await?;
     match client
-        .info_batch(&args.hotspots, args.batch_size, &args.keypair.to_keypair()?)
+        .info_batch(&args.hotspot, args.batch_size, &args.keypair.to_keypair()?)
         .await
     {
         Ok(info_stream) => {
@@ -53,7 +53,7 @@ pub async fn info_batch(args: GetHotspotBatch) -> Result<Msg> {
         }
         Err(err) => Msg::err(format!(
             "failed to retrieve {:?} info: {}",
-            &args.hotspots, err
+            &args.hotspot, err
         )),
     }
 }
