@@ -3498,6 +3498,7 @@ dependencies = [
  "prost",
  "serde",
  "solana",
+ "solana-sdk",
  "sqlx",
  "task-manager",
  "thiserror",

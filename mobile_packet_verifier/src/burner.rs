@@ -94,12 +94,7 @@ where
             }
 
             tracing::info!(%total_dcs, %payer, "Burning DC");
-            if self
-                .solana
-                .burn_data_credits(&payer, total_dcs)
-                .await
-                .is_err()
-            {
+            if self.burn_data_credits(&payer, total_dcs).await.is_err() {
                 // We have failed to burn data credits:
                 metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
                 continue;
@@ -136,6 +131,16 @@ where
             }
         }
 
+        Ok(())
+    }
+
+    async fn burn_data_credits(
+        &self,
+        payer: &PublicKeyBinary,
+        amount: u64,
+    ) -> Result<(), S::Error> {
+        let txn = self.solana.make_burn_transaction(payer, amount).await?;
+        self.solana.submit_transaction(&txn).await?;
         Ok(())
     }
 }
