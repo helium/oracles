@@ -50,14 +50,14 @@ heartbeats AS (
             ELSE
                 1.0
             END) AS location_trust_multiplier
-    FROM
-        wifi_heartbeats
-        WHERE
-            truncated_timestamp >= $1
-            AND truncated_timestamp < $2
-        GROUP BY
-            hotspot_key,
-            cell_type
+FROM
+    wifi_heartbeats
+    WHERE
+        truncated_timestamp >= $1
+        AND truncated_timestamp < $2
+    GROUP BY
+        hotspot_key,
+        cell_type
 ),
 latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
             cbsd_id)
@@ -94,6 +94,8 @@ SELECT
 FROM
     heartbeats hb
     INNER JOIN latest_uuids u ON hb.hotspot_key = u.hotspot_key
-        AND (hb.cbsd_id = u.cbsd_id or (hb.cbsd_id is null and u.cbsd_id is null))
+        AND (hb.cbsd_id = u.cbsd_id
+            OR (hb.cbsd_id IS NULL
+                AND u.cbsd_id IS NULL))
 WHERE
     hb.heartbeat_multiplier = 1.0
