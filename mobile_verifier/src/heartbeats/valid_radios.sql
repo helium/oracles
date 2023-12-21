@@ -35,7 +35,7 @@ heartbeats AS (
     UNION
     SELECT
         hotspot_key,
-        '' AS cbsd_id,
+        NULL AS cbsd_id,
         cell_type,
         CASE WHEN count(*) >= $3 THEN
             1.0
@@ -75,7 +75,7 @@ latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
             truncated_timestamp DESC)
     UNION ( SELECT DISTINCT ON (hotspot_key)
             hotspot_key,
-            '' AS cbsd_id,
+            NULL AS cbsd_id,
             coverage_object AS uuid
         FROM
             wifi_heartbeats wh
@@ -84,21 +84,16 @@ latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
             AND truncated_timestamp < $2
         ORDER BY
             hotspot_key,
-            truncated_timestamp DESC)
-)
+            truncated_timestamp DESC))
 SELECT
     hb.hotspot_key,
-    CASE WHEN hb.cbsd_id != '' THEN
-        hb.cbsd_id
-    ELSE
-        NULL
-    END AS cbsd_id,
+    hb.cbsd_id,
     hb.cell_type,
     hb.location_trust_multiplier,
     u.uuid AS coverage_object
 FROM
     heartbeats hb
     INNER JOIN latest_uuids u ON hb.hotspot_key = u.hotspot_key
-        AND hb.cbsd_id = u.cbsd_id
+        AND (hb.cbsd_id = u.cbsd_id or (hb.cbsd_id is null and u.cbsd_id is null))
 WHERE
     hb.heartbeat_multiplier = 1.0

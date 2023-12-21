@@ -262,16 +262,6 @@ impl From<WifiHeartbeatIngestReport> for Heartbeat {
     }
 }
 
-// #[derive(Debug, Clone, sqlx::FromRow)]
-// pub struct HeartbeatRow {
-//     pub hotspot_key: PublicKeyBinary,
-//     //cell hb only
-//     pub cbsd_id: Option<String>,
-//     pub cell_type: CellType,
-//     pub location_trust_multiplier: Decimal,
-//     pub coverage_object: Uuid,
-// }
-
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct HeartbeatReward {
     pub hotspot_key: PublicKeyBinary,
