@@ -56,5 +56,6 @@ hex-literal = "0"
 tempfile = "3"
 
 [features]
+default = ["sqlx-postgres"]
 local = ["aws-types"]
 sqlx-postgres = ["sqlx"]
