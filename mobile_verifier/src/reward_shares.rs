@@ -1733,7 +1733,8 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1741,7 +1742,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(Decimal::ZERO, &epoch)
+        .into_rewards(total_poc_rewards, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1757,7 +1758,7 @@ mod test {
         }
 
         // These were different, now they are the same:
-
+        println!("owner rewards {:?}", owner_rewards);
         // wifi
         let owner1_reward = *owner_rewards
             .get(&owner1)
