@@ -206,16 +206,20 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 
 #[derive(Debug)]
 struct RadioPoints {
-    heartbeat_multiplier: Decimal,
+    location_trust_score_multiplier: Decimal,
     coverage_object: Uuid,
     seniority: DateTime<Utc>,
     points: Decimal,
 }
 
 impl RadioPoints {
-    fn new(heartbeat_multiplier: Decimal, coverage_object: Uuid, seniority: DateTime<Utc>) -> Self {
+    fn new(
+        location_trust_score_multiplier: Decimal,
+        coverage_object: Uuid,
+        seniority: DateTime<Utc>,
+    ) -> Self {
         Self {
-            heartbeat_multiplier,
+            location_trust_score_multiplier,
             seniority,
             coverage_object,
             points: Decimal::ZERO,
@@ -223,7 +227,7 @@ impl RadioPoints {
     }
 
     fn points(&self) -> Decimal {
-        (self.heartbeat_multiplier * self.points).max(Decimal::ZERO)
+        (self.location_trust_score_multiplier * self.points).max(Decimal::ZERO)
     }
 }
 
@@ -401,7 +405,7 @@ fn new_radio_reward(
 ) -> proto::MobileRewardShare {
     let poc_reward = poc_rewards_per_share
         * speedtest_multiplier
-        * radio_points.heartbeat_multiplier
+        * radio_points.location_trust_score_multiplier
         * radio_points.points;
     let hotspot_key: Vec<u8> = hotspot_key.clone().into();
     let cbsd_id = cbsd_id.unwrap_or_default();
@@ -419,6 +423,11 @@ fn new_radio_reward(
                 coverage_points: radio_points.points.to_u64().unwrap_or(0),
                 seniority_timestamp: radio_points.seniority.encode_timestamp(),
                 coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
+                location_trust_score_multiplier: (radio_points.location_trust_score_multiplier
+                    * dec!(1000))
+                .to_u32()
+                .unwrap_or(0),
+                speedtest_multiplier: (speedtest_multiplier * dec!(1000)).to_u32().unwrap_or(0),
                 ..Default::default()
             },
         )),
@@ -1627,7 +1636,7 @@ mod test {
                 radio_points: vec![(
                     Some(c1),
                     RadioPoints {
-                        heartbeat_multiplier: dec!(1.0),
+                        location_trust_score_multiplier: dec!(1.0),
                         seniority: DateTime::default(),
                         coverage_object: Uuid::new_v4(),
                         points: dec!(10.0),
@@ -1645,7 +1654,7 @@ mod test {
                     (
                         Some(c2),
                         RadioPoints {
-                            heartbeat_multiplier: dec!(1.0),
+                            location_trust_score_multiplier: dec!(1.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
                             points: dec!(-1.0),
@@ -1654,7 +1663,7 @@ mod test {
                     (
                         Some(c3),
                         RadioPoints {
-                            heartbeat_multiplier: dec!(1.0),
+                            location_trust_score_multiplier: dec!(1.0),
                             points: dec!(0.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
