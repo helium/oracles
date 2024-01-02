@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(1, included_witnesses.len());
         assert_eq!(
             InvalidReason::Stale,
-            excluded_witnesses.get(0).unwrap().invalid_reason
+            excluded_witnesses.first().unwrap().invalid_reason
         );
         assert_eq!(
             InvalidReason::Duplicate,
