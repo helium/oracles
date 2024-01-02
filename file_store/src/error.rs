@@ -24,8 +24,6 @@ pub enum Error {
     Channel,
     #[error("no manifest")]
     NoManifest,
-    #[error("db error")]
-    DbError(#[from] sqlx::Error),
     #[error("tokio join error")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("send timeout")]
@@ -34,6 +32,9 @@ pub enum Error {
     Shutdown,
     #[error("error building file info poller")]
     FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
+    #[cfg(feature = "sqlx-postgres")]
+    #[error("db error")]
+    DbError(#[from] sqlx::Error),
 }
 
 #[derive(Error, Debug)]

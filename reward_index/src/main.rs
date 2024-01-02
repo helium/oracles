@@ -77,8 +77,8 @@ impl Server {
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
 
-        let (receiver, server) = file_source::continuous_source::<RewardManifest>()
-            .db(pool.clone())
+        let (receiver, server) = file_source::continuous_source::<RewardManifest, _>()
+            .state(pool.clone())
             .store(file_store)
             .prefix(FileType::RewardManifest.to_string())
             .lookback(LookbackBehavior::StartAfter(

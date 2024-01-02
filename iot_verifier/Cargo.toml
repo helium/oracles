@@ -36,7 +36,7 @@ h3o = {workspace = true, features = ["geo"]}
 xorf = {workspace = true}
 lazy_static = {workspace = true}
 once_cell = {workspace = true}
-file-store = { path = "../file_store" }
+file-store = { path = "../file_store"}
 metrics = {workspace = true}
 retainer = {workspace = true}
 blake3 = {workspace = true}

@@ -153,8 +153,8 @@ impl Cmd {
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
         let (reports, reports_server) =
-            file_source::continuous_source::<DataTransferSessionIngestReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<DataTransferSessionIngestReport, _>()
+                .state(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(
                     Utc.timestamp_millis_opt(0).unwrap(),

@@ -60,8 +60,8 @@ impl Cmd {
 
         // CBRS Heartbeats
         let (cbrs_heartbeats, cbrs_heartbeats_server) =
-            file_source::continuous_source::<CbrsHeartbeatIngestReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<CbrsHeartbeatIngestReport, _>()
+                .state(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
@@ -73,8 +73,8 @@ impl Cmd {
 
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) =
-            file_source::continuous_source::<WifiHeartbeatIngestReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<WifiHeartbeatIngestReport, _>()
+                .state(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::WifiHeartbeatIngestReport.to_string())
@@ -126,8 +126,8 @@ impl Cmd {
 
         // Speedtests
         let (speedtests, speedtests_server) =
-            file_source::continuous_source::<CellSpeedtestIngestReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<CellSpeedtestIngestReport, _>()
+                .state(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CellSpeedtestIngestReport.to_string())
@@ -166,8 +166,8 @@ impl Cmd {
 
         // Coverage objects
         let (coverage_objs, coverage_objs_server) =
-            file_source::continuous_source::<CoverageObjectIngestReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<CoverageObjectIngestReport, _>()
+                .state(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CoverageObjectIngestReport.to_string())
@@ -228,8 +228,8 @@ impl Cmd {
 
         // subscriber location
         let (subscriber_location_ingest, subscriber_location_ingest_server) =
-            file_source::continuous_source::<SubscriberLocationIngestReport>()
-                .db(pool.clone())
+            file_source::continuous_source::<SubscriberLocationIngestReport, _>()
+                .state(pool.clone())
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::SubscriberLocationIngestReport.to_string())
@@ -259,8 +259,8 @@ impl Cmd {
 
         // data transfers
         let (data_session_ingest, data_session_ingest_server) =
-            file_source::continuous_source::<ValidDataTransferSession>()
-                .db(pool.clone())
+            file_source::continuous_source::<ValidDataTransferSession, _>()
+                .state(pool.clone())
                 .store(data_transfer_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::ValidDataTransferSession.to_string())
