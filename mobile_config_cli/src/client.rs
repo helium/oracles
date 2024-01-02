@@ -127,7 +127,7 @@ impl AuthClient {
         keypair: &Keypair,
     ) -> Result<Vec<PublicKey>> {
         let mut request = AuthorizationListReqV1 {
-            role: role.try_into()?,
+            role: role.into(),
             signer: keypair.public_key().into(),
             signature: vec![],
         };
