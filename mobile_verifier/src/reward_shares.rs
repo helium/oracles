@@ -335,7 +335,7 @@ impl ServiceProviderShares {
 
     fn entity_key_to_service_provider(key: &str) -> anyhow::Result<ServiceProvider> {
         match key {
-            "helium_mobile" => Ok(ServiceProvider::HeliumMobile),
+            "Helium Mobile" => Ok(ServiceProvider::HeliumMobile),
             _ => bail!("invalid service provider name"),
         }
     }
