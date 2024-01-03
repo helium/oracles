@@ -162,7 +162,7 @@ impl Indexer {
                         if let Some(sp) = ServiceProvider::from_i32(r.service_provider_id) {
                             Ok((
                                 RewardKey {
-                                    key: sp.as_str_name().to_string(),
+                                    key: service_provider_to_entity_key(sp)?,
                                     reward_type: RewardType::MobileServiceProvider,
                                 },
                                 r.amount,
@@ -202,5 +202,11 @@ impl Indexer {
                 }
             }
         }
+    }
+}
+
+fn service_provider_to_entity_key(sp: ServiceProvider) -> anyhow::Result<String> {
+    match sp {
+        ServiceProvider::HeliumMobile => Ok("Helium Mobile".to_string()),
     }
 }
