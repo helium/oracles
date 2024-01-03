@@ -45,7 +45,7 @@ const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
 
 // Percent of total emissions allocated for oracles
-const ORACLES_PERCENT: Decimal = dec!(0.08);
+const ORACLES_PERCENT: Decimal = dec!(0.04);
 
 pub struct TransferRewards {
     reward_scale: Decimal,
