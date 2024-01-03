@@ -111,6 +111,7 @@ impl Cmd {
             gateway_client.clone(),
             cbrs_heartbeats,
             settings.modeled_coverage_start(),
+            settings.max_asserted_distance_deviation,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
         );
@@ -120,6 +121,7 @@ impl Cmd {
             gateway_client.clone(),
             wifi_heartbeats,
             settings.modeled_coverage_start(),
+            settings.max_asserted_distance_deviation,
             valid_heartbeats,
             seniority_updates,
         );

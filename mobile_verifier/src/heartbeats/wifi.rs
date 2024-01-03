@@ -21,6 +21,7 @@ pub struct HeartbeatDaemon<GIR> {
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
     modeled_coverage_start: DateTime<Utc>,
+    max_distance_to_asserted: u32,
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
 }
@@ -34,6 +35,7 @@ where
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
         modeled_coverage_start: DateTime<Utc>,
+        max_distance_to_asserted: u32,
         heartbeat_sink: FileSinkClient,
         seniority_sink: FileSinkClient,
     ) -> Self {
@@ -42,6 +44,7 @@ where
             gateway_info_resolver,
             heartbeats,
             modeled_coverage_start,
+            max_distance_to_asserted,
             heartbeat_sink,
             seniority_sink,
         }
@@ -115,6 +118,7 @@ where
             heartbeat_cache,
             coverage_claim_time_cache,
             self.modeled_coverage_start,
+            self.max_distance_to_asserted,
             &self.heartbeat_sink,
             &self.seniority_sink,
             &mut transaction,

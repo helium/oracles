@@ -17,7 +17,8 @@ use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
 use retainer::Cache;
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal_macros::dec;
 use sqlx::{postgres::PgTypeInfo, Decode, Encode, Postgres, Transaction, Type};
 use std::{collections::HashMap, ops::Range, pin::pin, time};
 use uuid::Uuid;
@@ -414,16 +415,27 @@ impl ValidatedHeartbeat {
         })
     }
 
-    pub async fn write(&self, heartbeats: &FileSinkClient) -> file_store::Result {
+    pub async fn write(
+        &self,
+        max_distance_to_asserted: u32,
+        heartbeats: &FileSinkClient,
+    ) -> file_store::Result {
+        let location_trust_score_multiplier = self.cell_type.location_weight(
+            self.heartbeat.location_validation_timestamp,
+            self.distance_to_asserted,
+            max_distance_to_asserted,
+        );
         heartbeats
             .write(
                 proto::Heartbeat {
                     cbsd_id: self.heartbeat.cbsd_id.clone().unwrap_or_default(),
                     pub_key: self.heartbeat.hotspot_key.as_ref().into(),
-                    reward_multiplier: 1.0,
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
                     timestamp: self.heartbeat.timestamp.timestamp() as u64,
+                    location_trust_score_multiplier: (location_trust_score_multiplier * dec!(1000))
+                        .to_u32()
+                        .unwrap_or_default(),
                     coverage_object: self
                         .heartbeat
                         .coverage_object
@@ -436,6 +448,7 @@ impl ValidatedHeartbeat {
                         .location_validation_timestamp
                         .map_or(0, |v| v.timestamp() as u64),
                     distance_to_asserted: self.distance_to_asserted.map_or(0, |v| v as u64),
+                    ..Default::default()
                 },
                 &[("validity", self.validity.as_str_name())],
             )
@@ -636,13 +649,16 @@ pub(crate) async fn process_validated_heartbeats(
     heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
     coverage_claim_time_cache: &CoverageClaimTimeCache,
     modeled_coverage_start: DateTime<Utc>,
+    max_distance_to_asserted: u32,
     heartbeat_sink: &FileSinkClient,
     seniority_sink: &FileSinkClient,
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
     let mut validated_heartbeats = pin!(validated_heartbeats);
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
-        validated_heartbeat.write(heartbeat_sink).await?;
+        validated_heartbeat
+            .write(max_distance_to_asserted, heartbeat_sink)
+            .await?;
 
         if !validated_heartbeat.is_valid() {
             continue;

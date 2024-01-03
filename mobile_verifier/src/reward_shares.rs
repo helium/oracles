@@ -37,8 +37,15 @@ const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 
 pub struct TransferRewards {
     reward_scale: Decimal,
-    rewards: HashMap<PublicKeyBinary, Decimal>,
+    rewards: HashMap<PublicKeyBinary, TransferReward>,
     reward_sum: Decimal,
+    mobile_bone_price: Decimal,
+}
+
+#[derive(Copy, Clone)]
+pub struct TransferReward {
+    bones: Decimal,
+    bytes_rewarded: u64,
 }
 
 impl TransferRewards {
@@ -52,7 +59,12 @@ impl TransferRewards {
 
     #[cfg(test)]
     fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
-        self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.reward_scale
+        self.rewards
+            .get(hotspot)
+            .copied()
+            .map(|x| x.bones)
+            .unwrap_or(Decimal::ZERO)
+            * self.reward_scale
     }
 
     pub async fn from_transfer_sessions(
@@ -64,10 +76,17 @@ impl TransferRewards {
         let rewards = transfer_sessions
             .into_iter()
             // Calculate rewards per hotspot
-            .map(|(pub_key, dc_amount)| {
-                let bones = dc_to_mobile_bones(Decimal::from(dc_amount), mobile_bone_price);
+            .map(|(pub_key, rewardable)| {
+                let bones =
+                    dc_to_mobile_bones(Decimal::from(rewardable.rewardable_dc), mobile_bone_price);
                 reward_sum += bones;
-                (pub_key, bones)
+                (
+                    pub_key,
+                    TransferReward {
+                        bones,
+                        bytes_rewarded: rewardable.rewardable_bytes,
+                    },
+                )
             })
             .collect();
 
@@ -99,6 +118,7 @@ impl TransferRewards {
             reward_scale,
             rewards,
             reward_sum: reward_sum * reward_scale,
+            mobile_bone_price,
         }
     }
 
@@ -121,10 +141,15 @@ impl TransferRewards {
                 reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
                     proto::GatewayReward {
                         hotspot_key: hotspot_key.into(),
-                        dc_transfer_reward: (reward * reward_scale)
+                        dc_transfer_reward: (reward.bones * reward_scale)
                             .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                             .to_u64()
-                            .unwrap_or(0),
+                            .unwrap_or_default(),
+                        rewardable_bytes: reward.bytes_rewarded,
+                        // Can someone confirm what this should be?
+                        price: (self.mobile_bone_price * dec!(1_000_000))
+                            .to_u64()
+                            .unwrap_or_default(),
                     },
                 )),
             })
@@ -186,7 +211,7 @@ impl MapperShares {
                 discovery_location_amount: (DISCOVERY_MAPPING_SHARES * reward_per_share)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
-                    .unwrap_or(0),
+                    .unwrap_or_default(),
             })
             .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
             .map(|subscriber_reward| proto::MobileRewardShare {
@@ -419,15 +444,17 @@ fn new_radio_reward(
                 poc_reward: poc_reward
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
-                    .unwrap_or(0),
-                coverage_points: radio_points.points.to_u64().unwrap_or(0),
+                    .unwrap_or_default(),
+                coverage_points: radio_points.points.to_u64().unwrap_or_default(),
                 seniority_timestamp: radio_points.seniority.encode_timestamp(),
                 coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
                 location_trust_score_multiplier: (radio_points.location_trust_score_multiplier
                     * dec!(1000))
                 .to_u32()
-                .unwrap_or(0),
-                speedtest_multiplier: (speedtest_multiplier * dec!(1000)).to_u32().unwrap_or(0),
+                .unwrap_or_default(),
+                speedtest_multiplier: (speedtest_multiplier * dec!(1000))
+                    .to_u32()
+                    .unwrap_or_default(),
                 ..Default::default()
             },
         )),
@@ -453,8 +480,8 @@ mod test {
     use crate::{
         cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage, Seniority},
-        data_session,
         data_session::HotspotDataSession,
+        data_session::{self, HotspotReward},
         heartbeats::{HeartbeatReward, HeartbeatRow, KeyType, OwnedKeyType},
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
@@ -560,7 +587,10 @@ mod test {
         let mut data_transfer_map = HotspotMap::new();
         data_transfer_map.insert(
             data_transfer_session.pub_key,
-            data_transfer_session.num_dcs as u64,
+            HotspotReward {
+                rewardable_bytes: 0, // Not used
+                rewardable_dc: data_transfer_session.num_dcs as u64,
+            },
         );
 
         let now = Utc::now();
