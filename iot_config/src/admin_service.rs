@@ -116,7 +116,7 @@ impl iot_config::Admin for AdminService {
             })
             .await?;
 
-        let timestamp = Utc::now().encode_timestamp();
+        let timestamp = Utc::now().encode_timestamp_millis();
         let signer = self.signing_key.public_key().into();
         let mut resp = AdminKeyResV1 {
             timestamp,
@@ -155,7 +155,7 @@ impl iot_config::Admin for AdminService {
             })
             .await?;
 
-        let timestamp = Utc::now().encode_timestamp();
+        let timestamp = Utc::now().encode_timestamp_millis();
         let signer = self.signing_key.public_key().into();
         let mut resp = AdminKeyResV1 {
             timestamp,
@@ -221,7 +221,7 @@ impl iot_config::Admin for AdminService {
             })
             .await?;
 
-        let timestamp = Utc::now().encode_timestamp();
+        let timestamp = Utc::now().encode_timestamp_millis();
         let signer = self.signing_key.public_key().into();
         let mut resp = AdminLoadRegionResV1 {
             timestamp,
@@ -247,7 +247,7 @@ impl iot_config::Admin for AdminService {
 
         let params = self.region_map.get_params(&region);
 
-        let timestamp = Utc::now().encode_timestamp();
+        let timestamp = Utc::now().encode_timestamp_millis();
         let signer = self.signing_key.public_key().into();
         let mut resp = RegionParamsResV1 {
             region: request.region,

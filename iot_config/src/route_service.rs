@@ -206,7 +206,7 @@ impl iot_config::Route for RouteService {
 
         let mut resp = RouteListResV1 {
             routes: proto_routes,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -234,7 +234,7 @@ impl iot_config::Route for RouteService {
 
         let mut resp = RouteResV1 {
             route: Some(route.into()),
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -283,7 +283,7 @@ impl iot_config::Route for RouteService {
 
         let mut resp = RouteResV1 {
             route: Some(new_route.into()),
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -326,7 +326,7 @@ impl iot_config::Route for RouteService {
 
         let mut resp = RouteResV1 {
             route: Some(updated_route.into()),
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -363,7 +363,7 @@ impl iot_config::Route for RouteService {
 
         let mut resp = RouteResV1 {
             route: Some(route.into()),
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -561,7 +561,7 @@ impl iot_config::Route for RouteService {
             .await?;
 
         let mut resp = RouteEuisResV1 {
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -719,7 +719,7 @@ impl iot_config::Route for RouteService {
             .await?;
 
         let mut resp = RouteDevaddrRangesResV1 {
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -901,7 +901,7 @@ impl iot_config::Route for RouteService {
         })?;
 
         let mut resp = RouteSkfUpdateResV1 {
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -1072,7 +1072,7 @@ async fn stream_existing_routes(
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
-    let timestamp = Utc::now().encode_timestamp();
+    let timestamp = Utc::now().encode_timestamp_millis();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
     route::route_stream(pool, since)
@@ -1107,7 +1107,7 @@ async fn stream_existing_euis(
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
-    let timestamp = Utc::now().encode_timestamp();
+    let timestamp = Utc::now().encode_timestamp_millis();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
     route::eui_stream(pool, since)
@@ -1142,7 +1142,7 @@ async fn stream_existing_devaddrs(
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
-    let timestamp = Utc::now().encode_timestamp();
+    let timestamp = Utc::now().encode_timestamp_millis();
     let signer: Vec<u8> = signing_key.public_key().into();
     let tx = &tx;
     route::devaddr_range_stream(pool, since)
@@ -1179,7 +1179,7 @@ async fn stream_existing_skfs(
     signing_key: &Keypair,
     tx: mpsc::Sender<Result<RouteStreamResV1, Status>>,
 ) -> Result<()> {
-    let timestamp = Utc::now().encode_timestamp();
+    let timestamp = Utc::now().encode_timestamp_millis();
     let signer: Vec<u8> = signing_key.public_key().into();
     route::skf_stream(pool, since)
         .then(|(skf, deleted)| {

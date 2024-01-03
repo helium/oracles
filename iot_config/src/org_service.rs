@@ -161,7 +161,7 @@ impl iot_config::Org for OrgService {
 
         let mut resp = OrgListResV1 {
             orgs: proto_orgs,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -202,7 +202,7 @@ impl iot_config::Org for OrgService {
             org: Some(org.into()),
             net_id: net_id.into(),
             devaddr_constraints,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -307,7 +307,7 @@ impl iot_config::Org for OrgService {
             org: Some(org.into()),
             net_id: helium_netid_field.into(),
             devaddr_constraints,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -389,7 +389,7 @@ impl iot_config::Org for OrgService {
             org: Some(org.into()),
             net_id: net_id.into(),
             devaddr_constraints,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -438,7 +438,7 @@ impl iot_config::Org for OrgService {
             org: Some(org.into()),
             net_id: net_id.into(),
             devaddr_constraints,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -475,7 +475,7 @@ impl iot_config::Org for OrgService {
 
         let mut resp = OrgDisableResV1 {
             oui: request.oui,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -512,7 +512,7 @@ impl iot_config::Org for OrgService {
 
         let mut resp = OrgEnableResV1 {
             oui: request.oui,
-            timestamp: Utc::now().encode_timestamp(),
+            timestamp: Utc::now().encode_timestamp_millis(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
