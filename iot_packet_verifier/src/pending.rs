@@ -7,6 +7,8 @@ use sqlx::{postgres::PgRow, FromRow, PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
+use crate::balances::BalanceStore;
+
 /// To avoid excessive burn transaction (which cost us money), we institute a minimum
 /// amount of Data Credits accounted for before we burn from a payer:
 const BURN_THRESHOLD: i64 = 10_000;
@@ -55,6 +57,7 @@ pub enum ConfirmPendingError<S> {
 pub async fn confirm_pending_txns<S>(
     pending_tables: &impl PendingTables,
     solana: &S,
+    balances: &BalanceStore,
 ) -> Result<(), ConfirmPendingError<S::Error>>
 where
     S: SolanaNetwork,
@@ -82,6 +85,10 @@ where
         {
             txn.subtract_burned_amount(&pending.payer, pending.amount)
                 .await?;
+            let mut balance_lock = balances.lock().await;
+            let payer_account = balance_lock.get_mut(&pending.payer).unwrap();
+            payer_account.burned = payer_account.burned.saturating_sub(pending.amount);
+            payer_account.balance = payer_account.balance.saturating_sub(pending.amount);
         }
         // Commit our work:
         txn.commit().await?;
@@ -380,6 +387,8 @@ impl<'a> PendingTablesTransaction<'a> for &'a MockPendingTables {
 
 #[cfg(test)]
 mod test {
+    use crate::balances::PayerAccount;
+
     use super::*;
     use std::collections::HashSet;
 
@@ -443,6 +452,14 @@ mod test {
                 time_of_submission: Utc::now() - Duration::minutes(1),
             },
         );
+        let mut balances = HashMap::new();
+        balances.insert(
+            payer.clone(),
+            PayerAccount {
+                balance: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
+                burned: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
+            },
+        );
         let mut pending_burns = HashMap::new();
         pending_burns.insert(
             payer.clone(),
@@ -458,7 +475,7 @@ mod test {
         confirmed_txns.insert(confirmed);
         let confirmed = MockConfirmed(confirmed_txns);
         // Confirm and resolve transactions:
-        confirm_pending_txns(&pending_tables, &confirmed)
+        confirm_pending_txns(&pending_tables, &confirmed, &Arc::new(Mutex::new(balances)))
             .await
             .unwrap();
         // The amount left in the pending burns table should only be the unconfirmed
