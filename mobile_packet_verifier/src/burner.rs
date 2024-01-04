@@ -101,20 +101,14 @@ where
                     // This transaction has been confirmed. Subtract the amount confirmed from
                     // the total amount burned and remove the transaction.
                     total_dcs -= amount as u64;
-                    sqlx::query(
-                        "UPDATE payer_totals SET txn = NULL, total_dcs = $2 WHERE payer = $1",
-                    )
+                }
+                // If the transaction has not been confirmed, we still want to remove the transaction.
+                // The total_dcs column remains the same.
+                sqlx::query("UPDATE payer_totals SET txn = NULL, total_dcs = $2 WHERE payer = $1")
                     .bind(&payer)
                     .bind(total_dcs as i64)
                     .execute(pool)
                     .await?;
-                } else {
-                    // Transaction is no longer valid. Remove it from the payer totals.
-                    sqlx::query("UPDATE payer_totals SET txn = NULL WHERE payer = $1")
-                        .bind(&payer)
-                        .execute(pool)
-                        .await?;
-                }
             }
 
             // Get the current sessions we need to write, before creating any new transactions
