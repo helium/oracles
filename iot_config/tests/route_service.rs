@@ -168,9 +168,9 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
     )
     .await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     let since = Utc::now();
-    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     let route2 = create_route(&mut client, &org, &admin_keypair).await;
 
@@ -408,7 +408,7 @@ async fn create_org(port: u64, admin_keypair: &Keypair) -> proto::OrgResV1 {
         owner: generate_keypair().public_key().to_vec(),
         payer: generate_keypair().public_key().to_vec(),
         devaddrs: 8,
-        timestamp: Utc::now().timestamp_millis() as u64,
+        timestamp: Utc::now().timestamp() as u64,
         signature: vec![],
         delegate_keys: vec![],
         signer: admin_keypair.public_key().into(),
@@ -455,7 +455,7 @@ async fn create_route(
             locked: false,
             ignore_empty_skf: true,
         }),
-        timestamp: Utc::now().timestamp_millis() as u64,
+        timestamp: Utc::now().timestamp() as u64,
         signature: vec![],
         signer: signing_keypair.public_key().into(),
     };
@@ -493,7 +493,7 @@ async fn create_euis(
             let mut request = proto::RouteUpdateEuisReqV1 {
                 action: proto::ActionV1::Add as i32,
                 eui_pair: Some(pair),
-                timestamp: Utc::now().timestamp_millis() as u64,
+                timestamp: Utc::now().timestamp() as u64,
                 signature: vec![],
                 signer: signing_keypair.public_key().into(),
             };
@@ -528,7 +528,7 @@ async fn create_devaddr_ranges(
             let mut request = proto::RouteUpdateDevaddrRangesReqV1 {
                 action: proto::ActionV1::Add as i32,
                 devaddr_range: Some(range),
-                timestamp: Utc::now().timestamp_millis() as u64,
+                timestamp: Utc::now().timestamp() as u64,
                 signature: vec![],
                 signer: signing_keypair.public_key().into(),
             };
@@ -570,7 +570,7 @@ async fn create_skf(
     let mut request = proto::RouteSkfUpdateReqV1 {
         route_id: route.id.clone(),
         updates,
-        timestamp: Utc::now().timestamp_millis() as u64,
+        timestamp: Utc::now().timestamp() as u64,
         signature: vec![],
         signer: signing_keypair.public_key().into(),
     };
