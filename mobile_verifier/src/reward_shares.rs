@@ -216,7 +216,7 @@ impl ServiceProviderShares {
 
     pub async fn from_payers_dc(
         payer_shares: HashMap<String, u64>,
-        client: &dyn CarrierServiceVerifier<Error = ClientError>,
+        client: &impl CarrierServiceVerifier<Error = ClientError>,
     ) -> anyhow::Result<ServiceProviderShares> {
         let mut sp_shares = ServiceProviderShares::default();
         for (payer, total_dcs) in payer_shares {
@@ -295,9 +295,9 @@ impl ServiceProviderShares {
 
     async fn payer_key_to_service_provider(
         payer: &str,
-        client: &dyn CarrierServiceVerifier<Error = ClientError>,
+        client: &impl CarrierServiceVerifier<Error = ClientError>,
     ) -> anyhow::Result<ServiceProvider> {
-        tracing::info!("getting entity key for pubkey {:?}", payer);
+        tracing::info!(payer, "getting entity key for service provider");
         let entity_key = client.key_to_rewardable_entity(payer).await?;
         Self::entity_key_to_service_provider(&entity_key)
     }
