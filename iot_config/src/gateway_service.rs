@@ -163,7 +163,7 @@ impl iot_config::Gateway for GatewayService {
 
         let mut resp = GatewayLocationResV1 {
             location,
-            timestamp: Utc::now().encode_timestamp_millis(),
+            timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -230,7 +230,7 @@ impl iot_config::Gateway for GatewayService {
             region: region.into(),
             params,
             gain: gain as u64,
-            timestamp: Utc::now().encode_timestamp_millis(),
+            timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -258,7 +258,7 @@ impl iot_config::Gateway for GatewayService {
             info: Some(gateway_info.try_into().map_err(|_| {
                 Status::internal("unexpected error converting gateway info to protobuf")
             })?),
-            timestamp: Utc::now().encode_timestamp_millis(),
+            timestamp: Utc::now().encode_timestamp(),
             signer: self.signing_key.public_key().into(),
             signature: vec![],
         };
@@ -310,7 +310,7 @@ async fn stream_all_gateways_info(
     region_map: RegionMapReader,
     batch_size: u32,
 ) -> anyhow::Result<()> {
-    let timestamp = Utc::now().encode_timestamp_millis();
+    let timestamp = Utc::now().encode_timestamp();
     let signer: Vec<u8> = signing_key.public_key().into();
     let mut stream = gateway_info::db::all_info_stream(pool).chunks(batch_size as usize);
     while let Some(infos) = stream.next().await {
