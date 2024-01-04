@@ -9,7 +9,7 @@ use iot_verifier::{
     rewarder,
 };
 use prost::Message;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, str::FromStr};
@@ -100,6 +100,12 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
             let expected_total =
                 expected_beacon_sum.to_u64().unwrap() + expected_witness_sum.to_u64().unwrap();
             assert_eq!(expected_total, poc_sum + dc_sum + unallocated_sum);
+
+            // confirm the poc & dc percentage amount matches expectations
+            let daily_total = *reward_share::REWARDS_PER_DAY;
+            let poc_dc_percent = (Decimal::from(poc_sum + dc_sum + unallocated_sum) / daily_total).round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+            assert_eq!(poc_dc_percent, dec!(0.8));
+
         }
     );
     Ok(())

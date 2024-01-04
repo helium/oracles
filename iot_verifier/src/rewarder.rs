@@ -122,7 +122,8 @@ impl Rewarder {
         // purge db
         let mut transaction = self.pool.begin().await?;
         // Clear gateway shares table period to end of reward period
-        GatewayShares::clear_rewarded_shares(&mut transaction, scheduler.reward_period.end).await?;
+        GatewayShares::clear_rewarded_shares(&mut transaction, scheduler.reward_period.start)
+            .await?;
         save_rewarded_timestamp(
             "last_rewarded_end_time",
             &scheduler.reward_period.end,

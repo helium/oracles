@@ -18,7 +18,7 @@ const DEFAULT_PREC: u32 = 15;
 lazy_static! {
     // TODO: year 1 emissions allocate 30% of total to PoC with 6% to beacons and 24% to witnesses but subsequent years back
     // total PoC percentage off 1.5% each year; determine how beacons and witnesses will split the subsequent years' allocations
-    static ref REWARDS_PER_DAY: Decimal = (Decimal::from(32_500_000_000_u64) / Decimal::from(366)) * Decimal::from(1_000_000); //  88_797_814_207_650.273224043715847
+    pub static ref REWARDS_PER_DAY: Decimal = (Decimal::from(32_500_000_000_u64) / Decimal::from(366)) * Decimal::from(1_000_000); //  88_797_814_207_650.273224043715847
     static ref BEACON_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.06);
     static ref WITNESS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.24);
     // Data transfer is allocated 50% of daily rewards
@@ -32,7 +32,7 @@ lazy_static! {
     static ref DC_USD_PRICE: Decimal =  dec!(0.00001);
 }
 
-fn get_tokens_by_duration(tokens: Decimal, duration: Duration) -> Decimal {
+pub fn get_tokens_by_duration(tokens: Decimal, duration: Duration) -> Decimal {
     ((tokens / Decimal::from(Duration::hours(24).num_seconds()))
         * Decimal::from(duration.num_seconds()))
     .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)

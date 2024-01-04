@@ -1,7 +1,8 @@
 mod common;
 use chrono::{Duration as ChronoDuration, Utc};
 use iot_verifier::{reward_share, rewarder};
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
+use rust_decimal_macros::dec;
 use sqlx::PgPool;
 
 #[sqlx::test]
@@ -20,6 +21,11 @@ async fn test_operations(_pool: PgPool) -> anyhow::Result<()> {
                     .unwrap();
                 assert_eq!(ops_reward.amount, 6215846994535);
                 assert_eq!(ops_reward.amount, expected_total);
+
+                // confirm the ops percentage amount matches expectations
+                let daily_total = *reward_share::REWARDS_PER_DAY;
+                let ops_percent = (Decimal::from(ops_reward.amount) / daily_total).round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+                assert_eq!(ops_percent, dec!(0.07));
 
                 // should be no further msgs
                 iot_rewards.assert_no_messages();
