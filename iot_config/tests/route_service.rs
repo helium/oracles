@@ -195,7 +195,7 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
     let response = client
         .stream(route_stream_req_v1(
             &client_keypair,
-            since.timestamp_millis() as u64,
+            since.timestamp() as u64,
         ))
         .await
         .expect("stream request");
@@ -331,7 +331,7 @@ where
 
 fn route_stream_req_v1(signer: &Keypair, since: u64) -> RouteStreamReqV1 {
     let mut request = RouteStreamReqV1 {
-        timestamp: Utc::now().timestamp_millis() as u64,
+        timestamp: Utc::now().timestamp() as u64,
         signer: signer.public_key().to_vec(),
         since,
         signature: vec![],
