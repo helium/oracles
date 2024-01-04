@@ -1,10 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::SolanaNetwork;
+use solana::{GetSignature, SolanaNetwork};
+use solana_sdk::signature::Signature;
 use sqlx::{FromRow, Pool, Postgres};
-use std::collections::HashMap;
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
@@ -17,17 +17,19 @@ pub struct DataTransferSession {
     last_timestamp: DateTime<Utc>,
 }
 
-#[derive(Default)]
+#[derive(FromRow)]
 pub struct PayerTotals {
-    total_dcs: u64,
-    sessions: Vec<DataTransferSession>,
+    payer: PublicKeyBinary,
+    total_dcs: i64,
+    txn: Option<SolanaTransaction>,
 }
 
-impl PayerTotals {
-    fn push_sess(&mut self, sess: DataTransferSession) {
-        self.total_dcs += bytes_to_dc(sess.rewardable_bytes as u64);
-        self.sessions.push(sess);
-    }
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "solana_transaction")]
+pub struct SolanaTransaction {
+    signature: String,
+    amount: i64,
+    time_of_submission: DateTime<Utc>,
 }
 
 pub struct Burner<S> {
@@ -50,6 +52,8 @@ pub enum BurnError<E> {
     FileStoreError(#[from] file_store::Error),
     #[error("sql error: {0}")]
     SqlError(#[from] sqlx::Error),
+    #[error("Chrono error: {0}")]
+    ChronoError(#[from] chrono::OutOfRangeError),
     #[error("solana error: {0}")]
     SolanaError(E),
 }
@@ -59,60 +63,105 @@ where
     S: SolanaNetwork,
 {
     pub async fn burn(&self, pool: &Pool<Postgres>) -> Result<(), BurnError<S::Error>> {
-        // Fetch all of the sessions
-        let sessions: Vec<DataTransferSession> =
-            sqlx::query_as("SELECT * FROM data_transfer_sessions")
-                .fetch_all(pool)
-                .await?;
+        // Fetch all of the payer totals:
+        let totals: Vec<PayerTotals> = sqlx::query_as("SELECT * FROM payer_totals")
+            .fetch_all(pool)
+            .await?;
 
-        // Fetch all of the sessions and group by the payer
-        let mut payer_totals = HashMap::<PublicKeyBinary, PayerTotals>::new();
-        for session in sessions.into_iter() {
-            payer_totals
-                .entry(session.payer.clone())
-                .or_default()
-                .push_sess(session);
-        }
-
-        for (
+        for PayerTotals {
             payer,
-            PayerTotals {
-                total_dcs,
-                sessions,
-            },
-        ) in payer_totals.into_iter()
+            total_dcs,
+            txn,
+        } in totals
         {
-            let payer_balance = self
-                .solana
-                .payer_balance(&payer)
-                .await
-                .map_err(BurnError::SolanaError)?;
+            let mut total_dcs = total_dcs as u64;
 
-            if payer_balance < total_dcs {
-                tracing::warn!(%payer, %payer_balance, %total_dcs, "Payer does not have enough balance to burn dcs");
-                continue;
+            // Check if there is a pending transaction
+            if let Some(SolanaTransaction {
+                signature,
+                amount,
+                time_of_submission,
+            }) = txn
+            {
+                // Sleep for at least a minute since the time of submission to
+                // give the transaction plenty of time to be confirmed:
+                let time_since_submission = Utc::now() - time_of_submission;
+                if Duration::minutes(1) > time_since_submission {
+                    tokio::time::sleep((Duration::minutes(1) - time_since_submission).to_std()?)
+                        .await;
+                }
+
+                let signature: Signature = signature.parse().unwrap();
+                if self
+                    .solana
+                    .confirm_transaction(&signature)
+                    .await
+                    .map_err(BurnError::SolanaError)?
+                {
+                    // This transaction has been confirmed. Subtract the amount confirmed from
+                    // the total amount burned and remove the transaction.
+                    total_dcs -= amount as u64;
+                    sqlx::query(
+                        "UPDATE payer_totals SET txn = NULL, total_dcs = $2 WHERE payer = $1",
+                    )
+                    .bind(&payer)
+                    .bind(total_dcs as i64)
+                    .execute(pool)
+                    .await?;
+                } else {
+                    // Transaction is no longer valid. Remove it from the payer totals.
+                    sqlx::query("UPDATE payer_totals SET txn = NULL WHERE payer = $1")
+                        .bind(&payer)
+                        .execute(pool)
+                        .await?;
+                }
             }
 
-            tracing::info!(%total_dcs, %payer, "Burning DC");
-            if self.burn_data_credits(&payer, total_dcs).await.is_err() {
-                // We have failed to burn data credits:
-                metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
-                continue;
+            // Get the current sessions we need to write, before creating any new transactions
+            let sessions: Vec<DataTransferSession> =
+                sqlx::query_as("SELECT * FROM data_transfer_session WHERE payer = $1")
+                    .bind(&payer)
+                    .fetch_all(pool)
+                    .await?;
+
+            // Create a new transaction for the given amount, if there is any left.
+            // If total_dcs is zero, that means we need to clear out the current sessions as they are paid for.
+            if total_dcs != 0 {
+                let txn = self
+                    .solana
+                    .make_burn_transaction(&payer, total_dcs)
+                    .await
+                    .map_err(BurnError::SolanaError)?;
+                sqlx::query("UPDATE payer_totals SET txn = $2 WHERE payer = $1")
+                    .bind(&payer)
+                    .bind(SolanaTransaction {
+                        signature: txn.get_signature().to_string(),
+                        amount: total_dcs as i64,
+                        time_of_submission: Utc::now(),
+                    })
+                    .execute(pool)
+                    .await?;
+                // Attempt to execute the transaction
+                if self.solana.submit_transaction(&txn).await.is_err() {
+                    // We have failed to burn data credits:
+                    metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
+                    continue;
+                }
             }
 
-            // We succesfully managed to burn data credits:
-
-            metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "true");
-
-            // Delete from the data transfer session and write out to S3
-
+            // Submit the sessions
             sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
                 .bind(&payer)
                 .execute(pool)
                 .await?;
 
+            sqlx::query("DELETE FROM payer_totals WHERE payer = $1")
+                .bind(&payer)
+                .execute(pool)
+                .await?;
+
             for session in sessions {
-                let num_dcs = bytes_to_dc(session.rewardable_bytes as u64);
+                let num_dcs = crate::bytes_to_dc(session.rewardable_bytes as u64);
                 self.valid_sessions
                     .write(
                         ValidDataTransferSession {
@@ -133,22 +182,4 @@ where
 
         Ok(())
     }
-
-    async fn burn_data_credits(
-        &self,
-        payer: &PublicKeyBinary,
-        amount: u64,
-    ) -> Result<(), S::Error> {
-        let txn = self.solana.make_burn_transaction(payer, amount).await?;
-        self.solana.submit_transaction(&txn).await?;
-        Ok(())
-    }
-}
-
-const BYTES_PER_DC: u64 = 20_000;
-
-fn bytes_to_dc(bytes: u64) -> u64 {
-    let bytes = bytes.max(BYTES_PER_DC);
-    // Integer div/ceil from: https://stackoverflow.com/a/2745086
-    (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }

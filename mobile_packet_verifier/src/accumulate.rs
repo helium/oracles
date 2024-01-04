@@ -59,13 +59,25 @@ pub async fn accumulate_sessions(
             "#
         )
             .bind(event.pub_key)
-            .bind(event.payer)
+            .bind(&event.payer)
             .bind(event.upload_bytes as i64)
             .bind(event.download_bytes as i64)
             .bind(report.report.rewardable_bytes as i64)
             .bind(curr_file_ts)
             .execute(&mut *conn)
             .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO payer_totals (payer, total_dcs)
+            VALUES ($1, $2)
+            ON CONFLICT (payer) DO UPDATE SET
+            total_dcs = total_dcs + EXCLUDED.total_dcs
+            "#,
+        )
+        .bind(event.payer)
+        .bind(crate::bytes_to_dc(event.upload_bytes + event.download_bytes) as i64)
+        .execute(&mut *conn)
+        .await?;
     }
 
     Ok(())

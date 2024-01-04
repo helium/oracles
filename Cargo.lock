@@ -4149,6 +4149,7 @@ dependencies = [
  "serde",
  "sha2 0.10.6",
  "solana",
+ "solana-sdk",
  "sqlx",
  "task-manager",
  "thiserror",
