@@ -644,6 +644,7 @@ pub async fn validate_heartbeat(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn process_validated_heartbeats(
     validated_heartbeats: impl Stream<Item = anyhow::Result<ValidatedHeartbeat>>,
     heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
