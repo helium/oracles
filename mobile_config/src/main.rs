@@ -3,12 +3,12 @@ use clap::Parser;
 use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_proto::services::mobile_config::{
-    AdminServer, AuthorizationServer, EntityServer, GatewayServer,
+    AdminServer, AuthorizationServer, CarrierServiceServer, EntityServer, GatewayServer,
 };
 use mobile_config::{
     admin_service::AdminService, authorization_service::AuthorizationService,
-    entity_service::EntityService, gateway_service::GatewayService, key_cache::KeyCache,
-    settings::Settings,
+    carrier_service::CarrierService, entity_service::EntityService,
+    gateway_service::GatewayService, key_cache::KeyCache, settings::Settings,
 };
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use task_manager::{ManagedTask, TaskManager};
@@ -86,6 +86,8 @@ impl Daemon {
             metadata_pool.clone(),
             settings.signing_keypair()?,
         );
+        let carrier_svc =
+            CarrierService::new(key_cache.clone(), pool.clone(), settings.signing_keypair()?);
 
         let grpc_server = GrpcServer {
             listen_addr,
@@ -93,6 +95,7 @@ impl Daemon {
             gateway_svc,
             auth_svc,
             entity_svc,
+            carrier_svc,
         };
 
         TaskManager::builder().add_task(grpc_server).start().await
@@ -105,6 +108,7 @@ pub struct GrpcServer {
     gateway_svc: GatewayService,
     auth_svc: AuthorizationService,
     entity_svc: EntityService,
+    carrier_svc: CarrierService,
 }
 
 impl ManagedTask for GrpcServer {
@@ -121,6 +125,7 @@ impl ManagedTask for GrpcServer {
                 .add_service(GatewayServer::new(self.gateway_svc))
                 .add_service(AuthorizationServer::new(self.auth_svc))
                 .add_service(EntityServer::new(self.entity_svc))
+                .add_service(CarrierServiceServer::new(self.carrier_svc))
                 .serve_with_shutdown(self.listen_addr, shutdown)
                 .map_err(Error::from)
                 .await

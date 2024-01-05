@@ -559,10 +559,7 @@ mod test {
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
-                rewards.insert(
-                    gateway_reward.hotspot_key.clone().try_into().unwrap(),
-                    gateway_reward,
-                );
+                rewards.insert(gateway_reward.hotspot_key.clone().into(), gateway_reward);
             }
         }
 
@@ -743,10 +740,7 @@ mod test {
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
-                rewards.insert(
-                    gateway_reward.hotspot_key.clone().try_into().unwrap(),
-                    gateway_reward,
-                );
+                rewards.insert(gateway_reward.hotspot_key.clone().into(), gateway_reward);
             }
         }
 
@@ -911,10 +905,7 @@ mod test {
             .collect();
         for reward in gw_reward_shares {
             if let Some(ProtoReward::GatewayReward(gateway_reward)) = reward.reward {
-                rewards.insert(
-                    gateway_reward.hotspot_key.clone().try_into().unwrap(),
-                    gateway_reward,
-                );
+                rewards.insert(gateway_reward.hotspot_key.clone().into(), gateway_reward);
             }
         }
 

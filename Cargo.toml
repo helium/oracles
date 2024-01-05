@@ -60,14 +60,14 @@ sqlx = {version = "0", features = [
   "runtime-tokio-rustls"
 ]}
 helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
-helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
+helium-proto = {git = "https://github.com/helium/proto", branch = "andymck/service-provider-rewards", features = ["services"]}
 hextree = "*"
 solana-client = "1.14"
 solana-sdk = "1.14"
 solana-program = "1.11"
 spl-token = "3.5.0"
 reqwest = {version = "0", default-features=false, features = ["gzip", "json", "rustls-tls"]}
-beacon = { git = "https://github.com/helium/proto", branch = "master" }
+beacon = { git = "https://github.com/helium/proto", branch = "andymck/service-provider-rewards" }
 humantime = "2"
 metrics = "0"
 metrics-exporter-prometheus = "0"

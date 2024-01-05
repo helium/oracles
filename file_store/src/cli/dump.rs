@@ -226,6 +226,10 @@ impl Cmd {
                             "subscriber_id": reward.subscriber_id,
                             "discovery_location_amount": reward.discovery_location_amount,
                         }))?,
+                        Some(Reward::ServiceProviderReward(reward)) => print_json(&json!({
+                            "service_provider": reward.service_provider_id,
+                            "amount": reward.amount,
+                        }))?,
                         _ => (),
                     }
                 }

@@ -149,7 +149,7 @@ where
         speedtest_report: CellSpeedtestIngestReport,
         result: SpeedtestVerificationResult,
     ) -> anyhow::Result<()> {
-        let ingest_report: SpeedtestIngestReportV1 = speedtest_report.try_into()?;
+        let ingest_report: SpeedtestIngestReportV1 = speedtest_report.into();
         let timestamp: u64 = Utc::now().timestamp_millis() as u64;
         let proto = VerifiedSpeedtestProto {
             report: Some(ingest_report),

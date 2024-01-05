@@ -1,4 +1,5 @@
 pub mod authorization_client;
+pub mod carrier_service_client;
 pub mod entity_client;
 pub mod gateway_client;
 mod settings;
@@ -6,6 +7,7 @@ mod settings;
 use std::time::Duration;
 
 pub use authorization_client::AuthorizationClient;
+pub use carrier_service_client::CarrierServiceClient;
 pub use entity_client::EntityClient;
 pub use gateway_client::GatewayClient;
 pub use settings::Settings;
@@ -22,6 +24,8 @@ pub enum ClientError {
     VerificationError(#[from] file_store::Error),
     #[error("error parsing gateway location {0}")]
     LocationParseError(#[from] std::num::ParseIntError),
+    #[error("unknown service provider")]
+    UnknownServiceProvider,
 }
 
 macro_rules! call_with_retry {
