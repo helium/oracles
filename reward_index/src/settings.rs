@@ -39,7 +39,6 @@ pub struct Settings {
     pub unallocated_reward_entity_key: Option<String>,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
-    pub unallocated_reward_entity_key: Option<String>,
 }
 
 pub fn default_start_after() -> u64 {
