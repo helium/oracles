@@ -25,6 +25,8 @@ lazy_static! {
     static ref DATA_TRANSFER_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.50);
     // Operations fund is allocated 7% of daily rewards
     static ref OPERATIONS_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
+    // Oracles fund is allocated 7% of daily rewards
+    static ref ORACLES_REWARDS_PER_DAY_PERCENT: Decimal = dec!(0.07);
     // dc remainer distributed at ration of 4:1 in favour of witnesses
     // ie WITNESS_REWARDS_PER_DAY_PERCENT:BEACON_REWARDS_PER_DAY_PERCENT
     static ref WITNESS_DC_REMAINER_PERCENT: Decimal = dec!(0.80);
@@ -62,6 +64,13 @@ pub fn get_scheduled_dc_tokens(duration: Duration) -> Decimal {
 pub fn get_scheduled_ops_fund_tokens(duration: Duration) -> Decimal {
     get_tokens_by_duration(
         *REWARDS_PER_DAY * *OPERATIONS_REWARDS_PER_DAY_PERCENT,
+        duration,
+    )
+}
+
+pub fn get_scheduled_oracle_tokens(duration: Duration) -> Decimal {
+    get_tokens_by_duration(
+        *REWARDS_PER_DAY * *ORACLES_REWARDS_PER_DAY_PERCENT,
         duration,
     )
 }

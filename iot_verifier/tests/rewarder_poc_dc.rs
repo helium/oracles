@@ -41,17 +41,17 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
                 gateway_rewards[0].hotspot_key,
                 PublicKeyBinary::from_str(HOTSPOT_1).unwrap().as_ref()
             );
-            assert_eq!(gateway_rewards[0].beacon_amount, 1775956284153);
+            assert_eq!(gateway_rewards[0].beacon_amount, 1_775_956_284_153);
             assert_eq!(gateway_rewards[0].witness_amount, 0);
-            assert_eq!(gateway_rewards[0].dc_transfer_amount, 14799635701275);
+            assert_eq!(gateway_rewards[0].dc_transfer_amount, 14_799_635_701_275);
 
             assert_eq!(
                 gateway_rewards[1].hotspot_key,
                 PublicKeyBinary::from_str(HOTSPOT_2).unwrap().as_ref()
             );
             assert_eq!(gateway_rewards[1].beacon_amount, 0);
-            assert_eq!(gateway_rewards[1].witness_amount, 8524590163934);
-            assert_eq!(gateway_rewards[1].dc_transfer_amount, 29599271402550);
+            assert_eq!(gateway_rewards[1].witness_amount, 8_524_590_163_934);
+            assert_eq!(gateway_rewards[1].dc_transfer_amount, 29_599_271_402_550);
             // hotspot 2 should have double the dc rewards of hotspot 1
             assert_eq!(
                 gateway_rewards[1].dc_transfer_amount,
@@ -63,7 +63,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
                 PublicKeyBinary::from_str(HOTSPOT_3).unwrap().as_ref()
             );
             // hotspot 2 has double reward scale of hotspot 1 and thus double the beacon  amount
-            assert_eq!(gateway_rewards[2].beacon_amount, 3551912568306);
+            assert_eq!(gateway_rewards[2].beacon_amount, 3_551_912_568_306);
             assert_eq!(
                 gateway_rewards[2].beacon_amount,
                 gateway_rewards[0].beacon_amount * 2
@@ -76,7 +76,7 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
                 PublicKeyBinary::from_str(HOTSPOT_4).unwrap().as_ref()
             );
             assert_eq!(gateway_rewards[3].beacon_amount, 0);
-            assert_eq!(gateway_rewards[3].witness_amount, 12786885245901);
+            assert_eq!(gateway_rewards[3].witness_amount, 12_786_885_245_901);
             assert_eq!(gateway_rewards[3].dc_transfer_amount, 0);
 
             // assert our unallocated reward

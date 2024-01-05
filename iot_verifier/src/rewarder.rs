@@ -116,6 +116,9 @@ impl Rewarder {
         reward_poc_and_dc(&self.pool, &self.rewards_sink, reward_period, iot_price).await?;
         // process rewards for the operational fund
         reward_operational(&self.rewards_sink, reward_period).await?;
+        // process rewards for the oracle
+        reward_oracles(&self.rewards_sink, reward_period).await?;
+
         // commit the filesink
         let written_files = self.rewards_sink.commit().await?.await??;
 
@@ -264,7 +267,7 @@ pub async fn reward_operational(
         )
         .await?
         .await??;
-    // write out any unallocated mapping rewards
+    // write out any unallocated operation rewards
     // which for the operational fund can only relate to rounding issue
     // in practice this should always be zero as there can be a max of
     // one bone lost due to rounding when going from decimal to u64
@@ -277,8 +280,31 @@ pub async fn reward_operational(
     .unwrap_or(0);
     write_unallocated_reward(
         rewards_sink,
-        UnallocatedRewardType::Oracle,
+        UnallocatedRewardType::Operation,
         unallocated_operation_reward_amount,
+        reward_period,
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn reward_oracles(
+    rewards_sink: &file_sink::FileSinkClient,
+    reward_period: &Range<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    // atm 100% of oracle rewards are assigned to 'unallocated'
+    let total_oracle_rewards =
+        reward_share::get_scheduled_oracle_tokens(reward_period.end - reward_period.start);
+    let allocated_oracle_rewards = 0_u64;
+    let unallocated_oracle_reward_amount = (total_oracle_rewards
+        - Decimal::from(allocated_oracle_rewards))
+    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+    .to_u64()
+    .unwrap_or(0);
+    write_unallocated_reward(
+        rewards_sink,
+        UnallocatedRewardType::Oracle,
+        unallocated_oracle_reward_amount,
         reward_period,
     )
     .await?;
