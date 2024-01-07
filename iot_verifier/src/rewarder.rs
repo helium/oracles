@@ -13,6 +13,7 @@ use helium_proto::RewardManifest;
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, PgPool, Pool, Postgres};
 use std::ops::Range;
 use task_manager::ManagedTask;
@@ -209,17 +210,28 @@ pub async fn reward_poc_and_dc(
     reward_period: &Range<DateTime<Utc>>,
     iot_price: Decimal,
 ) -> anyhow::Result<()> {
-    // aggregate the poc and dc data per gateway
-    let mut gateway_reward_shares = GatewayShares::aggregate(pool, reward_period).await?;
+    let reward_shares = reward_share::aggregate_reward_shares(pool, reward_period).await?;
+    let gateway_shares = GatewayShares::new(reward_shares)?;
+    let (beacon_rewards_per_share, witness_rewards_per_share, dc_transfer_rewards_per_share) =
+        gateway_shares
+            .calculate_rewards_per_share(reward_period, iot_price)
+            .await?;
 
-    // work out rewards per share and sum up total usage for poc and dc
-    gateway_reward_shares.calculate_rewards_per_share_and_total_usage(reward_period, iot_price);
-    let total_gateway_reward_allocation = gateway_reward_shares.total_rewards_for_poc_and_dc;
+    // get the total poc and dc rewards for the period
+    let (total_beacon_rewards, total_witness_rewards) =
+        reward_share::get_scheduled_poc_tokens(reward_period.end - reward_period.start, dec!(0.0));
+    let total_dc_rewards =
+        reward_share::get_scheduled_dc_tokens(reward_period.end - reward_period.start);
+    let total_poc_dc_reward_allocation =
+        total_beacon_rewards + total_witness_rewards + total_dc_rewards;
 
     let mut allocated_gateway_rewards = 0_u64;
-    for (gateway_reward_amount, reward_share) in
-        gateway_reward_shares.into_iot_reward_shares(reward_period)
-    {
+    for (gateway_reward_amount, reward_share) in gateway_shares.into_iot_reward_shares(
+        reward_period,
+        beacon_rewards_per_share,
+        witness_rewards_per_share,
+        dc_transfer_rewards_per_share,
+    ) {
         rewards_sink
             .write(reward_share, [])
             .await?
@@ -228,7 +240,7 @@ pub async fn reward_poc_and_dc(
         allocated_gateway_rewards += gateway_reward_amount;
     }
     // write out any unallocated poc reward
-    let unallocated_poc_reward_amount = (total_gateway_reward_allocation
+    let unallocated_poc_reward_amount = (total_poc_dc_reward_allocation
         - Decimal::from(allocated_gateway_rewards))
     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
     .to_u64()
