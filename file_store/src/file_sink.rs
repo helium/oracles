@@ -536,7 +536,7 @@ impl FileSink {
     }
 }
 
-fn file_name(path_buf: &Path) -> Result<String> {
+pub fn file_name(path_buf: &Path) -> Result<String> {
     path_buf
         .file_name()
         .map(|os_str| os_str.to_string_lossy().to_string())

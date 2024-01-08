@@ -9,8 +9,9 @@ use file_store::{
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{
+        iot_reward_share::Reward as IotReward, GatewayReward, IotRewardShare,
         LoraBeaconIngestReportV1, LoraInvalidBeaconReportV1, LoraInvalidWitnessReportV1, LoraPocV1,
-        LoraWitnessIngestReportV1,
+        LoraWitnessIngestReportV1, OperationalReward, UnallocatedReward,
     },
     DataRate, Region as ProtoRegion,
 };
@@ -29,7 +30,8 @@ use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
 
 pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
-    let (tx, rx) = tokio::sync::mpsc::channel(5);
+    let (tx, rx) = tokio::sync::mpsc::channel(10);
+
     (
         FileSinkClient::new(tx, "metric"),
         MockFileSinkReceiver { receiver: rx },
@@ -42,15 +44,22 @@ pub struct MockFileSinkReceiver {
 
 #[allow(dead_code)]
 impl MockFileSinkReceiver {
-    pub async fn receive(&mut self) -> SinkMessage {
+    pub async fn receive(&mut self) -> Option<Vec<u8>> {
         match timeout(seconds(2), self.receiver.recv()).await {
-            Ok(Some(msg)) => msg,
-            Ok(None) => panic!("server closed connection while waiting for message"),
-            Err(_) => panic!("timeout while waiting for message"),
+            Ok(Some(SinkMessage::Data(on_write_tx, msg))) => {
+                let _ = on_write_tx.send(Ok(()));
+                Some(msg)
+            }
+            Ok(None) => None,
+            Err(e) => panic!("timeout while waiting for message1 {:?}", e),
+            Ok(Some(unexpected_msg)) => {
+                println!("ignoring unexpected msg {:?}", unexpected_msg);
+                None
+            }
         }
     }
 
-    pub fn assert_no_messages(mut self) {
+    pub fn assert_no_messages(&mut self) {
         let Err(TryRecvError::Empty) = self.receiver.try_recv() else {
             panic!("receiver should have been empty")
         };
@@ -58,26 +67,71 @@ impl MockFileSinkReceiver {
 
     pub async fn receive_valid_poc(&mut self) -> LoraPocV1 {
         match self.receive().await {
-            SinkMessage::Data(_, bytes) => {
-                LoraPocV1::decode(bytes.as_slice()).expect("decode beacon report")
+            Some(bytes) => {
+                LoraPocV1::decode(bytes.as_slice()).expect("failed to decode expected valid poc")
             }
-            _ => panic!("invalid beacon message"),
+            None => panic!("failed to receive valid poc"),
         }
     }
 
     pub async fn receive_invalid_beacon(&mut self) -> LoraInvalidBeaconReportV1 {
         match self.receive().await {
-            SinkMessage::Data(_, bytes) => LoraInvalidBeaconReportV1::decode(bytes.as_slice())
-                .expect("decode invalid beacon report"),
-            _ => panic!("invalid beacon message"),
+            Some(bytes) => LoraInvalidBeaconReportV1::decode(bytes.as_slice())
+                .expect("failed to decode expected invalid beacon report"),
+            None => panic!("failed to receive invalid beacon"),
         }
     }
 
     pub async fn receive_invalid_witness(&mut self) -> LoraInvalidWitnessReportV1 {
         match self.receive().await {
-            SinkMessage::Data(_, bytes) => LoraInvalidWitnessReportV1::decode(bytes.as_slice())
-                .expect("decode invalid witness report"),
-            _ => panic!("invalid witness message"),
+            Some(bytes) => LoraInvalidWitnessReportV1::decode(bytes.as_slice())
+                .expect("failed to decode expected invalid witness report"),
+            None => panic!("failed to receive invalid witness"),
+        }
+    }
+
+    pub async fn receive_gateway_reward(&mut self) -> GatewayReward {
+        match self.receive().await {
+            Some(bytes) => {
+                let iot_reward = IotRewardShare::decode(bytes.as_slice())
+                    .expect("failed to decode expected gateway reward");
+                println!("iot_reward: {:?}", iot_reward);
+                match iot_reward.reward {
+                    Some(IotReward::GatewayReward(r)) => r,
+                    _ => panic!("failed to get gateway reward"),
+                }
+            }
+            None => panic!("failed to receive gateway reward"),
+        }
+    }
+
+    pub async fn receive_operational_reward(&mut self) -> OperationalReward {
+        match self.receive().await {
+            Some(bytes) => {
+                let iot_reward = IotRewardShare::decode(bytes.as_slice())
+                    .expect("failed to decode expected operational reward");
+                println!("iot_reward: {:?}", iot_reward);
+                match iot_reward.reward {
+                    Some(IotReward::OperationalReward(r)) => r,
+                    _ => panic!("failed to get operational reward"),
+                }
+            }
+            None => panic!("failed to receive operational reward"),
+        }
+    }
+
+    pub async fn receive_unallocated_reward(&mut self) -> UnallocatedReward {
+        match self.receive().await {
+            Some(bytes) => {
+                let iot_reward = IotRewardShare::decode(bytes.as_slice())
+                    .expect("failed to decode expected unallocated reward");
+                println!("iot_reward: {:?}", iot_reward);
+                match iot_reward.reward {
+                    Some(IotReward::UnallocatedReward(r)) => r,
+                    _ => panic!("failed to get unallocated reward"),
+                }
+            }
+            None => panic!("failed to receive unallocated reward"),
         }
     }
 }
@@ -86,6 +140,7 @@ fn seconds(s: u64) -> std::time::Duration {
     std::time::Duration::from_secs(s)
 }
 
+#[allow(dead_code)]
 pub fn create_valid_beacon_report(
     pubkey: &str,
     received_timestamp: DateTime<Utc>,
@@ -353,6 +408,7 @@ pub const POC_DATA: [u8; 51] = [
     203, 122, 146, 49, 241, 156, 148, 74, 246, 68, 17, 8, 212, 48, 6, 152, 58, 221, 158, 186, 101,
     37, 59, 135, 126, 18, 72, 244, 65, 174,
 ];
+#[allow(dead_code)]
 pub const ENTROPY_TIMESTAMP: i64 = 1677163710000;
 
 const EU868_PARAMS: &[u8] = &[

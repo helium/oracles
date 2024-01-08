@@ -35,6 +35,7 @@ pub enum RewardType {
     MobileSubscriber,
     MobileServiceProvider,
     MobileUnallocated,
+    IotUnallocated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -195,6 +196,13 @@ impl Indexer {
                         RewardKey {
                             key: self.op_fund_key.clone(),
                             reward_type: RewardType::IotOperational,
+                        },
+                        r.amount,
+                    )),
+                    Some(IotReward::UnallocatedReward(r)) => Ok((
+                        RewardKey {
+                            key: self.unallocated_reward_key.clone(),
+                            reward_type: RewardType::IotUnallocated,
                         },
                         r.amount,
                     )),
