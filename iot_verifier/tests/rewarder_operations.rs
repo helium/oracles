@@ -3,10 +3,9 @@ use chrono::{Duration as ChronoDuration, Utc};
 use iot_verifier::{reward_share, rewarder};
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
-use sqlx::PgPool;
 
-#[sqlx::test]
-async fn test_operations(_pool: PgPool) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_operations() -> anyhow::Result<()> {
     let (iot_rewards_client, mut iot_rewards) = common::create_file_sink();
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
