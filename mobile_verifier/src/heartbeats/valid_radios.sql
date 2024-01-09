@@ -63,7 +63,7 @@ latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
             cbsd_id)
             hotspot_key,
             cbsd_id,
-            coverage_object AS uuid
+            coverage_object
         FROM
             cbrs_heartbeats ch
         WHERE
@@ -76,7 +76,7 @@ latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
     UNION ( SELECT DISTINCT ON (hotspot_key)
             hotspot_key,
             NULL AS cbsd_id,
-            coverage_object AS uuid
+            coverage_object
         FROM
             wifi_heartbeats wh
         WHERE
@@ -90,7 +90,7 @@ SELECT
     hb.cbsd_id,
     hb.cell_type,
     hb.location_trust_multiplier,
-    u.uuid AS coverage_object
+    u.coverage_object
 FROM
     heartbeats hb
     INNER JOIN latest_uuids u ON hb.hotspot_key = u.hotspot_key
