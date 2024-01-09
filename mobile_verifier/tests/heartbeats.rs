@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile::HeartbeatValidity;
 use mobile_verifier::cell_type::CellType;
@@ -132,7 +132,6 @@ VALUES
 
     let start_period: DateTime<Utc> = "2023-08-25 00:00:00.000000000 UTC".parse()?;
     let end_period: DateTime<Utc> = "2023-08-26 00:00:00.000000000 UTC".parse()?;
-    let latest_timestamp: DateTime<Utc> = "2023-08-25 23:00:00.000000000 UTC".parse()?;
     let max_asserted_distance_deviation: u32 = 300;
 
     let heartbeat_reward: Vec<_> = HeartbeatReward::validated(
@@ -140,9 +139,8 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .await?
-    .collect()
-    .await;
+    .try_collect()
+    .await?;
 
     assert_eq!(
         heartbeat_reward,
@@ -150,8 +148,7 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            location_trust_score_multiplier: Decimal::ONE,
-            latest_timestamp,
+            location_trust_multiplier: Decimal::ONE,
             coverage_object,
         }]
     );
@@ -196,16 +193,14 @@ VALUES
 
     let start_period: DateTime<Utc> = "2023-08-25 00:00:00.000000000 UTC".parse()?;
     let end_period: DateTime<Utc> = "2023-08-26 00:00:00.000000000 UTC".parse()?;
-    let latest_timestamp: DateTime<Utc> = "2023-08-25 11:00:00.000000000 UTC".parse()?;
     let max_asserted_distance_deviation: u32 = 300;
     let heartbeat_reward: Vec<_> = HeartbeatReward::validated(
         &pool,
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .await?
-    .collect()
-    .await;
+    .try_collect()
+    .await?;
 
     assert_eq!(
         heartbeat_reward,
@@ -213,8 +208,7 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            location_trust_score_multiplier: Decimal::ONE,
-            latest_timestamp,
+            location_trust_multiplier: Decimal::ONE,
             coverage_object,
         }]
     );
@@ -261,9 +255,8 @@ VALUES
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .await?
-    .collect()
-    .await;
+    .try_collect()
+    .await?;
 
     assert!(heartbeat_reward.is_empty());
 
@@ -303,16 +296,14 @@ VALUES
 
     let start_period: DateTime<Utc> = "2023-08-25 00:00:00.000000000 UTC".parse()?;
     let end_period: DateTime<Utc> = "2023-08-26 00:00:00.000000000 UTC".parse()?;
-    let latest_timestamp: DateTime<Utc> = "2023-08-25 11:00:00.000000000 UTC".parse()?;
     let max_asserted_distance_deviation: u32 = 300;
     let heartbeat_reward: Vec<_> = HeartbeatReward::validated(
         &pool,
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .await?
-    .collect()
-    .await;
+    .try_collect()
+    .await?;
 
     assert_eq!(
         heartbeat_reward,
@@ -320,8 +311,7 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            location_trust_score_multiplier: dec!(1.0),
-            latest_timestamp,
+            location_trust_multiplier: dec!(1.0),
             coverage_object: latest_coverage_object,
         }]
     );
@@ -362,16 +352,14 @@ VALUES
 
     let start_period: DateTime<Utc> = "2023-08-25 00:00:00.000000000 UTC".parse()?;
     let end_period: DateTime<Utc> = "2023-08-26 00:00:00.000000000 UTC".parse()?;
-    let latest_timestamp: DateTime<Utc> = "2023-08-25 11:00:00.000000000 UTC".parse()?;
     let max_asserted_distance_deviation: u32 = 300;
     let heartbeat_reward: Vec<_> = HeartbeatReward::validated(
         &pool,
         &(start_period..end_period),
         max_asserted_distance_deviation,
     )
-    .await?
-    .collect()
-    .await;
+    .try_collect()
+    .await?;
 
     assert_eq!(
         heartbeat_reward,
@@ -379,8 +367,7 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            location_trust_score_multiplier: dec!(0.75),
-            latest_timestamp,
+            location_trust_multiplier: dec!(0.75),
             coverage_object: latest_coverage_object,
         }]
     );

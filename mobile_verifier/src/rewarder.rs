@@ -243,8 +243,7 @@ where
         transfer_reward_sum: Decimal,
     ) -> anyhow::Result<()> {
         let heartbeats =
-            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted)
-                .await?;
+            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
         let coverage_points = CoveragePoints::aggregate_points(
