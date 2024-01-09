@@ -5,7 +5,7 @@ use futures::{
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::ServiceProvider;
+use helium_proto::ServiceProvider;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};

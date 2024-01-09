@@ -5,18 +5,20 @@ use crate::{
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
 };
-use anyhow::bail;
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::{
-    poc_mobile as proto,
-    poc_mobile::{
-        mobile_reward_share::Reward as ProtoReward, ServiceProvider, UnallocatedReward,
-        UnallocatedRewardType,
+use helium_proto::{
+    services::{
+        poc_mobile as proto,
+        poc_mobile::{
+            mobile_reward_share::Reward as ProtoReward, UnallocatedReward, UnallocatedRewardType,
+        },
     },
+    ServiceProvider,
 };
+
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -330,16 +332,9 @@ impl ServiceProviderShares {
         payer: &str,
         client: &impl CarrierServiceVerifier<Error = ClientError>,
     ) -> anyhow::Result<ServiceProvider> {
-        tracing::info!(payer, "getting entity key for service provider");
-        let entity_key = client.key_to_rewardable_entity(payer).await?;
-        Self::entity_key_to_service_provider(&entity_key)
-    }
-
-    fn entity_key_to_service_provider(key: &str) -> anyhow::Result<ServiceProvider> {
-        match key {
-            "Helium Mobile" => Ok(ServiceProvider::HeliumMobile),
-            _ => bail!("unknown service provider name"),
-        }
+        tracing::info!(payer, "getting service provider for payer");
+        let sp = client.payer_key_to_service_provider(payer).await?;
+        Ok(sp)
     }
 }
 
@@ -606,8 +601,8 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_proto::services::{
-        poc_mobile::mobile_reward_share::Reward as MobileReward, poc_mobile::ServiceProvider,
+    use helium_proto::{
+        services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
     };
     use prost::Message;
     use std::collections::HashMap;

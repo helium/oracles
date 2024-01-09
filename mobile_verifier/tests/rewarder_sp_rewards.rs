@@ -3,8 +3,9 @@ use std::string::ToString;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use helium_proto::services::poc_mobile::{
-    ServiceProviderReward, UnallocatedReward, UnallocatedRewardType,
+use helium_proto::{
+    services::poc_mobile::{ServiceProviderReward, UnallocatedReward, UnallocatedRewardType},
+    ServiceProvider,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -35,11 +36,14 @@ impl MockCarrierServiceClient {
 impl CarrierServiceVerifier for MockCarrierServiceClient {
     type Error = ClientError;
 
-    async fn key_to_rewardable_entity<'a>(&self, pubkey: &'a str) -> Result<String, ClientError> {
+    async fn payer_key_to_service_provider<'a>(
+        &self,
+        pubkey: &str,
+    ) -> Result<ServiceProvider, ClientError> {
         match self.valid_sps.get(pubkey) {
-            Some(v) => Ok(v.clone()),
-
-            None => Err(ClientError::UnknownServiceProvider),
+            Some(v) => Ok(ServiceProvider::from_str(v)
+                .map_err(|_| ClientError::UnknownServiceProvider(pubkey.to_string()))?),
+            None => Err(ClientError::UnknownServiceProvider(pubkey.to_string())),
         }
     }
 }
@@ -70,7 +74,12 @@ async fn test_service_provider_rewards(pool: PgPool) -> anyhow::Result<()> {
         receive_expected_rewards(&mut mobile_rewards)
     );
     if let Ok((sp_reward, unallocated_reward)) = rewards {
-        // assert_eq!(SP_1.to_string(), ServiceProvider::from_i32(sp_reward.service_provider_id).unwrap().as_str_name());
+        assert_eq!(
+            SP_1.to_string(),
+            ServiceProvider::from_i32(sp_reward.service_provider_id)
+                .unwrap()
+                .to_string()
+        );
         assert_eq!(6000, sp_reward.amount);
 
         assert_eq!(
@@ -123,7 +132,7 @@ async fn test_service_provider_rewards_invalid_sp(pool: PgPool) -> anyhow::Resul
     .await;
     assert_eq!(
         resp.unwrap_err().to_string(),
-        "unknown service provider name".to_string()
+        "unknown service provider ".to_string() + PAYER_2
     );
 
     // confirm we get no msgs as rewards halted
