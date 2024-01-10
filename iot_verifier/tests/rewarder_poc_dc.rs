@@ -32,82 +32,84 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     txn.commit().await?;
 
     // run rewards for poc and dc
-    tokio::select!(
-        _ = rewarder::reward_poc_and_dc(&pool, &iot_rewards_client, &epoch, dec!(0.0001)) => {},
-        Ok((gateway_rewards, unallocated_poc_reward)) = receive_expected_rewards(&mut iot_rewards) => {
-
-            // assert the gateway rewards
-            assert_eq!(
-                gateway_rewards[0].hotspot_key,
-                PublicKeyBinary::from_str(HOTSPOT_1).unwrap().as_ref()
-            );
-            assert_eq!(gateway_rewards[0].beacon_amount, 1_775_956_284_153);
-            assert_eq!(gateway_rewards[0].witness_amount, 0);
-            assert_eq!(gateway_rewards[0].dc_transfer_amount, 14_799_635_701_275);
-
-            assert_eq!(
-                gateway_rewards[1].hotspot_key,
-                PublicKeyBinary::from_str(HOTSPOT_2).unwrap().as_ref()
-            );
-            assert_eq!(gateway_rewards[1].beacon_amount, 0);
-            assert_eq!(gateway_rewards[1].witness_amount, 8_524_590_163_934);
-            assert_eq!(gateway_rewards[1].dc_transfer_amount, 29_599_271_402_550);
-            // hotspot 2 should have double the dc rewards of hotspot 1
-            assert_eq!(
-                gateway_rewards[1].dc_transfer_amount,
-                gateway_rewards[0].dc_transfer_amount * 2
-            );
-
-            assert_eq!(
-                gateway_rewards[2].hotspot_key,
-                PublicKeyBinary::from_str(HOTSPOT_3).unwrap().as_ref()
-            );
-            // hotspot 2 has double reward scale of hotspot 1 and thus double the beacon  amount
-            assert_eq!(gateway_rewards[2].beacon_amount, 3_551_912_568_306);
-            assert_eq!(
-                gateway_rewards[2].beacon_amount,
-                gateway_rewards[0].beacon_amount * 2
-            );
-            assert_eq!(gateway_rewards[2].witness_amount, 0);
-            assert_eq!(gateway_rewards[2].dc_transfer_amount, 0);
-
-            assert_eq!(
-                gateway_rewards[3].hotspot_key,
-                PublicKeyBinary::from_str(HOTSPOT_4).unwrap().as_ref()
-            );
-            assert_eq!(gateway_rewards[3].beacon_amount, 0);
-            assert_eq!(gateway_rewards[3].witness_amount, 12_786_885_245_901);
-            assert_eq!(gateway_rewards[3].dc_transfer_amount, 0);
-
-            // assert our unallocated reward
-            assert_eq!(
-                UnallocatedRewardType::Poc as i32,
-                unallocated_poc_reward.reward_type
-            );
-            assert_eq!(1, unallocated_poc_reward.amount);
-
-            // confirm the total rewards allocated matches expectations
-            let poc_sum: u64 = gateway_rewards
-                .iter()
-                .map(|r| r.beacon_amount + r.witness_amount)
-                .sum();
-            let dc_sum: u64 = gateway_rewards.iter().map(|r| r.dc_transfer_amount).sum();
-            let unallocated_sum: u64 = unallocated_poc_reward.amount;
-
-            let expected_dc = reward_share::get_scheduled_dc_tokens(epoch.end - epoch.start);
-            let (expected_beacon_sum, expected_witness_sum) =
-                reward_share::get_scheduled_poc_tokens(epoch.end - epoch.start, expected_dc);
-            let expected_total =
-                expected_beacon_sum.to_u64().unwrap() + expected_witness_sum.to_u64().unwrap();
-            assert_eq!(expected_total, poc_sum + dc_sum + unallocated_sum);
-
-            // confirm the poc & dc percentage amount matches expectations
-            let daily_total = *reward_share::REWARDS_PER_DAY;
-            let poc_dc_percent = (Decimal::from(poc_sum + dc_sum + unallocated_sum) / daily_total).round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-            assert_eq!(poc_dc_percent, dec!(0.8));
-
-        }
+    let (_, rewards) = tokio::join!(
+        rewarder::reward_poc_and_dc(&pool, &iot_rewards_client, &epoch, dec!(0.0001)),
+        receive_expected_rewards(&mut iot_rewards)
     );
+    if let Ok((gateway_rewards, unallocated_poc_reward)) = rewards {
+        // assert the gateway rewards
+        assert_eq!(
+            gateway_rewards[0].hotspot_key,
+            PublicKeyBinary::from_str(HOTSPOT_1).unwrap().as_ref()
+        );
+        assert_eq!(gateway_rewards[0].beacon_amount, 1_775_956_284_153);
+        assert_eq!(gateway_rewards[0].witness_amount, 0);
+        assert_eq!(gateway_rewards[0].dc_transfer_amount, 14_799_635_701_275);
+
+        assert_eq!(
+            gateway_rewards[1].hotspot_key,
+            PublicKeyBinary::from_str(HOTSPOT_2).unwrap().as_ref()
+        );
+        assert_eq!(gateway_rewards[1].beacon_amount, 0);
+        assert_eq!(gateway_rewards[1].witness_amount, 8_524_590_163_934);
+        assert_eq!(gateway_rewards[1].dc_transfer_amount, 29_599_271_402_550);
+        // hotspot 2 should have double the dc rewards of hotspot 1
+        assert_eq!(
+            gateway_rewards[1].dc_transfer_amount,
+            gateway_rewards[0].dc_transfer_amount * 2
+        );
+
+        assert_eq!(
+            gateway_rewards[2].hotspot_key,
+            PublicKeyBinary::from_str(HOTSPOT_3).unwrap().as_ref()
+        );
+        // hotspot 2 has double reward scale of hotspot 1 and thus double the beacon  amount
+        assert_eq!(gateway_rewards[2].beacon_amount, 3_551_912_568_306);
+        assert_eq!(
+            gateway_rewards[2].beacon_amount,
+            gateway_rewards[0].beacon_amount * 2
+        );
+        assert_eq!(gateway_rewards[2].witness_amount, 0);
+        assert_eq!(gateway_rewards[2].dc_transfer_amount, 0);
+
+        assert_eq!(
+            gateway_rewards[3].hotspot_key,
+            PublicKeyBinary::from_str(HOTSPOT_4).unwrap().as_ref()
+        );
+        assert_eq!(gateway_rewards[3].beacon_amount, 0);
+        assert_eq!(gateway_rewards[3].witness_amount, 12_786_885_245_901);
+        assert_eq!(gateway_rewards[3].dc_transfer_amount, 0);
+
+        // assert our unallocated reward
+        assert_eq!(
+            UnallocatedRewardType::Poc as i32,
+            unallocated_poc_reward.reward_type
+        );
+        assert_eq!(1, unallocated_poc_reward.amount);
+
+        // confirm the total rewards allocated matches expectations
+        let poc_sum: u64 = gateway_rewards
+            .iter()
+            .map(|r| r.beacon_amount + r.witness_amount)
+            .sum();
+        let dc_sum: u64 = gateway_rewards.iter().map(|r| r.dc_transfer_amount).sum();
+        let unallocated_sum: u64 = unallocated_poc_reward.amount;
+
+        let expected_dc = reward_share::get_scheduled_dc_tokens(epoch.end - epoch.start);
+        let (expected_beacon_sum, expected_witness_sum) =
+            reward_share::get_scheduled_poc_tokens(epoch.end - epoch.start, expected_dc);
+        let expected_total =
+            expected_beacon_sum.to_u64().unwrap() + expected_witness_sum.to_u64().unwrap();
+        assert_eq!(expected_total, poc_sum + dc_sum + unallocated_sum);
+
+        // confirm the poc & dc percentage amount matches expectations
+        let daily_total = *reward_share::REWARDS_PER_DAY;
+        let poc_dc_percent = (Decimal::from(poc_sum + dc_sum + unallocated_sum) / daily_total)
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        assert_eq!(poc_dc_percent, dec!(0.8));
+    } else {
+        panic!("no rewards received");
+    };
     Ok(())
 }
 
