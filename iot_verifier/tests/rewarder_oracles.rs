@@ -17,7 +17,6 @@ async fn test_oracles(_pool: PgPool) -> anyhow::Result<()> {
         receive_expected_rewards(&mut iot_rewards)
     );
     if let Ok(unallocated_oracle_reward) = rewards {
-        println!("unallocated oracles reward {:?}", unallocated_oracle_reward);
         // confirm the total rewards matches expectations
         let expected_total = reward_share::get_scheduled_oracle_tokens(epoch.end - epoch.start)
             .to_u64()

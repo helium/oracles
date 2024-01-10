@@ -16,7 +16,6 @@ async fn test_operations() -> anyhow::Result<()> {
         receive_expected_rewards(&mut iot_rewards)
     );
     if let Ok(ops_reward) = rewards {
-        println!("ops reward {:?}", ops_reward);
         // confirm the total rewards allocated matches expectations
         let expected_total = reward_share::get_scheduled_ops_fund_tokens(epoch.end - epoch.start)
             .to_u64()
@@ -41,8 +40,7 @@ async fn test_operations() -> anyhow::Result<()> {
 async fn receive_expected_rewards(
     iot_rewards: &mut MockFileSinkReceiver,
 ) -> anyhow::Result<OperationalReward> {
-    // expect one unallocated reward
-    // as oracle rewards are currently 100% unallocated
+    // expect one operational reward msg
     let reward = iot_rewards.receive_operational_reward().await;
 
     // should be no further msgs

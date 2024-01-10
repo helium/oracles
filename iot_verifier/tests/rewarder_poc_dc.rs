@@ -123,6 +123,7 @@ async fn receive_expected_rewards(
     let gateway_reward3 = iot_rewards.receive_gateway_reward().await;
     let gateway_reward4 = iot_rewards.receive_gateway_reward().await;
     let unallocated_poc_reward = iot_rewards.receive_unallocated_reward().await;
+
     // should be no further msgs
     iot_rewards.assert_no_messages();
 
