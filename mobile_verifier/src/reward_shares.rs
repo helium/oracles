@@ -466,7 +466,7 @@ impl CoveragePoints {
                 .insert(
                     opt_cbsd_id,
                     RadioPoints::new(
-                        heartbeat.location_trust_multiplier,
+                        heartbeat.location_trust_score_multiplier,
                         heartbeat.coverage_object,
                         seniority.seniority_ts,
                     ),
@@ -1054,105 +1054,105 @@ mod test {
                 hotspot_key: gw2.clone(),
                 coverage_object: cov_obj_2,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c4.clone()),
                 hotspot_key: gw3.clone(),
                 coverage_object: cov_obj_4,
                 cell_type: CellType::from_cbsd_id(&c4).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c5.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_5,
                 cell_type: CellType::from_cbsd_id(&c5).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c6.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_6,
                 cell_type: CellType::from_cbsd_id(&c6).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c7.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_7,
                 cell_type: CellType::from_cbsd_id(&c7).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c8.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_8,
                 cell_type: CellType::from_cbsd_id(&c8).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c9.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_9,
                 cell_type: CellType::from_cbsd_id(&c9).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c10.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_10,
                 cell_type: CellType::from_cbsd_id(&c10).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c11.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_11,
                 cell_type: CellType::from_cbsd_id(&c11).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c12.clone()),
                 hotspot_key: gw5.clone(),
                 coverage_object: cov_obj_12,
                 cell_type: CellType::from_cbsd_id(&c12).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c13.clone()),
                 hotspot_key: gw6.clone(),
                 coverage_object: cov_obj_13,
                 cell_type: CellType::from_cbsd_id(&c13).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c14.clone()),
                 hotspot_key: gw7.clone(),
                 coverage_object: cov_obj_14,
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_15,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_16,
-                location_trust_multiplier: dec!(0.25),
+                location_trust_score_multiplier: dec!(0.25),
             },
             HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_17,
-                location_trust_multiplier: dec!(0.25),
+                location_trust_score_multiplier: dec!(0.25),
             },
         ]
         .into_iter()
@@ -1419,7 +1419,7 @@ mod test {
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
             HeartbeatReward {
@@ -1427,7 +1427,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 coverage_object: g2_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
         ]
         .into_iter()
@@ -1546,7 +1546,7 @@ mod test {
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                location_trust_multiplier: dec!(0.25),
+                location_trust_score_multiplier: dec!(0.25),
             },
             // add sercomm indoor HB
             HeartbeatReward {
@@ -1554,7 +1554,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 coverage_object: g2_cov_obj,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
         ]
         .into_iter()
@@ -1673,7 +1673,7 @@ mod test {
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g1_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
             HeartbeatReward {
@@ -1681,7 +1681,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 coverage_object: g2_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
         ]
         .into_iter()

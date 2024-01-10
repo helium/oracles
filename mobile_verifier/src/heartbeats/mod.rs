@@ -269,7 +269,7 @@ pub struct HeartbeatReward {
     // cell hb only
     pub cbsd_id: Option<String>,
     pub cell_type: CellType,
-    pub location_trust_multiplier: Decimal,
+    pub location_trust_score_multiplier: Decimal,
     pub coverage_object: Uuid,
 }
 
@@ -293,7 +293,7 @@ impl HeartbeatReward {
     }
 
     pub fn reward_weight(&self) -> Decimal {
-        self.location_trust_multiplier
+        self.location_trust_score_multiplier
     }
 
     pub fn validated<'a>(

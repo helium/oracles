@@ -21,7 +21,7 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        AVG(ch.location_trust_score_multiplier)
+        AVG(ch.location_trust_score_multiplier) as location_trust_score_multiplier
     FROM
         cbrs_heartbeats ch
         INNER JOIN latest_cbrs_hotspot lch ON ch.cbsd_id = lch.cbsd_id
@@ -42,7 +42,7 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        AVG(location_trust_score_multiplier)
+        AVG(location_trust_score_multiplier) as location_trust_score_multiplier
 FROM
     wifi_heartbeats
     WHERE
