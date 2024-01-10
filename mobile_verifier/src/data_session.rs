@@ -5,7 +5,9 @@ use futures::{
     TryFutureExt,
 };
 use helium_crypto::PublicKeyBinary;
-use sqlx::{PgPool, Postgres, Transaction};
+use helium_proto::services::poc_mobile::ServiceProvider;
+use rust_decimal::Decimal;
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
 use tokio::sync::mpsc::Receiver;
 
@@ -17,6 +19,12 @@ pub struct DataSessionIngestor {
 pub struct HotspotReward {
     pub rewardable_bytes: u64,
     pub rewardable_dc: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ServiceProviderDataSession {
+    pub service_provider: ServiceProvider,
+    pub total_dcs: Decimal,
 }
 
 pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
@@ -144,6 +152,31 @@ pub async fn aggregate_hotspot_data_sessions_to_dc<'a>(
     .bind(epoch.end)
     .fetch(exec);
     data_sessions_to_dc(stream).await
+}
+
+pub async fn sum_data_sessions_to_dc_by_payer<'a>(
+    exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
+    epoch: &'a Range<DateTime<Utc>>,
+) -> Result<HashMap<String, u64>, sqlx::Error> {
+    Ok(sqlx::query(
+        r#"
+        SELECT payer as sp, sum(num_dcs)::bigint as total_dcs
+        FROM hotspot_data_transfer_sessions
+        WHERE received_timestamp >= $1 and received_timestamp < $2
+        GROUP BY payer
+        "#,
+    )
+    .bind(epoch.start)
+    .bind(epoch.end)
+    .fetch_all(exec)
+    .await?
+    .iter()
+    .map(|row| {
+        let sp = row.get::<String, &str>("sp");
+        let dcs: u64 = row.get::<i64, &str>("total_dcs") as u64;
+        (sp, dcs)
+    })
+    .collect::<HashMap<String, u64>>())
 }
 
 pub async fn data_sessions_to_dc<'a>(

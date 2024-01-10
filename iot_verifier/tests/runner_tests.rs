@@ -362,7 +362,7 @@ async fn invalid_beacon_gateway_not_found_no_witnesses(pool: PgPool) -> anyhow::
 
 #[sqlx::test]
 async fn invalid_beacon_bad_payload(pool: PgPool) -> anyhow::Result<()> {
-    let ctx = TestContext::setup(pool.clone()).await?;
+    let mut ctx = TestContext::setup(pool.clone()).await?;
     //
     // test with an invalid beacon, no witnesses
     // the beacon will have an invalid payload, resulting in an error

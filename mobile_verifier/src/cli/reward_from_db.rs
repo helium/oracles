@@ -1,6 +1,6 @@
 use crate::{
     heartbeats::HeartbeatReward,
-    reward_shares::{get_scheduled_tokens_for_poc_and_dc, CoveragePoints},
+    reward_shares::{get_scheduled_tokens_for_poc, CoveragePoints},
     speedtests_average::SpeedtestAverages,
     Settings,
 };
@@ -30,14 +30,13 @@ impl Cmd {
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
-        let expected_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
+        let expected_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
 
         let (shutdown_trigger, _shutdown_listener) = triggered::trigger();
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
 
         let heartbeats =
-            HeartbeatReward::validated(&pool, &epoch, settings.max_asserted_distance_deviation)
-                .await?;
+            HeartbeatReward::validated(&pool, &epoch, settings.max_asserted_distance_deviation);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
         let reward_shares =
@@ -48,7 +47,7 @@ impl Cmd {
         let radio_rewards = reward_shares
             .into_rewards(Decimal::ZERO, &epoch)
             .ok_or(anyhow::anyhow!("no rewardable events"))?;
-        for reward in radio_rewards {
+        for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
                 hotspot_key,
                 poc_reward,
