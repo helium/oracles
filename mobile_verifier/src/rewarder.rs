@@ -35,7 +35,6 @@ pub struct Rewarder<A> {
     mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
-    max_distance_to_asserted: u32,
 }
 
 impl<A> Rewarder<A>
@@ -51,7 +50,6 @@ where
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
-        max_distance_to_asserted: u32,
     ) -> Self {
         Self {
             pool,
@@ -61,7 +59,6 @@ where
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            max_distance_to_asserted,
         }
     }
 
@@ -242,8 +239,7 @@ where
         reward_period: &Range<DateTime<Utc>>,
         transfer_reward_sum: Decimal,
     ) -> anyhow::Result<()> {
-        let heartbeats =
-            HeartbeatReward::validated(&self.pool, reward_period, self.max_distance_to_asserted);
+        let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
         let coverage_points = CoveragePoints::aggregate_points(

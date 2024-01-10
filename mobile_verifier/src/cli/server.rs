@@ -229,7 +229,6 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            settings.max_asserted_distance_deviation,
         );
 
         // subscriber location

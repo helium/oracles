@@ -21,7 +21,7 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        1.0 AS location_trust_multiplier
+        AVG(ch.location_trust_score_multiplier)
     FROM
         cbrs_heartbeats ch
         INNER JOIN latest_cbrs_hotspot lch ON ch.cbsd_id = lch.cbsd_id
@@ -42,14 +42,7 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        avg(
-            CASE WHEN location_validation_timestamp IS NULL THEN
-                0.25
-            WHEN distance_to_asserted > $4 THEN
-                0.25
-            ELSE
-                1.0
-            END) AS location_trust_multiplier
+        AVG(location_trust_score_multiplier)
 FROM
     wifi_heartbeats
     WHERE
@@ -89,7 +82,7 @@ SELECT
     hb.hotspot_key,
     hb.cbsd_id,
     hb.cell_type,
-    hb.location_trust_multiplier,
+    hb.location_trust_score_multiplier,
     u.coverage_object
 FROM
     heartbeats hb

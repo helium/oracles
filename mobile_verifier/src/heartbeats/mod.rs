@@ -299,13 +299,11 @@ impl HeartbeatReward {
     pub fn validated<'a>(
         exec: impl sqlx::PgExecutor<'a> + Copy + 'a,
         epoch: &'a Range<DateTime<Utc>>,
-        max_distance_to_asserted: u32,
     ) -> impl Stream<Item = Result<HeartbeatReward, sqlx::Error>> + 'a {
         sqlx::query_as::<_, HeartbeatReward>(include_str!("valid_radios.sql"))
             .bind(epoch.start)
             .bind(epoch.end)
             .bind(MINIMUM_HEARTBEAT_COUNT)
-            .bind(max_distance_to_asserted as i32)
             .fetch(exec)
     }
 }
@@ -314,6 +312,7 @@ impl HeartbeatReward {
 pub struct ValidatedHeartbeat {
     pub heartbeat: Heartbeat,
     pub cell_type: CellType,
+    pub location_trust_score_multiplier: Decimal,
     pub distance_to_asserted: Option<i64>,
     pub coverage_summary: Option<CoverageObjectSummary>,
     pub validity: proto::HeartbeatValidity,
@@ -328,37 +327,186 @@ impl ValidatedHeartbeat {
         self.heartbeat.timestamp.duration_trunc(Duration::hours(1))
     }
 
+    pub fn new(
+        heartbeat: Heartbeat,
+        cell_type: CellType,
+        location_trust_score_multiplier: Decimal,
+        distance_to_asserted: Option<i64>,
+        coverage_summary: Option<CoverageObjectSummary>,
+        validity: proto::HeartbeatValidity,
+    ) -> Self {
+        Self {
+            heartbeat,
+            cell_type,
+            location_trust_score_multiplier,
+            distance_to_asserted,
+            coverage_summary,
+            validity,
+        }
+    }
+
+    /// Validate a heartbeat in the given epoch.
+    pub async fn validate(
+        heartbeat: Heartbeat,
+        gateway_info_resolver: &impl GatewayResolver,
+        coverage_cache: &CoverageObjects,
+        max_distance_to_asserted: u32,
+        epoch: &Range<DateTime<Utc>>,
+    ) -> anyhow::Result<Self> {
+        let Some(coverage_object) = heartbeat.coverage_object else {
+            return Ok(Self::new(
+                heartbeat,
+                CellType::CellTypeNone,
+                dec!(0),
+                None,
+                None,
+                proto::HeartbeatValidity::BadCoverageObject,
+            ));
+        };
+
+        let Some(coverage_summary) = coverage_cache
+            .coverage_summary(&coverage_object, heartbeat.key())
+            .await?
+        else {
+            return Ok(Self::new(
+                heartbeat,
+                CellType::CellTypeNone,
+                dec!(0),
+                None,
+                None,
+                proto::HeartbeatValidity::NoSuchCoverageObject,
+            ));
+        };
+
+        let cell_type = match heartbeat.hb_type {
+            HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
+                Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
+                    Some(ty) => ty,
+                    _ => {
+                        return Ok(Self::new(
+                            heartbeat,
+                            CellType::CellTypeNone,
+                            dec!(0),
+                            None,
+                            Some(coverage_summary),
+                            proto::HeartbeatValidity::BadCbsdId,
+                        ));
+                    }
+                },
+                None => {
+                    return Ok(Self::new(
+                        heartbeat,
+                        CellType::CellTypeNone,
+                        dec!(0),
+                        None,
+                        Some(coverage_summary),
+                        proto::HeartbeatValidity::BadCbsdId,
+                    ));
+                }
+            },
+            HbType::Wifi => {
+                if coverage_summary.indoor {
+                    CellType::NovaGenericWifiIndoor
+                } else {
+                    CellType::NovaGenericWifiOutdoor
+                }
+            }
+        };
+
+        if !heartbeat.operation_mode {
+            return Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                Some(coverage_summary),
+                proto::HeartbeatValidity::NotOperational,
+            ));
+        }
+
+        if !epoch.contains(&heartbeat.timestamp) {
+            return Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                Some(coverage_summary),
+                proto::HeartbeatValidity::HeartbeatOutsideRange,
+            ));
+        }
+
+        match gateway_info_resolver
+            .resolve_gateway(&heartbeat.hotspot_key)
+            .await?
+        {
+            GatewayResolution::GatewayNotFound => Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                Some(coverage_summary),
+                proto::HeartbeatValidity::GatewayNotFound,
+            )),
+            GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
+                Ok(Self::new(
+                    heartbeat,
+                    cell_type,
+                    dec!(0),
+                    None,
+                    Some(coverage_summary),
+                    proto::HeartbeatValidity::GatewayNotAsserted,
+                ))
+            }
+            GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
+                let distance_to_asserted = heartbeat.asserted_distance(location)?;
+                let location_trust_score_multiplier =
+                    if heartbeat.location_validation_timestamp.is_some()
+                        && distance_to_asserted <= max_distance_to_asserted as i64
+                    {
+                        dec!(1.0)
+                    } else {
+                        dec!(0.25)
+                    };
+                Ok(Self::new(
+                    heartbeat,
+                    cell_type,
+                    location_trust_score_multiplier,
+                    Some(distance_to_asserted),
+                    Some(coverage_summary),
+                    proto::HeartbeatValidity::Valid,
+                ))
+            }
+            _ => Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(1.0),
+                None,
+                Some(coverage_summary),
+                proto::HeartbeatValidity::Valid,
+            )),
+        }
+    }
+
     pub fn validate_heartbeats<'a>(
         gateway_info_resolver: &'a impl GatewayResolver,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         coverage_cache: &'a CoverageObjects,
+        max_distance_to_asserted: u32,
         epoch: &'a Range<DateTime<Utc>>,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
-            let (cell_type, distance_to_asserted, coverage_summary, validity) =
-                validate_heartbeat(&heartbeat, gateway_info_resolver, coverage_cache, epoch)
-                    .await?;
-
-            Ok(Self {
+            Self::validate(
                 heartbeat,
-                cell_type,
-                distance_to_asserted,
-                coverage_summary,
-                validity,
-            })
+                gateway_info_resolver,
+                coverage_cache,
+                max_distance_to_asserted,
+                epoch,
+            )
+            .await
         })
     }
 
-    pub async fn write(
-        &self,
-        max_distance_to_asserted: u32,
-        heartbeats: &FileSinkClient,
-    ) -> file_store::Result {
-        let location_trust_score_multiplier = self.cell_type.location_weight(
-            self.heartbeat.location_validation_timestamp,
-            self.distance_to_asserted,
-            max_distance_to_asserted,
-        );
+    pub async fn write(&self, heartbeats: &FileSinkClient) -> file_store::Result {
         heartbeats
             .write(
                 proto::Heartbeat {
@@ -367,9 +515,10 @@ impl ValidatedHeartbeat {
                     cell_type: self.cell_type as i32,
                     validity: self.validity as i32,
                     timestamp: self.heartbeat.timestamp.timestamp() as u64,
-                    location_trust_score_multiplier: (location_trust_score_multiplier * dec!(1000))
-                        .to_u32()
-                        .unwrap_or_default(),
+                    location_trust_score_multiplier: (self.location_trust_score_multiplier
+                        * dec!(1000))
+                    .to_u32()
+                    .unwrap_or_default(),
                     coverage_object: self
                         .heartbeat
                         .coverage_object
@@ -418,8 +567,8 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
@@ -431,6 +580,7 @@ impl ValidatedHeartbeat {
         .bind(self.heartbeat.timestamp)
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
+        .bind(self.location_trust_score_multiplier)
         .execute(&mut *exec)
         .await?;
         Ok(())
@@ -440,9 +590,8 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, location_validation_timestamp, distance_to_asserted,
-                latest_timestamp, truncated_timestamp, coverage_object)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
@@ -450,132 +599,14 @@ impl ValidatedHeartbeat {
         )
         .bind(self.heartbeat.hotspot_key)
         .bind(self.cell_type)
-        .bind(self.heartbeat.location_validation_timestamp)
-        .bind(self.distance_to_asserted)
         .bind(self.heartbeat.timestamp)
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
+        .bind(self.location_trust_score_multiplier)
         .execute(&mut *exec)
         .await?;
         Ok(())
     }
-}
-
-/// Validate a heartbeat in the given epoch.
-// TODO(map): This needs to be changed to provide a struct instead of a tuple.
-pub async fn validate_heartbeat(
-    heartbeat: &Heartbeat,
-    gateway_info_resolver: &impl GatewayResolver,
-    coverage_cache: &CoverageObjects,
-    epoch: &Range<DateTime<Utc>>,
-) -> anyhow::Result<(
-    CellType,
-    Option<i64>,
-    Option<CoverageObjectSummary>,
-    proto::HeartbeatValidity,
-)> {
-    let Some(coverage_object) = heartbeat.coverage_object else {
-        return Ok((
-            CellType::CellTypeNone,
-            None,
-            None,
-            proto::HeartbeatValidity::BadCoverageObject,
-        ));
-    };
-
-    let Some(coverage_summary) = coverage_cache
-        .coverage_summary(&coverage_object, heartbeat.key())
-        .await?
-    else {
-        return Ok((
-            CellType::CellTypeNone,
-            None,
-            None,
-            proto::HeartbeatValidity::NoSuchCoverageObject,
-        ));
-    };
-
-    let cell_type = match heartbeat.hb_type {
-        HbType::Cbrs => match heartbeat.cbsd_id.as_ref() {
-            Some(cbsd_id) => match CellType::from_cbsd_id(cbsd_id) {
-                Some(ty) => ty,
-                _ => {
-                    return Ok((
-                        CellType::CellTypeNone,
-                        None,
-                        Some(coverage_summary),
-                        proto::HeartbeatValidity::BadCbsdId,
-                    ))
-                }
-            },
-            None => {
-                return Ok((
-                    CellType::CellTypeNone,
-                    None,
-                    Some(coverage_summary),
-                    proto::HeartbeatValidity::BadCbsdId,
-                ))
-            }
-        },
-        HbType::Wifi => {
-            if coverage_summary.indoor {
-                CellType::NovaGenericWifiIndoor
-            } else {
-                CellType::NovaGenericWifiOutdoor
-            }
-        }
-    };
-
-    if !heartbeat.operation_mode {
-        return Ok((
-            cell_type,
-            None,
-            Some(coverage_summary),
-            proto::HeartbeatValidity::NotOperational,
-        ));
-    }
-
-    if !epoch.contains(&heartbeat.timestamp) {
-        return Ok((
-            cell_type,
-            None,
-            Some(coverage_summary),
-            proto::HeartbeatValidity::HeartbeatOutsideRange,
-        ));
-    }
-
-    let distance_to_asserted = match gateway_info_resolver
-        .resolve_gateway(&heartbeat.hotspot_key)
-        .await?
-    {
-        GatewayResolution::GatewayNotFound => {
-            return Ok((
-                cell_type,
-                None,
-                Some(coverage_summary),
-                proto::HeartbeatValidity::GatewayNotFound,
-            ))
-        }
-        GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
-            return Ok((
-                cell_type,
-                None,
-                Some(coverage_summary),
-                proto::HeartbeatValidity::GatewayNotAsserted,
-            ))
-        }
-        GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
-            Some(heartbeat.asserted_distance(location)?)
-        }
-        _ => None,
-    };
-
-    Ok((
-        cell_type,
-        distance_to_asserted,
-        Some(coverage_summary),
-        proto::HeartbeatValidity::Valid,
-    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -584,16 +615,13 @@ pub(crate) async fn process_validated_heartbeats(
     heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
     coverage_claim_time_cache: &CoverageClaimTimeCache,
     modeled_coverage_start: DateTime<Utc>,
-    max_distance_to_asserted: u32,
     heartbeat_sink: &FileSinkClient,
     seniority_sink: &FileSinkClient,
     transaction: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<()> {
     let mut validated_heartbeats = pin!(validated_heartbeats);
     while let Some(validated_heartbeat) = validated_heartbeats.next().await.transpose()? {
-        validated_heartbeat
-            .write(max_distance_to_asserted, heartbeat_sink)
-            .await?;
+        validated_heartbeat.write(heartbeat_sink).await?;
 
         if !validated_heartbeat.is_valid() {
             continue;
@@ -824,6 +852,7 @@ mod test {
                 location_validation_timestamp: None,
             },
             validity: Default::default(),
+            location_trust_score_multiplier: dec!(1.0),
             distance_to_asserted: None,
             coverage_summary: None,
         }

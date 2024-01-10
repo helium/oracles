@@ -80,7 +80,10 @@ impl TransferRewards {
     }
 
     pub fn total(&self) -> Decimal {
-        self.rewards.values().map(|v| v * self.reward_scale).sum()
+        self.rewards
+            .values()
+            .map(|v| v.bones * self.reward_scale)
+            .sum()
     }
 
     pub async fn from_transfer_sessions(
@@ -152,7 +155,7 @@ impl TransferRewards {
         rewards
             .into_iter()
             .map(move |(hotspot_key, reward)| {
-                let dc_transfer_reward = (reward * reward_scale)
+                let dc_transfer_reward = (reward.bones * reward_scale)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
                     .unwrap_or(0);
@@ -165,11 +168,10 @@ impl TransferRewards {
                             proto::GatewayReward {
                                 hotspot_key: hotspot_key.into(),
                                 dc_transfer_reward,
-				rewardable_bytes: reward.bytes_rewarded,
-				// Can someone confirm what this should be?
-				price: (self.mobile_bone_price * dec!(1_000_000))
-				    .to_u64()
-				    .unwrap_or_default(),
+                                rewardable_bytes: reward.bytes_rewarded,
+                                price: (self.mobile_bone_price * dec!(1_000_000) * dec!(1_000_000))
+                                    .to_u64()
+                                    .unwrap_or_default(),
                             },
                         )),
                     },
@@ -588,13 +590,13 @@ fn new_radio_reward(
                     coverage_points: radio_points.points.to_u64().unwrap_or(0),
                     seniority_timestamp: radio_points.seniority.encode_timestamp(),
                     coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
-		    location_trust_score_multiplier: (radio_points.location_trust_score_multiplier
-						      * dec!(1000))
-			.to_u32()
-			.unwrap_or_default(),
+                    location_trust_score_multiplier: (radio_points.location_trust_score_multiplier
+                        * dec!(1000))
+                    .to_u32()
+                    .unwrap_or_default(),
                     speedtest_multiplier: (speedtest_multiplier * dec!(1000))
-			.to_u32()
-			.unwrap_or_default(),
+                        .to_u32()
+                        .unwrap_or_default(),
                     ..Default::default()
                 },
             )),
@@ -631,7 +633,7 @@ mod test {
         coverage::{CoveredHexStream, HexCoverage, Seniority},
         data_session::HotspotDataSession,
         data_session::{self, HotspotReward},
-        heartbeats::{HeartbeatReward, HeartbeatRow, KeyType, OwnedKeyType},
+        heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,

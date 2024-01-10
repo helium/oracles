@@ -35,8 +35,7 @@ impl Cmd {
         let (shutdown_trigger, _shutdown_listener) = triggered::trigger();
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
 
-        let heartbeats =
-            HeartbeatReward::validated(&pool, &epoch, settings.max_asserted_distance_deviation);
+        let heartbeats = HeartbeatReward::validated(&pool, &epoch);
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
         let reward_shares =
