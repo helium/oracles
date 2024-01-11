@@ -165,6 +165,34 @@ async fn valid_beacon_and_witness(pool: PgPool) -> anyhow::Result<()> {
 }
 
 #[sqlx::test]
+async fn valid_beacon_and_no_witness(pool: PgPool) -> anyhow::Result<()> {
+    let mut ctx = TestContext::setup(pool.clone()).await?;
+
+    // test with a valid beacon and no witnesses
+    let beacon_to_inject = common::create_valid_beacon_report(common::BEACONER1, ctx.entropy_ts);
+    common::inject_beacon_report(pool.clone(), beacon_to_inject.clone()).await?;
+    ctx.runner.handle_db_tick().await?;
+
+    let valid_poc = ctx.valid_pocs.receive_valid_poc().await;
+    assert_eq!(0, valid_poc.selected_witnesses.len());
+    assert_eq!(0, valid_poc.unselected_witnesses.len());
+    let valid_beacon = valid_poc.beacon_report.unwrap().report.clone().unwrap();
+    // assert the pubkeys in the outputted reports
+    // match those which we injected
+    assert_eq!(
+        PublicKeyBinary::from(valid_beacon.pub_key.clone()),
+        PublicKeyBinary::from_str(common::BEACONER1).unwrap()
+    );
+    // assert the beacon report outputted to filestore
+    // is unmodified from that submitted
+    assert_eq!(
+        valid_beacon,
+        LoraBeaconReportReqV1::from(beacon_to_inject.clone())
+    );
+    Ok(())
+}
+
+#[sqlx::test]
 async fn invalid_beacon_gateway_not_found(pool: PgPool) -> anyhow::Result<()> {
     let mut ctx = TestContext::setup(pool.clone()).await?;
     //
