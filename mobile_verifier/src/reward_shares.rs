@@ -5,17 +5,20 @@ use crate::{
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
 };
-use anyhow::bail;
 use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{
-    ServiceProvider, UnallocatedReward, UnallocatedRewardType,
+use helium_proto::{
+    services::{
+        poc_mobile as proto,
+        poc_mobile::{
+            mobile_reward_share::Reward as ProtoReward, UnallocatedReward, UnallocatedRewardType,
+        },
+    },
+    ServiceProvider,
 };
-use helium_proto::services::{
-    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
-};
+
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -47,6 +50,7 @@ const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
 // Percent of total emissions allocated for oracles
 const ORACLES_PERCENT: Decimal = dec!(0.04);
 
+#[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
     rewards: HashMap<PublicKeyBinary, TransferReward>,
@@ -54,7 +58,7 @@ pub struct TransferRewards {
     mobile_bone_price: Decimal,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TransferReward {
     bones: Decimal,
     bytes_rewarded: u64,
@@ -355,16 +359,9 @@ impl ServiceProviderShares {
         payer: &str,
         client: &impl CarrierServiceVerifier<Error = ClientError>,
     ) -> anyhow::Result<ServiceProvider> {
-        tracing::info!(payer, "getting entity key for service provider");
-        let entity_key = client.key_to_rewardable_entity(payer).await?;
-        Self::entity_key_to_service_provider(&entity_key)
-    }
-
-    fn entity_key_to_service_provider(key: &str) -> anyhow::Result<ServiceProvider> {
-        match key {
-            "Helium Mobile" => Ok(ServiceProvider::HeliumMobile),
-            _ => bail!("invalid service provider name"),
-        }
+        tracing::info!(payer, "getting service provider for payer");
+        let sp = client.payer_key_to_service_provider(payer).await?;
+        Ok(sp)
     }
 }
 
@@ -642,8 +639,8 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_proto::services::{
-        poc_mobile::mobile_reward_share::Reward as MobileReward, poc_mobile::ServiceProvider,
+    use helium_proto::{
+        services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
     };
     use prost::Message;
     use std::collections::HashMap;

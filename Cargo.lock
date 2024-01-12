@@ -4165,6 +4165,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "backon",
  "base64 0.21.0",
  "chrono",
  "clap 4.4.8",
@@ -4197,6 +4198,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing",
  "tracing-subscriber",

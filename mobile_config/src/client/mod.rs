@@ -24,8 +24,8 @@ pub enum ClientError {
     VerificationError(#[from] file_store::Error),
     #[error("error parsing gateway location {0}")]
     LocationParseError(#[from] std::num::ParseIntError),
-    #[error("unknown service provider")]
-    UnknownServiceProvider,
+    #[error("unknown service provider {0}")]
+    UnknownServiceProvider(String),
 }
 
 macro_rules! call_with_retry {

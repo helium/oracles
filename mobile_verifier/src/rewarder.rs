@@ -32,7 +32,7 @@ pub struct Rewarder<A> {
     carrier_client: A,
     reward_period_duration: Duration,
     reward_offset: Duration,
-    mobile_rewards: FileSinkClient,
+    pub mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
 }
@@ -174,18 +174,29 @@ where
                 / dec!(1_000_000); // Per Bone
 
         // process rewards for poc and data transfer
-        self.reward_poc_and_dc(reward_period, mobile_bone_price)
-            .await?;
+        reward_poc_and_dc(
+            &self.pool,
+            &self.mobile_rewards,
+            reward_period,
+            mobile_bone_price,
+        )
+        .await?;
 
         // process rewards for mappers
-        self.reward_mappers(reward_period).await?;
+        reward_mappers(&self.pool, &self.mobile_rewards, reward_period).await?;
 
         // process rewards for service providers
-        self.reward_service_providers(reward_period, mobile_bone_price)
-            .await?;
+        reward_service_providers(
+            &self.pool,
+            &self.carrier_client,
+            &self.mobile_rewards,
+            reward_period,
+            mobile_bone_price,
+        )
+        .await?;
 
         // process rewards for oracles
-        self.reward_oracles(reward_period).await?;
+        reward_oracles(&self.mobile_rewards, reward_period).await?;
 
         let written_files = self.mobile_rewards.commit().await?.await??;
 
@@ -219,238 +230,248 @@ where
         telemetry::last_rewarded_end_time(next_reward_period.start);
         Ok(())
     }
+}
 
-    async fn reward_poc_and_dc(
-        &self,
-        reward_period: &Range<DateTime<Utc>>,
-        mobile_bone_price: Decimal,
-    ) -> anyhow::Result<()> {
-        let transfer_rewards = TransferRewards::from_transfer_sessions(
-            mobile_bone_price,
-            data_session::aggregate_hotspot_data_sessions_to_dc(&self.pool, reward_period).await?,
-            reward_period,
-        )
-        .await;
-        let transfer_rewards_sum = transfer_rewards.reward_sum();
+pub async fn reward_poc_and_dc(
+    pool: &Pool<Postgres>,
+    mobile_rewards: &FileSinkClient,
+    reward_period: &Range<DateTime<Utc>>,
+    mobile_bone_price: Decimal,
+) -> anyhow::Result<()> {
+    let transfer_rewards = TransferRewards::from_transfer_sessions(
+        mobile_bone_price,
+        data_session::aggregate_hotspot_data_sessions_to_dc(pool, reward_period).await?,
+        reward_period,
+    )
+    .await;
+    let transfer_rewards_sum = transfer_rewards.reward_sum();
+    // It's important to gauge the scale metric. If this value is < 1.0, we are in
+    // big trouble.
+    let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
+        bail!("The data transfer rewards scale cannot be converted to a float");
+    };
+    telemetry::data_transfer_rewards_scale(scale);
 
-        // It's important to gauge the scale metric. If this value is < 1.0, we are in
-        // big trouble.
-        let Some(scale) = transfer_rewards.reward_scale().to_f64() else {
-            bail!("The data transfer rewards scale cannot be converted to a float");
-        };
-        telemetry::data_transfer_rewards_scale(scale);
+    reward_poc(
+        pool,
+        mobile_rewards,
+        reward_period,
+        transfer_rewards_sum,
+    )
+    .await?;
 
-        self.reward_poc(reward_period, transfer_rewards_sum).await?;
-        self.reward_dc(reward_period, transfer_rewards).await?;
+    reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
 
-        Ok(())
-    }
+    Ok(())
+}
 
-    async fn reward_poc(
-        &self,
-        reward_period: &Range<DateTime<Utc>>,
-        transfer_reward_sum: Decimal,
-    ) -> anyhow::Result<()> {
-        let heartbeats = HeartbeatReward::validated(&self.pool, reward_period);
-        let speedtest_averages =
-            SpeedtestAverages::aggregate_epoch_averages(reward_period.end, &self.pool).await?;
-        let coverage_points = CoveragePoints::aggregate_points(
-            &self.pool,
-            heartbeats,
-            &speedtest_averages,
-            reward_period.end,
-        )
-        .await?;
+async fn reward_poc(
+    pool: &Pool<Postgres>,
+    mobile_rewards: &FileSinkClient,
+    reward_period: &Range<DateTime<Utc>>,
+    transfer_reward_sum: Decimal,
+) -> anyhow::Result<()> {
+    let total_poc_rewards =
+        reward_shares::get_scheduled_tokens_for_poc(reward_period.end - reward_period.start)
+            - transfer_reward_sum;
 
-        let total_poc_rewards =
-            reward_shares::get_scheduled_tokens_for_poc(reward_period.end - reward_period.start)
-                - transfer_reward_sum;
-
-        if let Some(mobile_reward_shares) =
-            coverage_points.into_rewards(total_poc_rewards, reward_period)
-        {
-            // handle poc reward outputs
-            let mut allocated_poc_rewards = 0_u64;
-            for (poc_reward_amount, mobile_reward_share) in mobile_reward_shares {
-                allocated_poc_rewards += poc_reward_amount;
-                self.mobile_rewards
-                    .write(mobile_reward_share, [])
-                    .await?
-                    // Await the returned one shot to ensure that we wrote the file
-                    .await??;
-            }
-            // write out any unallocated poc reward
-            let unallocated_poc_reward_amount = (total_poc_rewards
-                - Decimal::from(allocated_poc_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
-            self.write_unallocated_reward(
-                UnallocatedRewardType::Poc,
-                unallocated_poc_reward_amount,
-                reward_period,
-            )
+    let heartbeats = HeartbeatReward::validated(pool, reward_period);
+    let speedtest_averages =
+        SpeedtestAverages::aggregate_epoch_averages(reward_period.end, pool).await?;
+    let coverage_points =
+        CoveragePoints::aggregate_points(pool, heartbeats, &speedtest_averages, reward_period.end)
             .await?;
-        };
-        Ok(())
-    }
 
-    async fn reward_dc(
-        &self,
-        reward_period: &Range<DateTime<Utc>>,
-        transfer_rewards: TransferRewards,
-    ) -> anyhow::Result<()> {
-        // handle dc reward outputs
-        let mut allocated_dc_rewards = 0_u64;
-        let total_dc_rewards = transfer_rewards.total();
-        for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_period)
-        {
-            allocated_dc_rewards += dc_reward_amount;
-            self.mobile_rewards
+    if let Some(mobile_reward_shares) =
+        coverage_points.into_rewards(total_poc_rewards, reward_period)
+    {
+        // handle poc reward outputs
+        let mut allocated_poc_rewards = 0_u64;
+        for (poc_reward_amount, mobile_reward_share) in mobile_reward_shares {
+            allocated_poc_rewards += poc_reward_amount;
+            mobile_rewards
                 .write(mobile_reward_share, [])
                 .await?
                 // Await the returned one shot to ensure that we wrote the file
                 .await??;
         }
-        // write out any unallocated dc reward
-        let unallocated_dc_reward_amount = (total_dc_rewards - Decimal::from(allocated_dc_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
-        self.write_unallocated_reward(
-            UnallocatedRewardType::Data,
-            unallocated_dc_reward_amount,
-            reward_period,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn reward_service_providers(
-        &self,
-        reward_period: &Range<DateTime<Utc>>,
-        mobile_bone_price: Decimal,
-    ) -> anyhow::Result<()> {
-        let payer_dc_sessions =
-            data_session::sum_data_sessions_to_dc_by_payer(&self.pool, reward_period).await?;
-        let sp_shares =
-            ServiceProviderShares::from_payers_dc(payer_dc_sessions, &self.carrier_client).await?;
-        let total_sp_rewards = reward_shares::get_scheduled_tokens_for_service_providers(
-            reward_period.end - reward_period.start,
-        );
-        let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
-        // translate service provider shares into service provider rewards
-        // track the amount of allocated reward value as we go
-        let mut allocated_sp_rewards = 0_u64;
-        for (amount, sp_share) in
-            sp_shares.into_service_provider_rewards(reward_period, rewards_per_share)
-        {
-            allocated_sp_rewards += amount;
-            self.mobile_rewards
-                .write(sp_share.clone(), [])
-                .await?
-                // Await the returned one shot to ensure that we wrote the file
-                .await??;
-        }
-
-        // write out any unallocated service provider reward
-        let unallocated_sp_reward_amount = (total_sp_rewards - Decimal::from(allocated_sp_rewards))
-            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-            .to_u64()
-            .unwrap_or(0);
-        self.write_unallocated_reward(
-            UnallocatedRewardType::ServiceProvider,
-            unallocated_sp_reward_amount,
-            reward_period,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn reward_mappers(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
-        // Mapper rewards currently include rewards for discovery mapping only.
-        // Verification mapping rewards to be added
-        // get subscriber location shares this epoch
-        let location_shares =
-            subscriber_location::aggregate_location_shares(&self.pool, reward_period).await?;
-
-        // determine mapping shares based on location shares and data transferred
-        let mapping_shares = MapperShares::new(location_shares);
-        let total_mappers_pool = reward_shares::get_scheduled_tokens_for_mappers(
-            reward_period.end - reward_period.start,
-        );
-        let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
-
-        // translate discovery mapping shares into subscriber rewards
-        let mut allocated_mapping_rewards = 0_u64;
-        for (reward_amount, mapping_share) in
-            mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
-        {
-            allocated_mapping_rewards += reward_amount;
-            self.mobile_rewards
-                .write(mapping_share.clone(), [])
-                .await?
-                // Await the returned one shot to ensure that we wrote the file
-                .await??;
-        }
-
-        // write out any unallocated mapping rewards
-        let unallocated_mapping_reward_amount = (total_mappers_pool
-            - Decimal::from(allocated_mapping_rewards))
+        // write out any unallocated poc reward
+        let unallocated_poc_reward_amount = (total_poc_rewards
+            - Decimal::from(allocated_poc_rewards))
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        self.write_unallocated_reward(
-            UnallocatedRewardType::Mapper,
-            unallocated_mapping_reward_amount,
+        write_unallocated_reward(
+            mobile_rewards,
+            UnallocatedRewardType::Poc,
+            unallocated_poc_reward_amount,
             reward_period,
         )
         .await?;
-        Ok(())
-    }
+    };
+    Ok(())
+}
 
-    async fn reward_oracles(&self, reward_period: &Range<DateTime<Utc>>) -> anyhow::Result<()> {
-        // atm 100% of oracle rewards are assigned to 'unallocated'
-        let total_oracle_rewards = reward_shares::get_scheduled_tokens_for_oracles(
-            reward_period.end - reward_period.start,
-        );
-        let allocated_oracle_rewards = 0_u64;
-        let unallocated_oracle_reward_amount = (total_oracle_rewards
-            - Decimal::from(allocated_oracle_rewards))
+pub async fn reward_dc(
+    mobile_rewards: &FileSinkClient,
+    reward_period: &Range<DateTime<Utc>>,
+    transfer_rewards: TransferRewards,
+) -> anyhow::Result<()> {
+    // handle dc reward outputs
+    let mut allocated_dc_rewards = 0_u64;
+    let total_dc_rewards = transfer_rewards.total();
+    for (dc_reward_amount, mobile_reward_share) in transfer_rewards.into_rewards(reward_period) {
+        allocated_dc_rewards += dc_reward_amount;
+        mobile_rewards
+            .write(mobile_reward_share, [])
+            .await?
+            // Await the returned one shot to ensure that we wrote the file
+            .await??;
+    }
+    // write out any unallocated dc reward
+    let unallocated_dc_reward_amount = (total_dc_rewards - Decimal::from(allocated_dc_rewards))
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
-        self.write_unallocated_reward(
-            UnallocatedRewardType::Oracle,
-            unallocated_oracle_reward_amount,
-            reward_period,
-        )
-        .await?;
-        Ok(())
+    write_unallocated_reward(
+        mobile_rewards,
+        UnallocatedRewardType::Data,
+        unallocated_dc_reward_amount,
+        reward_period,
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn reward_mappers(
+    pool: &Pool<Postgres>,
+    mobile_rewards: &FileSinkClient,
+    reward_period: &Range<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    // Mapper rewards currently include rewards for discovery mapping only.
+    // Verification mapping rewards to be added
+    // get subscriber location shares this epoch
+    let location_shares =
+        subscriber_location::aggregate_location_shares(pool, reward_period).await?;
+
+    // determine mapping shares based on location shares and data transferred
+    let mapping_shares = MapperShares::new(location_shares);
+    let total_mappers_pool =
+        reward_shares::get_scheduled_tokens_for_mappers(reward_period.end - reward_period.start);
+    let rewards_per_share = mapping_shares.rewards_per_share(total_mappers_pool)?;
+
+    // translate discovery mapping shares into subscriber rewards
+    let mut allocated_mapping_rewards = 0_u64;
+    for (reward_amount, mapping_share) in
+        mapping_shares.into_subscriber_rewards(reward_period, rewards_per_share)
+    {
+        allocated_mapping_rewards += reward_amount;
+        mobile_rewards
+            .write(mapping_share.clone(), [])
+            .await?
+            // Await the returned one shot to ensure that we wrote the file
+            .await??;
     }
 
-    async fn write_unallocated_reward(
-        &self,
-        unallocated_type: UnallocatedRewardType,
-        unallocated_amount: u64,
-        reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> anyhow::Result<()> {
-        if unallocated_amount > 0 {
-            let unallocated_reward = proto::MobileRewardShare {
-                start_period: reward_period.start.encode_timestamp(),
-                end_period: reward_period.end.encode_timestamp(),
-                reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
-                    reward_type: unallocated_type as i32,
-                    amount: unallocated_amount,
-                })),
-            };
-            self.mobile_rewards
-                .write(unallocated_reward, [])
-                .await?
-                .await??;
+    // write out any unallocated mapping rewards
+    let unallocated_mapping_reward_amount = (total_mappers_pool
+        - Decimal::from(allocated_mapping_rewards))
+    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+    .to_u64()
+    .unwrap_or(0);
+    write_unallocated_reward(
+        mobile_rewards,
+        UnallocatedRewardType::Mapper,
+        unallocated_mapping_reward_amount,
+        reward_period,
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn reward_oracles(
+    mobile_rewards: &FileSinkClient,
+    reward_period: &Range<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    // atm 100% of oracle rewards are assigned to 'unallocated'
+    let total_oracle_rewards =
+        reward_shares::get_scheduled_tokens_for_oracles(reward_period.end - reward_period.start);
+    let allocated_oracle_rewards = 0_u64;
+    let unallocated_oracle_reward_amount = (total_oracle_rewards
+        - Decimal::from(allocated_oracle_rewards))
+    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+    .to_u64()
+    .unwrap_or(0);
+    write_unallocated_reward(
+        mobile_rewards,
+        UnallocatedRewardType::Oracle,
+        unallocated_oracle_reward_amount,
+        reward_period,
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn reward_service_providers(
+    pool: &Pool<Postgres>,
+    carrier_client: &impl CarrierServiceVerifier<Error = ClientError>,
+    mobile_rewards: &FileSinkClient,
+    reward_period: &Range<DateTime<Utc>>,
+    mobile_bone_price: Decimal,
+) -> anyhow::Result<()> {
+    let payer_dc_sessions =
+        data_session::sum_data_sessions_to_dc_by_payer(pool, reward_period).await?;
+    let sp_shares =
+        ServiceProviderShares::from_payers_dc(payer_dc_sessions, carrier_client).await?;
+    let total_sp_rewards = reward_shares::get_scheduled_tokens_for_service_providers(
+        reward_period.end - reward_period.start,
+    );
+    let rewards_per_share = sp_shares.rewards_per_share(total_sp_rewards, mobile_bone_price)?;
+    // translate service provider shares into service provider rewards
+    // track the amount of allocated reward value as we go
+    let mut allocated_sp_rewards = 0_u64;
+    for (amount, sp_share) in
+        sp_shares.into_service_provider_rewards(reward_period, rewards_per_share)
+    {
+        allocated_sp_rewards += amount;
+        mobile_rewards.write(sp_share.clone(), []).await?.await??;
+    }
+    // write out any unallocated service provider reward
+    let unallocated_sp_reward_amount = (total_sp_rewards - Decimal::from(allocated_sp_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+    write_unallocated_reward(
+        mobile_rewards,
+        UnallocatedRewardType::ServiceProvider,
+        unallocated_sp_reward_amount,
+        reward_period,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn write_unallocated_reward(
+    mobile_rewards: &FileSinkClient,
+    unallocated_type: UnallocatedRewardType,
+    unallocated_amount: u64,
+    reward_period: &'_ Range<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    if unallocated_amount > 0 {
+        let unallocated_reward = proto::MobileRewardShare {
+            start_period: reward_period.start.encode_timestamp(),
+            end_period: reward_period.end.encode_timestamp(),
+            reward: Some(ProtoReward::UnallocatedReward(UnallocatedReward {
+                reward_type: unallocated_type as i32,
+                amount: unallocated_amount,
+            })),
         };
-        Ok(())
-    }
+        mobile_rewards
+            .write(unallocated_reward, [])
+            .await?
+            .await??;
+    };
+    Ok(())
 }
 
 pub async fn last_rewarded_end_time(db: &Pool<Postgres>) -> db_store::Result<DateTime<Utc>> {
