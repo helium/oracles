@@ -8,10 +8,8 @@ use futures::{stream, StreamExt, TryStreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::{
     services::poc_lora::{iot_reward_share::Reward as IotReward, IotRewardShare},
-    services::poc_mobile::{
-        mobile_reward_share::Reward as MobileReward, MobileRewardShare, ServiceProvider,
-    },
-    Message,
+    services::poc_mobile::{mobile_reward_share::Reward as MobileReward, MobileRewardShare},
+    Message, ServiceProvider,
 };
 use poc_metrics::record_duration;
 use sqlx::{Pool, Postgres, Transaction};
@@ -163,7 +161,7 @@ impl Indexer {
                         if let Some(sp) = ServiceProvider::from_i32(r.service_provider_id) {
                             Ok((
                                 RewardKey {
-                                    key: service_provider_to_entity_key(sp)?,
+                                    key: sp.to_string(),
                                     reward_type: RewardType::MobileServiceProvider,
                                 },
                                 r.amount,
@@ -210,11 +208,5 @@ impl Indexer {
                 }
             }
         }
-    }
-}
-
-fn service_provider_to_entity_key(sp: ServiceProvider) -> anyhow::Result<String> {
-    match sp {
-        ServiceProvider::HeliumMobile => Ok("Helium Mobile".to_string()),
     }
 }
