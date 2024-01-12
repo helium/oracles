@@ -10,11 +10,12 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{
-    ServiceProvider, UnallocatedReward, UnallocatedRewardType,
-};
 use helium_proto::services::{
-    poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
+    poc_mobile as proto,
+    poc_mobile::{
+        mobile_reward_share::Reward as ProtoReward, ServiceProvider, UnallocatedReward,
+        UnallocatedRewardType,
+    },
 };
 use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
@@ -47,6 +48,7 @@ const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
 // Percent of total emissions allocated for oracles
 const ORACLES_PERCENT: Decimal = dec!(0.04);
 
+#[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
     rewards: HashMap<PublicKeyBinary, Decimal>,
@@ -336,7 +338,7 @@ impl ServiceProviderShares {
     fn entity_key_to_service_provider(key: &str) -> anyhow::Result<ServiceProvider> {
         match key {
             "Helium Mobile" => Ok(ServiceProvider::HeliumMobile),
-            _ => bail!("invalid service provider name"),
+            _ => bail!("unknown service provider name"),
         }
     }
 }
