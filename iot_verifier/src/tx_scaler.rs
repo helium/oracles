@@ -75,10 +75,7 @@ impl Server {
         let refresh_start = Utc::now() - self.refresh_offset;
         tracing::info!("density_scaler: generating hex scaling map, starting at {refresh_start:?}");
         let mut global_map = GlobalHexMap::new();
-        let active_gateways = self
-            .gateways_recent_activity(refresh_start)
-            .await
-            .map_err(sqlx::Error::from)?;
+        let active_gateways = self.gateways_recent_activity(refresh_start).await?;
         for k in active_gateways.keys() {
             let pubkey = PublicKeyBinary::from(k.clone());
             if let Some(gateway_info) = self.gateway_cache_receiver.borrow().get(&pubkey) {
@@ -104,10 +101,10 @@ impl Server {
     async fn gateways_recent_activity(
         &self,
         now: DateTime<Utc>,
-    ) -> Result<HashMap<Vec<u8>, DateTime<Utc>>, sqlx::Error> {
+    ) -> anyhow::Result<HashMap<Vec<u8>, DateTime<Utc>>> {
         let interactivity_deadline = now - Duration::minutes(HIP_17_INTERACTIVITY_LIMIT);
         Ok(
-            LastBeacon::get_all_since(interactivity_deadline, &self.pool)
+            LastBeacon::get_all_since(&self.pool, interactivity_deadline)
                 .await?
                 .into_iter()
                 .map(|beacon| (beacon.id, beacon.timestamp))

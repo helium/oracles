@@ -1,7 +1,6 @@
 use crate::{
     gateway_cache::GatewayCache,
     hex_density::HexDensityMap,
-    last_beacon::LastBeacon,
     poc::{Poc, VerifyBeaconResult},
     poc_report::Report,
     region_cache::RegionCache,
@@ -222,6 +221,7 @@ where
     }
 
     async fn handle_beacon_report(&self, db_beacon: Report) -> anyhow::Result<()> {
+        // TODO: look at wrapping all db access from this point onwards in a transaction
         let entropy_start_time = match db_beacon.timestamp {
             Some(v) => v,
             None => return Ok(()),
@@ -252,6 +252,8 @@ where
 
         // create the struct defining this POC
         let mut poc = Poc::new(
+            self.pool.clone(),
+            self.beacon_interval,
             beacon_report.clone(),
             witnesses.clone(),
             entropy_start_time,
@@ -265,8 +267,6 @@ where
                 &self.hex_density_map,
                 &self.gateway_cache,
                 &self.region_cache,
-                &self.pool,
-                self.beacon_interval,
                 &self.deny_list,
             )
             .await?;
@@ -282,6 +282,7 @@ where
                             &self.deny_list,
                         )
                         .await?;
+
                     // check if there are any failed witnesses
                     // if so update the DB attempts count
                     // and halt here, let things be reprocessed next tick
@@ -464,7 +465,6 @@ where
         unselected_witnesses: Vec<IotVerifiedWitnessReport>,
     ) -> anyhow::Result<()> {
         let received_timestamp = valid_beacon_report.received_timestamp;
-        let pub_key = valid_beacon_report.report.pub_key.clone();
         let beacon_id = valid_beacon_report.report.report_id(received_timestamp);
         let packet_data = valid_beacon_report.report.data.clone();
         let beacon_report_id = valid_beacon_report.report.report_id(received_timestamp);
@@ -500,8 +500,7 @@ where
         // but could nae get it to get a way past the lack of COPY
         fire_invalid_witness_metric(&selected_witnesses);
         fire_invalid_witness_metric(&unselected_witnesses);
-        // update timestamp of last beacon for the beaconer
-        LastBeacon::update_last_timestamp(&self.pool, pub_key.as_ref(), received_timestamp).await?;
+
         Report::delete_poc(&self.pool, &packet_data).await?;
         telemetry::decrement_num_beacons();
         Ok(())
