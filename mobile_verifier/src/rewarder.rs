@@ -252,13 +252,7 @@ pub async fn reward_poc_and_dc(
     };
     telemetry::data_transfer_rewards_scale(scale);
 
-    reward_poc(
-        pool,
-        mobile_rewards,
-        reward_period,
-        transfer_rewards_sum,
-    )
-    .await?;
+    reward_poc(pool, mobile_rewards, reward_period, transfer_rewards_sum).await?;
 
     reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
 
