@@ -26,11 +26,20 @@ pub struct Settings {
     #[serde(default = "default_start_after")]
     pub start_after: u64,
     pub modeled_coverage_start: u64,
-    // Max distance in meters between the asserted location of a WIFI hotspot
-    // and the lat/lng defined in a heartbeat
-    // beyond which its location weight will be reduced
+    /// Max distance in meters between the heartbeat and all of the hexes in
+    /// its respective coverage object
+    #[serde(default = "default_max_distance_from_coverage")]
+    pub max_distance_from_coverage: u32,
+    /// Max distance in meters between the asserted location of a WIFI hotspot
+    /// and the lat/lng defined in a heartbeat
+    /// beyond which its location weight will be reduced
     #[serde(default = "default_max_asserted_distance_deviation")]
     pub max_asserted_distance_deviation: u32,
+}
+
+pub fn default_max_distance_from_coverage() -> u32 {
+    // Default is 2 km
+    2000
 }
 
 pub fn default_max_asserted_distance_deviation() -> u32 {
