@@ -672,14 +672,16 @@ impl CoverageObjectCache {
         uuid: &Uuid,
         key: KeyType<'_>,
     ) -> Result<Option<CachedCoverageObject<'_>>, sqlx::Error> {
-        let coverage_summary: Option<CoverageObjectMeta> = sqlx::query_as(
+        let coverage_meta: Option<CoverageObjectMeta> = sqlx::query_as(
 	    "SELECT inserted_at, indoor FROM coverage_objects WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
 	)
 	.bind(uuid)
 	.bind(key)
 	.fetch_optional(&self.pool)
 	.await?;
-        let Some(coverage_summary) = coverage_summary else {
+	// If we get a None back from the previous query, the coverage object does not exist
+	// or has been invalidated
+        let Some(coverage_meta) = coverage_meta else {
             return Ok(None);
         };
         // Check if the hexes have already been inserted into the hex
@@ -706,7 +708,7 @@ impl CoverageObjectCache {
         };
         // This is probably unnecessarily clever at the expense of clarity (and maybe lines) but I want
         // everyone to know how clever I am.
-        Ok(coverage.map(coverage_summary.into_constructor()))
+        Ok(coverage.map(coverage_meta.into_constructor()))
     }
 }
 
