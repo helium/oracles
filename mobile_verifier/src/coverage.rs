@@ -679,8 +679,8 @@ impl CoverageObjectCache {
 	.bind(key)
 	.fetch_optional(&self.pool)
 	.await?;
-	// If we get a None back from the previous query, the coverage object does not exist
-	// or has been invalidated
+        // If we get a None back from the previous query, the coverage object does not exist
+        // or has been invalidated
         let Some(coverage_meta) = coverage_meta else {
             return Ok(None);
         };
