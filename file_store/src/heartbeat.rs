@@ -95,7 +95,6 @@ pub mod cli {
     pub struct ValidatedHeartbeat {
         pub cbsd_id: String,
         pub pub_key: PublicKeyBinary,
-        pub reward_multiplier: f32,
         pub timestamp: DateTime<Utc>,
         pub cell_type: CellType,
         pub validity: HeartbeatValidity,
@@ -113,7 +112,6 @@ pub mod cli {
             Ok(Self {
                 cbsd_id: v.cbsd_id.clone(),
                 pub_key: v.pub_key.clone().into(),
-                reward_multiplier: v.reward_multiplier,
                 timestamp: Utc
                     .timestamp_opt(v.timestamp as i64, 0)
                     .single()

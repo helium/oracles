@@ -15,13 +15,19 @@ pub struct DataSessionIngestor {
     pub pool: PgPool,
 }
 
+#[derive(Default)]
+pub struct HotspotReward {
+    pub rewardable_bytes: u64,
+    pub rewardable_dc: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct ServiceProviderDataSession {
     pub service_provider: ServiceProvider,
     pub total_dcs: Decimal,
 }
 
-pub type HotspotMap = HashMap<PublicKeyBinary, u64>;
+pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
 
 impl DataSessionIngestor {
     pub fn new(pool: sqlx::Pool<sqlx::Postgres>) -> Self {
@@ -180,7 +186,9 @@ pub async fn data_sessions_to_dc<'a>(
     tokio::pin!(stream);
     let mut map = HotspotMap::new();
     while let Some(session) = stream.try_next().await? {
-        *map.entry(session.pub_key).or_default() += session.num_dcs as u64
+        let rewards = map.entry(session.pub_key).or_default();
+        rewards.rewardable_dc += session.num_dcs as u64;
+        rewards.rewardable_bytes += session.upload_bytes as u64 + session.download_bytes as u64;
     }
     Ok(map)
 }

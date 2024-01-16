@@ -53,8 +53,15 @@ const ORACLES_PERCENT: Decimal = dec!(0.04);
 #[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
-    rewards: HashMap<PublicKeyBinary, Decimal>,
+    rewards: HashMap<PublicKeyBinary, TransferReward>,
     reward_sum: Decimal,
+    mobile_bone_price: Decimal,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct TransferReward {
+    bones: Decimal,
+    bytes_rewarded: u64,
 }
 
 impl TransferRewards {
@@ -68,11 +75,19 @@ impl TransferRewards {
 
     #[cfg(test)]
     fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
-        self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.reward_scale
+        self.rewards
+            .get(hotspot)
+            .copied()
+            .map(|x| x.bones)
+            .unwrap_or(Decimal::ZERO)
+            * self.reward_scale
     }
 
     pub fn total(&self) -> Decimal {
-        self.rewards.values().map(|v| v * self.reward_scale).sum()
+        self.rewards
+            .values()
+            .map(|v| v.bones * self.reward_scale)
+            .sum()
     }
 
     pub async fn from_transfer_sessions(
@@ -84,10 +99,17 @@ impl TransferRewards {
         let rewards = transfer_sessions
             .into_iter()
             // Calculate rewards per hotspot
-            .map(|(pub_key, dc_amount)| {
-                let bones = dc_to_mobile_bones(Decimal::from(dc_amount), mobile_bone_price);
+            .map(|(pub_key, rewardable)| {
+                let bones =
+                    dc_to_mobile_bones(Decimal::from(rewardable.rewardable_dc), mobile_bone_price);
                 reward_sum += bones;
-                (pub_key, bones)
+                (
+                    pub_key,
+                    TransferReward {
+                        bones,
+                        bytes_rewarded: rewardable.rewardable_bytes,
+                    },
+                )
             })
             .collect();
 
@@ -119,6 +141,7 @@ impl TransferRewards {
             reward_scale,
             rewards,
             reward_sum: reward_sum * reward_scale,
+            mobile_bone_price,
         }
     }
 
@@ -136,7 +159,7 @@ impl TransferRewards {
         rewards
             .into_iter()
             .map(move |(hotspot_key, reward)| {
-                let dc_transfer_reward = (reward * reward_scale)
+                let dc_transfer_reward = (reward.bones * reward_scale)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
                     .unwrap_or(0);
@@ -149,6 +172,10 @@ impl TransferRewards {
                             proto::GatewayReward {
                                 hotspot_key: hotspot_key.into(),
                                 dc_transfer_reward,
+                                rewardable_bytes: reward.bytes_rewarded,
+                                price: (self.mobile_bone_price * dec!(1_000_000) * dec!(1_000_000))
+                                    .to_u64()
+                                    .unwrap_or_default(),
                             },
                         )),
                     },
@@ -201,7 +228,7 @@ impl MapperShares {
                 discovery_location_amount: (DISCOVERY_MAPPING_SHARES * reward_per_share)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
-                    .unwrap_or(0),
+                    .unwrap_or_default(),
             })
             .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
             .map(|subscriber_reward| {
@@ -347,16 +374,20 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 
 #[derive(Debug)]
 struct RadioPoints {
-    heartbeat_multiplier: Decimal,
+    location_trust_score_multiplier: Decimal,
     coverage_object: Uuid,
     seniority: DateTime<Utc>,
     points: Decimal,
 }
 
 impl RadioPoints {
-    fn new(heartbeat_multiplier: Decimal, coverage_object: Uuid, seniority: DateTime<Utc>) -> Self {
+    fn new(
+        location_trust_score_multiplier: Decimal,
+        coverage_object: Uuid,
+        seniority: DateTime<Utc>,
+    ) -> Self {
         Self {
-            heartbeat_multiplier,
+            location_trust_score_multiplier,
             seniority,
             coverage_object,
             points: Decimal::ZERO,
@@ -364,7 +395,7 @@ impl RadioPoints {
     }
 
     fn points(&self) -> Decimal {
-        (self.heartbeat_multiplier * self.points).max(Decimal::ZERO)
+        (self.location_trust_score_multiplier * self.points).max(Decimal::ZERO)
     }
 }
 
@@ -432,7 +463,7 @@ impl CoveragePoints {
                 .insert(
                     opt_cbsd_id,
                     RadioPoints::new(
-                        heartbeat.location_trust_multiplier,
+                        heartbeat.location_trust_score_multiplier,
                         heartbeat.coverage_object,
                         seniority.seniority_ts,
                     ),
@@ -535,7 +566,7 @@ fn new_radio_reward(
 ) -> (u64, proto::MobileRewardShare) {
     let poc_reward = poc_rewards_per_share
         * speedtest_multiplier
-        * radio_points.heartbeat_multiplier
+        * radio_points.location_trust_score_multiplier
         * radio_points.points;
     let hotspot_key: Vec<u8> = hotspot_key.clone().into();
     let cbsd_id = cbsd_id.unwrap_or_default();
@@ -556,6 +587,13 @@ fn new_radio_reward(
                     coverage_points: radio_points.points.to_u64().unwrap_or(0),
                     seniority_timestamp: radio_points.seniority.encode_timestamp(),
                     coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
+                    location_trust_score_multiplier: (radio_points.location_trust_score_multiplier
+                        * dec!(1000))
+                    .to_u32()
+                    .unwrap_or_default(),
+                    speedtest_multiplier: (speedtest_multiplier * dec!(1000))
+                        .to_u32()
+                        .unwrap_or_default(),
                     ..Default::default()
                 },
             )),
@@ -590,8 +628,8 @@ mod test {
     use crate::{
         cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage, Seniority},
-        data_session,
         data_session::HotspotDataSession,
+        data_session::{self, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
         reward_shares,
         speedtests::Speedtest,
@@ -713,7 +751,10 @@ mod test {
         let mut data_transfer_map = HotspotMap::new();
         data_transfer_map.insert(
             data_transfer_session.pub_key,
-            data_transfer_session.num_dcs as u64,
+            HotspotReward {
+                rewardable_bytes: 0, // Not used
+                rewardable_dc: data_transfer_session.num_dcs as u64,
+            },
         );
 
         let now = Utc::now();
@@ -1010,105 +1051,105 @@ mod test {
                 hotspot_key: gw2.clone(),
                 coverage_object: cov_obj_2,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c4.clone()),
                 hotspot_key: gw3.clone(),
                 coverage_object: cov_obj_4,
                 cell_type: CellType::from_cbsd_id(&c4).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c5.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_5,
                 cell_type: CellType::from_cbsd_id(&c5).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c6.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_6,
                 cell_type: CellType::from_cbsd_id(&c6).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c7.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_7,
                 cell_type: CellType::from_cbsd_id(&c7).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c8.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_8,
                 cell_type: CellType::from_cbsd_id(&c8).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c9.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_9,
                 cell_type: CellType::from_cbsd_id(&c9).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c10.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_10,
                 cell_type: CellType::from_cbsd_id(&c10).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c11.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_11,
                 cell_type: CellType::from_cbsd_id(&c11).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c12.clone()),
                 hotspot_key: gw5.clone(),
                 coverage_object: cov_obj_12,
                 cell_type: CellType::from_cbsd_id(&c12).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c13.clone()),
                 hotspot_key: gw6.clone(),
                 coverage_object: cov_obj_13,
                 cell_type: CellType::from_cbsd_id(&c13).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: Some(c14.clone()),
                 hotspot_key: gw7.clone(),
                 coverage_object: cov_obj_14,
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_15,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_16,
-                location_trust_multiplier: dec!(0.25),
+                location_trust_score_multiplier: dec!(0.25),
             },
             HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_17,
-                location_trust_multiplier: dec!(0.25),
+                location_trust_score_multiplier: dec!(0.25),
             },
         ]
         .into_iter()
@@ -1375,7 +1416,7 @@ mod test {
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
             HeartbeatReward {
@@ -1383,7 +1424,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 coverage_object: g2_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
         ]
         .into_iter()
@@ -1502,7 +1543,7 @@ mod test {
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                location_trust_multiplier: dec!(0.25),
+                location_trust_score_multiplier: dec!(0.25),
             },
             // add sercomm indoor HB
             HeartbeatReward {
@@ -1510,7 +1551,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 coverage_object: g2_cov_obj,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
         ]
         .into_iter()
@@ -1629,7 +1670,7 @@ mod test {
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g1_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
             HeartbeatReward {
@@ -1637,7 +1678,7 @@ mod test {
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
                 coverage_object: g2_cov_obj,
-                location_trust_multiplier: dec!(1.0),
+                location_trust_score_multiplier: dec!(1.0),
             },
         ]
         .into_iter()
@@ -1740,7 +1781,7 @@ mod test {
                 radio_points: vec![(
                     Some(c1),
                     RadioPoints {
-                        heartbeat_multiplier: dec!(1.0),
+                        location_trust_score_multiplier: dec!(1.0),
                         seniority: DateTime::default(),
                         coverage_object: Uuid::new_v4(),
                         points: dec!(10.0),
@@ -1758,7 +1799,7 @@ mod test {
                     (
                         Some(c2),
                         RadioPoints {
-                            heartbeat_multiplier: dec!(1.0),
+                            location_trust_score_multiplier: dec!(1.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
                             points: dec!(-1.0),
@@ -1767,7 +1808,7 @@ mod test {
                     (
                         Some(c3),
                         RadioPoints {
-                            heartbeat_multiplier: dec!(1.0),
+                            location_trust_score_multiplier: dec!(1.0),
                             points: dec!(0.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),

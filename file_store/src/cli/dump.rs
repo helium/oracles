@@ -205,7 +205,6 @@ impl Cmd {
                     print_json(&json!({
                         "cbsd_id": heartbeat.cbsd_id,
                         "pub_key": PublicKey::try_from(heartbeat.pub_key)?,
-                        "reward_multiplier": heartbeat.reward_multiplier,
                         "timestamp": heartbeat.timestamp,
                         "cell_type": heartbeat.cell_type,
                         "validity": heartbeat.validity,

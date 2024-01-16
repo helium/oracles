@@ -114,6 +114,7 @@ impl Cmd {
             gateway_client.clone(),
             cbrs_heartbeats,
             settings.modeled_coverage_start(),
+            settings.max_asserted_distance_deviation,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
         );
@@ -123,6 +124,7 @@ impl Cmd {
             gateway_client.clone(),
             wifi_heartbeats,
             settings.modeled_coverage_start(),
+            settings.max_asserted_distance_deviation,
             valid_heartbeats,
             seniority_updates,
         );
@@ -227,7 +229,6 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            settings.max_asserted_distance_deviation,
         );
 
         // subscriber location

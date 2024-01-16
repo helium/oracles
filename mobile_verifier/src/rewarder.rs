@@ -35,7 +35,6 @@ pub struct Rewarder<A> {
     pub mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
-    max_distance_to_asserted: u32,
 }
 
 impl<A> Rewarder<A>
@@ -51,7 +50,6 @@ where
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
-        max_distance_to_asserted: u32,
     ) -> Self {
         Self {
             pool,
@@ -61,7 +59,6 @@ where
             mobile_rewards,
             reward_manifests,
             price_tracker,
-            max_distance_to_asserted,
         }
     }
 
@@ -182,7 +179,6 @@ where
             &self.mobile_rewards,
             reward_period,
             mobile_bone_price,
-            self.max_distance_to_asserted,
         )
         .await?;
 
@@ -241,7 +237,6 @@ pub async fn reward_poc_and_dc(
     mobile_rewards: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
-    max_distance_to_asserted: u32,
 ) -> anyhow::Result<()> {
     let transfer_rewards = TransferRewards::from_transfer_sessions(
         mobile_bone_price,
@@ -257,14 +252,7 @@ pub async fn reward_poc_and_dc(
     };
     telemetry::data_transfer_rewards_scale(scale);
 
-    reward_poc(
-        pool,
-        mobile_rewards,
-        reward_period,
-        transfer_rewards_sum,
-        max_distance_to_asserted,
-    )
-    .await?;
+    reward_poc(pool, mobile_rewards, reward_period, transfer_rewards_sum).await?;
 
     reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
 
@@ -276,13 +264,12 @@ async fn reward_poc(
     mobile_rewards: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_reward_sum: Decimal,
-    max_distance_to_asserted: u32,
 ) -> anyhow::Result<()> {
     let total_poc_rewards =
         reward_shares::get_scheduled_tokens_for_poc(reward_period.end - reward_period.start)
             - transfer_reward_sum;
 
-    let heartbeats = HeartbeatReward::validated(pool, reward_period, max_distance_to_asserted);
+    let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_period.end, pool).await?;
     let coverage_points =

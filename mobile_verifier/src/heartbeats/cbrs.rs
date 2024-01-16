@@ -22,6 +22,7 @@ pub struct HeartbeatDaemon<GIR> {
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
     modeled_coverage_start: DateTime<Utc>,
+    max_distance_to_asserted: u32,
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
 }
@@ -35,6 +36,7 @@ where
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
         modeled_coverage_start: DateTime<Utc>,
+        max_distance_to_asserted: u32,
         heartbeat_sink: FileSinkClient,
         seniority_sink: FileSinkClient,
     ) -> Self {
@@ -43,6 +45,7 @@ where
             gateway_info_resolver,
             heartbeats,
             modeled_coverage_start,
+            max_distance_to_asserted,
             heartbeat_sink,
             seniority_sink,
         }
@@ -111,6 +114,7 @@ where
                 &self.gateway_info_resolver,
                 heartbeats,
                 coverage_objects,
+                self.max_distance_to_asserted,
                 &epoch,
             ),
             heartbeat_cache,
