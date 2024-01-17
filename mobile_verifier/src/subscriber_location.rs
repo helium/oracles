@@ -92,7 +92,7 @@ where
                     // if the report is valid then save to the db
                     // and thus available to be rewarded
                     if verified_report_status == SubscriberReportVerificationStatus::Valid {
-                        self.save(&loc_ingest_report, &mut transaction).await?;
+                        save(&loc_ingest_report, &mut transaction).await?;
                     }
 
                     // write out paper trail of verified report, valid or invalid
@@ -117,24 +117,6 @@ where
             .commit()
             .await?;
         self.verified_report_sink.commit().await?;
-        Ok(())
-    }
-
-    pub async fn save(
-        &self,
-        loc_ingest_report: &SubscriberLocationIngestReport,
-        db: &mut Transaction<'_, Postgres>,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            r#"
-                INSERT INTO subscriber_loc_verified (subscriber_id, received_timestamp)
-                VALUES ($1, $2)
-                "#,
-        )
-        .bind(loc_ingest_report.report.subscriber_id.clone())
-        .bind(loc_ingest_report.received_timestamp)
-        .execute(&mut *db)
-        .await?;
         Ok(())
     }
 
@@ -172,6 +154,23 @@ where
             Err(_err) => false,
         }
     }
+}
+
+pub async fn save(
+    loc_ingest_report: &SubscriberLocationIngestReport,
+    db: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+            INSERT INTO subscriber_loc_verified (subscriber_id, received_timestamp)
+            VALUES ($1, $2)
+            "#,
+    )
+    .bind(loc_ingest_report.report.subscriber_id.clone())
+    .bind(loc_ingest_report.received_timestamp)
+    .execute(&mut *db)
+    .await?;
+    Ok(())
 }
 
 #[derive(sqlx::FromRow)]

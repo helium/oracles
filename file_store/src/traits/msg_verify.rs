@@ -79,6 +79,8 @@ impl_msg_verify!(mobile_config::AuthorizationListReqV1, signature);
 impl_msg_verify!(mobile_config::AuthorizationListResV1, signature);
 impl_msg_verify!(mobile_config::EntityVerifyReqV1, signature);
 impl_msg_verify!(mobile_config::EntityVerifyResV1, signature);
+impl_msg_verify!(mobile_config::CarrierKeyToEntityReqV1, signature);
+impl_msg_verify!(mobile_config::CarrierKeyToEntityResV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoStreamReqV1, signature);
 impl_msg_verify!(mobile_config::GatewayInfoResV1, signature);

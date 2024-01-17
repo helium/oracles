@@ -1,6 +1,6 @@
 use crate::{
     coverage::{CoverageReward, CoveredHexStream, CoveredHexes},
-    data_session::HotspotMap,
+    data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::HeartbeatReward,
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
@@ -9,8 +9,17 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile as proto;
-use helium_proto::services::poc_mobile::mobile_reward_share::Reward as ProtoReward;
+use helium_proto::{
+    services::{
+        poc_mobile as proto,
+        poc_mobile::{
+            mobile_reward_share::Reward as ProtoReward, UnallocatedReward, UnallocatedRewardType,
+        },
+    },
+    ServiceProvider,
+};
+
+use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
@@ -35,10 +44,24 @@ const MAPPERS_REWARDS_PERCENT: Decimal = dec!(0.2);
 /// shares of the mappers pool allocated per eligible subscriber for discovery mapping
 const DISCOVERY_MAPPING_SHARES: Decimal = dec!(30);
 
+// Percent of total emissions allocated for service provider rewards
+const SERVICE_PROVIDER_PERCENT: Decimal = dec!(0.1);
+
+// Percent of total emissions allocated for oracles
+const ORACLES_PERCENT: Decimal = dec!(0.04);
+
+#[derive(Debug)]
 pub struct TransferRewards {
     reward_scale: Decimal,
-    rewards: HashMap<PublicKeyBinary, Decimal>,
+    rewards: HashMap<PublicKeyBinary, TransferReward>,
     reward_sum: Decimal,
+    mobile_bone_price: Decimal,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct TransferReward {
+    bones: Decimal,
+    bytes_rewarded: u64,
 }
 
 impl TransferRewards {
@@ -52,7 +75,19 @@ impl TransferRewards {
 
     #[cfg(test)]
     fn reward(&self, hotspot: &PublicKeyBinary) -> Decimal {
-        self.rewards.get(hotspot).copied().unwrap_or(Decimal::ZERO) * self.reward_scale
+        self.rewards
+            .get(hotspot)
+            .copied()
+            .map(|x| x.bones)
+            .unwrap_or(Decimal::ZERO)
+            * self.reward_scale
+    }
+
+    pub fn total(&self) -> Decimal {
+        self.rewards
+            .values()
+            .map(|v| v.bones * self.reward_scale)
+            .sum()
     }
 
     pub async fn from_transfer_sessions(
@@ -64,10 +99,17 @@ impl TransferRewards {
         let rewards = transfer_sessions
             .into_iter()
             // Calculate rewards per hotspot
-            .map(|(pub_key, dc_amount)| {
-                let bones = dc_to_mobile_bones(Decimal::from(dc_amount), mobile_bone_price);
+            .map(|(pub_key, rewardable)| {
+                let bones =
+                    dc_to_mobile_bones(Decimal::from(rewardable.rewardable_dc), mobile_bone_price);
                 reward_sum += bones;
-                (pub_key, bones)
+                (
+                    pub_key,
+                    TransferReward {
+                        bones,
+                        bytes_rewarded: rewardable.rewardable_bytes,
+                    },
+                )
             })
             .collect();
 
@@ -99,13 +141,14 @@ impl TransferRewards {
             reward_scale,
             rewards,
             reward_sum: reward_sum * reward_scale,
+            mobile_bone_price,
         }
     }
 
     pub fn into_rewards(
         self,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         let Self {
             reward_scale,
             rewards,
@@ -115,25 +158,30 @@ impl TransferRewards {
         let end_period = epoch.end.encode_timestamp();
         rewards
             .into_iter()
-            .map(move |(hotspot_key, reward)| proto::MobileRewardShare {
-                start_period,
-                end_period,
-                reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
-                    proto::GatewayReward {
-                        hotspot_key: hotspot_key.into(),
-                        dc_transfer_reward: (reward * reward_scale)
-                            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                            .to_u64()
-                            .unwrap_or(0),
+            .map(move |(hotspot_key, reward)| {
+                let dc_transfer_reward = (reward.bones * reward_scale)
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0);
+                (
+                    dc_transfer_reward,
+                    proto::MobileRewardShare {
+                        start_period,
+                        end_period,
+                        reward: Some(proto::mobile_reward_share::Reward::GatewayReward(
+                            proto::GatewayReward {
+                                hotspot_key: hotspot_key.into(),
+                                dc_transfer_reward,
+                                rewardable_bytes: reward.bytes_rewarded,
+                                price: (self.mobile_bone_price * dec!(1_000_000) * dec!(1_000_000))
+                                    .to_u64()
+                                    .unwrap_or_default(),
+                            },
+                        )),
                     },
-                )),
+                )
             })
-            .filter(|mobile_reward| match mobile_reward.reward {
-                Some(proto::mobile_reward_share::Reward::GatewayReward(ref gateway_reward)) => {
-                    gateway_reward.dc_transfer_reward > 0
-                }
-                _ => false,
-            })
+            .filter(|(dc_transfer_reward, _mobile_reward)| *dc_transfer_reward > 0)
     }
 }
 
@@ -149,17 +197,11 @@ impl MapperShares {
         }
     }
 
-    pub fn rewards_per_share(
-        &self,
-        reward_period: &'_ Range<DateTime<Utc>>,
-    ) -> anyhow::Result<Decimal> {
+    pub fn rewards_per_share(&self, total_mappers_pool: Decimal) -> anyhow::Result<Decimal> {
         // note: currently rewards_per_share calculation only takes into
         // consideration discovery mapping shares
         // in the future it will also need to take into account
         // verification mapping shares
-        let duration: Duration = reward_period.end - reward_period.start;
-        let total_mappers_pool = get_scheduled_tokens_for_mappers(duration);
-
         // the number of subscribers eligible for discovery location rewards
         let discovery_mappers_count = Decimal::from(self.discovery_mapping_shares.len());
 
@@ -178,7 +220,7 @@ impl MapperShares {
         self,
         reward_period: &'_ Range<DateTime<Utc>>,
         reward_per_share: Decimal,
-    ) -> impl Iterator<Item = proto::MobileRewardShare> + '_ {
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
         self.discovery_mapping_shares
             .into_iter()
             .map(move |subscriber_id| proto::SubscriberReward {
@@ -186,14 +228,140 @@ impl MapperShares {
                 discovery_location_amount: (DISCOVERY_MAPPING_SHARES * reward_per_share)
                     .round_dp_with_strategy(0, RoundingStrategy::ToZero)
                     .to_u64()
-                    .unwrap_or(0),
+                    .unwrap_or_default(),
             })
             .filter(|subscriber_reward| subscriber_reward.discovery_location_amount > 0)
-            .map(|subscriber_reward| proto::MobileRewardShare {
-                start_period: reward_period.start.encode_timestamp(),
-                end_period: reward_period.end.encode_timestamp(),
-                reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
+            .map(|subscriber_reward| {
+                (
+                    subscriber_reward.discovery_location_amount,
+                    proto::MobileRewardShare {
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
+                        reward: Some(ProtoReward::SubscriberReward(subscriber_reward)),
+                    },
+                )
             })
+    }
+}
+
+#[derive(Default)]
+pub struct ServiceProviderShares {
+    pub shares: Vec<ServiceProviderDataSession>,
+}
+
+impl ServiceProviderShares {
+    pub fn new(shares: Vec<ServiceProviderDataSession>) -> Self {
+        Self { shares }
+    }
+
+    pub async fn from_payers_dc(
+        payer_shares: HashMap<String, u64>,
+        client: &impl CarrierServiceVerifier<Error = ClientError>,
+    ) -> anyhow::Result<ServiceProviderShares> {
+        let mut sp_shares = ServiceProviderShares::default();
+        for (payer, total_dcs) in payer_shares {
+            let service_provider = Self::payer_key_to_service_provider(&payer, client).await?;
+            sp_shares.shares.push(ServiceProviderDataSession {
+                service_provider,
+                total_dcs: Decimal::from(total_dcs),
+            })
+        }
+        Ok(sp_shares)
+    }
+
+    fn total_dc(&self) -> Decimal {
+        self.shares.iter().map(|v| v.total_dcs).sum()
+    }
+
+    pub fn rewards_per_share(
+        &self,
+        total_sp_rewards: Decimal,
+        mobile_bone_price: Decimal,
+    ) -> anyhow::Result<Decimal> {
+        // the total amount of DC spent across all service providers
+        let total_sp_dc = self.total_dc();
+        // the total amount of service provider rewards in bones based on the spent DC
+        let total_sp_rewards_used = dc_to_mobile_bones(total_sp_dc, mobile_bone_price);
+        // cap the service provider rewards if used > pool total
+        let capped_sp_rewards_used =
+            Self::maybe_cap_service_provider_rewards(total_sp_rewards_used, total_sp_rewards);
+        Ok(Self::calc_rewards_per_share(
+            capped_sp_rewards_used,
+            total_sp_dc,
+        ))
+    }
+
+    pub fn into_service_provider_rewards(
+        self,
+        reward_period: &'_ Range<DateTime<Utc>>,
+        reward_per_share: Decimal,
+    ) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_ {
+        self.shares
+            .into_iter()
+            .map(move |share| proto::ServiceProviderReward {
+                service_provider_id: share.service_provider as i32,
+                amount: (share.total_dcs * reward_per_share)
+                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                    .to_u64()
+                    .unwrap_or(0),
+            })
+            .filter(|service_provider_reward| service_provider_reward.amount > 0)
+            .map(|service_provider_reward| {
+                (
+                    service_provider_reward.amount,
+                    proto::MobileRewardShare {
+                        start_period: reward_period.start.encode_timestamp(),
+                        end_period: reward_period.end.encode_timestamp(),
+                        reward: Some(ProtoReward::ServiceProviderReward(service_provider_reward)),
+                    },
+                )
+            })
+    }
+
+    pub fn into_unallocated_reward(
+        unallocated_amount: Decimal,
+        reward_period: &'_ Range<DateTime<Utc>>,
+    ) -> anyhow::Result<proto::MobileRewardShare> {
+        let reward = UnallocatedReward {
+            reward_type: UnallocatedRewardType::ServiceProvider as i32,
+            amount: unallocated_amount
+                .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+                .to_u64()
+                .unwrap_or(0),
+        };
+        Ok(proto::MobileRewardShare {
+            start_period: reward_period.start.encode_timestamp(),
+            end_period: reward_period.end.encode_timestamp(),
+            reward: Some(ProtoReward::UnallocatedReward(reward)),
+        })
+    }
+
+    fn maybe_cap_service_provider_rewards(
+        total_sp_rewards_used: Decimal,
+        total_sp_rewards: Decimal,
+    ) -> Decimal {
+        match total_sp_rewards_used <= total_sp_rewards {
+            true => total_sp_rewards_used,
+            false => total_sp_rewards,
+        }
+    }
+
+    fn calc_rewards_per_share(total_rewards: Decimal, total_shares: Decimal) -> Decimal {
+        if total_shares > Decimal::ZERO {
+            (total_rewards / total_shares)
+                .round_dp_with_strategy(DEFAULT_PREC, RoundingStrategy::MidpointNearestEven)
+        } else {
+            Decimal::ZERO
+        }
+    }
+
+    async fn payer_key_to_service_provider(
+        payer: &str,
+        client: &impl CarrierServiceVerifier<Error = ClientError>,
+    ) -> anyhow::Result<ServiceProvider> {
+        tracing::info!(payer, "getting service provider for payer");
+        let sp = client.payer_key_to_service_provider(payer).await?;
+        Ok(sp)
     }
 }
 
@@ -206,16 +374,20 @@ pub fn dc_to_mobile_bones(dc_amount: Decimal, mobile_bone_price: Decimal) -> Dec
 
 #[derive(Debug)]
 struct RadioPoints {
-    heartbeat_multiplier: Decimal,
+    location_trust_score_multiplier: Decimal,
     coverage_object: Uuid,
     seniority: DateTime<Utc>,
     points: Decimal,
 }
 
 impl RadioPoints {
-    fn new(heartbeat_multiplier: Decimal, coverage_object: Uuid, seniority: DateTime<Utc>) -> Self {
+    fn new(
+        location_trust_score_multiplier: Decimal,
+        coverage_object: Uuid,
+        seniority: DateTime<Utc>,
+    ) -> Self {
         Self {
-            heartbeat_multiplier,
+            location_trust_score_multiplier,
             seniority,
             coverage_object,
             points: Decimal::ZERO,
@@ -223,7 +395,7 @@ impl RadioPoints {
     }
 
     fn points(&self) -> Decimal {
-        (self.heartbeat_multiplier * self.points).max(Decimal::ZERO)
+        (self.location_trust_score_multiplier * self.points).max(Decimal::ZERO)
     }
 }
 
@@ -262,14 +434,14 @@ pub struct CoveragePoints {
 impl CoveragePoints {
     pub async fn aggregate_points(
         hex_streams: &impl CoveredHexStream,
-        heartbeats: impl Stream<Item = HeartbeatReward>,
+        heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: &SpeedtestAverages,
         period_end: DateTime<Utc>,
     ) -> Result<Self, sqlx::Error> {
         let mut heartbeats = std::pin::pin!(heartbeats);
         let mut covered_hexes = CoveredHexes::default();
         let mut coverage_points = HashMap::new();
-        while let Some(heartbeat) = heartbeats.next().await {
+        while let Some(heartbeat) = heartbeats.next().await.transpose()? {
             let speedtest_multiplier = speedtests
                 .get_average(&heartbeat.hotspot_key)
                 .as_ref()
@@ -335,12 +507,10 @@ impl CoveragePoints {
 
     pub fn into_rewards(
         self,
-        transfer_rewards_sum: Decimal,
+        available_poc_rewards: Decimal,
         epoch: &'_ Range<DateTime<Utc>>,
-    ) -> Option<impl Iterator<Item = proto::MobileRewardShare> + '_> {
+    ) -> Option<impl Iterator<Item = (u64, proto::MobileRewardShare)> + '_> {
         let total_shares = self.total_shares();
-        let available_poc_rewards =
-            get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start) - transfer_rewards_sum;
         available_poc_rewards
             .checked_div(total_shares)
             .map(|poc_rewards_per_share| {
@@ -359,12 +529,7 @@ impl CoveragePoints {
                             hotspot_points.radio_points.into_iter(),
                         )
                     })
-                    .filter(|mobile_reward| match mobile_reward.reward {
-                        Some(proto::mobile_reward_share::Reward::RadioReward(ref radio_reward)) => {
-                            radio_reward.poc_reward > 0
-                        }
-                        _ => false,
-                    })
+                    .filter(|(poc_reward, _mobile_reward)| *poc_reward > 0)
             })
     }
 }
@@ -376,7 +541,7 @@ fn radio_points_into_rewards(
     poc_rewards_per_share: Decimal,
     speedtest_multiplier: Decimal,
     radio_points: impl Iterator<Item = (Option<String>, RadioPoints)>,
-) -> impl Iterator<Item = proto::MobileRewardShare> {
+) -> impl Iterator<Item = (u64, proto::MobileRewardShare)> {
     radio_points.map(move |(cbsd_id, radio_points)| {
         new_radio_reward(
             cbsd_id,
@@ -398,31 +563,42 @@ fn new_radio_reward(
     poc_rewards_per_share: Decimal,
     speedtest_multiplier: Decimal,
     radio_points: RadioPoints,
-) -> proto::MobileRewardShare {
+) -> (u64, proto::MobileRewardShare) {
     let poc_reward = poc_rewards_per_share
         * speedtest_multiplier
-        * radio_points.heartbeat_multiplier
+        * radio_points.location_trust_score_multiplier
         * radio_points.points;
     let hotspot_key: Vec<u8> = hotspot_key.clone().into();
     let cbsd_id = cbsd_id.unwrap_or_default();
-    proto::MobileRewardShare {
-        start_period,
-        end_period,
-        reward: Some(proto::mobile_reward_share::Reward::RadioReward(
-            proto::RadioReward {
-                hotspot_key,
-                cbsd_id,
-                poc_reward: poc_reward
-                    .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-                    .to_u64()
-                    .unwrap_or(0),
-                coverage_points: radio_points.points.to_u64().unwrap_or(0),
-                seniority_timestamp: radio_points.seniority.encode_timestamp(),
-                coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
-                ..Default::default()
-            },
-        )),
-    }
+    let poc_reward = poc_reward
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+    (
+        poc_reward,
+        proto::MobileRewardShare {
+            start_period,
+            end_period,
+            reward: Some(proto::mobile_reward_share::Reward::RadioReward(
+                proto::RadioReward {
+                    hotspot_key,
+                    cbsd_id,
+                    poc_reward,
+                    coverage_points: radio_points.points.to_u64().unwrap_or(0),
+                    seniority_timestamp: radio_points.seniority.encode_timestamp(),
+                    coverage_object: Vec::from(radio_points.coverage_object.into_bytes()),
+                    location_trust_score_multiplier: (radio_points.location_trust_score_multiplier
+                        * dec!(1000))
+                    .to_u32()
+                    .unwrap_or_default(),
+                    speedtest_multiplier: (speedtest_multiplier * dec!(1000))
+                        .to_u32()
+                        .unwrap_or_default(),
+                    ..Default::default()
+                },
+            )),
+        },
+    )
 }
 
 pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
@@ -430,12 +606,20 @@ pub fn get_total_scheduled_tokens(duration: Duration) -> Decimal {
         * Decimal::from(duration.num_seconds())
 }
 
-pub fn get_scheduled_tokens_for_poc_and_dc(duration: Duration) -> Decimal {
+pub fn get_scheduled_tokens_for_poc(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * dec!(0.6)
 }
 
 pub fn get_scheduled_tokens_for_mappers(duration: Duration) -> Decimal {
     get_total_scheduled_tokens(duration) * MAPPERS_REWARDS_PERCENT
+}
+
+pub fn get_scheduled_tokens_for_service_providers(duration: Duration) -> Decimal {
+    get_total_scheduled_tokens(duration) * SERVICE_PROVIDER_PERCENT
+}
+
+pub fn get_scheduled_tokens_for_oracles(duration: Duration) -> Decimal {
+    get_total_scheduled_tokens(duration) * ORACLES_PERCENT
 }
 
 #[cfg(test)]
@@ -444,9 +628,10 @@ mod test {
     use crate::{
         cell_type::CellType,
         coverage::{CoveredHexStream, HexCoverage, Seniority},
-        data_session,
         data_session::HotspotDataSession,
-        heartbeats::{HeartbeatReward, HeartbeatRow, KeyType, OwnedKeyType},
+        data_session::{self, HotspotReward},
+        heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
+        reward_shares,
         speedtests::Speedtest,
         speedtests_average::SpeedtestAverage,
         subscriber_location::SubscriberValidatedLocations,
@@ -454,7 +639,9 @@ mod test {
     use chrono::{Duration, Utc};
     use file_store::speedtest::CellSpeedtest;
     use futures::stream::{self, BoxStream};
-    use helium_proto::services::poc_mobile::mobile_reward_share::Reward as MobileReward;
+    use helium_proto::{
+        services::poc_mobile::mobile_reward_share::Reward as MobileReward, ServiceProvider,
+    };
     use prost::Message;
     use std::collections::HashMap;
     use uuid::Uuid;
@@ -469,6 +656,12 @@ mod test {
             dc_to_mobile_bones(Decimal::from(2), dec!(1.0)),
             dec!(0.00002)
         );
+    }
+
+    fn mobile_bones_to_dc(mobile_bones_amount: Decimal, mobile_bones_price: Decimal) -> Decimal {
+        let mobile_value = mobile_bones_amount * mobile_bones_price;
+        (mobile_value / DC_USD_PRICE)
+            .round_dp_with_strategy(0, RoundingStrategy::ToNegativeInfinity)
     }
 
     #[tokio::test]
@@ -491,7 +684,11 @@ mod test {
 
         // translate location shares into discovery mapping shares
         let mapping_shares = MapperShares::new(location_shares);
-        let rewards_per_share = mapping_shares.rewards_per_share(&epoch).unwrap();
+        let total_mappers_pool =
+            reward_shares::get_scheduled_tokens_for_mappers(epoch.end - epoch.start);
+        let rewards_per_share = mapping_shares
+            .rewards_per_share(total_mappers_pool)
+            .unwrap();
 
         // verify total rewards for the epoch
         let total_epoch_rewards = get_total_scheduled_tokens(epoch.end - epoch.start)
@@ -510,23 +707,26 @@ mod test {
         let expected_reward_per_subscriber = total_mapper_rewards / NUM_SUBSCRIBERS;
 
         // get the summed rewards allocated to subscribers for discovery location
-        let mut total_discovery_mapping_rewards = 0_u64;
-        for subscriber_share in mapping_shares.into_subscriber_rewards(&epoch, rewards_per_share) {
+        let mut allocated_mapper_rewards = 0_u64;
+        for (reward_amount, subscriber_share) in
+            mapping_shares.into_subscriber_rewards(&epoch, rewards_per_share)
+        {
             if let Some(MobileReward::SubscriberReward(r)) = subscriber_share.reward {
-                total_discovery_mapping_rewards += r.discovery_location_amount;
                 assert_eq!(expected_reward_per_subscriber, r.discovery_location_amount);
+                assert_eq!(reward_amount, r.discovery_location_amount);
+                allocated_mapper_rewards += reward_amount;
             }
         }
 
-        // verify the total rewards awared for discovery mapping
-        assert_eq!(16_393_442_620_000, total_discovery_mapping_rewards);
+        // verify the total rewards awarded for discovery mapping
+        assert_eq!(16_393_442_620_000, allocated_mapper_rewards);
 
-        // the sum of rewards distributed should not exceed the epoch amount
-        // but due to rounding whilst going to u64 for each subscriber,
-        // we will be some bones short of the full epoch amount
-        // the difference in bones cannot be more than the total number of subscribers ( 10 k)
-        let diff = total_mapper_rewards - total_discovery_mapping_rewards;
-        assert!(diff < NUM_SUBSCRIBERS);
+        // confirm the unallocated service provider reward amounts
+        // this should not be more than the total number of subscribers ( 10 k)
+        // as we can at max drop one bone per subscriber due to rounding
+        let unallocated_mapper_reward_amount = total_mapper_rewards - allocated_mapper_rewards;
+        assert_eq!(unallocated_mapper_reward_amount, 2950);
+        assert!(unallocated_mapper_reward_amount < NUM_SUBSCRIBERS);
     }
 
     /// Test to ensure that the correct data transfer amount is rewarded.
@@ -551,12 +751,15 @@ mod test {
         let mut data_transfer_map = HotspotMap::new();
         data_transfer_map.insert(
             data_transfer_session.pub_key,
-            data_transfer_session.num_dcs as u64,
+            HotspotReward {
+                rewardable_bytes: 0, // Not used
+                rewardable_dc: data_transfer_session.num_dcs as u64,
+            },
         );
 
         let now = Utc::now();
         let epoch = (now - Duration::hours(1))..now;
-        let total_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
+        let total_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
 
         // confirm our hourly rewards add up to expected 24hr amount
         // total_rewards will be in bones
@@ -570,7 +773,7 @@ mod test {
 
         assert_eq!(data_transfer_rewards.reward(&owner), dec!(0.00002));
         assert_eq!(data_transfer_rewards.reward_scale(), dec!(1.0));
-        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
+        let available_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
         assert_eq!(
             available_poc_rewards,
@@ -621,7 +824,7 @@ mod test {
         // allotted reward amount for data transfer, which is 40% of the daily tokens. We check to
         // ensure that amount of tokens remaining for POC is no less than 20% of the rewards allocated
         // for POC and data transfer (which is 60% of the daily total emissions).
-        let available_poc_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start)
+        let available_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start)
             - data_transfer_rewards.reward_sum;
         assert_eq!(available_poc_rewards.trunc(), dec!(16_393_442_622_950));
         assert_eq!(
@@ -840,146 +1043,118 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         // setup heartbeats
-        let heartbeat_keys = vec![
-            HeartbeatRow {
+        let heartbeat_rewards = vec![
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 coverage_object: cov_obj_2,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c4.clone()),
                 hotspot_key: gw3.clone(),
                 coverage_object: cov_obj_4,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c4).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c5.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_5,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c5).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c6.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_6,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c6).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c7.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_7,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c7).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c8.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_8,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c8).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c9.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_9,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c9).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c10.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_10,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c10).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c11.clone()),
                 hotspot_key: gw4.clone(),
                 coverage_object: cov_obj_11,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c11).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c12.clone()),
                 hotspot_key: gw5.clone(),
                 coverage_object: cov_obj_12,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c12).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c13.clone()),
                 hotspot_key: gw6.clone(),
                 coverage_object: cov_obj_13,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c13).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c14.clone()),
                 hotspot_key: gw7.clone(),
                 coverage_object: cov_obj_14,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c14).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw9.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_15,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw10.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_16,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(0.25),
             },
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw11.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: cov_obj_17,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(10000),
+                location_trust_score_multiplier: dec!(0.25),
             },
-        ];
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // Setup hex coverages
         let mut hex_coverage = HashMap::new();
@@ -1043,11 +1218,6 @@ mod test {
             (OwnedKeyType::from(gw11.clone()), cov_obj_17),
             simple_hex_coverage(&gw11, 0x8c2681a306607ff),
         );
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -1118,8 +1288,14 @@ mod test {
 
         // calculate the rewards for the sample group
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
+
+        let duration = Duration::hours(1);
+        let epoch = (now - duration)..now;
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        let mut allocated_poc_rewards = 0_u64;
+
         let epoch = (now - Duration::hours(1))..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        for (reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1128,7 +1304,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(Decimal::ZERO, &epoch)
+        .into_rewards(total_poc_rewards, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1139,7 +1315,8 @@ mod test {
                 .get(&PublicKeyBinary::from(radio_reward.hotspot_key))
                 .expect("Could not find owner")
                 .clone();
-
+            assert_eq!(reward_amount, radio_reward.poc_reward);
+            allocated_poc_rewards += reward_amount;
             *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
         }
 
@@ -1189,22 +1366,16 @@ mod test {
         // and thus its reward scale is reduced
         assert_eq!((owner5_reward as f64 * 0.25) as u64, owner7_reward);
 
-        // total emissions for 1 hour
-        let expected_total_rewards = get_scheduled_tokens_for_poc_and_dc(Duration::hours(1))
-            .to_u64()
-            .unwrap();
-        // the emissions actually distributed for the hour
-        let mut distributed_total_rewards = 0;
-        for val in owner_rewards.values() {
-            distributed_total_rewards += *val
-        }
-        assert_eq!(distributed_total_rewards, 2_049_180_327_865);
+        // confirm total sum of allocated poc rewards
+        assert_eq!(allocated_poc_rewards, 2_049_180_327_865);
 
-        let diff = expected_total_rewards as i128 - distributed_total_rewards as i128;
-        // the sum of rewards distributed should not exceed the epoch amount
-        // but due to rounding whilst going to u64 when computing rewards,
-        // is permitted to be a few bones less
-        assert!(diff.abs() <= 5);
+        // confirm the unallocated poc reward amounts
+        let unallocated_sp_reward_amount = (total_poc_rewards
+            - Decimal::from(allocated_poc_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        assert_eq!(unallocated_sp_reward_amount, 3);
     }
 
     #[tokio::test]
@@ -1230,7 +1401,6 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         let g1_cov_obj = Uuid::new_v4();
         let g2_cov_obj = Uuid::new_v4();
@@ -1239,33 +1409,27 @@ mod test {
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
         // setup heartbeats
-        let heartbeat_keys = vec![
+        let heartbeat_rewards = vec![
             // add wifi indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 coverage_object: g2_cov_obj,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-        ];
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -1299,7 +1463,8 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1307,7 +1472,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(Decimal::ZERO, &epoch)
+        .into_rewards(total_poc_rewards, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1321,6 +1486,7 @@ mod test {
 
             *owner_rewards.entry(owner).or_default() += radio_reward.poc_reward;
         }
+        println!("owner rewards {:?}", owner_rewards);
 
         // These were different, now they are the same:
 
@@ -1360,7 +1526,6 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         // init cells and cell_types
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
@@ -1369,35 +1534,29 @@ mod test {
         let g2_cov_obj = Uuid::new_v4();
 
         // setup heartbeats
-        let heartbeat_keys = vec![
+        let heartbeat_rewards = vec![
             // add wifi  indoor HB
             // with distance to asserted > than max allowed
             // this results in reward scale dropping to 0.25
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiIndoor,
                 coverage_object: g1_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1000),
+                location_trust_score_multiplier: dec!(0.25),
             },
             // add sercomm indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 coverage_object: g2_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-        ];
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -1432,7 +1591,8 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1440,7 +1600,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(Decimal::ZERO, &epoch)
+        .into_rewards(total_poc_rewards, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1495,7 +1655,6 @@ mod test {
 
         let now = Utc::now();
         let timestamp = now - Duration::minutes(20);
-        let max_asserted_distance_deviation: u32 = 300;
 
         let g1_cov_obj = Uuid::new_v4();
         let g2_cov_obj = Uuid::new_v4();
@@ -1504,33 +1663,27 @@ mod test {
         let c2 = "P27-SCE4255W".to_string(); // sercom indoor
 
         // setup heartbeats
-        let heartbeat_keys = vec![
+        let heartbeat_rewards = vec![
             // add wifi indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: None,
                 hotspot_key: gw1.clone(),
                 cell_type: CellType::NovaGenericWifiOutdoor,
                 coverage_object: g1_cov_obj,
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
-                location_validation_timestamp: Some(timestamp),
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
             // add sercomm indoor HB
-            HeartbeatRow {
+            HeartbeatReward {
                 cbsd_id: Some(c2.clone()),
                 hotspot_key: gw2.clone(),
                 cell_type: CellType::from_cbsd_id(&c2).unwrap(),
-                latest_timestamp: DateTime::<Utc>::MIN_UTC,
                 coverage_object: g2_cov_obj,
-                location_validation_timestamp: None,
-                distance_to_asserted: Some(1),
+                location_trust_score_multiplier: dec!(1.0),
             },
-        ];
-
-        let heartbeat_rewards: Vec<HeartbeatReward> = heartbeat_keys
-            .into_iter()
-            .map(|row| HeartbeatReward::from_heartbeat_row(row, max_asserted_distance_deviation))
-            .collect();
+        ]
+        .into_iter()
+        .map(Ok)
+        .collect::<Vec<Result<HeartbeatReward, _>>>();
 
         // setup speedtests
         let last_speedtest = timestamp - Duration::hours(12);
@@ -1564,7 +1717,8 @@ mod test {
         let mut owner_rewards = HashMap::<PublicKeyBinary, u64>::new();
         let duration = Duration::hours(1);
         let epoch = (now - duration)..now;
-        for mobile_reward in CoveragePoints::aggregate_points(
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
+        for (_reward_amount, mobile_reward) in CoveragePoints::aggregate_points(
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
@@ -1572,7 +1726,7 @@ mod test {
         )
         .await
         .unwrap()
-        .into_rewards(Decimal::ZERO, &epoch)
+        .into_rewards(total_poc_rewards, &epoch)
         .unwrap()
         {
             let radio_reward = match mobile_reward.reward {
@@ -1588,7 +1742,7 @@ mod test {
         }
 
         // These were different, now they are the same:
-
+        println!("owner rewards {:?}", owner_rewards);
         // wifi
         let owner1_reward = *owner_rewards
             .get(&owner1)
@@ -1627,7 +1781,7 @@ mod test {
                 radio_points: vec![(
                     Some(c1),
                     RadioPoints {
-                        heartbeat_multiplier: dec!(1.0),
+                        location_trust_score_multiplier: dec!(1.0),
                         seniority: DateTime::default(),
                         coverage_object: Uuid::new_v4(),
                         points: dec!(10.0),
@@ -1645,7 +1799,7 @@ mod test {
                     (
                         Some(c2),
                         RadioPoints {
-                            heartbeat_multiplier: dec!(1.0),
+                            location_trust_score_multiplier: dec!(1.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
                             points: dec!(-1.0),
@@ -1654,7 +1808,7 @@ mod test {
                     (
                         Some(c3),
                         RadioPoints {
-                            heartbeat_multiplier: dec!(1.0),
+                            location_trust_score_multiplier: dec!(1.0),
                             points: dec!(0.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
@@ -1671,8 +1825,12 @@ mod test {
         // less than or equal to zero.
         let coverage_points = CoveragePoints { coverage_points };
         let epoch = now - Duration::hours(1)..now;
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         let expected_hotspot = gw1;
-        for mobile_reward in coverage_points.into_rewards(Decimal::ZERO, &epoch).unwrap() {
+        for (_reward_amount, mobile_reward) in coverage_points
+            .into_rewards(total_poc_rewards, &epoch)
+            .unwrap()
+        {
             let radio_reward = match mobile_reward.reward {
                 Some(proto::mobile_reward_share::Reward::RadioReward(radio_reward)) => radio_reward,
                 _ => unreachable!(),
@@ -1690,9 +1848,199 @@ mod test {
 
         let now = Utc::now();
         let epoch = now - Duration::hours(1)..now;
-
+        let total_poc_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
         assert!(coverage_points
-            .into_rewards(Decimal::ZERO, &epoch)
+            .into_rewards(total_poc_rewards, &epoch)
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_amounts() {
+        let mobile_bone_price = dec!(0.00001);
+
+        let sp1 = ServiceProvider::HeliumMobile;
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider: sp1,
+            total_dcs: dec!(1000),
+        }];
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let total_sp_rewards = get_scheduled_tokens_for_service_providers(epoch.end - epoch.start);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::<i32, u64>::new();
+        let mut allocated_sp_rewards = 0_u64;
+        for (reward_amount, sp_reward) in
+            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
+        {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+                assert_eq!(reward_amount, r.amount);
+                allocated_sp_rewards += reward_amount;
+            }
+        }
+
+        let sp1_reward_amount = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
+        assert_eq!(sp1_reward_amount, 1000);
+
+        // confirm the unallocated service provider reward amounts
+        let unallocated_sp_reward_amount = (total_sp_rewards - Decimal::from(allocated_sp_rewards))
+            .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+            .to_u64()
+            .unwrap_or(0);
+        assert_eq!(unallocated_sp_reward_amount, 341_530_053_644);
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_amounts_capped() {
+        let mobile_bone_price = dec!(1.0);
+        let sp1 = ServiceProvider::HeliumMobile;
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+
+        let total_sp_rewards_in_bones = dec!(100_000_000);
+        let total_rewards_value_in_dc =
+            mobile_bones_to_dc(total_sp_rewards_in_bones, mobile_bone_price);
+
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider: ServiceProvider::HeliumMobile,
+            // force the service provider to have spend more DC than total rewardable
+            total_dcs: total_rewards_value_in_dc * dec!(2.0),
+        }];
+
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::new();
+        let mut allocated_sp_rewards = 0_u64;
+        for (reward_amount, sp_reward) in
+            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
+        {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+                assert_eq!(reward_amount, r.amount);
+                allocated_sp_rewards += reward_amount;
+            }
+        }
+        let sp1_reward_amount = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
+
+        assert_eq!(Decimal::from(sp1_reward_amount), total_sp_rewards_in_bones);
+        assert_eq!(sp1_reward_amount, 100_000_000);
+
+        // confirm the unallocated service provider reward amounts
+        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
+            - Decimal::from(allocated_sp_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        assert_eq!(unallocated_sp_reward_amount, 0);
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_hip87_ex1() {
+        // mobile price from hip example and converted to bones
+        let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
+        let sp1 = ServiceProvider::HeliumMobile;
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(1))..now;
+        let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
+
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider: sp1,
+            total_dcs: dec!(100_000_000),
+        }];
+
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::new();
+        let mut allocated_sp_rewards = 0_u64;
+        for (reward_amount, sp_reward) in
+            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
+        {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+                assert_eq!(reward_amount, r.amount);
+                allocated_sp_rewards += reward_amount;
+            }
+        }
+
+        let sp1_reward_amount_in_bones = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
+        // example in HIP gives expected reward amount in mobile whereas we use bones
+        // assert expected value in bones
+        assert_eq!(sp1_reward_amount_in_bones, 10_000_000 * 1_000_000);
+
+        // confirm the unallocated service provider reward amounts
+        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
+            - Decimal::from(allocated_sp_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        assert_eq!(unallocated_sp_reward_amount, 490_000_000_000_000);
+    }
+
+    #[tokio::test]
+    async fn service_provider_reward_hip87_ex2() {
+        // mobile price from hip example and converted to bones
+        let mobile_bone_price = dec!(0.0001) / dec!(1_000_000);
+        let sp1 = ServiceProvider::HeliumMobile;
+
+        let now = Utc::now();
+        let epoch = (now - Duration::hours(24))..now;
+        let total_sp_rewards_in_bones = dec!(500_000_000) * dec!(1_000_000);
+
+        let service_provider_sessions = vec![ServiceProviderDataSession {
+            service_provider: sp1,
+            total_dcs: dec!(100_000_000_000),
+        }];
+
+        let sp_shares = ServiceProviderShares::new(service_provider_sessions);
+        let rewards_per_share = sp_shares
+            .rewards_per_share(total_sp_rewards_in_bones, mobile_bone_price)
+            .unwrap();
+
+        let mut sp_rewards = HashMap::new();
+        let mut allocated_sp_rewards = 0_u64;
+        for (reward_amount, sp_reward) in
+            sp_shares.into_service_provider_rewards(&epoch, rewards_per_share)
+        {
+            if let Some(MobileReward::ServiceProviderReward(r)) = sp_reward.reward {
+                sp_rewards.insert(r.service_provider_id, r.amount);
+                assert_eq!(reward_amount, r.amount);
+                allocated_sp_rewards += reward_amount;
+            }
+        }
+
+        let sp1_reward_amount_in_bones = *sp_rewards
+            .get(&(sp1 as i32))
+            .expect("Could not fetch sp1 shares");
+        // example in HIP gives expected reward amount in mobile whereas we use bones
+        // assert expected value in bones
+        assert_eq!(sp1_reward_amount_in_bones, 500_000_000 * 1_000_000);
+
+        // confirm the unallocated service provider reward amounts
+        let unallocated_sp_reward_amount = (total_sp_rewards_in_bones
+            - Decimal::from(allocated_sp_rewards))
+        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
+        .to_u64()
+        .unwrap_or(0);
+        assert_eq!(unallocated_sp_reward_amount, 0);
     }
 }

@@ -165,8 +165,8 @@ impl FileSinkBuilder {
 
 #[derive(Debug, Clone)]
 pub struct FileSinkClient {
-    sender: MessageSender,
-    metric: &'static str,
+    pub sender: MessageSender,
+    pub metric: &'static str,
 }
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
@@ -536,7 +536,7 @@ impl FileSink {
     }
 }
 
-fn file_name(path_buf: &Path) -> Result<String> {
+pub fn file_name(path_buf: &Path) -> Result<String> {
     path_buf
         .file_name()
         .map(|os_str| os_str.to_string_lossy().to_string())
