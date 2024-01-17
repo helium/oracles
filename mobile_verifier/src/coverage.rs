@@ -684,10 +684,11 @@ impl CoverageObjectCache {
         let Some(coverage_meta) = coverage_meta else {
             return Ok(None);
         };
-        // Check if the hexes have already been inserted into the hex
+        // Check if the hexes have already been inserted into the cache:
         let coverage = if let Some(hexes) = self.hex_coverage.get(uuid).await {
             Some(hexes)
         } else {
+            // If they haven't, query them from the database:
             let hexes: Vec<i64> = sqlx::query_scalar("SELECT hex FROM hexes WHERE uuid = $1")
                 .bind(uuid)
                 .fetch_all(&self.pool)
@@ -706,8 +707,6 @@ impl CoverageObjectCache {
                 .await;
             self.hex_coverage.get(uuid).await
         };
-        // This is probably unnecessarily clever at the expense of clarity (and maybe lines) but I want
-        // everyone to know how clever I am.
         Ok(coverage.map(coverage_meta.into_constructor()))
     }
 }
