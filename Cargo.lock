@@ -1197,7 +1197,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#5e38bab06b06321c3c13f42a6bb2382bbeaf2998"
+source = "git+https://github.com/helium/proto?branch=master#e4b935efc2d6743d0506198d2208c49540762235"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1207,7 +1207,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3047,7 +3047,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#5e38bab06b06321c3c13f42a6bb2382bbeaf2998"
+source = "git+https://github.com/helium/proto?branch=master#e4b935efc2d6743d0506198d2208c49540762235"
 dependencies = [
  "bytes",
  "prost",
@@ -4166,6 +4166,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "backon",
  "base64 0.21.0",
  "chrono",
  "clap 4.4.8",
@@ -4198,6 +4199,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing",
  "tracing-subscriber",
@@ -8330,7 +8332,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",

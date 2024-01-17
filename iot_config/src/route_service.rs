@@ -381,7 +381,7 @@ impl iot_config::Route for RouteService {
         self.verify_stream_request_signature(&signer, &request)?;
 
         let since = Utc
-            .timestamp_millis_opt(request.since as i64)
+            .timestamp_opt(request.since as i64, 0)
             .single()
             .ok_or_else(|| Status::invalid_argument("unable to parse since timestamp"))?;
 

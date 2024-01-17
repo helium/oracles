@@ -22,6 +22,7 @@ pub struct HeartbeatDaemon<GIR> {
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
     modeled_coverage_start: DateTime<Utc>,
+    max_distance_to_asserted: u32,
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
 }
@@ -35,6 +36,7 @@ where
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<CbrsHeartbeatIngestReport>>,
         modeled_coverage_start: DateTime<Utc>,
+        max_distance_to_asserted: u32,
         heartbeat_sink: FileSinkClient,
         seniority_sink: FileSinkClient,
     ) -> Self {
@@ -43,6 +45,7 @@ where
             gateway_info_resolver,
             heartbeats,
             modeled_coverage_start,
+            max_distance_to_asserted,
             heartbeat_sink,
             seniority_sink,
         }
@@ -94,7 +97,7 @@ where
     async fn process_file(
         &self,
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
-        heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
+        heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
         coverage_objects: &CoverageObjects,
     ) -> anyhow::Result<()> {
@@ -102,21 +105,16 @@ where
         let mut transaction = self.pool.begin().await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
-        let heartbeat_cache_clone = heartbeat_cache.clone();
         let heartbeats = file
             .into_stream(&mut transaction)
             .await?
-            .map(Heartbeat::from)
-            .filter(move |h| {
-                let hb_cache = heartbeat_cache_clone.clone();
-                let id = h.id().unwrap();
-                async move { hb_cache.get(&id).await.is_none() }
-            });
+            .map(Heartbeat::from);
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
                 &self.gateway_info_resolver,
                 heartbeats,
                 coverage_objects,
+                self.max_distance_to_asserted,
                 &epoch,
             ),
             heartbeat_cache,

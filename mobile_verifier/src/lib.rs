@@ -1,15 +1,15 @@
 pub mod cell_type;
 pub mod cli;
 pub mod coverage;
-mod data_session;
+pub mod data_session;
 pub mod heartbeats;
 pub mod reward_shares;
 pub mod rewarder;
 mod settings;
 pub mod speedtests;
 pub mod speedtests_average;
-mod subscriber_location;
-mod telemetry;
+pub mod subscriber_location;
+pub mod telemetry;
 
 pub use settings::Settings;
 

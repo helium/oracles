@@ -63,6 +63,7 @@ impl Cmd {
                         "operation_mode": msg.report.operation_mode,
                         "location_validation_timestamp": msg.report.location_validation_timestamp,
                     });
+                    // print_json(&msg)?;
                     print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {
@@ -204,7 +205,6 @@ impl Cmd {
                     print_json(&json!({
                         "cbsd_id": heartbeat.cbsd_id,
                         "pub_key": PublicKey::try_from(heartbeat.pub_key)?,
-                        "reward_multiplier": heartbeat.reward_multiplier,
                         "timestamp": heartbeat.timestamp,
                         "cell_type": heartbeat.cell_type,
                         "validity": heartbeat.validity,
@@ -225,6 +225,14 @@ impl Cmd {
                         Some(Reward::SubscriberReward(reward)) => print_json(&json!({
                             "subscriber_id": reward.subscriber_id,
                             "discovery_location_amount": reward.discovery_location_amount,
+                        }))?,
+                        Some(Reward::ServiceProviderReward(reward)) => print_json(&json!({
+                            "service_provider": reward.service_provider_id,
+                            "amount": reward.amount,
+                        }))?,
+                        Some(Reward::UnallocatedReward(reward)) => print_json(&json!({
+                            "unallocated_reward_type": reward.reward_type,
+                            "amount": reward.amount,
                         }))?,
                         _ => (),
                     }
