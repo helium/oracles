@@ -138,7 +138,7 @@ pub struct CoverageObject {
 
 impl CoverageObject {
     /// Validate a coverage object
-    async fn validate(
+    pub async fn validate(
         coverage_object: file_store::coverage::CoverageObject,
         auth_client: &impl IsAuthorized,
     ) -> anyhow::Result<Self> {
