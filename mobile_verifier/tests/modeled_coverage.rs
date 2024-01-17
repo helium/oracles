@@ -1270,10 +1270,10 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     assert_eq!(validated_hb_1.location_trust_score_multiplier, dec!(1.0));
 
     let validated_hb_2 = ValidatedHeartbeat::validate(
-        hb_2,
+        hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
-        2000,
+        1000000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
     )
@@ -1281,6 +1281,32 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     .unwrap();
 
     assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+
+    let validated_hb_2 = ValidatedHeartbeat::validate(
+        hb_2.clone(),
+        &AllOwnersValid,
+        &coverage_object_cache,
+        2000,
+        1000000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+
+    let validated_hb_2 = ValidatedHeartbeat::validate(
+        hb_2.clone(),
+        &AllOwnersValid,
+        &coverage_object_cache,
+        1000000,
+        1000000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(1.0));
 
     Ok(())
 }
