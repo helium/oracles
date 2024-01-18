@@ -1,5 +1,6 @@
 CREATE TYPE solana_transaction AS (
        signature TEXT NOT NULL,
+       amount BIGINT NOT NULL,
        time_of_submission TIMESTAMPTZ NOT NULL
 );
 
