@@ -209,7 +209,7 @@ impl FileSinkClient {
                     Err(Error::channel())
                 }
                 Err(SendTimeoutError::Timeout(_)) => {
-                    tracing::error!("file_sink write failed due to send timeout");
+                    tracing::error!("file_sink write failed for {:?} due to send timeout", self.metric);
                     Err(Error::SendTimeout)
                 }
             },
@@ -222,7 +222,10 @@ impl FileSinkClient {
             .send(Message::Commit(on_commit_tx))
             .await
             .map_err(|e| {
-                tracing::error!("file_sink failed to commit with {e:?}");
+                tracing::error!(
+                    "file_sink failed to commit for {:?} with {e:?}",
+                    self.metric
+                );
                 Error::channel()
             })
             .map(|_| on_commit_rx)
@@ -234,7 +237,10 @@ impl FileSinkClient {
             .send(Message::Rollback(on_rollback_tx))
             .await
             .map_err(|e| {
-                tracing::error!("file_sink failed to rollback with {e:?}");
+                tracing::error!(
+                    "file_sink failed to rollback for {:?} with {e:?}",
+                    self.metric
+                );
                 Error::channel()
             })
             .map(|_| on_rollback_rx)

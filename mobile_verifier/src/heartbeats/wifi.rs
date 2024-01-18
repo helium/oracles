@@ -124,9 +124,19 @@ where
             &mut transaction,
         )
         .await?;
-        self.heartbeat_sink.commit().await?;
-        self.seniority_sink.commit().await?;
+        // Ensure that we have committed our work:
+        tokio::try_join!(self.commit_heartbeat_sink(), self.commit_seniority_sink())?;
         transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn commit_heartbeat_sink(&self) -> anyhow::Result<()> {
+        self.heartbeat_sink.commit().await?.await??;
+        Ok(())
+    }
+
+    async fn commit_seniority_sink(&self) -> anyhow::Result<()> {
+        self.seniority_sink.commit().await?.await??;
         Ok(())
     }
 }

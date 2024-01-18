@@ -124,7 +124,7 @@ impl CoverageDaemon {
             }
         }
 
-        self.file_sink.commit().await?;
+        self.file_sink.commit().await?.await??;
         transaction.commit().await?;
 
         Ok(())
