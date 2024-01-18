@@ -137,7 +137,7 @@ where
     }
 
     async fn commit_seniority_sink(&self) -> anyhow::Result<()> {
-        self.heartbeat_sink.commit().await?.await??;
+        self.seniority_sink.commit().await?.await??;
         Ok(())
     }
 }
