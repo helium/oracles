@@ -15,6 +15,7 @@ use std::{
     sync::Arc,
     time::{self, Instant},
 };
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 pub struct HeartbeatDaemon<GIR> {
@@ -56,46 +57,41 @@ where
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        tracing::info!("Starting CBRS HeartbeatDaemon");
+        let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+
+        let heartbeat_cache_clone = heartbeat_cache.clone();
         tokio::spawn(async move {
-            tracing::info!("Starting CBRS HeartbeatDaemon");
-            let heartbeat_cache = Arc::new(Cache::<(String, DateTime<Utc>), ()>::new());
+            heartbeat_cache_clone
+                .monitor(4, 0.25, time::Duration::from_secs(60 * 60 * 3))
+                .await
+        });
 
-            let heartbeat_cache_clone = heartbeat_cache.clone();
-            tokio::spawn(async move {
-                heartbeat_cache_clone
-                    .monitor(4, 0.25, time::Duration::from_secs(60 * 60 * 3))
-                    .await
-            });
+        let coverage_claim_time_cache = CoverageClaimTimeCache::new();
+        let coverage_object_cache = CoverageObjectCache::new(&self.pool);
 
-            let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-            let coverage_object_cache = CoverageObjectCache::new(&self.pool);
-
-            loop {
-                #[rustfmt::skip]
-                tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => {
-                        tracing::info!("CBRS HeartbeatDaemon shutting down");
-                        break;
-                    }
-                    Some(file) = self.heartbeats.recv() => {
-			let start = Instant::now();
-			self.process_file(
-                            file,
-                            &heartbeat_cache,
-                            &coverage_claim_time_cache,
-                            &coverage_object_cache,
-			).await?;
-			metrics::histogram!("cbrs_heartbeat_processing_time", start.elapsed());
-                    }
+        loop {
+            #[rustfmt::skip]
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => {
+                    tracing::info!("CBRS HeartbeatDaemon shutting down");
+                    break;
+                }
+                Some(file) = self.heartbeats.recv() => {
+		    let start = Instant::now();
+		    self.process_file(
+                        file,
+                        &heartbeat_cache,
+                        &coverage_claim_time_cache,
+                        &coverage_object_cache,
+		    ).await?;
+		    metrics::histogram!("cbrs_heartbeat_processing_time", start.elapsed());
                 }
             }
+        }
 
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
+        Ok(())
     }
 
     async fn process_file(
@@ -134,5 +130,22 @@ where
         self.seniority_sink.commit().await?;
         transaction.commit().await?;
         Ok(())
+    }
+}
+
+impl<GIR> ManagedTask for HeartbeatDaemon<GIR>
+where
+    GIR: GatewayResolver,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }

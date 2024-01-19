@@ -11,6 +11,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 
+use futures_util::TryFutureExt;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
     poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
@@ -23,6 +24,7 @@ use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
 use std::ops::Range;
+use task_manager::ManagedTask;
 use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
@@ -229,6 +231,23 @@ where
         self.reward_manifests.commit().await?;
         telemetry::last_rewarded_end_time(next_reward_period.start);
         Ok(())
+    }
+}
+
+impl<A> ManagedTask for Rewarder<A>
+where
+    A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 
