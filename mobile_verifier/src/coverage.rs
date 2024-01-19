@@ -28,6 +28,7 @@ use retainer::Cache;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, Pool, Postgres, QueryBuilder, Transaction, Type};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
@@ -80,27 +81,22 @@ impl CoverageDaemon {
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tokio::spawn(async move {
-            loop {
-                #[rustfmt::skip]
-                tokio::select! {
-                    _ = shutdown.clone() => {
-                        tracing::info!("CoverageDaemon shutting down");
-                        break;
-                    }
-                    Some(file) = self.coverage_objs.recv() => {
-			let start = Instant::now();
-			self.process_file(file).await?;
-			metrics::histogram!("coverage_object_processing_time", start.elapsed());
-                    }
+        loop {
+            #[rustfmt::skip]
+            tokio::select! {
+                _ = shutdown.clone() => {
+                    tracing::info!("CoverageDaemon shutting down");
+                    break;
+                }
+                Some(file) = self.coverage_objs.recv() => {
+		    let start = Instant::now();
+		    self.process_file(file).await?;
+		    metrics::histogram!("coverage_object_processing_time", start.elapsed());
                 }
             }
+        }
 
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
+        Ok(())
     }
 
     async fn process_file(
@@ -128,6 +124,20 @@ impl CoverageDaemon {
         transaction.commit().await?;
 
         Ok(())
+    }
+}
+
+impl ManagedTask for CoverageDaemon {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 

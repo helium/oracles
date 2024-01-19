@@ -8,6 +8,7 @@ use file_store::{
     },
 };
 use futures::{StreamExt, TryStreamExt};
+use futures_util::TryFutureExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{
@@ -18,6 +19,7 @@ use mobile_config::client::{
 };
 use sqlx::{PgPool, Postgres, Transaction};
 use std::{ops::Range, time::Instant};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 const SUBSCRIBER_REWARD_PERIOD_IN_DAYS: i64 = 1;
@@ -53,7 +55,7 @@ where
         }
     }
 
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> anyhow::Result<()> {
+    async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         loop {
             #[rustfmt::skip]
             tokio::select! {
@@ -153,6 +155,24 @@ where
             Ok(res) => res,
             Err(_err) => false,
         }
+    }
+}
+
+impl<AV, EV> ManagedTask for SubscriberLocationIngestor<AV, EV>
+where
+    AV: AuthorizationVerifier + Send + Sync + 'static,
+    EV: EntityVerifier + Send + Sync + 'static,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 
