@@ -314,7 +314,8 @@ async fn assert_route_received(
         action,
         data: Some(proto::route_stream_res_v1::Data::Route(streamed_route)),
         ..
-    }) = msg else {
+    }) = msg
+    else {
         panic!("message not correct format")
     };
 
@@ -335,7 +336,8 @@ async fn assert_eui_pair(
         action,
         data: Some(proto::route_stream_res_v1::Data::EuiPair(streamed_pair)),
         ..
-    }) = msg else {
+    }) = msg
+    else {
         panic!("message not correct format")
     };
 
@@ -358,7 +360,8 @@ async fn assert_devaddr_range(
         action,
         data: Some(proto::route_stream_res_v1::Data::DevaddrRange(range)),
         ..
-    }) = msg else {
+    }) = msg
+    else {
         panic!("message not in correct format")
     };
 
@@ -381,7 +384,8 @@ async fn assert_skf(
         action,
         data: Some(proto::route_stream_res_v1::Data::Skf(skf)),
         ..
-    }) = msg else {
+    }) = msg
+    else {
         panic!("message not in received")
     };
 
