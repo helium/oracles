@@ -308,12 +308,13 @@ async fn assert_route_received(
     expected_action: proto::ActionV1,
     expected_id: &str,
 ) {
+    let msg = receive(stream.next()).await;
+    dbg!(&msg);
     let Ok(proto::RouteStreamResV1 {
         action,
         data: Some(proto::route_stream_res_v1::Data::Route(streamed_route)),
         ..
-    }) = receive(stream.next()).await
-    else {
+    }) = msg else {
         panic!("message not correct format")
     };
 
@@ -328,12 +329,13 @@ async fn assert_eui_pair(
     expected_app_eui: u64,
     expected_dev_eui: u64,
 ) {
+    let msg = receive(stream.next()).await;
+    dbg!(&msg);
     let Ok(proto::RouteStreamResV1 {
         action,
         data: Some(proto::route_stream_res_v1::Data::EuiPair(streamed_pair)),
         ..
-    }) = receive(stream.next()).await
-    else {
+    }) = msg else {
         panic!("message not correct format")
     };
 
@@ -350,12 +352,13 @@ async fn assert_devaddr_range(
     expected_start: u32,
     expected_end: u32,
 ) {
+    let msg = receive(stream.next()).await;
+    dbg!(&msg);
     let Ok(proto::RouteStreamResV1 {
         action,
         data: Some(proto::route_stream_res_v1::Data::DevaddrRange(range)),
         ..
-    }) = receive(stream.next()).await
-    else {
+    }) = msg else {
         panic!("message not in correct format")
     };
 
@@ -372,12 +375,13 @@ async fn assert_skf(
     expected_devaddr: u32,
     expected_session_key: &str,
 ) {
+    let msg = receive(stream.next()).await;
+    dbg!(&msg);
     let Ok(proto::RouteStreamResV1 {
         action,
         data: Some(proto::route_stream_res_v1::Data::Skf(skf)),
         ..
-    }) = receive(stream.next()).await
-    else {
+    }) = msg else {
         panic!("message not in received")
     };
 
