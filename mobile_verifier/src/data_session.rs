@@ -9,9 +9,11 @@ use helium_proto::ServiceProvider;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::{collections::HashMap, ops::Range, time::Instant};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 pub struct DataSessionIngestor {
+    pub receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
     pub pool: PgPool,
 }
 
@@ -30,15 +32,14 @@ pub struct ServiceProviderDataSession {
 pub type HotspotMap = HashMap<PublicKeyBinary, HotspotReward>;
 
 impl DataSessionIngestor {
-    pub fn new(pool: sqlx::Pool<sqlx::Postgres>) -> Self {
-        Self { pool }
+    pub fn new(
+        pool: sqlx::Pool<sqlx::Postgres>,
+        receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
+    ) -> Self {
+        Self { pool, receiver }
     }
 
-    pub async fn run(
-        self,
-        mut receiver: Receiver<FileInfoStream<ValidDataTransferSession>>,
-        shutdown: triggered::Listener,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
         tracing::info!("starting DataSessionIngestor");
         tokio::spawn(async move {
             loop {
@@ -49,7 +50,7 @@ impl DataSessionIngestor {
                         tracing::info!("DataSessionIngestor shutting down");
                         break;
                     }
-                    Some(file) = receiver.recv() => {
+                    Some(file) = self.receiver.recv() => {
 			let start = Instant::now();
 			self.process_file(file).await?;
 			metrics::histogram!(
@@ -91,6 +92,20 @@ impl DataSessionIngestor {
             .commit()
             .await?;
         Ok(())
+    }
+}
+
+impl ManagedTask for DataSessionIngestor {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 

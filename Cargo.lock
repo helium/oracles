@@ -4196,6 +4196,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.6",
  "sqlx",
+ "task-manager",
  "thiserror",
  "tokio",
  "tokio-stream",

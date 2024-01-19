@@ -5,7 +5,7 @@ use crate::{
     speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
     Settings,
 };
-use anyhow::{Error, Result};
+use anyhow::Result;
 use chrono::Duration;
 use file_store::{
     coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
@@ -14,12 +14,11 @@ use file_store::{
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
 };
-use futures_util::TryFutureExt;
 use mobile_config::client::{
     entity_client::EntityClient, AuthorizationClient, CarrierServiceClient, GatewayClient,
 };
 use price::PriceTracker;
-use tokio::signal;
+use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -27,15 +26,6 @@ pub struct Cmd {}
 impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
-
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
 
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
@@ -58,8 +48,7 @@ impl Cmd {
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
 
         // price tracker
-        let (price_tracker, tracker_process) =
-            PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
+        let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
         // CBRS Heartbeats
         let (cbrs_heartbeats, cbrs_heartbeats_server) =
@@ -70,9 +59,6 @@ impl Cmd {
                 .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
                 .queue_size(1)
                 .create()?;
-        let cbrs_heartbeats_join_handle = cbrs_heartbeats_server
-            .start(shutdown_listener.clone())
-            .await?;
 
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) =
@@ -82,9 +68,6 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::WifiHeartbeatIngestReport.to_string())
                 .create()?;
-        let wifi_heartbeats_join_handle = wifi_heartbeats_server
-            .start(shutdown_listener.clone())
-            .await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
@@ -137,7 +120,6 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CellSpeedtestIngestReport.to_string())
                 .create()?;
-        let speedtests_join_handle = speedtests_server.start(shutdown_listener.clone()).await?;
 
         let (speedtests_avg, speedtests_avg_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
@@ -177,9 +159,6 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CoverageObjectIngestReport.to_string())
                 .create()?;
-        let coverage_objs_join_handle = coverage_objs_server
-            .start(shutdown_listener.clone())
-            .await?;
 
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
@@ -239,9 +218,6 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::SubscriberLocationIngestReport.to_string())
                 .create()?;
-        let subscriber_location_ingest_join_handle = subscriber_location_ingest_server
-            .start(shutdown_listener.clone())
-            .await?;
 
         let (verified_subscriber_location, verified_subscriber_location_server) =
             file_sink::FileSinkBuilder::new(
@@ -270,62 +246,34 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::ValidDataTransferSession.to_string())
                 .create()?;
-        let data_session_ingest_join_handle = data_session_ingest_server
-            .start(shutdown_listener.clone())
-            .await?;
 
-        let data_session_ingestor = DataSessionIngestor::new(pool.clone());
+        let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
 
-        tokio::try_join!(
-            valid_heartbeats_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            speedtests_avg_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            speedtests_validity_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            valid_coverage_objs_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            seniority_updates_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            mobile_rewards_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            file_upload
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            reward_manifests_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            verified_subscriber_location_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            subscriber_location_ingestor
-                .run(&shutdown_listener)
-                .map_err(Error::from),
-            data_session_ingestor
-                .run(data_session_ingest, shutdown_listener.clone())
-                .map_err(Error::from),
-            tracker_process.map_err(Error::from),
-            cbrs_heartbeats_join_handle.map_err(Error::from),
-            wifi_heartbeats_join_handle.map_err(Error::from),
-            speedtests_join_handle.map_err(Error::from),
-            coverage_objs_join_handle.map_err(Error::from),
-            cbrs_heartbeat_daemon.run(shutdown_listener.clone()),
-            wifi_heartbeat_daemon.run(shutdown_listener.clone()),
-            speedtest_daemon.run(shutdown_listener.clone()),
-            coverage_daemon.run(shutdown_listener.clone()),
-            rewarder.run(shutdown_listener.clone()),
-            subscriber_location_ingest_join_handle.map_err(anyhow::Error::from),
-            data_session_ingest_join_handle.map_err(anyhow::Error::from),
-        )?;
-
-        tracing::info!("Shutting down verifier server");
-
-        Ok(())
+        TaskManager::builder()
+            .add_task(file_upload)
+            .add_task(cbrs_heartbeats_server)
+            .add_task(wifi_heartbeats_server)
+            .add_task(valid_heartbeats_server)
+            .add_task(speedtests_avg_server)
+            .add_task(speedtests_validity_server)
+            .add_task(valid_coverage_objs_server)
+            .add_task(seniority_updates_server)
+            .add_task(mobile_rewards_server)
+            .add_task(reward_manifests_server)
+            .add_task(verified_subscriber_location_server)
+            .add_task(subscriber_location_ingestor)
+            .add_task(data_session_ingest_server)
+            .add_task(price_daemon)
+            .add_task(cbrs_heartbeat_daemon)
+            .add_task(wifi_heartbeat_daemon)
+            .add_task(speedtests_server)
+            .add_task(coverage_objs_server)
+            .add_task(speedtest_daemon)
+            .add_task(coverage_daemon)
+            .add_task(rewarder)
+            .add_task(subscriber_location_ingest_server)
+            .add_task(data_session_ingestor)
+            .start()
+            .await
     }
 }

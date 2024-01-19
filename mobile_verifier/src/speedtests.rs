@@ -17,6 +17,7 @@ use helium_proto::services::poc_mobile::{
 use mobile_config::client::gateway_client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
 use std::{collections::HashMap, time::Instant};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -160,6 +161,18 @@ where
             .write(proto, &[("result", result.as_str_name())])
             .await?;
         Ok(())
+    }
+}
+
+impl<GIR> ManagedTask for SpeedtestDaemon<GIR>
+where
+    GIR: GatewayInfoResolver,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
     }
 }
 

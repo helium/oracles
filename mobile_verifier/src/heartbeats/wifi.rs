@@ -14,6 +14,7 @@ use std::{
     sync::Arc,
     time::{self, Instant},
 };
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 pub struct HeartbeatDaemon<GIR> {
@@ -128,5 +129,22 @@ where
         self.seniority_sink.commit().await?;
         transaction.commit().await?;
         Ok(())
+    }
+}
+
+impl<GIR> ManagedTask for HeartbeatDaemon<GIR>
+where
+    GIR: GatewayResolver,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }

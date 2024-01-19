@@ -28,6 +28,7 @@ use retainer::Cache;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, Pool, Postgres, QueryBuilder, Transaction, Type};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
@@ -128,6 +129,15 @@ impl CoverageDaemon {
         transaction.commit().await?;
 
         Ok(())
+    }
+}
+
+impl ManagedTask for CoverageDaemon {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
     }
 }
 
