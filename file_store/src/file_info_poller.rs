@@ -1,7 +1,7 @@
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, Result};
 use chrono::{DateTime, Duration, Utc};
 use derive_builder::Builder;
-use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
+use futures::{future::LocalBoxFuture, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc};
@@ -34,30 +34,27 @@ pub trait FileInfoPollerStateRecorder {
     async fn record(self, process_name: &str, file_info: &FileInfo) -> Result;
 }
 
-pub struct FileInfoStream<T> {
+pub struct FileInfoData<T> {
     pub file_info: FileInfo,
     process_name: String,
-    stream: BoxStream<'static, T>,
+    data: Vec<T>,
 }
 
-impl<T> FileInfoStream<T>
+impl<T> FileInfoData<T>
 where
     T: Send,
 {
-    pub fn new(process_name: String, file_info: FileInfo, stream: BoxStream<'static, T>) -> Self {
+    pub fn new(process_name: String, file_info: FileInfo, data: Vec<T>) -> Self {
         Self {
             file_info,
             process_name,
-            stream,
+            data,
         }
     }
 
-    pub async fn into_stream(
-        self,
-        recorder: impl FileInfoPollerStateRecorder,
-    ) -> Result<BoxStream<'static, T>> {
+    pub async fn into_data(self, recorder: impl FileInfoPollerStateRecorder) -> Result<Vec<T>> {
         recorder.record(&self.process_name, &self.file_info).await?;
-        Ok(self.stream)
+        Ok(self.data)
     }
 }
 
@@ -89,19 +86,19 @@ pub struct FileInfoPollerConfig<T, S> {
 #[derive(Clone)]
 pub struct FileInfoPollerServer<T, S> {
     config: FileInfoPollerConfig<T, S>,
-    sender: Sender<FileInfoStream<T>>,
+    sender: Sender<FileInfoData<T>>,
     file_queue: VecDeque<FileInfo>,
     latest_file_timestamp: Option<DateTime<Utc>>,
     cache: MemoryFileCache,
 }
 
-type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
+type FileInfoDataReceiver<T> = Receiver<FileInfoData<T>>;
 impl<T, S> FileInfoPollerConfigBuilder<T, S>
 where
     T: Clone,
     S: FileInfoPollerState,
 {
-    pub async fn create(self) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S>)> {
+    pub async fn create(self) -> Result<(FileInfoDataReceiver<T>, FileInfoPollerServer<T, S>)> {
         let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         let latest_file_timestamp = config
@@ -160,31 +157,34 @@ where
         })
     }
 
-    async fn get_next_file(&mut self) -> Result<Option<FileInfo>> {
-        match self.file_queue.pop_front() {
-            Some(file_info) => Ok(Some(file_info)),
-            None => {
-                let after = self.after(self.latest_file_timestamp);
-                let before = Utc::now();
-                let files = self
-                    .config
-                    .store
-                    .list_all(&self.config.prefix, after, before)
-                    .await?;
+    async fn get_next_file(&mut self) -> Result<FileInfo> {
+        loop {
+            if let Some(file_info) = self.file_queue.pop_front() {
+                return Ok(file_info);
+            }
 
-                for file in files {
-                    if !self.is_already_processed(&file).await? {
-                        self.latest_file_timestamp = Some(file.timestamp);
-                        self.file_queue.push_back(file);
-                    }
+            let after = self.after(self.latest_file_timestamp);
+            let before = Utc::now();
+            let files = self
+                .config
+                .store
+                .list_all(&self.config.prefix, after, before)
+                .await?;
+
+            for file in files {
+                if !self.is_already_processed(&file).await? {
+                    self.latest_file_timestamp = Some(file.timestamp);
+                    self.file_queue.push_back(file);
                 }
-                Ok(self.file_queue.pop_front())
+            }
+
+            if self.file_queue.len() == 0 {
+                tokio::time::sleep(self.poll_duration()).await;
             }
         }
     }
 
     async fn run(mut self, shutdown: triggered::Listener) -> Result {
-        let mut poll_trigger = tokio::time::interval(self.poll_duration());
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
         let process_name = self.config.process_name.clone();
 
@@ -193,8 +193,8 @@ where
             %process_name,
             "starting FileInfoPoller",
         );
-        let sender = self.sender.clone();
 
+        let sender = self.sender.clone();
         loop {
             tokio::select! {
                 biased;
@@ -203,31 +203,12 @@ where
                     break;
                 }
                 _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
-                result = sender.reserve(), if sender.capacity() == 0 => {
-                    let permit = result?;
-                    match self.get_next_file().await? {
-                        None => (),
-                        Some(file) => {
-                            let stream = create_stream(&self.config.store, process_name.clone(), file.clone()).await?;
-                            permit.send(stream);
-                            cache_file(&self.cache, &file).await;
-                        }
-                    }
-                }
-                _ = poll_trigger.tick(), if sender.capacity() > 0 => {
-                    for _ in 0..sender.capacity() {
-                        match self.get_next_file().await? {
-                            None => {
-                                break;
-                            }
-                            Some(file) => {
-                                let stream = create_stream(&self.config.store, process_name.clone(), file.clone()).await?;
-                                //TODO fix this
-                                let _ = self.sender.send(stream).await;
-                                cache_file(&self.cache, &file).await;
-                            }
-                        }
-                    }
+                result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
+                    let (permit, file) = result?;
+                    println!("parsing file {}", file.key);
+                    let data = parse_file(&self.config.store, process_name.clone(), file.clone()).await?;
+                    permit.send(data);
+                    cache_file(&self.cache, &file).await;
                 }
             }
         }
@@ -273,16 +254,15 @@ where
     }
 }
 
-async fn create_stream<T>(
-    // sender: &Sender<FileInfoStream<T>>,
+async fn parse_file<T>(
     store: &FileStore,
     process_name: String,
     file: FileInfo,
-) -> Result<FileInfoStream<T>>
+) -> Result<FileInfoData<T>>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
-    let stream = store
+    let stream: Vec<T> = store
         .stream_file(file.clone())
         .await?
         .filter_map(|msg| async {
@@ -306,14 +286,10 @@ where
                 })
                 .ok()
         })
-        .boxed();
+        .collect()
+        .await;
 
-    Ok(FileInfoStream::new(process_name, file, stream))
-    // match sender.try_send(incoming_data_stream) {
-    //     Ok(_) => Ok(true),
-    //     Err(TrySendError::Full(_)) => Ok(false),
-    //     Err(TrySendError::Closed(_)) => Err(Error::channel()),
-    // }
+    Ok(FileInfoData::new(process_name, file, stream))
 }
 
 fn create_cache() -> MemoryFileCache {
