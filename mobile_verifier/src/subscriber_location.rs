@@ -8,6 +8,7 @@ use file_store::{
     },
 };
 use futures::{StreamExt, TryStreamExt};
+use futures_util::TryFutureExt;
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{
@@ -159,14 +160,19 @@ where
 
 impl<AV, EV> ManagedTask for SubscriberLocationIngestor<AV, EV>
 where
-    AV: AuthorizationVerifier + 'static,
-    EV: EntityVerifier + 'static,
+    AV: AuthorizationVerifier + Send + Sync + 'static,
+    EV: EntityVerifier + Send + Sync + 'static,
 {
     fn start_task(
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 
