@@ -231,6 +231,78 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
     .await;
 }
 
+#[sqlx::test]
+async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
+    let signing_keypair = Arc::new(generate_keypair());
+    let admin_keypair = generate_keypair();
+    let client_keypair = generate_keypair();
+
+    let port = get_port();
+
+    let auth_cache = create_auth_cache(
+        admin_keypair.public_key().clone(),
+        client_keypair.public_key().clone(),
+        &pool,
+    )
+    .await;
+
+    let _handle = start_server(port, signing_keypair, auth_cache, pool.clone()).await;
+    let mut client = connect_client(port).await;
+
+    let org_res_v1 = create_org(port, &admin_keypair).await;
+
+    let proto::OrgResV1 { org: Some(org), .. } = org_res_v1 else {
+        panic!("invalid OrgResV1")
+    };
+
+    let response = client
+        .stream(route_stream_req_v1(&client_keypair, 0))
+        .await
+        .expect("stream request");
+    let mut response_stream = response.into_inner();
+
+    let route = create_route(&mut client, &org, &admin_keypair).await;
+
+    create_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
+
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    delete_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
+
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    create_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
+
+    assert_route_received(&mut response_stream, proto::ActionV1::Add, &route.id).await;
+
+    assert_eui_pair(
+        &mut response_stream,
+        proto::ActionV1::Add,
+        &route.id,
+        200,
+        201,
+    )
+    .await;
+
+    assert_eui_pair(
+        &mut response_stream,
+        proto::ActionV1::Remove,
+        &route.id,
+        200,
+        201,
+    )
+    .await;
+
+    assert_eui_pair(
+        &mut response_stream,
+        proto::ActionV1::Add,
+        &route.id,
+        200,
+        201,
+    )
+    .await;
+}
+
 async fn assert_route_received(
     stream: &mut Streaming<proto::RouteStreamResV1>,
     expected_action: proto::ActionV1,
@@ -508,6 +580,41 @@ async fn create_euis(
 
     let Ok(_) = client.update_euis(futures::stream::iter(requests)).await else {
         panic!("unable to create eui pairs")
+    };
+}
+
+async fn delete_euis(
+    client: &mut RouteClient<Channel>,
+    route: &proto::RouteV1,
+    pairs: Vec<(u64, u64)>,
+    signing_keypair: &Keypair,
+) {
+    let requests = pairs
+        .into_iter()
+        .map(|(a, b)| proto::EuiPairV1 {
+            route_id: route.id.clone(),
+            app_eui: a,
+            dev_eui: b,
+        })
+        .map(|pair| {
+            let mut request = proto::RouteUpdateEuisReqV1 {
+                action: proto::ActionV1::Remove as i32,
+                eui_pair: Some(pair),
+                timestamp: Utc::now().timestamp() as u64,
+                signature: vec![],
+                signer: signing_keypair.public_key().into(),
+            };
+
+            request.signature = signing_keypair
+                .sign(&request.encode_to_vec())
+                .expect("sign");
+
+            request
+        })
+        .collect::<Vec<_>>();
+
+    let Ok(_) = client.update_euis(futures::stream::iter(requests)).await else {
+        panic!("unable to delete eui pairs")
     };
 }
 
