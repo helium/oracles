@@ -73,28 +73,23 @@ where
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tokio::spawn(async move {
-            loop {
-                #[rustfmt::skip]
-                tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => {
-                        tracing::info!("SpeedtestDaemon shutting down");
-                        break;
-                    }
-                    Some(file) = self.speedtests.recv() => {
-			let start = Instant::now();
-			self.process_file(file).await?;
-			metrics::histogram!("speedtest_processing_time", start.elapsed());
-                    }
+        loop {
+            #[rustfmt::skip]
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => {
+                    tracing::info!("SpeedtestDaemon shutting down");
+                    break;
+                }
+                Some(file) = self.speedtests.recv() => {
+		    let start = Instant::now();
+		    self.process_file(file).await?;
+		    metrics::histogram!("speedtest_processing_time", start.elapsed());
                 }
             }
+        }
 
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
+        Ok(())
     }
 
     async fn process_file(
@@ -172,7 +167,12 @@ where
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        Box::pin(self.run(shutdown))
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 

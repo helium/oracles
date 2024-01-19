@@ -32,9 +32,8 @@ impl Cmd {
 
         telemetry::initialize(&pool).await?;
 
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
@@ -74,7 +73,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -86,7 +85,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_seniority_update"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -126,7 +125,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -137,7 +136,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -165,7 +164,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -185,7 +184,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -195,7 +194,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -225,7 +224,7 @@ impl Cmd {
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_location"),
             )
-            .deposits(Some(file_upload_tx.clone()))
+            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;
@@ -250,7 +249,7 @@ impl Cmd {
         let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
 
         TaskManager::builder()
-            .add_task(file_upload)
+            .add_task(file_upload_server)
             .add_task(cbrs_heartbeats_server)
             .add_task(wifi_heartbeats_server)
             .add_task(valid_heartbeats_server)
