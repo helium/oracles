@@ -52,12 +52,12 @@ where
         }
     }
 
-    pub async fn into_stream<'a>(
+    pub async fn into_stream(
         self,
         recorder: impl FileInfoPollerStateRecorder,
-    ) -> Result<BoxStream<'a, T>>
+    ) -> Result<BoxStream<'static, T>>
     where
-        T: 'a,
+        T: 'static,
     {
         recorder.record(&self.process_name, &self.file_info).await?;
         Ok(futures::stream::iter(self.data.into_iter()).boxed())
