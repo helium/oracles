@@ -28,7 +28,8 @@ use helium_proto::{
         },
         router::PacketRouterPacketReportV1,
     },
-    BlockchainTxn, Message, PriceReportV1, RewardManifest, SubnetworkRewards,
+    BlockchainTxn, BoostedHexUpdateV1 as BoostedHexUpdateProto, Message, PriceReportV1,
+    RewardManifest, SubnetworkRewards,
 };
 use serde_json::json;
 use std::io;
@@ -51,6 +52,21 @@ impl Cmd {
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
+                FileType::BoostedHexUpdate => {
+                    let dec_msg = BoostedHexUpdateProto::decode(msg)?;
+                    let update = dec_msg.update.unwrap();
+                    let json = json!({
+                        "last_update": dec_msg.timestamp,
+                        "location":  update.location,
+                        "start_ts":  update.start_ts,
+                        "end_ts":  update.end_ts,
+                        "period_length":  update.period_length,
+                        "multipliers":  update.multipliers,
+                        "boosted_hex_pubkey":  update.boosted_hex_pubkey,
+                        "boost_config_pubkey":  update.boost_config_pubkey,
+                    });
+                    print_json(&json)?;
+                }
                 FileType::CbrsHeartbeat => {
                     let dec_msg = CellHeartbeatReqV1::decode(msg)?;
                     wtr.serialize(CbrsHeartbeat::try_from(dec_msg)?)?;
@@ -221,6 +237,7 @@ impl Cmd {
                             "hotspot_key":  PublicKey::try_from(reward.hotspot_key)?,
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
+                            "boosted_hexes": reward.boosted_hexes,
                         }))?,
                         Some(Reward::SubscriberReward(reward)) => print_json(&json!({
                             "subscriber_id": reward.subscriber_id,

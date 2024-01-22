@@ -131,6 +131,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-attribute-access-control"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "faa5be5b72abea167f87c868379ba3c2be356bfca9e6f474fd055fa0f7eeb4f2"
+dependencies = [
+ "anchor-syn 0.28.0",
+ "anyhow",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "regex",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "anchor-attribute-account"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -139,6 +153,21 @@ dependencies = [
  "anchor-syn 0.26.0",
  "anyhow",
  "bs58 0.4.0",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "rustversion",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "anchor-attribute-account"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f468970344c7c9f9d03b4da854fd7c54f21305059f53789d0045c1dd803f0018"
+dependencies = [
+ "anchor-syn 0.28.0",
+ "anyhow",
+ "bs58 0.5.0",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
  "rustversion",
@@ -157,6 +186,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-attribute-constant"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59948e7f9ef8144c2aefb3f32a40c5fce2798baeec765ba038389e82301017ef"
+dependencies = [
+ "anchor-syn 0.28.0",
+ "proc-macro2 1.0.69",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "anchor-attribute-error"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -169,12 +209,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-attribute-error"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc753c9d1c7981cb8948cf7e162fb0f64558999c0413058e2d43df1df5448086"
+dependencies = [
+ "anchor-syn 0.28.0",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "anchor-attribute-event"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d401f11efb3644285685f8339829a9786d43ed7490bb1699f33c478d04d5a582"
 dependencies = [
  "anchor-syn 0.26.0",
+ "anyhow",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "anchor-attribute-event"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f38b4e172ba1b52078f53fdc9f11e3dc0668ad27997838a0aad2d148afac8c97"
+dependencies = [
+ "anchor-syn 0.28.0",
  "anyhow",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
@@ -209,6 +274,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-attribute-program"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4eebd21543606ab61e2d83d9da37d24d3886a49f390f9c43a1964735e8c0f0d5"
+dependencies = [
+ "anchor-syn 0.28.0",
+ "anyhow",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "anchor-attribute-state"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -227,7 +305,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "582dd4960f08a340a91ebe3cac5431338cfd2d2ccfa6520dcc8f2036a86f5125"
 dependencies = [
- "anchor-lang",
+ "anchor-lang 0.26.0",
  "anyhow",
  "regex",
  "serde",
@@ -246,6 +324,30 @@ checksum = "340beef6809d1c3fcc7ae219153d981e95a8a277ff31985bd7050e32645dc9a8"
 dependencies = [
  "anchor-syn 0.26.0",
  "anyhow",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "anchor-derive-accounts"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec4720d899b3686396cced9508f23dab420f1308344456ec78ef76f98fda42af"
+dependencies = [
+ "anchor-syn 0.28.0",
+ "anyhow",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "anchor-derive-space"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f495e85480bd96ddeb77b71d499247c7d4e8b501e75ecb234e9ef7ae7bd6552a"
+dependencies = [
  "proc-macro2 1.0.69",
  "quote 1.0.33",
  "syn 1.0.109",
@@ -303,15 +405,15 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "662ceafe667448ee4199a4be2ee83b6bb76da28566eee5cea05f96ab38255af8"
 dependencies = [
- "anchor-attribute-access-control",
- "anchor-attribute-account",
- "anchor-attribute-constant",
- "anchor-attribute-error",
- "anchor-attribute-event",
+ "anchor-attribute-access-control 0.26.0",
+ "anchor-attribute-account 0.26.0",
+ "anchor-attribute-constant 0.26.0",
+ "anchor-attribute-error 0.26.0",
+ "anchor-attribute-event 0.26.0",
  "anchor-attribute-interface",
- "anchor-attribute-program",
+ "anchor-attribute-program 0.26.0",
  "anchor-attribute-state",
- "anchor-derive-accounts",
+ "anchor-derive-accounts 0.26.0",
  "arrayref",
  "base64 0.13.1",
  "bincode",
@@ -319,6 +421,43 @@ dependencies = [
  "bytemuck",
  "solana-program",
  "thiserror",
+]
+
+[[package]]
+name = "anchor-lang"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d2d4b20100f1310a774aba3471ef268e5c4ba4d5c28c0bbe663c2658acbc414"
+dependencies = [
+ "anchor-attribute-access-control 0.28.0",
+ "anchor-attribute-account 0.28.0",
+ "anchor-attribute-constant 0.28.0",
+ "anchor-attribute-error 0.28.0",
+ "anchor-attribute-event 0.28.0",
+ "anchor-attribute-program 0.28.0",
+ "anchor-derive-accounts 0.28.0",
+ "anchor-derive-space",
+ "arrayref",
+ "base64 0.13.1",
+ "bincode",
+ "borsh",
+ "bytemuck",
+ "getrandom 0.2.10",
+ "solana-program",
+ "thiserror",
+]
+
+[[package]]
+name = "anchor-spl"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78f860599da1c2354e7234c768783049eb42e2f54509ecfc942d2e0076a2da7b"
+dependencies = [
+ "anchor-lang 0.28.0",
+ "solana-program",
+ "spl-associated-token-account",
+ "spl-token",
+ "spl-token-2022 0.6.1",
 ]
 
 [[package]]
@@ -355,6 +494,24 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.9.9",
+ "syn 1.0.109",
+ "thiserror",
+]
+
+[[package]]
+name = "anchor-syn"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a125e4b0cc046cfec58f5aa25038e34cf440151d58f0db3afc55308251fe936d"
+dependencies = [
+ "anyhow",
+ "bs58 0.5.0",
+ "heck 0.3.3",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "serde",
+ "serde_json",
+ "sha2 0.10.6",
  "syn 1.0.109",
  "thiserror",
 ]
@@ -520,19 +677,6 @@ checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
 
 [[package]]
 name = "async-compression"
-version = "0.3.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942c7cd7ae39e91bde4820d74132e9862e62c2f386c3aa90ccf55949f5bad63a"
-dependencies = [
- "flate2",
- "futures-core",
- "memchr",
- "pin-project-lite",
- "tokio",
-]
-
-[[package]]
-name = "async-compression"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc2d0cfb2a7388d34f590e76686704c494ed7aaceed62ee1ba35cbf363abc2a5"
@@ -666,8 +810,8 @@ dependencies = [
  "aws-types 0.51.0",
  "bytes",
  "hex",
- "http",
- "hyper",
+ "http 0.2.11",
+ "hyper 0.14.23",
  "ring 0.16.20",
  "time",
  "tokio",
@@ -698,7 +842,7 @@ dependencies = [
  "aws-smithy-http 0.51.0",
  "aws-smithy-types 0.51.0",
  "aws-types 0.51.0",
- "http",
+ "http 0.2.11",
  "regex",
  "tracing",
 ]
@@ -713,8 +857,8 @@ dependencies = [
  "aws-smithy-types 0.51.0",
  "aws-types 0.51.0",
  "bytes",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "lazy_static",
  "percent-encoding",
  "pin-project-lite",
@@ -742,8 +886,8 @@ dependencies = [
  "aws-types 0.51.0",
  "bytes",
  "bytes-utils",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "tokio-stream",
  "tower",
  "tracing",
@@ -766,7 +910,7 @@ dependencies = [
  "aws-smithy-types 0.51.0",
  "aws-types 0.51.0",
  "bytes",
- "http",
+ "http 0.2.11",
  "tokio-stream",
  "tower",
 ]
@@ -789,7 +933,7 @@ dependencies = [
  "aws-smithy-xml",
  "aws-types 0.51.0",
  "bytes",
- "http",
+ "http 0.2.11",
  "tower",
 ]
 
@@ -803,7 +947,7 @@ dependencies = [
  "aws-smithy-eventstream",
  "aws-smithy-http 0.51.0",
  "aws-types 0.51.0",
- "http",
+ "http 0.2.11",
  "tracing",
 ]
 
@@ -817,7 +961,7 @@ dependencies = [
  "aws-sigv4 0.54.1",
  "aws-smithy-http 0.54.4",
  "aws-types 0.54.1",
- "http",
+ "http 0.2.11",
  "tracing",
 ]
 
@@ -832,7 +976,7 @@ dependencies = [
  "bytes",
  "form_urlencoded",
  "hex",
- "http",
+ "http 0.2.11",
  "once_cell",
  "percent-encoding",
  "regex",
@@ -851,7 +995,7 @@ dependencies = [
  "form_urlencoded",
  "hex",
  "hmac 0.12.1",
- "http",
+ "http 0.2.11",
  "once_cell",
  "percent-encoding",
  "regex",
@@ -896,8 +1040,8 @@ dependencies = [
  "crc32c",
  "crc32fast",
  "hex",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "md-5",
  "pin-project-lite",
  "sha1",
@@ -917,9 +1061,9 @@ dependencies = [
  "aws-smithy-types 0.51.0",
  "bytes",
  "fastrand",
- "http",
- "http-body",
- "hyper",
+ "http 0.2.11",
+ "http-body 0.4.5",
+ "hyper 0.14.23",
  "hyper-rustls 0.23.1",
  "lazy_static",
  "pin-project-lite",
@@ -940,8 +1084,8 @@ dependencies = [
  "aws-smithy-types 0.54.4",
  "bytes",
  "fastrand",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "pin-project-lite",
  "tokio",
  "tower",
@@ -970,9 +1114,9 @@ dependencies = [
  "bytes",
  "bytes-utils",
  "futures-core",
- "http",
- "http-body",
- "hyper",
+ "http 0.2.11",
+ "http-body 0.4.5",
+ "hyper 0.14.23",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
@@ -992,9 +1136,9 @@ dependencies = [
  "bytes",
  "bytes-utils",
  "futures-core",
- "http",
- "http-body",
- "hyper",
+ "http 0.2.11",
+ "http-body 0.4.5",
+ "hyper 0.14.23",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
@@ -1010,8 +1154,8 @@ checksum = "20c96d7bd35e7cf96aca1134b2f81b1b59ffe493f7c6539c051791cbbf7a42d3"
 dependencies = [
  "aws-smithy-http 0.51.0",
  "bytes",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "pin-project-lite",
  "tower",
  "tracing",
@@ -1026,8 +1170,8 @@ dependencies = [
  "aws-smithy-http 0.54.4",
  "aws-smithy-types 0.54.4",
  "bytes",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "pin-project-lite",
  "tower",
  "tracing",
@@ -1096,7 +1240,7 @@ dependencies = [
  "aws-smithy-client 0.51.0",
  "aws-smithy-http 0.51.0",
  "aws-smithy-types 0.51.0",
- "http",
+ "http 0.2.11",
  "rustc_version 0.4.0",
  "tracing",
  "zeroize",
@@ -1113,7 +1257,7 @@ dependencies = [
  "aws-smithy-client 0.54.4",
  "aws-smithy-http 0.54.4",
  "aws-smithy-types 0.54.4",
- "http",
+ "http 0.2.11",
  "rustc_version 0.4.0",
  "tracing",
 ]
@@ -1125,13 +1269,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "678c5130a507ae3a7c797f9a17393c14849300b8440eac47cdb90a5bdcb3a543"
 dependencies = [
  "async-trait",
- "axum-core",
+ "axum-core 0.3.2",
  "bitflags",
  "bytes",
  "futures-util",
- "http",
- "http-body",
- "hyper",
+ "http 0.2.11",
+ "http-body 0.4.5",
+ "hyper 0.14.23",
  "itoa 1.0.9",
  "matchit",
  "memchr",
@@ -1148,6 +1292,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1236b4b292f6c4d6dc34604bb5120d85c3fe1d1aa596bd5cc52ca054d13e7b9e"
+dependencies = [
+ "async-trait",
+ "axum-core 0.4.3",
+ "bytes",
+ "futures-util",
+ "http 1.0.0",
+ "http-body 1.0.0",
+ "http-body-util",
+ "hyper 1.1.0",
+ "hyper-util",
+ "itoa 1.0.9",
+ "matchit",
+ "memchr",
+ "mime",
+ "percent-encoding",
+ "pin-project-lite",
+ "rustversion",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_urlencoded",
+ "sync_wrapper",
+ "tokio",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "axum-core"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1156,12 +1334,33 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures-util",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "mime",
  "rustversion",
  "tower-layer",
  "tower-service",
+]
+
+[[package]]
+name = "axum-core"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a15c63fd72d41492dc4f497196f5da1fb04fb7529e631d73630d1b491e47a2e3"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures-util",
+ "http 1.0.0",
+ "http-body 1.0.0",
+ "http-body-util",
+ "mime",
+ "pin-project-lite",
+ "rustversion",
+ "sync_wrapper",
+ "tower-layer",
+ "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -1249,7 +1448,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#1cda75ccc8d8cf8a069ca95cbba6d43593e39869"
+source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#fb07b06d55aa9bcba6facf0307a218ab63b5d6cd"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1259,7 +1458,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -1368,6 +1567,54 @@ name = "block-padding"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
+
+[[package]]
+name = "boost-manager"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang 0.28.0",
+ "anchor-spl",
+ "anyhow",
+ "async-trait",
+ "axum 0.7.4",
+ "base64 0.21.0",
+ "bs58 0.4.0",
+ "chrono",
+ "clap 4.4.8",
+ "config",
+ "db-store",
+ "file-store",
+ "futures",
+ "futures-util",
+ "helium-crypto",
+ "helium-proto",
+ "http 0.2.11",
+ "http-serde",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "mobile-config",
+ "once_cell",
+ "poc-metrics",
+ "prost",
+ "rand 0.8.5",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sha2 0.10.6",
+ "solana",
+ "solana-sdk",
+ "sqlx",
+ "task-manager",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "triggered",
+]
 
 [[package]]
 name = "borsh"
@@ -1592,10 +1839,10 @@ dependencies = [
 [[package]]
 name = "circuit-breaker"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -2127,10 +2374,10 @@ dependencies = [
 [[package]]
 name = "data-credits"
 version = "0.2.1"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -2149,7 +2396,7 @@ dependencies = [
  "aws-sig-auth 0.54.1",
  "aws-smithy-http 0.54.4",
  "aws-types 0.54.1",
- "http",
+ "http 0.2.11",
  "metrics",
  "poc-metrics",
  "serde",
@@ -2526,10 +2773,10 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 [[package]]
 name = "fanout"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -2562,7 +2809,7 @@ name = "file-store"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-compression 0.3.15",
+ "async-compression",
  "async-trait",
  "aws-config",
  "aws-sdk-s3",
@@ -2582,7 +2829,7 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "hex-literal",
- "http",
+ "http 0.2.11",
  "lazy_static",
  "metrics",
  "poc-metrics",
@@ -2905,8 +3152,27 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http",
+ "http 0.2.11",
  "indexmap 1.9.3",
+ "slab",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "h2"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31d030e59af851932b72ceebadf4a2b5986dba4c3b99dd2493f8273a0f151943"
+dependencies = [
+ "bytes",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "futures-util",
+ "http 1.0.0",
+ "indexmap 2.0.2",
  "slab",
  "tokio",
  "tokio-util",
@@ -3015,10 +3281,10 @@ dependencies = [
 [[package]]
 name = "helium-anchor-gen"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
  "circuit-breaker",
  "data-credits",
  "fanout",
@@ -3044,7 +3310,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.2.10",
+ "getrandom 0.1.16",
  "k256",
  "lazy_static",
  "multihash",
@@ -3062,16 +3328,16 @@ dependencies = [
 [[package]]
 name = "helium-entity-manager"
 version = "0.2.4"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=master#1cda75ccc8d8cf8a069ca95cbba6d43593e39869"
+source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#fb07b06d55aa9bcba6facf0307a218ab63b5d6cd"
 dependencies = [
  "bytes",
  "prost",
@@ -3085,10 +3351,10 @@ dependencies = [
 [[package]]
 name = "helium-sub-daos"
 version = "0.1.4"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -3120,11 +3386,11 @@ checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 
 [[package]]
 name = "hexboosting"
-version = "0.0.1"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+version = "0.0.2"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -3200,13 +3466,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "http"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b32afd38673a8016f7c9ae69e5af41a58f81b1d31689040f2f1959594ce194ea"
+dependencies = [
+ "bytes",
+ "fnv",
+ "itoa 1.0.9",
+]
+
+[[package]]
 name = "http-body"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5f38f16d184e36f2408a55281cd658ecbd3ca05cce6d6510a176eca393e26d1"
 dependencies = [
  "bytes",
- "http",
+ "http 0.2.11",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "http-body"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cac85db508abc24a2e48553ba12a996e87244a0395ce011e62b37158745d643"
+dependencies = [
+ "bytes",
+ "http 1.0.0",
+]
+
+[[package]]
+name = "http-body-util"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41cb79eb393015dadd30fc252023adb0b2400a0caee0fa2a077e6e21a551e840"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http 1.0.0",
+ "http-body 1.0.0",
  "pin-project-lite",
 ]
 
@@ -3222,7 +3522,7 @@ version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e272971f774ba29341db2f686255ff8a979365a26fb9e4277f6b6d9ec0cdd5e"
 dependencies = [
- "http",
+ "http 0.2.11",
  "serde",
 ]
 
@@ -3254,9 +3554,9 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2",
- "http",
- "http-body",
+ "h2 0.3.21",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "httparse",
  "httpdate",
  "itoa 1.0.9",
@@ -3269,13 +3569,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb5aa53871fc917b1a9ed87b683a5d86db645e23acb32c2e0785a353e522fb75"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "h2 0.4.2",
+ "http 1.0.0",
+ "http-body 1.0.0",
+ "httparse",
+ "httpdate",
+ "itoa 1.0.9",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "hyper-rustls"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59df7c4e19c950e6e0e868dcc0a300b09a9b88e9ec55bd879ca819087a77355d"
 dependencies = [
- "http",
- "hyper",
+ "http 0.2.11",
+ "hyper 0.14.23",
  "log",
  "rustls 0.20.7",
  "rustls-native-certs",
@@ -3291,8 +3610,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec3efd23720e2049821a693cbc7e65ea87c72f1c58ff2f9522ff332b1491e590"
 dependencies = [
  "futures-util",
- "http",
- "hyper",
+ "http 0.2.11",
+ "hyper 0.14.23",
  "rustls 0.21.9",
  "tokio",
  "tokio-rustls 0.24.1",
@@ -3304,10 +3623,28 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbb958482e8c7be4bc3cf272a766a2b0bf1a6755e7a6ae777f017a31d11b13b1"
 dependencies = [
- "hyper",
+ "hyper 0.14.23",
  "pin-project-lite",
  "tokio",
  "tokio-io-timeout",
+]
+
+[[package]]
+name = "hyper-util"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdea9aac0dbe5a9240d68cfd9501e2db94222c6dc06843e06640b9e07f0fdc67"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "http 1.0.0",
+ "http-body 1.0.0",
+ "hyper 1.1.0",
+ "pin-project-lite",
+ "socket2 0.5.5",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3415,7 +3752,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
+ "http 0.2.11",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
@@ -3472,7 +3809,7 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "hextree",
- "http",
+ "http 0.2.11",
  "http-serde",
  "libflate",
  "metrics",
@@ -3511,7 +3848,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
+ "http 0.2.11",
  "http-serde",
  "iot-config",
  "metrics",
@@ -3675,7 +4012,7 @@ dependencies = [
  "futures-channel",
  "futures-timer",
  "futures-util",
- "hyper",
+ "hyper 0.14.23",
  "jsonrpsee-types",
  "rustc-hash",
  "serde",
@@ -3692,7 +4029,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42007820863ab29f3adeacf43886ef54abaedb35bc33dada25771db4e1f94de4"
 dependencies = [
  "async-trait",
- "hyper",
+ "hyper 0.14.23",
  "hyper-rustls 0.23.1",
  "jsonrpsee-core",
  "jsonrpsee-types",
@@ -3763,19 +4100,19 @@ dependencies = [
 [[package]]
 name = "lazy-distributor"
 version = "0.1.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
 name = "lazy-transactions"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -4010,7 +4347,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a4964177ddfdab1e3a2b37aec7cf320e14169abb0ed73999f558136409178d5"
 dependencies = [
  "base64 0.21.0",
- "hyper",
+ "hyper 0.14.23",
  "indexmap 1.9.3",
  "ipnet",
  "metrics",
@@ -4106,7 +4443,7 @@ dependencies = [
  "helium-crypto",
  "helium-proto",
  "hextree",
- "http",
+ "http 0.2.11",
  "http-serde",
  "lazy_static",
  "metrics",
@@ -4156,10 +4493,10 @@ dependencies = [
 [[package]]
 name = "mobile-entity-manager"
 version = "0.1.1"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -4177,7 +4514,7 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
+ "http 0.2.11",
  "http-serde",
  "metrics",
  "mobile-config",
@@ -4728,8 +5065,8 @@ dependencies = [
  "futures-util",
  "helium-crypto",
  "helium-proto",
- "http",
- "hyper",
+ "http 0.2.11",
+ "hyper 0.14.23",
  "jsonrpsee",
  "metrics",
  "metrics-exporter-prometheus",
@@ -4796,7 +5133,7 @@ dependencies = [
 name = "price"
 version = "0.1.0"
 dependencies = [
- "anchor-lang",
+ "anchor-lang 0.26.0",
  "anyhow",
  "chrono",
  "clap 4.4.8",
@@ -4826,10 +5163,10 @@ dependencies = [
 [[package]]
 name = "price-oracle"
 version = "0.2.1"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -5256,16 +5593,16 @@ version = "0.11.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "046cd98826c46c2ac8ddecae268eb5c2e58628688a5fc7a2643704a73faba95b"
 dependencies = [
- "async-compression 0.4.5",
+ "async-compression",
  "base64 0.21.0",
  "bytes",
  "encoding_rs",
  "futures-core",
  "futures-util",
- "h2",
- "http",
- "http-body",
- "hyper",
+ "h2 0.3.21",
+ "http 0.2.11",
+ "http-body 0.4.5",
+ "hyper 0.14.23",
  "hyper-rustls 0.24.2",
  "ipnet",
  "js-sys",
@@ -5353,10 +5690,10 @@ dependencies = [
 [[package]]
 name = "rewards-oracle"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -5740,6 +6077,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_path_to_error"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4beec8bce849d58d06238cb50db2e1c417cfeafa4c63f692b15c82b7c80f8335"
+dependencies = [
+ "itoa 1.0.9",
+ "serde",
+]
+
+[[package]]
 name = "serde_repr"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5944,10 +6291,12 @@ name = "solana"
 version = "0.1.0"
 dependencies = [
  "anchor-client",
- "anchor-lang",
+ "anchor-lang 0.26.0",
  "anyhow",
  "async-trait",
+ "chrono",
  "clap 4.4.8",
+ "file-store",
  "futures",
  "helium-anchor-gen",
  "helium-crypto",
@@ -5984,7 +6333,7 @@ dependencies = [
  "solana-sdk",
  "solana-vote-program",
  "spl-token",
- "spl-token-2022",
+ "spl-token-2022 0.5.0",
  "thiserror",
  "zstd",
 ]
@@ -6089,7 +6438,7 @@ dependencies = [
  "solana-transaction-status",
  "solana-version",
  "solana-vote-program",
- "spl-token-2022",
+ "spl-token-2022 0.5.0",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -6489,7 +6838,7 @@ dependencies = [
  "spl-associated-token-account",
  "spl-memo",
  "spl-token",
- "spl-token-2022",
+ "spl-token-2022 0.5.0",
  "thiserror",
 ]
 
@@ -6598,7 +6947,7 @@ dependencies = [
  "num-traits",
  "solana-program",
  "spl-token",
- "spl-token-2022",
+ "spl-token-2022 0.5.0",
  "thiserror",
 ]
 
@@ -6631,6 +6980,24 @@ name = "spl-token-2022"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0edb869dbe159b018f17fb9bfa67118c30f232d7f54a73742bc96794dff77ed8"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "solana-program",
+ "solana-zk-token-sdk",
+ "spl-memo",
+ "spl-token",
+ "thiserror",
+]
+
+[[package]]
+name = "spl-token-2022"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0043b590232c400bad5ee9eb983ced003d15163c4c5d56b090ac6d9a57457b47"
 dependencies = [
  "arrayref",
  "bytemuck",
@@ -7149,15 +7516,15 @@ checksum = "8f219fad3b929bef19b1f86fbc0358d35daed8f2cac972037ac0dc10bbb8d5fb"
 dependencies = [
  "async-stream",
  "async-trait",
- "axum",
+ "axum 0.6.3",
  "base64 0.13.1",
  "bytes",
  "futures-core",
  "futures-util",
- "h2",
- "http",
- "http-body",
- "hyper",
+ "h2 0.3.21",
+ "http 0.2.11",
+ "http-body 0.4.5",
+ "hyper 0.14.23",
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
@@ -7219,8 +7586,8 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-util",
- "http",
- "http-body",
+ "http 0.2.11",
+ "http-body 0.4.5",
  "http-range-header",
  "pin-project-lite",
  "tower",
@@ -7302,10 +7669,10 @@ dependencies = [
 [[package]]
 name = "treasury-management"
 version = "0.2.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -7329,7 +7696,7 @@ dependencies = [
  "base64 0.13.1",
  "byteorder",
  "bytes",
- "http",
+ "http 0.2.11",
  "httparse",
  "log",
  "rand 0.8.5",
@@ -7349,7 +7716,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
@@ -7529,10 +7896,10 @@ dependencies = [
 [[package]]
 name = "voter-stake-registry"
 version = "0.3.0"
-source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+source = "git+https://github.com/helium/helium-anchor-gen.git#2c9e0741f19146c625ea15e9890b6f920f4c93d8"
 dependencies = [
  "anchor-gen",
- "anchor-lang",
+ "anchor-lang 0.26.0",
 ]
 
 [[package]]
@@ -7953,7 +8320,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",

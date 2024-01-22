@@ -3,7 +3,7 @@ use crate::{
     verifier::Debiter,
 };
 use helium_crypto::PublicKeyBinary;
-use solana::SolanaNetwork;
+use solana::burn::SolanaNetwork;
 use std::{
     collections::{hash_map::Entry, HashMap},
     sync::Arc,

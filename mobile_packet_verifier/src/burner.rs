@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
-use solana::SolanaNetwork;
+use solana::burn::SolanaNetwork;
 use sqlx::{FromRow, Pool, Postgres};
 use std::collections::HashMap;
 

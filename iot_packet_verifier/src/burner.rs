@@ -5,7 +5,7 @@ use crate::{
     },
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use solana::{GetSignature, SolanaNetwork};
+use solana::{burn::SolanaNetwork, GetSignature};
 use std::time::Duration;
 use task_manager::ManagedTask;
 use tokio::time::{self, MissedTickBehavior};
