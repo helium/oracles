@@ -184,7 +184,7 @@ where
                 }
             }
 
-            if self.file_queue.len() == 0 {
+            if self.file_queue.is_empty() {
                 tokio::time::sleep(self.poll_duration()).await;
             }
         }
