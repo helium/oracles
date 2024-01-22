@@ -98,13 +98,13 @@ pub struct FileInfoPollerServer<T, S> {
     cache: MemoryFileCache,
 }
 
-type FileInfoDataReceiver<T> = Receiver<FileInfoStream<T>>;
+type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
 impl<T, S> FileInfoPollerConfigBuilder<T, S>
 where
     T: Clone,
     S: FileInfoPollerState,
 {
-    pub async fn create(self) -> Result<(FileInfoDataReceiver<T>, FileInfoPollerServer<T, S>)> {
+    pub async fn create(self) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S>)> {
         let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
         let latest_file_timestamp = config
@@ -184,7 +184,7 @@ where
                 }
             }
 
-            if self.file_queue.is_empty() {
+            if self.file_queue.len() == 0 {
                 tokio::time::sleep(self.poll_duration()).await;
             }
         }
