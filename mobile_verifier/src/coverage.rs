@@ -1,11 +1,7 @@
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BinaryHeap, HashMap},
-    pin::pin,
-    sync::Arc,
-    time::Instant,
+use crate::{
+    heartbeats::{HbType, KeyType, OwnedKeyType},
+    IsAuthorized,
 };
-
 use chrono::{DateTime, Utc};
 use file_store::{
     coverage::{self, CoverageObjectIngestReport},
@@ -23,19 +19,24 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
-use mobile_config::client::AuthorizationClient;
+use mobile_config::{
+    boosted_hex_info::{BoostedHex, BoostedHexes},
+    client::AuthorizationClient,
+};
 use retainer::{entry::CacheReadGuard, Cache};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BinaryHeap, HashMap},
+    pin::pin,
+    sync::Arc,
+    time::Instant,
+};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
-
-use crate::{
-    heartbeats::{HbType, KeyType, OwnedKeyType},
-    IsAuthorized,
-};
 
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Type)]
 #[sqlx(type_name = "signal_level")]
@@ -371,6 +372,7 @@ pub struct CoverageReward {
     pub radio_key: OwnedKeyType,
     pub points: Decimal,
     pub hotspot: PublicKeyBinary,
+    pub boosted_hex_info: BoostedHex,
 }
 
 #[async_trait::async_trait]
@@ -535,7 +537,7 @@ impl CoveredHexes {
                         seniority_timestamp: coverage_claim_time,
                         signal_level,
                         hotspot: hotspot.clone(),
-                    });
+                    })
             } else {
                 // If this is an outdoor Wifi radio, we adjust the signal power by -30dbm in order
                 // to more properly reflect signal strength.
@@ -544,7 +546,6 @@ impl CoveredHexes {
                 } else {
                     signal_power
                 };
-
                 self.outdoor
                     .entry(CellIndex::try_from(hex as u64).unwrap())
                     .or_default()
@@ -562,32 +563,54 @@ impl CoveredHexes {
     }
 
     /// Returns the radios that should be rewarded for giving coverage.
-    pub fn into_coverage_rewards(self) -> impl Iterator<Item = CoverageReward> {
-        let outdoor_rewards = self.outdoor.into_values().flat_map(|radios| {
+    pub fn into_coverage_rewards(
+        self,
+        boosted_hexes: &BoostedHexes,
+        epoch_start: DateTime<Utc>,
+    ) -> impl Iterator<Item = CoverageReward> + '_ {
+        let outdoor_rewards = self.outdoor.into_iter().flat_map(move |(hex, radios)| {
             radios
                 .into_sorted_vec()
                 .into_iter()
                 .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
                 .zip(OUTDOOR_REWARD_WEIGHTS)
-                .map(|(cl, rank)| CoverageReward {
-                    points: cl.coverage_points() * rank,
-                    hotspot: cl.hotspot,
-                    radio_key: cl.radio_key,
+                .map(move |(cl, rank)| {
+                    let boost_multiplier = boosted_hexes
+                        .get_current_multiplier(hex.into(), epoch_start)
+                        .unwrap_or(1);
+                    CoverageReward {
+                        points: cl.coverage_points() * rank,
+                        hotspot: cl.hotspot,
+                        radio_key: cl.radio_key,
+                        boosted_hex_info: BoostedHex {
+                            location: hex.into(),
+                            multiplier: boost_multiplier,
+                        },
+                    }
                 })
         });
         let indoor_rewards = self
             .indoor
-            .into_values()
-            .flat_map(|mut radios| {
-                radios.pop_last().map(|(_, radios)| {
+            .into_iter()
+            .flat_map(move |(hex, mut radios)| {
+                radios.pop_last().map(move |(_, radios)| {
                     radios
                         .into_sorted_vec()
                         .into_iter()
                         .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
-                        .map(|cl| CoverageReward {
-                            points: cl.coverage_points(),
-                            hotspot: cl.hotspot,
-                            radio_key: cl.radio_key,
+                        .map(move |cl| {
+                            let boost_multiplier = boosted_hexes
+                                .get_current_multiplier(hex.into(), epoch_start)
+                                .unwrap_or(1);
+                            CoverageReward {
+                                points: cl.coverage_points(),
+                                hotspot: cl.hotspot,
+                                radio_key: cl.radio_key,
+                                boosted_hex_info: BoostedHex {
+                                    location: hex.into(),
+                                    multiplier: boost_multiplier,
+                                },
+                            }
                         })
                 })
             })
@@ -794,13 +817,19 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
+        let rewards: Vec<_> = covered_hexes
+            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+            .collect();
         assert_eq!(
             rewards,
             vec![CoverageReward {
                 radio_key: OwnedKeyType::Cbrs("3".to_string()),
                 hotspot: owner,
-                points: dec!(400)
+                points: dec!(400),
+                boosted_hex_info: BoostedHex {
+                    location: 0x8a1fb46622dffff_u64,
+                    multiplier: 1,
+                },
             }]
         );
     }
@@ -897,34 +926,56 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
+        let rewards: Vec<_> = covered_hexes
+            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+            .collect();
         assert_eq!(
             rewards,
             vec![
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("10".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(400)
+                    points: dec!(400),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("8".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(400)
+                    points: dec!(400),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("6".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(400)
+                    points: dec!(400),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(400)
+                    points: dec!(400),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("2".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(400)
+                    points: dec!(400),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 }
             ]
         );
@@ -966,24 +1017,38 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
+        let rewards: Vec<_> = covered_hexes
+            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+            .collect();
         assert_eq!(
             rewards,
             vec![
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("5".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(16)
+                    points: dec!(16),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(12)
+                    points: dec!(12),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("3".to_string()),
                     hotspot: owner,
-                    points: dec!(4)
+                    points: dec!(4),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 }
             ]
         );
@@ -1023,24 +1088,38 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes.into_coverage_rewards().collect();
+        let rewards: Vec<_> = covered_hexes
+            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+            .collect();
         assert_eq!(
             rewards,
             vec![
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("1".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(16)
+                    points: dec!(16),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("2".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(12)
+                    points: dec!(12),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
                 CoverageReward {
                     radio_key: OwnedKeyType::Wifi(owner.clone()),
                     hotspot: owner,
-                    points: dec!(4)
+                    points: dec!(4),
+                    boosted_hex_info: BoostedHex {
+                        location: 0x8a1fb46622dffff_u64,
+                        multiplier: 1,
+                    },
                 },
             ]
         );

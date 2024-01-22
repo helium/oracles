@@ -1,0 +1,48 @@
+# Cache location for generated boost manager outputs; Required
+cache = "/tmp/oracles/boost-manager"
+
+start_after = 1702602001
+
+enable_solana_integration = true
+
+activation_check_interval = 30
+
+[solana]
+# Solana RPC. This may contain a secret
+rpc_url = "https://special-few-daylight.solana-devnet.quiknode.pro/f066a3ccb6059d083c77e39f287fff4fdf46183a/"
+# Path to the keypair used to sign data credit burn solana transactions
+start_authority_keypair = "/Users/andymck/helium/rust/poc5g-server/boost_manager/keypair.bin"
+# Public key of the hex boost authority
+hexboost_authority_pubkey = "hex7ToPmHSbd1XWT7HwSqfEnXPscSG1uQk6FTEwHxDm"
+# Solana cluster to use. "devnet" or "mainnet"
+cluster = "devnet"
+
+#
+[database]
+url = "postgresql://postgres:postgres@localhost:5432/hexboosting"
+# Max connections to the database.
+max_connections = 10
+
+[verifier]
+bucket = "mobile-verified"
+endpoint = "http://localhost:9000"
+access_key_id = "oraclesecretid"
+secret_access_key = "oraclesecretkey"
+
+[output]
+bucket = "mobile-verified"
+endpoint = "http://localhost:9000"
+access_key_id = "oraclesecretid"
+secret_access_key = "oraclesecretkey"
+
+[mobile_config_client]
+url = "http://localhost:6090"
+config_pubkey = "13SPaCiVizWvb6fv5igsQE2TT6MrKwKvsfysZTEhCZNL98hur2e"
+signing_keypair = "/Users/andymck/helium/rust/mobileverifier/oracles/mobile_verifier/keypair.bin"
+
+
+[metrics]
+
+# Endpoint for metrics. Default below
+#
+endpoint = "127.0.0.1:19001"

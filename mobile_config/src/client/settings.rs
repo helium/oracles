@@ -20,6 +20,9 @@ pub struct Settings {
     /// Batch size for hotspot metadata stream results. Default 100
     #[serde(default = "default_batch_size")]
     pub batch_size: u32,
+    /// Batch size for hex boosting stream results. Default 100
+    #[serde(default = "default_hex_boosting_batch_size")]
+    pub hex_boosting_batch_size: u32,
     #[serde(default = "default_cache_ttl_in_secs")]
     pub cache_ttl_in_secs: u64,
 }
@@ -33,6 +36,10 @@ pub fn default_rpc_timeout() -> u64 {
 }
 
 pub fn default_batch_size() -> u32 {
+    100
+}
+
+pub fn default_hex_boosting_batch_size() -> u32 {
     100
 }
 
@@ -59,6 +66,11 @@ impl Settings {
     pub fn connect_carrier_service_client(&self) -> mobile_config::CarrierServiceClient<Channel> {
         let channel = connect_channel(self);
         mobile_config::CarrierServiceClient::new(channel)
+    }
+
+    pub fn connect_hex_boosting_service_client(&self) -> mobile_config::HexBoostingClient<Channel> {
+        let channel = connect_channel(self);
+        mobile_config::HexBoostingClient::new(channel)
     }
 
     pub fn signing_keypair(

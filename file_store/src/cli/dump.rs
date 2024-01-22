@@ -221,6 +221,7 @@ impl Cmd {
                             "hotspot_key":  PublicKey::try_from(reward.hotspot_key)?,
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
+                            "boosted_hexes": reward.boosted_hexes,
                         }))?,
                         Some(Reward::SubscriberReward(reward)) => print_json(&json!({
                             "subscriber_id": reward.subscriber_id,

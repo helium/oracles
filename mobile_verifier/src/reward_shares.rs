@@ -1,7 +1,7 @@
 use crate::{
     coverage::{CoverageReward, CoveredHexStream, CoveredHexes},
     data_session::{HotspotMap, ServiceProviderDataSession},
-    heartbeats::HeartbeatReward,
+    heartbeats::{HeartbeatReward, OwnedKeyType},
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
     subscriber_location::SubscriberValidatedLocations,
 };
@@ -18,8 +18,10 @@ use helium_proto::{
     },
     ServiceProvider,
 };
-
-use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
+use mobile_config::{
+    boosted_hex_info::{BoostedHex, BoostedHexes},
+    client::{carrier_service_client::CarrierServiceVerifier, ClientError},
+};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, ops::Range};
@@ -378,6 +380,9 @@ struct RadioPoints {
     coverage_object: Uuid,
     seniority: DateTime<Utc>,
     points: Decimal,
+    // list of all hexes that have been boosted for this hotspot along with the multiplier for each hex
+    // this gets included in the radio reward share proto
+    boosted_hexes: Vec<BoostedHex>,
 }
 
 impl RadioPoints {
@@ -391,6 +396,7 @@ impl RadioPoints {
             seniority,
             coverage_object,
             points: Decimal::ZERO,
+            boosted_hexes: vec![],
         }
     }
 
@@ -399,12 +405,30 @@ impl RadioPoints {
     }
 }
 
+// pub type HotspotBoostedHexes = HashMap<u64, u32>;
+
 #[derive(Debug, Default)]
 struct HotspotPoints {
     /// Points are multiplied by the multiplier to get shares.
     /// Multiplier should never be zero.
     speedtest_multiplier: Decimal,
     radio_points: HashMap<Option<String>, RadioPoints>,
+}
+
+impl HotspotPoints {
+    pub fn add_coverage_entry(
+        &mut self,
+        radio_key: OwnedKeyType,
+        points: Decimal,
+        boosted_hex_info: BoostedHex,
+    ) {
+        let rp = self
+            .radio_points
+            .get_mut(&radio_key.into_cbsd_id())
+            .unwrap();
+        rp.points += points * Decimal::from(boosted_hex_info.multiplier);
+        rp.boosted_hexes.push(boosted_hex_info);
+    }
 }
 
 impl HotspotPoints {
@@ -436,7 +460,8 @@ impl CoveragePoints {
         hex_streams: &impl CoveredHexStream,
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: &SpeedtestAverages,
-        period_end: DateTime<Utc>,
+        boosted_hexes: &BoostedHexes,
+        reward_period: &Range<DateTime<Utc>>,
     ) -> Result<Self, sqlx::Error> {
         let mut heartbeats = std::pin::pin!(heartbeats);
         let mut covered_hexes = CoveredHexes::default();
@@ -447,11 +472,12 @@ impl CoveragePoints {
                 .as_ref()
                 .map_or(Decimal::ZERO, SpeedtestAverage::reward_multiplier);
             let seniority = hex_streams
-                .fetch_seniority(heartbeat.key(), period_end)
+                .fetch_seniority(heartbeat.key(), reward_period.end)
                 .await?;
             let covered_hex_stream = hex_streams
                 .covered_hex_stream(heartbeat.key(), &heartbeat.coverage_object, &seniority)
                 .await?;
+
             covered_hexes
                 .aggregate_coverage(&heartbeat.hotspot_key, covered_hex_stream)
                 .await?;
@@ -474,18 +500,15 @@ impl CoveragePoints {
             radio_key,
             points,
             hotspot,
-        } in covered_hexes.into_coverage_rewards()
+            boosted_hex_info,
+        } in covered_hexes.into_coverage_rewards(boosted_hexes, reward_period.start)
         {
             // Guaranteed that points contains the given hotspot.
             coverage_points
                 .get_mut(&hotspot)
                 .unwrap()
-                .radio_points
-                .get_mut(&radio_key.into_cbsd_id())
-                .unwrap()
-                .points += points;
+                .add_coverage_entry(radio_key, points, boosted_hex_info)
         }
-
         Ok(Self { coverage_points })
     }
 
@@ -555,6 +578,7 @@ fn radio_points_into_rewards(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn new_radio_reward(
     cbsd_id: Option<String>,
     hotspot_key: &PublicKeyBinary,
@@ -574,6 +598,15 @@ fn new_radio_reward(
         .round_dp_with_strategy(0, RoundingStrategy::ToZero)
         .to_u64()
         .unwrap_or(0);
+    let boosted_hexes = radio_points
+        .boosted_hexes
+        .iter()
+        .filter(|boosted_hex| boosted_hex.multiplier > 1)
+        .map(|boosted_hex| proto::BoostedHex {
+            location: boosted_hex.location,
+            multiplier: boosted_hex.multiplier,
+        })
+        .collect();
     (
         poc_reward,
         proto::MobileRewardShare {
@@ -594,6 +627,7 @@ fn new_radio_reward(
                     speedtest_multiplier: (speedtest_multiplier * dec!(1000))
                         .to_u32()
                         .unwrap_or_default(),
+                    boosted_hexes,
                     ..Default::default()
                 },
             )),
@@ -1299,8 +1333,8 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            // Field isn't used:
-            DateTime::<Utc>::MIN_UTC,
+            &BoostedHexes::default(),
+            &epoch,
         )
         .await
         .unwrap()
@@ -1468,7 +1502,8 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            DateTime::<Utc>::MIN_UTC,
+            &BoostedHexes::default(),
+            &epoch,
         )
         .await
         .unwrap()
@@ -1596,7 +1631,8 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            DateTime::<Utc>::MIN_UTC,
+            &BoostedHexes::default(),
+            &epoch,
         )
         .await
         .unwrap()
@@ -1722,7 +1758,8 @@ mod test {
             &hex_coverage,
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
-            DateTime::<Utc>::MIN_UTC,
+            &BoostedHexes::default(),
+            &epoch,
         )
         .await
         .unwrap()
@@ -1785,6 +1822,7 @@ mod test {
                         seniority: DateTime::default(),
                         coverage_object: Uuid::new_v4(),
                         points: dec!(10.0),
+                        boosted_hexes: vec![],
                     },
                 )]
                 .into_iter()
@@ -1803,6 +1841,7 @@ mod test {
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
                             points: dec!(-1.0),
+                            boosted_hexes: vec![],
                         },
                     ),
                     (
@@ -1812,6 +1851,7 @@ mod test {
                             points: dec!(0.0),
                             seniority: DateTime::default(),
                             coverage_object: Uuid::new_v4(),
+                            boosted_hexes: vec![],
                         },
                     ),
                 ]

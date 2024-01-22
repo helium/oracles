@@ -10,14 +10,19 @@ use anyhow::bail;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use db_store::meta;
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
-
 use futures_util::TryFutureExt;
 use helium_proto::services::{
     poc_mobile as proto, poc_mobile::mobile_reward_share::Reward as ProtoReward,
     poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
 };
 use helium_proto::RewardManifest;
-use mobile_config::client::{carrier_service_client::CarrierServiceVerifier, ClientError};
+use mobile_config::{
+    boosted_hex_info::BoostedHexes,
+    client::{
+        carrier_service_client::CarrierServiceVerifier,
+        hex_boosting_client::HexBoostingInfoResolver, ClientError,
+    },
+};
 use price::PriceTracker;
 use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
@@ -29,9 +34,10 @@ use tokio::time::sleep;
 
 const REWARDS_NOT_CURRENT_DELAY_PERIOD: i64 = 5;
 
-pub struct Rewarder<A> {
+pub struct Rewarder<A, B> {
     pool: Pool<Postgres>,
     carrier_client: A,
+    hex_service_client: B,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient,
@@ -40,14 +46,16 @@ pub struct Rewarder<A> {
     speedtest_averages: FileSinkClient,
 }
 
-impl<A> Rewarder<A>
+impl<A, B> Rewarder<A, B>
 where
     A: CarrierServiceVerifier<Error = ClientError>,
+    B: HexBoostingInfoResolver<Error = ClientError>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: Pool<Postgres>,
         carrier_client: A,
+        hex_service_client: B,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient,
@@ -58,6 +66,7 @@ where
         Self {
             pool,
             carrier_client,
+            hex_service_client,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
@@ -181,6 +190,7 @@ where
         // process rewards for poc and data transfer
         reward_poc_and_dc(
             &self.pool,
+            &self.hex_service_client,
             &self.mobile_rewards,
             &self.speedtest_averages,
             reward_period,
@@ -239,9 +249,10 @@ where
     }
 }
 
-impl<A> ManagedTask for Rewarder<A>
+impl<A, B> ManagedTask for Rewarder<A, B>
 where
     A: CarrierServiceVerifier<Error = ClientError> + Send + Sync + 'static,
+    B: HexBoostingInfoResolver<Error = ClientError> + Send + Sync + 'static,
 {
     fn start_task(
         self: Box<Self>,
@@ -258,6 +269,7 @@ where
 
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
+    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
@@ -279,6 +291,7 @@ pub async fn reward_poc_and_dc(
 
     reward_poc(
         pool,
+        hex_service_client,
         mobile_rewards,
         speedtest_avg_sink,
         reward_period,
@@ -293,6 +306,7 @@ pub async fn reward_poc_and_dc(
 
 async fn reward_poc(
     pool: &Pool<Postgres>,
+    hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
@@ -308,9 +322,16 @@ async fn reward_poc(
 
     speedtest_averages.write_all(speedtest_avg_sink).await?;
 
-    let coverage_points =
-        CoveragePoints::aggregate_points(pool, heartbeats, &speedtest_averages, reward_period.end)
-            .await?;
+    let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
+    println!("boosted_hexes: {:?}", boosted_hexes);
+    let coverage_points = CoveragePoints::aggregate_points(
+        pool,
+        heartbeats,
+        &speedtest_averages,
+        &boosted_hexes,
+        reward_period,
+    )
+    .await?;
 
     if let Some(mobile_reward_shares) =
         coverage_points.into_rewards(total_poc_rewards, reward_period)

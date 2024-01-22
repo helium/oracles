@@ -16,7 +16,7 @@ use iot_packet_verifier::{
     pending::{confirm_pending_txns, AddPendingBurn, Burn, MockPendingTables, PendingTables},
     verifier::{payload_size_to_dc, ConfigServer, Org, Verifier, BYTES_PER_DC},
 };
-use solana::{GetSignature, MockTransaction, SolanaNetwork};
+use solana::burn::{GetSignature, MockTransaction, SolanaNetwork};
 use solana_sdk::signature::Signature;
 use sqlx::PgPool;
 use std::{
