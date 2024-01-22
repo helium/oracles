@@ -211,7 +211,6 @@ where
                 _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
                 result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
                     let (permit, file) = result?;
-                    println!("parsing file {}", file.key);
                     let data = parse_file(&self.config.store, process_name.clone(), file.clone()).await?;
                     permit.send(data);
                     cache_file(&self.cache, &file).await;
