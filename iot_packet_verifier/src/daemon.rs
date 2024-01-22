@@ -16,7 +16,7 @@ use file_store::{
 };
 use futures_util::TryFutureExt;
 use iot_config::client::{org_client::Orgs, OrgClient};
-use solana::SolanaRpc;
+use solana::burn::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
 use task_manager::{ManagedTask, TaskManager};

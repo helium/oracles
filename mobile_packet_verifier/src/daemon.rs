@@ -13,7 +13,7 @@ use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
     AuthorizationClient, GatewayClient,
 };
-use solana::{SolanaNetwork, SolanaRpc};
+use solana::burn::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
 use tokio::{

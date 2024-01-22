@@ -2,6 +2,7 @@ pub mod authorization_client;
 pub mod carrier_service_client;
 pub mod entity_client;
 pub mod gateway_client;
+pub mod hex_boosting_client;
 mod settings;
 
 use std::time::Duration;
