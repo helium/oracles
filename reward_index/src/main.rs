@@ -88,7 +88,8 @@ impl Server {
             ))
             .poll_duration(settings.interval())
             .offset(settings.interval() * 2)
-            .create()?;
+            .create()
+            .await?;
         let source_join_handle = server.start(shutdown_listener.clone()).await?;
 
         // Reward server

@@ -1,7 +1,7 @@
 use crate::{traits::MsgDecode, Error, FileInfo, FileStore, Result};
 use chrono::{DateTime, Duration, Utc};
 use derive_builder::Builder;
-use futures::{future::LocalBoxFuture, StreamExt};
+use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
 use std::{collections::VecDeque, marker::PhantomData, sync::Arc};
@@ -34,13 +34,13 @@ pub trait FileInfoPollerStateRecorder {
     async fn record(self, process_name: &str, file_info: &FileInfo) -> Result;
 }
 
-pub struct FileInfoData<T> {
+pub struct FileInfoStream<T> {
     pub file_info: FileInfo,
     process_name: String,
     data: Vec<T>,
 }
 
-impl<T> FileInfoData<T>
+impl<T> FileInfoStream<T>
 where
     T: Send,
 {
@@ -52,9 +52,15 @@ where
         }
     }
 
-    pub async fn into_data(self, recorder: impl FileInfoPollerStateRecorder) -> Result<Vec<T>> {
+    pub async fn into_stream<'a>(
+        self,
+        recorder: impl FileInfoPollerStateRecorder,
+    ) -> Result<BoxStream<'a, T>>
+    where
+        T: 'a,
+    {
         recorder.record(&self.process_name, &self.file_info).await?;
-        Ok(self.data)
+        Ok(futures::stream::iter(self.data.into_iter()).boxed())
     }
 }
 
@@ -86,13 +92,13 @@ pub struct FileInfoPollerConfig<T, S> {
 #[derive(Clone)]
 pub struct FileInfoPollerServer<T, S> {
     config: FileInfoPollerConfig<T, S>,
-    sender: Sender<FileInfoData<T>>,
+    sender: Sender<FileInfoStream<T>>,
     file_queue: VecDeque<FileInfo>,
     latest_file_timestamp: Option<DateTime<Utc>>,
     cache: MemoryFileCache,
 }
 
-type FileInfoDataReceiver<T> = Receiver<FileInfoData<T>>;
+type FileInfoDataReceiver<T> = Receiver<FileInfoStream<T>>;
 impl<T, S> FileInfoPollerConfigBuilder<T, S>
 where
     T: Clone,
@@ -258,7 +264,7 @@ async fn parse_file<T>(
     store: &FileStore,
     process_name: String,
     file: FileInfo,
-) -> Result<FileInfoData<T>>
+) -> Result<FileInfoStream<T>>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
@@ -289,7 +295,7 @@ where
         .collect()
         .await;
 
-    Ok(FileInfoData::new(process_name, file, stream))
+    Ok(FileInfoStream::new(process_name, file, stream))
 }
 
 fn create_cache() -> MemoryFileCache {
@@ -371,5 +377,87 @@ impl FileInfoPollerState for sqlx::Pool<sqlx::Postgres> {
         .await
         .map(|_| ())
         .map_err(Error::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use crate::{file_source, wifi_heartbeat::WifiHeartbeatIngestReport, FileType, Settings};
+
+    use super::*;
+
+    #[derive(Clone)]
+    struct TestState {}
+
+    #[async_trait::async_trait]
+    impl FileInfoPollerState for TestState {
+        async fn latest_timestamp(
+            &self,
+            _process_name: &str,
+            _file_type: &str,
+        ) -> Result<Option<DateTime<Utc>>> {
+            Ok(None)
+        }
+
+        async fn exists(&self, _process_name: &str, _file_info: &FileInfo) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn clean(&self, _process_name: &str, _file_type: &str) -> Result {
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl FileInfoPollerStateRecorder for &TestState {
+        async fn record(self, _process_name: &str, _file_info: &FileInfo) -> Result {
+            Ok(())
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn brian() -> anyhow::Result<()> {
+        let settings = Settings {
+            bucket: "helium-mainnet-mobile-ingest".to_string(),
+            endpoint: None,
+            region: "us-west-2".to_string(),
+            access_key_id: None,
+            secret_access_key: None,
+        };
+
+        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
+
+        let file_store = FileStore::from_settings(&settings).await?;
+
+        let state = TestState {};
+        let (mut wifi_heartbeats, wifi_heartbeats_server) =
+            file_source::continuous_source::<WifiHeartbeatIngestReport, _>()
+                .state(state.clone())
+                .store(file_store)
+                .queue_size(4)
+                .lookback(LookbackBehavior::StartAfter(dt(2024, 1, 19, 10, 0, 0)))
+                .prefix(FileType::WifiHeartbeatIngestReport.to_string())
+                .create()
+                .await?;
+
+        let handle = tokio::spawn(wifi_heartbeats_server.run(shutdown_listener));
+
+        while let Some(file_info_data) = wifi_heartbeats.recv().await {
+            let name = file_info_data.file_info.key.clone();
+            let _data = file_info_data.into_stream(&state).await?;
+            println!("file: {}", name);
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+
+        shutdown_trigger.trigger();
+        handle.await??;
+
+        Ok(())
+    }
+
+    fn dt(y: i32, m: u32, d: u32, h: u32, min: u32, s: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(y, m, d, h, min, s).unwrap()
     }
 }

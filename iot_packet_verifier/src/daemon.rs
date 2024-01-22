@@ -169,7 +169,8 @@ impl Cmd {
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::IotPacketReport.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let balance_store = balances.balances();
         let verifier_daemon = Daemon {
