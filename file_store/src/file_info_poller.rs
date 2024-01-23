@@ -81,7 +81,7 @@ pub struct FileInfoPollerConfig<T, S> {
     lookback: LookbackBehavior,
     #[builder(default = "Duration::minutes(10)")]
     offset: Duration,
-    #[builder(default = "20")]
+    #[builder(default = "5")]
     queue_size: usize,
     #[builder(default = r#""default".to_string()"#)]
     process_name: String,
