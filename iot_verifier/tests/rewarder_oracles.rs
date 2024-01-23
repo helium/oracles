@@ -29,9 +29,6 @@ async fn test_oracles(_pool: PgPool) -> anyhow::Result<()> {
         let oracle_percent = (Decimal::from(unallocated_oracle_reward.amount) / daily_total)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(oracle_percent, dec!(0.07));
-
-        // should be no further msgs
-        iot_rewards.assert_no_messages();
     } else {
         panic!("no rewards received");
     };

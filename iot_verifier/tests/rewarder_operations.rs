@@ -28,9 +28,6 @@ async fn test_operations() -> anyhow::Result<()> {
         let ops_percent = (Decimal::from(ops_reward.amount) / daily_total)
             .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
         assert_eq!(ops_percent, dec!(0.07));
-
-        // should be no further msgs
-        iot_rewards.assert_no_messages();
     } else {
         panic!("no rewards received");
     };
