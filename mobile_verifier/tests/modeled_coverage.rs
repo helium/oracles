@@ -3,13 +3,14 @@ use file_store::{
     coverage::{CoverageObjectIngestReport, RadioHexSignalLevel},
     heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     speedtest::CellSpeedtest,
+    wifi_heartbeat::{WifiHeartbeat, WifiHeartbeatIngestReport},
 };
 use futures::stream::{self, StreamExt};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{CoverageObjectValidity, SignalLevel};
 use mobile_verifier::{
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjects, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
     heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
@@ -24,7 +25,7 @@ use uuid::Uuid;
 #[sqlx::test]
 #[ignore]
 async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
-    let cache = CoverageObjects::new(&pool);
+    let cache = CoverageObjectCache::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
     let key: PublicKeyBinary = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL"
@@ -32,7 +33,7 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
         .unwrap();
     let key = KeyType::from(&key);
 
-    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
+    assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -83,12 +84,8 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     transaction.commit().await?;
 
-    /*
-    let coverage = cache.inserted_at(&uuid).await?.unwrap();
-
-    assert_eq!(coverage.coverage.len(), 3);
-     */
-    assert!(cache.coverage_summary(&uuid, key).await?.is_some());
+    let coverage = cache.fetch_coverage_object(&uuid, key).await?.unwrap();
+    assert_eq!(coverage.covered_hexes.len(), 3);
 
     Ok(())
 }
@@ -96,13 +93,13 @@ async fn test_save_wifi_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 #[ignore]
 async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
-    let cache = CoverageObjects::new(&pool);
+    let cache = CoverageObjectCache::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
     let key = "P27-SCE4255W120200039521XGB0103";
     let key = KeyType::from(key);
 
-    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
+    assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 
     let co = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -151,12 +148,8 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 
     transaction.commit().await?;
 
-    /*
-    let coverage = cache.fetch_coverage(&uuid).await?.unwrap();
-
-    assert_eq!(coverage.coverage.len(), 3);
-     */
-    assert!(cache.coverage_summary(&uuid, key).await?.is_some());
+    let coverage = cache.fetch_coverage_object(&uuid, key).await?.unwrap();
+    assert_eq!(coverage.covered_hexes.len(), 3);
 
     Ok(())
 }
@@ -164,13 +157,13 @@ async fn test_save_cbrs_coverage_object(pool: PgPool) -> anyhow::Result<()> {
 #[sqlx::test]
 #[ignore]
 async fn test_coverage_object_save_updates(pool: PgPool) -> anyhow::Result<()> {
-    let cache = CoverageObjects::new(&pool);
+    let cache = CoverageObjectCache::new(&pool);
     let uuid = Uuid::new_v4();
     let coverage_claim_time = "2023-08-23 00:00:00.000000000 UTC".parse().unwrap();
     let key = "P27-SCE4255W120200039521XGB0103";
     let key = KeyType::from(key);
 
-    assert!(cache.coverage_summary(&uuid, key).await?.is_none());
+    assert!(cache.fetch_coverage_object(&uuid, key).await?.is_none());
 
     let co1 = file_store::coverage::CoverageObject {
         pub_key: PublicKeyBinary::from(vec![1]),
@@ -242,7 +235,7 @@ impl GatewayResolver for AllOwnersValid {
         &self,
         _address: &PublicKeyBinary,
     ) -> Result<GatewayResolution, Self::Error> {
-        Ok(GatewayResolution::AssertedLocation(1000))
+        Ok(GatewayResolution::AssertedLocation(0x8c2681a3064d9ff))
     }
 }
 
@@ -374,7 +367,7 @@ async fn process_input(
     coverage_objs: impl Iterator<Item = CoverageObjectIngestReport>,
     heartbeats: impl Iterator<Item = CbrsHeartbeatIngestReport>,
 ) -> anyhow::Result<()> {
-    let coverage_objects = CoverageObjects::new(pool);
+    let coverage_objects = CoverageObjectCache::new(pool);
     let coverage_claim_time_cache = CoverageClaimTimeCache::new();
 
     let mut transaction = pool.begin().await?;
@@ -392,6 +385,7 @@ async fn process_input(
         &AllOwnersValid,
         stream::iter(heartbeats.map(Heartbeat::from)),
         &coverage_objects,
+        2000,
         2000,
         epoch,
     ));
@@ -1201,6 +1195,118 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(coverage_points.hotspot_points(&owner_4), dec!(1000));
     assert_eq!(coverage_points.hotspot_points(&owner_5), dec!(1000));
     assert_eq!(coverage_points.hotspot_points(&owner_6), dec!(0));
+
+    Ok(())
+}
+
+#[sqlx::test]
+#[ignore]
+async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow::Result<()> {
+    let owner_1: PublicKeyBinary = "11xtYwQYnvkFYnJ9iZ8kmnetYKwhdi87Mcr36e1pVLrhBMPLjV9"
+        .parse()
+        .unwrap();
+    let coverage_object_uuid = Uuid::new_v4();
+
+    let coverage_object = file_store::coverage::CoverageObject {
+        pub_key: PublicKeyBinary::from(vec![1]),
+        uuid: coverage_object_uuid,
+        key_type: file_store::coverage::KeyType::HotspotKey(owner_1.clone()),
+        coverage_claim_time: "2022-02-01 00:00:00.000000000 UTC".parse()?,
+        indoor: true,
+        signature: Vec::new(),
+        coverage: vec![signal_level("8c2681a3064d9ff", SignalLevel::High)?],
+        trust_score: 1000,
+    };
+
+    let coverage_object = CoverageObject::validate(coverage_object, &AllPubKeysAuthed).await?;
+
+    let mut transaction = pool.begin().await?;
+    coverage_object.save(&mut transaction).await?;
+    transaction.commit().await?;
+
+    let hb_1 = WifiHeartbeatIngestReport {
+        report: WifiHeartbeat {
+            pubkey: owner_1.clone(),
+            lon: -105.2715848904,
+            lat: 40.0194278140,
+            timestamp: DateTime::<Utc>::MIN_UTC,
+            location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
+            operation_mode: true,
+            coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
+        },
+        received_timestamp: Utc::now(),
+    };
+
+    let hb_1: Heartbeat = hb_1.into();
+
+    let hb_2 = WifiHeartbeatIngestReport {
+        report: WifiHeartbeat {
+            pubkey: owner_1.clone(),
+            lon: -105.2344693282443,
+            lat: 40.033526907035935,
+            timestamp: DateTime::<Utc>::MIN_UTC,
+            location_validation_timestamp: Some(DateTime::<Utc>::MIN_UTC),
+            operation_mode: true,
+            coverage_object: Vec::from(coverage_object_uuid.into_bytes()),
+        },
+        received_timestamp: Utc::now(),
+    };
+
+    let hb_2: Heartbeat = hb_2.into();
+
+    let coverage_object_cache = CoverageObjectCache::new(&pool);
+
+    let validated_hb_1 = ValidatedHeartbeat::validate(
+        hb_1,
+        &AllOwnersValid,
+        &coverage_object_cache,
+        2000,
+        2000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_1.location_trust_score_multiplier, dec!(1.0));
+
+    let validated_hb_2 = ValidatedHeartbeat::validate(
+        hb_2.clone(),
+        &AllOwnersValid,
+        &coverage_object_cache,
+        1000000,
+        2000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+
+    let validated_hb_2 = ValidatedHeartbeat::validate(
+        hb_2.clone(),
+        &AllOwnersValid,
+        &coverage_object_cache,
+        2000,
+        1000000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+
+    let validated_hb_2 = ValidatedHeartbeat::validate(
+        hb_2.clone(),
+        &AllOwnersValid,
+        &coverage_object_cache,
+        1000000,
+        1000000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(1.0));
 
     Ok(())
 }

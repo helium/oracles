@@ -24,10 +24,10 @@ use helium_proto::services::{
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
 use mobile_config::client::AuthorizationClient;
-use retainer::Cache;
+use retainer::{entry::CacheReadGuard, Cache};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlx::{FromRow, Pool, Postgres, QueryBuilder, Transaction, Type};
+use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
@@ -147,6 +147,33 @@ pub struct CoverageObject {
 }
 
 impl CoverageObject {
+    /// Validate a coverage object
+    pub async fn validate(
+        coverage_object: file_store::coverage::CoverageObject,
+        auth_client: &impl IsAuthorized,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            validity: if auth_client
+                .is_authorized(&coverage_object.pub_key, NetworkKeyRole::MobilePcs)
+                .await?
+            {
+                CoverageObjectValidity::Valid
+            } else {
+                CoverageObjectValidity::InvalidPubKey
+            },
+            coverage_object,
+        })
+    }
+
+    pub fn validate_coverage_objects<'a>(
+        auth_client: &'a impl IsAuthorized,
+        coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
+    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
+        coverage_objects.then(move |coverage_object_report| async move {
+            Self::validate(coverage_object_report.report, auth_client).await
+        })
+    }
+
     pub fn is_valid(&self) -> bool {
         matches!(self.validity, CoverageObjectValidity::Valid)
     }
@@ -156,18 +183,6 @@ impl CoverageObject {
             coverage::KeyType::CbsdId(ref cbsd) => KeyType::Cbrs(cbsd.as_str()),
             coverage::KeyType::HotspotKey(ref hotspot_key) => KeyType::Wifi(hotspot_key),
         }
-    }
-
-    pub fn validate_coverage_objects<'a>(
-        auth_client: &'a impl IsAuthorized,
-        coverage_objects: impl Stream<Item = CoverageObjectIngestReport> + 'a,
-    ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
-        coverage_objects.then(move |coverage_object_report| async move {
-            Ok(CoverageObject {
-                validity: validate_coverage_object(&coverage_object_report, auth_client).await?,
-                coverage_object: coverage_object_report.report,
-            })
-        })
     }
 
     pub async fn write(&self, coverage_objects: &FileSinkClient) -> file_store::Result {
@@ -259,20 +274,6 @@ impl CoverageObject {
 
         Ok(())
     }
-}
-
-async fn validate_coverage_object(
-    coverage_object: &CoverageObjectIngestReport,
-    auth_client: &impl IsAuthorized,
-) -> anyhow::Result<CoverageObjectValidity> {
-    if !auth_client
-        .is_authorized(&coverage_object.report.pub_key, NetworkKeyRole::MobilePcs)
-        .await?
-    {
-        return Ok(CoverageObjectValidity::InvalidPubKey);
-    }
-
-    Ok(CoverageObjectValidity::Valid)
 }
 
 #[derive(Clone, FromRow)]
@@ -654,48 +655,100 @@ impl CoverageClaimTimeCache {
     }
 }
 
-pub struct CoverageObjects {
-    pool: Pool<Postgres>,
+/// A cache for coverage object hex information needed to validate heartbeats
+pub struct CoverageObjectCache {
+    pool: PgPool,
+    /// Covered hexes that have been cached
+    hex_coverage: Arc<Cache<uuid::Uuid, Vec<CellIndex>>>,
 }
 
-impl CoverageObjects {
+impl CoverageObjectCache {
     pub fn new(pool: &Pool<Postgres>) -> Self {
-        Self { pool: pool.clone() }
+        let hex_coverage = Arc::new(Cache::new());
+        let hex_coverage_clone = hex_coverage.clone();
+        tokio::spawn(async move {
+            hex_coverage_clone
+                .monitor(4, 0.25, std::time::Duration::from_secs(60 * 60 * 3))
+                .await
+        });
+        Self {
+            pool: pool.clone(),
+            hex_coverage,
+        }
     }
 
-    pub async fn coverage_summary(
+    pub async fn fetch_coverage_object(
         &self,
         uuid: &Uuid,
         key: KeyType<'_>,
-    ) -> Result<Option<CoverageObjectSummary>, sqlx::Error> {
-        sqlx::query_as(
+    ) -> Result<Option<CachedCoverageObject<'_>>, sqlx::Error> {
+        let coverage_meta: Option<CoverageObjectMeta> = sqlx::query_as(
 	    "SELECT inserted_at, indoor FROM coverage_objects WHERE uuid = $1 AND radio_key = $2 AND invalidated_at IS NULL LIMIT 1"
 	)
 	.bind(uuid)
 	.bind(key)
 	.fetch_optional(&self.pool)
-	.await
+	.await?;
+        // If we get a None back from the previous query, the coverage object does not exist
+        // or has been invalidated
+        let Some(coverage_meta) = coverage_meta else {
+            return Ok(None);
+        };
+        // Check if the hexes have already been inserted into the cache:
+        let coverage = if let Some(hexes) = self.hex_coverage.get(uuid).await {
+            Some(hexes)
+        } else {
+            // If they haven't, query them from the database:
+            let hexes: Vec<i64> = sqlx::query_scalar("SELECT hex FROM hexes WHERE uuid = $1")
+                .bind(uuid)
+                .fetch_all(&self.pool)
+                .await?;
+            let hexes = hexes
+                .into_iter()
+                .map(|x| CellIndex::try_from(x as u64).unwrap())
+                .collect();
+            self.hex_coverage
+                .insert(
+                    *uuid,
+                    hexes,
+                    // Let's say... three days?
+                    std::time::Duration::from_secs(60 * 60 * 24 * 3),
+                )
+                .await;
+            self.hex_coverage.get(uuid).await
+        };
+        Ok(coverage.map(coverage_meta.into_constructor()))
     }
 }
 
 #[derive(Clone, FromRow)]
-pub struct CoverageObjectSummary {
+pub struct CoverageObjectMeta {
     pub inserted_at: DateTime<Utc>,
     pub indoor: bool,
 }
 
-#[derive(Clone)]
-pub struct CachedCoverage {
-    pub radio_key: OwnedKeyType,
-    pub coverage: Vec<CellIndex>,
-    pub inserted_at: DateTime<Utc>,
+impl CoverageObjectMeta {
+    pub fn into_constructor(
+        self,
+    ) -> impl FnOnce(CacheReadGuard<'_, Vec<CellIndex>>) -> CachedCoverageObject<'_> {
+        move |covered_hexes| CachedCoverageObject {
+            meta: self,
+            covered_hexes,
+        }
+    }
 }
 
-impl CachedCoverage {
-    pub fn max_distance_km(&self, latlng: LatLng) -> f64 {
-        self.coverage.iter().fold(0.0, |curr_max, curr_cov| {
+pub struct CachedCoverageObject<'a> {
+    pub meta: CoverageObjectMeta,
+    pub covered_hexes: CacheReadGuard<'a, Vec<CellIndex>>,
+}
+
+impl CachedCoverageObject<'_> {
+    /// Max distance in meters between the hex coverage and the given Lat Long
+    pub fn max_distance_m(&self, latlng: LatLng) -> f64 {
+        self.covered_hexes.iter().fold(0.0, |curr_max, curr_cov| {
             let cov = LatLng::from(*curr_cov);
-            curr_max.max(cov.distance_km(latlng))
+            curr_max.max(cov.distance_m(latlng))
         })
     }
 }

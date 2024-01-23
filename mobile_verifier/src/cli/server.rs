@@ -99,6 +99,7 @@ impl Cmd {
             cbrs_heartbeats,
             settings.modeled_coverage_start(),
             settings.max_asserted_distance_deviation,
+            settings.max_distance_from_coverage,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
         );
@@ -109,6 +110,7 @@ impl Cmd {
             wifi_heartbeats,
             settings.modeled_coverage_start(),
             settings.max_asserted_distance_deviation,
+            settings.max_distance_from_coverage,
             valid_heartbeats,
             seniority_updates,
         );

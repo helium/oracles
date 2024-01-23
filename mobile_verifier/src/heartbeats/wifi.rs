@@ -1,6 +1,6 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
 use crate::{
-    coverage::{CoverageClaimTimeCache, CoverageObjects},
+    coverage::{CoverageClaimTimeCache, CoverageObjectCache},
     GatewayResolver,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -23,6 +23,7 @@ pub struct HeartbeatDaemon<GIR> {
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
     modeled_coverage_start: DateTime<Utc>,
     max_distance_to_asserted: u32,
+    max_distance_to_coverage: u32,
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
 }
@@ -31,12 +32,14 @@ impl<GIR> HeartbeatDaemon<GIR>
 where
     GIR: GatewayResolver,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: sqlx::Pool<sqlx::Postgres>,
         gateway_info_resolver: GIR,
         heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
         modeled_coverage_start: DateTime<Utc>,
         max_distance_to_asserted: u32,
+        max_distance_to_coverage: u32,
         heartbeat_sink: FileSinkClient,
         seniority_sink: FileSinkClient,
     ) -> Self {
@@ -46,6 +49,7 @@ where
             heartbeats,
             modeled_coverage_start,
             max_distance_to_asserted,
+            max_distance_to_coverage,
             heartbeat_sink,
             seniority_sink,
         }
@@ -63,7 +67,7 @@ where
         });
 
         let coverage_claim_time_cache = CoverageClaimTimeCache::new();
-        let coverage_objects = CoverageObjects::new(&self.pool);
+        let coverage_object_cache = CoverageObjectCache::new(&self.pool);
 
         loop {
             #[rustfmt::skip]
@@ -79,7 +83,7 @@ where
                         file,
                         &heartbeat_cache,
                         &coverage_claim_time_cache,
-                        &coverage_objects,
+                        &coverage_object_cache,
 		    ).await?;
 		    metrics::histogram!("wifi_heartbeat_processing_time", start.elapsed());
                 }
@@ -94,7 +98,7 @@ where
         file: FileInfoStream<WifiHeartbeatIngestReport>,
         heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
-        coverage_objects: &CoverageObjects,
+        coverage_object_cache: &CoverageObjectCache,
     ) -> anyhow::Result<()> {
         tracing::info!("Processing WIFI heartbeat file {}", file.file_info.key);
         let mut transaction = self.pool.begin().await?;
@@ -108,8 +112,9 @@ where
             ValidatedHeartbeat::validate_heartbeats(
                 &self.gateway_info_resolver,
                 heartbeats,
-                coverage_objects,
+                coverage_object_cache,
                 self.max_distance_to_asserted,
+                self.max_distance_to_coverage,
                 &epoch,
             ),
             heartbeat_cache,

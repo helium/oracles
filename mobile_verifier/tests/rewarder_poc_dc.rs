@@ -166,7 +166,7 @@ async fn seed_heartbeats(
             },
             cell_type: CellType::SercommIndoor,
             distance_to_asserted: None,
-            coverage_summary: None,
+            coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
@@ -194,7 +194,7 @@ async fn seed_heartbeats(
             },
             cell_type: CellType::SercommOutdoor,
             distance_to_asserted: None,
-            coverage_summary: None,
+            coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
@@ -221,7 +221,7 @@ async fn seed_heartbeats(
             },
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),
-            coverage_summary: None,
+            coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
