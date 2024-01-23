@@ -297,26 +297,6 @@ impl FileSink {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
-        // Move any partial previous sink files to the target
-        let mut dir = fs::read_dir(&self.tmp_path).await?;
-        loop {
-            match dir.next_entry().await {
-                Ok(Some(entry))
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(&self.prefix) =>
-                {
-                    if self.auto_commit {
-                        let _ = self.deposit_sink(&entry.path()).await;
-                    } else {
-                        let _ = fs::remove_file(&entry.path()).await;
-                    }
-                }
-                Ok(None) => break,
-                _ => continue,
-            }
-        }
 
         // Notify all existing completed sinks via deposits
         if let Some(deposits) = &self.deposits {
@@ -353,6 +333,27 @@ impl FileSink {
                     Ok(None) => break,
                     _ => continue,
                 }
+            }
+        }
+
+        // Move any partial previous sink files to the target
+        let mut dir = fs::read_dir(&self.tmp_path).await?;
+        loop {
+            match dir.next_entry().await {
+                Ok(Some(entry))
+                    if entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(&self.prefix) =>
+                {
+                    if self.auto_commit {
+                        let _ = self.deposit_sink(&entry.path()).await;
+                    } else {
+                        let _ = fs::remove_file(&entry.path()).await;
+                    }
+                }
+                Ok(None) => break,
+                _ => continue,
             }
         }
 
