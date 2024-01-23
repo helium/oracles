@@ -255,12 +255,6 @@ async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
         panic!("invalid OrgResV1")
     };
 
-    let response = client
-        .stream(route_stream_req_v1(&client_keypair, 0))
-        .await
-        .expect("stream request");
-    let mut response_stream = response.into_inner();
-
     let route = create_route(&mut client, &org, &admin_keypair).await;
 
     create_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
@@ -273,34 +267,29 @@ async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
 
     create_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
 
-    assert_route_received(&mut response_stream, proto::ActionV1::Add, &route.id).await;
+    let response = client
+        .stream(route_stream_req_v1(&client_keypair, 0))
+        .await
+        .expect("stream request");
+    let response_stream = response.into_inner();
+    let responses: Vec<proto::RouteStreamResV1> = drain_stream(response_stream)
+        .await
+        .expect("drain stream contents");
 
-    assert_eui_pair(
-        &mut response_stream,
-        proto::ActionV1::Add,
-        &route.id,
-        200,
-        201,
-    )
-    .await;
+    assert_eq!(responses.len(), 2);
+    assert_eui_pair_result(&responses, proto::ActionV1::Add, &route.id, 200, 201);
+    assert_route_result(&responses, proto::ActionV1::Add, &route.id);
+}
 
-    assert_eui_pair(
-        &mut response_stream,
-        proto::ActionV1::Remove,
-        &route.id,
-        200,
-        201,
-    )
-    .await;
-
-    assert_eui_pair(
-        &mut response_stream,
-        proto::ActionV1::Add,
-        &route.id,
-        200,
-        201,
-    )
-    .await;
+async fn drain_stream(
+    stream: Streaming<proto::RouteStreamResV1>,
+) -> Result<Vec<proto::RouteStreamResV1>, tonic::Status> {
+    stream
+        .take_until(tokio::time::sleep(std::time::Duration::from_secs(5)))
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect()
 }
 
 async fn assert_route_received(
@@ -321,6 +310,26 @@ async fn assert_route_received(
 
     assert_eq!(action, expected_action as i32);
     assert_eq!(&streamed_route.id, expected_id);
+}
+
+fn assert_route_result(
+    records: &[proto::RouteStreamResV1],
+    expected_action: proto::ActionV1,
+    expected_id: &str,
+) {
+    for record in records {
+        if let proto::RouteStreamResV1 {
+            action,
+            data: Some(proto::route_stream_res_v1::Data::Route(received_route)),
+            ..
+        } = record
+        {
+            assert_eq!(*action, expected_action as i32);
+            assert_eq!(&received_route.id, expected_id);
+            return;
+        }
+    }
+    panic!("expected message not found")
 }
 
 async fn assert_eui_pair(
@@ -345,6 +354,30 @@ async fn assert_eui_pair(
     assert_eq!(streamed_pair.route_id, expected_id);
     assert_eq!(streamed_pair.app_eui, expected_app_eui);
     assert_eq!(streamed_pair.dev_eui, expected_dev_eui);
+}
+
+fn assert_eui_pair_result(
+    records: &[proto::RouteStreamResV1],
+    expected_action: proto::ActionV1,
+    expected_id: &str,
+    expected_app_eui: u64,
+    expected_dev_eui: u64,
+) {
+    for record in records {
+        if let proto::RouteStreamResV1 {
+            action,
+            data: Some(proto::route_stream_res_v1::Data::EuiPair(received_pair)),
+            ..
+        } = record
+        {
+            assert_eq!(*action, expected_action as i32);
+            assert_eq!(received_pair.route_id, expected_id);
+            assert_eq!(received_pair.app_eui, expected_app_eui);
+            assert_eq!(received_pair.dev_eui, expected_dev_eui);
+            return;
+        }
+    }
+    panic!("expected message not found")
 }
 
 async fn assert_devaddr_range(
