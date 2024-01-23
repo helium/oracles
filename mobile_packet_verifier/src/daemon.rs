@@ -161,7 +161,8 @@ impl Cmd {
                 ))
                 .prefix(FileType::DataTransferSessionIngestReport.to_string())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .create()?;
+                .create()
+                .await?;
 
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;

@@ -4,9 +4,9 @@ use derive_builder::Builder;
 use futures::{future::LocalBoxFuture, stream::BoxStream, StreamExt};
 use futures_util::TryFutureExt;
 use retainer::Cache;
-use std::marker::PhantomData;
+use std::{collections::VecDeque, marker::PhantomData, sync::Arc};
 use task_manager::ManagedTask;
-use tokio::sync::mpsc::{error::TrySendError, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 const DEFAULT_POLL_DURATION_SECS: i64 = 30;
 const DEFAULT_POLL_DURATION: std::time::Duration =
@@ -14,7 +14,7 @@ const DEFAULT_POLL_DURATION: std::time::Duration =
 const CLEAN_DURATION: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
 const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3 * 60 * 60);
 
-type MemoryFileCache = Cache<String, bool>;
+type MemoryFileCache = Arc<Cache<String, bool>>;
 
 #[async_trait::async_trait]
 pub trait FileInfoPollerState: Send + Sync + 'static {
@@ -37,27 +37,30 @@ pub trait FileInfoPollerStateRecorder {
 pub struct FileInfoStream<T> {
     pub file_info: FileInfo,
     process_name: String,
-    stream: BoxStream<'static, T>,
+    data: Vec<T>,
 }
 
 impl<T> FileInfoStream<T>
 where
     T: Send,
 {
-    pub fn new(process_name: String, file_info: FileInfo, stream: BoxStream<'static, T>) -> Self {
+    pub fn new(process_name: String, file_info: FileInfo, data: Vec<T>) -> Self {
         Self {
             file_info,
             process_name,
-            stream,
+            data,
         }
     }
 
     pub async fn into_stream(
         self,
         recorder: impl FileInfoPollerStateRecorder,
-    ) -> Result<BoxStream<'static, T>> {
+    ) -> Result<BoxStream<'static, T>>
+    where
+        T: 'static,
+    {
         recorder.record(&self.process_name, &self.file_info).await?;
-        Ok(self.stream)
+        Ok(futures::stream::iter(self.data.into_iter()).boxed())
     }
 }
 
@@ -86,21 +89,39 @@ pub struct FileInfoPollerConfig<T, S> {
     p: PhantomData<T>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FileInfoPollerServer<T, S> {
     config: FileInfoPollerConfig<T, S>,
     sender: Sender<FileInfoStream<T>>,
+    file_queue: VecDeque<FileInfo>,
+    latest_file_timestamp: Option<DateTime<Utc>>,
+    cache: MemoryFileCache,
 }
 
 type FileInfoStreamReceiver<T> = Receiver<FileInfoStream<T>>;
 impl<T, S> FileInfoPollerConfigBuilder<T, S>
 where
     T: Clone,
+    S: FileInfoPollerState,
 {
-    pub fn create(self) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S>)> {
+    pub async fn create(self) -> Result<(FileInfoStreamReceiver<T>, FileInfoPollerServer<T, S>)> {
         let config = self.build()?;
         let (sender, receiver) = tokio::sync::mpsc::channel(config.queue_size);
-        Ok((receiver, FileInfoPollerServer { config, sender }))
+        let latest_file_timestamp = config
+            .state
+            .latest_timestamp(&config.process_name, &config.prefix)
+            .await?;
+
+        Ok((
+            receiver,
+            FileInfoPollerServer {
+                config,
+                sender,
+                file_queue: VecDeque::new(),
+                latest_file_timestamp,
+                cache: create_cache(),
+            },
+        ))
     }
 }
 
@@ -142,47 +163,57 @@ where
         })
     }
 
-    async fn run(self, shutdown: triggered::Listener) -> Result {
-        let cache = create_cache();
-        let mut poll_trigger = tokio::time::interval(self.poll_duration());
+    async fn get_next_file(&mut self) -> Result<FileInfo> {
+        loop {
+            if let Some(file_info) = self.file_queue.pop_front() {
+                return Ok(file_info);
+            }
+
+            let after = self.after(self.latest_file_timestamp);
+            let before = Utc::now();
+            let files = self
+                .config
+                .store
+                .list_all(&self.config.prefix, after, before)
+                .await?;
+
+            for file in files {
+                if !self.is_already_processed(&file).await? {
+                    self.latest_file_timestamp = Some(file.timestamp);
+                    self.file_queue.push_back(file);
+                }
+            }
+
+            if self.file_queue.is_empty() {
+                tokio::time::sleep(self.poll_duration()).await;
+            }
+        }
+    }
+
+    async fn run(mut self, shutdown: triggered::Listener) -> Result {
         let mut cleanup_trigger = tokio::time::interval(CLEAN_DURATION);
         let process_name = self.config.process_name.clone();
 
-        let mut latest_ts = self
-            .config
-            .state
-            .latest_timestamp(&self.config.process_name, &self.config.prefix)
-            .await?;
         tracing::info!(
             r#type = self.config.prefix,
             %process_name,
             "starting FileInfoPoller",
         );
 
+        let sender = self.sender.clone();
         loop {
-            let after = self.after(latest_ts);
-            let before = Utc::now();
-
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => {
                     tracing::info!(r#type = self.config.prefix, %process_name, "stopping FileInfoPoller");
                     break;
                 }
-                _ = cleanup_trigger.tick() => self.clean(&cache).await?,
-                _ = poll_trigger.tick() => {
-                    let files = self.config.store.list_all(&self.config.prefix, after, before).await?;
-                    for file in files {
-                        if !is_already_processed(&self.config.state, &cache, &process_name, &file).await? {
-                            if send_stream(&self.sender, &self.config.store, process_name.clone(), file.clone()).await? {
-                                latest_ts = Some(file.timestamp);
-                                cache_file(&cache, &file).await;
-                            } else {
-                                tracing::info!(r#type = self.config.prefix, %process_name, "FileInfoPoller: channel full");
-                                break;
-                            }
-                        }
-                    }
+                _ = cleanup_trigger.tick() => self.clean(&self.cache).await?,
+                result = futures::future::try_join(sender.reserve().map_err(Error::from), self.get_next_file()) => {
+                    let (permit, file) = result?;
+                    let data = parse_file(&self.config.store, process_name.clone(), file.clone()).await?;
+                    permit.send(data);
+                    cache_file(&self.cache, &file).await;
                 }
             }
         }
@@ -215,18 +246,28 @@ where
             .to_std()
             .unwrap_or(DEFAULT_POLL_DURATION)
     }
+
+    async fn is_already_processed(&self, file_info: &FileInfo) -> Result<bool> {
+        if self.cache.get(&file_info.key).await.is_some() {
+            Ok(true)
+        } else {
+            self.config
+                .state
+                .exists(&self.config.process_name, file_info)
+                .await
+        }
+    }
 }
 
-async fn send_stream<T>(
-    sender: &Sender<FileInfoStream<T>>,
+async fn parse_file<T>(
     store: &FileStore,
     process_name: String,
     file: FileInfo,
-) -> Result<bool>
+) -> Result<FileInfoStream<T>>
 where
     T: MsgDecode + TryFrom<T::Msg, Error = Error> + Send + Sync + 'static,
 {
-    let stream = store
+    let stream: Vec<T> = store
         .stream_file(file.clone())
         .await?
         .filter_map(|msg| async {
@@ -250,31 +291,14 @@ where
                 })
                 .ok()
         })
-        .boxed();
+        .collect()
+        .await;
 
-    let incoming_data_stream = FileInfoStream::new(process_name, file, stream);
-    match sender.try_send(incoming_data_stream) {
-        Ok(_) => Ok(true),
-        Err(TrySendError::Full(_)) => Ok(false),
-        Err(TrySendError::Closed(_)) => Err(Error::channel()),
-    }
+    Ok(FileInfoStream::new(process_name, file, stream))
 }
 
 fn create_cache() -> MemoryFileCache {
-    Cache::new()
-}
-
-async fn is_already_processed(
-    state: &impl FileInfoPollerState,
-    cache: &MemoryFileCache,
-    process_name: &str,
-    file_info: &FileInfo,
-) -> Result<bool> {
-    if cache.get(&file_info.key).await.is_some() {
-        Ok(true)
-    } else {
-        state.exists(process_name, file_info).await
-    }
+    Arc::new(Cache::new())
 }
 
 async fn cache_file(cache: &MemoryFileCache, file_info: &FileInfo) {

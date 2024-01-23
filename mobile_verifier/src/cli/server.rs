@@ -57,7 +57,8 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
                 .queue_size(1)
-                .create()?;
+                .create()
+                .await?;
 
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) =
@@ -66,7 +67,8 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::WifiHeartbeatIngestReport.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
@@ -118,7 +120,8 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CellSpeedtestIngestReport.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let (speedtests_avg, speedtests_avg_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
@@ -157,7 +160,8 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CoverageObjectIngestReport.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
@@ -216,7 +220,8 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::SubscriberLocationIngestReport.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let (verified_subscriber_location, verified_subscriber_location_server) =
             file_sink::FileSinkBuilder::new(
@@ -244,7 +249,8 @@ impl Cmd {
                 .store(data_transfer_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::ValidDataTransferSession.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
 
