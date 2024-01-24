@@ -103,6 +103,7 @@ pub mod cli {
         pub coverage_object: Vec<u8>,
         pub location_validation_timestamp: DateTime<Utc>,
         pub distance_to_asserted: u64,
+        pub location_trust_score_multiplier: u32,
     }
 
     impl TryFrom<Heartbeat> for ValidatedHeartbeat {
@@ -128,6 +129,7 @@ pub mod cli {
                         DecodeError::invalid_timestamp(v.location_validation_timestamp)
                     })?,
                 distance_to_asserted: v.distance_to_asserted,
+                location_trust_score_multiplier: v.location_trust_score_multiplier,
             })
         }
     }
