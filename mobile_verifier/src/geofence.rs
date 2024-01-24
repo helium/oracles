@@ -17,8 +17,10 @@ pub struct Geofence {
 
 impl Geofence {
     pub fn from_settings(settings: &Settings) -> anyhow::Result<Self> {
+        let paths = settings.region_paths()?;
+        tracing::info!(?paths, "geofence_regions");
         Ok(Self {
-            regions: Arc::new(valid_mapping_regions(settings.region_paths()?)?),
+            regions: Arc::new(valid_mapping_regions(paths)?),
             resolution: settings.fencing_resolution()?,
         })
     }
