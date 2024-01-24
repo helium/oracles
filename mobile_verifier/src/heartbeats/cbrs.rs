@@ -93,7 +93,7 @@ where
     async fn process_file(
         &self,
         file: FileInfoStream<CbrsHeartbeatIngestReport>,
-        heartbeat_cache: &Cache<(String, DateTime<Utc>), ()>,
+        heartbeat_cache: &Arc<Cache<(String, DateTime<Utc>), ()>>,
         coverage_claim_time_cache: &CoverageClaimTimeCache,
         coverage_objects: &CoverageObjects,
     ) -> anyhow::Result<()> {
@@ -101,10 +101,16 @@ where
         let mut transaction = self.pool.begin().await?;
         let epoch = (file.file_info.timestamp - Duration::hours(3))
             ..(file.file_info.timestamp + Duration::minutes(30));
+        let heartbeat_cache_clone = heartbeat_cache.clone();
         let heartbeats = file
             .into_stream(&mut transaction)
             .await?
-            .map(Heartbeat::from);
+            .map(Heartbeat::from)
+            .filter(move |h| {
+                let hb_cache = heartbeat_cache_clone.clone();
+                let id = h.id().unwrap();
+                async move { hb_cache.get(&id).await.is_none() }
+            });
         process_validated_heartbeats(
             ValidatedHeartbeat::validate_heartbeats(
                 &self.gateway_info_resolver,
