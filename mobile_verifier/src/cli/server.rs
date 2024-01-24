@@ -1,5 +1,5 @@
 use crate::{
-    coverage::CoverageDaemon, data_session::DataSessionIngestor,
+    coverage::CoverageDaemon, data_session::DataSessionIngestor, geofence::Geofence,
     heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
     heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon, rewarder::Rewarder,
     speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
@@ -93,6 +93,8 @@ impl Cmd {
         .create()
         .await?;
 
+        let geofence = Geofence::from_settings(settings)?;
+
         let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
             gateway_client.clone(),
@@ -102,6 +104,7 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
+            geofence.clone(),
         );
 
         let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
@@ -113,6 +116,7 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats,
             seniority_updates,
+            geofence,
         );
 
         // Speedtests

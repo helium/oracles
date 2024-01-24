@@ -1,6 +1,7 @@
 use super::{process_validated_heartbeats, Heartbeat, ValidatedHeartbeat};
 use crate::{
     coverage::{CoverageClaimTimeCache, CoverageObjectCache},
+    geofence::GeofenceValidator,
     GatewayResolver,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -17,7 +18,7 @@ use std::{
 use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
-pub struct HeartbeatDaemon<GIR> {
+pub struct HeartbeatDaemon<GIR, GFV> {
     pool: sqlx::Pool<sqlx::Postgres>,
     gateway_info_resolver: GIR,
     heartbeats: Receiver<FileInfoStream<WifiHeartbeatIngestReport>>,
@@ -26,11 +27,13 @@ pub struct HeartbeatDaemon<GIR> {
     max_distance_to_coverage: u32,
     heartbeat_sink: FileSinkClient,
     seniority_sink: FileSinkClient,
+    geofence: GFV,
 }
 
-impl<GIR> HeartbeatDaemon<GIR>
+impl<GIR, GFV> HeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
+    GFV: GeofenceValidator,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -42,6 +45,7 @@ where
         max_distance_to_coverage: u32,
         heartbeat_sink: FileSinkClient,
         seniority_sink: FileSinkClient,
+        geofence: GFV,
     ) -> Self {
         Self {
             pool,
@@ -52,6 +56,7 @@ where
             max_distance_to_coverage,
             heartbeat_sink,
             seniority_sink,
+            geofence,
         }
     }
 
@@ -116,6 +121,7 @@ where
                 self.max_distance_to_asserted,
                 self.max_distance_to_coverage,
                 &epoch,
+                &self.geofence,
             ),
             heartbeat_cache,
             coverage_claim_time_cache,
@@ -132,9 +138,10 @@ where
     }
 }
 
-impl<GIR> ManagedTask for HeartbeatDaemon<GIR>
+impl<GIR, GFV> ManagedTask for HeartbeatDaemon<GIR, GFV>
 where
     GIR: GatewayResolver,
+    GFV: GeofenceValidator,
 {
     fn start_task(
         self: Box<Self>,

@@ -11,6 +11,7 @@ use helium_proto::services::mobile_config::NetworkKeyRole;
 use helium_proto::services::poc_mobile::{CoverageObjectValidity, SignalLevel};
 use mobile_verifier::{
     coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
+    geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
     reward_shares::CoveragePoints,
     speedtests::Speedtest,
@@ -21,6 +22,15 @@ use rust_decimal_macros::dec;
 use sqlx::PgPool;
 use std::{collections::HashMap, ops::Range, pin::pin};
 use uuid::Uuid;
+
+#[derive(Clone)]
+struct MockGeofence {}
+
+impl GeofenceValidator for MockGeofence {
+    fn in_valid_region(&self, _heartbeat: &Heartbeat) -> bool {
+        true
+    }
+}
 
 #[sqlx::test]
 #[ignore]
@@ -388,6 +398,7 @@ async fn process_input(
         2000,
         2000,
         epoch,
+        &MockGeofence {},
     ));
     while let Some(heartbeat) = heartbeats.next().await.transpose()? {
         let coverage_claim_time = coverage_claim_time_cache
@@ -1263,6 +1274,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         2000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+        &MockGeofence {},
     )
     .await
     .unwrap();
@@ -1276,6 +1288,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         1000000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+        &MockGeofence {},
     )
     .await
     .unwrap();
@@ -1289,6 +1302,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         2000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+        &MockGeofence {},
     )
     .await
     .unwrap();
@@ -1302,6 +1316,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         1000000,
         1000000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+        &MockGeofence {},
     )
     .await
     .unwrap();

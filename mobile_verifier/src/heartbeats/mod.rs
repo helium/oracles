@@ -4,6 +4,7 @@ pub mod wifi;
 use crate::{
     cell_type::{CellType, CellTypeLabel},
     coverage::{CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta, Seniority},
+    geofence::GeofenceValidator,
     GatewayResolution, GatewayResolver,
 };
 use anyhow::anyhow;
@@ -353,6 +354,7 @@ impl ValidatedHeartbeat {
         max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
+        geofence: &impl GeofenceValidator,
     ) -> anyhow::Result<Self> {
         let Some(coverage_object) = heartbeat.coverage_object else {
             return Ok(Self::new(
@@ -447,6 +449,17 @@ impl ValidatedHeartbeat {
             ));
         };
 
+        if !geofence.in_valid_region(&heartbeat) {
+            return Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                Some(coverage_object.meta),
+                proto::HeartbeatValidity::UnsupportedLocation,
+            ));
+        }
+
         match gateway_info_resolver
             .resolve_gateway(&heartbeat.hotspot_key)
             .await?
@@ -509,6 +522,7 @@ impl ValidatedHeartbeat {
         max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
+        geofence: &'a impl GeofenceValidator,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
             Self::validate(
@@ -518,6 +532,7 @@ impl ValidatedHeartbeat {
                 max_distance_to_asserted,
                 max_distance_to_coverage,
                 epoch,
+                geofence,
             )
             .await
         })
