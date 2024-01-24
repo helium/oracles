@@ -2,6 +2,7 @@ pub mod cell_type;
 pub mod cli;
 pub mod coverage;
 pub mod data_session;
+pub mod geofence;
 pub mod heartbeats;
 pub mod reward_shares;
 pub mod rewarder;
