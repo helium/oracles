@@ -1,6 +1,8 @@
 use crate::{
     balances::{BalanceCache, BalanceStore},
-    pending::{Burn, PendingTables, PendingTablesTransaction},
+    pending::{
+        confirm_pending_txns, Burn, ConfirmPendingError, PendingTables, PendingTablesTransaction,
+    },
 };
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use solana::{GetSignature, SolanaNetwork};
@@ -42,6 +44,8 @@ pub enum BurnError<S> {
     SqlError(#[from] sqlx::Error),
     #[error("Solana error: {0}")]
     SolanaError(S),
+    #[error("Confirm pending transaction error: {0}")]
+    ConfirmPendingError(#[from] ConfirmPendingError<S>),
 }
 
 impl<P, S> Burner<P, S> {
@@ -66,10 +70,19 @@ where
         burn_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
+            #[rustfmt::skip]
             tokio::select! {
                 biased;
                 _ = shutdown.clone() => break,
-                _ = burn_timer.tick() => { let _ = self.burn().await; }
+                _ = burn_timer.tick() => {
+		    match self.burn().await {
+			Ok(()) => continue,
+			Err(err) => {
+			    tracing::error!("Error while burning data credits: {err}");
+			    confirm_pending_txns(&self.pending_tables, &self.solana, &self.balances).await?;
+			}
+		    }
+		}
             }
         }
         tracing::info!("Stopping burner");
