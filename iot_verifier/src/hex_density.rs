@@ -49,16 +49,16 @@ const SCALING_RES: [Resolution; 10] = [
 ];
 
 lazy_static! {
-    static ref HIP17_RES_CONFIG: HashMap<Resolution, HexResConfig> = {
+    static ref HIP104_RES_CONFIG: HashMap<Resolution, HexResConfig> = {
         // Hex resolutions 0 - 3 and 11 and 12 are currently ignored when calculating density;
         // For completeness sake their on-chain settings are N=2, TGT=100_000, MAX=100_000
         let mut configs = HashMap::new();
-        configs.insert(Resolution::Four, HexResConfig::new(1, 250, 800));
-        configs.insert(Resolution::Five, HexResConfig::new(1, 100, 400));
-        configs.insert(Resolution::Six, HexResConfig::new(1, 25, 100));
-        configs.insert(Resolution::Seven, HexResConfig::new(2, 5, 20));
-        configs.insert(Resolution::Eight, HexResConfig::new(2, 1, 4));
-        configs.insert(Resolution::Nine, HexResConfig::new(2, 1, 2));
+        configs.insert(Resolution::Four, HexResConfig::new(2, 500, 1000));
+        configs.insert(Resolution::Five, HexResConfig::new(4, 100, 200));
+        configs.insert(Resolution::Six, HexResConfig::new(4, 25, 50));
+        configs.insert(Resolution::Seven, HexResConfig::new(4, 5, 10));
+        configs.insert(Resolution::Eight, HexResConfig::new(2, 1, 1));
+        configs.insert(Resolution::Nine, HexResConfig::new(2, 1, 1));
         configs.insert(Resolution::Ten, HexResConfig::new(2, 1, 1));
         configs
     };
@@ -201,7 +201,7 @@ fn occupied_count(cell_map: &HexMap, hex: &CellIndex, density_tgt: u64) -> u64 {
 }
 
 fn limit(res: &h3o::Resolution, occupied_count: u64) -> u64 {
-    let res_config = HIP17_RES_CONFIG.get(res).unwrap();
+    let res_config = HIP104_RES_CONFIG.get(res).unwrap();
     let occupied_neighbor_diff = occupied_count.saturating_sub(res_config.neighbors);
     let max = cmp::max((occupied_neighbor_diff) + 1, 1);
     cmp::min(res_config.max, res_config.target * max)
@@ -232,7 +232,7 @@ pub fn compute_hex_density_map(global_map: &GlobalHexMap) -> HashMap<u64, Decima
 }
 
 fn get_res_tgt(res: &Resolution) -> u64 {
-    HIP17_RES_CONFIG
+    HIP104_RES_CONFIG
         .get(res)
         .map(|config| config.target)
         .unwrap()
@@ -292,37 +292,37 @@ mod tests {
         let hex_density_map = compute_hex_density_map(&gw_map);
 
         let expected_map = HashMap::<u64, Decimal>::from([
-            (631210990515538431, dec!(0.0065)),
-            (631210990515727359, dec!(0.0091)),
-            (631210990515924479, dec!(0.0606)),
-            (631210990515537919, dec!(0.0065)),
-            (631210990517011455, dec!(0.0152)),
-            (631210990516885503, dec!(0.0152)),
-            (631210990516888063, dec!(0.0152)),
-            (631210990516955647, dec!(0.0455)),
-            (631210990515728895, dec!(0.0091)),
-            (631210990517144063, dec!(0.0909)),
-            (631210990515739647, dec!(0.0091)),
-            (631210990516640767, dec!(0.0606)),
-            (631210990515601919, dec!(0.0114)),
-            (631210990516590079, dec!(0.0606)),
-            (631210990517264895, dec!(0.0909)),
-            (631210990515606527, dec!(0.0114)),
-            (631210990515874303, dec!(0.0606)),
-            (631210990516613631, dec!(0.0303)),
-            (631210990515589631, dec!(0.0114)),
-            (631210990515564031, dec!(0.0455)),
-            (631210990516612607, dec!(0.0303)),
-            (631210990516876799, dec!(0.0152)),
-            (631210990516363775, dec!(0.0909)),
-            (631210990516907007, dec!(0.0227)),
-            (631210990516912639, dec!(0.0227)),
-            (631210990515722239, dec!(0.0091)),
-            (631210990516996607, dec!(0.0152)),
-            (631210990515987455, dec!(0.0606)),
-            (631210990515600383, dec!(0.0114)),
-            (631210990517016575, dec!(0.0152)),
-            (631210990515536895, dec!(0.0065)),
+            (631210990515537919, dec!(0.0060)),
+            (631210990516955647, dec!(0.0417)),
+            (631210990516885503, dec!(0.0139)),
+            (631210990515601919, dec!(0.0104)),
+            (631210990516590079, dec!(0.0556)),
+            (631210990516888063, dec!(0.0139)),
+            (631210990516640767, dec!(0.0556)),
+            (631210990516907007, dec!(0.0208)),
+            (631210990515874303, dec!(0.0556)),
+            (631210990517011455, dec!(0.0139)),
+            (631210990516363775, dec!(0.1667)),
+            (631210990515589631, dec!(0.0104)),
+            (631210990516996607, dec!(0.0139)),
+            (631210990515600383, dec!(0.0104)),
+            (631210990517016575, dec!(0.0139)),
+            (631210990515606527, dec!(0.0104)),
+            (631210990515739647, dec!(0.0083)),
+            (631210990516613631, dec!(0.0278)),
+            (631210990516876799, dec!(0.0139)),
+            (631210990515924479, dec!(0.0556)),
+            (631210990515538431, dec!(0.0060)),
+            (631210990515536895, dec!(0.0060)),
+            (631210990517144063, dec!(0.0833)),
+            (631210990517264895, dec!(0.0833)),
+            (631210990516612607, dec!(0.0278)),
+            (631210990515722239, dec!(0.0083)),
+            (631210990516912639, dec!(0.0208)),
+            (631210990515727359, dec!(0.0083)),
+            (631210990515564031, dec!(0.0417)),
+            (631210990515728895, dec!(0.0083)),
+            (631210990515987455, dec!(0.0556)),
         ]);
         assert_eq!(hex_density_map, expected_map);
     }
