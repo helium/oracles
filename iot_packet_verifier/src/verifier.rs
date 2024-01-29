@@ -1,12 +1,15 @@
-use crate::pending_burns::PendingBurns;
+use crate::pending::AddPendingBurn;
 use async_trait::async_trait;
 use file_store::{
     file_sink::FileSinkClient, iot_packet::PacketRouterPacketReport, traits::MsgTimestamp,
 };
 use futures::{Stream, StreamExt};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket};
-use iot_config::client::{ClientError, OrgClient};
+use helium_proto::services::{
+    packet_verifier::{InvalidPacket, InvalidPacketReason, ValidPacket},
+    router::packet_router_packet_report_v1::PacketType,
+};
+use iot_config::client::org_client::Orgs;
 use solana::SolanaNetwork;
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -26,13 +29,13 @@ pub struct Verifier<D, C> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum VerificationError<DE, CE, BE, VPE, IPE> {
+pub enum VerificationError<DE, CE, VPE, IPE> {
     #[error("Debit error: {0}")]
     DebitError(DE),
     #[error("Config server error: {0}")]
     ConfigError(CE),
     #[error("Burn error: {0}")]
-    BurnError(BE),
+    BurnError(#[from] sqlx::Error),
     #[error("Valid packet writer error: {0}")]
     ValidPacketWriterError(VPE),
     #[error("Invalid packet writer error: {0}")]
@@ -52,9 +55,9 @@ where
         reports: R,
         mut valid_packets: VP,
         mut invalid_packets: IP,
-    ) -> Result<(), VerificationError<D::Error, C::Error, B::Error, VP::Error, IP::Error>>
+    ) -> Result<(), VerificationError<D::Error, C::Error, VP::Error, IP::Error>>
     where
-        B: PendingBurns,
+        B: AddPendingBurn,
         R: Stream<Item = PacketRouterPacketReport>,
         VP: PacketWriter<ValidPacket>,
         IP: PacketWriter<InvalidPacket>,
@@ -64,6 +67,10 @@ where
         tokio::pin!(reports);
 
         while let Some(report) = reports.next().await {
+            if PacketType::Uplink != report.packet_type {
+                continue;
+            }
+
             let debit_amount = payload_size_to_dc(report.payload_size as u64);
 
             let payer = self
@@ -71,17 +78,18 @@ where
                 .fetch_org(report.oui, &mut org_cache)
                 .await
                 .map_err(VerificationError::ConfigError)?;
-            let remaining_balance = self
-                .debiter
-                .debit_if_sufficient(&payer, debit_amount)
-                .await
-                .map_err(VerificationError::DebitError)?;
 
-            if let Some(remaining_balance) = remaining_balance {
+            if let Some(remaining_balance) = self
+                .debiter
+                .debit_if_sufficient(&payer, debit_amount, minimum_allowed_balance)
+                .await
+                .map_err(VerificationError::DebitError)?
+            {
                 pending_burns
                     .add_burned_amount(&payer, debit_amount)
                     .await
                     .map_err(VerificationError::BurnError)?;
+
                 valid_packets
                     .write(ValidPacket {
                         packet_timestamp: report.timestamp(),
@@ -109,6 +117,10 @@ where
                     })
                     .await
                     .map_err(VerificationError::InvalidPacketWriterError)?;
+                self.config_server
+                    .disable_org(report.oui)
+                    .await
+                    .map_err(VerificationError::ConfigError)?;
             }
         }
 
@@ -134,6 +146,7 @@ pub trait Debiter {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
+        trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, Self::Error>;
 }
 
@@ -145,6 +158,7 @@ impl Debiter for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
+        _trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, Infallible> {
         let map = self.lock().await;
         let balance = map.get(payer).unwrap();
@@ -258,26 +272,44 @@ pub enum MonitorError<S, E> {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ConfigServerError {
-    #[error("org client error: {0}")]
-    Client(#[from] ClientError),
+pub enum ConfigServerError<OrgsError> {
+    #[error("orgs  error: {0}")]
+    OrgError(#[from] OrgsError),
     #[error("not found: {0}")]
     NotFound(u64),
 }
 
+pub struct CachedOrgClient<O> {
+    orgs: O,
+    locked_cache: HashMap<u64, bool>,
+}
+
+impl<O> CachedOrgClient<O> {
+    pub fn new(orgs: O) -> Self {
+        Self {
+            orgs,
+            locked_cache: HashMap::new(),
+        }
+    }
+}
+
 #[async_trait]
-impl ConfigServer for Arc<Mutex<OrgClient>> {
-    type Error = ConfigServerError;
+impl<O> ConfigServer for Arc<Mutex<CachedOrgClient<O>>>
+where
+    O: Orgs,
+{
+    type Error = ConfigServerError<O::Error>;
 
     async fn fetch_org(
         &self,
         oui: u64,
-        cache: &mut HashMap<u64, PublicKeyBinary>,
+        oui_cache: &mut HashMap<u64, PublicKeyBinary>,
     ) -> Result<PublicKeyBinary, Self::Error> {
-        if let Entry::Vacant(e) = cache.entry(oui) {
+        if let Entry::Vacant(e) = oui_cache.entry(oui) {
             let pubkey = PublicKeyBinary::from(
                 self.lock()
                     .await
+                    .orgs
                     .get(oui)
                     .await?
                     .org
@@ -286,16 +318,24 @@ impl ConfigServer for Arc<Mutex<OrgClient>> {
             );
             e.insert(pubkey);
         }
-        Ok(cache.get(&oui).unwrap().clone())
+        Ok(oui_cache.get(&oui).unwrap().clone())
     }
 
     async fn disable_org(&self, oui: u64) -> Result<(), Self::Error> {
-        self.lock().await.disable(oui).await?;
+        let mut cached_client = self.lock().await;
+        if *cached_client.locked_cache.entry(oui).or_insert(true) {
+            cached_client.orgs.disable(oui).await?;
+            *cached_client.locked_cache.get_mut(&oui).unwrap() = false;
+        }
         Ok(())
     }
 
     async fn enable_org(&self, oui: u64) -> Result<(), Self::Error> {
-        self.lock().await.enable(oui).await?;
+        let mut cached_client = self.lock().await;
+        if !*cached_client.locked_cache.entry(oui).or_insert(false) {
+            cached_client.orgs.enable(oui).await?;
+            *cached_client.locked_cache.get_mut(&oui).unwrap() = true;
+        }
         Ok(())
     }
 
@@ -303,6 +343,7 @@ impl ConfigServer for Arc<Mutex<OrgClient>> {
         Ok(self
             .lock()
             .await
+            .orgs
             .list()
             .await?
             .into_iter()

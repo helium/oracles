@@ -3,7 +3,7 @@ use crate::{
     lora_field::{DevAddrField, DevAddrRange, EuiPair, NetIdField, Skf},
 };
 use anyhow::anyhow;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use file_store::traits::TimestampEncode;
 use futures::{
     future::TryFutureExt,
@@ -13,7 +13,7 @@ use helium_crypto::{Keypair, Sign};
 use helium_proto::Message;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{types::Uuid, Row};
+use sqlx::{types::Uuid, FromRow, Row};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::broadcast::Sender;
 
@@ -155,8 +155,10 @@ pub async fn create_route(
         })
         .and_then(|signature| {
             update.signature = signature;
-            broadcast_update(update, update_tx)
-                .map_err(|_| anyhow!("failed broadcasting route create"))
+            broadcast_update(update, update_tx).map_err(|_| {
+                tracing::error!("failed broadcasting route create");
+                anyhow!("failed broadcasting route create")
+            })
         })
         .await;
 
@@ -220,8 +222,10 @@ pub async fn update_route(
         })
         .and_then(|signature| {
             update_res.signature = signature;
-            broadcast_update(update_res, update_tx)
-                .map_err(|_| anyhow!("failed broadcasting route update"))
+            broadcast_update(update_res, update_tx).map_err(|_| {
+                tracing::error!("failed broadcasting route update");
+                anyhow!("failed broadcasting route update")
+            })
         })
         .await;
 
@@ -243,7 +247,7 @@ async fn insert_euis(
 
     const EUI_INSERT_VALS: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
     const EUI_INSERT_ON_CONF: &str =
-        " on conflict (route_id, app_eui, dev_eui) do nothing returning * ";
+        " on conflict (route_id, app_eui, dev_eui) do update set deleted = false returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(EUI_INSERT_VALS);
     query_builder
@@ -272,7 +276,7 @@ async fn remove_euis(
         .collect::<Result<Vec<(Uuid, i64, i64)>, _>>()?;
 
     const EUI_DELETE_VALS: &str =
-        " delete from route_eui_pairs where (route_id, app_eui, dev_eui) in ";
+        " update route_eui_pairs set deleted = true where (route_id, app_eui, dev_eui) in ";
     const EUI_DELETE_RETURNING: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(EUI_DELETE_VALS);
@@ -354,7 +358,7 @@ async fn insert_devaddr_ranges(
     const DEVADDR_RANGE_INSERT_VALS: &str =
         " insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
     const DEVADDR_RANGE_INSERT_ON_CONF: &str =
-        " on conflict (route_id, start_addr, end_addr) do nothing returning * ";
+        " on conflict (route_id, start_addr, end_addr) do update set deleted = false returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_VALS);
     query_builder
@@ -383,7 +387,7 @@ async fn remove_devaddr_ranges(
         .collect::<Result<Vec<(Uuid, i32, i32)>, _>>()?;
 
     const DEVADDR_RANGE_DELETE_VALS: &str =
-        " delete from route_devaddr_ranges where (route_id, start_addr, end_addr) in ";
+        " update route_devaddr_ranges set deleted = true where (route_id, start_addr, end_addr) in ";
     const DEVADDR_RANGE_DELETE_RETURNING: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(DEVADDR_RANGE_DELETE_VALS);
@@ -461,7 +465,7 @@ pub async fn list_routes(oui: u64, db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
         select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
             from routes r
             join organizations o on r.oui = o.oui
-            where o.oui = $1
+            where o.oui = $1 and r.deleted = false
             group by r.id, o.locked
         "#,
     )
@@ -491,7 +495,7 @@ pub fn list_euis_for_route<'a>(
     const EUI_SELECT_SQL: &str = r#"
     select eui.route_id, eui.app_eui, eui.dev_eui
         from route_eui_pairs eui
-        where eui.route_id = $1
+        where eui.route_id = $1 and eui.deleted = false
     "#;
 
     Ok(sqlx::query_as::<_, EuiPair>(EUI_SELECT_SQL)
@@ -508,7 +512,7 @@ pub fn list_devaddr_ranges_for_route<'a>(
     const DEVADDR_RANGE_SELECT_SQL: &str = r#"
     select devaddr.route_id, devaddr.start_addr, devaddr.end_addr
         from route_devaddr_ranges devaddr
-        where devaddr.route_id = $1
+        where devaddr.route_id = $1 and devaddr.deleted = false
     "#;
 
     Ok(sqlx::query_as::<_, DevAddrRange>(DEVADDR_RANGE_SELECT_SQL)
@@ -517,20 +521,24 @@ pub fn list_devaddr_ranges_for_route<'a>(
         .boxed())
 }
 
-pub fn active_route_stream<'a>(
+pub fn route_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a,
-) -> impl Stream<Item = Route> + 'a {
-    sqlx::query_as::<_, StorageRoute>(
+    since: DateTime<Utc>,
+) -> impl Stream<Item = (Route, bool)> + 'a {
+    sqlx::query(
         r#"
-        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
+        select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked, r.deleted
             from routes r
             join organizations o on r.oui = o.oui
+            where r.updated_at >= $1
             group by r.id, o.locked
         "#,
     )
+    .bind(since)
     .fetch(db)
+    .and_then(|row| async move { StorageRoute::from_row(&row).map(|sr| (sr, row.get("deleted"))) })
     .map_err(RouteStorageError::from)
-    .and_then(|route| async move { Ok(Route {
+    .and_then(|(route, deleted)| async move { Ok((Route {
             id: route.id.to_string(),
             net_id: route.net_id.into(),
             oui: route.oui as u64,
@@ -539,50 +547,67 @@ pub fn active_route_stream<'a>(
             active: route.active,
             locked: route.locked,
             ignore_empty_skf: route.ignore_empty_skf,
-        })})
-    .filter_map(|route| async move { route.ok() })
+        }, deleted))})
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
 pub fn eui_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a + Copy,
-) -> impl Stream<Item = EuiPair> + 'a {
-    sqlx::query_as::<_, EuiPair>(
+    since: DateTime<Utc>,
+) -> impl Stream<Item = (EuiPair, bool)> + 'a {
+    sqlx::query(
         r#"
-        select eui.route_id, eui.app_eui, eui.dev_eui
+        select eui.route_id, eui.app_eui, eui.dev_eui, eui.deleted
         from route_eui_pairs eui
+        join routes r on eui.route_id = r.id
+        where eui.updated_at >= $1 and r.deleted = false
         "#,
     )
+    .bind(since)
     .fetch(db)
-    .map_err(sqlx::Error::from)
-    .filter_map(|eui| async move { eui.ok() })
+    .and_then(|row| async move { EuiPair::from_row(&row).map(|eui| (eui, row.get("deleted"))) })
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
 pub fn devaddr_range_stream<'a>(
     db: impl sqlx::PgExecutor<'a> + 'a + Copy,
-) -> impl Stream<Item = DevAddrRange> + 'a {
-    sqlx::query_as::<_, DevAddrRange>(
+    since: DateTime<Utc>,
+) -> impl Stream<Item = (DevAddrRange, bool)> + 'a {
+    sqlx::query(
         r#"
-        select devaddr.route_id, devaddr.start_addr, devaddr.end_addr
+        select devaddr.route_id, devaddr.start_addr, devaddr.end_addr, devaddr.deleted
         from route_devaddr_ranges devaddr
+        join routes r on devaddr.route_id = r.id
+        where devaddr.updated_at >= $1 and r.deleted = false
         "#,
     )
+    .bind(since)
     .fetch(db)
-    .map_err(sqlx::Error::from)
-    .filter_map(|devaddr| async move { devaddr.ok() })
+    .and_then(
+        |row| async move { DevAddrRange::from_row(&row).map(|dar| (dar, row.get("deleted"))) },
+    )
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
-pub fn skf_stream<'a>(db: impl sqlx::PgExecutor<'a> + 'a + Copy) -> impl Stream<Item = Skf> + 'a {
-    sqlx::query_as::<_, Skf>(
+pub fn skf_stream<'a>(
+    db: impl sqlx::PgExecutor<'a> + 'a + Copy,
+    since: DateTime<Utc>,
+) -> impl Stream<Item = (Skf, bool)> + 'a {
+    sqlx::query(
         r#"
-        select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies
+        select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies, skf.deleted
         from route_session_key_filters skf
+        join routes r on skf.route_id = r.id
+        where skf.updated_at >= $1 and r.deleted = false
         "#,
     )
+    .bind(since)
     .fetch(db)
-    .filter_map(|skf| async move { skf.ok() })
+    .and_then(|row| async move { Skf::from_row(&row).map(|skf| (skf, row.get("deleted"))) })
+    .filter_map(|result| async move { result.ok() })
     .boxed()
 }
 
@@ -593,7 +618,7 @@ pub async fn get_route(id: &str, db: impl sqlx::PgExecutor<'_>) -> anyhow::Resul
         select r.id, r.oui, r.net_id, r.max_copies, r.server_host, r.server_port, r.server_protocol_opts, r.active, r.ignore_empty_skf, o.locked
             from routes r
             join organizations o on r.oui = o.oui
-            where r.id = $1
+            where r.id = $1 and r.deleted = false
             group by r.id, o.locked
         "#,
     )
@@ -632,7 +657,8 @@ pub async fn delete_route(
 
     sqlx::query(
         r#"
-        delete from routes
+        update routes
+        set deleted = true
         where id = $1
         "#,
     )
@@ -659,9 +685,10 @@ pub async fn delete_route(
         .map_err(|_| anyhow!("failed to sign route delete update"))
         .and_then(|signature| {
             delete_res.signature = signature;
-            update_tx
-                .send(delete_res)
-                .map_err(|_| anyhow!("failed to broadcast route delete update"))
+            update_tx.send(delete_res).map_err(|_| {
+                tracing::error!("failed to broadcast route delete update");
+                anyhow!("failed to broadcast route delete update")
+            })
         });
 
     Ok(())
@@ -675,7 +702,7 @@ pub fn list_skfs_for_route<'a>(
     const SKF_SELECT_SQL: &str = r#"
         select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies
             from route_session_key_filters skf
-            where skf.route_id = $1
+            where skf.route_id = $1 and skf.deleted = false
     "#;
 
     Ok(sqlx::query_as::<_, Skf>(SKF_SELECT_SQL)
@@ -695,7 +722,7 @@ pub fn list_skfs_for_route_and_devaddr<'a>(
         r#"
         select skf.route_id, skf.devaddr, skf.session_key, skf.max_copies
         from route_session_key_filters skf
-        where skf.route_id = $1 and devaddr = $2
+        where skf.route_id = $1 and skf.devaddr = $2 and skf.deleted = false
         "#,
     )
     .bind(id)
@@ -713,16 +740,18 @@ pub async fn update_skfs(
 ) -> anyhow::Result<()> {
     let mut transaction = db.begin().await?;
 
-    let added_updates: Vec<(Skf, proto::ActionV1)> = insert_skfs(to_add, &mut transaction)
-        .await?
-        .into_iter()
-        .map(|added_skf| (added_skf, proto::ActionV1::Add))
-        .collect();
-
+    // Always process removes before adds to ensure updating existing values doesn't result in
+    // removing a value that was just added
     let removed_updates: Vec<(Skf, proto::ActionV1)> = remove_skfs(to_remove, &mut transaction)
         .await?
         .into_iter()
         .map(|removed_skf| (removed_skf, proto::ActionV1::Remove))
+        .collect();
+
+    let added_updates: Vec<(Skf, proto::ActionV1)> = insert_skfs(to_add, &mut transaction)
+        .await?
+        .into_iter()
+        .map(|added_skf| (added_skf, proto::ActionV1::Add))
         .collect();
 
     transaction.commit().await?;
@@ -766,8 +795,11 @@ async fn insert_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
 
     const SKF_INSERT_VALS: &str =
         " insert into route_session_key_filters (route_id, devaddr, session_key, max_copies) ";
+    // changes to existing records are always treated as an upsert and override the existing value
+    // instead of ignoring. this avoids reconciliation bugs attempting to update fields of an
+    // existing skf from succeeding on the HPRs but being ignored by the Config Service
     const SKF_INSERT_CONFLICT: &str =
-        " on conflict (route_id, devaddr, session_key) do nothing returning * ";
+        " on conflict (route_id, devaddr, session_key) do update set max_copies = excluded.max_copies, deleted = false returning * ";
 
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SKF_INSERT_VALS);
@@ -798,7 +830,7 @@ async fn remove_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
         .collect::<Result<Vec<(Uuid, i32, String, i32)>, _>>()?;
 
     const SKF_DELETE_VALS: &str =
-        " delete from route_session_key_filters where (route_id, devaddr, session_key) in ";
+        " update route_session_key_filters set deleted = true where (route_id, devaddr, session_key) in ";
     const SKF_DELETE_RETURN: &str = " returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SKF_DELETE_VALS);

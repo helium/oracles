@@ -1,40 +1,59 @@
 use crate::{
     balances::BalanceCache,
     burner::Burner,
+    pending::confirm_pending_txns,
     settings::Settings,
-    verifier::{ConfigServer, Verifier},
+    verifier::{CachedOrgClient, ConfigServer, Verifier},
 };
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Result};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
+    file_sink::FileSinkBuilder,
     file_sink::FileSinkClient,
     file_source, file_upload,
     iot_packet::PacketRouterPacketReport,
-    FileSinkBuilder, FileStore, FileType,
+    FileStore, FileType,
 };
 use futures_util::TryFutureExt;
-use iot_config::client::OrgClient;
+use iot_config::client::{org_client::Orgs, OrgClient};
 use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use std::{sync::Arc, time::Duration};
-use tokio::{
-    signal,
-    sync::{mpsc::Receiver, Mutex},
-};
+use task_manager::{ManagedTask, TaskManager};
+use tokio::sync::{mpsc::Receiver, Mutex};
 
-struct Daemon {
+type SharedCachedOrgClient<T> = Arc<Mutex<CachedOrgClient<T>>>;
+
+struct Daemon<O> {
     pool: Pool<Postgres>,
-    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, Arc<Mutex<OrgClient>>>,
+    verifier: Verifier<BalanceCache<Option<Arc<SolanaRpc>>>, SharedCachedOrgClient<O>>,
     report_files: Receiver<FileInfoStream<PacketRouterPacketReport>>,
     valid_packets: FileSinkClient,
     invalid_packets: FileSinkClient,
     minimum_allowed_balance: u64,
 }
 
-impl Daemon {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
+impl<O> ManagedTask for Daemon<O>
+where
+    O: Orgs,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
+impl<O> Daemon<O>
+where
+    O: Orgs,
+{
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
+        tracing::info!("Starting verifier daemon");
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.clone() => break,
                 file = self.report_files.recv() => {
                     if let Some(file) = file {
@@ -46,7 +65,7 @@ impl Daemon {
 
             }
         }
-
+        tracing::info!("Stopping verifier daemon");
         Ok(())
     }
 
@@ -80,23 +99,11 @@ impl Daemon {
 pub struct Cmd {}
 
 impl Cmd {
-    pub async fn run(self, settings: &Settings) -> Result<()> {
+    pub async fn run(self, settings: Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Set up the postgres pool:
-        let (mut pool, db_handle) = settings
-            .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
         let solana = if settings.enable_solana_integration {
@@ -109,15 +116,12 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = solana::balance_monitor::start(
-            env!("CARGO_PKG_NAME"),
-            solana.clone(),
-            shutdown_listener.clone(),
-        )
-        .await?;
-
         // Set up the balance cache:
-        let balances = BalanceCache::new(&mut pool, solana.clone()).await?;
+        let balances = BalanceCache::new(&pool, solana.clone()).await?;
+
+        // Check if we have any left over pending transactions, and if we
+        // do check if they have been confirmed:
+        confirm_pending_txns(&pool, &solana, &balances.balances()).await?;
 
         // Set up the balance burner:
         let burner = Burner::new(
@@ -127,49 +131,45 @@ impl Cmd {
             solana.clone(),
         );
 
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
         // Verified packets:
-        let (valid_packets, mut valid_packets_server) = FileSinkBuilder::new(
+        let (valid_packets, valid_packets_server) = FileSinkBuilder::new(
             FileType::IotValidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_packets"),
-            shutdown_listener.clone(),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
 
-        let (invalid_packets, mut invalid_packets_server) = FileSinkBuilder::new(
+        let (invalid_packets, invalid_packets_server) = FileSinkBuilder::new(
             FileType::InvalidPacket,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_packets"),
-            shutdown_listener.clone(),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
 
-        let org_client = Arc::new(Mutex::new(OrgClient::from_settings(
+        let org_client = Arc::new(Mutex::new(CachedOrgClient::new(OrgClient::from_settings(
             &settings.iot_config_client,
-        )?));
+        )?)));
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (report_files, source_join_handle) =
-            file_source::continuous_source::<PacketRouterPacketReport>()
-                .db(pool.clone())
+        let (report_files, report_files_server) =
+            file_source::continuous_source::<PacketRouterPacketReport, _>()
+                .state(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .file_type(FileType::IotPacketReport)
-                .build()?
-                .start(shutdown_listener.clone())
+                .prefix(FileType::IotPacketReport.to_string())
+                .create()
                 .await?;
 
         let balance_store = balances.balances();
@@ -186,26 +186,28 @@ impl Cmd {
         };
 
         // Run the services:
-        tokio::try_join!(
-            db_handle.map_err(Error::from),
-            burner.run(&shutdown_listener).map_err(Error::from),
-            file_upload.run(&shutdown_listener).map_err(Error::from),
-            verifier_daemon.run(&shutdown_listener).map_err(Error::from),
-            valid_packets_server.run().map_err(Error::from),
-            invalid_packets_server.run().map_err(Error::from),
-            org_client
-                .monitor_funds(
-                    solana,
-                    balance_store,
-                    settings.minimum_allowed_balance,
-                    Duration::from_secs(60 * settings.monitor_funds_period),
-                    shutdown_listener.clone(),
-                )
-                .map_err(Error::from),
-            source_join_handle.map_err(Error::from),
-            sol_balance_monitor.map_err(Error::from),
-        )?;
+        let minimum_allowed_balance = settings.minimum_allowed_balance;
+        let monitor_funds_period = settings.monitor_funds_period;
 
-        Ok(())
+        TaskManager::builder()
+            .add_task(file_upload_server)
+            .add_task(valid_packets_server)
+            .add_task(invalid_packets_server)
+            .add_task(move |shutdown| {
+                org_client
+                    .monitor_funds(
+                        solana,
+                        balance_store,
+                        minimum_allowed_balance,
+                        Duration::from_secs(60 * monitor_funds_period),
+                        shutdown,
+                    )
+                    .map_err(anyhow::Error::from)
+            })
+            .add_task(verifier_daemon)
+            .add_task(burner)
+            .add_task(report_files_server)
+            .start()
+            .await
     }
 }

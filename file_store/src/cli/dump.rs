@@ -1,12 +1,13 @@
 use crate::{
     cli::print_json,
     file_source,
-    heartbeat::{CellHeartbeat, CellHeartbeatIngestReport},
+    heartbeat::{CbrsHeartbeat, CbrsHeartbeatIngestReport},
     iot_packet::IotValidPacket,
     mobile_session::{DataTransferSessionIngestReport, InvalidDataTransferIngestReport},
     mobile_subscriber::{SubscriberLocationIngestReport, VerifiedSubscriberLocationIngestReport},
     speedtest::{CellSpeedtest, CellSpeedtestIngestReport},
     traits::MsgDecode,
+    wifi_heartbeat::WifiHeartbeatIngestReport,
     FileType, Result, Settings,
 };
 use base64::Engine;
@@ -16,7 +17,10 @@ use helium_crypto::PublicKey;
 use helium_proto::{
     services::{
         packet_verifier::ValidDataTransferSession as ValidDataTransferSessionProto,
-        poc_lora::{LoraBeaconIngestReportV1, LoraPocV1, LoraWitnessIngestReportV1},
+        poc_lora::{
+            LoraBeaconIngestReportV1, LoraInvalidWitnessReportV1, LoraPocV1,
+            LoraWitnessIngestReportV1,
+        },
         poc_mobile::{
             mobile_reward_share::Reward, CellHeartbeatIngestReportV1, CellHeartbeatReqV1,
             Heartbeat, InvalidDataTransferIngestReportV1, MobileRewardShare, RadioRewardShare,
@@ -47,17 +51,28 @@ impl Cmd {
         while let Some(result) = file_stream.next().await {
             let msg = result?;
             match self.file_type {
-                FileType::CellHeartbeat => {
+                FileType::CbrsHeartbeat => {
                     let dec_msg = CellHeartbeatReqV1::decode(msg)?;
-                    wtr.serialize(CellHeartbeat::try_from(dec_msg)?)?;
+                    wtr.serialize(CbrsHeartbeat::try_from(dec_msg)?)?;
+                }
+                FileType::WifiHeartbeatIngestReport => {
+                    let msg = WifiHeartbeatIngestReport::decode(msg)?;
+                    let json = json!({
+                        "received_timestamp": msg.received_timestamp,
+                        "pubkey": msg.report.pubkey,
+                        "operation_mode": msg.report.operation_mode,
+                        "location_validation_timestamp": msg.report.location_validation_timestamp,
+                    });
+                    // print_json(&msg)?;
+                    print_json(&json)?;
                 }
                 FileType::CellSpeedtest => {
                     let dec_msg = SpeedtestReqV1::decode(msg)?;
                     wtr.serialize(CellSpeedtest::try_from(dec_msg)?)?;
                 }
-                FileType::CellHeartbeatIngestReport => {
+                FileType::CbrsHeartbeatIngestReport => {
                     let dec_msg = CellHeartbeatIngestReportV1::decode(msg)?;
-                    let ingest_report = CellHeartbeatIngestReport::try_from(dec_msg)?;
+                    let ingest_report = CbrsHeartbeatIngestReport::try_from(dec_msg)?;
                     print_json(&ingest_report)?;
                 }
                 FileType::CellSpeedtestIngestReport => {
@@ -69,7 +84,7 @@ impl Cmd {
                     let dtr = DataTransferSessionIngestReport::decode(msg)?;
                     print_json(&json!({
                         "received_timestamp": dtr.received_timestamp,
-                        "reward_cancelled": dtr.report.reward_cancelled,
+                        "rewardable_bytes": dtr.report.rewardable_bytes,
                         "pub_key": dtr.report.data_transfer_usage.pub_key,
                         "upload_bytes": dtr.report.data_transfer_usage.upload_bytes,
                         "download_bytes": dtr.report.data_transfer_usage.download_bytes,
@@ -86,7 +101,7 @@ impl Cmd {
                         "invalid_reason": msg.reason,
                         "invalid_timestamp": msg.timestamp,
                         "received_timestamp": msg.report.received_timestamp,
-                        "reward_cancelled": msg.report.report.reward_cancelled,
+                        "rewardable_bytes": msg.report.report.rewardable_bytes,
                         "hotspot_key": PublicKey::try_from(msg.report.report.data_transfer_usage.pub_key)?,
                         "upload_bytes": msg.report.report.data_transfer_usage.upload_bytes,
                         "download_bytes": msg.report.report.data_transfer_usage.download_bytes,
@@ -125,6 +140,17 @@ impl Cmd {
                     let json = json!({
                         "received_timestamp": dec_msg.received_timestamp,
                         "report":  dec_msg.report,
+                    });
+                    // TODO: tmp dump out as json
+                    // printing to json here as csv serializing failing due on header generation from struct
+                    print_json(&json)?;
+                    // wtr.serialize(IotWitnessIngestReport::try_from(dec_msg)?)?;
+                }
+                FileType::IotInvalidWitnessReport => {
+                    let dec_msg = LoraInvalidWitnessReportV1::decode(msg)?;
+                    let json = json!({
+                        "received_timestamp": dec_msg.received_timestamp,
+                        "reason":  dec_msg.reason
                     });
                     // TODO: tmp dump out as json
                     // printing to json here as csv serializing failing due on header generation from struct
@@ -179,7 +205,6 @@ impl Cmd {
                     print_json(&json!({
                         "cbsd_id": heartbeat.cbsd_id,
                         "pub_key": PublicKey::try_from(heartbeat.pub_key)?,
-                        "reward_multiplier": heartbeat.reward_multiplier,
                         "timestamp": heartbeat.timestamp,
                         "cell_type": heartbeat.cell_type,
                         "validity": heartbeat.validity,
@@ -193,12 +218,21 @@ impl Cmd {
                             "dc_transfer_reward": reward.dc_transfer_reward,
                         }))?,
                         Some(Reward::RadioReward(reward)) => print_json(&json!({
+                            "hotspot_key":  PublicKey::try_from(reward.hotspot_key)?,
                             "cbsd_id": reward.cbsd_id,
                             "poc_reward": reward.poc_reward,
                         }))?,
                         Some(Reward::SubscriberReward(reward)) => print_json(&json!({
                             "subscriber_id": reward.subscriber_id,
                             "discovery_location_amount": reward.discovery_location_amount,
+                        }))?,
+                        Some(Reward::ServiceProviderReward(reward)) => print_json(&json!({
+                            "service_provider": reward.service_provider_id,
+                            "amount": reward.amount,
+                        }))?,
+                        Some(Reward::UnallocatedReward(reward)) => print_json(&json!({
+                            "unallocated_reward_type": reward.reward_type,
+                            "amount": reward.amount,
                         }))?,
                         _ => (),
                     }

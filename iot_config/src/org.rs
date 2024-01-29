@@ -156,6 +156,7 @@ pub async fn update_org(
     authorizer: UpdateAuthorizer,
     updates: Vec<proto::UpdateV1>,
     db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres>,
+    delegate_cache: &watch::Sender<DelegateCache>,
 ) -> Result<Org, OrgStoreError> {
     let mut txn = db.begin().await?;
 
@@ -165,37 +166,52 @@ pub async fn update_org(
     let net_id = get_org_netid(oui, &mut txn).await?;
     let is_helium_org = is_helium_netid(&net_id);
 
-    for update in updates {
+    for update in updates.iter() {
         match update.update {
-            Some(proto::Update::Owner(pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
-                update_owner(oui, pubkeybin.into(), &mut txn).await?
+            Some(proto::Update::Owner(ref pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
+                let pubkeybin: PublicKeyBinary = pubkeybin.clone().into();
+                update_owner(oui, &pubkeybin, &mut txn).await?;
+                tracing::info!(oui, pubkey = %pubkeybin, "owner pubkey updated");
             }
-            Some(proto::Update::Payer(pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
-                update_payer(oui, pubkeybin.into(), &mut txn).await?
+            Some(proto::Update::Payer(ref pubkeybin)) if authorizer == UpdateAuthorizer::Admin => {
+                let pubkeybin: PublicKeyBinary = pubkeybin.clone().into();
+                update_payer(oui, &pubkeybin, &mut txn).await?;
+                tracing::info!(oui, pubkey = %pubkeybin, "payer pubkey updated");
             }
             Some(proto::Update::Devaddrs(addr_count))
                 if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
             {
-                add_devaddr_slab(oui, net_id, addr_count, &mut txn).await?
+                add_devaddr_slab(oui, net_id, addr_count, &mut txn).await?;
+                tracing::info!(oui, addrs = addr_count, "new devaddr slab assigned");
             }
-            Some(proto::Update::Constraint(constraint_update))
+            Some(proto::Update::Constraint(ref constraint_update))
                 if authorizer == UpdateAuthorizer::Admin && is_helium_org =>
             {
                 match (constraint_update.action(), &constraint_update.constraint) {
-                    (proto::ActionV1::Add, Some(ref constraint)) => add_constraint_update(oui, net_id, constraint.into(), &mut txn).await?,
-                    (proto::ActionV1::Remove, Some(ref constraint)) => remove_constraint_update(oui, net_id, current_org.constraints.as_ref(), constraint.into(), &mut txn).await?,
+                    (proto::ActionV1::Add, Some(ref constraint)) => {
+                        let constraint: DevAddrConstraint = constraint.into();
+                        add_constraint_update(oui, net_id, constraint.clone(), &mut txn).await?;
+                        tracing::info!(oui, %net_id, ?constraint, "devaddr constraint added");
+                    }
+                    (proto::ActionV1::Remove, Some(ref constraint)) => {
+                        let constraint: DevAddrConstraint = constraint.into();
+                        remove_constraint_update(oui, net_id, current_org.constraints.as_ref(), constraint.clone(), &mut txn).await?;
+                        tracing::info!(oui, %net_id, ?constraint, "devaddr constraint removed");
+                    }
                     _ => return Err(OrgStoreError::InvalidUpdate(format!("invalid action or missing devaddr constraint update: {constraint_update:?}")))
                 }
             }
-            Some(proto::Update::DelegateKey(delegate_key_update)) => {
+            Some(proto::Update::DelegateKey(ref delegate_key_update)) => {
                 match delegate_key_update.action() {
                     proto::ActionV1::Add => {
-                        add_delegate_key(oui, delegate_key_update.delegate_key.into(), &mut txn)
-                            .await?
+                        let delegate = delegate_key_update.delegate_key.clone().into();
+                        add_delegate_key(oui, &delegate, &mut txn).await?;
+                        tracing::info!(oui, %delegate, "delegate key authorized");
                     }
                     proto::ActionV1::Remove => {
-                        remove_delegate_key(oui, delegate_key_update.delegate_key.into(), &mut txn)
-                            .await?
+                        let delegate = delegate_key_update.delegate_key.clone().into();
+                        remove_delegate_key(oui, &delegate, &mut txn).await?;
+                        tracing::info!(oui, %delegate, "delegate key de-authorized");
                     }
                 }
             }
@@ -212,6 +228,23 @@ pub async fn update_org(
         .ok_or_else(|| OrgStoreError::SaveOrg(format!("{oui}")))?;
 
     txn.commit().await?;
+
+    for update in updates.iter() {
+        if let Some(proto::Update::DelegateKey(ref delegate_key_update)) = update.update {
+            match delegate_key_update.action() {
+                proto::ActionV1::Add => {
+                    delegate_cache.send_if_modified(|cache| {
+                        cache.insert(delegate_key_update.delegate_key.clone().into())
+                    });
+                }
+                proto::ActionV1::Remove => {
+                    delegate_cache.send_if_modified(|cache| {
+                        cache.remove(&delegate_key_update.delegate_key.clone().into())
+                    });
+                }
+            }
+        }
+    }
 
     Ok(updated_org)
 }
@@ -231,7 +264,7 @@ pub async fn get_org_netid(
 
 async fn update_owner(
     oui: u64,
-    owner_pubkey: PublicKeyBinary,
+    owner_pubkey: &PublicKeyBinary,
     db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(" update organizations set owner_pubkey = $1 where oui = $2 ")
@@ -244,7 +277,7 @@ async fn update_owner(
 
 async fn update_payer(
     oui: u64,
-    payer_pubkey: PublicKeyBinary,
+    payer_pubkey: &PublicKeyBinary,
     db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(" update organizations set payer_pubkey = $1 where oui = $2 ")
@@ -257,7 +290,7 @@ async fn update_payer(
 
 async fn add_delegate_key(
     oui: u64,
-    delegate_pubkey: PublicKeyBinary,
+    delegate_pubkey: &PublicKeyBinary,
     db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(" insert into organization_delegate_keys (delegate_pubkey, oui) values ($1, $2) ")
@@ -270,7 +303,7 @@ async fn add_delegate_key(
 
 async fn remove_delegate_key(
     oui: u64,
-    delegate_pubkey: PublicKeyBinary,
+    delegate_pubkey: &PublicKeyBinary,
     db: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(" delete from organization_delegate_keys where delegate_pubkey = $1 and oui = $2 ")

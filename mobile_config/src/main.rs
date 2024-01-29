@@ -1,16 +1,17 @@
 use anyhow::{Error, Result};
 use clap::Parser;
+use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_proto::services::mobile_config::{
-    AdminServer, AuthorizationServer, EntityServer, GatewayServer,
+    AdminServer, AuthorizationServer, CarrierServiceServer, EntityServer, GatewayServer,
 };
 use mobile_config::{
     admin_service::AdminService, authorization_service::AuthorizationService,
-    entity_service::EntityService, gateway_service::GatewayService, key_cache::KeyCache,
-    settings::Settings,
+    carrier_service::CarrierService, entity_service::EntityService,
+    gateway_service::GatewayService, key_cache::KeyCache, settings::Settings,
 };
-use std::{path::PathBuf, time::Duration};
-use tokio::signal;
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use task_manager::{ManagedTask, TaskManager};
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -58,31 +59,15 @@ impl Daemon {
             .with(tracing_subscriber::fmt::layer())
             .init();
 
-        // Configure shutdown trigger
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Install prometheus metrics exporter
         poc_metrics::start_metrics(&settings.metrics)?;
 
         // Create database pool
-        let (pool, pool_handle) = settings
-            .database
-            .connect("mobile-config-store", shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect("mobile-config-store").await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Create on-chain metadata pool
-        let (metadata_pool, md_pool_handle) = settings
-            .metadata
-            .connect("mobile-config-metadata", shutdown_listener.clone())
-            .await?;
+        let metadata_pool = settings.metadata.connect("mobile-config-metadata").await?;
 
         let listen_addr = settings.listen_addr()?;
 
@@ -101,24 +86,50 @@ impl Daemon {
             metadata_pool.clone(),
             settings.signing_keypair()?,
         );
+        let carrier_svc =
+            CarrierService::new(key_cache.clone(), pool.clone(), settings.signing_keypair()?);
 
-        let server = transport::Server::builder()
-            .http2_keepalive_interval(Some(Duration::from_secs(250)))
-            .http2_keepalive_timeout(Some(Duration::from_secs(60)))
-            .add_service(AdminServer::new(admin_svc))
-            .add_service(GatewayServer::new(gateway_svc))
-            .add_service(AuthorizationServer::new(auth_svc))
-            .add_service(EntityServer::new(entity_svc))
-            .serve_with_shutdown(listen_addr, shutdown_listener)
-            .map_err(Error::from);
+        let grpc_server = GrpcServer {
+            listen_addr,
+            admin_svc,
+            gateway_svc,
+            auth_svc,
+            entity_svc,
+            carrier_svc,
+        };
 
-        tokio::try_join!(
-            pool_handle.map_err(Error::from),
-            md_pool_handle.map_err(Error::from),
-            server,
-        )?;
+        TaskManager::builder().add_task(grpc_server).start().await
+    }
+}
 
-        Ok(())
+pub struct GrpcServer {
+    listen_addr: SocketAddr,
+    admin_svc: AdminService,
+    gateway_svc: GatewayService,
+    auth_svc: AuthorizationService,
+    entity_svc: EntityService,
+    carrier_svc: CarrierService,
+}
+
+impl ManagedTask for GrpcServer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(async move {
+            transport::Server::builder()
+                .http2_keepalive_interval(Some(Duration::from_secs(250)))
+                .http2_keepalive_timeout(Some(Duration::from_secs(60)))
+                .layer(tower_http::trace::TraceLayer::new_for_grpc())
+                .add_service(AdminServer::new(self.admin_svc))
+                .add_service(GatewayServer::new(self.gateway_svc))
+                .add_service(AuthorizationServer::new(self.auth_svc))
+                .add_service(EntityServer::new(self.entity_svc))
+                .add_service(CarrierServiceServer::new(self.carrier_svc))
+                .serve_with_shutdown(self.listen_addr, shutdown)
+                .map_err(Error::from)
+                .await
+        })
     }
 }
 

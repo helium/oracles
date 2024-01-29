@@ -1,3 +1,4 @@
+use anyhow::bail;
 use chrono::Duration;
 use config::{Config, Environment, File};
 use serde::Deserialize;
@@ -18,6 +19,15 @@ pub struct Settings {
     /// in the event the verifier is down for an extended period of time
     #[serde(default = "default_base_stale_period")]
     pub base_stale_period: i64,
+    /// the period after which a beacon report in the DB will be deemed stale
+    #[serde(default = "default_beacon_stale_period")]
+    pub beacon_stale_period: i64,
+    /// the period after which a witness report in the DB will be deemed stale
+    #[serde(default = "default_witness_stale_period")]
+    pub witness_stale_period: i64,
+    /// the period after which an entropy report in the DB will be deemed stale
+    #[serde(default = "default_entropy_stale_period")]
+    pub entropy_stale_period: i64,
     pub database: db_store::Settings,
     pub iot_config_client: iot_config::client::Settings,
     pub ingest: file_store::Settings,
@@ -38,11 +48,10 @@ pub struct Settings {
     #[serde(default = "default_max_witnesses_per_poc")]
     pub max_witnesses_per_poc: u64,
     /// The cadence at which hotspots are permitted to beacon (in seconds)
+    /// this should be a factor of 24 so that we can have clear
+    /// beaconing bucket sizes
     #[serde(default = "default_beacon_interval")]
-    pub beacon_interval: i64,
-    /// Tolerance applied to beacon intervals within which beacons will be accepted (in seconds)
-    #[serde(default = "default_beacon_interval_tolerance")]
-    pub beacon_interval_tolerance: i64,
+    pub beacon_interval: u64,
     /// Trigger interval for generating a transmit scaling map
     #[serde(default = "default_transmit_scale_interval")]
     pub transmit_scale_interval: i64,
@@ -136,13 +145,8 @@ pub fn default_poc_loader_poll_time() -> u64 {
     5 * 60
 }
 
-// Default: 10 minutes
-pub fn default_beacon_interval_tolerance() -> i64 {
-    10 * 60
-}
-
 // Default: 6 hours
-pub fn default_beacon_interval() -> i64 {
+pub fn default_beacon_interval() -> u64 {
     6 * 60 * 60
 }
 
@@ -157,6 +161,18 @@ pub fn default_log() -> String {
 
 pub fn default_base_stale_period() -> i64 {
     0
+}
+
+pub fn default_beacon_stale_period() -> i64 {
+    60 * 45
+}
+
+pub fn default_witness_stale_period() -> i64 {
+    60 * 45
+}
+
+pub fn default_entropy_stale_period() -> i64 {
+    60 * 60
 }
 
 fn default_reward_period() -> i64 {
@@ -217,14 +233,6 @@ impl Settings {
         Duration::minutes(self.reward_offset_minutes)
     }
 
-    pub fn beacon_interval(&self) -> Duration {
-        Duration::seconds(self.beacon_interval)
-    }
-
-    pub fn beacon_interval_tolerance(&self) -> Duration {
-        Duration::seconds(self.beacon_interval_tolerance)
-    }
-
     pub fn poc_loader_window_width(&self) -> Duration {
         Duration::seconds(self.poc_loader_window_width)
     }
@@ -249,6 +257,18 @@ impl Settings {
         Duration::seconds(self.base_stale_period)
     }
 
+    pub fn beacon_stale_period(&self) -> Duration {
+        Duration::seconds(self.beacon_stale_period)
+    }
+
+    pub fn witness_stale_period(&self) -> Duration {
+        Duration::seconds(self.witness_stale_period)
+    }
+
+    pub fn entropy_stale_period(&self) -> Duration {
+        Duration::seconds(self.entropy_stale_period)
+    }
+
     pub fn entropy_interval(&self) -> Duration {
         Duration::seconds(self.entropy_interval)
     }
@@ -260,5 +280,13 @@ impl Settings {
     }
     pub fn region_params_refresh_interval(&self) -> time::Duration {
         time::Duration::from_secs(self.region_params_refresh_interval)
+    }
+    pub fn beacon_interval(&self) -> anyhow::Result<Duration> {
+        // validate the beacon_interval value is a factor of 24, if not bail out
+        if (24 * 60 * 60) % self.beacon_interval != 0 {
+            bail!("beacon interval is not a factor of 24")
+        } else {
+            Ok(Duration::seconds(self.beacon_interval as i64))
+        }
     }
 }

@@ -1,4 +1,5 @@
-use super::{ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use async_trait::async_trait;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
 use helium_proto::{
@@ -7,6 +8,17 @@ use helium_proto::{
 };
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
+
+#[async_trait]
+pub trait AuthorizationVerifier {
+    type Error;
+
+    async fn verify_authorized_key(
+        &self,
+        pubkey: &PublicKeyBinary,
+        role: mobile_config::NetworkKeyRole,
+    ) -> Result<bool, Self::Error>;
+}
 
 #[derive(Clone)]
 pub struct AuthorizationClient {
@@ -35,8 +47,13 @@ impl AuthorizationClient {
             cache,
         })
     }
+}
 
-    pub async fn verify_authorized_key(
+#[async_trait]
+impl AuthorizationVerifier for AuthorizationClient {
+    type Error = ClientError;
+
+    async fn verify_authorized_key(
         &self,
         pubkey: &PublicKeyBinary,
         role: mobile_config::NetworkKeyRole,
@@ -53,7 +70,7 @@ impl AuthorizationClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = pubkey.to_string(), role = ?role, "verifying authorized key registered");
-        let response = match self.client.clone().verify(request).await {
+        let response = match call_with_retry!(self.client.clone().verify(request.clone())) {
             Ok(verify_res) => {
                 let response = verify_res.into_inner();
                 response.verify(&self.config_pubkey)?;

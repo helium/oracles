@@ -8,7 +8,7 @@ use std::{fmt, io, os::unix::fs::MetadataExt, path::Path, str::FromStr};
 #[derive(Debug, Clone, Serialize)]
 pub struct FileInfo {
     pub key: String,
-    pub file_type: FileType,
+    pub prefix: String,
     pub timestamp: DateTime<Utc>,
     pub size: usize,
 }
@@ -24,13 +24,13 @@ impl FromStr for FileInfo {
         let cap = RE
             .captures(s)
             .ok_or_else(|| DecodeError::file_info("failed to decode file info"))?;
-        let file_type = FileType::from_str(&cap[1])?;
+        let prefix = cap[1].to_owned();
         let timestamp = u64::from_str(&cap[2])
             .map_err(|_| DecodeError::file_info("failed to decode timestamp"))?
             .to_timestamp_millis()?;
         Ok(Self {
             key,
-            file_type,
+            prefix,
             timestamp,
             size: 0,
         })
@@ -59,7 +59,18 @@ impl From<(FileType, DateTime<Utc>)> for FileInfo {
     fn from(v: (FileType, DateTime<Utc>)) -> Self {
         Self {
             key: format!("{}.{}.gz", &v.0, v.1.timestamp_millis()),
-            file_type: v.0,
+            prefix: v.0.to_string(),
+            timestamp: v.1,
+            size: 0,
+        }
+    }
+}
+
+impl From<(String, DateTime<Utc>)> for FileInfo {
+    fn from(v: (String, DateTime<Utc>)) -> Self {
+        Self {
+            key: format!("{}.{}.gz", &v.0, v.1.timestamp_millis()),
+            prefix: v.0,
             timestamp: v.1,
             size: 0,
         }
@@ -98,9 +109,12 @@ impl FileInfo {
 pub const SUBSCRIBER_LOCATION_REQ: &str = "subscriber_location_req";
 pub const SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "subscriber_location_report";
 pub const VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT: &str = "verified_subscriber_location_report";
-pub const CELL_HEARTBEAT: &str = "cell_heartbeat";
+pub const CBRS_HEARTBEAT: &str = "cbrs_heartbeat";
+pub const WIFI_HEARTBEAT: &str = "wifi_heartbeat";
 pub const CELL_SPEEDTEST: &str = "cell_speedtest";
+pub const VERIFIED_SPEEDTEST: &str = "verified_speedtest";
 pub const CELL_HEARTBEAT_INGEST_REPORT: &str = "heartbeat_report";
+pub const WIFI_HEARTBEAT_INGEST_REPORT: &str = "wifi_heartbeat_report";
 pub const CELL_SPEEDTEST_INGEST_REPORT: &str = "speedtest_report";
 pub const ENTROPY: &str = "entropy";
 pub const SUBNETWORK_REWARDS: &str = "subnetwork_rewards";
@@ -127,16 +141,18 @@ pub const VALID_DATA_TRANSFER_SESSION: &str = "valid_data_transfer_session";
 pub const PRICE_REPORT: &str = "price_report";
 pub const MOBILE_REWARD_SHARE: &str = "mobile_reward_share";
 pub const MAPPER_MSG: &str = "mapper_msg";
+pub const COVERAGE_OBJECT: &str = "coverage_object";
 pub const COVERAGE_OBJECT_INGEST_REPORT: &str = "coverage_object_ingest_report";
+pub const SENIORITY_UPDATE: &str = "seniority_update";
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Copy, strum::EnumCount)]
 #[serde(rename_all = "snake_case")]
 pub enum FileType {
-    CellHeartbeat = 0,
+    CbrsHeartbeat = 0,
     CellSpeedtest = 1,
     Entropy = 2,
     SubnetworkRewards = 3,
-    CellHeartbeatIngestReport,
+    CbrsHeartbeatIngestReport,
     CellSpeedtestIngestReport,
     EntropyReport,
     IotBeaconIngestReport,
@@ -163,7 +179,12 @@ pub enum FileType {
     SubscriberLocationIngestReport,
     VerifiedSubscriberLocationIngestReport,
     MapperMsg,
+    CoverageObject,
     CoverageObjectIngestReport,
+    SeniorityUpdate,
+    VerifiedSpeedtest,
+    WifiHeartbeat,
+    WifiHeartbeatIngestReport,
 }
 
 impl fmt::Display for FileType {
@@ -174,9 +195,12 @@ impl fmt::Display for FileType {
             Self::VerifiedSubscriberLocationIngestReport => {
                 VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
             }
-            Self::CellHeartbeat => CELL_HEARTBEAT,
+            Self::CbrsHeartbeat => CBRS_HEARTBEAT,
+            Self::WifiHeartbeat => WIFI_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
-            Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::VerifiedSpeedtest => VERIFIED_SPEEDTEST,
+            Self::CbrsHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::WifiHeartbeatIngestReport => WIFI_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
@@ -204,7 +228,9 @@ impl fmt::Display for FileType {
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,
+            Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
+            Self::SeniorityUpdate => SENIORITY_UPDATE,
         };
         f.write_str(s)
     }
@@ -218,9 +244,12 @@ impl FileType {
             Self::VerifiedSubscriberLocationIngestReport => {
                 VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT
             }
-            Self::CellHeartbeat => CELL_HEARTBEAT,
+            Self::CbrsHeartbeat => CBRS_HEARTBEAT,
+            Self::WifiHeartbeat => WIFI_HEARTBEAT,
             Self::CellSpeedtest => CELL_SPEEDTEST,
-            Self::CellHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::VerifiedSpeedtest => VERIFIED_SPEEDTEST,
+            Self::CbrsHeartbeatIngestReport => CELL_HEARTBEAT_INGEST_REPORT,
+            Self::WifiHeartbeatIngestReport => WIFI_HEARTBEAT_INGEST_REPORT,
             Self::CellSpeedtestIngestReport => CELL_SPEEDTEST_INGEST_REPORT,
             Self::Entropy => ENTROPY,
             Self::SubnetworkRewards => SUBNETWORK_REWARDS,
@@ -248,7 +277,9 @@ impl FileType {
             Self::PriceReport => PRICE_REPORT,
             Self::MobileRewardShare => MOBILE_REWARD_SHARE,
             Self::MapperMsg => MAPPER_MSG,
+            Self::CoverageObject => COVERAGE_OBJECT,
             Self::CoverageObjectIngestReport => COVERAGE_OBJECT_INGEST_REPORT,
+            Self::SeniorityUpdate => SENIORITY_UPDATE,
         }
     }
 }
@@ -262,9 +293,12 @@ impl FromStr for FileType {
             VERIFIED_SUBSCRIBER_LOCATION_INGEST_REPORT => {
                 Self::VerifiedSubscriberLocationIngestReport
             }
-            CELL_HEARTBEAT => Self::CellHeartbeat,
+            CBRS_HEARTBEAT => Self::CbrsHeartbeat,
+            WIFI_HEARTBEAT => Self::WifiHeartbeat,
             CELL_SPEEDTEST => Self::CellSpeedtest,
-            CELL_HEARTBEAT_INGEST_REPORT => Self::CellHeartbeatIngestReport,
+            VERIFIED_SPEEDTEST => Self::VerifiedSpeedtest,
+            CELL_HEARTBEAT_INGEST_REPORT => Self::CbrsHeartbeatIngestReport,
+            WIFI_HEARTBEAT_INGEST_REPORT => Self::WifiHeartbeatIngestReport,
             CELL_SPEEDTEST_INGEST_REPORT => Self::CellSpeedtestIngestReport,
             ENTROPY => Self::Entropy,
             SUBNETWORK_REWARDS => Self::SubnetworkRewards,
@@ -292,7 +326,9 @@ impl FromStr for FileType {
             PRICE_REPORT => Self::PriceReport,
             MOBILE_REWARD_SHARE => Self::MobileRewardShare,
             MAPPER_MSG => Self::MapperMsg,
+            COVERAGE_OBJECT => Self::CoverageObject,
             COVERAGE_OBJECT_INGEST_REPORT => Self::CoverageObjectIngestReport,
+            SENIORITY_UPDATE => Self::SeniorityUpdate,
             _ => return Err(Error::from(io::Error::from(io::ErrorKind::InvalidInput))),
         };
         Ok(result)

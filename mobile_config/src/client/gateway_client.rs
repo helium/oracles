@@ -1,5 +1,5 @@
-use super::{ClientError, Settings, CACHE_EVICTION_FREQUENCY};
-use crate::gateway_info;
+use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use crate::gateway_info::{self, GatewayInfo, GatewayInfoStream};
 use file_store::traits::MsgVerify;
 use futures::stream::{self, StreamExt};
 use helium_crypto::{Keypair, PublicKey, PublicKeyBinary, Sign};
@@ -8,7 +8,7 @@ use helium_proto::{
     Message,
 };
 use retainer::Cache;
-use std::{sync::Arc, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct GatewayClient {
@@ -42,7 +42,19 @@ impl GatewayClient {
 }
 
 #[async_trait::async_trait]
-impl gateway_info::GatewayInfoResolver for GatewayClient {
+pub trait GatewayInfoResolver: Clone + Send + Sync + 'static {
+    type Error: Error + Send + Sync + 'static;
+
+    async fn resolve_gateway_info(
+        &self,
+        address: &PublicKeyBinary,
+    ) -> Result<Option<GatewayInfo>, Self::Error>;
+
+    async fn stream_gateways_info(&mut self) -> Result<GatewayInfoStream, Self::Error>;
+}
+
+#[async_trait::async_trait]
+impl GatewayInfoResolver for GatewayClient {
     type Error = ClientError;
 
     async fn resolve_gateway_info(
@@ -60,11 +72,14 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
         };
         request.signature = self.signing_key.sign(&request.encode_to_vec())?;
         tracing::debug!(pubkey = address.to_string(), "fetching gateway info");
-        let response = match self.client.clone().info(request).await {
+        let response = match call_with_retry!(self.client.clone().info(request.clone())) {
             Ok(info_res) => {
                 let response = info_res.into_inner();
                 response.verify(&self.config_pubkey)?;
-                response.info.map(gateway_info::GatewayInfo::from)
+                response
+                    .info
+                    .map(gateway_info::GatewayInfo::try_from)
+                    .transpose()?
             }
             Err(status) if status.code() == tonic::Code::NotFound => None,
             Err(status) => Err(status)?,
@@ -88,10 +103,7 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
         tracing::debug!("fetching gateway info stream");
         let pubkey = Arc::new(self.config_pubkey.clone());
-        let res_stream = self
-            .client
-            .info_stream(req)
-            .await?
+        let res_stream = call_with_retry!(self.client.info_stream(req.clone()))?
             .into_inner()
             .filter_map(|res| async move { res.ok() })
             .map(move |res| (res, pubkey.clone()))
@@ -101,8 +113,9 @@ impl gateway_info::GatewayInfoResolver for GatewayClient {
                     Err(_) => None,
                 }
             })
-            .flat_map(|res| stream::iter(res.gateways.into_iter()))
-            .map(gateway_info::GatewayInfo::from)
+            .flat_map(|res| stream::iter(res.gateways))
+            .map(gateway_info::GatewayInfo::try_from)
+            .filter_map(|gateway| async move { gateway.ok() })
             .boxed();
 
         Ok(res_stream)

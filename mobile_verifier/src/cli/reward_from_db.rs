@@ -1,11 +1,11 @@
 use crate::{
     heartbeats::HeartbeatReward,
-    reward_shares::{get_scheduled_tokens_for_poc_and_dc, PocShares},
-    speedtests::{Average, SpeedtestAverages},
+    reward_shares::{get_scheduled_tokens_for_poc, CoveragePoints},
+    speedtests_average::SpeedtestAverages,
     Settings,
 };
 use anyhow::Result;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 use helium_crypto::PublicKey;
 use helium_proto::services::poc_mobile as proto;
 use rust_decimal::Decimal;
@@ -25,26 +25,28 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         let Self { start, end } = self;
 
-        let start = DateTime::from_utc(start, Utc);
-        let end = DateTime::from_utc(end, Utc);
+        let start = start.and_utc();
+        let end = end.and_utc();
 
         tracing::info!("Rewarding shares from the following time range: {start} to {end}");
         let epoch = start..end;
-        let expected_rewards = get_scheduled_tokens_for_poc_and_dc(epoch.end - epoch.start);
+        let expected_rewards = get_scheduled_tokens_for_poc(epoch.end - epoch.start);
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let (pool, _join_handle) = settings
-            .database
-            .connect(env!("CARGO_PKG_NAME"), shutdown_listener)
-            .await?;
+        let (shutdown_trigger, _shutdown_listener) = triggered::trigger();
+        let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
 
         let heartbeats = HeartbeatReward::validated(&pool, &epoch);
-        let speedtests = SpeedtestAverages::validated(&pool, epoch.end).await?;
-        let reward_shares = PocShares::aggregate(heartbeats, speedtests.clone()).await?;
+        let speedtest_averages =
+            SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
+        let reward_shares =
+            CoveragePoints::aggregate_points(&pool, heartbeats, &speedtest_averages, end).await?;
 
         let mut total_rewards = 0_u64;
         let mut owner_rewards = HashMap::<_, u64>::new();
-        for reward in reward_shares.into_rewards(Decimal::ZERO, &epoch) {
+        let radio_rewards = reward_shares
+            .into_rewards(Decimal::ZERO, &epoch)
+            .ok_or(anyhow::anyhow!("no rewardable events"))?;
+        for (_reward_amount, reward) in radio_rewards {
             if let Some(proto::mobile_reward_share::Reward::RadioReward(proto::RadioReward {
                 hotspot_key,
                 poc_reward,
@@ -59,11 +61,11 @@ impl Cmd {
         }
         let rewards: Vec<_> = owner_rewards.into_iter().collect();
         let mut multiplier_count = HashMap::<_, usize>::new();
-        let speedtest_multipliers: Vec<_> = speedtests
-            .speedtests
+        let speedtest_multipliers: Vec<_> = speedtest_averages
+            .averages
             .into_iter()
-            .map(|(pub_key, avg)| {
-                let reward_multiplier = Average::from(&avg).reward_multiplier();
+            .map(|(pub_key, average)| {
+                let reward_multiplier = average.reward_multiplier;
                 *multiplier_count.entry(reward_multiplier).or_default() += 1;
                 (pub_key, reward_multiplier)
             })

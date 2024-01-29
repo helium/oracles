@@ -56,6 +56,11 @@ impl Settings {
         mobile_config::EntityClient::new(channel)
     }
 
+    pub fn connect_carrier_service_client(&self) -> mobile_config::CarrierServiceClient<Channel> {
+        let channel = connect_channel(self);
+        mobile_config::CarrierServiceClient::new(channel)
+    }
+
     pub fn signing_keypair(
         &self,
     ) -> Result<Arc<helium_crypto::Keypair>, Box<helium_crypto::Error>> {

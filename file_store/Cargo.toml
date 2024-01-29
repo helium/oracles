@@ -7,13 +7,14 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = {workspace = true}
 clap = {workspace = true}
 config = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
 thiserror = {workspace = true}
 tokio = { workspace = true }
-tokio-util = "0"
+tokio-util = { workspace = true }
 tokio-stream = {workspace = true}
 triggered = {workspace = true}
 async-compression = {version = "0", features = ["tokio", "gzip"]}
@@ -42,14 +43,19 @@ rust_decimal = {workspace = true}
 rust_decimal_macros = {workspace = true}
 base64 = {workspace = true}
 beacon = {workspace = true}
-sqlx = {workspace = true}
+sqlx = {workspace = true, optional = true}
 async-trait = {workspace = true}
 derive_builder = "0"
 retainer = {workspace = true}
+uuid = {workspace = true}
+h3o = {workspace = true}
+task-manager = { path = "../task_manager" }
 
 [dev-dependencies]
 hex-literal = "0"
 tempfile = "3"
 
 [features]
+default = ["sqlx-postgres"]
 local = ["aws-types"]
+sqlx-postgres = ["sqlx"]

@@ -1,5 +1,5 @@
-use crate::{burner::Burner, settings::Settings};
-use anyhow::{bail, Error, Result};
+use crate::{burner::Burner, event_ids::EventIdPurger, settings::Settings};
+use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
     file_info_poller::{FileInfoStream, LookbackBehavior},
@@ -8,34 +8,37 @@ use file_store::{
     mobile_session::DataTransferSessionIngestReport,
     FileSinkBuilder, FileStore, FileType,
 };
-use futures_util::TryFutureExt;
-use mobile_config::{client::AuthorizationClient, GatewayClient};
+
+use mobile_config::client::{
+    authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
+    AuthorizationClient, GatewayClient,
+};
 use solana::{SolanaNetwork, SolanaRpc};
 use sqlx::{Pool, Postgres};
+use task_manager::{ManagedTask, TaskManager};
 use tokio::{
-    signal,
     sync::mpsc::Receiver,
     time::{sleep_until, Duration, Instant},
 };
 
-pub struct Daemon<S> {
+pub struct Daemon<S, GIR, AV> {
     pool: Pool<Postgres>,
     burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
     burn_period: Duration,
-    gateway_client: GatewayClient,
-    auth_client: AuthorizationClient,
+    gateway_info_resolver: GIR,
+    authorization_verifier: AV,
     invalid_data_session_report_sink: FileSinkClient,
 }
 
-impl<S> Daemon<S> {
+impl<S, GIR, AV> Daemon<S, GIR, AV> {
     pub fn new(
         settings: &Settings,
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
         burner: Burner<S>,
-        gateway_client: GatewayClient,
-        auth_client: AuthorizationClient,
+        gateway_info_resolver: GIR,
+        authorization_verifier: AV,
         invalid_data_session_report_sink: FileSinkClient,
     ) -> Self {
         Self {
@@ -43,18 +46,34 @@ impl<S> Daemon<S> {
             burner,
             reports,
             burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
-            gateway_client,
-            auth_client,
+            gateway_info_resolver,
+            authorization_verifier,
             invalid_data_session_report_sink,
         }
     }
 }
 
-impl<S> Daemon<S>
+impl<S, GIR, AV> ManagedTask for Daemon<S, GIR, AV>
 where
     S: SolanaNetwork,
+    GIR: GatewayInfoResolver,
+    AV: AuthorizationVerifier + 'static,
 {
-    pub async fn run(mut self, shutdown: &triggered::Listener) -> Result<()> {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures::future::LocalBoxFuture<'static, Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
+impl<S, GIR, AV> Daemon<S, GIR, AV>
+where
+    S: SolanaNetwork,
+    GIR: GatewayInfoResolver,
+    AV: AuthorizationVerifier,
+{
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
         // Set the initial burn period to one minute
         let mut burn_time = Instant::now() + Duration::from_secs(60);
         loop {
@@ -67,7 +86,7 @@ where
                     let ts = file.file_info.timestamp;
                     let mut transaction = self.pool.begin().await?;
                     let reports = file.into_stream(&mut transaction).await?;
-                    crate::accumulate::accumulate_sessions(&self.gateway_client, &self.auth_client, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
+                    crate::accumulate::accumulate_sessions(&self.gateway_info_resolver, &self.authorization_verifier, &mut transaction, &self.invalid_data_session_report_sink, ts, reports).await?;
                     transaction.commit().await?;
                     self.invalid_data_session_report_sink.commit().await?;
                 },
@@ -89,20 +108,8 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Set up the postgres pool:
-        let (pool, conn_handler) = settings
-            .database
-            .connect("mobile-packet-verifier", shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect("mobile-packet-verifier").await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Set up the solana network:
@@ -116,37 +123,27 @@ impl Cmd {
             None
         };
 
-        let sol_balance_monitor = solana::balance_monitor::start(
-            env!("CARGO_PKG_NAME"),
-            solana.clone(),
-            shutdown_listener.clone(),
-        )
-        .await?;
-
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
-        let (valid_sessions, mut valid_sessions_server) = FileSinkBuilder::new(
+        let (valid_sessions, valid_sessions_server) = FileSinkBuilder::new(
             FileType::ValidDataTransferSession,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_valid_data_transfer_session"),
-            shutdown_listener.clone(),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(true)
         .create()
         .await?;
 
-        let (invalid_sessions, mut invalid_sessions_server) = FileSinkBuilder::new(
+        let (invalid_sessions, invalid_sessions_server) = FileSinkBuilder::new(
             FileType::InvalidDataTransferSessionIngestReport,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_invalid_data_transfer_session"),
-            shutdown_listener.clone(),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -155,17 +152,16 @@ impl Cmd {
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
-        let (reports, source_join_handle) =
-            file_source::continuous_source::<DataTransferSessionIngestReport>()
-                .db(pool.clone())
+        let (reports, reports_server) =
+            file_source::continuous_source::<DataTransferSessionIngestReport, _>()
+                .state(pool.clone())
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(
                     Utc.timestamp_millis_opt(0).unwrap(),
                 ))
-                .file_type(FileType::DataTransferSessionIngestReport)
+                .prefix(FileType::DataTransferSessionIngestReport.to_string())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
-                .build()?
-                .start(shutdown_listener.clone())
+                .create()
                 .await?;
 
         let gateway_client = GatewayClient::from_settings(&settings.config_client)?;
@@ -173,7 +169,7 @@ impl Cmd {
 
         let daemon = Daemon::new(
             settings,
-            pool,
+            pool.clone(),
             reports,
             burner,
             gateway_client,
@@ -181,16 +177,16 @@ impl Cmd {
             invalid_sessions,
         );
 
-        tokio::try_join!(
-            source_join_handle.map_err(Error::from),
-            valid_sessions_server.run().map_err(Error::from),
-            invalid_sessions_server.run().map_err(Error::from),
-            file_upload.run(&shutdown_listener).map_err(Error::from),
-            daemon.run(&shutdown_listener).map_err(Error::from),
-            conn_handler.map_err(Error::from),
-            sol_balance_monitor.map_err(Error::from),
-        )?;
+        let event_id_purger = EventIdPurger::from_settings(pool, settings);
 
-        Ok(())
+        TaskManager::builder()
+            .add_task(file_upload_server)
+            .add_task(valid_sessions_server)
+            .add_task(invalid_sessions_server)
+            .add_task(reports_server)
+            .add_task(event_id_purger)
+            .add_task(daemon)
+            .start()
+            .await
     }
 }

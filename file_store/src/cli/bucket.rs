@@ -1,7 +1,11 @@
 use crate::{
-    heartbeat::CellHeartbeat, iot_beacon_report::IotBeaconIngestReport, iot_valid_poc::IotPoc,
-    iot_witness_report::IotWitnessIngestReport, speedtest::CellSpeedtest, traits::MsgDecode, Error,
-    FileInfoStream, FileStore, FileType, Result, Settings,
+    heartbeat::{cli::ValidatedHeartbeat, CbrsHeartbeat},
+    iot_beacon_report::IotBeaconIngestReport,
+    iot_valid_poc::IotPoc,
+    iot_witness_report::IotWitnessIngestReport,
+    speedtest::{cli::SpeedtestAverage, CellSpeedtest},
+    traits::MsgDecode,
+    Error, FileInfoStream, FileStore, FileType, Result, Settings,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use futures::{stream::TryStreamExt, StreamExt, TryFutureExt};
@@ -10,6 +14,7 @@ use serde::{ser::SerializeSeq, Serializer};
 use std::{
     io,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 use tokio::fs;
 
@@ -48,24 +53,24 @@ impl BucketCmd {
 }
 
 #[derive(Debug, clap::Args)]
-struct FileFilter {
+pub struct FileFilter {
     /// Optional start time to look for (inclusive). Defaults to the oldest
     /// timestamp in the bucket.
     #[clap(long)]
-    after: Option<NaiveDateTime>,
+    pub after: Option<NaiveDateTime>,
     /// Optional end time to look for (exclusive). Defaults to the latest
     /// available timestamp in the bucket.
     #[clap(long)]
-    before: Option<NaiveDateTime>,
-    /// The file type to search for
+    pub before: Option<NaiveDateTime>,
+    /// The file type prefix to search for
     #[clap(long)]
-    file_type: FileType,
+    pub prefix: String,
 }
 
 impl FileFilter {
-    fn list(&self, store: &FileStore) -> FileInfoStream {
+    pub fn list(&self, store: &FileStore) -> FileInfoStream {
         store.list(
-            self.file_type,
+            &self.prefix,
             self.after.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
             self.before.as_ref().map(|dt| Utc.from_utc_datetime(dt)),
         )
@@ -180,12 +185,15 @@ impl Locate {
     pub async fn run(&self, settings: &Settings) -> Result {
         let store = FileStore::from_settings(settings).await?;
         let file_infos = self.filter.list(&store);
-        let file_type = self.filter.file_type;
+        let prefix = self.filter.prefix.clone();
         let gateway = &self.gateway.clone();
         let mut events = store
             .source(file_infos)
             .map_ok(|buf| (buf, gateway))
-            .try_filter_map(|(buf, gateway)| async move { locate(file_type, gateway, &buf) })
+            .try_filter_map(|(buf, gateway)| {
+                let prefix = prefix.clone();
+                async move { locate(&prefix, gateway, &buf) }
+            })
             .boxed();
         let mut ser = serde_json::Serializer::new(io::stdout());
         let mut seq = ser.serialize_seq(None)?;
@@ -197,15 +205,17 @@ impl Locate {
     }
 }
 
-fn locate(
-    file_type: FileType,
-    gateway: &PublicKey,
-    buf: &[u8],
-) -> Result<Option<serde_json::Value>> {
+fn locate(prefix: &str, gateway: &PublicKey, buf: &[u8]) -> Result<Option<serde_json::Value>> {
     let pub_key = gateway.to_vec();
-    match file_type {
-        FileType::CellHeartbeat => {
-            CellHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
+    match FileType::from_str(prefix)? {
+        FileType::CbrsHeartbeat => {
+            CbrsHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
+        }
+        FileType::ValidatedHeartbeat => {
+            ValidatedHeartbeat::decode(buf).and_then(|event| event.to_value_if(pub_key))
+        }
+        FileType::SpeedtestAvg => {
+            SpeedtestAverage::decode(buf).and_then(|event| event.to_value_if(pub_key))
         }
         FileType::CellSpeedtest => {
             CellSpeedtest::decode(buf).and_then(|event| event.to_value_if(pub_key))
@@ -254,7 +264,7 @@ where
     }
 }
 
-impl Gateway for CellHeartbeat {
+impl Gateway for CbrsHeartbeat {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.pubkey.as_ref() == pub_key
     }
@@ -281,5 +291,17 @@ impl Gateway for IotWitnessIngestReport {
 impl Gateway for IotPoc {
     fn has_pubkey(&self, pub_key: &[u8]) -> bool {
         self.beacon_report.report.pub_key.as_ref() == pub_key
+    }
+}
+
+impl Gateway for ValidatedHeartbeat {
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.pub_key.as_ref() == pub_key
+    }
+}
+
+impl Gateway for SpeedtestAverage {
+    fn has_pubkey(&self, pub_key: &[u8]) -> bool {
+        self.pub_key.as_ref() == pub_key
     }
 }

@@ -70,20 +70,17 @@ impl Server {
 
         // Create database pool
         let app_name = format!("{}_{}", settings.mode, env!("CARGO_PKG_NAME"));
-        let (pool, db_join_handle) = settings
-            .database
-            .connect(&app_name, shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect(&app_name).await?;
         sqlx::migrate!().run(&pool).await?;
 
         telemetry::initialize(&pool).await?;
 
         let file_store = FileStore::from_settings(&settings.verifier).await?;
 
-        let (receiver, source_join_handle) = file_source::continuous_source::<RewardManifest>()
-            .db(pool.clone())
+        let (receiver, server) = file_source::continuous_source::<RewardManifest, _>()
+            .state(pool.clone())
             .store(file_store)
-            .file_type(FileType::RewardManifest)
+            .prefix(FileType::RewardManifest.to_string())
             .lookback(LookbackBehavior::StartAfter(
                 Utc.timestamp_opt(settings.start_after as i64, 0)
                     .single()
@@ -91,15 +88,14 @@ impl Server {
             ))
             .poll_duration(settings.interval())
             .offset(settings.interval() * 2)
-            .build()?
-            .start(shutdown_listener.clone())
+            .create()
             .await?;
+        let source_join_handle = server.start(shutdown_listener.clone()).await?;
 
         // Reward server
         let mut indexer = Indexer::new(settings, pool).await?;
 
         tokio::try_join!(
-            db_join_handle.map_err(anyhow::Error::from),
             source_join_handle.map_err(anyhow::Error::from),
             indexer.run(shutdown_listener, receiver),
         )?;

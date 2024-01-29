@@ -1,13 +1,17 @@
-use crate::{cmds::gateway::GatewayInfo, current_timestamp, NetworkKeyRole, Result};
+use crate::{
+    cmds::gateway::{GatewayInfo, GatewayInfoStream},
+    current_timestamp, NetworkKeyRole, Result,
+};
 
 use base64::Engine;
+use futures::{stream, StreamExt};
 use helium_crypto::{Keypair, PublicKey, Sign, Verify};
 use helium_proto::{
     services::mobile_config::{
         admin_client, authorization_client, entity_client, gateway_client, AdminAddKeyReqV1,
         AdminKeyResV1, AdminRemoveKeyReqV1, AuthorizationListReqV1, AuthorizationListResV1,
         AuthorizationVerifyReqV1, AuthorizationVerifyResV1, EntityVerifyReqV1, EntityVerifyResV1,
-        GatewayInfoReqV1, GatewayInfoResV1,
+        GatewayInfoBatchReqV1, GatewayInfoReqV1, GatewayInfoResV1, GatewayInfoStreamResV1,
     },
     Message,
 };
@@ -123,7 +127,7 @@ impl AuthClient {
         keypair: &Keypair,
     ) -> Result<Vec<PublicKey>> {
         let mut request = AuthorizationListReqV1 {
-            role: role.try_into()?,
+            role: role.into(),
             signer: keypair.public_key().into(),
             signature: vec![],
         };
@@ -184,7 +188,42 @@ impl GatewayClient {
         let info = response
             .info
             .ok_or_else(|| anyhow::anyhow!("gateway not found"))?;
-        info.try_into()
+        GatewayInfo::try_from(info)
+    }
+
+    pub async fn info_batch(
+        &mut self,
+        gateways: &[PublicKey],
+        batch_size: u32,
+        keypair: &Keypair,
+    ) -> Result<GatewayInfoStream> {
+        let mut request = GatewayInfoBatchReqV1 {
+            addresses: gateways.iter().map(|pubkey| pubkey.into()).collect(),
+            batch_size,
+            signer: keypair.public_key().into(),
+            signature: vec![],
+        };
+        request.signature = request.sign(keypair)?;
+        let config_pubkey = self.server_pubkey.clone();
+        let stream = self
+            .client
+            .info_batch(request)
+            .await?
+            .into_inner()
+            .filter_map(|res| async move { res.ok() })
+            .map(move |res| (res, config_pubkey.clone()))
+            .filter_map(|(res, pubkey)| async move {
+                match res.verify(&pubkey) {
+                    Ok(()) => Some(res),
+                    Err(_) => None,
+                }
+            })
+            .flat_map(|res| stream::iter(res.gateways.into_iter()))
+            .map(GatewayInfo::try_from)
+            .filter_map(|gateway| async move { gateway.ok() })
+            .boxed();
+
+        Ok(stream)
     }
 }
 
@@ -212,6 +251,7 @@ impl_sign!(AuthorizationVerifyReqV1, signature);
 impl_sign!(AuthorizationListReqV1, signature);
 impl_sign!(EntityVerifyReqV1, signature);
 impl_sign!(GatewayInfoReqV1, signature);
+impl_sign!(GatewayInfoBatchReqV1, signature);
 
 pub trait MsgVerify: Message + std::clone::Clone {
     fn verify(&self, verifier: &PublicKey) -> Result
@@ -240,3 +280,4 @@ impl_verify!(AuthorizationVerifyResV1, signature);
 impl_verify!(AuthorizationListResV1, signature);
 impl_verify!(EntityVerifyResV1, signature);
 impl_verify!(GatewayInfoResV1, signature);
+impl_verify!(GatewayInfoStreamResV1, signature);

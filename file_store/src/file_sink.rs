@@ -1,13 +1,17 @@
-use crate::{file_upload, Error, Result};
+use crate::{
+    file_upload::{self, FileUpload},
+    Error, Result,
+};
 use async_compression::tokio::write::GzipEncoder;
 use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
-use futures::SinkExt;
+use futures::{future::LocalBoxFuture, SinkExt, TryFutureExt};
 use metrics::Label;
 use std::{
     io, mem,
     path::{Path, PathBuf},
 };
+use task_manager::ManagedTask;
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncWriteExt, BufWriter},
@@ -63,18 +67,13 @@ pub struct FileSinkBuilder {
     max_size: usize,
     roll_time: Duration,
     deposits: Option<file_upload::MessageSender>,
+    file_upload: Option<FileUpload>,
     auto_commit: bool,
     metric: &'static str,
-    shutdown_listener: triggered::Listener,
 }
 
 impl FileSinkBuilder {
-    pub fn new(
-        prefix: impl ToString,
-        target_path: &Path,
-        metric: &'static str,
-        shutdown_listener: triggered::Listener,
-    ) -> Self {
+    pub fn new(prefix: impl ToString, target_path: &Path, metric: &'static str) -> Self {
         Self {
             prefix: prefix.to_string(),
             target_path: target_path.to_path_buf(),
@@ -82,9 +81,9 @@ impl FileSinkBuilder {
             max_size: 50_000_000,
             roll_time: Duration::minutes(DEFAULT_SINK_ROLL_MINS),
             deposits: None,
+            file_upload: None,
             auto_commit: true,
             metric,
-            shutdown_listener,
         }
     }
 
@@ -107,7 +106,19 @@ impl FileSinkBuilder {
     }
 
     pub fn deposits(self, deposits: Option<file_upload::MessageSender>) -> Self {
-        Self { deposits, ..self }
+        Self {
+            deposits,
+            file_upload: None,
+            ..self
+        }
+    }
+
+    pub fn file_upload(self, file_upload: Option<FileUpload>) -> Self {
+        Self {
+            file_upload,
+            deposits: None,
+            ..self
+        }
     }
 
     pub fn auto_commit(self, auto_commit: bool) -> Self {
@@ -130,7 +141,6 @@ impl FileSinkBuilder {
         let client = FileSinkClient {
             sender: tx,
             metric: self.metric,
-            shutdown_listener: self.shutdown_listener.clone(),
         };
 
         metrics::register_counter!(client.metric, vec![OK_LABEL]);
@@ -141,12 +151,12 @@ impl FileSinkBuilder {
             prefix: self.prefix,
             max_size: self.max_size,
             deposits: self.deposits,
+            file_upload: self.file_upload,
             roll_time: self.roll_time,
             messages: rx,
             staged_files: Vec::new(),
             auto_commit: self.auto_commit,
             active_sink: None,
-            shutdown_listener: self.shutdown_listener,
         };
         sink.init().await?;
         Ok((client, sink))
@@ -155,9 +165,8 @@ impl FileSinkBuilder {
 
 #[derive(Debug, Clone)]
 pub struct FileSinkClient {
-    sender: MessageSender,
-    metric: &'static str,
-    shutdown_listener: triggered::Listener,
+    pub sender: MessageSender,
+    pub metric: &'static str,
 }
 
 const OK_LABEL: Label = Label::from_static_parts("status", "ok");
@@ -165,6 +174,10 @@ const ERROR_LABEL: Label = Label::from_static_parts("status", "error");
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl FileSinkClient {
+    pub fn new(sender: MessageSender, metric: &'static str) -> Self {
+        Self { sender, metric }
+    }
+
     pub async fn write<T: prost::Message>(
         &self,
         item: T,
@@ -173,11 +186,7 @@ impl FileSinkClient {
         let (on_write_tx, on_write_rx) = oneshot::channel();
         let bytes = item.encode_to_vec();
         let labels = labels.into_iter().map(Label::from);
-
         tokio::select! {
-            _ = self.shutdown_listener.clone() => {
-                Err(Error::Shutdown)
-            }
             result = self.sender.send_timeout(Message::Data(on_write_tx, bytes), SEND_TIMEOUT) => match result {
                 Ok(_) => {
                     metrics::increment_counter!(
@@ -200,7 +209,7 @@ impl FileSinkClient {
                     Err(Error::channel())
                 }
                 Err(SendTimeoutError::Timeout(_)) => {
-                    tracing::error!("file_sink write failed due to send timeout");
+                    tracing::error!("file_sink write failed for {:?} due to send timeout", self.metric);
                     Err(Error::SendTimeout)
                 }
             },
@@ -213,7 +222,10 @@ impl FileSinkClient {
             .send(Message::Commit(on_commit_tx))
             .await
             .map_err(|e| {
-                tracing::error!("file_sink failed to commit with {e:?}");
+                tracing::error!(
+                    "file_sink failed to commit for {:?} with {e:?}",
+                    self.metric
+                );
                 Error::channel()
             })
             .map(|_| on_commit_rx)
@@ -225,7 +237,10 @@ impl FileSinkClient {
             .send(Message::Rollback(on_rollback_tx))
             .await
             .map_err(|e| {
-                tracing::error!("file_sink failed to rollback with {e:?}");
+                tracing::error!(
+                    "file_sink failed to rollback for {:?} with {e:?}",
+                    self.metric
+                );
                 Error::channel()
             })
             .map(|_| on_rollback_rx)
@@ -242,11 +257,11 @@ pub struct FileSink {
 
     messages: MessageReceiver,
     deposits: Option<file_upload::MessageSender>,
+    file_upload: Option<FileUpload>,
     staged_files: Vec<PathBuf>,
     auto_commit: bool,
 
     active_sink: Option<ActiveSink>,
-    shutdown_listener: triggered::Listener,
 }
 
 #[derive(Debug)]
@@ -263,10 +278,64 @@ impl ActiveSink {
     }
 }
 
+impl ManagedTask for FileSink {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
+    }
+}
+
 impl FileSink {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
+
+        // Notify all existing completed sinks via deposits
+        if let Some(deposits) = &self.deposits {
+            let mut dir = fs::read_dir(&self.target_path).await?;
+            loop {
+                match dir.next_entry().await {
+                    Ok(Some(entry))
+                        if entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(&self.prefix) =>
+                    {
+                        file_upload::upload_file(deposits, &entry.path()).await?;
+                    }
+                    Ok(None) => break,
+                    _ => continue,
+                }
+            }
+        }
+
+        // Notify all existing completed sinks via file uploads
+        if let Some(file_uploads) = &self.file_upload {
+            let mut dir = fs::read_dir(&self.target_path).await?;
+            loop {
+                match dir.next_entry().await {
+                    Ok(Some(entry))
+                        if entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(&self.prefix) =>
+                    {
+                        file_upload::upload_file(&file_uploads.sender, &entry.path()).await?;
+                    }
+                    Ok(None) => break,
+                    _ => continue,
+                }
+            }
+        }
+
         // Move any partial previous sink files to the target
         let mut dir = fs::read_dir(&self.tmp_path).await?;
         loop {
@@ -288,28 +357,10 @@ impl FileSink {
             }
         }
 
-        // Notify all existing completed sinks
-        if let Some(deposits) = &self.deposits {
-            let mut dir = fs::read_dir(&self.target_path).await?;
-            loop {
-                match dir.next_entry().await {
-                    Ok(Some(entry))
-                        if entry
-                            .file_name()
-                            .to_string_lossy()
-                            .starts_with(&self.prefix) =>
-                    {
-                        file_upload::upload_file(deposits, &entry.path()).await?;
-                    }
-                    Ok(None) => break,
-                    _ => continue,
-                }
-            }
-        }
         Ok(())
     }
 
-    pub async fn run(&mut self) -> Result {
+    pub async fn run(mut self, shutdown: triggered::Listener) -> Result {
         tracing::info!(
             "starting file sink {} in {}",
             self.prefix,
@@ -325,7 +376,8 @@ impl FileSink {
 
         loop {
             tokio::select! {
-                _ = self.shutdown_listener.clone() => break,
+                biased;
+                _ = shutdown.clone() => break,
                 _ = rollover_timer.tick() => self.maybe_roll().await?,
                 msg = self.messages.recv() => match msg {
                     Some(Message::Data(on_write_tx, bytes)) => {
@@ -449,6 +501,9 @@ impl FileSink {
         if let Some(deposits) = &self.deposits {
             file_upload::upload_file(deposits, &target_path).await?;
         }
+        if let Some(file_upload) = &self.file_upload {
+            file_upload.upload_file(&target_path).await?;
+        };
 
         Ok(())
     }
@@ -488,7 +543,7 @@ impl FileSink {
     }
 }
 
-fn file_name(path_buf: &Path) -> Result<String> {
+pub fn file_name(path_buf: &Path) -> Result<String> {
     path_buf
         .file_name()
         .map(|os_str| os_str.to_string_lossy().to_string())
@@ -514,20 +569,16 @@ mod tests {
         let tmp_dir = TempDir::new().expect("Unable to create temp dir");
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
 
-        let (file_sink_client, mut file_sink_server) = FileSinkBuilder::new(
-            FileType::EntropyReport,
-            tmp_dir.path(),
-            "fake_metric",
-            shutdown_listener.clone(),
-        )
-        .roll_time(chrono::Duration::milliseconds(100))
-        .create()
-        .await
-        .expect("failed to create file sink");
+        let (file_sink_client, file_sink_server) =
+            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
+                .roll_time(chrono::Duration::milliseconds(100))
+                .create()
+                .await
+                .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server
-                .run()
+                .run(shutdown_listener.clone())
                 .await
                 .expect("failed to complete file sink");
         });
@@ -559,22 +610,18 @@ mod tests {
         let (shutdown_trigger, shutdown_listener) = triggered::trigger();
         let (file_upload_tx, mut file_upload_rx) = file_upload::message_channel();
 
-        let (file_sink_client, mut file_sink_server) = FileSinkBuilder::new(
-            FileType::EntropyReport,
-            tmp_dir.path(),
-            "fake_metric",
-            shutdown_listener.clone(),
-        )
-        .roll_time(chrono::Duration::milliseconds(100))
-        .auto_commit(false)
-        .deposits(Some(file_upload_tx))
-        .create()
-        .await
-        .expect("failed to create file sink");
+        let (file_sink_client, file_sink_server) =
+            FileSinkBuilder::new(FileType::EntropyReport, tmp_dir.path(), "fake_metric")
+                .roll_time(chrono::Duration::milliseconds(100))
+                .auto_commit(false)
+                .deposits(Some(file_upload_tx))
+                .create()
+                .await
+                .expect("failed to create file sink");
 
         let sink_thread = tokio::spawn(async move {
             file_sink_server
-                .run()
+                .run(shutdown_listener.clone())
                 .await
                 .expect("failed to complete file sink");
         });
@@ -638,7 +685,8 @@ mod tests {
             .to_str()
             .and_then(|file_name| FileInfo::from_str(file_name).ok())
             .map_or(false, |file_info| {
-                file_info.file_type == FileType::EntropyReport
+                FileType::from_str(&file_info.prefix).expect("entropy report prefix")
+                    == FileType::EntropyReport
             })
     }
 }

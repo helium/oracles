@@ -25,12 +25,33 @@ pub struct Settings {
     pub config_client: mobile_config::ClientSettings,
     #[serde(default = "default_start_after")]
     pub start_after: u64,
-    #[serde(default = "default_disable_discovery_loc_rewards_to_s3")]
-    pub disable_discovery_loc_rewards_to_s3: bool,
+    pub modeled_coverage_start: u64,
+    /// Max distance in meters between the heartbeat and all of the hexes in
+    /// its respective coverage object
+    #[serde(default = "default_max_distance_from_coverage")]
+    pub max_distance_from_coverage: u32,
+    /// Max distance in meters between the asserted location of a WIFI hotspot
+    /// and the lat/lng defined in a heartbeat
+    /// beyond which its location weight will be reduced
+    #[serde(default = "default_max_asserted_distance_deviation")]
+    pub max_asserted_distance_deviation: u32,
+    // Geofencing settings
+    pub geofence_regions: String,
+    #[serde(default = "default_fencing_resolution")]
+    pub fencing_resolution: u8,
 }
 
-pub fn default_disable_discovery_loc_rewards_to_s3() -> bool {
-    true
+fn default_fencing_resolution() -> u8 {
+    7
+}
+
+pub fn default_max_distance_from_coverage() -> u32 {
+    // Default is 2 km
+    2000
+}
+
+pub fn default_max_asserted_distance_deviation() -> u32 {
+    100
 }
 
 pub fn default_log() -> String {
@@ -76,5 +97,25 @@ impl Settings {
         Utc.timestamp_opt(self.start_after as i64, 0)
             .single()
             .unwrap()
+    }
+
+    pub fn modeled_coverage_start(&self) -> DateTime<Utc> {
+        Utc.timestamp_opt(self.modeled_coverage_start as i64, 0)
+            .single()
+            .unwrap()
+    }
+
+    pub fn region_paths(&self) -> anyhow::Result<Vec<std::path::PathBuf>> {
+        let paths = std::fs::read_dir(&self.geofence_regions)?;
+        Ok(paths
+            .into_iter()
+            .collect::<Result<Vec<std::fs::DirEntry>, std::io::Error>>()?
+            .into_iter()
+            .map(|path| path.path())
+            .collect())
+    }
+
+    pub fn fencing_resolution(&self) -> anyhow::Result<h3o::Resolution> {
+        Ok(h3o::Resolution::try_from(self.fencing_resolution)?)
     }
 }

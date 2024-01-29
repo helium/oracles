@@ -1,5 +1,3 @@
-pub mod balance_monitor;
-
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::AccountDeserialize;
 use async_trait::async_trait;
@@ -10,34 +8,77 @@ use helium_anchor_gen::{
 use helium_crypto::PublicKeyBinary;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_client::{
+    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
     pubkey::{ParsePubkeyError, Pubkey},
-    signature::{read_keypair_file, Keypair},
+    signature::{read_keypair_file, Keypair, Signature},
     signer::Signer,
     transaction::Transaction,
 };
-use std::collections::HashMap;
 use std::convert::Infallible;
+use std::{collections::HashMap, str::FromStr};
 use std::{
     sync::Arc,
-    time::{SystemTime, SystemTimeError},
+    time::{Duration, SystemTime, SystemTimeError},
 };
 use tokio::sync::Mutex;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
+    type Transaction: GetSignature + Send + Sync + 'static;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error>;
 
-    async fn burn_data_credits(
+    async fn make_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<Self::Transaction, Self::Error>;
+
+    async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
+
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error>;
+}
+
+pub trait GetSignature {
+    fn get_signature(&self) -> &Signature;
+}
+
+impl GetSignature for Transaction {
+    fn get_signature(&self) -> &Signature {
+        &self.signatures[0]
+    }
+}
+
+impl GetSignature for Signature {
+    fn get_signature(&self) -> &Signature {
+        self
+    }
+}
+
+macro_rules! send_with_retry {
+    ($rpc:expr) => {{
+        let mut attempt = 1;
+        loop {
+            match $rpc.await {
+                Ok(resp) => break Ok(resp),
+                Err(err) => {
+                    if attempt < 5 {
+                        attempt += 1;
+                        tokio::time::sleep(Duration::from_secs(attempt)).await;
+                        continue;
+                    } else {
+                        break Err(err);
+                    }
+                }
+            }
+        }
+    }};
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -45,7 +86,7 @@ pub enum SolanaRpcError {
     #[error("Solana rpc error: {0}")]
     RpcClientError(#[from] ClientError),
     #[error("Anchor error: {0}")]
-    AnchorError(#[from] anchor_lang::error::Error),
+    AnchorError(Box<anchor_lang::error::Error>),
     #[error("Solana program error: {0}")]
     ProgramError(#[from] solana_sdk::program_error::ProgramError),
     #[error("Parse pubkey error: {0}")]
@@ -56,6 +97,14 @@ pub enum SolanaRpcError {
     SystemTimeError(#[from] SystemTimeError),
     #[error("Failed to read keypair file")]
     FailedToReadKeypairError,
+    #[error("crypto error: {0}")]
+    Crypto(#[from] helium_crypto::Error),
+}
+
+impl From<anchor_lang::error::Error> for SolanaRpcError {
+    fn from(err: anchor_lang::error::Error) -> Self {
+        Self::AnchorError(Box::new(err))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,6 +114,18 @@ pub struct Settings {
     burn_keypair: String,
     dc_mint: String,
     dnt_mint: String,
+    #[serde(default)]
+    payers_to_monitor: Vec<String>,
+}
+
+impl Settings {
+    pub fn payers_to_monitor(&self) -> Result<Vec<PublicKeyBinary>, SolanaRpcError> {
+        self.payers_to_monitor
+            .iter()
+            .map(|payer| PublicKeyBinary::from_str(payer))
+            .collect::<Result<_, _>>()
+            .map_err(SolanaRpcError::from)
+    }
 }
 
 pub struct SolanaRpc {
@@ -72,6 +133,7 @@ pub struct SolanaRpc {
     program_cache: BurnProgramCache,
     cluster: String,
     keypair: [u8; 64],
+    payers_to_monitor: Vec<PublicKeyBinary>,
 }
 
 impl SolanaRpc {
@@ -92,6 +154,7 @@ impl SolanaRpc {
             provider,
             program_cache,
             keypair: keypair.to_bytes(),
+            payers_to_monitor: settings.payers_to_monitor()?,
         }))
     }
 }
@@ -99,6 +162,7 @@ impl SolanaRpc {
 #[async_trait]
 impl SolanaNetwork for SolanaRpc {
     type Error = SolanaRpcError;
+    type Transaction = Transaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
         let ddc_key = delegated_data_credits(&self.program_cache.sub_dao, payer);
@@ -106,20 +170,38 @@ impl SolanaNetwork for SolanaRpc {
             &["escrow_dc_account".as_bytes(), &ddc_key.to_bytes()],
             &data_credits::ID,
         );
-        let Ok(account_data) = self.provider.get_account_data(&escrow_account).await else {
-            // If the account is empty, it has no DC
-            tracing::info!(%payer, "Account not found, therefore no balance");
-            return Ok(0);
+        let account_data = match self
+            .provider
+            .get_account_with_commitment(&escrow_account, CommitmentConfig::finalized())
+            .await?
+        {
+            Response { value: None, .. } => {
+                tracing::info!(%payer, "Account not found, therefore no balance");
+                return Ok(0);
+            }
+            Response {
+                value: Some(account),
+                ..
+            } => account.data,
         };
         let account_layout = spl_token::state::Account::unpack(account_data.as_slice())?;
+
+        if self.payers_to_monitor.contains(payer) {
+            metrics::gauge!(
+                "balance",
+                account_layout.amount as f64,
+                "payer" => payer.to_string()
+            );
+        }
+
         Ok(account_layout.amount)
     }
 
-    async fn burn_data_credits(
+    async fn make_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<Self::Transaction, Self::Error> {
         // Fetch the sub dao epoch info:
         const EPOCH_LENGTH: u64 = 60 * 60 * 24;
         let epoch = SystemTime::now()
@@ -182,21 +264,45 @@ impl SolanaNetwork for SolanaRpc {
         let blockhash = self.provider.get_latest_blockhash().await?;
         let signer = Keypair::from_bytes(&self.keypair).unwrap();
 
-        let tx = Transaction::new_signed_with_payer(
+        Ok(Transaction::new_signed_with_payer(
             &instructions,
             Some(&signer.pubkey()),
             &[&signer],
             blockhash,
-        );
+        ))
+    }
 
-        let signature = self.provider.send_and_confirm_transaction(&tx).await?;
+    async fn submit_transaction(&self, tx: &Self::Transaction) -> Result<(), Self::Error> {
+        match send_with_retry!(self.provider.send_and_confirm_transaction(tx)) {
+            Ok(signature) => {
+                tracing::info!(
+                    transaction = %signature,
+                    "Data credit burn successful",
+                );
+                Ok(())
+            }
+            Err(err) => {
+                let signature = tx.get_signature();
+                tracing::error!(
+                    transaction = %signature,
+                    "Data credit burn failed: {err:?}"
+                );
+                Err(SolanaRpcError::RpcClientError(err))
+            }
+        }
+    }
 
-        tracing::info!(
-            transaction = %signature,
-            "Successfully burned data credits",
-        );
-
-        Ok(())
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+        Ok(matches!(
+            self.provider
+                .get_signature_status_with_commitment_and_history(
+                    txn,
+                    CommitmentConfig::confirmed(),
+                    true,
+                )
+                .await?,
+            Some(Ok(()))
+        ))
     }
 }
 
@@ -250,9 +356,24 @@ impl BurnProgramCache {
 
 const FIXED_BALANCE: u64 = 1_000_000_000;
 
+pub enum PossibleTransaction {
+    NoTransaction(Signature),
+    Transaction(Transaction),
+}
+
+impl GetSignature for PossibleTransaction {
+    fn get_signature(&self) -> &Signature {
+        match self {
+            Self::NoTransaction(ref sig) => sig,
+            Self::Transaction(ref txn) => txn.get_signature(),
+        }
+    }
+}
+
 #[async_trait]
 impl SolanaNetwork for Option<Arc<SolanaRpc>> {
     type Error = SolanaRpcError;
+    type Transaction = PossibleTransaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
         if let Some(ref rpc) = self {
@@ -262,34 +383,80 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         }
     }
 
-    async fn burn_data_credits(
+    async fn make_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<Self::Transaction, Self::Error> {
         if let Some(ref rpc) = self {
-            rpc.burn_data_credits(payer, amount).await
+            Ok(PossibleTransaction::Transaction(
+                rpc.make_burn_transaction(payer, amount).await?,
+            ))
         } else {
-            Ok(())
+            Ok(PossibleTransaction::NoTransaction(Signature::new_unique()))
         }
+    }
+
+    async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error> {
+        match (self, transaction) {
+            (Some(ref rpc), PossibleTransaction::Transaction(ref txn)) => {
+                rpc.submit_transaction(txn).await?
+            }
+            (None, PossibleTransaction::NoTransaction(_)) => (),
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
+    async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error> {
+        if let Some(ref rpc) = self {
+            rpc.confirm_transaction(txn).await
+        } else {
+            panic!("We will not confirm transactions when Solana is disabled");
+        }
+    }
+}
+
+pub struct MockTransaction {
+    pub signature: Signature,
+    pub payer: PublicKeyBinary,
+    pub amount: u64,
+}
+
+impl GetSignature for MockTransaction {
+    fn get_signature(&self) -> &Signature {
+        &self.signature
     }
 }
 
 #[async_trait]
 impl SolanaNetwork for Arc<Mutex<HashMap<PublicKeyBinary, u64>>> {
     type Error = Infallible;
+    type Transaction = MockTransaction;
 
     async fn payer_balance(&self, payer: &PublicKeyBinary) -> Result<u64, Self::Error> {
         Ok(*self.lock().await.get(payer).unwrap())
     }
 
-    async fn burn_data_credits(
+    async fn make_burn_transaction(
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
-    ) -> Result<(), Self::Error> {
-        *self.lock().await.get_mut(payer).unwrap() -= amount;
+    ) -> Result<MockTransaction, Self::Error> {
+        Ok(MockTransaction {
+            signature: Signature::new_unique(),
+            payer: payer.clone(),
+            amount,
+        })
+    }
+
+    async fn submit_transaction(&self, txn: &MockTransaction) -> Result<(), Self::Error> {
+        *self.lock().await.get_mut(&txn.payer).unwrap() -= txn.amount;
         Ok(())
+    }
+
+    async fn confirm_transaction(&self, _txn: &Signature) -> Result<bool, Self::Error> {
+        Ok(true)
     }
 }
 

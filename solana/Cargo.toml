@@ -7,6 +7,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = {workspace = true}
 anchor-lang = {workspace = true}
 anchor-client = {workspace = true}
@@ -23,5 +24,5 @@ solana-sdk = {workspace = true}
 spl-token = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
+tokio-util = { workspace = true }
 tracing = {workspace = true}
-triggered = {workspace = true}

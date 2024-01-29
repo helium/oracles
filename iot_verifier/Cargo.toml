@@ -36,7 +36,7 @@ h3o = {workspace = true, features = ["geo"]}
 xorf = {workspace = true}
 lazy_static = {workspace = true}
 once_cell = {workspace = true}
-file-store = { path = "../file_store" }
+file-store = { path = "../file_store"}
 metrics = {workspace = true}
 retainer = {workspace = true}
 blake3 = {workspace = true}
@@ -47,9 +47,11 @@ denylist = {path = "../denylist"}
 reward-scheduler = {path = "../reward_scheduler"}
 rust_decimal = {workspace = true, features = ["maths"]}
 rust_decimal_macros = {workspace = true}
-humantime = {workspace = true}
 twox-hash = {workspace = true}
 itertools = {workspace = true}
 rand = {workspace = true}
 beacon = {workspace = true}
 price = { path = "../price" }
+tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
+task-manager = { path = "../task_manager" }

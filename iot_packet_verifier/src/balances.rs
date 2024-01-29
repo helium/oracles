@@ -1,21 +1,23 @@
 use crate::{
-    pending_burns::{Burn, PendingBurns},
+    pending::{Burn, PendingTables},
     verifier::Debiter,
 };
-use futures_util::StreamExt;
 use helium_crypto::PublicKeyBinary;
 use solana::SolanaNetwork;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 
 /// Caches balances fetched from the solana chain and debits made by the
 /// packet verifier.
 pub struct BalanceCache<S> {
-    balances: BalanceStore,
+    payer_accounts: BalanceStore,
     solana: S,
 }
 
-pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, Balance>>>;
+pub type BalanceStore = Arc<Mutex<HashMap<PublicKeyBinary, PayerAccount>>>;
 
 impl<S> BalanceCache<S>
 where
@@ -23,32 +25,27 @@ where
 {
     /// Fetch all of the current balances that have been actively burned so that
     /// we have an accurate cache.
-    pub async fn new<P>(pending_burns: &mut P, solana: S) -> anyhow::Result<Self>
-    where
-        P: PendingBurns,
-    {
+    pub async fn new(pending_tables: &impl PendingTables, solana: S) -> anyhow::Result<Self> {
         let mut balances = HashMap::new();
-        let mut burns = pending_burns.fetch_all().await;
 
-        while let Some(Burn {
+        for Burn {
             payer,
             amount: burn_amount,
-            ..
-        }) = burns.next().await.transpose()?
+        } in pending_tables.fetch_all_pending_burns().await?
         {
             // Look up the current balance of the payer
             let balance = solana.payer_balance(&payer).await?;
             balances.insert(
                 payer,
-                Balance {
-                    burned: burn_amount as u64,
+                PayerAccount {
+                    burned: burn_amount,
                     balance,
                 },
             );
         }
 
         Ok(Self {
-            balances: Arc::new(Mutex::new(balances)),
+            payer_accounts: Arc::new(Mutex::new(balances)),
             solana,
         })
     }
@@ -56,7 +53,7 @@ where
 
 impl<S> BalanceCache<S> {
     pub fn balances(&self) -> BalanceStore {
-        self.balances.clone()
+        self.payer_accounts.clone()
     }
 }
 
@@ -73,40 +70,44 @@ where
         &self,
         payer: &PublicKeyBinary,
         amount: u64,
+        trigger_balance_check_threshold: u64,
     ) -> Result<Option<u64>, S::Error> {
-        let mut balances = self.balances.lock().await;
+        let mut payer_accounts = self.payer_accounts.lock().await;
 
-        let balance = if !balances.contains_key(payer) {
-            let new_balance = self.solana.payer_balance(payer).await?;
-            balances.insert(payer.clone(), Balance::new(new_balance));
-            balances.get_mut(payer).unwrap()
-        } else {
-            let balance = balances.get_mut(payer).unwrap();
+        // Fetch the balance if we haven't seen the payer before
+        if let Entry::Vacant(payer_account) = payer_accounts.entry(payer.clone()) {
+            let payer_account =
+                payer_account.insert(PayerAccount::new(self.solana.payer_balance(payer).await?));
+            return Ok((payer_account.balance >= amount).then(|| {
+                payer_account.burned += amount;
+                payer_account.balance - amount
+            }));
+        }
 
-            // If the balance is not sufficient, check to see if it has been increased
-            if balance.balance < amount + balance.burned {
-                balance.balance = self.solana.payer_balance(payer).await?;
+        let payer_account = payer_accounts.get_mut(payer).unwrap();
+        match payer_account
+            .balance
+            .checked_sub(amount + payer_account.burned)
+        {
+            Some(remaining_balance) => {
+                if remaining_balance < trigger_balance_check_threshold {
+                    payer_account.balance = self.solana.payer_balance(payer).await?;
+                }
+                payer_account.burned += amount;
+                Ok(Some(payer_account.balance - payer_account.burned))
             }
-
-            balance
-        };
-
-        Ok(if balance.balance >= amount + balance.burned {
-            balance.burned += amount;
-            Some(balance.balance - balance.burned)
-        } else {
-            None
-        })
+            None => Ok(None),
+        }
     }
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct Balance {
+pub struct PayerAccount {
     pub balance: u64,
     pub burned: u64,
 }
 
-impl Balance {
+impl PayerAccount {
     pub fn new(balance: u64) -> Self {
         Self { balance, burned: 0 }
     }

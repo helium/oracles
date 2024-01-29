@@ -7,7 +7,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use helium_proto::services::poc_lora::{
-    InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraPocV1,
+    InvalidDetails, InvalidParticipantSide, InvalidReason, LoraBeaconReportReqV1, LoraPocV1,
     LoraValidBeaconReportV1, LoraVerifiedWitnessReportV1, LoraWitnessReportReqV1,
     VerificationStatus,
 };
@@ -51,6 +51,7 @@ pub struct IotVerifiedWitnessReport {
     pub reward_unit: Decimal,
     pub invalid_reason: InvalidReason,
     pub participant_side: InvalidParticipantSide,
+    pub invalid_details: Option<InvalidDetails>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -153,10 +154,7 @@ impl From<IotValidBeaconReport> for LoraValidBeaconReportV1 {
 
         Self {
             received_timestamp,
-            location: v
-                .location
-                .map(|l| l.to_string())
-                .unwrap_or_else(String::new),
+            location: v.location.map(|l| l.to_string()).unwrap_or_default(),
             gain: v.gain,
             elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
@@ -186,7 +184,6 @@ impl TryFrom<LoraVerifiedWitnessReportV1> for IotVerifiedWitnessReport {
                     v.participant_side,
                 )
             })?;
-
         Ok(Self {
             received_timestamp,
             status,
@@ -201,6 +198,7 @@ impl TryFrom<LoraVerifiedWitnessReportV1> for IotVerifiedWitnessReport {
             reward_unit: Decimal::new(v.reward_unit as i64, SCALING_PRECISION),
             invalid_reason,
             participant_side,
+            invalid_details: v.invalid_details,
         })
     }
 }
@@ -213,16 +211,14 @@ impl From<IotVerifiedWitnessReport> for LoraVerifiedWitnessReportV1 {
             received_timestamp,
             status: v.status.into(),
             report: Some(report),
-            location: v
-                .location
-                .map(|l| l.to_string())
-                .unwrap_or_else(String::new),
+            location: v.location.map(|l| l.to_string()).unwrap_or_default(),
             gain: v.gain,
             elevation: v.elevation,
             hex_scale: (v.hex_scale * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             reward_unit: (v.reward_unit * SCALE_MULTIPLIER).to_u32().unwrap_or(0),
             invalid_reason: v.invalid_reason as i32,
             participant_side: v.participant_side as i32,
+            invalid_details: v.invalid_details,
         }
     }
 }
@@ -249,10 +245,14 @@ impl IotVerifiedWitnessReport {
             // valid, non-failed witnesses for the final validated poc report
             reward_unit: Decimal::ZERO,
             participant_side: InvalidParticipantSide::SideNone,
+            invalid_details: None,
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn invalid(
         invalid_reason: InvalidReason,
+        invalid_details: Option<InvalidDetails>,
         report: &IotWitnessReport,
         received_timestamp: DateTime<Utc>,
         location: Option<u64>,
@@ -264,6 +264,7 @@ impl IotVerifiedWitnessReport {
             received_timestamp,
             status: VerificationStatus::Invalid,
             invalid_reason,
+            invalid_details,
             report: report.clone(),
             location,
             gain,

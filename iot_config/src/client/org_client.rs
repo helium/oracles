@@ -1,12 +1,23 @@
 use super::{
-    iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message, MsgVerify,
-    PublicKey, Settings, Sign,
+    call_with_retry, iot_config, Arc, Channel, ClientError, Duration, Endpoint, Keypair, Message,
+    MsgVerify, PublicKey, Settings, Sign,
 };
+use async_trait::async_trait;
 use chrono::Utc;
 use file_store::traits::TimestampEncode;
 use helium_proto::services::iot_config::{
     OrgDisableReqV1, OrgEnableReqV1, OrgGetReqV1, OrgListReqV1, OrgResV1, OrgV1,
 };
+
+#[async_trait]
+pub trait Orgs: Send + Sync + 'static {
+    type Error: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static;
+
+    async fn get(&mut self, oui: u64) -> Result<OrgResV1, Self::Error>;
+    async fn list(&mut self) -> Result<Vec<OrgV1>, Self::Error>;
+    async fn enable(&mut self, oui: u64) -> Result<(), Self::Error>;
+    async fn disable(&mut self, oui: u64) -> Result<(), Self::Error>;
+}
 
 #[derive(Clone)]
 pub struct OrgClient {
@@ -27,25 +38,30 @@ impl OrgClient {
             config_pubkey: settings.config_pubkey()?,
         })
     }
+}
 
-    pub async fn get(&mut self, oui: u64) -> Result<OrgResV1, ClientError> {
+#[async_trait]
+impl Orgs for OrgClient {
+    type Error = ClientError;
+
+    async fn get(&mut self, oui: u64) -> Result<OrgResV1, ClientError> {
         tracing::debug!(%oui, "retrieving org");
 
         let req = OrgGetReqV1 { oui };
-        let res = self.client.get(req).await?.into_inner();
+        let res = call_with_retry!(self.client.get(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res)
     }
 
-    pub async fn list(&mut self) -> Result<Vec<OrgV1>, ClientError> {
+    async fn list(&mut self) -> Result<Vec<OrgV1>, ClientError> {
         tracing::debug!("retrieving org list");
 
-        let res = self.client.list(OrgListReqV1 {}).await?.into_inner();
+        let res = call_with_retry!(self.client.list(OrgListReqV1 {}))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(res.orgs)
     }
 
-    pub async fn enable(&mut self, oui: u64) -> Result<(), ClientError> {
+    async fn enable(&mut self, oui: u64) -> Result<(), ClientError> {
         tracing::info!(%oui, "enabling org");
 
         let mut req = OrgEnableReqV1 {
@@ -55,12 +71,12 @@ impl OrgClient {
             signature: vec![],
         };
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
-        let res = self.client.enable(req).await?.into_inner();
+        let res = call_with_retry!(self.client.enable(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(())
     }
 
-    pub async fn disable(&mut self, oui: u64) -> Result<(), ClientError> {
+    async fn disable(&mut self, oui: u64) -> Result<(), ClientError> {
         tracing::info!(%oui, "disabling org");
 
         let mut req = OrgDisableReqV1 {
@@ -70,7 +86,7 @@ impl OrgClient {
             signature: vec![],
         };
         req.signature = self.signing_key.sign(&req.encode_to_vec())?;
-        let res = self.client.disable(req).await?.into_inner();
+        let res = call_with_retry!(self.client.disable(req.clone()))?.into_inner();
         res.verify(&self.config_pubkey)?;
         Ok(())
     }

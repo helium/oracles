@@ -1,4 +1,5 @@
-use super::{ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use super::{call_with_retry, ClientError, Settings, CACHE_EVICTION_FREQUENCY};
+use async_trait::async_trait;
 use file_store::traits::MsgVerify;
 use helium_crypto::{Keypair, PublicKey, Sign};
 use helium_proto::{
@@ -8,6 +9,13 @@ use helium_proto::{
 use retainer::Cache;
 use std::{sync::Arc, time::Duration};
 
+#[async_trait]
+pub trait EntityVerifier {
+    type Error;
+
+    async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, Self::Error>;
+}
+
 #[derive(Clone)]
 pub struct EntityClient {
     client: mobile_config::EntityClient<Channel>,
@@ -15,6 +23,41 @@ pub struct EntityClient {
     config_pubkey: PublicKey,
     cache: Arc<Cache<Vec<u8>, bool>>,
     cache_ttl: Duration,
+}
+
+#[async_trait]
+impl EntityVerifier for EntityClient {
+    type Error = ClientError;
+
+    async fn verify_rewardable_entity(&self, entity_id: &[u8]) -> Result<bool, ClientError> {
+        let entity_id = entity_id.to_vec();
+        if let Some(entity_found) = self.cache.get(&entity_id).await {
+            return Ok(*entity_found.value());
+        }
+
+        let mut request = mobile_config::EntityVerifyReqV1 {
+            entity_id: entity_id.clone(),
+            signer: self.signing_key.public_key().into(),
+            signature: vec![],
+        };
+        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
+        tracing::debug!(?entity_id, "verifying entity on-chain");
+        let response = match call_with_retry!(self.client.clone().verify(request.clone())) {
+            Ok(verify_res) => {
+                let response = verify_res.into_inner();
+                response.verify(&self.config_pubkey)?;
+                true
+            }
+            Err(status) if status.code() == tonic::Code::NotFound => false,
+            Err(status) => Err(status)?,
+        };
+
+        self.cache
+            .insert(entity_id.clone(), response, self.cache_ttl)
+            .await;
+
+        Ok(response)
+    }
 }
 
 impl EntityClient {
@@ -34,34 +77,5 @@ impl EntityClient {
             cache_ttl: settings.cache_ttl(),
             cache,
         })
-    }
-
-    pub async fn verify_rewardable_entity(&self, entity_id: &Vec<u8>) -> Result<bool, ClientError> {
-        if let Some(entity_found) = self.cache.get(entity_id).await {
-            return Ok(*entity_found.value());
-        }
-
-        let mut request = mobile_config::EntityVerifyReqV1 {
-            entity_id: entity_id.clone(),
-            signer: self.signing_key.public_key().into(),
-            signature: vec![],
-        };
-        request.signature = self.signing_key.sign(&request.encode_to_vec())?;
-        tracing::debug!(?entity_id, "verifying entity on-chain");
-        let response = match self.client.clone().verify(request).await {
-            Ok(verify_res) => {
-                let response = verify_res.into_inner();
-                response.verify(&self.config_pubkey)?;
-                true
-            }
-            Err(status) if status.code() == tonic::Code::NotFound => false,
-            Err(status) => Err(status)?,
-        };
-
-        self.cache
-            .insert(entity_id.clone(), response, self.cache_ttl)
-            .await;
-
-        Ok(response)
     }
 }

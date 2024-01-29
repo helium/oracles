@@ -24,14 +24,19 @@ pub enum Error {
     Channel,
     #[error("no manifest")]
     NoManifest,
-    #[error("db error")]
-    DbError(#[from] sqlx::Error),
     #[error("tokio join error")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("send timeout")]
     SendTimeout,
     #[error("shutting down")]
     Shutdown,
+    #[error("error building file info poller")]
+    FileInfoPollerError(#[from] crate::file_info_poller::FileInfoPollerConfigBuilderError),
+    #[cfg(feature = "sqlx-postgres")]
+    #[error("db error")]
+    DbError(#[from] sqlx::Error),
+    #[error("channel send error")]
+    SendError(#[from] tokio::sync::mpsc::error::SendError<()>),
 }
 
 #[derive(Error, Debug)]
@@ -54,8 +59,18 @@ pub enum DecodeError {
     UnsupportedParticipantSide(String, i32),
     #[error("unsupported verification status, type: {0}, value: {1}")]
     UnsupportedStatusReason(String, i32),
+    #[error("unsupported signal level, type: {0}, value: {1}")]
+    UnsupportedSignalLevel(String, i32),
     #[error("invalid unix timestamp {0}")]
     InvalidTimestamp(u64),
+    #[error("Uuid error: {0}")]
+    UuidError(#[from] uuid::Error),
+    #[error("Invalid cell index error: {0}")]
+    InvalidCellIndexError(#[from] h3o::error::InvalidCellIndex),
+    #[error("unsupported packet type, type: {0}, value: {1}")]
+    UnsupportedPacketType(String, i32),
+    #[error("file stream try decode error: {0}")]
+    FileStreamTryDecode(String),
 }
 
 #[derive(Error, Debug)]
@@ -97,6 +112,10 @@ impl Error {
     {
         Self::from(err.into())
     }
+
+    pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
+        DecodeError::file_stream_try_decode(msg)
+    }
 }
 
 impl DecodeError {
@@ -110,6 +129,10 @@ impl DecodeError {
 
     pub fn unsupported_datarate<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedDataRate(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_packet_type<E: ToString>(msg1: E, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedPacketType(msg1.to_string(), msg2))
     }
 
     pub fn unsupported_participant_side<E: ToString>(msg1: E, msg2: i32) -> Error {
@@ -126,6 +149,14 @@ impl DecodeError {
 
     pub fn unsupported_status_reason<E: ToString>(msg1: E, msg2: i32) -> Error {
         Error::Decode(Self::UnsupportedInvalidReason(msg1.to_string(), msg2))
+    }
+
+    pub fn unsupported_signal_level(msg1: impl ToString, msg2: i32) -> Error {
+        Error::Decode(Self::UnsupportedSignalLevel(msg1.to_string(), msg2))
+    }
+
+    pub fn file_stream_try_decode<E: ToString>(msg: E) -> Error {
+        Error::Decode(Self::FileStreamTryDecode(msg.to_string()))
     }
 }
 

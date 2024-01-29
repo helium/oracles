@@ -35,7 +35,6 @@ pub struct GatewayService {
     region_map: RegionMapReader,
     signing_key: Arc<Keypair>,
     delegate_cache: watch::Receiver<org::DelegateCache>,
-    shutdown: triggered::Listener,
 }
 
 impl GatewayService {
@@ -45,7 +44,6 @@ impl GatewayService {
         region_map: RegionMapReader,
         auth_cache: AuthCache,
         delegate_cache: watch::Receiver<org::DelegateCache>,
-        shutdown: triggered::Listener,
     ) -> Result<Self> {
         let gateway_cache = Arc::new(Cache::new());
         let cache_clone = gateway_cache.clone();
@@ -58,7 +56,6 @@ impl GatewayService {
             region_map,
             signing_key: Arc::new(settings.signing_keypair()?),
             delegate_cache,
-            shutdown,
         })
     }
 
@@ -80,11 +77,20 @@ impl GatewayService {
 
     fn verify_location_request(&self, request: &GatewayLocationReqV1) -> Result<(), Status> {
         let signature_bytes = request.signer.clone();
+        let signer_pubkey = verify_public_key(&signature_bytes)?;
+
+        if self
+            .auth_cache
+            .verify_signature(&signer_pubkey, request)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
         self.delegate_cache
             .borrow()
             .contains(&signature_bytes.clone().into())
             .then(|| {
-                let signer_pubkey = verify_public_key(&signature_bytes)?;
                 request
                     .verify(&signer_pubkey)
                     .map_err(|_| Status::invalid_argument("bad request signature"))
@@ -278,13 +284,11 @@ impl iot_config::Gateway for GatewayService {
         let signing_key = self.signing_key.clone();
         let batch_size = request.batch_size;
         let region_map = self.region_map.clone();
-        let shutdown_listener = self.shutdown.clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(20);
 
         tokio::spawn(async move {
             tokio::select! {
-                _ = shutdown_listener => (),
                 _ = stream_all_gateways_info(
                     &pool,
                     tx.clone(),

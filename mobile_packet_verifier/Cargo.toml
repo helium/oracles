@@ -25,6 +25,7 @@ serde = {workspace = true}
 sqlx = {workspace = true}
 solana = {path = "../solana"}
 mobile-config = {path = "../mobile_config"}
+task-manager = {path = "../task_manager"}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tonic = {workspace = true}

@@ -1,14 +1,18 @@
 use crate::{
+    error::DecodeError,
     traits::{MsgDecode, MsgTimestamp, TimestampDecode},
     Error, Result,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use helium_crypto::PublicKeyBinary;
-use helium_proto::services::poc_mobile::{CellHeartbeatIngestReportV1, CellHeartbeatReqV1};
+use helium_proto::services::poc_mobile::{
+    CellHeartbeatIngestReportV1, CellHeartbeatReqV1, CellType, Heartbeat, HeartbeatValidity,
+};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CellHeartbeat {
+pub struct CbrsHeartbeat {
     pub pubkey: PublicKeyBinary,
     pub hotspot_type: String,
     pub cell_id: u32,
@@ -18,23 +22,30 @@ pub struct CellHeartbeat {
     pub operation_mode: bool,
     pub cbsd_category: String,
     pub cbsd_id: String,
+    pub coverage_object: Vec<u8>,
+}
+
+impl CbrsHeartbeat {
+    pub fn coverage_object(&self) -> Option<Uuid> {
+        Uuid::from_slice(&self.coverage_object).ok()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CellHeartbeatIngestReport {
+pub struct CbrsHeartbeatIngestReport {
     pub received_timestamp: DateTime<Utc>,
-    pub report: CellHeartbeat,
+    pub report: CbrsHeartbeat,
 }
 
-impl MsgDecode for CellHeartbeat {
+impl MsgDecode for CbrsHeartbeat {
     type Msg = CellHeartbeatReqV1;
 }
 
-impl MsgDecode for CellHeartbeatIngestReport {
+impl MsgDecode for CbrsHeartbeatIngestReport {
     type Msg = CellHeartbeatIngestReportV1;
 }
 
-impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
+impl TryFrom<CellHeartbeatReqV1> for CbrsHeartbeat {
     type Error = Error;
     fn try_from(v: CellHeartbeatReqV1) -> Result<Self> {
         Ok(Self {
@@ -47,6 +58,7 @@ impl TryFrom<CellHeartbeatReqV1> for CellHeartbeat {
             operation_mode: v.operation_mode,
             cbsd_category: v.cbsd_category,
             cbsd_id: v.cbsd_id,
+            coverage_object: v.coverage_object,
         })
     }
 }
@@ -57,7 +69,7 @@ impl MsgTimestamp<Result<DateTime<Utc>>> for CellHeartbeatReqV1 {
     }
 }
 
-impl TryFrom<CellHeartbeatIngestReportV1> for CellHeartbeatIngestReport {
+impl TryFrom<CellHeartbeatIngestReportV1> for CbrsHeartbeatIngestReport {
     type Error = Error;
     fn try_from(v: CellHeartbeatIngestReportV1) -> Result<Self> {
         Ok(Self {
@@ -73,6 +85,55 @@ impl TryFrom<CellHeartbeatIngestReportV1> for CellHeartbeatIngestReport {
 impl MsgTimestamp<Result<DateTime<Utc>>> for CellHeartbeatIngestReportV1 {
     fn timestamp(&self) -> Result<DateTime<Utc>> {
         self.received_timestamp.to_timestamp_millis()
+    }
+}
+
+pub mod cli {
+    use super::*;
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct ValidatedHeartbeat {
+        pub cbsd_id: String,
+        pub pub_key: PublicKeyBinary,
+        pub timestamp: DateTime<Utc>,
+        pub cell_type: CellType,
+        pub validity: HeartbeatValidity,
+        pub lat: f64,
+        pub lon: f64,
+        pub coverage_object: Vec<u8>,
+        pub location_validation_timestamp: DateTime<Utc>,
+        pub distance_to_asserted: u64,
+    }
+
+    impl TryFrom<Heartbeat> for ValidatedHeartbeat {
+        type Error = Error;
+
+        fn try_from(v: Heartbeat) -> Result<Self> {
+            Ok(Self {
+                cbsd_id: v.cbsd_id.clone(),
+                pub_key: v.pub_key.clone().into(),
+                timestamp: Utc
+                    .timestamp_opt(v.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| DecodeError::invalid_timestamp(v.timestamp))?,
+                cell_type: v.cell_type(),
+                validity: v.validity(),
+                lat: v.lat,
+                lon: v.lon,
+                coverage_object: v.coverage_object,
+                location_validation_timestamp: Utc
+                    .timestamp_opt(v.location_validation_timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        DecodeError::invalid_timestamp(v.location_validation_timestamp)
+                    })?,
+                distance_to_asserted: v.distance_to_asserted,
+            })
+        }
+    }
+
+    impl MsgDecode for ValidatedHeartbeat {
+        type Msg = Heartbeat;
     }
 }
 
@@ -108,17 +169,17 @@ mod tests {
 
         let buffer = report.encode_to_vec();
 
-        let cellheartbeatreport = CellHeartbeatIngestReport::decode(buffer.as_slice())
-            .expect("unable to decode into CellHeartbeat");
+        let heartbeatreport = CbrsHeartbeatIngestReport::decode(buffer.as_slice())
+            .expect("unable to decode into CbrsHeartbeat");
 
         assert_eq!(
-            cellheartbeatreport.received_timestamp,
+            heartbeatreport.received_timestamp,
             Utc.timestamp_millis_opt(now).unwrap()
         );
         assert_eq!(
             report.timestamp().expect("timestamp"),
-            cellheartbeatreport.received_timestamp
+            heartbeatreport.received_timestamp
         );
-        assert_eq!(cellheartbeatreport.report.cell_id, 123);
+        assert_eq!(heartbeatreport.report.cell_id, 123);
     }
 }

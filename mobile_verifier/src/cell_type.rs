@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use helium_proto::services::poc_mobile::CellType as CellTypeProto;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -18,6 +19,16 @@ pub enum CellType {
     Neutrino430 = 2,
     SercommIndoor = 3,
     SercommOutdoor = 4,
+    CellTypeNone = 5,
+    NovaGenericWifiIndoor = 6,
+    NovaGenericWifiOutdoor = 7,
+}
+
+#[derive(PartialEq)]
+pub enum CellTypeLabel {
+    CellTypeLabelNone = 0,
+    CBRS = 1,
+    Wifi = 2,
 }
 
 impl CellType {
@@ -32,25 +43,53 @@ impl CellType {
         }
     }
 
-    pub fn reward_weight(&self) -> Decimal {
+    pub fn to_label(self) -> CellTypeLabel {
         match self {
-            Self::Nova436H => dec!(4.0),
-            Self::Nova430I => dec!(2.5),
-            Self::Neutrino430 => dec!(1.0),
-            Self::SercommIndoor => dec!(1.0),
-            Self::SercommOutdoor => dec!(2.5),
+            Self::Nova436H => CellTypeLabel::CBRS,
+            Self::Nova430I => CellTypeLabel::CBRS,
+            Self::Neutrino430 => CellTypeLabel::CBRS,
+            Self::SercommIndoor => CellTypeLabel::CBRS,
+            Self::SercommOutdoor => CellTypeLabel::CBRS,
+            Self::NovaGenericWifiIndoor => CellTypeLabel::Wifi,
+            Self::NovaGenericWifiOutdoor => CellTypeLabel::Wifi,
+            Self::CellTypeNone => CellTypeLabel::CellTypeLabelNone,
+        }
+    }
+
+    pub fn location_weight(
+        &self,
+        location_validation_timestamp: Option<DateTime<Utc>>,
+        distance: Option<i64>,
+        max_distance_to_asserted: u32,
+    ) -> Decimal {
+        match (self, distance, location_validation_timestamp.is_some()) {
+            (Self::NovaGenericWifiIndoor | Self::NovaGenericWifiOutdoor, Some(dist), true)
+                if dist <= max_distance_to_asserted as i64 =>
+            {
+                dec!(1.0)
+            }
+            (Self::NovaGenericWifiIndoor | Self::NovaGenericWifiOutdoor, Some(dist), true)
+                if dist > max_distance_to_asserted as i64 =>
+            {
+                dec!(0.25)
+            }
+            (Self::NovaGenericWifiIndoor | Self::NovaGenericWifiOutdoor, _, _) => dec!(0.25),
+            _ => dec!(1.0),
         }
     }
 }
 
 impl From<CellType> for CellTypeProto {
-    fn from(ct: CellType) -> Self {
+    fn from(ct: CellType) -> CellTypeProto {
         match ct {
-            CellType::Nova436H => Self::Nova436h,
-            CellType::Nova430I => Self::Nova430i,
-            CellType::Neutrino430 => Self::Neutrino430,
-            CellType::SercommIndoor => Self::SercommIndoor,
-            CellType::SercommOutdoor => Self::SercommOutdoor,
+            CellType::Nova436H => CellTypeProto::Nova436h,
+            CellType::Nova430I => CellTypeProto::Nova430i,
+            CellType::Neutrino430 => CellTypeProto::Neutrino430,
+            CellType::SercommIndoor => CellTypeProto::SercommIndoor,
+            CellType::SercommOutdoor => CellTypeProto::SercommOutdoor,
+            CellType::NovaGenericWifiIndoor => CellTypeProto::NovaGenericWifiIndoor,
+            CellType::NovaGenericWifiOutdoor => CellTypeProto::NovaGenericWifiOutdoor,
+            CellType::CellTypeNone => CellTypeProto::None,
         }
     }
 }

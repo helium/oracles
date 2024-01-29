@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod coverage;
 pub mod entropy_report;
 mod error;
 mod file_info;
@@ -20,8 +21,10 @@ pub mod reward_manifest;
 mod settings;
 pub mod speedtest;
 pub mod traits;
+pub mod wifi_heartbeat;
 
 pub use crate::file_store::FileStore;
+pub use cli::bucket::FileFilter;
 pub use error::{Error, Result};
 pub use file_info::{FileInfo, FileType};
 pub use file_sink::{FileSink, FileSinkBuilder};

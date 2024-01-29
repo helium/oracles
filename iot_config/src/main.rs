@@ -1,14 +1,15 @@
 use anyhow::{Error, Result};
 use clap::Parser;
+use futures::future::LocalBoxFuture;
 use futures_util::TryFutureExt;
 use helium_proto::services::iot_config::{AdminServer, GatewayServer, OrgServer, RouteServer};
 use iot_config::{
-    admin::AuthCache, admin_service::AdminService, gateway_service::GatewayService, org,
-    org_service::OrgService, region_map::RegionMapReader, route_service::RouteService,
-    settings::Settings, telemetry,
+    admin::AuthCache, admin_service::AdminService, db_cleaner::DbCleaner,
+    gateway_service::GatewayService, org, org_service::OrgService, region_map::RegionMapReader,
+    route_service::RouteService, settings::Settings, telemetry,
 };
-use std::{path::PathBuf, time::Duration};
-use tokio::signal;
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use task_manager::{ManagedTask, TaskManager};
 use tonic::transport;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -60,34 +61,20 @@ impl Daemon {
         poc_metrics::start_metrics(&settings.metrics)?;
         telemetry::initialize();
 
-        // Configure shutdown trigger
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         // Create database pool
-        let (pool, db_join_handle) = settings
-            .database
-            .connect("iot-config-store", shutdown_listener.clone())
-            .await?;
+        let pool = settings.database.connect("iot-config-store").await?;
         sqlx::migrate!().run(&pool).await?;
 
         // Create on-chain metadata pool
-        let (metadata_pool, md_pool_handle) = settings
-            .metadata
-            .connect("iot-config-metadata", shutdown_listener.clone())
-            .await?;
+        let metadata_pool = settings.metadata.connect("iot-config-metadata").await?;
 
         let listen_addr = settings.listen_addr()?;
 
-        let (auth_updater, auth_cache) = AuthCache::new(settings, &pool).await?;
+        let (auth_updater, auth_cache) = AuthCache::new(settings.admin_pubkey()?, &pool).await?;
         let (region_updater, region_map) = RegionMapReader::new(&pool).await?;
         let (delegate_key_updater, delegate_key_cache) = org::delegate_keys_cache(&pool).await?;
+
+        let signing_keypair = Arc::new(settings.signing_keypair()?);
 
         let gateway_svc = GatewayService::new(
             settings,
@@ -95,22 +82,19 @@ impl Daemon {
             region_map.clone(),
             auth_cache.clone(),
             delegate_key_cache,
-            shutdown_listener.clone(),
         )?;
-        let route_svc = RouteService::new(
-            settings,
-            auth_cache.clone(),
-            pool.clone(),
-            shutdown_listener.clone(),
-        )?;
+
+        let route_svc =
+            RouteService::new(signing_keypair.clone(), auth_cache.clone(), pool.clone());
+
         let org_svc = OrgService::new(
-            settings,
+            signing_keypair.clone(),
             auth_cache.clone(),
             pool.clone(),
             route_svc.clone_update_channel(),
             delegate_key_updater,
-            shutdown_listener.clone(),
         )?;
+
         let admin_svc = AdminService::new(
             settings,
             auth_cache.clone(),
@@ -126,23 +110,65 @@ impl Daemon {
         tracing::debug!("listening on {listen_addr}");
         tracing::debug!("signing as {pubkey}");
 
-        let server = transport::Server::builder()
-            .http2_keepalive_interval(Some(Duration::from_secs(250)))
-            .http2_keepalive_timeout(Some(Duration::from_secs(60)))
-            .add_service(GatewayServer::new(gateway_svc))
-            .add_service(OrgServer::new(org_svc))
-            .add_service(RouteServer::new(route_svc))
-            .add_service(AdminServer::new(admin_svc))
-            .serve_with_shutdown(listen_addr, shutdown_listener)
-            .map_err(Error::from);
+        let grpc_server = GrpcServer {
+            listen_addr,
+            gateway_svc,
+            route_svc,
+            org_svc,
+            admin_svc,
+        };
 
-        tokio::try_join!(
-            db_join_handle.map_err(Error::from),
-            md_pool_handle.map_err(Error::from),
-            server
-        )?;
+        let db_cleaner = DbCleaner::new(pool.clone(), settings.deleted_entry_retention());
 
-        Ok(())
+        TaskManager::builder()
+            .add_task(grpc_server)
+            .add_task(db_cleaner)
+            .start()
+            .await
+    }
+}
+
+pub struct GrpcServer {
+    listen_addr: SocketAddr,
+    gateway_svc: GatewayService,
+    route_svc: RouteService,
+    org_svc: OrgService,
+    admin_svc: AdminService,
+}
+
+impl ManagedTask for GrpcServer {
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(async move {
+            let grpc_server = transport::Server::builder()
+                .http2_keepalive_interval(Some(Duration::from_secs(250)))
+                .http2_keepalive_timeout(Some(Duration::from_secs(60)))
+                .layer(tower_http::trace::TraceLayer::new_for_grpc())
+                .add_service(GatewayServer::new(self.gateway_svc))
+                .add_service(OrgServer::new(self.org_svc))
+                .add_service(RouteServer::new(self.route_svc))
+                .add_service(AdminServer::new(self.admin_svc))
+                .serve(self.listen_addr)
+                .map_err(Error::from);
+
+            tokio::select! {
+                _ = shutdown => {
+                    tracing::warn!("grpc server shutting down");
+                    Ok(())
+                }
+                res = grpc_server => {
+                    match res {
+                        Ok(()) => Ok(()),
+                        Err(err) => {
+                            tracing::error!(?err, "grpc server failed with error");
+                            Err(anyhow::anyhow!("grpc server exiting with error"))
+                        }
+                    }
+                }
+            }
+        })
     }
 }
 
