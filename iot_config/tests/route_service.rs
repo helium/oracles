@@ -170,7 +170,6 @@ async fn stream_only_sends_data_modified_since(pool: Pool<Postgres>) {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     let since = Utc::now();
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     let route2 = create_route(&mut client, &org, &admin_keypair).await;
 
@@ -259,11 +258,7 @@ async fn stream_updates_with_deactivate_reactivate(pool: Pool<Postgres>) {
 
     create_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
 
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
     delete_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
-
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     create_euis(&mut client, &route, vec![(200, 201)], &admin_keypair).await;
 
