@@ -59,7 +59,7 @@ sqlx = {version = "0", features = [
   "macros",
   "runtime-tokio-rustls"
 ]}
-helium-anchor-gen = {git = "https://github.com/lthiery/helium-anchor-gen.git"}
+helium-anchor-gen = {git = "https://github.com/helium/helium-anchor-gen.git"}
 helium-crypto = {version = "0.8.1", features=["sqlx-postgres", "multisig"]}
 helium-proto = {git = "https://github.com/helium/proto", branch = "master", features = ["services"]}
 hextree = "*"
