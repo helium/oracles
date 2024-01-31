@@ -92,7 +92,7 @@ where
         Ok(())
     }
 
-    async fn process_file(
+    pub async fn process_file(
         &self,
         file: FileInfoStream<CellSpeedtestIngestReport>,
     ) -> anyhow::Result<()> {
@@ -105,6 +105,7 @@ where
                 save_speedtest(&speedtest_report.report, &mut transaction).await?;
                 let latest_speedtests = get_latest_speedtests_for_pubkey(
                     &speedtest_report.report.pubkey,
+                    speedtest_report.report.timestamp,
                     &mut transaction,
                 )
                 .await?;
@@ -200,12 +201,23 @@ pub async fn save_speedtest(
 
 pub async fn get_latest_speedtests_for_pubkey(
     pubkey: &PublicKeyBinary,
+    timestamp: DateTime<Utc>,
     exec: &mut Transaction<'_, Postgres>,
 ) -> Result<Vec<Speedtest>, sqlx::Error> {
     let speedtests = sqlx::query_as::<_, Speedtest>(
-        "SELECT * FROM speedtests where pubkey = $1 order by timestamp desc limit $2",
+        r#"
+        SELECT * 
+        FROM speedtests 
+        WHERE pubkey = $1 
+            AND timestamp >= $2
+            AND timestamp <= $3
+        ORDER BY timestamp DESC 
+        LIMIT $4
+        "#,
     )
     .bind(pubkey)
+    .bind(timestamp - Duration::hours(SPEEDTEST_LAPSE))
+    .bind(timestamp)
     .bind(SPEEDTEST_AVG_MAX_DATA_POINTS as i64)
     .fetch_all(exec)
     .await?;
