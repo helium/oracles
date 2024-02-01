@@ -3,7 +3,8 @@ pub mod wifi;
 
 use crate::{
     cell_type::{CellType, CellTypeLabel},
-    coverage::{CoverageClaimTimeCache, CoverageObjectSummary, CoverageObjects, Seniority},
+    coverage::{CoverageClaimTimeCache, CoverageObjectCache, CoverageObjectMeta, Seniority},
+    geofence::GeofenceValidator,
     GatewayResolution, GatewayResolver,
 };
 use anyhow::anyhow;
@@ -314,7 +315,7 @@ pub struct ValidatedHeartbeat {
     pub cell_type: CellType,
     pub location_trust_score_multiplier: Decimal,
     pub distance_to_asserted: Option<i64>,
-    pub coverage_summary: Option<CoverageObjectSummary>,
+    pub coverage_meta: Option<CoverageObjectMeta>,
     pub validity: proto::HeartbeatValidity,
 }
 
@@ -332,7 +333,7 @@ impl ValidatedHeartbeat {
         cell_type: CellType,
         location_trust_score_multiplier: Decimal,
         distance_to_asserted: Option<i64>,
-        coverage_summary: Option<CoverageObjectSummary>,
+        coverage_meta: Option<CoverageObjectMeta>,
         validity: proto::HeartbeatValidity,
     ) -> Self {
         Self {
@@ -340,7 +341,7 @@ impl ValidatedHeartbeat {
             cell_type,
             location_trust_score_multiplier,
             distance_to_asserted,
-            coverage_summary,
+            coverage_meta,
             validity,
         }
     }
@@ -349,9 +350,11 @@ impl ValidatedHeartbeat {
     pub async fn validate(
         heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
-        coverage_cache: &CoverageObjects,
+        coverage_object_cache: &CoverageObjectCache,
         max_distance_to_asserted: u32,
+        max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
+        geofence: &impl GeofenceValidator,
     ) -> anyhow::Result<Self> {
         let Some(coverage_object) = heartbeat.coverage_object else {
             return Ok(Self::new(
@@ -364,8 +367,8 @@ impl ValidatedHeartbeat {
             ));
         };
 
-        let Some(coverage_summary) = coverage_cache
-            .coverage_summary(&coverage_object, heartbeat.key())
+        let Some(coverage_object) = coverage_object_cache
+            .fetch_coverage_object(&coverage_object, heartbeat.key())
             .await?
         else {
             return Ok(Self::new(
@@ -388,7 +391,7 @@ impl ValidatedHeartbeat {
                             CellType::CellTypeNone,
                             dec!(0),
                             None,
-                            Some(coverage_summary),
+                            Some(coverage_object.meta),
                             proto::HeartbeatValidity::BadCbsdId,
                         ));
                     }
@@ -399,13 +402,13 @@ impl ValidatedHeartbeat {
                         CellType::CellTypeNone,
                         dec!(0),
                         None,
-                        Some(coverage_summary),
+                        Some(coverage_object.meta),
                         proto::HeartbeatValidity::BadCbsdId,
                     ));
                 }
             },
             HbType::Wifi => {
-                if coverage_summary.indoor {
+                if coverage_object.meta.indoor {
                     CellType::NovaGenericWifiIndoor
                 } else {
                     CellType::NovaGenericWifiOutdoor
@@ -419,7 +422,7 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
-                Some(coverage_summary),
+                Some(coverage_object.meta),
                 proto::HeartbeatValidity::NotOperational,
             ));
         }
@@ -430,8 +433,30 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
-                Some(coverage_summary),
+                Some(coverage_object.meta),
                 proto::HeartbeatValidity::HeartbeatOutsideRange,
+            ));
+        }
+
+        let Ok(hb_latlng) = LatLng::new(heartbeat.lat, heartbeat.lon) else {
+            return Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                Some(coverage_object.meta),
+                proto::HeartbeatValidity::InvalidLatLon,
+            ));
+        };
+
+        if !geofence.in_valid_region(&heartbeat) {
+            return Ok(Self::new(
+                heartbeat,
+                cell_type,
+                dec!(0),
+                None,
+                Some(coverage_object.meta),
+                proto::HeartbeatValidity::UnsupportedLocation,
             ));
         }
 
@@ -444,7 +469,7 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
-                Some(coverage_summary),
+                Some(coverage_object.meta),
                 proto::HeartbeatValidity::GatewayNotFound,
             )),
             GatewayResolution::GatewayNotAsserted if heartbeat.hb_type == HbType::Wifi => {
@@ -453,26 +478,29 @@ impl ValidatedHeartbeat {
                     cell_type,
                     dec!(0),
                     None,
-                    Some(coverage_summary),
+                    Some(coverage_object.meta),
                     proto::HeartbeatValidity::GatewayNotAsserted,
                 ))
             }
             GatewayResolution::AssertedLocation(location) if heartbeat.hb_type == HbType::Wifi => {
-                let distance_to_asserted = heartbeat.asserted_distance(location)?;
-                let location_trust_score_multiplier =
-                    if heartbeat.location_validation_timestamp.is_some()
-                        && distance_to_asserted <= max_distance_to_asserted as i64
-                    {
-                        dec!(1.0)
-                    } else {
-                        dec!(0.25)
-                    };
+                let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
+                let distance_to_asserted = asserted_latlng.distance_m(hb_latlng).round() as i64;
+                let location_trust_score_multiplier = if heartbeat.location_validation_timestamp.is_some()
+		// The heartbeat location to asserted location must be less than the max_distance_to_asserted value:
+                    && distance_to_asserted <= max_distance_to_asserted as i64
+		// The heartbeat location to every associated coverage hex must be less than max_distance_to_coverage:
+		    && coverage_object.max_distance_m(hb_latlng).round() as u32 <= max_distance_to_coverage
+                {
+                    dec!(1.0)
+                } else {
+                    dec!(0.25)
+                };
                 Ok(Self::new(
                     heartbeat,
                     cell_type,
                     location_trust_score_multiplier,
                     Some(distance_to_asserted),
-                    Some(coverage_summary),
+                    Some(coverage_object.meta),
                     proto::HeartbeatValidity::Valid,
                 ))
             }
@@ -481,7 +509,7 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(1.0),
                 None,
-                Some(coverage_summary),
+                Some(coverage_object.meta),
                 proto::HeartbeatValidity::Valid,
             )),
         }
@@ -490,17 +518,21 @@ impl ValidatedHeartbeat {
     pub fn validate_heartbeats<'a>(
         gateway_info_resolver: &'a impl GatewayResolver,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
-        coverage_cache: &'a CoverageObjects,
+        coverage_object_cache: &'a CoverageObjectCache,
         max_distance_to_asserted: u32,
+        max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
+        geofence: &'a impl GeofenceValidator,
     ) -> impl Stream<Item = anyhow::Result<Self>> + 'a {
         heartbeats.then(move |heartbeat| async move {
             Self::validate(
                 heartbeat,
                 gateway_info_resolver,
-                coverage_cache,
+                coverage_object_cache,
                 max_distance_to_asserted,
+                max_distance_to_coverage,
                 epoch,
+                geofence,
             )
             .await
         })
@@ -551,7 +583,7 @@ impl ValidatedHeartbeat {
             "#,
         )
         .bind(self.heartbeat.timestamp)
-        .bind(self.coverage_summary.as_ref().map(|x| x.inserted_at)) // Guaranteed not to be NULL
+        .bind(self.coverage_meta.as_ref().map(|x| x.inserted_at)) // Guaranteed not to be NULL
         .bind(self.heartbeat.key())
         .bind(self.heartbeat.coverage_object)
         .execute(&mut *exec)
@@ -854,7 +886,7 @@ mod test {
             validity: Default::default(),
             location_trust_score_multiplier: dec!(1.0),
             distance_to_asserted: None,
-            coverage_summary: None,
+            coverage_meta: None,
         }
     }
 

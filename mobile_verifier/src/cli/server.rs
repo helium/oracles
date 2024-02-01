@@ -1,11 +1,11 @@
 use crate::{
-    coverage::CoverageDaemon, data_session::DataSessionIngestor,
+    coverage::CoverageDaemon, data_session::DataSessionIngestor, geofence::Geofence,
     heartbeats::cbrs::HeartbeatDaemon as CellHeartbeatDaemon,
     heartbeats::wifi::HeartbeatDaemon as WifiHeartbeatDaemon, rewarder::Rewarder,
     speedtests::SpeedtestDaemon, subscriber_location::SubscriberLocationIngestor, telemetry,
     Settings,
 };
-use anyhow::{Error, Result};
+use anyhow::Result;
 use chrono::Duration;
 use file_store::{
     coverage::CoverageObjectIngestReport, file_info_poller::LookbackBehavior, file_sink,
@@ -14,12 +14,11 @@ use file_store::{
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
 };
-use futures_util::TryFutureExt;
 use mobile_config::client::{
     entity_client::EntityClient, AuthorizationClient, CarrierServiceClient, GatewayClient,
 };
 use price::PriceTracker;
-use tokio::signal;
+use task_manager::TaskManager;
 
 #[derive(Debug, clap::Args)]
 pub struct Cmd {}
@@ -28,23 +27,13 @@ impl Cmd {
     pub async fn run(self, settings: &Settings) -> Result<()> {
         poc_metrics::start_metrics(&settings.metrics)?;
 
-        let (shutdown_trigger, shutdown_listener) = triggered::trigger();
-        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = sigterm.recv() => shutdown_trigger.trigger(),
-                _ = signal::ctrl_c() => shutdown_trigger.trigger(),
-            }
-        });
-
         let pool = settings.database.connect(env!("CARGO_PKG_NAME")).await?;
         sqlx::migrate!().run(&pool).await?;
 
         telemetry::initialize(&pool).await?;
 
-        let (file_upload_tx, file_upload_rx) = file_upload::message_channel();
-        let file_upload =
-            file_upload::FileUpload::from_settings(&settings.output, file_upload_rx).await?;
+        let (file_upload, file_upload_server) =
+            file_upload::FileUpload::from_settings_tm(&settings.output).await?;
 
         let store_base_path = std::path::Path::new(&settings.cache);
 
@@ -58,8 +47,7 @@ impl Cmd {
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
 
         // price tracker
-        let (price_tracker, tracker_process) =
-            PriceTracker::start(&settings.price_tracker, shutdown_listener.clone()).await?;
+        let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
 
         // CBRS Heartbeats
         let (cbrs_heartbeats, cbrs_heartbeats_server) =
@@ -69,10 +57,8 @@ impl Cmd {
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CbrsHeartbeatIngestReport.to_string())
                 .queue_size(1)
-                .create()?;
-        let cbrs_heartbeats_join_handle = cbrs_heartbeats_server
-            .start(shutdown_listener.clone())
-            .await?;
+                .create()
+                .await?;
 
         // Wifi Heartbeats
         let (wifi_heartbeats, wifi_heartbeats_server) =
@@ -81,17 +67,15 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::WifiHeartbeatIngestReport.to_string())
-                .create()?;
-        let wifi_heartbeats_join_handle = wifi_heartbeats_server
-            .start(shutdown_listener.clone())
-            .await?;
+                .create()
+                .await?;
 
         let (valid_heartbeats, valid_heartbeats_server) = file_sink::FileSinkBuilder::new(
             FileType::ValidatedHeartbeat,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_heartbeat"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -103,11 +87,13 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_seniority_update"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
         .await?;
+
+        let geofence = Geofence::from_settings(settings)?;
 
         let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
@@ -115,8 +101,10 @@ impl Cmd {
             cbrs_heartbeats,
             settings.modeled_coverage_start(),
             settings.max_asserted_distance_deviation,
+            settings.max_distance_from_coverage,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
+            geofence.clone(),
         );
 
         let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
@@ -125,8 +113,10 @@ impl Cmd {
             wifi_heartbeats,
             settings.modeled_coverage_start(),
             settings.max_asserted_distance_deviation,
+            settings.max_distance_from_coverage,
             valid_heartbeats,
             seniority_updates,
+            geofence,
         );
 
         // Speedtests
@@ -136,15 +126,15 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CellSpeedtestIngestReport.to_string())
-                .create()?;
-        let speedtests_join_handle = speedtests_server.start(shutdown_listener.clone()).await?;
+                .create()
+                .await?;
 
         let (speedtests_avg, speedtests_avg_server) = file_sink::FileSinkBuilder::new(
             FileType::SpeedtestAvg,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_speedtest_average"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -155,7 +145,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_verified_speedtest"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -176,17 +166,15 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::CoverageObjectIngestReport.to_string())
-                .create()?;
-        let coverage_objs_join_handle = coverage_objs_server
-            .start(shutdown_listener.clone())
-            .await?;
+                .create()
+                .await?;
 
         let (valid_coverage_objs, valid_coverage_objs_server) = file_sink::FileSinkBuilder::new(
             FileType::CoverageObject,
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_coverage_object"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .roll_time(Duration::minutes(15))
         .create()
@@ -206,7 +194,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_radio_reward_shares"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -216,7 +204,7 @@ impl Cmd {
             store_base_path,
             concat!(env!("CARGO_PKG_NAME"), "_reward_manifest"),
         )
-        .deposits(Some(file_upload_tx.clone()))
+        .file_upload(Some(file_upload.clone()))
         .auto_commit(false)
         .create()
         .await?;
@@ -238,10 +226,8 @@ impl Cmd {
                 .store(report_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::SubscriberLocationIngestReport.to_string())
-                .create()?;
-        let subscriber_location_ingest_join_handle = subscriber_location_ingest_server
-            .start(shutdown_listener.clone())
-            .await?;
+                .create()
+                .await?;
 
         let (verified_subscriber_location, verified_subscriber_location_server) =
             file_sink::FileSinkBuilder::new(
@@ -249,7 +235,7 @@ impl Cmd {
                 store_base_path,
                 concat!(env!("CARGO_PKG_NAME"), "_verified_subscriber_location"),
             )
-            .deposits(Some(file_upload_tx.clone()))
+            .file_upload(Some(file_upload.clone()))
             .auto_commit(false)
             .create()
             .await?;
@@ -269,63 +255,36 @@ impl Cmd {
                 .store(data_transfer_ingest.clone())
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::ValidDataTransferSession.to_string())
-                .create()?;
-        let data_session_ingest_join_handle = data_session_ingest_server
-            .start(shutdown_listener.clone())
-            .await?;
+                .create()
+                .await?;
 
-        let data_session_ingestor = DataSessionIngestor::new(pool.clone());
+        let data_session_ingestor = DataSessionIngestor::new(pool.clone(), data_session_ingest);
 
-        tokio::try_join!(
-            valid_heartbeats_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            speedtests_avg_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            speedtests_validity_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            valid_coverage_objs_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            seniority_updates_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            mobile_rewards_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            file_upload
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            reward_manifests_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            verified_subscriber_location_server
-                .run(shutdown_listener.clone())
-                .map_err(Error::from),
-            subscriber_location_ingestor
-                .run(&shutdown_listener)
-                .map_err(Error::from),
-            data_session_ingestor
-                .run(data_session_ingest, shutdown_listener.clone())
-                .map_err(Error::from),
-            tracker_process.map_err(Error::from),
-            cbrs_heartbeats_join_handle.map_err(Error::from),
-            wifi_heartbeats_join_handle.map_err(Error::from),
-            speedtests_join_handle.map_err(Error::from),
-            coverage_objs_join_handle.map_err(Error::from),
-            cbrs_heartbeat_daemon.run(shutdown_listener.clone()),
-            wifi_heartbeat_daemon.run(shutdown_listener.clone()),
-            speedtest_daemon.run(shutdown_listener.clone()),
-            coverage_daemon.run(shutdown_listener.clone()),
-            rewarder.run(shutdown_listener.clone()),
-            subscriber_location_ingest_join_handle.map_err(anyhow::Error::from),
-            data_session_ingest_join_handle.map_err(anyhow::Error::from),
-        )?;
-
-        tracing::info!("Shutting down verifier server");
-
-        Ok(())
+        TaskManager::builder()
+            .add_task(file_upload_server)
+            .add_task(cbrs_heartbeats_server)
+            .add_task(wifi_heartbeats_server)
+            .add_task(valid_heartbeats_server)
+            .add_task(speedtests_avg_server)
+            .add_task(speedtests_validity_server)
+            .add_task(valid_coverage_objs_server)
+            .add_task(seniority_updates_server)
+            .add_task(mobile_rewards_server)
+            .add_task(reward_manifests_server)
+            .add_task(verified_subscriber_location_server)
+            .add_task(subscriber_location_ingestor)
+            .add_task(data_session_ingest_server)
+            .add_task(price_daemon)
+            .add_task(cbrs_heartbeat_daemon)
+            .add_task(wifi_heartbeat_daemon)
+            .add_task(speedtests_server)
+            .add_task(coverage_objs_server)
+            .add_task(speedtest_daemon)
+            .add_task(coverage_daemon)
+            .add_task(rewarder)
+            .add_task(subscriber_location_ingest_server)
+            .add_task(data_session_ingestor)
+            .start()
+            .await
     }
 }

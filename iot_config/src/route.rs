@@ -247,7 +247,7 @@ async fn insert_euis(
 
     const EUI_INSERT_VALS: &str = " insert into route_eui_pairs (route_id, app_eui, dev_eui) ";
     const EUI_INSERT_ON_CONF: &str =
-        " on conflict (route_id, app_eui, dev_eui) do nothing returning * ";
+        " on conflict (route_id, app_eui, dev_eui) do update set deleted = false returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(EUI_INSERT_VALS);
     query_builder
@@ -358,7 +358,7 @@ async fn insert_devaddr_ranges(
     const DEVADDR_RANGE_INSERT_VALS: &str =
         " insert into route_devaddr_ranges (route_id, start_addr, end_addr) ";
     const DEVADDR_RANGE_INSERT_ON_CONF: &str =
-        " on conflict (route_id, start_addr, end_addr) do nothing returning * ";
+        " on conflict (route_id, start_addr, end_addr) do update set deleted = false returning * ";
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(DEVADDR_RANGE_INSERT_VALS);
     query_builder
@@ -799,7 +799,7 @@ async fn insert_skfs(skfs: &[Skf], db: impl sqlx::PgExecutor<'_>) -> anyhow::Res
     // instead of ignoring. this avoids reconciliation bugs attempting to update fields of an
     // existing skf from succeeding on the HPRs but being ignored by the Config Service
     const SKF_INSERT_CONFLICT: &str =
-        " on conflict (route_id, devaddr, session_key) do update set max_copies = excluded.max_copies returning * ";
+        " on conflict (route_id, devaddr, session_key) do update set max_copies = excluded.max_copies, deleted = false returning * ";
 
     let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> =
         sqlx::QueryBuilder::new(SKF_INSERT_VALS);

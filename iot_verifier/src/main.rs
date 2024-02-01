@@ -158,7 +158,8 @@ impl Server {
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(entropy_interval)
                 .offset(entropy_interval * 2)
-                .create()?;
+                .create()
+                .await?;
 
         let entropy_loader = EntropyLoader {
             pool: pool.clone(),
@@ -190,7 +191,8 @@ impl Server {
                 .lookback(LookbackBehavior::Max(max_lookback_age))
                 .poll_duration(packet_interval)
                 .offset(packet_interval * 2)
-                .create()?;
+                .create()
+                .await?;
 
         let packet_loader = packet_loader::PacketLoader::from_settings(
             settings,

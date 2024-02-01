@@ -209,7 +209,7 @@ impl FileSinkClient {
                     Err(Error::channel())
                 }
                 Err(SendTimeoutError::Timeout(_)) => {
-                    tracing::error!("file_sink write failed due to send timeout");
+                    tracing::error!("file_sink write failed for {:?} due to send timeout", self.metric);
                     Err(Error::SendTimeout)
                 }
             },
@@ -222,7 +222,10 @@ impl FileSinkClient {
             .send(Message::Commit(on_commit_tx))
             .await
             .map_err(|e| {
-                tracing::error!("file_sink failed to commit with {e:?}");
+                tracing::error!(
+                    "file_sink failed to commit for {:?} with {e:?}",
+                    self.metric
+                );
                 Error::channel()
             })
             .map(|_| on_commit_rx)
@@ -234,7 +237,10 @@ impl FileSinkClient {
             .send(Message::Rollback(on_rollback_tx))
             .await
             .map_err(|e| {
-                tracing::error!("file_sink failed to rollback with {e:?}");
+                tracing::error!(
+                    "file_sink failed to rollback for {:?} with {e:?}",
+                    self.metric
+                );
                 Error::channel()
             })
             .map(|_| on_rollback_rx)
@@ -291,26 +297,6 @@ impl FileSink {
     async fn init(&mut self) -> Result {
         fs::create_dir_all(&self.target_path).await?;
         fs::create_dir_all(&self.tmp_path).await?;
-        // Move any partial previous sink files to the target
-        let mut dir = fs::read_dir(&self.tmp_path).await?;
-        loop {
-            match dir.next_entry().await {
-                Ok(Some(entry))
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(&self.prefix) =>
-                {
-                    if self.auto_commit {
-                        let _ = self.deposit_sink(&entry.path()).await;
-                    } else {
-                        let _ = fs::remove_file(&entry.path()).await;
-                    }
-                }
-                Ok(None) => break,
-                _ => continue,
-            }
-        }
 
         // Notify all existing completed sinks via deposits
         if let Some(deposits) = &self.deposits {
@@ -347,6 +333,27 @@ impl FileSink {
                     Ok(None) => break,
                     _ => continue,
                 }
+            }
+        }
+
+        // Move any partial previous sink files to the target
+        let mut dir = fs::read_dir(&self.tmp_path).await?;
+        loop {
+            match dir.next_entry().await {
+                Ok(Some(entry))
+                    if entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(&self.prefix) =>
+                {
+                    if self.auto_commit {
+                        let _ = self.deposit_sink(&entry.path()).await;
+                    } else {
+                        let _ = fs::remove_file(&entry.path()).await;
+                    }
+                }
+                Ok(None) => break,
+                _ => continue,
             }
         }
 

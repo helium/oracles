@@ -17,6 +17,7 @@ use helium_proto::services::poc_mobile::{
 use mobile_config::client::gateway_client::GatewayInfoResolver;
 use sqlx::{postgres::PgRow, FromRow, Postgres, Row, Transaction};
 use std::{collections::HashMap, time::Instant};
+use task_manager::ManagedTask;
 use tokio::sync::mpsc::Receiver;
 
 const SPEEDTEST_AVG_MAX_DATA_POINTS: usize = 6;
@@ -72,28 +73,23 @@ where
     }
 
     pub async fn run(mut self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        tokio::spawn(async move {
-            loop {
-                #[rustfmt::skip]
-                tokio::select! {
-                    biased;
-                    _ = shutdown.clone() => {
-                        tracing::info!("SpeedtestDaemon shutting down");
-                        break;
-                    }
-                    Some(file) = self.speedtests.recv() => {
-			let start = Instant::now();
-			self.process_file(file).await?;
-			metrics::histogram!("speedtest_processing_time", start.elapsed());
-                    }
+        loop {
+            #[rustfmt::skip]
+            tokio::select! {
+                biased;
+                _ = shutdown.clone() => {
+                    tracing::info!("SpeedtestDaemon shutting down");
+                    break;
+                }
+                Some(file) = self.speedtests.recv() => {
+		    let start = Instant::now();
+		    self.process_file(file).await?;
+		    metrics::histogram!("speedtest_processing_time", start.elapsed());
                 }
             }
+        }
 
-            Ok(())
-        })
-        .map_err(anyhow::Error::from)
-        .and_then(|result| async move { result })
-        .await
+        Ok(())
     }
 
     async fn process_file(
@@ -160,6 +156,23 @@ where
             .write(proto, &[("result", result.as_str_name())])
             .await?;
         Ok(())
+    }
+}
+
+impl<GIR> ManagedTask for SpeedtestDaemon<GIR>
+where
+    GIR: GatewayInfoResolver,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 

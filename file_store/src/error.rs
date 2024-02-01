@@ -35,6 +35,8 @@ pub enum Error {
     #[cfg(feature = "sqlx-postgres")]
     #[error("db error")]
     DbError(#[from] sqlx::Error),
+    #[error("channel send error")]
+    SendError(#[from] tokio::sync::mpsc::error::SendError<()>),
 }
 
 #[derive(Error, Debug)]

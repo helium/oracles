@@ -11,7 +11,7 @@ use helium_proto::{
     DataRate, Region,
 };
 use iot_packet_verifier::{
-    balances::BalanceCache,
+    balances::{BalanceCache, PayerAccount},
     burner::Burner,
     pending::{confirm_pending_txns, AddPendingBurn, Burn, MockPendingTables, PendingTables},
     verifier::{payload_size_to_dc, ConfigServer, Org, Verifier, BYTES_PER_DC},
@@ -543,6 +543,14 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
         payer.clone(),
         CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
     );
+    let mut cache = HashMap::new();
+    cache.insert(
+        payer.clone(),
+        PayerAccount {
+            balance: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
+            burned: CONFIRMED_BURN_AMOUNT + UNCONFIRMED_BURN_AMOUNT,
+        },
+    );
     let mock_network = MockSolanaNetwork::new(ledger);
 
     // Add both the burn amounts to the pending burns table
@@ -579,7 +587,9 @@ async fn test_pending_txns(pool: PgPool) -> anyhow::Result<()> {
     }
 
     // Confirm pending transactions
-    confirm_pending_txns(&pool, &mock_network).await.unwrap();
+    confirm_pending_txns(&pool, &mock_network, &Arc::new(Mutex::new(cache)))
+        .await
+        .unwrap();
 
     let pending_burn: Burn = sqlx::query_as("SELECT * FROM pending_burns LIMIT 1")
         .fetch_one(&pool)

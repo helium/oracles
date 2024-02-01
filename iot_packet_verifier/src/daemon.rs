@@ -116,12 +116,12 @@ impl Cmd {
             None
         };
 
-        // Check if we have any left over pending transactions, and if we
-        // do check if they have been confirmed:
-        confirm_pending_txns(&pool, &solana).await?;
-
         // Set up the balance cache:
         let balances = BalanceCache::new(&pool, solana.clone()).await?;
+
+        // Check if we have any left over pending transactions, and if we
+        // do check if they have been confirmed:
+        confirm_pending_txns(&pool, &solana, &balances.balances()).await?;
 
         // Set up the balance burner:
         let burner = Burner::new(
@@ -169,7 +169,8 @@ impl Cmd {
                 .store(file_store)
                 .lookback(LookbackBehavior::StartAfter(settings.start_after()))
                 .prefix(FileType::IotPacketReport.to_string())
-                .create()?;
+                .create()
+                .await?;
 
         let balance_store = balances.balances();
         let verifier_daemon = Daemon {

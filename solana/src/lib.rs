@@ -1,9 +1,11 @@
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::AccountDeserialize;
 use async_trait::async_trait;
-use data_credits::{accounts, instruction};
+use helium_anchor_gen::{
+    data_credits::{self, accounts, instruction},
+    helium_sub_daos::{self, DaoV0, SubDaoV0},
+};
 use helium_crypto::PublicKeyBinary;
-use helium_sub_daos::{DaoV0, SubDaoV0};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use solana_client::{
@@ -247,7 +249,7 @@ impl SolanaNetwork for SolanaRpc {
                 registrar: self.program_cache.registrar,
             };
             let args = instruction::BurnDelegatedDataCreditsV0 {
-                args: data_credits::BurnDelegatedDataCreditsArgsV0 { amount },
+                _args: data_credits::BurnDelegatedDataCreditsArgsV0 { amount },
             };
 
             // As far as I can tell, the instructions function does not actually have any

@@ -12,10 +12,9 @@ async-trait = {workspace = true}
 anchor-lang = {workspace = true}
 anchor-client = {workspace = true}
 clap = {workspace = true}
-data-credits = {workspace = true}
 futures = {workspace = true}
+helium-anchor-gen = {workspace = true}
 helium-crypto = {workspace = true, features = ["solana"]}
-helium-sub-daos = {workspace = true}
 metrics = {workspace = true}
 serde = {workspace = true}
 sha2 = {workspace = true}

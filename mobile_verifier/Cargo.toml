@@ -13,6 +13,7 @@ thiserror = {workspace = true}
 serde =  {workspace = true}
 serde_json = {workspace = true}
 h3o = {workspace = true, features = ["geo"]}
+hextree = "0"
 http-serde = {workspace = true}
 clap = {workspace = true}
 sqlx = {workspace = true}
@@ -24,6 +25,7 @@ sha2 = {workspace = true}
 lazy_static = {workspace = true}
 chrono = {workspace = true}
 triggered = {workspace = true}
+flate2 = "1"
 futures = {workspace = true}
 futures-util = {workspace = true}
 prost = {workspace = true}
@@ -47,6 +49,7 @@ rand = {workspace = true}
 async-trait = {workspace = true}
 retainer = {workspace = true}
 uuid = {workspace = true}
+task-manager = {path = "../task_manager"}
 
 [dev-dependencies]
 backon = "0"
