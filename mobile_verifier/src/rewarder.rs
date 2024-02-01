@@ -37,6 +37,7 @@ pub struct Rewarder<A> {
     pub mobile_rewards: FileSinkClient,
     reward_manifests: FileSinkClient,
     price_tracker: PriceTracker,
+    speedtest_averages: FileSinkClient,
 }
 
 impl<A> Rewarder<A>
@@ -52,6 +53,7 @@ where
         mobile_rewards: FileSinkClient,
         reward_manifests: FileSinkClient,
         price_tracker: PriceTracker,
+        speedtest_averages: FileSinkClient,
     ) -> Self {
         Self {
             pool,
@@ -61,6 +63,7 @@ where
             mobile_rewards,
             reward_manifests,
             price_tracker,
+            speedtest_averages,
         }
     }
 
@@ -179,6 +182,7 @@ where
         reward_poc_and_dc(
             &self.pool,
             &self.mobile_rewards,
+            &self.speedtest_averages,
             reward_period,
             mobile_bone_price,
         )
@@ -200,6 +204,7 @@ where
         // process rewards for oracles
         reward_oracles(&self.mobile_rewards, reward_period).await?;
 
+        self.speedtest_averages.commit().await?;
         let written_files = self.mobile_rewards.commit().await?.await??;
 
         let mut transaction = self.pool.begin().await?;
@@ -254,6 +259,7 @@ where
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     mobile_rewards: &FileSinkClient,
+    speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     mobile_bone_price: Decimal,
 ) -> anyhow::Result<()> {
@@ -271,7 +277,14 @@ pub async fn reward_poc_and_dc(
     };
     telemetry::data_transfer_rewards_scale(scale);
 
-    reward_poc(pool, mobile_rewards, reward_period, transfer_rewards_sum).await?;
+    reward_poc(
+        pool,
+        mobile_rewards,
+        speedtest_avg_sink,
+        reward_period,
+        transfer_rewards_sum,
+    )
+    .await?;
 
     reward_dc(mobile_rewards, reward_period, transfer_rewards).await?;
 
@@ -281,6 +294,7 @@ pub async fn reward_poc_and_dc(
 async fn reward_poc(
     pool: &Pool<Postgres>,
     mobile_rewards: &FileSinkClient,
+    speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
     transfer_reward_sum: Decimal,
 ) -> anyhow::Result<()> {
@@ -291,6 +305,9 @@ async fn reward_poc(
     let heartbeats = HeartbeatReward::validated(pool, reward_period);
     let speedtest_averages =
         SpeedtestAverages::aggregate_epoch_averages(reward_period.end, pool).await?;
+
+    speedtest_averages.write_all(speedtest_avg_sink).await?;
+
     let coverage_points =
         CoveragePoints::aggregate_points(pool, heartbeats, &speedtest_averages, reward_period.end)
             .await?;

@@ -27,20 +27,18 @@ pub struct SpeedtestAverage {
     pub latency_avg_ms: u32,
     pub validity: proto::SpeedtestAvgValidity,
     pub reward_multiplier: Decimal,
+    pub speedtests: Vec<Speedtest>,
 }
 
-impl<'a, I: ?Sized> From<&'a I> for SpeedtestAverage
-where
-    &'a I: IntoIterator<Item = &'a Speedtest>,
-{
-    fn from(iter: &'a I) -> Self {
+impl From<Vec<Speedtest>> for SpeedtestAverage {
+    fn from(speedtests: Vec<Speedtest>) -> Self {
         let mut id = vec![]; // eww!
         let mut window_size = 0;
         let mut sum_upload = 0;
         let mut sum_download = 0;
         let mut sum_latency = 0;
 
-        for Speedtest { report, .. } in iter.into_iter() {
+        for Speedtest { report, .. } in speedtests.iter() {
             id = report.pubkey.as_ref().to_vec(); // eww!
             sum_upload += report.upload_speed;
             sum_download += report.download_speed;
@@ -73,6 +71,7 @@ where
                 latency_avg_ms,
                 validity,
                 reward_multiplier,
+                speedtests,
             }
         } else {
             SpeedtestAverage {
@@ -83,17 +82,14 @@ where
                 latency_avg_ms: sum_latency,
                 validity: proto::SpeedtestAvgValidity::TooFewSamples,
                 reward_multiplier: Decimal::ZERO,
+                speedtests,
             }
         }
     }
 }
 
 impl SpeedtestAverage {
-    pub async fn write(
-        &self,
-        filesink: &FileSinkClient,
-        speedtests: Vec<Speedtest>,
-    ) -> file_store::Result {
+    pub async fn write(&self, filesink: &FileSinkClient) -> file_store::Result {
         filesink
             .write(
                 proto::SpeedtestAvg {
@@ -102,7 +98,8 @@ impl SpeedtestAverage {
                     download_speed_avg_bps: self.download_speed_avg_bps,
                     latency_avg_ms: self.latency_avg_ms,
                     timestamp: Utc::now().encode_timestamp(),
-                    speedtests: speedtests
+                    speedtests: self
+                        .speedtests
                         .iter()
                         .map(|st| proto::Speedtest {
                             timestamp: st.report.timestamp(),
@@ -200,6 +197,14 @@ pub struct SpeedtestAverages {
 }
 
 impl SpeedtestAverages {
+    pub async fn write_all(&self, sink: &FileSinkClient) -> anyhow::Result<()> {
+        for speedtest in self.averages.values() {
+            speedtest.write(sink).await?;
+        }
+
+        Ok(())
+    }
+
     pub fn get_average(&self, pub_key: &PublicKeyBinary) -> Option<SpeedtestAverage> {
         self.averages.get(pub_key).cloned()
     }
@@ -212,7 +217,7 @@ impl SpeedtestAverages {
             .await?
             .into_iter()
             .map(|(pub_key, speedtests)| {
-                let average = SpeedtestAverage::from(&speedtests);
+                let average = SpeedtestAverage::from(speedtests);
                 (pub_key, average)
             })
             .collect();
@@ -299,11 +304,11 @@ mod test {
     fn check_known_valid() {
         let speedtests = known_speedtests();
         assert_ne!(
-            SpeedtestAverage::from(&speedtests[0..5]).tier(),
+            SpeedtestAverage::from(speedtests[0..5].to_vec()).tier(),
             SpeedtestTier::Acceptable,
         );
         assert_eq!(
-            SpeedtestAverage::from(&speedtests[0..6]).tier(),
+            SpeedtestAverage::from(speedtests[0..6].to_vec()).tier(),
             SpeedtestTier::Acceptable
         );
     }
@@ -312,15 +317,15 @@ mod test {
     fn check_minimum_known_valid() {
         let speedtests = known_speedtests();
         assert_ne!(
-            SpeedtestAverage::from(&speedtests[4..4]).tier(),
+            SpeedtestAverage::from(speedtests[4..4].to_vec()).tier(),
             SpeedtestTier::Acceptable
         );
         assert_eq!(
-            SpeedtestAverage::from(&speedtests[4..=5]).tier(),
+            SpeedtestAverage::from(speedtests[4..=5].to_vec()).tier(),
             SpeedtestTier::Acceptable
         );
         assert_eq!(
-            SpeedtestAverage::from(&speedtests[4..=6]).tier(),
+            SpeedtestAverage::from(speedtests[4..=6].to_vec()).tier(),
             SpeedtestTier::Acceptable
         );
     }
@@ -329,7 +334,7 @@ mod test {
     fn check_minimum_known_invalid() {
         let speedtests = known_speedtests();
         assert_ne!(
-            SpeedtestAverage::from(&speedtests[5..6]).tier(),
+            SpeedtestAverage::from(speedtests[5..6].to_vec()).tier(),
             SpeedtestTier::Acceptable
         );
     }

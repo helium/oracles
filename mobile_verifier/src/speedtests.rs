@@ -109,10 +109,8 @@ where
                     &mut transaction,
                 )
                 .await?;
-                let average = SpeedtestAverage::from(&latest_speedtests);
-                average
-                    .write(&self.speedtest_avg_file_sink, latest_speedtests)
-                    .await?;
+                let average = SpeedtestAverage::from(latest_speedtests);
+                average.write(&self.speedtest_avg_file_sink).await?;
             }
             // write out paper trail of speedtest validity
             self.write_verified_speedtest(speedtest_report, result)

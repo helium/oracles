@@ -1262,16 +1262,16 @@ mod test {
             acceptable_speedtest(gw11.clone(), timestamp),
         ];
 
-        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
-        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
-        let gw3_average = SpeedtestAverage::from(&gw3_speedtests);
-        let gw4_average = SpeedtestAverage::from(&gw4_speedtests);
-        let gw5_average = SpeedtestAverage::from(&gw5_speedtests);
-        let gw6_average = SpeedtestAverage::from(&gw6_speedtests);
-        let gw7_average = SpeedtestAverage::from(&gw7_speedtests);
-        let gw9_average = SpeedtestAverage::from(&gw9_speedtests);
-        let gw10_average = SpeedtestAverage::from(&gw10_speedtests);
-        let gw11_average = SpeedtestAverage::from(&gw11_speedtests);
+        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(gw2_speedtests);
+        let gw3_average = SpeedtestAverage::from(gw3_speedtests);
+        let gw4_average = SpeedtestAverage::from(gw4_speedtests);
+        let gw5_average = SpeedtestAverage::from(gw5_speedtests);
+        let gw6_average = SpeedtestAverage::from(gw6_speedtests);
+        let gw7_average = SpeedtestAverage::from(gw7_speedtests);
+        let gw9_average = SpeedtestAverage::from(gw9_speedtests);
+        let gw10_average = SpeedtestAverage::from(gw10_speedtests);
+        let gw11_average = SpeedtestAverage::from(gw11_speedtests);
         let mut averages = HashMap::new();
         averages.insert(gw1.clone(), gw1_average);
         averages.insert(gw2.clone(), gw2_average);
@@ -1442,8 +1442,8 @@ mod test {
             acceptable_speedtest(gw2.clone(), timestamp),
         ];
 
-        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
-        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(gw2_speedtests);
         let mut averages = HashMap::new();
         averages.insert(gw1.clone(), gw1_average);
         averages.insert(gw2.clone(), gw2_average);
@@ -1569,8 +1569,8 @@ mod test {
             acceptable_speedtest(gw2.clone(), timestamp),
         ];
 
-        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
-        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(gw2_speedtests);
         let mut averages = HashMap::new();
         averages.insert(gw1.clone(), gw1_average);
         averages.insert(gw2.clone(), gw2_average);
@@ -1696,8 +1696,8 @@ mod test {
             acceptable_speedtest(gw2.clone(), timestamp),
         ];
 
-        let gw1_average = SpeedtestAverage::from(&gw1_speedtests);
-        let gw2_average = SpeedtestAverage::from(&gw2_speedtests);
+        let gw1_average = SpeedtestAverage::from(gw1_speedtests);
+        let gw2_average = SpeedtestAverage::from(gw2_speedtests);
         let mut averages = HashMap::new();
         averages.insert(gw1.clone(), gw1_average);
         averages.insert(gw2.clone(), gw2_average);

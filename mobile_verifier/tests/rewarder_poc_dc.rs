@@ -30,6 +30,7 @@ const PAYER_1: &str = "11eX55faMbqZB7jzN4p67m6w7ScPMH6ubnvCjCPLh72J49PaJEL";
 #[sqlx::test]
 async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
     let now = Utc::now();
     let epoch = (now - ChronoDuration::hours(24))..now;
 
@@ -42,7 +43,13 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
-        rewarder::reward_poc_and_dc(&pool, &mobile_rewards_client, &epoch, dec!(0.0001)),
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &epoch,
+            dec!(0.0001)
+        ),
         receive_expected_rewards(&mut mobile_rewards)
     );
     if let Ok((poc_rewards, dc_rewards, unallocated_poc_reward)) = rewards {
