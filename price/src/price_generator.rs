@@ -1,15 +1,13 @@
 use crate::{metrics::Metrics, Settings};
-use anchor_lang::AccountDeserialize;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, bail, Error, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use file_store::file_sink;
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use helium_anchor_gen::price_oracle::{calculate_current_price, PriceOracleV0};
 use helium_proto::{BlockchainTokenTypeV1, PriceReportV1};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey as SolPubkey;
-use std::{path::PathBuf, str::FromStr};
+use std::{cmp::Ordering, path::PathBuf, str::FromStr};
 use task_manager::ManagedTask;
 use tokio::{fs, time};
 
@@ -209,7 +207,7 @@ impl PriceGenerator {
         key: &SolPubkey,
         file_sink: &file_sink::FileSinkClient,
     ) -> Result<()> {
-        let price_opt = match get_price(&self.client, key, self.token_type).await {
+        let price_opt = match self.get_price(key).await {
             Ok(new_price) => {
                 tracing::info!(
                     "updating price for {:?} to {}",
@@ -269,6 +267,42 @@ impl PriceGenerator {
         Ok(())
     }
 
+    async fn get_price(&self, price_key: &SolPubkey) -> Result<Price> {
+        let mut account = self.client.get_account(price_key).await?;
+        let price_oracle = pyth_sdk_solana::load_price_feed_from_account(price_key, &mut account)?;
+        let curr_price = price_oracle
+            .get_ema_price_no_older_than(Utc::now().timestamp(), self.interval_duration.as_secs())
+            .ok_or_else(|| anyhow!("No new price in the given interval"))?;
+
+        if curr_price.price < 0 {
+            bail!("Price is less than zero");
+        }
+
+        // Remove the confidence interval from the price to get the most conservative price:
+        let conservative_price = curr_price.price as u64 - curr_price.conf * 2;
+
+        // We want the price to have a resulting exponent of 10^-6
+        // I don't think it's possible for pyth to give us anything other than -8, but we make
+        // this robust just in case:
+        let exp = curr_price.expo + 6;
+        let adjusted_conservative_price = match exp.cmp(&0) {
+            Ordering::Less => conservative_price / 10_u64.pow(exp.unsigned_abs()),
+            Ordering::Greater => conservative_price * 10_u64.pow(exp as u32),
+            _ => conservative_price,
+        };
+
+        Ok(Price::new(
+            DateTime::from_timestamp(curr_price.publish_time, 0).ok_or_else(|| {
+                anyhow!(
+                    "Invalid publish time for price: {}",
+                    curr_price.publish_time
+                )
+            })?,
+            adjusted_conservative_price,
+            self.token_type,
+        ))
+    }
+
     fn is_valid(&self, price: &Price) -> bool {
         price.timestamp > Utc::now() - self.stale_price_duration
     }
@@ -302,24 +336,4 @@ impl PriceGenerator {
             }
         }
     }
-}
-
-pub async fn get_price(
-    client: &RpcClient,
-    price_key: &SolPubkey,
-    token_type: BlockchainTokenTypeV1,
-) -> Result<Price> {
-    let price_oracle_v0_data = client.get_account_data(price_key).await?;
-    let mut price_oracle_v0_data = price_oracle_v0_data.as_ref();
-    let price_oracle_v0 = PriceOracleV0::try_deserialize(&mut price_oracle_v0_data)?;
-
-    let current_time = Utc::now();
-    let current_timestamp = current_time.timestamp();
-
-    calculate_current_price(&price_oracle_v0.oracles, current_timestamp)
-        .map(|price| {
-            tracing::debug!("got price: {:?} for token_type: {:?}", price, token_type);
-            Price::new(current_time, price, token_type)
-        })
-        .ok_or_else(|| anyhow!("unable to fetch price!"))
 }
