@@ -21,12 +21,10 @@ pub struct DataTransferSession {
 pub struct PayerTotals {
     payer: PublicKeyBinary,
     total_dcs: i64,
-    txn: Option<SolanaTransaction>,
 }
 
-#[derive(sqlx::Type)]
-#[sqlx(type_name = "solana_transaction")]
-pub struct SolanaTransaction {
+#[derive(FromRow)]
+pub struct PendingTxn {
     signature: String,
     amount: i64,
     time_of_submission: DateTime<Utc>,
@@ -68,20 +66,22 @@ where
             .fetch_all(pool)
             .await?;
 
-        for PayerTotals {
-            payer,
-            total_dcs,
-            txn,
-        } in totals
-        {
+        for PayerTotals { payer, total_dcs } in totals {
             let mut total_dcs = total_dcs as u64;
 
             // Check if there is a pending transaction
-            if let Some(SolanaTransaction {
+            if let Some(PendingTxn {
                 signature,
                 amount,
                 time_of_submission,
-            }) = txn
+            }) = sqlx::query_as(
+                r#"
+                SELECT signature, amount, time_of_submission FROM pending_txns WHERE payer = $1
+                "#,
+            )
+            .bind(&payer)
+            .fetch_optional(pool)
+            .await?
             {
                 // Sleep for at least a minute since the time of submission to
                 // give the transaction plenty of time to be confirmed:
@@ -91,10 +91,10 @@ where
                         .await;
                 }
 
-                let signature: Signature = signature.parse().unwrap();
+                let sig: Signature = signature.parse().unwrap();
                 if self
                     .solana
-                    .confirm_transaction(&signature)
+                    .confirm_transaction(&sig)
                     .await
                     .map_err(BurnError::SolanaError)?
                 {
@@ -104,11 +104,17 @@ where
                 }
                 // If the transaction has not been confirmed, we still want to remove the transaction.
                 // The total_dcs column remains the same.
-                sqlx::query("UPDATE payer_totals SET txn = NULL, total_dcs = $2 WHERE payer = $1")
+                let mut transaction = pool.begin().await?;
+                sqlx::query("UPDATE payer_totals SET total_dcs = $2 WHERE payer = $1")
                     .bind(&payer)
                     .bind(total_dcs as i64)
-                    .execute(pool)
+                    .execute(&mut transaction)
                     .await?;
+                sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
+                    .bind(&signature)
+                    .execute(&mut transaction)
+                    .await?;
+                transaction.commit().await?;
             }
 
             // Get the current sessions we need to write, before creating any new transactions
@@ -126,15 +132,14 @@ where
                     .make_burn_transaction(&payer, total_dcs)
                     .await
                     .map_err(BurnError::SolanaError)?;
-                sqlx::query("UPDATE payer_totals SET txn = $2 WHERE payer = $1")
-                    .bind(&payer)
-                    .bind(SolanaTransaction {
-                        signature: txn.get_signature().to_string(),
-                        amount: total_dcs as i64,
-                        time_of_submission: Utc::now(),
-                    })
-                    .execute(pool)
-                    .await?;
+                sqlx::query(
+                    "INSERT INTO pending_txns (signature, payer, amount) VALUES ($1, $2, $3)",
+                )
+                .bind(txn.get_signature().to_string())
+                .bind(&payer)
+                .bind(total_dcs as i64)
+                .execute(pool)
+                .await?;
                 // Attempt to execute the transaction
                 if self.solana.submit_transaction(&txn).await.is_err() {
                     // We have failed to burn data credits:
@@ -144,15 +149,16 @@ where
             }
 
             // Submit the sessions
+            let mut transaction = pool.begin().await?;
             sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
                 .bind(&payer)
-                .execute(pool)
+                .execute(&mut transaction)
                 .await?;
-
             sqlx::query("DELETE FROM payer_totals WHERE payer = $1")
                 .bind(&payer)
-                .execute(pool)
+                .execute(&mut transaction)
                 .await?;
+            transaction.commit().await?;
 
             for session in sessions {
                 let num_dcs = crate::bytes_to_dc(session.rewardable_bytes as u64);
