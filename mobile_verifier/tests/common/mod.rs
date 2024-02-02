@@ -2,7 +2,7 @@ use file_store::file_sink::{FileSinkClient, Message as SinkMessage};
 use helium_proto::{
     services::poc_mobile::{
         mobile_reward_share::Reward as MobileReward, GatewayReward, MobileRewardShare, RadioReward,
-        ServiceProviderReward, SubscriberReward, UnallocatedReward,
+        ServiceProviderReward, SpeedtestAvg, SubscriberReward, UnallocatedReward,
     },
     Message,
 };
@@ -37,10 +37,38 @@ impl MockFileSinkReceiver {
         }
     }
 
+    pub async fn get_all(&mut self) -> Vec<Vec<u8>> {
+        let mut buf = Vec::new();
+        while let Ok(SinkMessage::Data(on_write_tx, msg)) = self.receiver.try_recv() {
+            let _ = on_write_tx.send(Ok(()));
+            buf.push(msg);
+        }
+        buf
+    }
+
     pub fn assert_no_messages(&mut self) {
         let Err(TryRecvError::Empty) = self.receiver.try_recv() else {
             panic!("receiver should have been empty")
         };
+    }
+
+    pub async fn receive_speedtest_avg(&mut self) -> SpeedtestAvg {
+        match self.receive().await {
+            Some(bytes) => {
+                SpeedtestAvg::decode(bytes.as_slice()).expect("Not a valid speedtest average")
+            }
+            None => panic!("failed to receive speedtest average"),
+        }
+    }
+
+    pub async fn get_all_speedtest_avgs(&mut self) -> Vec<SpeedtestAvg> {
+        self.get_all()
+            .await
+            .into_iter()
+            .map(|bytes| {
+                SpeedtestAvg::decode(bytes.as_slice()).expect("Not a valid speedtest average")
+            })
+            .collect()
     }
 
     pub async fn receive_radio_reward(&mut self) -> RadioReward {
