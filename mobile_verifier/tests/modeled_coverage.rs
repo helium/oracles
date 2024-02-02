@@ -468,7 +468,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         acceptable_speedtest(owner.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner.clone(), SpeedtestAverage::from(&owner_speedtests));
+    averages.insert(owner.clone(), SpeedtestAverage::from(owner_speedtests));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
@@ -560,8 +560,8 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         acceptable_speedtest(owner_2.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
-    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(speedtests_2));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
@@ -790,12 +790,12 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         acceptable_speedtest(owner_6.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
-    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
-    averages.insert(owner_3.clone(), SpeedtestAverage::from(&speedtests_3));
-    averages.insert(owner_4.clone(), SpeedtestAverage::from(&speedtests_4));
-    averages.insert(owner_5.clone(), SpeedtestAverage::from(&speedtests_5));
-    averages.insert(owner_6.clone(), SpeedtestAverage::from(&speedtests_6));
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(speedtests_2));
+    averages.insert(owner_3.clone(), SpeedtestAverage::from(speedtests_3));
+    averages.insert(owner_4.clone(), SpeedtestAverage::from(speedtests_4));
+    averages.insert(owner_5.clone(), SpeedtestAverage::from(speedtests_5));
+    averages.insert(owner_6.clone(), SpeedtestAverage::from(speedtests_6));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
@@ -860,7 +860,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         acceptable_speedtest(owner.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner.clone(), SpeedtestAverage::from(&owner_speedtests));
+    averages.insert(owner.clone(), SpeedtestAverage::from(owner_speedtests));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
@@ -951,8 +951,8 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         acceptable_speedtest(owner_2.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
-    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(speedtests_2));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;
@@ -1187,12 +1187,12 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         acceptable_speedtest(owner_6.clone(), end),
     ];
     let mut averages = HashMap::new();
-    averages.insert(owner_1.clone(), SpeedtestAverage::from(&speedtests_1));
-    averages.insert(owner_2.clone(), SpeedtestAverage::from(&speedtests_2));
-    averages.insert(owner_3.clone(), SpeedtestAverage::from(&speedtests_3));
-    averages.insert(owner_4.clone(), SpeedtestAverage::from(&speedtests_4));
-    averages.insert(owner_5.clone(), SpeedtestAverage::from(&speedtests_5));
-    averages.insert(owner_6.clone(), SpeedtestAverage::from(&speedtests_6));
+    averages.insert(owner_1.clone(), SpeedtestAverage::from(speedtests_1));
+    averages.insert(owner_2.clone(), SpeedtestAverage::from(speedtests_2));
+    averages.insert(owner_3.clone(), SpeedtestAverage::from(speedtests_3));
+    averages.insert(owner_4.clone(), SpeedtestAverage::from(speedtests_4));
+    averages.insert(owner_5.clone(), SpeedtestAverage::from(speedtests_5));
+    averages.insert(owner_6.clone(), SpeedtestAverage::from(speedtests_6));
     let speedtest_avgs = SpeedtestAverages { averages };
 
     let reward_period = start..end;

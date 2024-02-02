@@ -155,7 +155,7 @@ impl Cmd {
             pool.clone(),
             gateway_client,
             speedtests,
-            speedtests_avg,
+            speedtests_avg.clone(),
             speedtests_validity,
         );
 
@@ -217,6 +217,7 @@ impl Cmd {
             mobile_rewards,
             reward_manifests,
             price_tracker,
+            speedtests_avg,
         );
 
         // subscriber location
