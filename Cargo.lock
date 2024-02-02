@@ -122,7 +122,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf7d535e1381be3de2c0716c0a1c1e32ad9df1042cddcf7bc18d743569e53319"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "anyhow",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
@@ -136,7 +136,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3bcd731f21048a032be27c7791701120e44f3f6371358fc4261a7f716283d29"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "anyhow",
  "bs58 0.4.0",
  "proc-macro2 1.0.69",
@@ -151,7 +151,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1be64a48e395fe00b8217287f226078be2cf32dae42fdf8a885b997945c3d28"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "proc-macro2 1.0.69",
  "syn 1.0.109",
 ]
@@ -162,7 +162,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38ea6713d1938c0da03656ff8a693b17dc0396da66d1ba320557f07e86eca0d4"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
  "syn 1.0.109",
@@ -174,7 +174,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d401f11efb3644285685f8339829a9786d43ed7490bb1699f33c478d04d5a582"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "anyhow",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
@@ -187,7 +187,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6700a6f5c888a9c33fe8afc0c64fd8575fa28d05446037306d0f96102ae4480"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "anyhow",
  "heck 0.3.3",
  "proc-macro2 1.0.69",
@@ -201,7 +201,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ad769993b5266714e8939e47fbdede90e5c030333c7522d99a4d4748cf26712"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "anyhow",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
@@ -214,7 +214,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e677fae4a016a554acdd0e3b7f178d3acafaa7e7ffac6b8690cf4e171f1c116"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "anyhow",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
@@ -244,10 +244,56 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "340beef6809d1c3fcc7ae219153d981e95a8a277ff31985bd7050e32645dc9a8"
 dependencies = [
- "anchor-syn",
+ "anchor-syn 0.26.0",
  "anyhow",
  "proc-macro2 1.0.69",
  "quote 1.0.33",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "anchor-gen"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a3b9def91d1f0c23b99be210afea0990f931a1edae439ea30e0da50baeaea8f"
+dependencies = [
+ "anchor-generate-cpi-crate",
+ "anchor-generate-cpi-interface",
+]
+
+[[package]]
+name = "anchor-generate-cpi-crate"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03e8733d55b8492bde0d6f219c25769786758ff9e5e90a16e6a348f91284af50"
+dependencies = [
+ "anchor-idl",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "anchor-generate-cpi-interface"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7092a50cf959ebf53460162cb07e88d4cc8ea7fa8c45292e80503a3186033daf"
+dependencies = [
+ "anchor-idl",
+ "darling",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "anchor-idl"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3de2665dc06ee0bd3c7d08f47f136a3d5b1e34b7ac1bc632c86a812add04d68b"
+dependencies = [
+ "anchor-syn 0.24.2",
+ "darling",
+ "heck 0.4.0",
+ "proc-macro2 1.0.69",
+ "quote 1.0.33",
+ "serde_json",
  "syn 1.0.109",
 ]
 
@@ -276,16 +322,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "anchor-spl"
-version = "0.26.0"
+name = "anchor-syn"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f32390ce8356f54c0f0245ea156f8190717e37285b8bf4f406a613dc4b954cde"
+checksum = "03549dc2eae0b20beba6333b14520e511822a6321cdb1760f841064a69347316"
 dependencies = [
- "anchor-lang",
- "mpl-token-metadata 1.8.4",
- "solana-program",
- "spl-associated-token-account",
- "spl-token",
+ "anyhow",
+ "bs58 0.3.1",
+ "heck 0.3.3",
+ "proc-macro2 1.0.69",
+ "proc-macro2-diagnostics",
+ "quote 1.0.33",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "syn 1.0.109",
+ "thiserror",
 ]
 
 [[package]]
@@ -1207,7 +1259,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
 ]
 
@@ -1539,12 +1591,11 @@ dependencies = [
 
 [[package]]
 name = "circuit-breaker"
-version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
+version = "0.1.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
 dependencies = [
+ "anchor-gen",
  "anchor-lang",
- "anchor-spl",
- "shared-utils",
 ]
 
 [[package]]
@@ -1626,62 +1677,6 @@ name = "clap_lex"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
-
-[[package]]
-name = "clockwork-cron"
-version = "2.0.1"
-source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
-dependencies = [
- "chrono",
- "nom",
- "once_cell",
-]
-
-[[package]]
-name = "clockwork-network-program"
-version = "2.0.1"
-source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "clockwork-utils",
-]
-
-[[package]]
-name = "clockwork-sdk"
-version = "2.0.1"
-source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
-dependencies = [
- "anchor-lang",
- "chrono",
- "clockwork-thread-program",
- "nom",
- "once_cell",
-]
-
-[[package]]
-name = "clockwork-thread-program"
-version = "2.0.1"
-source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
-dependencies = [
- "anchor-lang",
- "chrono",
- "clockwork-cron",
- "clockwork-network-program",
- "clockwork-utils",
- "static-pubkey",
- "version",
-]
-
-[[package]]
-name = "clockwork-utils"
-version = "2.0.1"
-source = "git+https://github.com/clockwork-xyz/clockwork?rev=781b42fd06f2926899597ce5ea1f19b8ecd3d2e4#781b42fd06f2926899597ce5ea1f19b8ecd3d2e4"
-dependencies = [
- "anchor-lang",
- "base64 0.13.1",
- "static-pubkey",
-]
 
 [[package]]
 name = "cmake"
@@ -2131,16 +2126,11 @@ dependencies = [
 
 [[package]]
 name = "data-credits"
-version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
+version = "0.2.1"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
 dependencies = [
+ "anchor-gen",
  "anchor-lang",
- "anchor-spl",
- "circuit-breaker",
- "helium-sub-daos",
- "lazy-transactions",
- "price-oracle",
- "pyth-sdk-solana",
 ]
 
 [[package]]
@@ -2364,12 +2354,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03d8c417d7a8cb362e0c37e5d815f5eb7c37f79ff93707329d5a194e42e54ca0"
 
 [[package]]
-name = "dyn-clone"
-version = "1.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68b0cf012f1230e43cd00ebb729c6bb58707ecfa8ad08b52ef3a4ccd2697fc30"
-
-[[package]]
 name = "eager"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2538,6 +2522,15 @@ name = "event-listener"
 version = "2.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
+
+[[package]]
+name = "fanout"
+version = "0.1.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+dependencies = [
+ "anchor-gen",
+ "anchor-lang",
+]
 
 [[package]]
 name = "fastrand"
@@ -3020,6 +3013,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "helium-anchor-gen"
+version = "0.1.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+dependencies = [
+ "anchor-gen",
+ "anchor-lang",
+ "circuit-breaker",
+ "data-credits",
+ "fanout",
+ "helium-entity-manager",
+ "helium-sub-daos",
+ "hexboosting",
+ "lazy-distributor",
+ "lazy-transactions",
+ "mobile-entity-manager",
+ "price-oracle",
+ "rewards-oracle",
+ "treasury-management",
+ "voter-stake-registry",
+]
+
+[[package]]
 name = "helium-crypto"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3029,7 +3044,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.1.16",
+ "getrandom 0.2.10",
  "k256",
  "lazy_static",
  "multihash",
@@ -3042,6 +3057,15 @@ dependencies = [
  "solana-sdk",
  "sqlx",
  "thiserror",
+]
+
+[[package]]
+name = "helium-entity-manager"
+version = "0.2.4"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+dependencies = [
+ "anchor-gen",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -3060,20 +3084,11 @@ dependencies = [
 
 [[package]]
 name = "helium-sub-daos"
-version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
+version = "0.1.4"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
 dependencies = [
+ "anchor-gen",
  "anchor-lang",
- "anchor-spl",
- "circuit-breaker",
- "clockwork-sdk",
- "mpl-token-metadata 1.8.3",
- "shared-utils",
- "spl-governance-tools",
- "switchboard-v2",
- "time",
- "treasury-management",
- "voter-stake-registry",
 ]
 
 [[package]]
@@ -3096,15 +3111,21 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "hex-literal"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
+
+[[package]]
+name = "hexboosting"
+version = "0.0.1"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+dependencies = [
+ "anchor-gen",
+ "anchor-lang",
+]
 
 [[package]]
 name = "hextree"
@@ -3740,14 +3761,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "lazy-transactions"
-version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
+name = "lazy-distributor"
+version = "0.1.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
 dependencies = [
+ "anchor-gen",
  "anchor-lang",
- "anchor-spl",
- "bytemuck",
- "spl-concurrent-merkle-tree 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "lazy-transactions"
+version = "0.2.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+dependencies = [
+ "anchor-gen",
+ "anchor-lang",
 ]
 
 [[package]]
@@ -4126,6 +4154,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-entity-manager"
+version = "0.1.1"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+dependencies = [
+ "anchor-gen",
+ "anchor-lang",
+]
+
+[[package]]
 name = "mobile-packet-verifier"
 version = "0.1.0"
 dependencies = [
@@ -4207,119 +4244,6 @@ dependencies = [
  "tracing-subscriber",
  "triggered",
  "uuid",
-]
-
-[[package]]
-name = "mpl-bubblegum"
-version = "0.6.0"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
-dependencies = [
- "anchor-lang",
- "bytemuck",
- "mpl-token-metadata 1.8.3",
- "solana-program",
- "spl-account-compression 0.1.8",
- "spl-associated-token-account",
- "spl-token",
-]
-
-[[package]]
-name = "mpl-token-auth-rules"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24dcb2b0ec0e9246f6f035e0336ba3359c21f6928dfd90281999e2c8e8ab53eb"
-dependencies = [
- "borsh",
- "mpl-token-metadata-context-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "num-derive",
- "num-traits",
- "rmp-serde",
- "serde",
- "shank",
- "solana-program",
- "solana-zk-token-sdk",
- "thiserror",
-]
-
-[[package]]
-name = "mpl-token-metadata"
-version = "1.8.3"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
-dependencies = [
- "arrayref",
- "borsh",
- "mpl-token-auth-rules",
- "mpl-token-metadata-context-derive 0.2.1 (git+https://github.com/helium/helium-program-library.git?tag=v0.1.0)",
- "mpl-utils 0.1.0 (git+https://github.com/helium/helium-program-library.git?tag=v0.1.0)",
- "num-derive",
- "num-traits",
- "shank",
- "solana-program",
- "spl-associated-token-account",
- "spl-token",
- "thiserror",
-]
-
-[[package]]
-name = "mpl-token-metadata"
-version = "1.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "301235b920e1b3a4bf9c3ffd6a16b1db1f3ac5bdcb6b6f201d4bb7a9fd1d94a0"
-dependencies = [
- "arrayref",
- "borsh",
- "mpl-token-auth-rules",
- "mpl-token-metadata-context-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "mpl-utils 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "num-derive",
- "num-traits",
- "shank",
- "solana-program",
- "spl-associated-token-account",
- "spl-token",
- "thiserror",
-]
-
-[[package]]
-name = "mpl-token-metadata-context-derive"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12989bc45715b0ee91944855130131479f9c772e198a910c3eb0ea327d5bffc3"
-dependencies = [
- "quote 1.0.33",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "mpl-token-metadata-context-derive"
-version = "0.2.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
-dependencies = [
- "quote 1.0.33",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "mpl-utils"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fc48e64c50dba956acb46eec86d6968ef0401ef37031426da479f1f2b592066"
-dependencies = [
- "arrayref",
- "borsh",
- "solana-program",
- "spl-token",
-]
-
-[[package]]
-name = "mpl-utils"
-version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
-dependencies = [
- "arrayref",
- "borsh",
- "solana-program",
- "spl-token",
 ]
 
 [[package]]
@@ -4880,11 +4804,11 @@ dependencies = [
  "file-store",
  "futures",
  "futures-util",
+ "helium-anchor-gen",
  "helium-proto",
  "metrics",
  "metrics-exporter-prometheus",
  "poc-metrics",
- "price-oracle",
  "prost",
  "serde",
  "serde_json",
@@ -4901,9 +4825,10 @@ dependencies = [
 
 [[package]]
 name = "price-oracle"
-version = "0.1.0"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
+version = "0.2.1"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
 dependencies = [
+ "anchor-gen",
  "anchor-lang",
 ]
 
@@ -5040,36 +4965,6 @@ checksum = "747761bc3dc48f9a34553bf65605cf6cb6288ba219f3450b4275dbd81539551a"
 dependencies = [
  "bytes",
  "prost",
-]
-
-[[package]]
-name = "pyth-sdk"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00bf2540203ca3c7a5712fdb8b5897534b7f6a0b6e7b0923ff00466c5f9efcb3"
-dependencies = [
- "borsh",
- "borsh-derive",
- "hex",
- "schemars",
- "serde",
-]
-
-[[package]]
-name = "pyth-sdk-solana"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bc0e0ab39d0543220dcba7c248161aab70e25916b2c1585057abc0856ff4e0c"
-dependencies = [
- "borsh",
- "borsh-derive",
- "bytemuck",
- "num-derive",
- "num-traits",
- "pyth-sdk",
- "serde",
- "solana-program",
- "thiserror",
 ]
 
 [[package]]
@@ -5456,6 +5351,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rewards-oracle"
+version = "0.2.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
+dependencies = [
+ "anchor-gen",
+ "anchor-lang",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5521,28 +5425,6 @@ name = "rle-decode-fast"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
-
-[[package]]
-name = "rmp"
-version = "0.8.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44519172358fd6d58656c86ab8e7fbc9e1490c3e8f14d35ed78ca0dd07403c9f"
-dependencies = [
- "byteorder",
- "num-traits",
- "paste",
-]
-
-[[package]]
-name = "rmp-serde"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5b13be192e0220b8afb7222aa5813cb62cc269ebb5cac346ca6487681d2913e"
-dependencies = [
- "byteorder",
- "rmp",
- "serde",
-]
 
 [[package]]
 name = "robust"
@@ -5740,30 +5622,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "schemars"
-version = "0.8.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02c613288622e5f0c3fdc5dbd4db1c5fbe752746b1d1a56a0630b78fd00de44f"
-dependencies = [
- "dyn-clone",
- "schemars_derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "schemars_derive"
-version = "0.8.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "109da1e6b197438deb6db99952990c7f959572794b80ff93707d55a232545e7c"
-dependencies = [
- "proc-macro2 1.0.69",
- "quote 1.0.33",
- "serde_derive_internals",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5868,17 +5726,6 @@ dependencies = [
  "proc-macro2 1.0.69",
  "quote 1.0.33",
  "syn 2.0.38",
-]
-
-[[package]]
-name = "serde_derive_internals"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85bf8229e7920a9f636479437026331ce11aa132b4dde37d121944a44d6e5f3c"
-dependencies = [
- "proc-macro2 1.0.69",
- "quote 1.0.33",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -5996,59 +5843,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "shank"
-version = "0.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b63e565b5e95ad88ab38f312e89444c749360641c509ef2de0093b49f55974a5"
-dependencies = [
- "shank_macro",
-]
-
-[[package]]
-name = "shank_macro"
-version = "0.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63927d22a1e8b74bda98cc6e151fcdf178b7abb0dc6c4f81e0bbf5ffe2fc4ec8"
-dependencies = [
- "proc-macro2 1.0.69",
- "quote 1.0.33",
- "shank_macro_impl",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "shank_macro_impl"
-version = "0.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40ce03403df682f80f4dc1efafa87a4d0cb89b03726d0565e6364bdca5b9a441"
-dependencies = [
- "anyhow",
- "proc-macro2 1.0.69",
- "quote 1.0.33",
- "serde",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "sharded-slab"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "900fba806f70c630b0a382d0d825e17a0f19fcd059a2ade1ff237bcddf446b31"
 dependencies = [
  "lazy_static",
-]
-
-[[package]]
-name = "shared-utils"
-version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "mpl-bubblegum",
- "mpl-token-metadata 1.8.3",
- "spl-account-compression 0.1.5",
- "uint",
 ]
 
 [[package]]
@@ -6148,10 +5948,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap 4.4.8",
- "data-credits",
  "futures",
+ "helium-anchor-gen",
  "helium-crypto",
- "helium-sub-daos",
  "metrics",
  "serde",
  "sha2 0.10.6",
@@ -6788,28 +6587,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-account-compression"
-version = "0.1.5"
-source = "git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26#e6db7bcf6da7b41c3ab250a0c8489ea50d511a90"
-dependencies = [
- "anchor-lang",
- "bytemuck",
- "spl-concurrent-merkle-tree 0.1.2",
- "spl-noop 0.1.3 (git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26)",
-]
-
-[[package]]
-name = "spl-account-compression"
-version = "0.1.8"
-source = "git+https://github.com/solana-labs/solana-program-library#776d0624c1c194404d2f864cef113b18b4ae49ba"
-dependencies = [
- "anchor-lang",
- "bytemuck",
- "spl-concurrent-merkle-tree 0.1.3 (git+https://github.com/solana-labs/solana-program-library)",
- "spl-noop 0.1.3 (git+https://github.com/solana-labs/solana-program-library)",
-]
-
-[[package]]
 name = "spl-associated-token-account"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6826,106 +6603,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-concurrent-merkle-tree"
-version = "0.1.2"
-source = "git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26#e6db7bcf6da7b41c3ab250a0c8489ea50d511a90"
-dependencies = [
- "bytemuck",
- "solana-program",
- "thiserror",
-]
-
-[[package]]
-name = "spl-concurrent-merkle-tree"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26dd605d33bdc8d2522a9f55207c3eac06737b2e8310f602e252b510e3db1210"
-dependencies = [
- "bytemuck",
- "solana-program",
- "thiserror",
-]
-
-[[package]]
-name = "spl-concurrent-merkle-tree"
-version = "0.1.3"
-source = "git+https://github.com/solana-labs/solana-program-library#776d0624c1c194404d2f864cef113b18b4ae49ba"
-dependencies = [
- "bytemuck",
- "solana-program",
- "thiserror",
-]
-
-[[package]]
-name = "spl-governance"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0e20402049d3c185837f4d97aa005b83f8d5e8c6a54ddc6ba800dbe82e736e8"
-dependencies = [
- "arrayref",
- "bincode",
- "borsh",
- "num-derive",
- "num-traits",
- "serde",
- "serde_derive",
- "solana-program",
- "spl-governance-addin-api",
- "spl-governance-tools",
- "spl-token",
- "thiserror",
-]
-
-[[package]]
-name = "spl-governance-addin-api"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e0feddb2c7efa42f39954e3bb1b0bfc6dc7e9292ca467eff40ecd934c14106b"
-dependencies = [
- "borsh",
- "solana-program",
- "spl-governance-tools",
-]
-
-[[package]]
-name = "spl-governance-tools"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bd674d9e8f3fc9ea628dcbe56d48991ea1cb05b994a7845782572c705efd836"
-dependencies = [
- "arrayref",
- "bincode",
- "borsh",
- "num-derive",
- "num-traits",
- "serde",
- "serde_derive",
- "solana-program",
- "spl-token",
- "thiserror",
-]
-
-[[package]]
 name = "spl-memo"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd0dc6f70db6bacea7ff25870b016a65ba1d1b6013536f08e4fd79a8f9005325"
-dependencies = [
- "solana-program",
-]
-
-[[package]]
-name = "spl-noop"
-version = "0.1.3"
-source = "git+https://github.com/ChewingGlass/solana-program-library?branch=feature/anchor-26#e6db7bcf6da7b41c3ab250a0c8489ea50d511a90"
-dependencies = [
- "solana-program",
-]
-
-[[package]]
-name = "spl-noop"
-version = "0.1.3"
-source = "git+https://github.com/solana-labs/solana-program-library#776d0624c1c194404d2f864cef113b18b4ae49ba"
 dependencies = [
  "solana-program",
 ]
@@ -7074,18 +6755,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
-name = "static-pubkey"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0547d5945c93f55e1b18bf2a67d1a3d0548561f2687645b22c1c1d4fbb9a8e90"
-dependencies = [
- "bs58 0.4.0",
- "proc-macro2 1.0.69",
- "quote 1.0.33",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7140,27 +6809,6 @@ name = "subtle"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
-
-[[package]]
-name = "superslice"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab16ced94dbd8a46c82fd81e3ed9a8727dac2977ea869d217bcc4ea1f122e81f"
-
-[[package]]
-name = "switchboard-v2"
-version = "0.1.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcfe32aee48f4e3a2639d9defcf33c69f0c7cacfff6adcb27c6970187cec0d4a"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "bytemuck",
- "rust_decimal",
- "solana-program",
- "spl-token",
- "superslice",
-]
 
 [[package]]
 name = "syn"
@@ -7653,13 +7301,11 @@ dependencies = [
 
 [[package]]
 name = "treasury-management"
-version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
+version = "0.2.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
 dependencies = [
+ "anchor-gen",
  "anchor-lang",
- "anchor-spl",
- "circuit-breaker",
- "shared-utils",
 ]
 
 [[package]]
@@ -7703,7 +7349,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
@@ -7718,18 +7364,6 @@ name = "typewit"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c52b4cb7830f995903b2fcff3f523d21efc1c11f6c1596dd544b7925a64ff56"
-
-[[package]]
-name = "uint"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76f64bba2c53b04fcab63c01a7d7427eadc821e3bc48c34dc9ba29c501164b52"
-dependencies = [
- "byteorder",
- "crunchy",
- "hex",
- "static_assertions",
-]
 
 [[package]]
 name = "unicode-bidi"
@@ -7872,12 +7506,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 
 [[package]]
-name = "version"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a449064fee414fcc201356a3e6c1510f6c8829ed28bb06b91c54ebe208ce065"
-
-[[package]]
 name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7900,20 +7528,11 @@ dependencies = [
 
 [[package]]
 name = "voter-stake-registry"
-version = "0.0.1"
-source = "git+https://github.com/helium/helium-program-library.git?tag=v0.1.0#57c57e8ec7bf71798db8fdccb6f9e90bb11b371d"
+version = "0.3.0"
+source = "git+https://github.com/helium/helium-anchor-gen.git#24a2bd3f812edf5852517f7a3ab0859f993357b5"
 dependencies = [
+ "anchor-gen",
  "anchor-lang",
- "anchor-spl",
- "bytemuck",
- "itertools 0.10.5",
- "mpl-token-metadata 1.8.3",
- "shared-utils",
- "solana-program",
- "spl-governance",
- "spl-governance-addin-api",
- "spl-governance-tools",
- "static_assertions",
 ]
 
 [[package]]
@@ -8334,7 +7953,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.9.9",
+ "sha2 0.10.6",
  "thiserror",
  "twox-hash",
  "xorf",
