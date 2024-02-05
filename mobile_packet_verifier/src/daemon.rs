@@ -1,4 +1,8 @@
-use crate::{burner::Burner, event_ids::EventIdPurger, settings::Settings};
+use crate::{
+    burner::{BurnConfirmer, BurnInitiator},
+    event_ids::EventIdPurger,
+    settings::Settings,
+};
 use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use file_store::{
@@ -13,39 +17,30 @@ use mobile_config::client::{
     authorization_client::AuthorizationVerifier, gateway_client::GatewayInfoResolver,
     AuthorizationClient, GatewayClient,
 };
-use solana::{SolanaNetwork, SolanaRpc};
+use solana::SolanaRpc;
 use sqlx::{Pool, Postgres};
 use task_manager::{ManagedTask, TaskManager};
-use tokio::{
-    sync::mpsc::Receiver,
-    time::{sleep_until, Duration, Instant},
-};
+use tokio::{sync::mpsc::Receiver, time::Duration};
 
-pub struct Daemon<S, GIR, AV> {
+pub struct Daemon<GIR, AV> {
     pool: Pool<Postgres>,
-    burner: Burner<S>,
     reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-    burn_period: Duration,
     gateway_info_resolver: GIR,
     authorization_verifier: AV,
     invalid_data_session_report_sink: FileSinkClient,
 }
 
-impl<S, GIR, AV> Daemon<S, GIR, AV> {
+impl<GIR, AV> Daemon<GIR, AV> {
     pub fn new(
-        settings: &Settings,
         pool: Pool<Postgres>,
         reports: Receiver<FileInfoStream<DataTransferSessionIngestReport>>,
-        burner: Burner<S>,
         gateway_info_resolver: GIR,
         authorization_verifier: AV,
         invalid_data_session_report_sink: FileSinkClient,
     ) -> Self {
         Self {
             pool,
-            burner,
             reports,
-            burn_period: Duration::from_secs(60 * 60 * settings.burn_period as u64),
             gateway_info_resolver,
             authorization_verifier,
             invalid_data_session_report_sink,
@@ -53,9 +48,8 @@ impl<S, GIR, AV> Daemon<S, GIR, AV> {
     }
 }
 
-impl<S, GIR, AV> ManagedTask for Daemon<S, GIR, AV>
+impl<GIR, AV> ManagedTask for Daemon<GIR, AV>
 where
-    S: SolanaNetwork,
     GIR: GatewayInfoResolver,
     AV: AuthorizationVerifier + 'static,
 {
@@ -67,15 +61,12 @@ where
     }
 }
 
-impl<S, GIR, AV> Daemon<S, GIR, AV>
+impl<GIR, AV> Daemon<GIR, AV>
 where
-    S: SolanaNetwork,
     GIR: GatewayInfoResolver,
     AV: AuthorizationVerifier,
 {
     pub async fn run(mut self, shutdown: triggered::Listener) -> Result<()> {
-        // Set the initial burn period to one minute
-        let mut burn_time = Instant::now() + Duration::from_secs(60);
         loop {
             tokio::select! {
                 file = self.reports.recv() => {
@@ -90,11 +81,6 @@ where
                     transaction.commit().await?;
                     self.invalid_data_session_report_sink.commit().await?;
                 },
-                _ = sleep_until(burn_time) => {
-                    // It's time to burn
-                    self.burner.burn(&self.pool).await?;
-                    burn_time = Instant::now() + self.burn_period;
-                }
                 _ = shutdown.clone() => return Ok(()),
             }
         }
@@ -138,6 +124,19 @@ impl Cmd {
         .create()
         .await?;
 
+        let burn_initiator = BurnInitiator::new(
+            solana.clone(),
+            pool.clone(),
+            Duration::from_secs(60 * 60 * settings.burn_period),
+        );
+
+        let burn_confirmer = BurnConfirmer::new(
+            valid_sessions,
+            solana,
+            pool.clone(),
+            Duration::from_secs(60 * settings.confirmation_period),
+        );
+
         let (invalid_sessions, invalid_sessions_server) = FileSinkBuilder::new(
             FileType::InvalidDataTransferSessionIngestReport,
             store_base_path,
@@ -147,8 +146,6 @@ impl Cmd {
         .auto_commit(false)
         .create()
         .await?;
-
-        let burner = Burner::new(valid_sessions, solana);
 
         let file_store = FileStore::from_settings(&settings.ingest).await?;
 
@@ -167,10 +164,8 @@ impl Cmd {
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
 
         let daemon = Daemon::new(
-            settings,
             pool.clone(),
             reports,
-            burner,
             gateway_client,
             auth_client,
             invalid_sessions,
@@ -184,6 +179,8 @@ impl Cmd {
             .add_task(invalid_sessions_server)
             .add_task(reports_server)
             .add_task(event_id_purger)
+            .add_task(burn_initiator)
+            .add_task(burn_confirmer)
             .add_task(daemon)
             .start()
             .await

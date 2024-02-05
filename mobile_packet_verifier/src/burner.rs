@@ -1,10 +1,12 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use file_store::{file_sink::FileSinkClient, traits::TimestampEncode};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::packet_verifier::ValidDataTransferSession;
 use solana::{GetSignature, SolanaNetwork};
-use solana_sdk::signature::Signature;
-use sqlx::{FromRow, Pool, Postgres};
+use solana_sdk::signature::{ParseSignatureError, Signature};
+use sqlx::{FromRow, PgPool};
+use task_manager::ManagedTask;
+use tokio::time::{sleep_until, Duration, Instant};
 
 #[derive(FromRow)]
 pub struct DataTransferSession {
@@ -17,33 +19,6 @@ pub struct DataTransferSession {
     last_timestamp: DateTime<Utc>,
 }
 
-#[derive(FromRow)]
-pub struct PayerTotals {
-    payer: PublicKeyBinary,
-    total_dcs: i64,
-}
-
-#[derive(FromRow)]
-pub struct PendingTxn {
-    signature: String,
-    amount: i64,
-    time_of_submission: DateTime<Utc>,
-}
-
-pub struct Burner<S> {
-    valid_sessions: FileSinkClient,
-    solana: S,
-}
-
-impl<S> Burner<S> {
-    pub fn new(valid_sessions: FileSinkClient, solana: S) -> Self {
-        Self {
-            valid_sessions,
-            solana,
-        }
-    }
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum BurnError<E> {
     #[error("file store error: {0}")]
@@ -54,132 +29,243 @@ pub enum BurnError<E> {
     ChronoError(#[from] chrono::OutOfRangeError),
     #[error("solana error: {0}")]
     SolanaError(E),
+    #[error("parse signature error: {0}")]
+    ParseSignatureError(#[from] ParseSignatureError),
 }
 
-impl<S> Burner<S>
+pub struct BurnInitiator<S> {
+    solana: S,
+    pool: PgPool,
+    burn_period: Duration,
+}
+
+impl<S> BurnInitiator<S> {
+    pub fn new(solana: S, pool: PgPool, burn_period: Duration) -> Self {
+        Self {
+            solana,
+            pool,
+            burn_period,
+        }
+    }
+}
+
+impl<S> ManagedTask for BurnInitiator<S>
 where
     S: SolanaNetwork,
 {
-    pub async fn burn(&self, pool: &Pool<Postgres>) -> Result<(), BurnError<S::Error>> {
-        // Fetch all of the payer totals:
-        let totals: Vec<PayerTotals> = sqlx::query_as("SELECT * FROM payer_totals")
-            .fetch_all(pool)
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
+impl<S> BurnInitiator<S>
+where
+    S: SolanaNetwork,
+{
+    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        // Initial burn period is one minute
+        let mut burn_time = Instant::now() + Duration::from_secs(60);
+        loop {
+            #[rustfmt::skip]
+            tokio::select! {
+		_ = sleep_until(burn_time) => {
+                    // Initiate new burns
+                    self.initiate_burns().await?;
+                    burn_time = Instant::now() + self.burn_period;
+		}
+		_ = shutdown.clone() => return Ok(()),
+            }
+        }
+    }
+
+    pub async fn initiate_burns(&self) -> anyhow::Result<()> {
+        let sessions: Vec<DataTransferSession> = sqlx::query_as(
+	    r#"
+	    SELECT pub_key, payer, SUM(uploaded_bytes) as uploaded_bytes, SUM(downloaded_bytes) as downloaded_bytes,
+	    SUM(rewardable_bytes) as rewardable_bytes, MIN(session_timestamp) as first_timestamp, MAX(session_timestamp) as last_timestamp
+	    FROM data_transfer_sessions GROUP BY pub_key, payer
+	    WHERE session_timestamp < $1
+	    "#
+	).bind(Utc::now())
+	    .fetch_all(&self.pool)
+	    .await?;
+
+        for session in sessions.into_iter() {
+            let num_dcs = bytes_to_dc(session.rewardable_bytes as u64);
+            let txn = self
+                .solana
+                .make_burn_transaction(&session.payer, num_dcs)
+                .await?;
+            let mut transaction = self.pool.begin().await?;
+            sqlx::query(
+		r#"
+		INSERT INTO pending_txns (signature, pub_key, payer, num_dcs, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timesetamp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		"#
+	    )
+		.bind(txn.get_signature().to_string())
+		.bind(&session.pub_key)
+		.bind(&session.payer)
+		.bind(session.uploaded_bytes)
+		.bind(session.downloaded_bytes)
+		.bind(session.rewardable_bytes)
+		.bind(session.first_timestamp)
+		.bind(session.last_timestamp)
+		.execute(&mut transaction)
+		.await?;
+            sqlx::query(
+		r#"
+		DELETE FROM pending_txns WHERE pub_key = $1 AND payer = $2 AND session_timestamp >= $3 and session_timestamp <= $4 
+		"#
+	    )
+		.bind(&session.pub_key)
+		.bind(&session.payer)
+		.bind(session.first_timestamp)
+		.bind(session.last_timestamp)
+		.execute(&mut transaction)
+		.await?;
+            transaction.commit().await?;
+            // We should make this a quick submission that doesn't check for confirmation
+            let _ = self.solana.submit_transaction(&txn).await;
+        }
+        Ok(())
+    }
+}
+
+#[derive(FromRow)]
+pub struct PendingTxn {
+    signature: String,
+    pub_key: PublicKeyBinary,
+    payer: PublicKeyBinary,
+    uploaded_bytes: i64,
+    downloaded_bytes: i64,
+    rewardable_bytes: i64,
+    first_timestamp: DateTime<Utc>,
+    last_timestamp: DateTime<Utc>,
+}
+
+pub struct BurnConfirmer<S> {
+    valid_sessions: FileSinkClient,
+    solana: S,
+    pool: PgPool,
+    confirmation_period: Duration,
+}
+
+impl<S> BurnConfirmer<S> {
+    pub fn new(
+        valid_sessions: FileSinkClient,
+        solana: S,
+        pool: PgPool,
+        confirmation_period: Duration,
+    ) -> Self {
+        Self {
+            valid_sessions,
+            solana,
+            pool,
+            confirmation_period,
+        }
+    }
+}
+
+impl<S> ManagedTask for BurnConfirmer<S>
+where
+    S: SolanaNetwork,
+{
+    fn start_task(
+        self: Box<Self>,
+        shutdown: triggered::Listener,
+    ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(self.run(shutdown))
+    }
+}
+
+impl<S> BurnConfirmer<S>
+where
+    S: SolanaNetwork,
+{
+    pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        // Initial confirmation period is two minutes
+        let mut confirm_time = Instant::now() + Duration::from_secs(120);
+        loop {
+            #[rustfmt::skip]
+            tokio::select! {
+		_ = sleep_until(confirm_time) => {
+                    // Initiate new burns
+                    self.confirm_burns().await?;
+                    confirm_time = Instant::now() + self.confirmation_period;
+		}
+		_ = shutdown.clone() => return Ok(()),
+            }
+        }
+    }
+
+    pub async fn confirm_burns(&self) -> anyhow::Result<()> {
+        let pending_txns: Vec<PendingTxn> = sqlx::query_as(r#"SELECT * FROM pending_txns"#)
+            .fetch_all(&self.pool)
             .await?;
 
-        for PayerTotals { payer, total_dcs } in totals {
-            let mut total_dcs = total_dcs as u64;
-
-            // Check if there is a pending transaction
-            if let Some(PendingTxn {
-                signature,
-                amount,
-                time_of_submission,
-            }) = sqlx::query_as(
-                r#"
-                SELECT signature, amount, time_of_submission FROM pending_txns WHERE payer = $1
-                "#,
-            )
-            .bind(&payer)
-            .fetch_optional(pool)
-            .await?
-            {
-                // Sleep for at least a minute since the time of submission to
-                // give the transaction plenty of time to be confirmed:
-                let time_since_submission = Utc::now() - time_of_submission;
-                if Duration::minutes(1) > time_since_submission {
-                    tokio::time::sleep((Duration::minutes(1) - time_since_submission).to_std()?)
-                        .await;
-                }
-
-                let sig: Signature = signature.parse().unwrap();
-                if self
-                    .solana
-                    .confirm_transaction(&sig)
-                    .await
-                    .map_err(BurnError::SolanaError)?
-                {
-                    // This transaction has been confirmed. Subtract the amount confirmed from
-                    // the total amount burned and remove the transaction.
-                    total_dcs -= amount as u64;
-                }
-                // If the transaction has not been confirmed, we still want to remove the transaction.
-                // The total_dcs column remains the same.
-                let mut transaction = pool.begin().await?;
-                sqlx::query("UPDATE payer_totals SET total_dcs = $2 WHERE payer = $1")
-                    .bind(&payer)
-                    .bind(total_dcs as i64)
-                    .execute(&mut transaction)
-                    .await?;
-                sqlx::query("DELETE FROM pending_txns WHERE signature = $1")
-                    .bind(&signature)
-                    .execute(&mut transaction)
-                    .await?;
-                transaction.commit().await?;
-            }
-
-            // Get the current sessions we need to write, before creating any new transactions
-            let sessions: Vec<DataTransferSession> =
-                sqlx::query_as("SELECT * FROM data_transfer_session WHERE payer = $1")
-                    .bind(&payer)
-                    .fetch_all(pool)
-                    .await?;
-
-            // Create a new transaction for the given amount, if there is any left.
-            // If total_dcs is zero, that means we need to clear out the current sessions as they are paid for.
-            if total_dcs != 0 {
-                let txn = self
-                    .solana
-                    .make_burn_transaction(&payer, total_dcs)
-                    .await
-                    .map_err(BurnError::SolanaError)?;
-                sqlx::query(
-                    "INSERT INTO pending_txns (signature, payer, amount) VALUES ($1, $2, $3)",
-                )
-                .bind(txn.get_signature().to_string())
-                .bind(&payer)
-                .bind(total_dcs as i64)
-                .execute(pool)
-                .await?;
-                // Attempt to execute the transaction
-                if self.solana.submit_transaction(&txn).await.is_err() {
-                    // We have failed to burn data credits:
-                    metrics::counter!("burned", total_dcs, "payer" => payer.to_string(), "success" => "false");
-                    continue;
-                }
-            }
-
-            // Submit the sessions
-            let mut transaction = pool.begin().await?;
-            sqlx::query("DELETE FROM data_transfer_sessions WHERE payer = $1")
-                .bind(&payer)
+        for pending_txn in pending_txns {
+            let txn: Signature = pending_txn.signature.parse()?;
+            let mut transaction = self.pool.begin().await?;
+            let num_dcs = bytes_to_dc(pending_txn.rewardable_bytes as u64);
+            sqlx::query(r#"DELETE FROM pending_txns WHERE signature = $1"#)
+                .bind(pending_txn.signature)
                 .execute(&mut transaction)
                 .await?;
-            sqlx::query("DELETE FROM payer_totals WHERE payer = $1")
-                .bind(&payer)
-                .execute(&mut transaction)
-                .await?;
-            transaction.commit().await?;
-
-            for session in sessions {
-                let num_dcs = crate::bytes_to_dc(session.rewardable_bytes as u64);
+            if self.solana.confirm_transaction(&txn).await? {
                 self.valid_sessions
                     .write(
                         ValidDataTransferSession {
-                            pub_key: session.pub_key.into(),
-                            payer: session.payer.into(),
-                            upload_bytes: session.uploaded_bytes as u64,
-                            download_bytes: session.downloaded_bytes as u64,
-                            rewardable_bytes: session.rewardable_bytes as u64,
+                            pub_key: pending_txn.pub_key.into(),
+                            payer: pending_txn.payer.into(),
+                            upload_bytes: pending_txn.uploaded_bytes as u64,
+                            download_bytes: pending_txn.downloaded_bytes as u64,
+                            rewardable_bytes: pending_txn.rewardable_bytes as u64,
                             num_dcs,
-                            first_timestamp: session.first_timestamp.encode_timestamp_millis(),
-                            last_timestamp: session.last_timestamp.encode_timestamp_millis(),
+                            first_timestamp: pending_txn.first_timestamp.encode_timestamp_millis(),
+                            last_timestamp: pending_txn.last_timestamp.encode_timestamp_millis(),
                         },
                         &[],
                     )
                     .await?;
+            } else {
+                // If we can't confirm the transaction, we can just submit it and check the pending
+                // transaction next time
+                let new_txn = self
+                    .solana
+                    .make_burn_transaction(&pending_txn.payer, num_dcs)
+                    .await?;
+                sqlx::query(
+		    r#"
+		    INSERT INTO pending_txns (signature, pub_key, payer, num_dcs, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		    "#
+		)
+		    .bind(new_txn.get_signature().to_string())
+		    .bind(pending_txn.pub_key)
+		    .bind(pending_txn.payer)
+		    .bind(num_dcs as i64)
+		    .bind(pending_txn.uploaded_bytes)
+		    .bind(pending_txn.downloaded_bytes)
+		    .bind(pending_txn.rewardable_bytes)
+		    .bind(pending_txn.first_timestamp)
+		    .bind(pending_txn.last_timestamp)
+		    .execute(&mut transaction)
+		    .await?;
+                let _ = self.solana.submit_transaction(&new_txn).await;
             }
         }
 
         Ok(())
     }
+}
+
+const BYTES_PER_DC: u64 = 20_000;
+
+pub fn bytes_to_dc(bytes: u64) -> u64 {
+    let bytes = bytes.max(BYTES_PER_DC);
+    // Integer div/ceil from: https://stackoverflow.com/a/2745086
+    (bytes + BYTES_PER_DC - 1) / BYTES_PER_DC
 }

@@ -13,7 +13,10 @@ pub struct Settings {
     pub cache: String,
     /// Burn period in hours. (Default is 1)
     #[serde(default = "default_burn_period")]
-    pub burn_period: i64,
+    pub burn_period: u64,
+    /// Confirmation period in minutes. (Default is 10)
+    #[serde(default = "default_confirmation_period")]
+    pub confirmation_period: u64,
     pub database: db_store::Settings,
     pub ingest: file_store::Settings,
     pub output: file_store::Settings,
@@ -50,8 +53,12 @@ pub fn default_log() -> String {
     "mobile_packet_verifier=debug,poc_store=info".to_string()
 }
 
-pub fn default_burn_period() -> i64 {
+pub fn default_burn_period() -> u64 {
     1
+}
+
+pub fn default_confirmation_period() -> u64 {
+    10
 }
 
 impl Settings {

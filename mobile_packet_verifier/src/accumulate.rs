@@ -49,13 +49,7 @@ pub async fn accumulate_sessions(
         let event = report.report.data_transfer_usage;
         sqlx::query(
             r#"
-            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $6)
-            ON CONFLICT (pub_key, payer) DO UPDATE SET
-            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, session_timestamp) VALUES ($1, $2, $3, $4, $5, $6);
             "#
         )
             .bind(event.pub_key)
@@ -66,18 +60,6 @@ pub async fn accumulate_sessions(
             .bind(curr_file_ts)
             .execute(&mut *conn)
             .await?;
-        sqlx::query(
-            r#"
-            INSERT INTO payer_totals (payer, total_dcs)
-            VALUES ($1, $2)
-            ON CONFLICT (payer) DO UPDATE SET
-            total_dcs = total_dcs + EXCLUDED.total_dcs
-            "#,
-        )
-        .bind(event.payer)
-        .bind(crate::bytes_to_dc(event.upload_bytes + event.download_bytes) as i64)
-        .execute(&mut *conn)
-        .await?;
     }
 
     Ok(())
