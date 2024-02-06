@@ -3,7 +3,7 @@ use h3o::{LatLng, Resolution};
 use hextree::{Cell, HexTreeSet};
 use std::{fs, io::Read, path, sync::Arc};
 
-use crate::{heartbeats::Heartbeat, Settings};
+use crate::heartbeats::Heartbeat;
 
 pub trait GeofenceValidator: Clone + Send + Sync + 'static {
     fn in_valid_region(&self, heartbeat: &Heartbeat) -> bool;
@@ -16,12 +16,10 @@ pub struct Geofence {
 }
 
 impl Geofence {
-    pub fn from_settings(settings: &Settings) -> anyhow::Result<Self> {
-        let paths = settings.region_paths()?;
-        tracing::info!(?paths, "geofence_regions");
+    pub fn new(paths: Vec<std::path::PathBuf>, resolution: Resolution) -> anyhow::Result<Self> {
         Ok(Self {
             regions: Arc::new(valid_mapping_regions(paths)?),
-            resolution: settings.fencing_resolution()?,
+            resolution,
         })
     }
 }
