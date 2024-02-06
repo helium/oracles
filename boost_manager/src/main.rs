@@ -109,11 +109,12 @@ impl Server {
         .await?;
 
         // The server to monitor rewards and activate any newly seen boosted hexes
+        let verifier_store = FileStore::from_settings(&settings.verifier).await?;
         let activator = Activator::new(
-            settings,
             pool.clone(),
             manifest_receiver,
             hex_boosting_client.clone(),
+            verifier_store,
         )
         .await?;
 

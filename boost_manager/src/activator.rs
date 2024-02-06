@@ -51,16 +51,16 @@ where
     A: HexBoostingInfoResolver<Error = ClientError>,
 {
     pub async fn new(
-        settings: &Settings,
         pool: Pool<Postgres>,
         receiver: Receiver<FileInfoStream<RewardManifest>>,
         hex_boosting_client: A,
+        verifier_store: FileStore,
     ) -> Result<Self> {
         Ok(Self {
             pool,
-            verifier_store: FileStore::from_settings(&settings.verifier).await?,
             receiver,
             hex_boosting_client,
+            verifier_store,
         })
     }
 
@@ -126,7 +126,7 @@ where
         Ok(())
     }
 
-    async fn process_boosted_hex(
+    pub async fn process_boosted_hex(
         &mut self,
         txn: &mut Transaction<'_, Postgres>,
         manifest_time: DateTime<Utc>,

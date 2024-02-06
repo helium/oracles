@@ -3,7 +3,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::file_sink::FileSinkClient;
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
+use helium_proto::BoostedHexUpdateV1 as BoostedHexUpdateProto;
+use file_store::traits::TimestampEncode;
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
@@ -77,7 +78,7 @@ where
         Ok(())
     }
 
-    async fn handle_tick(&mut self) -> Result<()> {
+    pub async fn handle_tick(&mut self) -> Result<()> {
         let now = Utc::now();
         // get the last time we processed hex boosting info
         let last_processed_ts = fetch_last_processed_timestamp(&self.pool).await?;
@@ -89,7 +90,10 @@ where
 
         for (location, info) in &boosted_hexes.hexes {
             tracing::info!("location: {}, info: {:?}", location, info);
-            let proto: BoostedHexInfoProto = info.clone().try_into()?;
+            let proto: BoostedHexUpdateProto = BoostedHexUpdateProto {
+                timestamp: now.encode_timestamp(),
+                update: Some(info.clone().try_into()?),
+            };
             self.file_sink.write(proto, []).await?.await??;
         }
         self.file_sink.commit().await?;
@@ -106,7 +110,7 @@ pub async fn fetch_last_processed_timestamp(
         .ok_or(db_store::Error::DecodeError)
 }
 
-async fn save_last_processed_timestamp(
+pub async fn save_last_processed_timestamp(
     db: impl PgExecutor<'_>,
     value: &DateTime<Utc>,
 ) -> db_store::Result<()> {
