@@ -15,6 +15,8 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTimeError},
 };
+use anchor_lang::{InstructionData, ToAccountMetas};
+use solana_program::instruction::Instruction;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
@@ -135,6 +137,7 @@ impl SolanaNetwork for SolanaRpc {
         &self,
         batch: &[BoostedHexActivation],
     ) -> Result<Self::Transaction, Self::Error> {
+
         let instructions = {
             let mut request = RequestBuilder::from(
                 hexboosting::id(),
@@ -143,7 +146,6 @@ impl SolanaNetwork for SolanaRpc {
                 Some(CommitmentConfig::confirmed()),
                 RequestNamespace::Global,
             );
-
             for update in batch {
                 let account = accounts::StartBoostV0 {
                     start_authority: self.start_authority,
@@ -155,11 +157,17 @@ impl SolanaNetwork for SolanaRpc {
                         start_ts: update.activation_ts.timestamp(),
                     },
                 };
-                request = request.accounts(account).args(args);
+                let instruction = Instruction{
+                    program_id: hexboosting::id(),
+                    accounts: account.to_account_metas(None),
+                    data: args.data(),
+                };
+                request = request.instruction(instruction);
+
             }
             request.instructions().unwrap()
         };
-
+        tracing::info!("instructions: {:?}", instructions);
         let blockhash = self.provider.get_latest_blockhash().await?;
         let signer = Keypair::from_bytes(&self.keypair).unwrap();
 
