@@ -424,10 +424,21 @@ impl HotspotPoints {
     ) {
         let rp = self
             .radio_points
-            .get_mut(&radio_key.into_cbsd_id())
+            .get_mut(&radio_key.clone().into_cbsd_id())
             .unwrap();
-        rp.points += points * Decimal::from(boosted_hex_info.multiplier);
-        rp.boosted_hexes.push(boosted_hex_info);
+        // if radio is wifi & the location trust score multiplier is less than 1,
+        // then no boost points for you mister
+        let final_boost_info =
+            if radio_key.is_wifi() && rp.location_trust_score_multiplier < dec!(0.75) {
+                BoostedHex {
+                    location: boosted_hex_info.location,
+                    multiplier: 1,
+                }
+            } else {
+                boosted_hex_info
+            };
+        rp.points += points * Decimal::from(final_boost_info.multiplier);
+        rp.boosted_hexes.push(final_boost_info);
     }
 }
 
