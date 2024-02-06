@@ -2,9 +2,9 @@ use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use db_store::meta;
 use file_store::file_sink::FileSinkClient;
+use file_store::traits::TimestampEncode;
 use futures::{future::LocalBoxFuture, TryFutureExt};
 use helium_proto::BoostedHexUpdateV1 as BoostedHexUpdateProto;
-use file_store::traits::TimestampEncode;
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
