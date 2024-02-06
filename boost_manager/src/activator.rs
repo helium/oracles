@@ -1,4 +1,4 @@
-use crate::{db, telemetry, Settings};
+use crate::{db, telemetry};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use file_store::{
