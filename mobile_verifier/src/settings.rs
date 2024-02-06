@@ -42,7 +42,6 @@ pub struct Settings {
     pub cbrs_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
     pub cbrs_fencing_resolution: u8,
-
 }
 
 fn default_fencing_resolution() -> u8 {
