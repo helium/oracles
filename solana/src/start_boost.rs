@@ -1,9 +1,11 @@
 use anchor_client::{RequestBuilder, RequestNamespace};
+use anchor_lang::{InstructionData, ToAccountMetas};
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
 use helium_anchor_gen::hexboosting::{self, accounts, instruction};
 use serde::Deserialize;
 use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_program::instruction::Instruction;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::{ParsePubkeyError, Pubkey},
@@ -15,8 +17,6 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTimeError},
 };
-use anchor_lang::{InstructionData, ToAccountMetas};
-use solana_program::instruction::Instruction;
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
@@ -137,7 +137,6 @@ impl SolanaNetwork for SolanaRpc {
         &self,
         batch: &[BoostedHexActivation],
     ) -> Result<Self::Transaction, Self::Error> {
-
         let instructions = {
             let mut request = RequestBuilder::from(
                 hexboosting::id(),
@@ -157,13 +156,12 @@ impl SolanaNetwork for SolanaRpc {
                         start_ts: update.activation_ts.timestamp(),
                     },
                 };
-                let instruction = Instruction{
+                let instruction = Instruction {
                     program_id: hexboosting::id(),
                     accounts: account.to_account_metas(None),
                     data: args.data(),
                 };
                 request = request.instruction(instruction);
-
             }
             request.instructions().unwrap()
         };
