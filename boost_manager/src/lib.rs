@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod activator;
-mod db;
+pub mod db;
 pub mod settings;
 pub mod telemetry;
 pub use settings::Settings;

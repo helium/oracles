@@ -118,38 +118,36 @@ where
             let share = MobileRewardShare::decode(msg)?;
             if let Some(MobileReward::RadioReward(r)) = share.reward {
                 for hex in r.boosted_hexes.into_iter() {
-                    self.process_boosted_hex(txn, manifest_time, &boosted_hexes, &hex)
-                        .await?
+                    process_boosted_hex(txn, manifest_time, &boosted_hexes, &hex).await?
                 }
             }
         }
         Ok(())
     }
+}
 
-    pub async fn process_boosted_hex(
-        &mut self,
-        txn: &mut Transaction<'_, Postgres>,
-        manifest_time: DateTime<Utc>,
-        boosted_hexes: &BoostedHexes,
-        hex: &BoostedHexProto,
-    ) -> Result<()> {
-        match boosted_hexes.hexes.get(&hex.location) {
-            Some(info) => {
-                if info.start_ts.is_none() {
-                    db::insert_activated_hex(
-                        txn,
-                        hex.location,
-                        &info.boosted_hex_pubkey,
-                        &info.boost_config_pubkey,
-                        manifest_time,
-                    )
-                    .await?;
-                }
-            }
-            None => {
-                tracing::warn!(hex = %hex.location, "got an invalid boosted hex");
+pub async fn process_boosted_hex(
+    txn: &mut Transaction<'_, Postgres>,
+    manifest_time: DateTime<Utc>,
+    boosted_hexes: &BoostedHexes,
+    hex: &BoostedHexProto,
+) -> Result<()> {
+    match boosted_hexes.hexes.get(&hex.location) {
+        Some(info) => {
+            if info.start_ts.is_none() {
+                db::insert_activated_hex(
+                    txn,
+                    hex.location,
+                    &info.boosted_hex_pubkey,
+                    &info.boost_config_pubkey,
+                    manifest_time,
+                )
+                .await?;
             }
         }
-        Ok(())
+        None => {
+            tracing::warn!(hex = %hex.location, "got an invalid boosted hex");
+        }
     }
+    Ok(())
 }

@@ -92,21 +92,25 @@ where
     }
 
     pub async fn process_activations(&self) -> Result<()> {
+        tracing::info!("point1");
         self.check_failed_activations().await?;
-
+        tracing::info!("point2");
         // get the batch of queued activations to update on chain
         let activations = db::get_queued_batch(&self.pool).await?;
 
+        tracing::info!("point3");
         if activations.is_empty() {
             tracing::info!("no activations in queue");
             return Ok(());
         }
 
+        tracing::info!("point4");
         let activations_count = activations.len() as u64;
         tracing::info!(
             num_of_activations = activations_count,
             "processing activations,"
         );
+        tracing::info!("point5");
 
         // slice the summed activations up into batches of N activations and submit to solana
         for batch in activations.chunks(BATCH_SIZE) {

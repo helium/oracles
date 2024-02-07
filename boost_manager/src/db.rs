@@ -1,7 +1,7 @@
 use crate::OnChainStatus;
 use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Transaction};
 
 const MAX_RETRIES: i32 = 10;
 const MAX_BATCH_COUNT: i32 = 100;
@@ -11,16 +11,20 @@ pub struct TxnRow {
     pub txn_id: String,
 }
 
-pub async fn insert_activated_hex<'c, E>(
-    executor: E,
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct StatusRow {
+    #[sqlx(try_from = "i64")]
+    pub location: u64,
+    pub status: OnChainStatus,
+}
+
+pub async fn insert_activated_hex(
+    txn: &mut Transaction<'_, Postgres>,
     location: u64,
     boosted_hex_pubkey: &String,
     boost_config_pubkey: &String,
     activation_ts: DateTime<Utc>,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-{
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         insert into activated_hexes (
@@ -38,7 +42,7 @@ where
     .bind(boosted_hex_pubkey)
     .bind(boost_config_pubkey)
     .bind(OnChainStatus::Queued)
-    .execute(executor)
+    .execute(txn)
     .await?;
 
     Ok(())
@@ -61,6 +65,17 @@ pub async fn get_queued_batch(
     .bind(MAX_BATCH_COUNT)
     .fetch_all(db)
     .await
+}
+
+pub async fn query_activation_statuses(db: &Pool<Postgres>) -> anyhow::Result<Vec<StatusRow>> {
+    Ok(sqlx::query_as::<_, StatusRow>(
+        r#"
+            SELECT location, status
+            FROM activated_hexes
+    "#,
+    )
+    .fetch_all(db)
+    .await?)
 }
 
 pub async fn save_batch_txn_id(

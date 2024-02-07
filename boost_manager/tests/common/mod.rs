@@ -62,6 +62,7 @@ impl MockFileSinkReceiver {
     }
 }
 
+#[allow(dead_code)]
 pub fn create_file_sink() -> (FileSinkClient, MockFileSinkReceiver) {
     let (tx, rx) = tokio::sync::mpsc::channel(20);
     (

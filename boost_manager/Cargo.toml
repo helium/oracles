@@ -49,3 +49,4 @@ task-manager = { path = "../task_manager" }
 http = {workspace = true}
 http-serde = {workspace = true}
 solana = {path = "../solana"}
+solana-sdk = {workspace = true}
