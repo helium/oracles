@@ -323,7 +323,7 @@ async fn reward_poc(
     speedtest_averages.write_all(speedtest_avg_sink).await?;
 
     let boosted_hexes = BoostedHexes::get_all(hex_service_client).await?;
-    println!("boosted_hexes: {:?}", boosted_hexes);
+
     let coverage_points = CoveragePoints::aggregate_points(
         pool,
         heartbeats,

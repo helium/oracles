@@ -143,6 +143,11 @@ async fn test_process_activations_failure(pool: PgPool) -> anyhow::Result<()> {
     assert_eq!(res[1].location, 0x8a1fb49642dffff_u64);
     assert_eq!(res[2].status, OnChainStatus::Failed);
     assert_eq!(res[2].location, 0x8a1fb466d2dffff_u64);
+
+    // should return zero queued activations
+    let rows = db::get_queued_batch(&pool).await?;
+    assert_eq!(rows.len(), 0);
+
     Ok(())
 }
 

@@ -426,10 +426,10 @@ impl HotspotPoints {
             .radio_points
             .get_mut(&radio_key.clone().into_cbsd_id())
             .unwrap();
-        // if radio is wifi & the location trust score multiplier is less than 1,
+        // as per hip93, if radio is wifi & the location trust score multiplier is less than 1,
         // then no boost points for you mister
         let final_boost_info =
-            if radio_key.is_wifi() && rp.location_trust_score_multiplier < dec!(0.75) {
+            if radio_key.is_wifi() && rp.location_trust_score_multiplier < dec!(1) {
                 BoostedHex {
                     location: boosted_hex_info.location,
                     multiplier: 1,

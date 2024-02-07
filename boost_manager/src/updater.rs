@@ -54,7 +54,7 @@ where
     pub async fn run(self, mut shutdown: triggered::Listener) -> Result<()> {
         tracing::info!("starting Updater");
         // on startup if there are activations in the DB with 'queued' status and WITH a txn id then
-        // it suggests we crashed out early of the payer tick
+        // it suggests we crashed out early of the updater tick
         // after we started the solana activation flow
         // we need to check if these txns are onchain and if not then null the txn id
         // if they are on chain then update their status to success
