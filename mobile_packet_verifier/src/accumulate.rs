@@ -49,17 +49,11 @@ pub async fn accumulate_sessions(
         let event = report.report.data_transfer_usage;
         sqlx::query(
             r#"
-            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, first_timestamp, last_timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $6)
-            ON CONFLICT (pub_key, payer) DO UPDATE SET
-            uploaded_bytes = data_transfer_sessions.uploaded_bytes + EXCLUDED.uploaded_bytes,
-            downloaded_bytes = data_transfer_sessions.downloaded_bytes + EXCLUDED.downloaded_bytes,
-            rewardable_bytes = data_transfer_sessions.rewardable_bytes + EXCLUDED.rewardable_bytes,
-            last_timestamp = GREATEST(data_transfer_sessions.last_timestamp, EXCLUDED.last_timestamp)
+            INSERT INTO data_transfer_sessions (pub_key, payer, uploaded_bytes, downloaded_bytes, rewardable_bytes, session_timestamp) VALUES ($1, $2, $3, $4, $5, $6);
             "#
         )
             .bind(event.pub_key)
-            .bind(event.payer)
+            .bind(&event.payer)
             .bind(event.upload_bytes as i64)
             .bind(event.download_bytes as i64)
             .bind(report.report.rewardable_bytes as i64)
