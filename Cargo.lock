@@ -1448,7 +1448,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#db47a85109f470526e43c7522acd7f6c12c8f46a"
+source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#39138825d3d0bc51244e71c4daa72bd30c4d5582"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -1458,7 +1458,7 @@ dependencies = [
  "rand_chacha 0.3.0",
  "rust_decimal",
  "serde",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
 ]
 
@@ -3310,7 +3310,7 @@ dependencies = [
  "bs58 0.5.0",
  "byteorder",
  "ed25519-compact",
- "getrandom 0.2.10",
+ "getrandom 0.1.16",
  "k256",
  "lazy_static",
  "multihash",
@@ -3337,7 +3337,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#db47a85109f470526e43c7522acd7f6c12c8f46a"
+source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#39138825d3d0bc51244e71c4daa72bd30c4d5582"
 dependencies = [
  "bytes",
  "prost",
@@ -7716,7 +7716,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
@@ -8320,7 +8320,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.9.9",
  "thiserror",
  "twox-hash",
  "xorf",
