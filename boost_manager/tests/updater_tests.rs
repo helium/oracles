@@ -136,7 +136,6 @@ async fn test_process_activations_failure(pool: PgPool) -> anyhow::Result<()> {
         updater.process_activations().await?;
     }
     let res = db::query_activation_statuses(&pool).await?;
-    println!("res: {:?}", res);
     assert_eq!(res[0].status, OnChainStatus::Failed);
     assert_eq!(res[0].location, 0x8a1fb466d2dffff_u64);
     assert_eq!(res[1].status, OnChainStatus::Failed);
