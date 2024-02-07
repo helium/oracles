@@ -543,9 +543,9 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
         // HOTSPOT 3 has reduced location trust score and a boosted location
 
         // assert poc reward outputs
-        let hotspot_1_reward = 30264817150063;
-        let hotspot_2_reward = 15132408575031;
-        let hotspot_3_reward = 3783102143757;
+        let hotspot_1_reward = 30_264_817_150_063;
+        let hotspot_2_reward = 15_132_408_575_031;
+        let hotspot_3_reward = 3_783_102_143_757;
 
         assert_eq!(hotspot_1_reward, poc_rewards[1].poc_reward);
         assert_eq!(
