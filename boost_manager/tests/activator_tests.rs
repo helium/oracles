@@ -175,6 +175,5 @@ async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
     let rows1 = db::get_queued_batch(&pool).await?;
     assert_eq!(rows1.len(), 1);
     assert_eq!(rows1[0].activation_ts, now);
-    assert_eq!(1, 2);
     Ok(())
 }
