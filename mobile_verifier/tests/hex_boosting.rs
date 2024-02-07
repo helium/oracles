@@ -53,6 +53,9 @@ impl HexBoostingInfoResolver for MockHexBoostingClient {
         Ok(stream::iter(self.boosted_hexes.clone()).boxed())
     }
 }
+//
+// TODO: add a bootstrapper to reduce boiler plate
+//
 
 #[sqlx::test]
 async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
@@ -475,6 +478,142 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[sqlx::test]
+async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
+    let (mobile_rewards_client, mut mobile_rewards) = common::create_file_sink();
+    let (speedtest_avg_client, _speedtest_avg_server) = common::create_file_sink();
+    let now = Utc::now();
+    let epoch = (now - ChronoDuration::hours(24))..now;
+    let boost_period_length = Duration::days(30);
+
+    // seed all the things
+    let mut txn = pool.clone().begin().await?;
+    seed_heartbeats_v3(epoch.start, &mut txn).await?;
+    seed_speedtests(epoch.end, &mut txn).await?;
+    txn.commit().await?;
+
+    // setup boosted hex where reward start time is in the second period length
+    let multipliers1 = vec![2];
+    let start_ts_1 = epoch.start;
+    let end_ts_1 = start_ts_1 + (boost_period_length * multipliers1.len() as i32);
+
+    // setup boosted hex where no start or end time is set
+    let multipliers2 = vec![2];
+
+    let boosted_hexes = vec![
+        BoostedHexInfo {
+            // hotspot 1's location
+            location: 0x8a1fb466d2dffff_u64,
+            start_ts: Some(start_ts_1),
+            end_ts: Some(end_ts_1),
+            period_length: boost_period_length,
+            multipliers: multipliers1,
+            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+        },
+        BoostedHexInfo {
+            // hotspot 3's location
+            location: 0x8c2681a306607ff_u64,
+            start_ts: None,
+            end_ts: None,
+            period_length: boost_period_length,
+            multipliers: multipliers2,
+            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+        },
+    ];
+
+    let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+
+    let (_, rewards) = tokio::join!(
+        // run rewards for poc and dc
+        rewarder::reward_poc_and_dc(
+            &pool,
+            &hex_boosting_client,
+            &mobile_rewards_client,
+            &speedtest_avg_client,
+            &epoch,
+            dec!(0.0001)
+        ),
+        receive_expected_rewards(&mut mobile_rewards)
+    );
+    if let Ok((poc_rewards, unallocated_reward)) = rewards {
+        // HOTSPOT 1 has full location trust score and a boosted location
+        // HOTSPOT 2 has full location trust score and NO boosted location
+        // HOTSPOT 3 has reduced location trust score and a boosted location
+
+        // assert poc reward outputs
+        let hotspot_1_reward = 30264817150063;
+        let hotspot_2_reward = 15132408575031;
+        let hotspot_3_reward = 3783102143757;
+
+        assert_eq!(hotspot_1_reward, poc_rewards[1].poc_reward);
+        assert_eq!(
+            HOTSPOT_1.to_string(),
+            PublicKeyBinary::from(poc_rewards[1].hotspot_key.clone()).to_string()
+        );
+        assert_eq!(hotspot_2_reward, poc_rewards[0].poc_reward);
+        assert_eq!(
+            HOTSPOT_2.to_string(),
+            PublicKeyBinary::from(poc_rewards[0].hotspot_key.clone()).to_string()
+        );
+        assert_eq!(hotspot_3_reward, poc_rewards[2].poc_reward);
+        assert_eq!(
+            HOTSPOT_3.to_string(),
+            PublicKeyBinary::from(poc_rewards[2].hotspot_key.clone()).to_string()
+        );
+
+        // assert the boosted hexes in the radio rewards
+        // assert the number of boosted hexes for each radio
+
+        //hotspot 1 has one boosted hex
+        assert_eq!(1, poc_rewards[1].boosted_hexes.len());
+        //hotspot 2 has no boosted hexes
+        assert_eq!(0, poc_rewards[0].boosted_hexes.len());
+        // hotspot 3 has a boosted location but as its location trust score
+        // is reduced the boost does not get applied
+        assert_eq!(0, poc_rewards[2].boosted_hexes.len());
+
+        // assert the hex boost multiplier values
+        // assert_eq!(2, poc_rewards[0].boosted_hexes[0].multiplier);
+        assert_eq!(2, poc_rewards[1].boosted_hexes[0].multiplier);
+
+        assert_eq!(
+            0x8a1fb466d2dffff_u64,
+            poc_rewards[1].boosted_hexes[0].location
+        );
+
+        // hotspot1 should have 2x the reward of hotspot 2
+        // hotspot 2 has a full location trust score but no boosted hex
+        assert_eq!(poc_rewards[1].poc_reward / poc_rewards[0].poc_reward, 2);
+        // hotspot1 should have 8x the reward of hotspot 3
+        // hotspot 2 has a reduced location trust score and thus gets no boost
+        // even tho its location is boosted
+        // this results in a 4x reduction in reward compared to hotspot 1's base reward
+        // then when you apply hotspots 2x boost you get an 8x difference
+        assert_eq!(poc_rewards[1].poc_reward / poc_rewards[2].poc_reward, 8);
+
+        // confirm the total rewards allocated matches expectations
+        let poc_sum: u64 = poc_rewards.iter().map(|r| r.poc_reward).sum();
+        let unallocated_sum: u64 = unallocated_reward.amount;
+        let total = poc_sum + unallocated_sum;
+
+        let expected_sum = reward_shares::get_scheduled_tokens_for_poc(epoch.end - epoch.start)
+            .to_u64()
+            .unwrap();
+        assert_eq!(expected_sum, total);
+
+        // confirm the rewarded percentage amount matches expectations
+        let daily_total = reward_shares::get_total_scheduled_tokens(epoch.end - epoch.start);
+        let percent = (Decimal::from(total) / daily_total)
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        assert_eq!(percent, dec!(0.6));
+    } else {
+        panic!("no rewards received");
+    };
+    Ok(())
+}
+
 async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver,
 ) -> anyhow::Result<(Vec<RadioReward>, UnallocatedReward)> {
@@ -682,6 +821,110 @@ async fn seed_heartbeats_v2(
             distance_to_asserted: Some(10),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
+            validity: HeartbeatValidity::Valid,
+        };
+
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat1, txn).await?;
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat2, txn).await?;
+        save_seniority_object(ts + ChronoDuration::hours(n), &wifi_heartbeat3, txn).await?;
+
+        wifi_heartbeat1.save(txn).await?;
+        wifi_heartbeat2.save(txn).await?;
+        wifi_heartbeat3.save(txn).await?;
+
+        cov_obj_1.save(txn).await?;
+        cov_obj_2.save(txn).await?;
+        cov_obj_3.save(txn).await?;
+    }
+    Ok(())
+}
+
+async fn seed_heartbeats_v3(
+    ts: DateTime<Utc>,
+    txn: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<()> {
+    // HOTSPOT 1 has full location trust score
+    // HOTSPOT 2 has full location trust score
+    // HOTSPOT 3 has reduced location trust score
+    for n in 0..24 {
+        let hotspot_key1: PublicKeyBinary = HOTSPOT_1.to_string().parse().unwrap();
+        let cov_obj_1 = create_coverage_object(
+            ts + ChronoDuration::hours(n),
+            None,
+            hotspot_key1.clone(),
+            0x8a1fb466d2dffff_u64,
+            true,
+        );
+        let wifi_heartbeat1 = ValidatedHeartbeat {
+            heartbeat: Heartbeat {
+                hb_type: HbType::Wifi,
+                hotspot_key: hotspot_key1,
+                cbsd_id: None,
+                operation_mode: true,
+                lat: 0.0,
+                lon: 0.0,
+                coverage_object: Some(cov_obj_1.coverage_object.uuid),
+                location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
+                timestamp: ts + ChronoDuration::hours(n),
+            },
+            cell_type: CellType::NovaGenericWifiIndoor,
+            distance_to_asserted: Some(10),
+            coverage_meta: None,
+            location_trust_score_multiplier: dec!(1.0),
+            validity: HeartbeatValidity::Valid,
+        };
+
+        let hotspot_key2: PublicKeyBinary = HOTSPOT_2.to_string().parse().unwrap();
+        let cov_obj_2 = create_coverage_object(
+            ts + ChronoDuration::hours(n),
+            None,
+            hotspot_key2.clone(),
+            0x8a1fb49642dffff_u64,
+            true,
+        );
+        let wifi_heartbeat2 = ValidatedHeartbeat {
+            heartbeat: Heartbeat {
+                hb_type: HbType::Wifi,
+                hotspot_key: hotspot_key2,
+                cbsd_id: None,
+                operation_mode: true,
+                lat: 0.0,
+                lon: 0.0,
+                coverage_object: Some(cov_obj_2.coverage_object.uuid),
+                location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
+                timestamp: ts + ChronoDuration::hours(n),
+            },
+            cell_type: CellType::NovaGenericWifiIndoor,
+            distance_to_asserted: Some(10),
+            coverage_meta: None,
+            location_trust_score_multiplier: dec!(1.0),
+            validity: HeartbeatValidity::Valid,
+        };
+
+        let hotspot_key3: PublicKeyBinary = HOTSPOT_3.to_string().parse().unwrap();
+        let cov_obj_3 = create_coverage_object(
+            ts + ChronoDuration::hours(n),
+            None,
+            hotspot_key3.clone(),
+            0x8c2681a306607ff_u64,
+            true,
+        );
+        let wifi_heartbeat3 = ValidatedHeartbeat {
+            heartbeat: Heartbeat {
+                hb_type: HbType::Wifi,
+                hotspot_key: hotspot_key3,
+                cbsd_id: None,
+                operation_mode: true,
+                lat: 0.0,
+                lon: 0.0,
+                coverage_object: Some(cov_obj_3.coverage_object.uuid),
+                location_validation_timestamp: Some(ts - ChronoDuration::hours(24)),
+                timestamp: ts + ChronoDuration::hours(n),
+            },
+            cell_type: CellType::NovaGenericWifiIndoor,
+            distance_to_asserted: Some(300),
+            coverage_meta: None,
+            location_trust_score_multiplier: dec!(0.25),
             validity: HeartbeatValidity::Valid,
         };
 
