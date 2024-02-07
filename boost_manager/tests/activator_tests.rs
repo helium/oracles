@@ -1,6 +1,6 @@
 mod common;
 use boost_manager::{activator, db, OnChainStatus};
-use chrono::{DateTime, Duration as ChronoDuration, Duration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Duration, Timelike, Utc};
 use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 use sqlx::PgPool;
@@ -133,7 +133,7 @@ async fn test_activated_hex_no_insert(pool: PgPool) -> anyhow::Result<()> {
 
 #[sqlx::test]
 async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
-    let now = Utc::now();
+    let now = Utc::now().with_second(0).unwrap();
     let ctx = TestContext::setup(now)?;
     let boosted_hexes_map = ctx
         .boosted_hexes
@@ -175,6 +175,6 @@ async fn test_activated_dup_hex_insert(pool: PgPool) -> anyhow::Result<()> {
     let rows1 = db::get_queued_batch(&pool).await?;
     assert_eq!(rows1.len(), 1);
     assert_eq!(rows1[0].activation_ts, now);
-
+    assert_eq!(1, 2);
     Ok(())
 }

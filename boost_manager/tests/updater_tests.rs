@@ -135,13 +135,14 @@ async fn test_process_activations_failure(pool: PgPool) -> anyhow::Result<()> {
     for _ in 1..=11 {
         updater.process_activations().await?;
     }
-    let res = db::query_activation_statuses(&pool).await?;
+    let mut res = db::query_activation_statuses(&pool).await?;
+    res.sort_by(|a, b| b.location.cmp(&a.location));
     assert_eq!(res[0].status, OnChainStatus::Failed);
-    assert_eq!(res[0].location, 0x8a1fb466d2dffff_u64);
+    assert_eq!(res[0].location, 0x8c2681a306607ff_u64);
     assert_eq!(res[1].status, OnChainStatus::Failed);
     assert_eq!(res[1].location, 0x8a1fb49642dffff_u64);
     assert_eq!(res[2].status, OnChainStatus::Failed);
-    assert_eq!(res[2].location, 0x8c2681a306607ff_u64);
+    assert_eq!(res[2].location, 0x8a1fb466d2dffff_u64);
     Ok(())
 }
 
