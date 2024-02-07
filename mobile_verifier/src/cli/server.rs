@@ -93,7 +93,10 @@ impl Cmd {
         .create()
         .await?;
 
-        let geofence = Geofence::from_settings(settings)?;
+        let cbrs_region_paths = settings.cbrs_region_paths()?;
+        tracing::info!(?cbrs_region_paths, "cbrs_geofence_regions");
+
+        let cbrs_geofence = Geofence::new(cbrs_region_paths, settings.cbrs_fencing_resolution()?)?;
 
         let cbrs_heartbeat_daemon = CellHeartbeatDaemon::new(
             pool.clone(),
@@ -104,8 +107,13 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats.clone(),
             seniority_updates.clone(),
-            geofence.clone(),
+            cbrs_geofence,
         );
+
+        let wifi_region_paths = settings.wifi_region_paths()?;
+        tracing::info!(?wifi_region_paths, "wifi_geofence_regions");
+
+        let wifi_geofence = Geofence::new(wifi_region_paths, settings.wifi_fencing_resolution()?)?;
 
         let wifi_heartbeat_daemon = WifiHeartbeatDaemon::new(
             pool.clone(),
@@ -116,7 +124,7 @@ impl Cmd {
             settings.max_distance_from_coverage,
             valid_heartbeats,
             seniority_updates,
-            geofence,
+            wifi_geofence,
         );
 
         // Speedtests
