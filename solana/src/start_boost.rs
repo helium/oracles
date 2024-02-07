@@ -1,22 +1,20 @@
+use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use anchor_client::{RequestBuilder, RequestNamespace};
 use anchor_lang::{InstructionData, ToAccountMetas};
 use async_trait::async_trait;
 use file_store::hex_boost::BoostedHexActivation;
 use helium_anchor_gen::hexboosting::{self, accounts, instruction};
 use serde::Deserialize;
-use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::instruction::Instruction;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
-    pubkey::{ParsePubkeyError, Pubkey},
+    pubkey::Pubkey,
     signature::{read_keypair_file, Keypair, Signature},
     signer::Signer,
     transaction::Transaction,
 };
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTimeError},
-};
+use std::{sync::Arc, time::Duration};
 
 #[async_trait]
 pub trait SolanaNetwork: Send + Sync + 'static {
@@ -31,70 +29,6 @@ pub trait SolanaNetwork: Send + Sync + 'static {
     async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
 
     async fn confirm_transaction(&self, txn: &str) -> Result<bool, Self::Error>;
-}
-
-pub trait GetSignature {
-    fn get_signature(&self) -> &Signature;
-}
-
-impl GetSignature for Transaction {
-    fn get_signature(&self) -> &Signature {
-        &self.signatures[0]
-    }
-}
-
-impl GetSignature for Signature {
-    fn get_signature(&self) -> &Signature {
-        self
-    }
-}
-
-macro_rules! send_with_retry {
-    ($rpc:expr) => {{
-        let mut attempt = 1;
-        loop {
-            match $rpc.await {
-                Ok(resp) => break Ok(resp),
-                Err(err) => {
-                    if attempt < 5 {
-                        attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
-                        continue;
-                    } else {
-                        break Err(err);
-                    }
-                }
-            }
-        }
-    }};
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum SolanaRpcError {
-    #[error("Solana rpc error: {0}")]
-    RpcClientError(#[from] ClientError),
-    #[error("Anchor error: {0}")]
-    AnchorError(Box<anchor_lang::error::Error>),
-    #[error("Solana program error: {0}")]
-    ProgramError(#[from] solana_sdk::program_error::ProgramError),
-    #[error("Parse pubkey error: {0}")]
-    ParsePubkeyError(#[from] ParsePubkeyError),
-    #[error("Parse signature error: {0}")]
-    ParseSignatureError(#[from] solana_sdk::signature::ParseSignatureError),
-    #[error("Start authority does not match keypair")]
-    InvalidKeypair,
-    #[error("System time error: {0}")]
-    SystemTimeError(#[from] SystemTimeError),
-    #[error("Failed to read keypair file")]
-    FailedToReadKeypairError,
-    #[error("crypto error: {0}")]
-    Crypto(#[from] helium_crypto::Error),
-}
-
-impl From<anchor_lang::error::Error> for SolanaRpcError {
-    fn from(err: anchor_lang::error::Error) -> Self {
-        Self::AnchorError(Box::new(err))
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -262,5 +196,3 @@ impl SolanaNetwork for Option<Arc<SolanaRpc>> {
         }
     }
 }
-
-// TODO: reinstate mock transaction

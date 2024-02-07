@@ -1,3 +1,4 @@
+use crate::{send_with_retry, GetSignature, SolanaRpcError};
 use anchor_client::{RequestBuilder, RequestNamespace};
 use async_trait::async_trait;
 use helium_anchor_gen::{
@@ -8,13 +9,11 @@ use helium_anchor_gen::{
 use helium_crypto::PublicKeyBinary;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use solana_client::{
-    client_error::ClientError, nonblocking::rpc_client::RpcClient, rpc_response::Response,
-};
+use solana_client::{nonblocking::rpc_client::RpcClient, rpc_response::Response};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     program_pack::Pack,
-    pubkey::{ParsePubkeyError, Pubkey},
+    pubkey::Pubkey,
     signature::{read_keypair_file, Keypair, Signature},
     signer::Signer,
     transaction::Transaction,
@@ -23,7 +22,7 @@ use std::convert::Infallible;
 use std::{collections::HashMap, str::FromStr};
 use std::{
     sync::Arc,
-    time::{Duration, SystemTime, SystemTimeError},
+    time::{Duration, SystemTime},
 };
 use tokio::sync::Mutex;
 
@@ -43,68 +42,6 @@ pub trait SolanaNetwork: Send + Sync + 'static {
     async fn submit_transaction(&self, transaction: &Self::Transaction) -> Result<(), Self::Error>;
 
     async fn confirm_transaction(&self, txn: &Signature) -> Result<bool, Self::Error>;
-}
-
-pub trait GetSignature {
-    fn get_signature(&self) -> &Signature;
-}
-
-impl GetSignature for Transaction {
-    fn get_signature(&self) -> &Signature {
-        &self.signatures[0]
-    }
-}
-
-impl GetSignature for Signature {
-    fn get_signature(&self) -> &Signature {
-        self
-    }
-}
-
-macro_rules! send_with_retry {
-    ($rpc:expr) => {{
-        let mut attempt = 1;
-        loop {
-            match $rpc.await {
-                Ok(resp) => break Ok(resp),
-                Err(err) => {
-                    if attempt < 5 {
-                        attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
-                        continue;
-                    } else {
-                        break Err(err);
-                    }
-                }
-            }
-        }
-    }};
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum SolanaRpcError {
-    #[error("Solana rpc error: {0}")]
-    RpcClientError(#[from] ClientError),
-    #[error("Anchor error: {0}")]
-    AnchorError(Box<helium_anchor_gen::anchor_lang::error::Error>),
-    #[error("Solana program error: {0}")]
-    ProgramError(#[from] solana_sdk::program_error::ProgramError),
-    #[error("Parse pubkey error: {0}")]
-    ParsePubkeyError(#[from] ParsePubkeyError),
-    #[error("DC burn authority does not match keypair")]
-    InvalidKeypair,
-    #[error("System time error: {0}")]
-    SystemTimeError(#[from] SystemTimeError),
-    #[error("Failed to read keypair file")]
-    FailedToReadKeypairError,
-    #[error("crypto error: {0}")]
-    Crypto(#[from] helium_crypto::Error),
-}
-
-impl From<helium_anchor_gen::anchor_lang::error::Error> for SolanaRpcError {
-    fn from(err: helium_anchor_gen::anchor_lang::error::Error) -> Self {
-        Self::AnchorError(Box::new(err))
-    }
 }
 
 #[derive(Debug, Deserialize)]

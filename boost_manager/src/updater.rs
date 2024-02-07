@@ -1,7 +1,7 @@
 use crate::db::{self, TxnRow};
 use anyhow::Result;
 use futures::{future::LocalBoxFuture, TryFutureExt};
-use solana::start_boost::{GetSignature, SolanaNetwork};
+use solana::{start_boost::SolanaNetwork, GetSignature};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use task_manager::ManagedTask;
