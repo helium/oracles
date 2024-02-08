@@ -1448,7 +1448,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "beacon"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#39138825d3d0bc51244e71c4daa72bd30c4d5582"
+source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#fb07b06d55aa9bcba6facf0307a218ab63b5d6cd"
 dependencies = [
  "base64 0.21.0",
  "byteorder",
@@ -3337,7 +3337,7 @@ dependencies = [
 [[package]]
 name = "helium-proto"
 version = "0.1.0"
-source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#39138825d3d0bc51244e71c4daa72bd30c4d5582"
+source = "git+https://github.com/helium/proto?branch=andymck/hex-boosting-support#fb07b06d55aa9bcba6facf0307a218ab63b5d6cd"
 dependencies = [
  "bytes",
  "prost",

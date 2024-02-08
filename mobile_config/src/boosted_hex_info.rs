@@ -20,6 +20,7 @@ pub struct BoostedHexInfo {
     pub multipliers: Vec<u32>,
     pub boosted_hex_pubkey: String,
     pub boost_config_pubkey: String,
+    pub version: u32,
 }
 
 impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
@@ -38,6 +39,7 @@ impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
             // todo: maybe just convert to solana keys here??
             boosted_hex_pubkey: str::from_utf8(&v.boosted_hex_pubkey)?.into(),
             boost_config_pubkey: str::from_utf8(&v.boost_config_pubkey)?.into(),
+            version: v.version,
         })
     }
 }
@@ -56,6 +58,7 @@ impl TryFrom<BoostedHexInfo> for BoostedHexInfoProto {
             multipliers: v.multipliers,
             boosted_hex_pubkey: v.boosted_hex_pubkey.into(),
             boost_config_pubkey: v.boost_config_pubkey.into(),
+            version: v.version,
         })
     }
 }
@@ -150,18 +153,28 @@ pub(crate) mod db {
     use sqlx::{PgExecutor, Row};
 
     const GET_BOOSTED_HEX_INFO_SQL: &str = r#"
-            select CAST(hexes.location as bigint), CAST(hexes.start_ts as bigint), config.period_length,
+            select 
+                CAST(hexes.location as bigint), 
+                CAST(hexes.start_ts as bigint), 
+                config.period_length,
                 hexes.boosts_by_period as multipliers,
-                hexes.address as boosted_hex_pubkey, config.address as boost_config_pubkey
+                hexes.address as boosted_hex_pubkey, 
+                config.address as boost_config_pubkey,
+                hexes.version
             from boosted_hexes hexes
             join boost_configs config on hexes.boost_config = config.address
         "#;
 
     // TODO: reuse with string above
     const GET_MODIFIED_BOOSTED_HEX_INFO_SQL: &str = r#"
-            select CAST(hexes.location as bigint), CAST(hexes.start_ts as bigint), config.period_length,
+            select 
+                CAST(hexes.location as bigint), 
+                CAST(hexes.start_ts as bigint), 
+                config.period_length,
                 hexes.boosts_by_period as multipliers,
-                hexes.address as boosted_hex_pubkey, config.address as boost_config_pubkey
+                hexes.address as boosted_hex_pubkey, 
+                config.address as boost_config_pubkey,
+                hexes.version
             from boosted_hexes hexes
             join boost_configs config on hexes.boost_config = config.address
             where hexes.refreshed_at > $1
@@ -199,6 +212,7 @@ pub(crate) mod db {
             let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
             let boost_config_pubkey = row.get::<&str, &str>("boost_config_pubkey").into();
             let boosted_hex_pubkey = row.get::<&str, &str>("boosted_hex_pubkey").into();
+            let version = row.get::<i32, &str>("version") as u32;
             Ok(Self {
                 location: row.get::<i64, &str>("location") as u64,
                 start_ts,
@@ -207,6 +221,7 @@ pub(crate) mod db {
                 multipliers,
                 boosted_hex_pubkey,
                 boost_config_pubkey,
+                version,
             })
         }
     }

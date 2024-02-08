@@ -60,6 +60,7 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             multipliers: multipliers1,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             location: 0x8a1fb49642dffff_u64,
@@ -69,6 +70,7 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             multipliers: multipliers2,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     ];
 

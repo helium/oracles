@@ -97,6 +97,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             multipliers: multipliers1,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -107,6 +108,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             multipliers: multipliers2,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -117,6 +119,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             multipliers: multipliers3,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     ];
 
@@ -246,6 +249,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             multipliers: multipliers1.clone(),
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             // hotspot 1's second covered location
@@ -256,6 +260,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             multipliers: multipliers1,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             // hotspot 2's location
@@ -266,6 +271,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             multipliers: multipliers2,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -276,6 +282,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             multipliers: multipliers3,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     ];
 
@@ -403,6 +410,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             multipliers: multipliers1,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             location: 0x8a1fb49642dffff_u64,
@@ -412,6 +420,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             multipliers: multipliers2,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     ];
 
@@ -510,6 +519,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             multipliers: multipliers1,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
         BoostedHexInfo {
             // hotspot 3's location
@@ -520,6 +530,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             multipliers: multipliers2,
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     ];
 

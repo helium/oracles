@@ -825,6 +825,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             multipliers: vec![1],
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     );
     boosted_hexes.hexes.insert(
@@ -837,6 +838,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             multipliers: vec![2],
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     );
     boosted_hexes.hexes.insert(
@@ -850,6 +852,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             multipliers: vec![3],
             boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
             boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            version: 0,
         },
     );
 

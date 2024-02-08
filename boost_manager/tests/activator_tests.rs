@@ -35,6 +35,7 @@ impl TestContext {
                 multipliers: multipliers1,
                 boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
                 boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+                version: 0,
             },
             BoostedHexInfo {
                 location: 0x8a1fb49642dffff_u64,
@@ -44,6 +45,7 @@ impl TestContext {
                 multipliers: multipliers2,
                 boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
                 boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+                version: 0,
             },
             BoostedHexInfo {
                 // hotspot 3's location
@@ -54,6 +56,7 @@ impl TestContext {
                 multipliers: multipliers3,
                 boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
                 boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+                version: 0,
             },
         ];
         Ok(Self {
