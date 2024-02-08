@@ -278,17 +278,17 @@ impl PriceGenerator {
             bail!("Price is less than zero");
         }
 
-        // Remove the confidence interval from the price to get the most conservative price:
-        let conservative_price = curr_price.price as u64 - curr_price.conf * 2;
+        // Remove the confidence interval from the price to get the most optimistic price:
+        let optimistic_price = curr_price.price as u64 + curr_price.conf * 2;
 
         // We want the price to have a resulting exponent of 10^-6
         // I don't think it's possible for pyth to give us anything other than -8, but we make
         // this robust just in case:
         let exp = curr_price.expo + 6;
-        let adjusted_conservative_price = match exp.cmp(&0) {
-            Ordering::Less => conservative_price / 10_u64.pow(exp.unsigned_abs()),
-            Ordering::Greater => conservative_price * 10_u64.pow(exp as u32),
-            _ => conservative_price,
+        let adjusted_optimistic_price = match exp.cmp(&0) {
+            Ordering::Less => optimistic_price / 10_u64.pow(exp.unsigned_abs()),
+            Ordering::Greater => optimistic_price * 10_u64.pow(exp as u32),
+            _ => optimistic_price,
         };
 
         Ok(Price::new(
@@ -298,7 +298,7 @@ impl PriceGenerator {
                     curr_price.publish_time
                 )
             })?,
-            adjusted_conservative_price,
+            adjusted_optimistic_price,
             self.token_type,
         ))
     }
