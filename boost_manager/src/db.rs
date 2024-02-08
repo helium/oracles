@@ -1,10 +1,24 @@
 use crate::OnChainStatus;
 use chrono::{DateTime, Utc};
 use file_store::hex_boost::BoostedHexActivation;
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
 
 const MAX_RETRIES: i32 = 10;
 const MAX_BATCH_COUNT: i32 = 100;
+
+struct Boost(BoostedHexActivation);
+
+impl FromRow<'_, PgRow> for Boost {
+    fn from_row(row: &PgRow) -> sqlx::Result<Boost> {
+        let boost = BoostedHexActivation {
+            location: row.get::<i64, _>("location") as u64,
+            activation_ts: row.get::<DateTime<Utc>, &str>("activation_ts"),
+            boosted_hex_pubkey: row.get::<String, &str>("boosted_hex_pubkey"),
+            boost_config_pubkey: row.get::<String, &str>("boost_config_pubkey"),
+        };
+        Ok(Boost(boost))
+    }
+}
 
 #[derive(sqlx::FromRow, Debug, Clone)]
 pub struct TxnRow {
@@ -51,7 +65,7 @@ pub async fn insert_activated_hex(
 pub async fn get_queued_batch(
     db: &Pool<Postgres>,
 ) -> Result<Vec<BoostedHexActivation>, sqlx::Error> {
-    sqlx::query_as::<_, BoostedHexActivation>(
+    Ok(sqlx::query_as::<_, Boost>(
         r#"
             SELECT location, activation_ts, boosted_hex_pubkey, boost_config_pubkey
             FROM activated_hexes
@@ -64,7 +78,10 @@ pub async fn get_queued_batch(
     .bind(MAX_RETRIES)
     .bind(MAX_BATCH_COUNT)
     .fetch_all(db)
-    .await
+    .await?
+    .into_iter()
+    .map(|boost| boost.0)
+    .collect::<Vec<BoostedHexActivation>>())
 }
 
 pub async fn query_activation_statuses(db: &Pool<Postgres>) -> anyhow::Result<Vec<StatusRow>> {

@@ -6,8 +6,8 @@ use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use task_manager::ManagedTask;
 // the number of records to fit per solana txn
-// TODO determine a sane value for this
-const BATCH_SIZE: usize = 10;
+// each instructions takes ~150 bytes
+const BATCH_SIZE: usize = 7;
 
 pub struct Updater<S> {
     pool: Pool<Postgres>,
