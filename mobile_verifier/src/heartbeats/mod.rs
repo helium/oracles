@@ -653,7 +653,7 @@ impl ValidatedHeartbeat {
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
-        .bind(self.asserted_hex.map(|x| x as i32))
+        .bind(self.asserted_hex.map(|x| x as i64))
         .bind(self.distance_to_asserted)
         .execute(&mut *exec)
         .await?;
@@ -677,7 +677,7 @@ impl ValidatedHeartbeat {
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
-        .bind(self.asserted_hex.map(|x| x as i32))
+        .bind(self.asserted_hex.map(|x| x as i64))
         .bind(self.distance_to_asserted)
         .execute(&mut *exec)
         .await?;
@@ -931,6 +931,7 @@ mod test {
             location_trust_score_multiplier: dec!(1.0),
             asserted_hex: None,
             distance_to_asserted: None,
+            asserted_hex: None,
             coverage_meta: None,
         }
     }
