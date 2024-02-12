@@ -21,11 +21,13 @@ use iot_config::{
 };
 use iot_verifier::{
     entropy::Entropy,
+    last_beacon::LastBeacon,
+    last_witness::LastWitness,
     poc_report::{InsertBindings, IotStatus, Report, ReportType},
 };
 
 use prost::Message;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::{self, ops::DerefMut, str::FromStr};
 use tokio::{sync::mpsc::error::TryRecvError, sync::Mutex, time::timeout};
 
@@ -304,6 +306,24 @@ pub async fn inject_entropy_report(pool: PgPool, ts: DateTime<Utc>) -> anyhow::R
 }
 
 #[allow(dead_code)]
+pub async fn inject_last_beacon(
+    txn: &mut Transaction<'_, Postgres>,
+    gateway: PublicKeyBinary,
+    ts: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    LastBeacon::update_last_timestamp(&mut *txn, gateway.as_ref(), ts).await
+}
+
+#[allow(dead_code)]
+pub async fn inject_last_witness(
+    txn: &mut Transaction<'_, Postgres>,
+    gateway: PublicKeyBinary,
+    ts: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    LastWitness::update_last_timestamp(&mut *txn, gateway.as_ref(), ts).await
+}
+
+#[allow(dead_code)]
 pub fn valid_gateway() -> GatewayInfo {
     GatewayInfo {
         address: PublicKeyBinary::from_str(BEACONER1).unwrap(),
@@ -356,9 +376,29 @@ pub fn valid_gateway_stream() -> Vec<GatewayInfo> {
             is_full_hotspot: true,
         },
         GatewayInfo {
+            address: PublicKeyBinary::from_str(BEACONER5).unwrap(),
+            metadata: Some(GatewayMetadata {
+                location: 627111975465463807,
+                elevation: 0,
+                gain: 20,
+                region: ProtoRegion::Eu868,
+            }),
+            is_full_hotspot: true,
+        },
+        GatewayInfo {
             address: PublicKeyBinary::from_str(WITNESS1).unwrap(),
             metadata: Some(GatewayMetadata {
                 location: 627111975465463807,
+                elevation: 0,
+                gain: 20,
+                region: ProtoRegion::Eu868,
+            }),
+            is_full_hotspot: true,
+        },
+        GatewayInfo {
+            address: PublicKeyBinary::from_str(WITNESS2).unwrap(),
+            metadata: Some(GatewayMetadata {
+                location: 631615575095659519,
                 elevation: 0,
                 gain: 20,
                 region: ProtoRegion::Eu868,
@@ -389,8 +429,10 @@ pub const BEACONER1: &str = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT
 pub const BEACONER2: &str = "11z69eJ3czc92k6snrfR9ek7g2uRWXosFbnG9v4bXgwhfUCivUo";
 pub const BEACONER3: &str = "1ZPNnNd9k5qiQXXigKifQpCPiy5HTbszQDSyLM56ywk7ihNRvt6";
 pub const BEACONER4: &str = "1ZAxCrEsigGVbLUM37Jki6p88kyZ5NVqjVC6oHSbqu49t7bQDym";
+pub const BEACONER5: &str = "112BwpY6ARmnMsPZE9iBauh6EJVDvH7MimZtvWnd99nXmmGcKeMD";
 
 pub const WITNESS1: &str = "13ABbtvMrRK8jgYrT3h6Y9Zu44nS6829kzsamiQn9Eefeu3VAZs";
+pub const WITNESS2: &str = "112e5E4NCpZ88ivqoXeyWwiVCC4mJFv4kMPowycNMXjoDRSP6ZnS";
 #[allow(dead_code)]
 pub const UNKNOWN_GATEWAY1: &str = "1YiZUsuCwxE7xyxjke1ogehv5WSuYZ9o7uM2ZKvRpytyqb8Be63";
 pub const NO_METADATA_GATEWAY1: &str = "1YpopKVbRDELWGR3nMd1MAU8a5GxP1uQSDj9AeXHEi3fHSsWGRi";
