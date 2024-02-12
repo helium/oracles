@@ -931,7 +931,6 @@ mod test {
             location_trust_score_multiplier: dec!(1.0),
             asserted_hex: None,
             distance_to_asserted: None,
-            asserted_hex: None,
             coverage_meta: None,
         }
     }

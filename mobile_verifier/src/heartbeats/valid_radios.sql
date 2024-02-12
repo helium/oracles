@@ -87,7 +87,9 @@ SELECT
     hb.hotspot_key,
     hb.cbsd_id,
     hb.cell_type,
-    hb.location_trust_score_multiplier,
+    hb.asserted_hex,
+    hb.distances_to_asserted,
+    hb.trust_score_multipliers,
     u.coverage_object
 FROM
     heartbeats hb

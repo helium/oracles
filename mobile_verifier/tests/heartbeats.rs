@@ -146,7 +146,7 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            trust_score_multipliers: vec![Decimal::ONE; 12],
+            trust_score_multipliers: vec![Decimal::ONE; 24],
             distances_to_asserted: None,
             asserted_hex: None,
             coverage_object,
@@ -316,7 +316,7 @@ async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> 
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
         r#"
-INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distances_to_asserted, asserted_hex)
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, asserted_hex)
 VALUES
     ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0, 0, 0),
     ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0, 0, 0),
