@@ -30,6 +30,7 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
         coverage_meta: None,
+        asserted_hex: None,
         location_trust_score_multiplier: dec!(1.0),
         validity: HeartbeatValidity::Valid,
     };
@@ -68,6 +69,7 @@ async fn test_save_cbrs_heartbeat(pool: PgPool) -> anyhow::Result<()> {
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
         coverage_meta: None,
+        asserted_hex: None,
         location_trust_score_multiplier: dec!(1.0),
         validity: HeartbeatValidity::Valid,
     };

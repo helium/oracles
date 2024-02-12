@@ -628,7 +628,7 @@ impl ValidatedHeartbeat {
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
-        .bind(self.asserted_hex.map(|x| x as i32))
+        .bind(self.asserted_hex.map(|x| x as i64))
         .bind(self.distance_to_asserted)
         .execute(&mut *exec)
         .await?;
@@ -652,7 +652,7 @@ impl ValidatedHeartbeat {
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
-        .bind(self.asserted_hex.map(|x| x as i32))
+        .bind(self.asserted_hex.map(|x| x as i64))
         .bind(self.distance_to_asserted)
         .execute(&mut *exec)
         .await?;
@@ -900,12 +900,12 @@ mod test {
                 operation_mode: false,
                 cbsd_id: None,
                 coverage_object: Some(coverage_object),
-                asserted_hex: None,
                 location_validation_timestamp: None,
             },
             validity: Default::default(),
             location_trust_score_multiplier: dec!(1.0),
             distance_to_asserted: None,
+            asserted_hex: None,
             coverage_meta: None,
         }
     }
