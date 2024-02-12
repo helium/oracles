@@ -21,7 +21,9 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        AVG(ch.location_trust_score_multiplier) as location_trust_score_multiplier
+	NULL as asserted_hex,
+	NULL as distances_to_asserted,
+	ARRAY_AGG(ch.location_trust_score_multiplier) as trust_score_multipliers
     FROM
         cbrs_heartbeats ch
         INNER JOIN latest_cbrs_hotspot lch ON ch.cbsd_id = lch.cbsd_id
@@ -42,7 +44,9 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        AVG(location_trust_score_multiplier) as location_trust_score_multiplier
+	asserted_hex,
+	ARRAY_AGG(distance_to_asserted) as distances_to_asserted,
+        ARRAY_AGG(location_trust_score_multiplier) as trust_score_multipliers
 FROM
     wifi_heartbeats
     WHERE
@@ -50,7 +54,8 @@ FROM
         AND truncated_timestamp < $2
     GROUP BY
         hotspot_key,
-        cell_type
+        cell_type,
+	asserted_hex
 ),
 latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
             cbsd_id)

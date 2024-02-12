@@ -33,6 +33,10 @@ impl BoostedHexes {
         Ok(Self { hexes: map })
     }
 
+    pub fn is_hex_boosted(&self, location: u64) -> bool {
+	self.hexes.contains_key(&location)
+    }
+
     pub fn get_current_multiplier(&self, location: u64, ts: DateTime<Utc>) -> Option<u32> {
         self.hexes
             .get(&location)

@@ -30,6 +30,7 @@ async fn test_save_wifi_heartbeat(pool: PgPool) -> anyhow::Result<()> {
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
         coverage_meta: None,
+        asserted_hex: None,
         location_trust_score_multiplier: dec!(1.0),
         validity: HeartbeatValidity::Valid,
     };
@@ -68,6 +69,7 @@ async fn test_save_cbrs_heartbeat(pool: PgPool) -> anyhow::Result<()> {
         cell_type: CellType::SercommIndoor,
         distance_to_asserted: None,
         coverage_meta: None,
+        asserted_hex: None,
         location_trust_score_multiplier: dec!(1.0),
         validity: HeartbeatValidity::Valid,
     };
@@ -144,7 +146,9 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            location_trust_score_multiplier: Decimal::ONE,
+            trust_score_multipliers: vec![Decimal::ONE; 12],
+            distances_to_asserted: None,
+            asserted_hex: None,
             coverage_object,
         }]
     );
@@ -199,7 +203,9 @@ VALUES
             hotspot_key: hotspot_2,
             cell_type,
             cbsd_id: Some(cbsd_id),
-            location_trust_score_multiplier: Decimal::ONE,
+            trust_score_multipliers: vec![Decimal::ONE; 12],
+            distances_to_asserted: None,
+            asserted_hex: None,
             coverage_object,
         }]
     );
@@ -257,20 +263,20 @@ async fn ensure_wifi_hotspots_are_rewarded(pool: PgPool) -> anyhow::Result<()> {
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
         r#"
-INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted, asserted_hex)
 VALUES
-    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', $3, 1.0)
+    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', $3, 1.0, 0, 0)
 "#,
     )
     .bind(&hotspot)
@@ -291,7 +297,9 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            location_trust_score_multiplier: dec!(1.0),
+            trust_score_multipliers: vec![Decimal::ONE; 12],
+            distances_to_asserted: Some(vec![0; 12]),
+            asserted_hex: Some(0),
             coverage_object: latest_coverage_object,
         }]
     );
@@ -308,20 +316,20 @@ async fn ensure_wifi_hotspots_use_average_location_trust_score(pool: PgPool) -> 
         "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6".parse()?;
     sqlx::query(
         r#"
-INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
+INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distances_to_asserted, asserted_hex)
 VALUES
-    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', $2, 1.0),
-    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', $2, 0.25),
-    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', $2, 0.25),
-    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', $2, 0.25),
-    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', $3, 0.25)
+    ($1, 'novagenericwifiindoor', '2023-08-25 00:00:00+00', '2023-08-25 00:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 01:00:00+00', '2023-08-25 01:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 02:00:00+00', '2023-08-25 02:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 03:00:00+00', '2023-08-25 03:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 04:00:00+00', '2023-08-25 04:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 05:00:00+00', '2023-08-25 05:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 06:00:00+00', '2023-08-25 06:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 07:00:00+00', '2023-08-25 07:00:00+00', $2, 1.0, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 08:00:00+00', '2023-08-25 08:00:00+00', $2, 0.25, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 09:00:00+00', '2023-08-25 09:00:00+00', $2, 0.25, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 10:00:00+00', '2023-08-25 10:00:00+00', $2, 0.25, 0, 0),
+    ($1, 'novagenericwifiindoor', '2023-08-25 11:00:00+00', '2023-08-25 11:00:00+00', $3, 0.25, 0, 0)
 "#,
     )
     .bind(&hotspot)
@@ -342,7 +350,22 @@ VALUES
             hotspot_key: hotspot,
             cell_type: CellType::NovaGenericWifiIndoor,
             cbsd_id: None,
-            location_trust_score_multiplier: dec!(0.75),
+            trust_score_multipliers: vec![
+                dec!(1.0),
+                dec!(1.0),
+                dec!(1.0),
+                dec!(1.0),
+                dec!(1.0),
+                dec!(1.0),
+                dec!(1.0),
+                dec!(1.0),
+                dec!(0.25),
+                dec!(0.25),
+                dec!(0.25),
+                dec!(0.25)
+            ],
+            distances_to_asserted: Some(vec![0; 12]),
+            asserted_hex: Some(0),
             coverage_object: latest_coverage_object,
         }]
     );

@@ -675,6 +675,7 @@ async fn seed_heartbeats_v1(
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),
             coverage_meta: None,
+            asserted_hex: Some(0x8a1fb466d2dffff),
             location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
@@ -702,6 +703,7 @@ async fn seed_heartbeats_v1(
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),
             coverage_meta: None,
+            asserted_hex: Some(0x8a1fb49642dffff),
             location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
@@ -729,6 +731,7 @@ async fn seed_heartbeats_v1(
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),
             coverage_meta: None,
+            asserted_hex: Some(0x8c2681a306607ff),
             location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
@@ -777,6 +780,7 @@ async fn seed_heartbeats_v2(
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),
             coverage_meta: None,
+            asserted_hex: Some(0x8a1fb46622dffff),
             location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
@@ -805,6 +809,7 @@ async fn seed_heartbeats_v2(
             distance_to_asserted: Some(10),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
+            asserted_hex: Some(0x8a1fb49642dffff),
             validity: HeartbeatValidity::Valid,
         };
 
@@ -832,6 +837,7 @@ async fn seed_heartbeats_v2(
             distance_to_asserted: Some(10),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
+            asserted_hex: Some(0x8c2681a306607ff),
             validity: HeartbeatValidity::Valid,
         };
 
@@ -882,6 +888,7 @@ async fn seed_heartbeats_v3(
             distance_to_asserted: Some(10),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
+            asserted_hex: Some(0x8a1fb466d2dffff),
             validity: HeartbeatValidity::Valid,
         };
 
@@ -909,6 +916,7 @@ async fn seed_heartbeats_v3(
             distance_to_asserted: Some(10),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(1.0),
+            asserted_hex: Some(0x8a1fb49642dffff),
             validity: HeartbeatValidity::Valid,
         };
 
@@ -936,6 +944,7 @@ async fn seed_heartbeats_v3(
             distance_to_asserted: Some(300),
             coverage_meta: None,
             location_trust_score_multiplier: dec!(0.25),
+            asserted_hex: Some(0x8c2681a306607ff),
             validity: HeartbeatValidity::Valid,
         };
 
