@@ -10,7 +10,7 @@ use helium_proto::services::{
     router::packet_router_packet_report_v1::PacketType,
 };
 use iot_config::client::org_client::Orgs;
-use solana::SolanaNetwork;
+use solana::burn::SolanaNetwork;
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::Infallible,

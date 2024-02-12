@@ -15,7 +15,8 @@ use file_store::{
     FileType,
 };
 use mobile_config::client::{
-    entity_client::EntityClient, AuthorizationClient, CarrierServiceClient, GatewayClient,
+    entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
+    CarrierServiceClient, GatewayClient,
 };
 use price::PriceTracker;
 use task_manager::TaskManager;
@@ -45,6 +46,7 @@ impl Cmd {
         let auth_client = AuthorizationClient::from_settings(&settings.config_client)?;
         let entity_client = EntityClient::from_settings(&settings.config_client)?;
         let carrier_client = CarrierServiceClient::from_settings(&settings.config_client)?;
+        let hex_boosting_client = HexBoostingClient::from_settings(&settings.config_client)?;
 
         // price tracker
         let (price_tracker, price_daemon) = PriceTracker::new_tm(&settings.price_tracker).await?;
@@ -220,6 +222,7 @@ impl Cmd {
         let rewarder = Rewarder::new(
             pool.clone(),
             carrier_client,
+            hex_boosting_client,
             Duration::hours(reward_period_hours),
             Duration::minutes(settings.reward_offset_minutes),
             mobile_rewards,
