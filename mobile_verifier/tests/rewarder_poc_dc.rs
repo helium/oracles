@@ -272,7 +272,7 @@ async fn seed_heartbeats(
             cell_type: CellType::NovaGenericWifiIndoor,
             distance_to_asserted: Some(10),
             coverage_meta: None,
-	    location_trust_score_multiplier: dec!(1.0),
+            location_trust_score_multiplier: dec!(1.0),
             validity: HeartbeatValidity::Valid,
         };
 
