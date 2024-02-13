@@ -35,8 +35,8 @@ pub struct StatusRow {
 pub async fn insert_activated_hex(
     txn: &mut Transaction<'_, Postgres>,
     location: u64,
-    boosted_hex_pubkey: &String,
-    boost_config_pubkey: &String,
+    boosted_hex_pubkey: String,
+    boost_config_pubkey: String,
     activation_ts: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(

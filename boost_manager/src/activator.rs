@@ -138,8 +138,8 @@ pub async fn process_boosted_hex(
                 db::insert_activated_hex(
                     txn,
                     hex.location,
-                    &info.boosted_hex_pubkey,
-                    &info.boost_config_pubkey,
+                    info.boosted_hex_pubkey.to_string(),
+                    info.boost_config_pubkey.to_string(),
                     manifest_time,
                 )
                 .await?;

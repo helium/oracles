@@ -24,13 +24,16 @@ use mobile_verifier::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use solana_sdk::pubkey::Pubkey;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::str::FromStr;
 use uuid::Uuid;
 
 const HOTSPOT_1: &str = "112E7TxoNHV46M6tiPA8N1MkeMeQxc9ztb4JQLXBVAAUfq1kJLoF";
 const HOTSPOT_2: &str = "112QhnxqU8QZ3jUXpoRk51quuQVft9Pf5P5zzDDvLxj7Q9QqbMh7";
 const HOTSPOT_3: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQmuCiF1";
-const BOOST_CONFIG_PUBKEY: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQmuCiF1";
+const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
+const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
 impl MockHexBoostingClient {
     fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
@@ -95,8 +98,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -106,8 +109,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -117,8 +120,8 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: boost_period_length,
             multipliers: multipliers3,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -247,8 +250,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1.clone(),
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -258,8 +261,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -269,8 +272,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -280,8 +283,8 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
             end_ts: Some(end_ts_3),
             period_length: boost_period_length,
             multipliers: multipliers3,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -408,8 +411,8 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -418,8 +421,8 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -517,8 +520,8 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -528,8 +531,8 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
             end_ts: None,
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
