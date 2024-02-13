@@ -344,7 +344,6 @@ pub struct ValidatedHeartbeat {
     pub heartbeat: Heartbeat,
     pub cell_type: CellType,
     pub location_trust_score_multiplier: Decimal,
-    pub asserted_hex: Option<u64>,
     pub distance_to_asserted: Option<i64>,
     pub coverage_meta: Option<CoverageObjectMeta>,
     pub validity: proto::HeartbeatValidity,
@@ -363,7 +362,6 @@ impl ValidatedHeartbeat {
         heartbeat: Heartbeat,
         cell_type: CellType,
         location_trust_score_multiplier: Decimal,
-        asserted_hex: Option<u64>,
         distance_to_asserted: Option<i64>,
         coverage_meta: Option<CoverageObjectMeta>,
         validity: proto::HeartbeatValidity,
@@ -372,7 +370,6 @@ impl ValidatedHeartbeat {
             heartbeat,
             cell_type,
             location_trust_score_multiplier,
-            asserted_hex,
             distance_to_asserted,
             coverage_meta,
             validity,
@@ -395,7 +392,6 @@ impl ValidatedHeartbeat {
                 dec!(0),
                 None,
                 None,
-                None,
                 proto::HeartbeatValidity::BadCoverageObject,
             ));
         };
@@ -408,7 +404,6 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 CellType::CellTypeNone,
                 dec!(0),
-                None,
                 None,
                 None,
                 proto::HeartbeatValidity::NoSuchCoverageObject,
@@ -425,7 +420,6 @@ impl ValidatedHeartbeat {
                             CellType::CellTypeNone,
                             dec!(0),
                             None,
-                            None,
                             Some(coverage_object.meta),
                             proto::HeartbeatValidity::BadCbsdId,
                         ));
@@ -436,7 +430,6 @@ impl ValidatedHeartbeat {
                         heartbeat,
                         CellType::CellTypeNone,
                         dec!(0),
-                        None,
                         None,
                         Some(coverage_object.meta),
                         proto::HeartbeatValidity::BadCbsdId,
@@ -458,7 +451,6 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
-                None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::NotOperational,
             ));
@@ -469,7 +461,6 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 dec!(0),
-                None,
                 None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::HeartbeatOutsideRange,
@@ -482,7 +473,6 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
-                None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::InvalidLatLon,
             ));
@@ -493,7 +483,6 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 dec!(0),
-                None,
                 None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::UnsupportedLocation,
@@ -509,7 +498,6 @@ impl ValidatedHeartbeat {
                 cell_type,
                 dec!(0),
                 None,
-                None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::GatewayNotFound,
             )),
@@ -518,7 +506,6 @@ impl ValidatedHeartbeat {
                     heartbeat,
                     cell_type,
                     dec!(0),
-                    None,
                     None,
                     Some(coverage_object.meta),
                     proto::HeartbeatValidity::GatewayNotAsserted,
@@ -539,7 +526,6 @@ impl ValidatedHeartbeat {
                     heartbeat,
                     cell_type,
                     location_trust_score_multiplier,
-                    Some(location),
                     Some(distance_to_asserted),
                     Some(coverage_object.meta),
                     proto::HeartbeatValidity::Valid,
@@ -549,7 +535,6 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 cell_type,
                 dec!(1.0),
-                None,
                 None,
                 Some(coverage_object.meta),
                 proto::HeartbeatValidity::Valid,
@@ -662,8 +647,8 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, asserted_hex, distance_to_asserted)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO wifi_heartbeats (hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, distance_to_asserted)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (hotspot_key, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
@@ -675,7 +660,6 @@ impl ValidatedHeartbeat {
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
-        .bind(self.asserted_hex.map(|x| x as i64))
         .bind(self.distance_to_asserted)
         .execute(&mut *exec)
         .await?;
@@ -927,7 +911,6 @@ mod test {
             },
             validity: Default::default(),
             location_trust_score_multiplier: dec!(1.0),
-            asserted_hex: None,
             distance_to_asserted: None,
             coverage_meta: None,
         }
