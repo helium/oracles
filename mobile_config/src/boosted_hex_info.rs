@@ -3,7 +3,8 @@ use chrono::{DateTime, Duration, Utc};
 use file_store::traits::TimestampDecode;
 use futures::stream::{BoxStream, StreamExt};
 use helium_proto::BoostedHexInfoV1 as BoostedHexInfoProto;
-use std::{collections::HashMap, convert::TryFrom, str};
+use solana_sdk::pubkey::Pubkey;
+use std::{collections::HashMap, convert::TryFrom};
 
 pub type BoostedHexInfoStream = BoxStream<'static, BoostedHexInfo>;
 
@@ -18,8 +19,8 @@ pub struct BoostedHexInfo {
     pub end_ts: Option<DateTime<Utc>>,
     pub period_length: Duration,
     pub multipliers: Vec<u32>,
-    pub boosted_hex_pubkey: String,
-    pub boost_config_pubkey: String,
+    pub boosted_hex_pubkey: Pubkey,
+    pub boost_config_pubkey: Pubkey,
     pub version: u32,
 }
 
@@ -30,15 +31,16 @@ impl TryFrom<BoostedHexInfoProto> for BoostedHexInfo {
         let multipliers = v.multipliers;
         let start_ts = to_start_ts(v.start_ts);
         let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
+        let boosted_hex_pubkey: Pubkey = Pubkey::try_from(v.boosted_hex_pubkey.as_slice())?;
+        let boost_config_pubkey: Pubkey = Pubkey::try_from(v.boost_config_pubkey.as_slice())?;
         Ok(Self {
             location: v.location,
             start_ts,
             end_ts,
             period_length,
             multipliers,
-            // todo: maybe just convert to solana keys here??
-            boosted_hex_pubkey: str::from_utf8(&v.boosted_hex_pubkey)?.into(),
-            boost_config_pubkey: str::from_utf8(&v.boost_config_pubkey)?.into(),
+            boosted_hex_pubkey,
+            boost_config_pubkey,
             version: v.version,
         })
     }
@@ -56,8 +58,8 @@ impl TryFrom<BoostedHexInfo> for BoostedHexInfoProto {
             end_ts,
             period_length: v.period_length.num_seconds() as u32,
             multipliers: v.multipliers,
-            boosted_hex_pubkey: v.boosted_hex_pubkey.into(),
-            boost_config_pubkey: v.boost_config_pubkey.into(),
+            boosted_hex_pubkey: v.boosted_hex_pubkey.to_bytes().into(),
+            boost_config_pubkey: v.boost_config_pubkey.to_bytes().into(),
             version: v.version,
         })
     }
@@ -127,7 +129,6 @@ impl BoostedHexes {
         hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
         timestamp: DateTime<Utc>,
     ) -> anyhow::Result<Self> {
-        tracing::info!("getting boosted hexes");
         let mut map = HashMap::new();
         let mut stream = hex_service_client
             .clone()
@@ -150,7 +151,9 @@ pub(crate) mod db {
     use super::{to_end_ts, to_start_ts, BoostedHexInfo};
     use chrono::{DateTime, Duration, Utc};
     use futures::stream::{Stream, StreamExt};
+    use solana_sdk::pubkey::Pubkey;
     use sqlx::{PgExecutor, Row};
+    use std::str::FromStr;
 
     const GET_BOOSTED_HEX_INFO_SQL: &str = r#"
             select 
@@ -210,8 +213,11 @@ pub(crate) mod db {
                 .map(|v| v as u32)
                 .collect::<Vec<_>>();
             let end_ts = to_end_ts(start_ts, period_length, multipliers.len());
-            let boost_config_pubkey = row.get::<&str, &str>("boost_config_pubkey").into();
-            let boosted_hex_pubkey = row.get::<&str, &str>("boosted_hex_pubkey").into();
+            let boost_config_pubkey =
+                Pubkey::from_str(row.get::<&str, &str>("boost_config_pubkey"))
+                    .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+            let boosted_hex_pubkey = Pubkey::from_str(row.get::<&str, &str>("boosted_hex_pubkey"))
+                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
             let version = row.get::<i32, &str>("version") as u32;
             Ok(Self {
                 location: row.get::<i64, &str>("location") as u64,
