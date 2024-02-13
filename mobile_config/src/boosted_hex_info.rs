@@ -129,7 +129,6 @@ impl BoostedHexes {
         hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
         timestamp: DateTime<Utc>,
     ) -> anyhow::Result<Self> {
-        tracing::info!("getting boosted hexes");
         let mut map = HashMap::new();
         let mut stream = hex_service_client
             .clone()
