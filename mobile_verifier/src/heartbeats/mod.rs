@@ -614,8 +614,8 @@ impl ValidatedHeartbeat {
         let truncated_timestamp = self.truncated_timestamp()?;
         sqlx::query(
             r#"
-            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier, asserted_hex, distance_to_asserted)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO cbrs_heartbeats (cbsd_id, hotspot_key, cell_type, latest_timestamp, truncated_timestamp, coverage_object, location_trust_score_multiplier)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (cbsd_id, truncated_timestamp) DO UPDATE SET
             latest_timestamp = EXCLUDED.latest_timestamp,
             coverage_object = EXCLUDED.coverage_object
@@ -628,8 +628,6 @@ impl ValidatedHeartbeat {
         .bind(truncated_timestamp)
         .bind(self.heartbeat.coverage_object)
         .bind(self.location_trust_score_multiplier)
-        .bind(self.asserted_hex.map(|x| x as i64))
-        .bind(self.distance_to_asserted)
         .execute(&mut *exec)
         .await?;
         Ok(())
