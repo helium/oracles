@@ -84,8 +84,10 @@ impl LastWitness {
 
     pub async fn bulk_update_last_timestamps(
         db: impl sqlx::PgExecutor<'_> + sqlx::Acquire<'_, Database = sqlx::Postgres> + Copy,
-        ids: Vec<(PublicKeyBinary, DateTime<Utc>)>,
+        ids: &mut Vec<(PublicKeyBinary, DateTime<Utc>)>,
     ) -> anyhow::Result<()> {
+        ids.sort();
+        ids.dedup();
         const NUMBER_OF_FIELDS_IN_QUERY: u16 = 2;
         const MAX_BATCH_ENTRIES: usize = (u16::MAX / NUMBER_OF_FIELDS_IN_QUERY) as usize;
         let mut txn = db.begin().await?;

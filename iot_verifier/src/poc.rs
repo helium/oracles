@@ -270,7 +270,7 @@ impl Poc {
 
         // update the last witness timestamp for any witness which has successfully passed regular validations
         if !witnesses_to_update.is_empty() {
-            LastWitness::bulk_update_last_timestamps(&self.pool, witnesses_to_update).await?
+            LastWitness::bulk_update_last_timestamps(&self.pool, &mut witnesses_to_update).await?
         };
 
         let resp = VerifyWitnessesResult {
