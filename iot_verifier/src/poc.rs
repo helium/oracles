@@ -63,8 +63,8 @@ pub struct InvalidResponse {
     details: Option<InvalidDetails>,
 }
 
-pub struct Poc {
-    pool: PgPool,
+pub struct Poc<'a> {
+    pool: &'a PgPool,
     beacon_interval: Duration,
     beacon_report: IotBeaconIngestReport,
     witness_reports: Vec<IotWitnessIngestReport>,
@@ -87,9 +87,9 @@ pub struct VerifyWitnessesResult {
     pub failed_witnesses: Vec<IotWitnessIngestReport>,
 }
 
-impl Poc {
+impl<'a> Poc<'a> {
     pub async fn new(
-        pool: PgPool,
+        pool: &'a PgPool,
         beacon_interval: Duration,
         beacon_report: IotBeaconIngestReport,
         witness_reports: Vec<IotWitnessIngestReport>,
@@ -146,7 +146,7 @@ impl Poc {
             Err(err) => return Err(anyhow::Error::from(err)),
         };
         // we have beaconer info, proceed to verifications
-        let last_beacon = LastBeacon::get(&self.pool, beaconer_pub_key.as_ref()).await?;
+        let last_beacon = LastBeacon::get(self.pool, beaconer_pub_key.as_ref()).await?;
         match do_beacon_verifications(
             deny_list,
             self.entropy_start,
@@ -165,7 +165,7 @@ impl Poc {
                     .unwrap_or(*DEFAULT_TX_SCALE);
                 // update 'last beacon' timestamp if the beacon has passed regular validations
                 LastBeacon::update_last_timestamp(
-                    &self.pool,
+                    self.pool,
                     beaconer_pub_key.as_ref(),
                     self.beacon_report.received_timestamp,
                 )
@@ -270,7 +270,7 @@ impl Poc {
 
         // update the last witness timestamp for any witness which has successfully passed regular validations
         if !witnesses_to_update.is_empty() {
-            LastWitness::bulk_update_last_timestamps(&self.pool, witnesses_to_update).await?
+            LastWitness::bulk_update_last_timestamps(self.pool, witnesses_to_update).await?
         };
 
         let resp = VerifyWitnessesResult {
@@ -380,7 +380,7 @@ impl Poc {
 
     async fn verify_beacon_reciprocity(&self) -> anyhow::Result<bool> {
         let last_witness =
-            LastWitness::get(&self.pool, self.beacon_report.report.pub_key.as_ref()).await?;
+            LastWitness::get(self.pool, self.beacon_report.report.pub_key.as_ref()).await?;
         if let Some(last_witness) = last_witness {
             if self.beacon_report.received_timestamp - last_witness.timestamp < *RECIPROCITY_WINDOW
             {
@@ -391,7 +391,7 @@ impl Poc {
     }
 
     async fn verify_witness_reciprocity(&self, pubkey: &PublicKeyBinary) -> anyhow::Result<bool> {
-        let last_beacon = LastBeacon::get(&self.pool, pubkey.as_ref()).await?;
+        let last_beacon = LastBeacon::get(self.pool, pubkey.as_ref()).await?;
         if let Some(last_beacon) = last_beacon {
             if self.beacon_report.received_timestamp - last_beacon.timestamp < *RECIPROCITY_WINDOW {
                 return Ok(true);

@@ -252,7 +252,7 @@ where
 
         // create the struct defining this POC
         let mut poc = Poc::new(
-            self.pool.clone(),
+            &self.pool,
             self.beacon_interval,
             beacon_report.clone(),
             witnesses.clone(),
