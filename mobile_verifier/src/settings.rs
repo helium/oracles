@@ -30,11 +30,6 @@ pub struct Settings {
     /// its respective coverage object
     #[serde(default = "default_max_distance_from_coverage")]
     pub max_distance_from_coverage: u32,
-    /// Max distance in meters between the asserted location of a WIFI hotspot
-    /// and the lat/lng defined in a heartbeat
-    /// beyond which its location weight will be reduced
-    #[serde(default = "default_max_asserted_distance_deviation")]
-    pub max_asserted_distance_deviation: u32,
     // Geofencing settings
     pub wifi_geofence_regions: String,
     #[serde(default = "default_fencing_resolution")]
@@ -51,10 +46,6 @@ fn default_fencing_resolution() -> u8 {
 pub fn default_max_distance_from_coverage() -> u32 {
     // Default is 2 km
     2000
-}
-
-pub fn default_max_asserted_distance_deviation() -> u32 {
-    100
 }
 
 pub fn default_log() -> String {
