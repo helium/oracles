@@ -17,7 +17,6 @@ use futures::stream::{Stream, StreamExt};
 use h3o::{CellIndex, LatLng};
 use helium_crypto::PublicKeyBinary;
 use helium_proto::services::poc_mobile as proto;
-use mobile_config::boosted_hex_info::BoostedHexes;
 use retainer::Cache;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use rust_decimal_macros::dec;
@@ -271,14 +270,12 @@ pub struct HeartbeatReward {
     // cell hb only
     pub cbsd_id: Option<String>,
     pub cell_type: CellType,
-    pub asserted_hex: Option<i64>,
     pub distances_to_asserted: Option<Vec<i64>>,
     pub trust_score_multipliers: Vec<Decimal>,
     pub coverage_object: Uuid,
 }
 
-const MAX_DISTANCE_IN_BOOSTED: i64 = 30;
-const MAX_DISTANCE_OUTSIDE_BOOSTED: i64 = 100;
+const RESTRICTIVE_MAX_DISTANCE: i64 = 30;
 
 impl HeartbeatReward {
     pub fn key(&self) -> KeyType<'_> {
@@ -299,32 +296,37 @@ impl HeartbeatReward {
         }
     }
 
-    pub fn trust_score_multiplier(&self, boosted_hexes: &BoostedHexes) -> Decimal {
+    pub fn trust_score_multiplier(&self, overlaps_boosted: bool) -> Decimal {
         if self.cbsd_id.is_some() {
             // If this is a cbrs radio, the trust score is always 1
             return dec!(1.0);
         }
-        let asserted_hex = self.asserted_hex.unwrap() as u64;
-        let is_boosted = boosted_hexes.is_boosted(&asserted_hex);
-        let distances = self.distances_to_asserted.as_ref().unwrap();
-        let num_distances = distances.len();
-        distances
-            .iter()
-            .zip(self.trust_score_multipliers.iter())
-            .map(|(distance, ts)| {
-                std::cmp::min(
-                    if is_boosted && *distance > MAX_DISTANCE_IN_BOOSTED
-                        || !is_boosted && *distance > MAX_DISTANCE_OUTSIDE_BOOSTED
-                    {
-                        dec!(0.25)
-                    } else {
-                        dec!(1.0)
-                    },
-                    *ts,
-                )
-            })
-            .sum::<Decimal>()
-            / Decimal::from(num_distances)
+        if overlaps_boosted {
+            // If we overlap a boosted hex, use the more restrictive distance
+            // check:
+            let distances = self.distances_to_asserted.as_ref().unwrap();
+            let num_distances = Decimal::from(distances.len());
+            distances
+                .iter()
+                .zip(self.trust_score_multipliers.iter())
+                .map(|(distance, ts)| {
+                    std::cmp::min(
+                        if *distance > RESTRICTIVE_MAX_DISTANCE {
+                            dec!(0.25)
+                        } else {
+                            dec!(1.0)
+                        },
+                        *ts,
+                    )
+                })
+                .sum::<Decimal>()
+                / num_distances
+        } else {
+            // If we don't overlap a boosted hex, just use the average of the
+            // trust scores:
+            let num_trust_scores = Decimal::from(self.trust_score_multipliers.len());
+            self.trust_score_multipliers.iter().sum::<Decimal>() / num_trust_scores
+        }
     }
 
     pub fn validated<'a>(
@@ -381,6 +383,7 @@ impl ValidatedHeartbeat {
         heartbeat: Heartbeat,
         gateway_info_resolver: &impl GatewayResolver,
         coverage_object_cache: &CoverageObjectCache,
+        max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &Range<DateTime<Utc>>,
         geofence: &impl GeofenceValidator,
@@ -515,6 +518,8 @@ impl ValidatedHeartbeat {
                 let asserted_latlng: LatLng = CellIndex::try_from(location)?.into();
                 let distance_to_asserted = asserted_latlng.distance_m(hb_latlng).round() as i64;
                 let location_trust_score_multiplier = if heartbeat.location_validation_timestamp.is_some()
+		// The heartbeat location to asserted location must be less than the max_distance_to_asserted value:
+                    && distance_to_asserted <= max_distance_to_asserted as i64
 		// The heartbeat location to every associated coverage hex must be less than max_distance_to_coverage:
 		    && coverage_object.max_distance_m(hb_latlng).round() as u32 <= max_distance_to_coverage
                 {
@@ -546,6 +551,7 @@ impl ValidatedHeartbeat {
         gateway_info_resolver: &'a impl GatewayResolver,
         heartbeats: impl Stream<Item = Heartbeat> + 'a,
         coverage_object_cache: &'a CoverageObjectCache,
+        max_distance_to_asserted: u32,
         max_distance_to_coverage: u32,
         epoch: &'a Range<DateTime<Utc>>,
         geofence: &'a impl GeofenceValidator,
@@ -555,6 +561,7 @@ impl ValidatedHeartbeat {
                 heartbeat,
                 gateway_info_resolver,
                 coverage_object_cache,
+                max_distance_to_asserted,
                 max_distance_to_coverage,
                 epoch,
                 geofence,

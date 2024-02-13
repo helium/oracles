@@ -400,6 +400,7 @@ async fn process_input(
         stream::iter(heartbeats.map(Heartbeat::from)),
         &coverage_objects,
         2000,
+        2000,
         epoch,
         &MockGeofence {},
     ));
@@ -1353,6 +1354,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         &AllOwnersValid,
         &coverage_object_cache,
         2000,
+        2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
         &MockGeofence {},
     )
@@ -1365,6 +1367,7 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
         hb_2.clone(),
         &AllOwnersValid,
         &coverage_object_cache,
+        1000000,
         2000,
         &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
         &MockGeofence {},
@@ -1373,6 +1376,34 @@ async fn ensure_lower_trust_score_for_distant_heartbeats(pool: PgPool) -> anyhow
     .unwrap();
 
     assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+
+    let validated_hb_2 = ValidatedHeartbeat::validate(
+        hb_2.clone(),
+        &AllOwnersValid,
+        &coverage_object_cache,
+        2000,
+        1000000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+        &MockGeofence {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(0.25));
+
+    let validated_hb_2 = ValidatedHeartbeat::validate(
+        hb_2.clone(),
+        &AllOwnersValid,
+        &coverage_object_cache,
+        1000000,
+        1000000,
+        &(DateTime::<Utc>::MIN_UTC..DateTime::<Utc>::MAX_UTC),
+        &MockGeofence {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(validated_hb_2.location_trust_score_multiplier, dec!(1.0));
 
     Ok(())
 }

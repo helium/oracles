@@ -21,7 +21,6 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-	NULL as asserted_hex,
 	NULL as distances_to_asserted,
 	ARRAY_AGG(ch.location_trust_score_multiplier) as trust_score_multipliers
     FROM
@@ -44,7 +43,6 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-	asserted_hex,
 	ARRAY_AGG(distance_to_asserted) as distances_to_asserted,
         ARRAY_AGG(location_trust_score_multiplier) as trust_score_multipliers
 FROM
@@ -54,8 +52,7 @@ FROM
         AND truncated_timestamp < $2
     GROUP BY
         hotspot_key,
-        cell_type,
-	asserted_hex
+        cell_type
 ),
 latest_uuids AS (( SELECT DISTINCT ON (hotspot_key,
             cbsd_id)
@@ -87,7 +84,6 @@ SELECT
     hb.hotspot_key,
     hb.cbsd_id,
     hb.cell_type,
-    hb.asserted_hex,
     hb.distances_to_asserted,
     hb.trust_score_multipliers,
     u.coverage_object
