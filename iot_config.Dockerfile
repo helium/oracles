@@ -21,7 +21,7 @@ RUN mkdir ./iot_config/src \
            -e '/poc_entropy/d'         -e '/iot_verifier/d'     -e '/price/d' \
            -e '/reward_index/d'        -e '/reward_scheduler/d' -e '/denylist/d' \
            -e '/iot_packet_verifier/d' -e '/solana/d'           -e '/mobile_packet_verifier/d' \
-           -e '/mobile_config_cli/d' \
+           -e '/mobile_config_cli/d'   -e '/boost_manager/d' \
            Cargo.toml \
  && cargo build --package iot-config --release
 
