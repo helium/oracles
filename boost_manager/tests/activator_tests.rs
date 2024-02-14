@@ -3,10 +3,12 @@ use boost_manager::{activator, db, OnChainStatus};
 use chrono::{DateTime, Duration as ChronoDuration, Duration, Timelike, Utc};
 use helium_proto::services::poc_mobile::BoostedHex as BoostedHexProto;
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
+use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
-const BOOST_CONFIG_PUBKEY: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQmuCiF1";
+const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
+const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
 struct TestContext {
     boosted_hexes: Vec<BoostedHexInfo>,
@@ -33,8 +35,8 @@ impl TestContext {
                 end_ts: Some(end_ts_1),
                 period_length: boost_period_length,
                 multipliers: multipliers1,
-                boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-                boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+                boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+                boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
             },
             BoostedHexInfo {
@@ -43,8 +45,8 @@ impl TestContext {
                 end_ts: Some(end_ts_2),
                 period_length: boost_period_length,
                 multipliers: multipliers2,
-                boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-                boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+                boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+                boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
             },
             BoostedHexInfo {
@@ -54,8 +56,8 @@ impl TestContext {
                 end_ts: None,
                 period_length: boost_period_length,
                 multipliers: multipliers3,
-                boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-                boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+                boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+                boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
                 version: 0,
             },
         ];

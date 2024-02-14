@@ -9,9 +9,12 @@ use mobile_config::{
     boosted_hex_info::{BoostedHexInfo, BoostedHexInfoStream},
     client::{hex_boosting_client::HexBoostingInfoResolver, ClientError},
 };
+use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
+use std::str::FromStr;
 
-const BOOST_CONFIG_PUBKEY: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQmuCiF1";
+const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
+const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
 impl MockHexBoostingClient {
     fn new(boosted_hexes: Vec<BoostedHexInfo>) -> Self {
@@ -58,8 +61,8 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             end_ts: Some(end_ts_1),
             period_length: boost_period_length,
             multipliers: multipliers1,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
         BoostedHexInfo {
@@ -68,8 +71,8 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
             end_ts: Some(end_ts_2),
             period_length: boost_period_length,
             multipliers: multipliers2,
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     ];
@@ -87,11 +90,25 @@ async fn test_boosted_hex_updates_to_filestore(pool: PgPool) -> anyhow::Result<(
         watcher.handle_tick(),
         receive_expected_msgs(&mut hex_update)
     );
+
     if let Ok(boosted_hexes) = boosted_hexes_result {
+        let res_boosted_hex_pubkey1 =
+            Pubkey::try_from(boosted_hexes[0].boosted_hex_pubkey.as_slice())?.to_string();
+        let res_boost_config_pubkey1 =
+            Pubkey::try_from(boosted_hexes[0].boost_config_pubkey.as_slice())?.to_string();
+        let res_boosted_hex_pubkey2 =
+            Pubkey::try_from(boosted_hexes[1].boosted_hex_pubkey.as_slice())?.to_string();
+        let res_boost_config_pubkey2 =
+            Pubkey::try_from(boosted_hexes[1].boost_config_pubkey.as_slice())?.to_string();
+
         // assert the boosted hexes outputted to filestore
         assert_eq!(2, boosted_hexes.len());
         assert_eq!(0x8a1fb49642dffff_u64, boosted_hexes[0].location);
         assert_eq!(0x8a1fb466d2dffff_u64, boosted_hexes[1].location);
+        assert_eq!(BOOST_HEX_PUBKEY, res_boosted_hex_pubkey1);
+        assert_eq!(BOOST_CONFIG_PUBKEY, res_boost_config_pubkey1);
+        assert_eq!(BOOST_HEX_PUBKEY, res_boosted_hex_pubkey2);
+        assert_eq!(BOOST_CONFIG_PUBKEY, res_boost_config_pubkey2);
     } else {
         panic!("no boosted hex updates received");
     };

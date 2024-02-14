@@ -22,8 +22,9 @@ use mobile_verifier::{
     GatewayResolution, GatewayResolver, IsAuthorized,
 };
 use rust_decimal_macros::dec;
+use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
-use std::{collections::HashMap, ops::Range, pin::pin};
+use std::{collections::HashMap, ops::Range, pin::pin, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -34,7 +35,8 @@ impl GeofenceValidator for MockGeofence {
         true
     }
 }
-const BOOST_CONFIG_PUBKEY: &str = "11hd7HoicRgBPjBGcqcT2Y9hRQovdZeff5eKFMbCSuDYQmuCiF1";
+const BOOST_HEX_PUBKEY: &str = "J9JiLTpjaShxL8eMvUs8txVw6TZ36E38SiJ89NxnMbLU";
+const BOOST_CONFIG_PUBKEY: &str = "BZM1QTud72B2cpTW7PhEnFmRX7ZWzvY7DpPpNJJuDrWG";
 
 #[sqlx::test]
 #[ignore]
@@ -823,8 +825,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: Duration::hours(1),
             multipliers: vec![1],
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     );
@@ -836,8 +838,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: Duration::hours(1),
             multipliers: vec![2],
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     );
@@ -850,8 +852,8 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
             end_ts: None,
             period_length: Duration::hours(1),
             multipliers: vec![3],
-            boosted_hex_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
-            boost_config_pubkey: BOOST_CONFIG_PUBKEY.to_string(),
+            boosted_hex_pubkey: Pubkey::from_str(BOOST_HEX_PUBKEY).unwrap(),
+            boost_config_pubkey: Pubkey::from_str(BOOST_CONFIG_PUBKEY).unwrap(),
             version: 0,
         },
     );

@@ -84,7 +84,11 @@ where
         // get modified hex info from mobile config
         let boosted_hexes =
             BoostedHexes::get_modified(&self.hex_boosting_client, last_processed_ts).await?;
-        tracing::info!("modified hexes count: {}", boosted_hexes.hexes.len());
+        tracing::info!(
+            "modified hexes count since {}: {} ",
+            last_processed_ts,
+            boosted_hexes.hexes.len()
+        );
         for info in boosted_hexes.hexes.values() {
             let proto: BoostedHexUpdateProto = BoostedHexUpdateProto {
                 timestamp: now.encode_timestamp(),

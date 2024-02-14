@@ -160,24 +160,24 @@ async fn seed_activations(
     db::insert_activated_hex(
         txn,
         0x8a1fb466d2dffff_u64,
-        &BOOSTED_HEX1_PUBKEY.to_string(),
-        &BOOSTED_HEX_CONFIG_PUBKEY.to_string(),
+        BOOSTED_HEX1_PUBKEY,
+        BOOSTED_HEX_CONFIG_PUBKEY,
         activation_ts,
     )
     .await?;
     db::insert_activated_hex(
         txn,
         0x8a1fb49642dffff_u64,
-        &BOOSTED_HEX2_PUBKEY.to_string(),
-        &BOOSTED_HEX_CONFIG_PUBKEY.to_string(),
+        BOOSTED_HEX2_PUBKEY,
+        BOOSTED_HEX_CONFIG_PUBKEY,
         activation_ts,
     )
     .await?;
     db::insert_activated_hex(
         txn,
         0x8c2681a306607ff_u64,
-        &BOOSTED_HEX3_PUBKEY.to_string(),
-        &BOOSTED_HEX_CONFIG_PUBKEY.to_string(),
+        BOOSTED_HEX3_PUBKEY,
+        BOOSTED_HEX_CONFIG_PUBKEY,
         activation_ts,
     )
     .await?;
