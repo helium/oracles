@@ -43,8 +43,8 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-	ARRAY_AGG(distance_to_asserted) as distances_to_asserted,
-        ARRAY_AGG(location_trust_score_multiplier) as trust_score_multipliers
+	ARRAY_AGG(distance_to_asserted ORDER BY truncated_timestamp) as distances_to_asserted,
+        ARRAY_AGG(location_trust_score_multiplier ORDER BY truncated_timestamp) as trust_score_multipliers
 FROM
     wifi_heartbeats
     WHERE
