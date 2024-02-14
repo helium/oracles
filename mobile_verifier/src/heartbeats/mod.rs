@@ -902,6 +902,44 @@ mod test {
     use super::*;
     use proto::SeniorityUpdateReason::*;
 
+    #[test]
+    fn ensure_stricter_distance_check_in_trust_score_for_boosted_hexes() {
+        let mut heartbeat_reward = HeartbeatReward {
+            hotspot_key: "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+                .parse()
+                .unwrap(),
+            cbsd_id: None,
+            cell_type: CellType::CellTypeNone,
+            distances_to_asserted: Some(vec![RESTRICTIVE_MAX_DISTANCE + 1]),
+            trust_score_multipliers: vec![dec!(1.0)],
+            coverage_object: Uuid::new_v4(),
+        };
+        // If the heartbeat is not in a boosted hex, the trust score should be 1.0:
+        assert_eq!(heartbeat_reward.trust_score_multiplier(false), dec!(1.0));
+        // If the heartbeat does overlap a boosted hex, the trust score should be 0.25:
+        assert_eq!(heartbeat_reward.trust_score_multiplier(true), dec!(0.25));
+        // Now we check that if we set the distance to asserted to be below the restrictive
+        // max, that we have a trust score of 1.0:
+        heartbeat_reward.distances_to_asserted = Some(vec![RESTRICTIVE_MAX_DISTANCE]);
+        assert_eq!(heartbeat_reward.trust_score_multiplier(true), dec!(1.0));
+    }
+
+    #[test]
+    fn test_averaging_of_trust_scores() {
+        let heartbeat_reward = HeartbeatReward {
+            hotspot_key: "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+                .parse()
+                .unwrap(),
+            cbsd_id: None,
+            cell_type: CellType::CellTypeNone,
+            distances_to_asserted: Some(vec![RESTRICTIVE_MAX_DISTANCE + 1, 0, 0, 0, 0]),
+            trust_score_multipliers: vec![dec!(1.0), dec!(0.25), dec!(1.0), dec!(1.0), dec!(0.25)],
+            coverage_object: Uuid::new_v4(),
+        };
+        assert_eq!(heartbeat_reward.trust_score_multiplier(false), dec!(0.7));
+        assert_eq!(heartbeat_reward.trust_score_multiplier(true), dec!(0.55));
+    }
+
     fn heartbeat(timestamp: DateTime<Utc>, coverage_object: Uuid) -> ValidatedHeartbeat {
         ValidatedHeartbeat {
             cell_type: CellType::CellTypeNone,
