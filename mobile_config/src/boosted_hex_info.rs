@@ -125,6 +125,10 @@ impl BoostedHexes {
         Ok(Self { hexes: map })
     }
 
+    pub fn is_boosted(&self, location: &u64) -> bool {
+        self.hexes.contains_key(location)
+    }
+
     pub async fn get_modified(
         hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
         timestamp: DateTime<Utc>,

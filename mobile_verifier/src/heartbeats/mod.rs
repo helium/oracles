@@ -270,9 +270,12 @@ pub struct HeartbeatReward {
     // cell hb only
     pub cbsd_id: Option<String>,
     pub cell_type: CellType,
-    pub location_trust_score_multiplier: Decimal,
+    pub distances_to_asserted: Option<Vec<i64>>,
+    pub trust_score_multipliers: Vec<Decimal>,
     pub coverage_object: Uuid,
 }
+
+const RESTRICTIVE_MAX_DISTANCE: i64 = 30;
 
 impl HeartbeatReward {
     pub fn key(&self) -> KeyType<'_> {
@@ -293,8 +296,37 @@ impl HeartbeatReward {
         }
     }
 
-    pub fn reward_weight(&self) -> Decimal {
-        self.location_trust_score_multiplier
+    pub fn trust_score_multiplier(&self, overlaps_boosted: bool) -> Decimal {
+        if self.cbsd_id.is_some() {
+            // If this is a cbrs radio, the trust score is always 1
+            return dec!(1.0);
+        }
+        if overlaps_boosted {
+            // If we overlap a boosted hex, use the more restrictive distance
+            // check:
+            let distances = self.distances_to_asserted.as_ref().unwrap();
+            let num_distances = Decimal::from(distances.len());
+            distances
+                .iter()
+                .zip(self.trust_score_multipliers.iter())
+                .map(|(distance, ts)| {
+                    std::cmp::min(
+                        if *distance > RESTRICTIVE_MAX_DISTANCE {
+                            dec!(0.25)
+                        } else {
+                            dec!(1.0)
+                        },
+                        *ts,
+                    )
+                })
+                .sum::<Decimal>()
+                / num_distances
+        } else {
+            // If we don't overlap a boosted hex, just use the average of the
+            // trust scores:
+            let num_trust_scores = Decimal::from(self.trust_score_multipliers.len());
+            self.trust_score_multipliers.iter().sum::<Decimal>() / num_trust_scores
+        }
     }
 
     pub fn validated<'a>(
@@ -869,6 +901,44 @@ impl SeniorityUpdate<'_> {
 mod test {
     use super::*;
     use proto::SeniorityUpdateReason::*;
+
+    #[test]
+    fn ensure_stricter_distance_check_in_trust_score_for_boosted_hexes() {
+        let mut heartbeat_reward = HeartbeatReward {
+            hotspot_key: "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+                .parse()
+                .unwrap(),
+            cbsd_id: None,
+            cell_type: CellType::CellTypeNone,
+            distances_to_asserted: Some(vec![RESTRICTIVE_MAX_DISTANCE + 1]),
+            trust_score_multipliers: vec![dec!(1.0)],
+            coverage_object: Uuid::new_v4(),
+        };
+        // If the heartbeat is not in a boosted hex, the trust score should be 1.0:
+        assert_eq!(heartbeat_reward.trust_score_multiplier(false), dec!(1.0));
+        // If the heartbeat does overlap a boosted hex, the trust score should be 0.25:
+        assert_eq!(heartbeat_reward.trust_score_multiplier(true), dec!(0.25));
+        // Now we check that if we set the distance to asserted to be below the restrictive
+        // max, that we have a trust score of 1.0:
+        heartbeat_reward.distances_to_asserted = Some(vec![RESTRICTIVE_MAX_DISTANCE]);
+        assert_eq!(heartbeat_reward.trust_score_multiplier(true), dec!(1.0));
+    }
+
+    #[test]
+    fn test_averaging_of_trust_scores() {
+        let heartbeat_reward = HeartbeatReward {
+            hotspot_key: "11sctWiP9r5wDJVuDe1Th4XSL2vaawaLLSQF8f8iokAoMAJHxqp"
+                .parse()
+                .unwrap(),
+            cbsd_id: None,
+            cell_type: CellType::CellTypeNone,
+            distances_to_asserted: Some(vec![RESTRICTIVE_MAX_DISTANCE + 1, 0, 0, 0, 0]),
+            trust_score_multipliers: vec![dec!(1.0), dec!(0.25), dec!(1.0), dec!(1.0), dec!(0.25)],
+            coverage_object: Uuid::new_v4(),
+        };
+        assert_eq!(heartbeat_reward.trust_score_multiplier(false), dec!(0.7));
+        assert_eq!(heartbeat_reward.trust_score_multiplier(true), dec!(0.55));
+    }
 
     fn heartbeat(timestamp: DateTime<Utc>, coverage_object: Uuid) -> ValidatedHeartbeat {
         ValidatedHeartbeat {

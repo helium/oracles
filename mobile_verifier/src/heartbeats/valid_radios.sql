@@ -21,7 +21,8 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        AVG(ch.location_trust_score_multiplier) as location_trust_score_multiplier
+	NULL as distances_to_asserted,
+	ARRAY_AGG(ch.location_trust_score_multiplier) as trust_score_multipliers
     FROM
         cbrs_heartbeats ch
         INNER JOIN latest_cbrs_hotspot lch ON ch.cbsd_id = lch.cbsd_id
@@ -42,7 +43,8 @@ heartbeats AS (
         ELSE
             0.0
         END AS heartbeat_multiplier,
-        AVG(location_trust_score_multiplier) as location_trust_score_multiplier
+	ARRAY_AGG(distance_to_asserted ORDER BY truncated_timestamp) as distances_to_asserted,
+        ARRAY_AGG(location_trust_score_multiplier ORDER BY truncated_timestamp) as trust_score_multipliers
 FROM
     wifi_heartbeats
     WHERE
@@ -82,7 +84,8 @@ SELECT
     hb.hotspot_key,
     hb.cbsd_id,
     hb.cell_type,
-    hb.location_trust_score_multiplier,
+    hb.distances_to_asserted,
+    hb.trust_score_multipliers,
     u.coverage_object
 FROM
     heartbeats hb

@@ -509,12 +509,15 @@ pub const MAX_OUTDOOR_RADIOS_PER_RES12_HEX: usize = 3;
 pub const OUTDOOR_REWARD_WEIGHTS: [Decimal; 3] = [dec!(1.0), dec!(0.75), dec!(0.25)];
 
 impl CoveredHexes {
+    /// Aggregate the coverage. Returns whether or not any of the hexes are boosted
     pub async fn aggregate_coverage<E>(
         &mut self,
         hotspot: &PublicKeyBinary,
+        boosted_hexes: &BoostedHexes,
         covered_hexes: impl Stream<Item = Result<HexCoverage, E>>,
-    ) -> Result<(), E> {
+    ) -> Result<bool, E> {
         let mut covered_hexes = std::pin::pin!(covered_hexes);
+        let mut boosted = false;
 
         while let Some(HexCoverage {
             hex,
@@ -526,9 +529,11 @@ impl CoveredHexes {
             ..
         }) = covered_hexes.next().await.transpose()?
         {
+            let hex = hex as u64;
+            boosted |= boosted_hexes.is_boosted(&hex);
             if indoor {
                 self.indoor
-                    .entry(CellIndex::try_from(hex as u64).unwrap())
+                    .entry(CellIndex::try_from(hex).unwrap())
                     .or_default()
                     .entry(signal_level)
                     .or_default()
@@ -547,7 +552,7 @@ impl CoveredHexes {
                     signal_power
                 };
                 self.outdoor
-                    .entry(CellIndex::try_from(hex as u64).unwrap())
+                    .entry(CellIndex::try_from(hex).unwrap())
                     .or_default()
                     .push(OutdoorCoverageLevel {
                         radio_key,
@@ -559,7 +564,7 @@ impl CoveredHexes {
             }
         }
 
-        Ok(())
+        Ok(boosted)
     }
 
     /// Returns the radios that should be rewarded for giving coverage.
@@ -807,6 +812,7 @@ mod test {
         covered_hexes
             .aggregate_coverage(
                 &owner,
+                &BoostedHexes::default(),
                 iter(vec![
                     anyhow::Ok(default_indoor_hex_coverage("1", SignalLevel::None)),
                     anyhow::Ok(default_indoor_hex_coverage("2", SignalLevel::Low)),
@@ -871,6 +877,7 @@ mod test {
         covered_hexes
             .aggregate_coverage(
                 &owner,
+                &BoostedHexes::default(),
                 iter(vec![
                     anyhow::Ok(indoor_hex_coverage_with_date(
                         "1",
@@ -1007,6 +1014,7 @@ mod test {
         covered_hexes
             .aggregate_coverage(
                 &owner,
+                &BoostedHexes::default(),
                 iter(vec![
                     anyhow::Ok(outdoor_hex_coverage("1", -946, date(2022, 8, 1))),
                     anyhow::Ok(outdoor_hex_coverage("2", -936, date(2022, 12, 5))),
@@ -1080,6 +1088,7 @@ mod test {
         covered_hexes
             .aggregate_coverage(
                 &owner,
+                &BoostedHexes::default(),
                 iter(vec![
                     anyhow::Ok(outdoor_hex_coverage("1", -936, date(2022, 8, 1))),
                     anyhow::Ok(outdoor_hex_coverage("2", -946, date(2022, 12, 5))),
