@@ -19,6 +19,7 @@ use helium_proto::services::{
     mobile_config::NetworkKeyRole,
     poc_mobile::{self as proto, CoverageObjectValidity, SignalLevel as SignalLevelProto},
 };
+use hextree::disktree::DiskTreeMap;
 use mobile_config::{
     boosted_hex_info::{BoostedHex, BoostedHexes},
     client::AuthorizationClient,
@@ -28,9 +29,11 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::{FromRow, PgPool, Pool, Postgres, QueryBuilder, Transaction, Type};
 use std::{
+    cell::RefCell,
     cmp::Ordering,
-    collections::{BTreeMap, BinaryHeap, HashMap},
+    collections::{hash_map::Entry, BTreeMap, BinaryHeap, HashMap},
     pin::pin,
+    rc::Rc,
     sync::Arc,
     time::Instant,
 };
@@ -568,61 +571,109 @@ impl CoveredHexes {
     }
 
     /// Returns the radios that should be rewarded for giving coverage.
-    pub fn into_coverage_rewards(
+    pub fn into_coverage_rewards<'a>(
         self,
-        boosted_hexes: &BoostedHexes,
+        boosted_hexes: &'a BoostedHexes,
+        urbanization: &'a hextree::disktree::DiskTreeMap,
         epoch_start: DateTime<Utc>,
-    ) -> impl Iterator<Item = CoverageReward> + '_ {
+    ) -> impl Iterator<Item = hextree::Result<CoverageReward>> + 'a {
+        let urbanization_cache = DiskTreeCacher::new(urbanization, |x| x.is_some());
+        let urbanization = urbanization_cache.clone();
         let outdoor_rewards = self.outdoor.into_iter().flat_map(move |(hex, radios)| {
+            let urbanization = urbanization.clone();
             radios
                 .into_sorted_vec()
                 .into_iter()
                 .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
                 .zip(OUTDOOR_REWARD_WEIGHTS)
                 .map(move |(cl, rank)| {
+                    let oracle_multiplier = if urbanization.get(&hex)? {
+                        dec!(1.0)
+                    } else {
+                        dec!(0.25)
+                    };
                     let boost_multiplier = boosted_hexes
                         .get_current_multiplier(hex.into(), epoch_start)
                         .unwrap_or(1);
-                    CoverageReward {
-                        points: cl.coverage_points() * rank,
+                    Ok(CoverageReward {
+                        points: cl.coverage_points() * rank * oracle_multiplier,
                         hotspot: cl.hotspot,
                         radio_key: cl.radio_key,
                         boosted_hex_info: BoostedHex {
                             location: hex.into(),
                             multiplier: boost_multiplier,
                         },
-                    }
+                    })
                 })
         });
+        let urbanization = urbanization_cache.clone();
         let indoor_rewards = self
             .indoor
             .into_iter()
             .flat_map(move |(hex, mut radios)| {
+                let urbanization = urbanization.clone();
                 radios.pop_last().map(move |(_, radios)| {
                     radios
                         .into_sorted_vec()
                         .into_iter()
                         .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                         .map(move |cl| {
+                            let oracle_multiplier = if urbanization.get(&hex)? {
+                                dec!(1.0)
+                            } else {
+                                dec!(0.25)
+                            };
                             let boost_multiplier = boosted_hexes
                                 .get_current_multiplier(hex.into(), epoch_start)
                                 .unwrap_or(1);
-                            CoverageReward {
-                                points: cl.coverage_points(),
+                            Ok(CoverageReward {
+                                points: cl.coverage_points() * oracle_multiplier,
                                 hotspot: cl.hotspot,
                                 radio_key: cl.radio_key,
                                 boosted_hex_info: BoostedHex {
                                     location: hex.into(),
                                     multiplier: boost_multiplier,
                                 },
-                            }
+                            })
                         })
                 })
             })
             .flatten();
-        outdoor_rewards
-            .chain(indoor_rewards)
-            .filter(|r| r.points > Decimal::ZERO)
+        outdoor_rewards.chain(indoor_rewards)
+        //            .filter(|r| r.points > Decimal::ZERO)
+    }
+}
+
+#[derive(Clone)]
+struct DiskTreeCacher<'a, T> {
+    disktree: &'a hextree::disktree::DiskTreeMap,
+    to_data_fn: fn(Option<&[u8]>) -> T,
+    cached: Rc<RefCell<HashMap<hextree::Cell, T>>>,
+}
+
+impl<'a, T> DiskTreeCacher<'a, T> {
+    fn new(disktree: &'a DiskTreeMap, to_data_fn: fn(Option<&[u8]>) -> T) -> Self {
+        Self {
+            disktree,
+            to_data_fn,
+            cached: Rc::new(RefCell::new(HashMap::new())),
+        }
+    }
+}
+
+impl<'a, T: Clone> DiskTreeCacher<'a, T> {
+    fn get(&self, hex: &CellIndex) -> hextree::Result<T> {
+        let hex: u64 = hex.clone().into();
+        let hex = hextree::Cell::from_raw(hex)?;
+        let mut cached = self.cached.borrow_mut();
+        match cached.entry(hex) {
+            Entry::Vacant(cached) => {
+                let data = (self.to_data_fn)(self.disktree.get(hex)?.map(|x| x.1));
+                cached.insert(data.clone());
+                Ok(data)
+            }
+            Entry::Occupied(cached) => Ok(cached.get().clone()),
+        }
     }
 }
 

@@ -16,6 +16,7 @@ use helium_proto::services::{
     poc_mobile::UnallocatedReward, poc_mobile::UnallocatedRewardType,
 };
 use helium_proto::RewardManifest;
+use hextree::disktree::DiskTreeMap;
 use mobile_config::{
     boosted_hex_info::BoostedHexes,
     client::{
@@ -28,7 +29,7 @@ use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::ops::Range;
+use std::{ops::Range, path::PathBuf};
 use task_manager::ManagedTask;
 use tokio::time::sleep;
 
@@ -38,6 +39,7 @@ pub struct Rewarder<A, B> {
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
+    urbanization_data_set: PathBuf,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient,
@@ -56,6 +58,7 @@ where
         pool: Pool<Postgres>,
         carrier_client: A,
         hex_service_client: B,
+        urbanization_data_set: PathBuf,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient,
@@ -67,6 +70,7 @@ where
             pool,
             carrier_client,
             hex_service_client,
+            urbanization_data_set,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
@@ -77,6 +81,7 @@ where
     }
 
     pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
+        let disktree = DiskTreeMap::open(&self.urbanization_data_set)?;
         loop {
             let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
             let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
@@ -89,7 +94,7 @@ where
             let now = Utc::now();
             let sleep_duration = if scheduler.should_reward(now) {
                 if self.is_data_current(&scheduler.reward_period).await? {
-                    self.reward(&scheduler).await?;
+                    self.reward(&disktree, &scheduler).await?;
                     continue;
                 } else {
                     Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
@@ -168,7 +173,11 @@ where
         Ok(true)
     }
 
-    pub async fn reward(&self, scheduler: &Scheduler) -> anyhow::Result<()> {
+    pub async fn reward(
+        &self,
+        urbanization: &DiskTreeMap,
+        scheduler: &Scheduler,
+    ) -> anyhow::Result<()> {
         let reward_period = &scheduler.reward_period;
 
         tracing::info!(
@@ -191,6 +200,7 @@ where
         reward_poc_and_dc(
             &self.pool,
             &self.hex_service_client,
+            urbanization,
             &self.mobile_rewards,
             &self.speedtest_averages,
             reward_period,
@@ -258,18 +268,15 @@ where
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        let handle = tokio::spawn(self.run(shutdown));
-        Box::pin(
-            handle
-                .map_err(anyhow::Error::from)
-                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
-        )
+        // We cannot move disk tree map between threads
+        Box::pin(self.run(shutdown).map_err(anyhow::Error::from))
     }
 }
 
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+    urbanization: &DiskTreeMap,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
@@ -295,6 +302,7 @@ pub async fn reward_poc_and_dc(
     let poc_unallocated_amount = reward_poc(
         pool,
         hex_service_client,
+        urbanization,
         mobile_rewards,
         speedtest_avg_sink,
         reward_period,
@@ -319,6 +327,7 @@ pub async fn reward_poc_and_dc(
 async fn reward_poc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
+    urbanization: &DiskTreeMap,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
@@ -341,6 +350,7 @@ async fn reward_poc(
         heartbeats,
         &speedtest_averages,
         &boosted_hexes,
+        urbanization,
         reward_period,
     )
     .await?;

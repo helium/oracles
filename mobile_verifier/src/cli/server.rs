@@ -223,6 +223,7 @@ impl Cmd {
             pool.clone(),
             carrier_client,
             hex_boosting_client,
+            settings.urbanization_data_set.clone(),
             Duration::hours(reward_period_hours),
             Duration::minutes(settings.reward_offset_minutes),
             mobile_rewards,

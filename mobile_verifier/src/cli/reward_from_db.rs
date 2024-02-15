@@ -45,6 +45,7 @@ impl Cmd {
             heartbeats,
             &speedtest_averages,
             &boosted_hexes,
+            todo!(),
             &epoch,
         )
         .await?;

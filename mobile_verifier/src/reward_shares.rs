@@ -472,8 +472,9 @@ impl CoveragePoints {
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: &SpeedtestAverages,
         boosted_hexes: &BoostedHexes,
+        urbanization: &hextree::disktree::DiskTreeMap,
         reward_period: &Range<DateTime<Utc>>,
-    ) -> Result<Self, sqlx::Error> {
+    ) -> anyhow::Result<Self> {
         let mut heartbeats = std::pin::pin!(heartbeats);
         let mut covered_hexes = CoveredHexes::default();
         let mut coverage_points = HashMap::new();
@@ -506,13 +507,16 @@ impl CoveragePoints {
                 );
         }
 
-        for CoverageReward {
-            radio_key,
-            points,
-            hotspot,
-            boosted_hex_info,
-        } in covered_hexes.into_coverage_rewards(boosted_hexes, reward_period.start)
+        for reward in
+            covered_hexes.into_coverage_rewards(boosted_hexes, urbanization, reward_period.start)
         {
+            let CoverageReward {
+                radio_key,
+                points,
+                hotspot,
+                boosted_hex_info,
+            } = reward?;
+
             // Guaranteed that points contains the given hotspot.
             coverage_points
                 .get_mut(&hotspot)
