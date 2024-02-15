@@ -311,7 +311,7 @@ pub async fn inject_last_beacon(
     gateway: PublicKeyBinary,
     ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    LastBeacon::update_last_timestamp(&mut *txn, gateway.as_ref(), ts).await
+    LastBeacon::update_last_timestamp(&mut *txn, &gateway, ts).await
 }
 
 #[allow(dead_code)]
@@ -320,7 +320,7 @@ pub async fn inject_last_witness(
     gateway: PublicKeyBinary,
     ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    LastWitness::update_last_timestamp(&mut *txn, gateway.as_ref(), ts).await
+    LastWitness::update_last_timestamp(&mut *txn, &gateway, ts).await
 }
 
 #[allow(dead_code)]

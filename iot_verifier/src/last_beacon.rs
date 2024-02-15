@@ -1,15 +1,29 @@
 use chrono::{DateTime, Utc};
+use helium_crypto::PublicKeyBinary;
 use serde::{Deserialize, Serialize};
+use sqlx::{postgres::PgRow, FromRow, Row};
 
-#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
-#[sqlx(type_name = "last_beacon")]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct LastBeacon {
-    pub id: Vec<u8>,
+    pub id: PublicKeyBinary,
     pub timestamp: DateTime<Utc>,
 }
 
+impl FromRow<'_, PgRow> for LastBeacon {
+    fn from_row(row: &PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            id: row.get::<Vec<u8>, &str>("id").into(),
+            timestamp: row.get::<DateTime<Utc>, &str>("timestamp"),
+        })
+    }
+}
+
 impl LastBeacon {
-    pub async fn insert_kv<'c, E>(executor: E, id: &[u8], val: &str) -> anyhow::Result<Self>
+    pub async fn insert_kv<'c, E>(
+        executor: E,
+        id: &PublicKeyBinary,
+        val: &str,
+    ) -> anyhow::Result<Self>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
@@ -20,19 +34,19 @@ impl LastBeacon {
             returning *;
             "#,
         )
-        .bind(id)
+        .bind(id.as_ref())
         .bind(val)
         .fetch_one(executor)
         .await?)
     }
 
-    pub async fn get<'c, E>(executor: E, id: &[u8]) -> anyhow::Result<Option<Self>>
+    pub async fn get<'c, E>(executor: E, id: &PublicKeyBinary) -> anyhow::Result<Option<Self>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
     {
         Ok(
             sqlx::query_as::<_, LastBeacon>(r#" select * from last_beacon where id = $1;"#)
-                .bind(id)
+                .bind(id.as_ref())
                 .fetch_optional(executor)
                 .await?,
         )
@@ -55,7 +69,7 @@ impl LastBeacon {
 
     pub async fn last_timestamp<'c, E>(
         executor: E,
-        id: &[u8],
+        id: &PublicKeyBinary,
     ) -> anyhow::Result<Option<DateTime<Utc>>>
     where
         E: sqlx::Executor<'c, Database = sqlx::Postgres>,
@@ -66,7 +80,7 @@ impl LastBeacon {
             where id = $1
             "#,
         )
-        .bind(id)
+        .bind(id.as_ref())
         .fetch_optional(executor)
         .await?;
         Ok(height)
@@ -74,7 +88,7 @@ impl LastBeacon {
 
     pub async fn update_last_timestamp<'c, E>(
         executor: E,
-        id: &[u8],
+        id: &PublicKeyBinary,
         timestamp: DateTime<Utc>,
     ) -> anyhow::Result<()>
     where
@@ -88,7 +102,7 @@ impl LastBeacon {
                 timestamp = EXCLUDED.timestamp
             "#,
         )
-        .bind(id)
+        .bind(id.as_ref())
         .bind(timestamp)
         .execute(executor)
         .await?;
