@@ -163,6 +163,14 @@ async fn receive_expected_rewards(
     mobile_rewards: &mut MockFileSinkReceiver,
 ) -> anyhow::Result<(Vec<RadioReward>, Vec<GatewayReward>, UnallocatedReward)> {
     // get the filestore outputs from rewards run
+
+    // expect 3 gateway rewards for dc transfer
+    let dc_reward1 = mobile_rewards.receive_gateway_reward().await;
+    let dc_reward2 = mobile_rewards.receive_gateway_reward().await;
+    let dc_reward3 = mobile_rewards.receive_gateway_reward().await;
+    let mut dc_rewards = vec![dc_reward1, dc_reward2, dc_reward3];
+    dc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
+
     // we will have 3 radio rewards, 1 wifi radio and 2 cbrs radios
     let radio_reward1 = mobile_rewards.receive_radio_reward().await;
     let radio_reward2 = mobile_rewards.receive_radio_reward().await;
@@ -174,13 +182,6 @@ async fn receive_expected_rewards(
 
     // expect one unallocated reward for poc
     let unallocated_poc_reward = mobile_rewards.receive_unallocated_reward().await;
-
-    // expect 3 gateway rewards for dc transfer
-    let dc_reward1 = mobile_rewards.receive_gateway_reward().await;
-    let dc_reward2 = mobile_rewards.receive_gateway_reward().await;
-    let dc_reward3 = mobile_rewards.receive_gateway_reward().await;
-    let mut dc_rewards = vec![dc_reward1, dc_reward2, dc_reward3];
-    dc_rewards.sort_by(|a, b| b.hotspot_key.cmp(&a.hotspot_key));
 
     // should be no further msgs
     mobile_rewards.assert_no_messages();
