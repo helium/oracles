@@ -14,6 +14,7 @@ use file_store::{
     speedtest::CellSpeedtestIngestReport, wifi_heartbeat::WifiHeartbeatIngestReport, FileStore,
     FileType,
 };
+use hextree::disktree::DiskTreeMap;
 use mobile_config::client::{
     entity_client::EntityClient, hex_boosting_client::HexBoostingClient, AuthorizationClient,
     CarrierServiceClient, GatewayClient,
@@ -223,7 +224,7 @@ impl Cmd {
             pool.clone(),
             carrier_client,
             hex_boosting_client,
-            settings.urbanization_data_set.clone(),
+            DiskTreeMap::open(&settings.urbanization_data_set)?,
             Duration::hours(reward_period_hours),
             Duration::minutes(settings.reward_offset_minutes),
             mobile_rewards,

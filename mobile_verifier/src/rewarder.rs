@@ -29,7 +29,7 @@ use reward_scheduler::Scheduler;
 use rust_decimal::{prelude::*, Decimal};
 use rust_decimal_macros::dec;
 use sqlx::{PgExecutor, Pool, Postgres};
-use std::{ops::Range, path::PathBuf};
+use std::ops::Range;
 use task_manager::ManagedTask;
 use tokio::time::sleep;
 
@@ -39,7 +39,7 @@ pub struct Rewarder<A, B> {
     pool: Pool<Postgres>,
     carrier_client: A,
     hex_service_client: B,
-    urbanization_data_set: PathBuf,
+    urbanization: DiskTreeMap,
     reward_period_duration: Duration,
     reward_offset: Duration,
     pub mobile_rewards: FileSinkClient,
@@ -58,7 +58,7 @@ where
         pool: Pool<Postgres>,
         carrier_client: A,
         hex_service_client: B,
-        urbanization_data_set: PathBuf,
+        urbanization: DiskTreeMap,
         reward_period_duration: Duration,
         reward_offset: Duration,
         mobile_rewards: FileSinkClient,
@@ -70,7 +70,7 @@ where
             pool,
             carrier_client,
             hex_service_client,
-            urbanization_data_set,
+            urbanization,
             reward_period_duration,
             reward_offset,
             mobile_rewards,
@@ -81,7 +81,6 @@ where
     }
 
     pub async fn run(self, shutdown: triggered::Listener) -> anyhow::Result<()> {
-        let disktree = DiskTreeMap::open(&self.urbanization_data_set)?;
         loop {
             let last_rewarded_end_time = last_rewarded_end_time(&self.pool).await?;
             let next_rewarded_end_time = next_rewarded_end_time(&self.pool).await?;
@@ -94,7 +93,7 @@ where
             let now = Utc::now();
             let sleep_duration = if scheduler.should_reward(now) {
                 if self.is_data_current(&scheduler.reward_period).await? {
-                    self.reward(&disktree, &scheduler).await?;
+                    self.reward(&scheduler).await?;
                     continue;
                 } else {
                     Duration::minutes(REWARDS_NOT_CURRENT_DELAY_PERIOD).to_std()?
@@ -173,11 +172,7 @@ where
         Ok(true)
     }
 
-    pub async fn reward(
-        &self,
-        urbanization: &DiskTreeMap,
-        scheduler: &Scheduler,
-    ) -> anyhow::Result<()> {
+    pub async fn reward(&self, scheduler: &Scheduler) -> anyhow::Result<()> {
         let reward_period = &scheduler.reward_period;
 
         tracing::info!(
@@ -200,7 +195,7 @@ where
         reward_poc_and_dc(
             &self.pool,
             &self.hex_service_client,
-            urbanization,
+            &self.urbanization,
             &self.mobile_rewards,
             &self.speedtest_averages,
             reward_period,
@@ -268,8 +263,12 @@ where
         self: Box<Self>,
         shutdown: triggered::Listener,
     ) -> futures_util::future::LocalBoxFuture<'static, anyhow::Result<()>> {
-        // We cannot move disk tree map between threads
-        Box::pin(self.run(shutdown).map_err(anyhow::Error::from))
+        let handle = tokio::spawn(self.run(shutdown));
+        Box::pin(
+            handle
+                .map_err(anyhow::Error::from)
+                .and_then(|result| async move { result.map_err(anyhow::Error::from) }),
+        )
     }
 }
 
