@@ -691,7 +691,7 @@ impl<'a, D, T> DiskTreeCacher<'a, D, T> {
 
 impl<'a, D: DiskTreeLike, T: Clone> DiskTreeCacher<'a, D, T> {
     fn get(&self, hex: &CellIndex) -> hextree::Result<T> {
-        let hex: u64 = hex.clone().into();
+        let hex: u64 = (*hex).into();
         let hex = hextree::Cell::from_raw(hex)?;
         let mut cached = self.cached.borrow_mut();
         match cached.entry(hex) {
@@ -903,11 +903,7 @@ mod test {
             .await
             .unwrap();
         let rewards: hextree::Result<Vec<_>> = covered_hexes
-            .into_coverage_rewards(
-                &BoostedHexes::default(),
-                &MockFullDiskTree::default(),
-                Utc::now(),
-            )
+            .into_coverage_rewards(&BoostedHexes::default(), &MockFullDiskTree, Utc::now())
             .collect();
         assert_eq!(
             rewards.unwrap(),
@@ -1017,11 +1013,7 @@ mod test {
             .await
             .unwrap();
         let rewards: hextree::Result<Vec<_>> = covered_hexes
-            .into_coverage_rewards(
-                &BoostedHexes::default(),
-                &MockFullDiskTree::default(),
-                Utc::now(),
-            )
+            .into_coverage_rewards(&BoostedHexes::default(), &MockFullDiskTree, Utc::now())
             .collect();
         assert_eq!(
             rewards.unwrap(),
@@ -1113,11 +1105,7 @@ mod test {
             .await
             .unwrap();
         let rewards: hextree::Result<Vec<_>> = covered_hexes
-            .into_coverage_rewards(
-                &BoostedHexes::default(),
-                &MockFullDiskTree::default(),
-                Utc::now(),
-            )
+            .into_coverage_rewards(&BoostedHexes::default(), &MockFullDiskTree, Utc::now())
             .collect();
         assert_eq!(
             rewards.unwrap(),
@@ -1189,11 +1177,7 @@ mod test {
             .await
             .unwrap();
         let rewards: hextree::Result<Vec<_>> = covered_hexes
-            .into_coverage_rewards(
-                &BoostedHexes::default(),
-                &MockFullDiskTree::default(),
-                Utc::now(),
-            )
+            .into_coverage_rewards(&BoostedHexes::default(), &MockFullDiskTree, Utc::now())
             .collect();
         assert_eq!(
             rewards.unwrap(),

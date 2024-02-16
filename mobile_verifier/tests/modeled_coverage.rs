@@ -486,7 +486,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &MockFullDiskTree::default(),
+        &MockFullDiskTree,
         &reward_period,
     )
     .await?;
@@ -586,7 +586,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &MockFullDiskTree::default(),
+        &MockFullDiskTree,
         &reward_period,
     )
     .await?;
@@ -869,7 +869,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
-        &MockFullDiskTree::default(),
+        &MockFullDiskTree,
         &reward_period,
     )
     .await?;
@@ -941,7 +941,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &MockFullDiskTree::default(),
+        &MockFullDiskTree,
         &reward_period,
     )
     .await?;
@@ -1040,7 +1040,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &MockFullDiskTree::default(),
+        &MockFullDiskTree,
         &reward_period,
     )
     .await?;
@@ -1287,7 +1287,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
-        &MockFullDiskTree::default(),
+        &MockFullDiskTree,
         &reward_period,
     )
     .await?;

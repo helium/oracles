@@ -1363,7 +1363,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &MockFullDiskTree::default(),
+            &MockFullDiskTree,
             &epoch,
         )
         .await
@@ -1535,7 +1535,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &MockFullDiskTree::default(),
+            &MockFullDiskTree,
             &epoch,
         )
         .await
@@ -1667,7 +1667,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &MockFullDiskTree::default(),
+            &MockFullDiskTree,
             &epoch,
         )
         .await
@@ -1797,7 +1797,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
-            &MockFullDiskTree::default(),
+            &MockFullDiskTree,
             &epoch,
         )
         .await

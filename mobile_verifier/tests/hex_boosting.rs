@@ -127,7 +127,7 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let disk_tree = MockFullDiskTree::default();
+    let disk_tree = MockFullDiskTree;
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -292,7 +292,7 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let disk_tree = MockFullDiskTree::default();
+    let disk_tree = MockFullDiskTree;
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -432,7 +432,7 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let disk_tree = MockFullDiskTree::default();
+    let disk_tree = MockFullDiskTree;
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
@@ -544,7 +544,7 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
-    let disk_tree = MockFullDiskTree::default();
+    let disk_tree = MockFullDiskTree;
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc

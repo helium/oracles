@@ -41,7 +41,7 @@ impl Cmd {
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
         let boosted_hexes = BoostedHexes::default();
-        let urbanization = MockFullDiskTree::default();
+        let urbanization = MockFullDiskTree;
         let reward_shares = CoveragePoints::aggregate_points(
             &pool,
             heartbeats,
