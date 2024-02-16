@@ -574,7 +574,7 @@ impl CoveredHexes {
     pub fn into_coverage_rewards<'a>(
         self,
         boosted_hexes: &'a BoostedHexes,
-        urbanization: &'a hextree::disktree::DiskTreeMap,
+        urbanization: &'a impl DiskTreeLike,
         epoch_start: DateTime<Utc>,
     ) -> impl Iterator<Item = hextree::Result<CoverageReward>> + 'a {
         let urbanization_cache = DiskTreeCacher::new(urbanization, |x| x.is_some());
@@ -644,15 +644,43 @@ impl CoveredHexes {
     }
 }
 
-#[derive(Clone)]
-struct DiskTreeCacher<'a, T> {
-    disktree: &'a hextree::disktree::DiskTreeMap,
+pub trait DiskTreeLike {
+    fn get(&self, hex: hextree::Cell) -> hextree::Result<Option<&[u8]>>;
+}
+
+#[derive(Default)]
+pub struct MockFullDiskTree;
+
+impl DiskTreeLike for MockFullDiskTree {
+    fn get(&self, _hex: hextree::Cell) -> hextree::Result<Option<&[u8]>> {
+        Ok(Some(&[]))
+    }
+}
+
+impl DiskTreeLike for DiskTreeMap {
+    fn get(&self, hex: hextree::Cell) -> hextree::Result<Option<&[u8]>> {
+        Ok(self.get(hex)?.map(|x| x.1))
+    }
+}
+
+struct DiskTreeCacher<'a, D, T> {
+    disktree: &'a D,
     to_data_fn: fn(Option<&[u8]>) -> T,
     cached: Rc<RefCell<HashMap<hextree::Cell, T>>>,
 }
 
-impl<'a, T> DiskTreeCacher<'a, T> {
-    fn new(disktree: &'a DiskTreeMap, to_data_fn: fn(Option<&[u8]>) -> T) -> Self {
+impl<'a, D, T: Clone> Clone for DiskTreeCacher<'a, D, T> {
+    fn clone(&self) -> Self {
+        Self {
+            disktree: self.disktree,
+            to_data_fn: self.to_data_fn,
+            cached: self.cached.clone(),
+        }
+    }
+}
+
+impl<'a, D, T> DiskTreeCacher<'a, D, T> {
+    fn new(disktree: &'a D, to_data_fn: fn(Option<&[u8]>) -> T) -> Self {
         Self {
             disktree,
             to_data_fn,
@@ -661,14 +689,14 @@ impl<'a, T> DiskTreeCacher<'a, T> {
     }
 }
 
-impl<'a, T: Clone> DiskTreeCacher<'a, T> {
+impl<'a, D: DiskTreeLike, T: Clone> DiskTreeCacher<'a, D, T> {
     fn get(&self, hex: &CellIndex) -> hextree::Result<T> {
         let hex: u64 = hex.clone().into();
         let hex = hextree::Cell::from_raw(hex)?;
         let mut cached = self.cached.borrow_mut();
         match cached.entry(hex) {
             Entry::Vacant(cached) => {
-                let data = (self.to_data_fn)(self.disktree.get(hex)?.map(|x| x.1));
+                let data = (self.to_data_fn)(self.disktree.get(hex)?);
                 cached.insert(data.clone());
                 Ok(data)
             }
@@ -874,11 +902,15 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes
-            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+        let rewards: hextree::Result<Vec<_>> = covered_hexes
+            .into_coverage_rewards(
+                &BoostedHexes::default(),
+                &MockFullDiskTree::default(),
+                Utc::now(),
+            )
             .collect();
         assert_eq!(
-            rewards,
+            rewards.unwrap(),
             vec![CoverageReward {
                 radio_key: OwnedKeyType::Cbrs("3".to_string()),
                 hotspot: owner,
@@ -984,11 +1016,15 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes
-            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+        let rewards: hextree::Result<Vec<_>> = covered_hexes
+            .into_coverage_rewards(
+                &BoostedHexes::default(),
+                &MockFullDiskTree::default(),
+                Utc::now(),
+            )
             .collect();
         assert_eq!(
-            rewards,
+            rewards.unwrap(),
             vec![
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("10".to_string()),
@@ -1076,11 +1112,15 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes
-            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+        let rewards: hextree::Result<Vec<_>> = covered_hexes
+            .into_coverage_rewards(
+                &BoostedHexes::default(),
+                &MockFullDiskTree::default(),
+                Utc::now(),
+            )
             .collect();
         assert_eq!(
-            rewards,
+            rewards.unwrap(),
             vec![
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("5".to_string()),
@@ -1148,11 +1188,15 @@ mod test {
             )
             .await
             .unwrap();
-        let rewards: Vec<_> = covered_hexes
-            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
+        let rewards: hextree::Result<Vec<_>> = covered_hexes
+            .into_coverage_rewards(
+                &BoostedHexes::default(),
+                &MockFullDiskTree::default(),
+                Utc::now(),
+            )
             .collect();
         assert_eq!(
-            rewards,
+            rewards.unwrap(),
             vec![
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("1".to_string()),

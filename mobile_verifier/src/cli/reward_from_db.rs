@@ -1,4 +1,5 @@
 use crate::{
+    coverage::MockFullDiskTree,
     heartbeats::HeartbeatReward,
     reward_shares::{get_scheduled_tokens_for_poc, CoveragePoints},
     speedtests_average::SpeedtestAverages,
@@ -40,12 +41,13 @@ impl Cmd {
         let speedtest_averages =
             SpeedtestAverages::aggregate_epoch_averages(epoch.end, &pool).await?;
         let boosted_hexes = BoostedHexes::default();
+        let urbanization = MockFullDiskTree::default();
         let reward_shares = CoveragePoints::aggregate_points(
             &pool,
             heartbeats,
             &speedtest_averages,
             &boosted_hexes,
-            todo!(),
+            &urbanization,
             &epoch,
         )
         .await?;

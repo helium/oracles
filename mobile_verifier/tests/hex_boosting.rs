@@ -18,7 +18,7 @@ use mobile_config::{
 };
 use mobile_verifier::{
     cell_type::CellType,
-    coverage::CoverageObject,
+    coverage::{CoverageObject, MockFullDiskTree},
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
 };
@@ -127,12 +127,14 @@ async fn test_poc_with_boosted_hexes(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let disk_tree = MockFullDiskTree::default();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
             &hex_boosting_client,
+            &disk_tree,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -290,12 +292,14 @@ async fn test_poc_with_multi_coverage_boosted_hexes(pool: PgPool) -> anyhow::Res
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let disk_tree = MockFullDiskTree::default();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
             &hex_boosting_client,
+            &disk_tree,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -428,12 +432,14 @@ async fn test_expired_boosted_hex(pool: PgPool) -> anyhow::Result<()> {
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let disk_tree = MockFullDiskTree::default();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
             &hex_boosting_client,
+            &disk_tree,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,
@@ -538,12 +544,14 @@ async fn test_reduced_location_score_with_boosted_hexes(pool: PgPool) -> anyhow:
     ];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let disk_tree = MockFullDiskTree::default();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
             &hex_boosting_client,
+            &disk_tree,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,

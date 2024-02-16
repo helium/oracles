@@ -18,7 +18,7 @@ use mobile_config::{
 };
 use mobile_verifier::{
     cell_type::CellType,
-    coverage::CoverageObject,
+    coverage::{CoverageObject, MockFullDiskTree},
     data_session,
     heartbeats::{HbType, Heartbeat, ValidatedHeartbeat},
     reward_shares, rewarder, speedtests,
@@ -72,12 +72,14 @@ async fn test_poc_and_dc_rewards(pool: PgPool) -> anyhow::Result<()> {
     let boosted_hexes = vec![];
 
     let hex_boosting_client = MockHexBoostingClient::new(boosted_hexes);
+    let disk_tree = MockFullDiskTree::default();
 
     let (_, rewards) = tokio::join!(
         // run rewards for poc and dc
         rewarder::reward_poc_and_dc(
             &pool,
             &hex_boosting_client,
+            &disk_tree,
             &mobile_rewards_client,
             &speedtest_avg_client,
             &epoch,

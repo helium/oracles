@@ -13,7 +13,9 @@ use helium_proto::services::{
 };
 use mobile_config::boosted_hex_info::{BoostedHexInfo, BoostedHexes};
 use mobile_verifier::{
-    coverage::{CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, Seniority},
+    coverage::{
+        CoverageClaimTimeCache, CoverageObject, CoverageObjectCache, MockFullDiskTree, Seniority,
+    },
     geofence::GeofenceValidator,
     heartbeats::{Heartbeat, HeartbeatReward, KeyType, SeniorityUpdate, ValidatedHeartbeat},
     reward_shares::CoveragePoints,
@@ -484,6 +486,7 @@ async fn scenario_one(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &MockFullDiskTree::default(),
         &reward_period,
     )
     .await?;
@@ -583,6 +586,7 @@ async fn scenario_two(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &MockFullDiskTree::default(),
         &reward_period,
     )
     .await?;
@@ -865,6 +869,7 @@ async fn scenario_three(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &boosted_hexes,
+        &MockFullDiskTree::default(),
         &reward_period,
     )
     .await?;
@@ -936,6 +941,7 @@ async fn scenario_four(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &MockFullDiskTree::default(),
         &reward_period,
     )
     .await?;
@@ -1034,6 +1040,7 @@ async fn scenario_five(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &MockFullDiskTree::default(),
         &reward_period,
     )
     .await?;
@@ -1280,6 +1287,7 @@ async fn scenario_six(pool: PgPool) -> anyhow::Result<()> {
         heartbeats,
         &speedtest_avgs,
         &BoostedHexes::default(),
+        &MockFullDiskTree::default(),
         &reward_period,
     )
     .await?;

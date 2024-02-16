@@ -1,5 +1,5 @@
 use crate::{
-    coverage::{CoverageReward, CoveredHexStream, CoveredHexes},
+    coverage::{CoverageReward, CoveredHexStream, CoveredHexes, DiskTreeLike},
     data_session::{HotspotMap, ServiceProviderDataSession},
     heartbeats::{HeartbeatReward, OwnedKeyType},
     speedtests_average::{SpeedtestAverage, SpeedtestAverages},
@@ -472,7 +472,7 @@ impl CoveragePoints {
         heartbeats: impl Stream<Item = Result<HeartbeatReward, sqlx::Error>>,
         speedtests: &SpeedtestAverages,
         boosted_hexes: &BoostedHexes,
-        urbanization: &hextree::disktree::DiskTreeMap,
+        urbanization: &impl DiskTreeLike,
         reward_period: &Range<DateTime<Utc>>,
     ) -> anyhow::Result<Self> {
         let mut heartbeats = std::pin::pin!(heartbeats);
@@ -675,7 +675,7 @@ mod test {
     use super::*;
     use crate::{
         cell_type::CellType,
-        coverage::{CoveredHexStream, HexCoverage, Seniority},
+        coverage::{CoveredHexStream, HexCoverage, MockFullDiskTree, Seniority},
         data_session::HotspotDataSession,
         data_session::{self, HotspotReward},
         heartbeats::{HeartbeatReward, KeyType, OwnedKeyType},
@@ -1363,6 +1363,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &MockFullDiskTree::default(),
             &epoch,
         )
         .await
@@ -1534,6 +1535,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &MockFullDiskTree::default(),
             &epoch,
         )
         .await
@@ -1665,6 +1667,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &MockFullDiskTree::default(),
             &epoch,
         )
         .await
@@ -1794,6 +1797,7 @@ mod test {
             stream::iter(heartbeat_rewards),
             &speedtest_avgs,
             &BoostedHexes::default(),
+            &MockFullDiskTree::default(),
             &epoch,
         )
         .await

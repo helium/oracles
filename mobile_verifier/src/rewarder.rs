@@ -1,5 +1,6 @@
 use crate::{
-    coverage, data_session,
+    coverage::{self, DiskTreeLike},
+    data_session,
     heartbeats::{self, HeartbeatReward},
     reward_shares::{self, CoveragePoints, MapperShares, ServiceProviderShares, TransferRewards},
     speedtests,
@@ -275,7 +276,7 @@ where
 pub async fn reward_poc_and_dc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
-    urbanization: &DiskTreeMap,
+    urbanization: &impl DiskTreeLike,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
@@ -326,7 +327,7 @@ pub async fn reward_poc_and_dc(
 async fn reward_poc(
     pool: &Pool<Postgres>,
     hex_service_client: &impl HexBoostingInfoResolver<Error = ClientError>,
-    urbanization: &DiskTreeMap,
+    urbanization: &impl DiskTreeLike,
     mobile_rewards: &FileSinkClient,
     speedtest_avg_sink: &FileSinkClient,
     reward_period: &Range<DateTime<Utc>>,
