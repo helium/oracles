@@ -185,13 +185,13 @@ impl SpeedtestTier {
     }
 
     fn from_latency(latency: u32) -> Self {
-        if latency <= 50 {
+        if latency < 50 {
             Self::Good
-        } else if latency <= 60 {
+        } else if latency < 60 {
             Self::Acceptable
-        } else if latency <= 75 {
+        } else if latency < 75 {
             Self::Degraded
-        } else if latency <= 100 {
+        } else if latency < 100 {
             Self::Poor
         } else {
             Self::Failed
