@@ -128,6 +128,7 @@ pub enum SpeedtestTier {
     Poor = 1,
     Degraded = 2,
     Acceptable = 3,
+    Good = 4,
 }
 
 impl SpeedtestTier {
@@ -147,7 +148,8 @@ impl SpeedtestTier {
 
     fn into_multiplier(self) -> Decimal {
         match self {
-            Self::Acceptable => dec!(1.0),
+            Self::Good => dec!(1.0),
+            Self::Acceptable => dec!(0.75),
             Self::Degraded => dec!(0.5),
             Self::Poor => dec!(0.25),
             Self::Failed => dec!(0.0),
@@ -156,6 +158,8 @@ impl SpeedtestTier {
 
     fn from_download_speed(download_speed: u64) -> Self {
         if download_speed >= mbps(100) {
+            Self::Good
+        } else if download_speed >= mbps(75) {
             Self::Acceptable
         } else if download_speed >= mbps(50) {
             Self::Degraded
@@ -168,6 +172,8 @@ impl SpeedtestTier {
 
     fn from_upload_speed(upload_speed: u64) -> Self {
         if upload_speed >= mbps(10) {
+            Self::Good
+        } else if upload_speed >= mbps(8) {
             Self::Acceptable
         } else if upload_speed >= mbps(5) {
             Self::Degraded
@@ -180,6 +186,8 @@ impl SpeedtestTier {
 
     fn from_latency(latency: u32) -> Self {
         if latency <= 50 {
+            Self::Good
+        } else if latency <= 60 {
             Self::Acceptable
         } else if latency <= 75 {
             Self::Degraded
@@ -295,7 +303,7 @@ mod test {
     #[test]
     fn check_tier_cmp() {
         assert_eq!(
-            SpeedtestTier::Acceptable.min(SpeedtestTier::Failed),
+            SpeedtestTier::Good.min(SpeedtestTier::Failed),
             SpeedtestTier::Failed,
         );
     }
@@ -303,30 +311,31 @@ mod test {
     #[test]
     fn check_known_valid() {
         let speedtests = known_speedtests();
-        assert_ne!(
+        dbg!(SpeedtestAverage::from(speedtests[0..5].to_vec()).tier());
+        assert_eq!(
             SpeedtestAverage::from(speedtests[0..5].to_vec()).tier(),
             SpeedtestTier::Acceptable,
         );
         assert_eq!(
             SpeedtestAverage::from(speedtests[0..6].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestTier::Good
         );
     }
 
     #[test]
     fn check_minimum_known_valid() {
         let speedtests = known_speedtests();
-        assert_ne!(
+        assert_eq!(
             SpeedtestAverage::from(speedtests[4..4].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestTier::Failed
         );
         assert_eq!(
             SpeedtestAverage::from(speedtests[4..=5].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestTier::Good
         );
         assert_eq!(
             SpeedtestAverage::from(speedtests[4..=6].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestTier::Good
         );
     }
 
