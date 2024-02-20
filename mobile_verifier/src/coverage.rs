@@ -587,14 +587,14 @@ impl CoveredHexes {
                 .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
                 .zip(OUTDOOR_REWARD_WEIGHTS)
                 .map(move |(cl, rank)| {
-                    let oracle_multiplier = if urbanization.get(&hex)? {
+                    let boost_multiplier = boosted_hexes
+                        .get_current_multiplier(hex.into(), epoch_start)
+                        .unwrap_or(1);
+                    let oracle_multiplier = if boost_multiplier > 1 || urbanization.get(&hex)? {
                         dec!(1.0)
                     } else {
                         dec!(0.25)
                     };
-                    let boost_multiplier = boosted_hexes
-                        .get_current_multiplier(hex.into(), epoch_start)
-                        .unwrap_or(1);
                     Ok(CoverageReward {
                         points: cl.coverage_points() * rank * oracle_multiplier,
                         hotspot: cl.hotspot,
@@ -618,14 +618,15 @@ impl CoveredHexes {
                         .into_iter()
                         .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
                         .map(move |cl| {
-                            let oracle_multiplier = if urbanization.get(&hex)? {
-                                dec!(1.0)
-                            } else {
-                                dec!(0.25)
-                            };
                             let boost_multiplier = boosted_hexes
                                 .get_current_multiplier(hex.into(), epoch_start)
                                 .unwrap_or(1);
+                            let oracle_multiplier =
+                                if boost_multiplier > 1 || urbanization.get(&hex)? {
+                                    dec!(1.0)
+                                } else {
+                                    dec!(0.25)
+                                };
                             Ok(CoverageReward {
                                 points: cl.coverage_points() * oracle_multiplier,
                                 hotspot: cl.hotspot,
