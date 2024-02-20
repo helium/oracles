@@ -309,6 +309,98 @@ mod test {
     }
 
     #[test]
+    fn validate_good_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(10, 100, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Good
+        );
+    }
+
+    #[test]
+    fn validate_acceptable_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(9, 100, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(10, 99, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(10, 100, 50), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(8, 75, 59), speedtest(8, 100, 60)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+    }
+
+    #[test]
+    fn validate_degraded_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(7, 75, 59), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(8, 74, 59), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(8, 75, 60), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 50, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Degraded
+        );
+    }
+
+    #[test]
+    fn validate_poor_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(4, 50, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 49, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 50, 75), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Poor
+        );
+    }
+
+    #[test]
+    fn validate_failed_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(1, 30, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 29, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 100), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 99)]).tier(),
+            SpeedtestTier::Failed
+        );
+    }
+
+    #[test]
     fn check_known_valid() {
         let speedtests = known_speedtests();
         assert_eq!(
@@ -414,6 +506,22 @@ mod test {
                 40,
             ),
         ]
+    }
+
+    fn speedtest(upload: u64, download: u64, latency: u32) -> Speedtest {
+        let pubkey: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+            .parse()
+            .expect("failed gw1 parse");
+        Speedtest {
+            report: CellSpeedtest {
+                pubkey,
+                timestamp: Utc::now(),
+                serial: "".to_string(),
+                upload_speed: bytes_per_s(upload),
+                download_speed: bytes_per_s(download),
+                latency,
+            },
+        }
     }
 
     fn default_cellspeedtest(
