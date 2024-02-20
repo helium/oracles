@@ -128,6 +128,7 @@ pub enum SpeedtestTier {
     Poor = 1,
     Degraded = 2,
     Acceptable = 3,
+    Good = 4,
 }
 
 impl SpeedtestTier {
@@ -147,7 +148,8 @@ impl SpeedtestTier {
 
     fn into_multiplier(self) -> Decimal {
         match self {
-            Self::Acceptable => dec!(1.0),
+            Self::Good => dec!(1.0),
+            Self::Acceptable => dec!(0.75),
             Self::Degraded => dec!(0.5),
             Self::Poor => dec!(0.25),
             Self::Failed => dec!(0.0),
@@ -156,6 +158,8 @@ impl SpeedtestTier {
 
     fn from_download_speed(download_speed: u64) -> Self {
         if download_speed >= mbps(100) {
+            Self::Good
+        } else if download_speed >= mbps(75) {
             Self::Acceptable
         } else if download_speed >= mbps(50) {
             Self::Degraded
@@ -168,6 +172,8 @@ impl SpeedtestTier {
 
     fn from_upload_speed(upload_speed: u64) -> Self {
         if upload_speed >= mbps(10) {
+            Self::Good
+        } else if upload_speed >= mbps(8) {
             Self::Acceptable
         } else if upload_speed >= mbps(5) {
             Self::Degraded
@@ -179,11 +185,13 @@ impl SpeedtestTier {
     }
 
     fn from_latency(latency: u32) -> Self {
-        if latency <= 50 {
+        if latency < 50 {
+            Self::Good
+        } else if latency < 60 {
             Self::Acceptable
-        } else if latency <= 75 {
+        } else if latency < 75 {
             Self::Degraded
-        } else if latency <= 100 {
+        } else if latency < 100 {
             Self::Poor
         } else {
             Self::Failed
@@ -282,12 +290,6 @@ mod test {
         }
     }
 
-    fn parse_dt(dt: &str) -> DateTime<Utc> {
-        DateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
-            .expect("unable_to_parse")
-            .with_timezone(&Utc)
-    }
-
     fn bytes_per_s(mbps: u64) -> u64 {
         mbps * 125000
     }
@@ -295,134 +297,115 @@ mod test {
     #[test]
     fn check_tier_cmp() {
         assert_eq!(
-            SpeedtestTier::Acceptable.min(SpeedtestTier::Failed),
+            SpeedtestTier::Good.min(SpeedtestTier::Failed),
             SpeedtestTier::Failed,
         );
     }
 
     #[test]
-    fn check_known_valid() {
-        let speedtests = known_speedtests();
-        assert_ne!(
-            SpeedtestAverage::from(speedtests[0..5].to_vec()).tier(),
-            SpeedtestTier::Acceptable,
+    fn validate_good_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(10, 100, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Good
+        );
+    }
+
+    #[test]
+    fn validate_acceptable_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(9, 100, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
         );
         assert_eq!(
-            SpeedtestAverage::from(speedtests[0..6].to_vec()).tier(),
+            SpeedtestAverage::from(vec![speedtest(10, 99, 49), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(10, 100, 50), speedtest(10, 100, 50)]).tier(),
+            SpeedtestTier::Acceptable
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(8, 75, 59), speedtest(8, 100, 60)]).tier(),
             SpeedtestTier::Acceptable
         );
     }
 
     #[test]
-    fn check_minimum_known_valid() {
-        let speedtests = known_speedtests();
-        assert_ne!(
-            SpeedtestAverage::from(speedtests[4..4].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+    fn validate_degraded_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(7, 75, 59), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
         );
         assert_eq!(
-            SpeedtestAverage::from(speedtests[4..=5].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestAverage::from(vec![speedtest(8, 74, 59), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
         );
         assert_eq!(
-            SpeedtestAverage::from(speedtests[4..=6].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+            SpeedtestAverage::from(vec![speedtest(8, 75, 60), speedtest(8, 75, 60)]).tier(),
+            SpeedtestTier::Degraded
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 50, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Degraded
         );
     }
 
     #[test]
-    fn check_minimum_known_invalid() {
-        let speedtests = known_speedtests();
-        assert_ne!(
-            SpeedtestAverage::from(speedtests[5..6].to_vec()).tier(),
-            SpeedtestTier::Acceptable
+    fn validate_poor_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(4, 50, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 49, 74), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(5, 50, 75), speedtest(5, 50, 75)]).tier(),
+            SpeedtestTier::Poor
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Poor
         );
     }
 
-    fn known_speedtests() -> Vec<Speedtest> {
-        // This data is taken from the spreadsheet
-        // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Acceptable?
-        // 2022-08-02 18:00:00	70	30	40	103.33	19.17	30.00	TRUE
-        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
-        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
-        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
-        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
-        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
-        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
-        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
-        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
+    #[test]
+    fn validate_failed_tier() {
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(1, 30, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 29, 99), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 100), speedtest(2, 30, 100)]).tier(),
+            SpeedtestTier::Failed
+        );
+
+        assert_eq!(
+            SpeedtestAverage::from(vec![speedtest(2, 30, 99)]).tier(),
+            SpeedtestTier::Failed
+        );
+    }
+
+    fn speedtest(upload: u64, download: u64, latency: u32) -> Speedtest {
+        let pubkey: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed gw1 parse");
-
-        vec![
-            default_cellspeedtest(gw1.clone(), parse_dt("2022-08-02 18:00:00 +0000"), 0, 0, 0),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 12:00:00 +0000"),
-                bytes_per_s(20),
-                bytes_per_s(150),
-                70,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 6:00:00 +0000"),
-                bytes_per_s(10),
-                bytes_per_s(118),
-                50,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 0:00:00 +0000"),
-                bytes_per_s(30),
-                bytes_per_s(112),
-                40,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 0:00:00 +0000"),
-                bytes_per_s(15),
-                bytes_per_s(90),
-                10,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-01 18:00:00 +0000"),
-                bytes_per_s(20),
-                bytes_per_s(130),
-                10,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-01 12:00:00 +0000"),
-                bytes_per_s(10),
-                bytes_per_s(100),
-                30,
-            ),
-            default_cellspeedtest(
-                gw1,
-                parse_dt("2022-08-01 6:00:00 +0000"),
-                bytes_per_s(30),
-                bytes_per_s(70),
-                40,
-            ),
-        ]
-    }
-
-    fn default_cellspeedtest(
-        pubkey: PublicKeyBinary,
-        timestamp: DateTime<Utc>,
-        upload_speed: u64,
-        download_speed: u64,
-        latency: u32,
-    ) -> Speedtest {
         Speedtest {
             report: CellSpeedtest {
                 pubkey,
-                timestamp,
-                upload_speed,
-                download_speed,
-                latency,
+                timestamp: Utc::now(),
                 serial: "".to_string(),
+                upload_speed: bytes_per_s(upload),
+                download_speed: bytes_per_s(download),
+                latency,
             },
         }
     }
