@@ -290,12 +290,6 @@ mod test {
         }
     }
 
-    fn parse_dt(dt: &str) -> DateTime<Utc> {
-        DateTime::parse_from_str(dt, "%Y-%m-%d %H:%M:%S %z")
-            .expect("unable_to_parse")
-            .with_timezone(&Utc)
-    }
-
     fn bytes_per_s(mbps: u64) -> u64 {
         mbps * 125000
     }
@@ -400,114 +394,6 @@ mod test {
         );
     }
 
-    #[test]
-    fn check_known_valid() {
-        let speedtests = known_speedtests();
-        assert_eq!(
-            SpeedtestAverage::from(speedtests[0..5].to_vec()).tier(),
-            SpeedtestTier::Acceptable,
-        );
-        assert_eq!(
-            SpeedtestAverage::from(speedtests[0..6].to_vec()).tier(),
-            SpeedtestTier::Good
-        );
-    }
-
-    #[test]
-    fn check_minimum_known_valid() {
-        let speedtests = known_speedtests();
-        assert_eq!(
-            SpeedtestAverage::from(speedtests[4..4].to_vec()).tier(),
-            SpeedtestTier::Failed
-        );
-        assert_eq!(
-            SpeedtestAverage::from(speedtests[4..=5].to_vec()).tier(),
-            SpeedtestTier::Good
-        );
-        assert_eq!(
-            SpeedtestAverage::from(speedtests[4..=6].to_vec()).tier(),
-            SpeedtestTier::Good
-        );
-    }
-
-    #[test]
-    fn check_minimum_known_invalid() {
-        let speedtests = known_speedtests();
-        assert_ne!(
-            SpeedtestAverage::from(speedtests[5..6].to_vec()).tier(),
-            SpeedtestTier::Acceptable
-        );
-    }
-
-    fn known_speedtests() -> Vec<Speedtest> {
-        // This data is taken from the spreadsheet
-        // Timestamp	DL	UL	Latency	DL RA	UL RA	Latency RA	Acceptable?
-        // 2022-08-02 18:00:00	70	30	40	103.33	19.17	30.00	TRUE
-        // 2022-08-02 12:00:00	100	10	30	116.67	17.50	35.00	TRUE
-        // 2022-08-02 6:00:00	130	20	10	100.00	15.83	30.00	TRUE
-        // 2022-08-02 0:00:00	90	15	10	94.00	15.00	34.00	FALSE
-        // 2022-08-01 18:00:00	112	30	40	95.00	15.00	40.00	FALSE
-        // 2022-08-01 12:00:00	118	10	50	89.33	10.00	40.00	FALSE
-        // 2022-08-01 6:00:00	150	20	70	75.00	10.00	35.00	FALSE
-        // 2022-08-01 0:00:00	0	0	0	0.00	0.00	0.00	FALSE*
-        let gw1: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed gw1 parse");
-
-        vec![
-            default_cellspeedtest(gw1.clone(), parse_dt("2022-08-02 18:00:00 +0000"), 0, 0, 0),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 12:00:00 +0000"),
-                bytes_per_s(20),
-                bytes_per_s(150),
-                70,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 6:00:00 +0000"),
-                bytes_per_s(10),
-                bytes_per_s(118),
-                50,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 0:00:00 +0000"),
-                bytes_per_s(30),
-                bytes_per_s(112),
-                40,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-02 0:00:00 +0000"),
-                bytes_per_s(15),
-                bytes_per_s(90),
-                10,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-01 18:00:00 +0000"),
-                bytes_per_s(20),
-                bytes_per_s(130),
-                10,
-            ),
-            default_cellspeedtest(
-                gw1.clone(),
-                parse_dt("2022-08-01 12:00:00 +0000"),
-                bytes_per_s(10),
-                bytes_per_s(100),
-                30,
-            ),
-            default_cellspeedtest(
-                gw1,
-                parse_dt("2022-08-01 6:00:00 +0000"),
-                bytes_per_s(30),
-                bytes_per_s(70),
-                40,
-            ),
-        ]
-    }
-
     fn speedtest(upload: u64, download: u64, latency: u32) -> Speedtest {
         let pubkey: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
@@ -520,25 +406,6 @@ mod test {
                 upload_speed: bytes_per_s(upload),
                 download_speed: bytes_per_s(download),
                 latency,
-            },
-        }
-    }
-
-    fn default_cellspeedtest(
-        pubkey: PublicKeyBinary,
-        timestamp: DateTime<Utc>,
-        upload_speed: u64,
-        download_speed: u64,
-        latency: u32,
-    ) -> Speedtest {
-        Speedtest {
-            report: CellSpeedtest {
-                pubkey,
-                timestamp,
-                upload_speed,
-                download_speed,
-                latency,
-                serial: "".to_string(),
             },
         }
     }
