@@ -311,7 +311,6 @@ mod test {
     #[test]
     fn check_known_valid() {
         let speedtests = known_speedtests();
-        dbg!(SpeedtestAverage::from(speedtests[0..5].to_vec()).tier());
         assert_eq!(
             SpeedtestAverage::from(speedtests[0..5].to_vec()).tier(),
             SpeedtestTier::Acceptable,
