@@ -1,5 +1,5 @@
 use crate::OnChainStatus;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use file_store::hex_boost::BoostedHexActivation;
 use sqlx::{postgres::PgRow, FromRow, Pool, Postgres, Row, Transaction};
 
@@ -219,4 +219,19 @@ pub async fn update_verified_txns_not_onchain(
     .execute(db)
     .await
     .map(|_| ())?)
+}
+
+pub async fn purge_stale_records(
+    db: &Pool<Postgres>,
+    retention_period: Duration,
+) -> anyhow::Result<u64> {
+    let stale_period = Utc::now() - retention_period;
+    Ok(
+        sqlx::query(" DELETE FROM activated_hexes WHERE status = $1 AND updated_at < $2 ")
+            .bind(OnChainStatus::Success)
+            .bind(stale_period)
+            .execute(db)
+            .await
+            .map(|result| result.rows_affected())?,
+    )
 }

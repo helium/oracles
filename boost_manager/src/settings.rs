@@ -31,6 +31,13 @@ pub struct Settings {
     // the number of records to fit per solana txn
     #[serde(default = "default_txn_batch_size")]
     pub txn_batch_size: u32,
+    // default retention period in seconds
+    #[serde(default = "default_retention_period")]
+    pub retention_period: i64,
+}
+
+fn default_retention_period() -> i64 {
+    86400 * 7 // 7 days
 }
 
 fn default_txn_batch_size() -> u32 {
@@ -82,6 +89,10 @@ impl Settings {
 
     pub fn activation_check_interval(&self) -> Duration {
         Duration::from_secs(self.activation_check_interval as u64)
+    }
+
+    pub fn retention_period(&self) -> ChronoDuration {
+        ChronoDuration::seconds(self.retention_period)
     }
 
     pub fn txn_batch_size(&self) -> usize {

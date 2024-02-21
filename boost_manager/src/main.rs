@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use boost_manager::{
-    activator::Activator, settings::Settings, telemetry, updater::Updater, watcher::Watcher,
+    activator::Activator, purger::Purger, settings::Settings, telemetry, updater::Updater,
+    watcher::Watcher,
 };
 use chrono::Duration;
 use clap::Parser;
@@ -128,6 +129,8 @@ impl Server {
             solana,
         )?;
 
+        let purger = Purger::new(pool.clone(), settings.retention_period());
+
         TaskManager::builder()
             .add_task(file_upload_server)
             .add_task(manifest_server)
@@ -135,6 +138,7 @@ impl Server {
             .add_task(activator)
             .add_task(watcher)
             .add_task(updater)
+            .add_task(purger)
             .start()
             .await
     }
