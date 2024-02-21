@@ -500,13 +500,15 @@ pub async fn clear_coverage_objects(
 
 #[derive(Default, Debug)]
 pub struct CoveredHexes {
-    indoor: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
-    outdoor: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
+    indoor_cbrs: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
+    indoor_wifi: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
+    outdoor_cbrs: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
+    outdoor_wifi: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
 }
 
-pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 5;
+pub const MAX_INDOOR_RADIOS_PER_RES12_HEX: usize = 1;
 pub const MAX_OUTDOOR_RADIOS_PER_RES12_HEX: usize = 3;
-pub const OUTDOOR_REWARD_WEIGHTS: [Decimal; 3] = [dec!(1.0), dec!(0.75), dec!(0.25)];
+pub const OUTDOOR_REWARD_WEIGHTS: [Decimal; 3] = [dec!(1.0), dec!(0.50), dec!(0.25)];
 
 impl CoveredHexes {
     /// Aggregate the coverage. Returns whether or not any of the hexes are boosted
@@ -531,8 +533,9 @@ impl CoveredHexes {
         {
             let hex = hex as u64;
             boosted |= boosted_hexes.is_boosted(&hex);
-            if indoor {
-                self.indoor
+            match (indoor, &radio_key) {
+                (true, OwnedKeyType::Cbrs(_)) => self
+                    .indoor_cbrs
                     .entry(CellIndex::try_from(hex).unwrap())
                     .or_default()
                     .entry(signal_level)
@@ -542,25 +545,43 @@ impl CoveredHexes {
                         seniority_timestamp: coverage_claim_time,
                         signal_level,
                         hotspot: hotspot.clone(),
-                    })
-            } else {
-                // If this is an outdoor Wifi radio, we adjust the signal power by -30dbm in order
-                // to more properly reflect signal strength.
-                let signal_power = if radio_key.is_wifi() {
-                    signal_power - 300
-                } else {
-                    signal_power
-                };
-                self.outdoor
+                    }),
+                (true, OwnedKeyType::Wifi(_)) => self
+                    .indoor_wifi
                     .entry(CellIndex::try_from(hex).unwrap())
                     .or_default()
-                    .push(OutdoorCoverageLevel {
+                    .entry(signal_level)
+                    .or_default()
+                    .push(IndoorCoverageLevel {
                         radio_key,
                         seniority_timestamp: coverage_claim_time,
                         signal_level,
-                        signal_power,
                         hotspot: hotspot.clone(),
-                    });
+                    }),
+                (false, OwnedKeyType::Cbrs(_)) => {
+                    self.outdoor_cbrs
+                        .entry(CellIndex::try_from(hex).unwrap())
+                        .or_default()
+                        .push(OutdoorCoverageLevel {
+                            radio_key,
+                            seniority_timestamp: coverage_claim_time,
+                            signal_level,
+                            signal_power,
+                            hotspot: hotspot.clone(),
+                        });
+                }
+                (false, OwnedKeyType::Wifi(_)) => {
+                    self.outdoor_wifi
+                        .entry(CellIndex::try_from(hex).unwrap())
+                        .or_default()
+                        .push(OutdoorCoverageLevel {
+                            radio_key,
+                            seniority_timestamp: coverage_claim_time,
+                            signal_level,
+                            signal_power,
+                            hotspot: hotspot.clone(),
+                        });
+                }
             }
         }
 
@@ -573,29 +594,58 @@ impl CoveredHexes {
         boosted_hexes: &BoostedHexes,
         epoch_start: DateTime<Utc>,
     ) -> impl Iterator<Item = CoverageReward> + '_ {
-        let outdoor_rewards = self.outdoor.into_iter().flat_map(move |(hex, radios)| {
-            radios
-                .into_sorted_vec()
-                .into_iter()
-                .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
-                .zip(OUTDOOR_REWARD_WEIGHTS)
-                .map(move |(cl, rank)| {
-                    let boost_multiplier = boosted_hexes
-                        .get_current_multiplier(hex.into(), epoch_start)
-                        .unwrap_or(1);
-                    CoverageReward {
-                        points: cl.coverage_points() * rank,
-                        hotspot: cl.hotspot,
-                        radio_key: cl.radio_key,
-                        boosted_hex_info: BoostedHex {
-                            location: hex.into(),
-                            multiplier: boost_multiplier,
-                        },
-                    }
-                })
-        });
-        let indoor_rewards = self
-            .indoor
+        let outdoor_cbrs_rewards = self
+            .outdoor_cbrs
+            .into_iter()
+            .flat_map(move |(hex, radios)| {
+                radios
+                    .into_sorted_vec()
+                    .into_iter()
+                    .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
+                    .zip(OUTDOOR_REWARD_WEIGHTS)
+                    .map(move |(cl, rank)| {
+                        let boost_multiplier = boosted_hexes
+                            .get_current_multiplier(hex.into(), epoch_start)
+                            .unwrap_or(1);
+                        CoverageReward {
+                            points: cl.coverage_points() * rank,
+                            hotspot: cl.hotspot,
+                            radio_key: cl.radio_key,
+                            boosted_hex_info: BoostedHex {
+                                location: hex.into(),
+                                multiplier: boost_multiplier,
+                            },
+                        }
+                    })
+            });
+
+        let outdoor_wifi_rewards = self
+            .outdoor_wifi
+            .into_iter()
+            .flat_map(move |(hex, radios)| {
+                radios
+                    .into_sorted_vec()
+                    .into_iter()
+                    .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
+                    .zip(OUTDOOR_REWARD_WEIGHTS)
+                    .map(move |(cl, rank)| {
+                        let boost_multiplier = boosted_hexes
+                            .get_current_multiplier(hex.into(), epoch_start)
+                            .unwrap_or(1);
+                        CoverageReward {
+                            points: cl.coverage_points() * rank,
+                            hotspot: cl.hotspot,
+                            radio_key: cl.radio_key,
+                            boosted_hex_info: BoostedHex {
+                                location: hex.into(),
+                                multiplier: boost_multiplier,
+                            },
+                        }
+                    })
+            });
+
+        let indoor_cbrs_rewards = self
+            .indoor_cbrs
             .into_iter()
             .flat_map(move |(hex, mut radios)| {
                 radios.pop_last().map(move |(_, radios)| {
@@ -620,8 +670,38 @@ impl CoveredHexes {
                 })
             })
             .flatten();
-        outdoor_rewards
-            .chain(indoor_rewards)
+
+        let indoor_wifi_rewards = self
+            .indoor_wifi
+            .into_iter()
+            .flat_map(move |(hex, mut radios)| {
+                radios.pop_last().map(move |(_, radios)| {
+                    radios
+                        .into_sorted_vec()
+                        .into_iter()
+                        .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
+                        .map(move |cl| {
+                            let boost_multiplier = boosted_hexes
+                                .get_current_multiplier(hex.into(), epoch_start)
+                                .unwrap_or(1);
+                            CoverageReward {
+                                points: cl.coverage_points(),
+                                hotspot: cl.hotspot,
+                                radio_key: cl.radio_key,
+                                boosted_hex_info: BoostedHex {
+                                    location: hex.into(),
+                                    multiplier: boost_multiplier,
+                                },
+                            }
+                        })
+                })
+            })
+            .flatten();
+
+        outdoor_cbrs_rewards
+            .chain(outdoor_wifi_rewards)
+            .chain(indoor_cbrs_rewards)
+            .chain(indoor_wifi_rewards)
             .filter(|r| r.points > Decimal::ZERO)
     }
 }
@@ -869,7 +949,7 @@ mod test {
     /// Test to ensure that if there are more than five radios with the highest signal
     /// level in a given hex, that the five oldest radios are chosen.
     #[tokio::test]
-    async fn ensure_oldest_five_radios_selected() {
+    async fn ensure_oldest_radio_selected() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
             .parse()
             .expect("failed owner parse");
@@ -938,53 +1018,15 @@ mod test {
             .collect();
         assert_eq!(
             rewards,
-            vec![
-                CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("10".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(400),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
+            vec![CoverageReward {
+                radio_key: OwnedKeyType::Cbrs("10".to_string()),
+                hotspot: owner.clone(),
+                points: dec!(400),
+                boosted_hex_info: BoostedHex {
+                    location: 0x8a1fb46622dffff_u64,
+                    multiplier: 1,
                 },
-                CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("8".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(400),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
-                },
-                CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("6".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(400),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
-                },
-                CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("4".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(400),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
-                },
-                CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(400),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
-                }
-            ]
+            }]
         );
     }
 
@@ -1043,7 +1085,7 @@ mod test {
                 CoverageReward {
                     radio_key: OwnedKeyType::Cbrs("4".to_string()),
                     hotspot: owner.clone(),
-                    points: dec!(12),
+                    points: dec!(8),
                     boosted_hex_info: BoostedHex {
                         location: 0x8a1fb46622dffff_u64,
                         multiplier: 1,
@@ -1077,60 +1119,5 @@ mod test {
             coverage_claim_time,
             inserted_at: DateTime::<Utc>::MIN_UTC,
         }
-    }
-
-    #[tokio::test]
-    async fn ensure_outdoor_wifi_radios_adjusted() {
-        let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
-            .parse()
-            .expect("failed owner parse");
-        let mut covered_hexes = CoveredHexes::default();
-        covered_hexes
-            .aggregate_coverage(
-                &owner,
-                &BoostedHexes::default(),
-                iter(vec![
-                    anyhow::Ok(outdoor_hex_coverage("1", -936, date(2022, 8, 1))),
-                    anyhow::Ok(outdoor_hex_coverage("2", -946, date(2022, 12, 5))),
-                    anyhow::Ok(outdoor_wifi_hex_coverage(&owner, -647, date(2022, 12, 2))),
-                ]),
-            )
-            .await
-            .unwrap();
-        let rewards: Vec<_> = covered_hexes
-            .into_coverage_rewards(&BoostedHexes::default(), Utc::now())
-            .collect();
-        assert_eq!(
-            rewards,
-            vec![
-                CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("1".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(16),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
-                },
-                CoverageReward {
-                    radio_key: OwnedKeyType::Cbrs("2".to_string()),
-                    hotspot: owner.clone(),
-                    points: dec!(12),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
-                },
-                CoverageReward {
-                    radio_key: OwnedKeyType::Wifi(owner.clone()),
-                    hotspot: owner,
-                    points: dec!(4),
-                    boosted_hex_info: BoostedHex {
-                        location: 0x8a1fb46622dffff_u64,
-                        multiplier: 1,
-                    },
-                },
-            ]
-        );
     }
 }
