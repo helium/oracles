@@ -832,20 +832,6 @@ mod test {
     use chrono::NaiveDate;
     use futures::stream::iter;
 
-    fn default_indoor_hex_coverage(cbsd_id: &str, signal_level: SignalLevel) -> HexCoverage {
-        HexCoverage {
-            uuid: Uuid::new_v4(),
-            hex: 0x8a1fb46622dffff_u64 as i64,
-            indoor: true,
-            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
-            signal_level,
-            // Signal power is ignored for indoor radios:
-            signal_power: 0,
-            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
-            inserted_at: DateTime::<Utc>::MIN_UTC,
-        }
-    }
-
     /// Test to ensure that if there are multiple radios with different signal levels
     /// in a given hex, that the one with the highest signal level is chosen.
     #[tokio::test]
@@ -859,11 +845,11 @@ mod test {
                 &owner,
                 &BoostedHexes::default(),
                 iter(vec![
-                    anyhow::Ok(default_indoor_hex_coverage("1", SignalLevel::None)),
-                    anyhow::Ok(default_indoor_hex_coverage("2", SignalLevel::Low)),
-                    anyhow::Ok(default_indoor_hex_coverage("3", SignalLevel::High)),
-                    anyhow::Ok(default_indoor_hex_coverage("4", SignalLevel::Low)),
-                    anyhow::Ok(default_indoor_hex_coverage("5", SignalLevel::None)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("1", SignalLevel::None)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("2", SignalLevel::Low)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("3", SignalLevel::High)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("4", SignalLevel::Low)),
+                    anyhow::Ok(indoor_cbrs_hex_coverage("5", SignalLevel::None)),
                 ]),
             )
             .await
@@ -995,23 +981,6 @@ mod test {
         );
     }
 
-    fn outdoor_hex_coverage(
-        cbsd_id: &str,
-        signal_power: i32,
-        coverage_claim_time: DateTime<Utc>,
-    ) -> HexCoverage {
-        HexCoverage {
-            uuid: Uuid::new_v4(),
-            hex: 0x8a1fb46622dffff_u64 as i64,
-            indoor: false,
-            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
-            signal_power,
-            signal_level: SignalLevel::High,
-            coverage_claim_time,
-            inserted_at: DateTime::<Utc>::MIN_UTC,
-        }
-    }
-
     #[tokio::test]
     async fn ensure_outdoor_radios_ranked_by_power() {
         let owner: PublicKeyBinary = "112NqN2WWMwtK29PMzRby62fDydBJfsCLkCAf392stdok48ovNT6"
@@ -1023,11 +992,11 @@ mod test {
                 &owner,
                 &BoostedHexes::default(),
                 iter(vec![
-                    anyhow::Ok(outdoor_hex_coverage("1", -946, date(2022, 8, 1))),
-                    anyhow::Ok(outdoor_hex_coverage("2", -936, date(2022, 12, 5))),
-                    anyhow::Ok(outdoor_hex_coverage("3", -887, date(2022, 12, 2))),
-                    anyhow::Ok(outdoor_hex_coverage("4", -887, date(2022, 12, 1))),
-                    anyhow::Ok(outdoor_hex_coverage("5", -773, date(2023, 5, 1))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("1", -946, date(2022, 8, 1))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("2", -936, date(2022, 12, 5))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("3", -887, date(2022, 12, 2))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("4", -887, date(2022, 12, 1))),
+                    anyhow::Ok(outdoor_cbrs_hex_coverage("5", -773, date(2023, 5, 1))),
                 ]),
             )
             .await
@@ -1069,8 +1038,22 @@ mod test {
         );
     }
 
-    fn outdoor_wifi_hex_coverage(
-        pub_key: &PublicKeyBinary,
+    fn indoor_cbrs_hex_coverage(cbsd_id: &str, signal_level: SignalLevel) -> HexCoverage {
+        HexCoverage {
+            uuid: Uuid::new_v4(),
+            hex: 0x8a1fb46622dffff_u64 as i64,
+            indoor: true,
+            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
+            signal_level,
+            // Signal power is ignored for indoor radios:
+            signal_power: 0,
+            coverage_claim_time: DateTime::<Utc>::MIN_UTC,
+            inserted_at: DateTime::<Utc>::MIN_UTC,
+        }
+    }
+
+    fn outdoor_cbrs_hex_coverage(
+        cbsd_id: &str,
         signal_power: i32,
         coverage_claim_time: DateTime<Utc>,
     ) -> HexCoverage {
@@ -1078,7 +1061,7 @@ mod test {
             uuid: Uuid::new_v4(),
             hex: 0x8a1fb46622dffff_u64 as i64,
             indoor: false,
-            radio_key: OwnedKeyType::Wifi(pub_key.clone()),
+            radio_key: OwnedKeyType::Cbrs(cbsd_id.to_string()),
             signal_power,
             signal_level: SignalLevel::High,
             coverage_claim_time,
