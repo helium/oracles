@@ -594,109 +594,14 @@ impl CoveredHexes {
         boosted_hexes: &BoostedHexes,
         epoch_start: DateTime<Utc>,
     ) -> impl Iterator<Item = CoverageReward> + '_ {
-        let outdoor_cbrs_rewards = self
-            .outdoor_cbrs
-            .into_iter()
-            .flat_map(move |(hex, radios)| {
-                radios
-                    .into_sorted_vec()
-                    .into_iter()
-                    .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
-                    .zip(OUTDOOR_REWARD_WEIGHTS)
-                    .map(move |(cl, rank)| {
-                        let boost_multiplier = boosted_hexes
-                            .get_current_multiplier(hex.into(), epoch_start)
-                            .unwrap_or(1);
-                        CoverageReward {
-                            points: cl.coverage_points() * rank,
-                            hotspot: cl.hotspot,
-                            radio_key: cl.radio_key,
-                            boosted_hex_info: BoostedHex {
-                                location: hex.into(),
-                                multiplier: boost_multiplier,
-                            },
-                        }
-                    })
-            });
+        let outdoor_cbrs_rewards =
+            into_outdoor_rewards(self.outdoor_cbrs, boosted_hexes, epoch_start);
 
-        let outdoor_wifi_rewards = self
-            .outdoor_wifi
-            .into_iter()
-            .flat_map(move |(hex, radios)| {
-                radios
-                    .into_sorted_vec()
-                    .into_iter()
-                    .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
-                    .zip(OUTDOOR_REWARD_WEIGHTS)
-                    .map(move |(cl, rank)| {
-                        let boost_multiplier = boosted_hexes
-                            .get_current_multiplier(hex.into(), epoch_start)
-                            .unwrap_or(1);
-                        CoverageReward {
-                            points: cl.coverage_points() * rank,
-                            hotspot: cl.hotspot,
-                            radio_key: cl.radio_key,
-                            boosted_hex_info: BoostedHex {
-                                location: hex.into(),
-                                multiplier: boost_multiplier,
-                            },
-                        }
-                    })
-            });
+        let outdoor_wifi_rewards =
+            into_outdoor_rewards(self.outdoor_wifi, boosted_hexes, epoch_start);
 
-        let indoor_cbrs_rewards = self
-            .indoor_cbrs
-            .into_iter()
-            .flat_map(move |(hex, mut radios)| {
-                radios.pop_last().map(move |(_, radios)| {
-                    radios
-                        .into_sorted_vec()
-                        .into_iter()
-                        .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
-                        .map(move |cl| {
-                            let boost_multiplier = boosted_hexes
-                                .get_current_multiplier(hex.into(), epoch_start)
-                                .unwrap_or(1);
-                            CoverageReward {
-                                points: cl.coverage_points(),
-                                hotspot: cl.hotspot,
-                                radio_key: cl.radio_key,
-                                boosted_hex_info: BoostedHex {
-                                    location: hex.into(),
-                                    multiplier: boost_multiplier,
-                                },
-                            }
-                        })
-                })
-            })
-            .flatten();
-
-        let indoor_wifi_rewards = self
-            .indoor_wifi
-            .into_iter()
-            .flat_map(move |(hex, mut radios)| {
-                radios.pop_last().map(move |(_, radios)| {
-                    radios
-                        .into_sorted_vec()
-                        .into_iter()
-                        .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
-                        .map(move |cl| {
-                            let boost_multiplier = boosted_hexes
-                                .get_current_multiplier(hex.into(), epoch_start)
-                                .unwrap_or(1);
-                            CoverageReward {
-                                points: cl.coverage_points(),
-                                hotspot: cl.hotspot,
-                                radio_key: cl.radio_key,
-                                boosted_hex_info: BoostedHex {
-                                    location: hex.into(),
-                                    multiplier: boost_multiplier,
-                                },
-                            }
-                        })
-                })
-            })
-            .flatten();
+        let indoor_cbrs_rewards = into_indoor_rewards(self.indoor_cbrs, boosted_hexes, epoch_start);
+        let indoor_wifi_rewards = into_indoor_rewards(self.indoor_wifi, boosted_hexes, epoch_start);
 
         outdoor_cbrs_rewards
             .chain(outdoor_wifi_rewards)
@@ -704,6 +609,66 @@ impl CoveredHexes {
             .chain(indoor_wifi_rewards)
             .filter(|r| r.points > Decimal::ZERO)
     }
+}
+
+fn into_outdoor_rewards(
+    outdoor: HashMap<CellIndex, BinaryHeap<OutdoorCoverageLevel>>,
+    boosted_hexes: &BoostedHexes,
+    epoch_start: DateTime<Utc>,
+) -> impl Iterator<Item = CoverageReward> + '_ {
+    outdoor.into_iter().flat_map(move |(hex, radios)| {
+        radios
+            .into_sorted_vec()
+            .into_iter()
+            .take(MAX_OUTDOOR_RADIOS_PER_RES12_HEX)
+            .zip(OUTDOOR_REWARD_WEIGHTS)
+            .map(move |(cl, rank)| {
+                let boost_multiplier = boosted_hexes
+                    .get_current_multiplier(hex.into(), epoch_start)
+                    .unwrap_or(1);
+                CoverageReward {
+                    points: cl.coverage_points() * rank,
+                    hotspot: cl.hotspot,
+                    radio_key: cl.radio_key,
+                    boosted_hex_info: BoostedHex {
+                        location: hex.into(),
+                        multiplier: boost_multiplier,
+                    },
+                }
+            })
+    })
+}
+
+fn into_indoor_rewards(
+    indoor: HashMap<CellIndex, BTreeMap<SignalLevel, BinaryHeap<IndoorCoverageLevel>>>,
+    boosted_hexes: &BoostedHexes,
+    epoch_start: DateTime<Utc>,
+) -> impl Iterator<Item = CoverageReward> + '_ {
+    indoor
+        .into_iter()
+        .flat_map(move |(hex, mut radios)| {
+            radios.pop_last().map(move |(_, radios)| {
+                radios
+                    .into_sorted_vec()
+                    .into_iter()
+                    .take(MAX_INDOOR_RADIOS_PER_RES12_HEX)
+                    .map(move |cl| {
+                        let boost_multiplier = boosted_hexes
+                            .get_current_multiplier(hex.into(), epoch_start)
+                            .unwrap_or(1);
+                        CoverageReward {
+                            points: cl.coverage_points(),
+                            hotspot: cl.hotspot,
+                            radio_key: cl.radio_key,
+                            boosted_hex_info: BoostedHex {
+                                location: hex.into(),
+                                multiplier: boost_multiplier,
+                            },
+                        }
+                    })
+            })
+        })
+        .flatten()
 }
 
 type CoverageClaimTimeKey = ((String, HbType), Option<Uuid>);
