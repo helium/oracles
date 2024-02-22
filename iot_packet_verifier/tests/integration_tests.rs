@@ -93,11 +93,12 @@ fn packet_report(
     timestamp: u64,
     payload_size: u32,
     payload_hash: Vec<u8>,
+    net_id: Option<u32>,
 ) -> PacketRouterPacketReport {
     PacketRouterPacketReport {
         received_timestamp: Utc.timestamp_opt(timestamp as i64, 0).unwrap(),
         oui,
-        net_id: 0,
+        net_id: net_id.unwrap_or_default(),
         rssi: 0,
         frequency: 0,
         snr: 0.0,
@@ -132,12 +133,21 @@ fn join_packet_report(
     }
 }
 
-fn valid_packet(timestamp: u64, payload_size: u32, payload_hash: Vec<u8>) -> ValidPacket {
+fn valid_packet(
+    timestamp: u64,
+    payload_size: u32,
+    payload_hash: Vec<u8>,
+    paid: bool,
+) -> ValidPacket {
     ValidPacket {
         payload_size,
         payload_hash,
         gateway: vec![],
-        num_dcs: payload_size_to_dc(payload_size as u64) as u32,
+        num_dcs: if paid {
+            payload_size_to_dc(payload_size as u64) as u32
+        } else {
+            0
+        },
         packet_timestamp: timestamp,
     }
 }
@@ -194,9 +204,9 @@ async fn test_config_unlocking() {
             1,
             balances.clone(),
             stream::iter(vec![
-                packet_report(0, 0, 24, vec![1]),
-                packet_report(0, 1, 48, vec![2]),
-                packet_report(0, 2, 1, vec![3]),
+                packet_report(0, 0, 24, vec![1], None),
+                packet_report(0, 1, 48, vec![2], None),
+                packet_report(0, 2, 1, vec![3], None),
             ]),
             &mut valid_packets,
             &mut invalid_packets,
@@ -252,9 +262,9 @@ async fn test_config_unlocking() {
             1,
             balances.clone(),
             stream::iter(vec![
-                packet_report(0, 0, 24, vec![1]),
-                packet_report(0, 1, 48, vec![2]),
-                packet_report(0, 2, 1, vec![3]),
+                packet_report(0, 0, 24, vec![1], None),
+                packet_report(0, 1, 48, vec![2], None),
+                packet_report(0, 2, 1, vec![3], None),
             ]),
             &mut valid_packets,
             &mut invalid_packets,
@@ -275,20 +285,88 @@ async fn test_config_unlocking() {
 }
 
 #[tokio::test]
+async fn test_verifier_free_packets() {
+    const FREE_DEV_NETID: u32 = 12582995u32;
+
+    // Org packets
+    let packets = vec![
+        packet_report(0, 0, 24, vec![4], Some(FREE_DEV_NETID)),
+        packet_report(0, 1, 48, vec![5], Some(FREE_DEV_NETID)),
+        packet_report(0, 2, 1, vec![6], Some(FREE_DEV_NETID)),
+    ];
+
+    let org_pubkey = PublicKeyBinary::from(vec![0]);
+
+    // Set up orgs:
+    let orgs = MockConfigServer::default();
+    orgs.insert(0_u64, org_pubkey.clone()).await;
+
+    // Set up balances:
+    let mut balances = HashMap::new();
+    balances.insert(org_pubkey.clone(), 5);
+    let balances = InstantlyBurnedBalance(Arc::new(Mutex::new(balances)));
+
+    // Set up output:
+    let mut valid_packets = Vec::new();
+    let mut invalid_packets = Vec::new();
+
+    // Set up verifier:
+    let mut verifier = Verifier {
+        debiter: balances.0.clone(),
+        config_server: orgs,
+    };
+    // Run the verifier:
+    verifier
+        .verify(
+            1,
+            balances.clone(),
+            stream::iter(packets),
+            &mut valid_packets,
+            &mut invalid_packets,
+        )
+        .await
+        .unwrap();
+
+    // Verify packet reports:
+    assert_eq!(
+        valid_packets,
+        vec![
+            valid_packet(0, 24, vec![4], false),
+            valid_packet(1000, 48, vec![5], false),
+            valid_packet(2000, 1, vec![6], false),
+        ]
+    );
+
+    assert!(invalid_packets.is_empty());
+
+    let payers = verifier.config_server.payers.lock().await;
+    assert!(payers.get(&0).unwrap().enabled);
+
+    assert_eq!(
+        verifier
+            .debiter
+            .payer_balance(&org_pubkey)
+            .await
+            .expect("unchanged balance"),
+        5
+    );
+}
+
+#[tokio::test]
 async fn test_verifier() {
     let packets = vec![
         // Packets for first OUI
-        packet_report(0, 0, 24, vec![1]),
-        packet_report(0, 1, 48, vec![2]),
-        packet_report(0, 2, 1, vec![3]),
+        packet_report(0, 0, 24, vec![1], None),
+        packet_report(0, 1, 48, vec![2], None),
+        packet_report(0, 2, 1, vec![3], None),
         join_packet_report(0, 3, 1, vec![4]),
         // Packets for second OUI
-        packet_report(1, 0, 24, vec![4]),
-        packet_report(1, 1, 48, vec![5]),
-        packet_report(1, 2, 1, vec![6]),
+        packet_report(1, 0, 24, vec![4], None),
+        packet_report(1, 1, 48, vec![5], None),
+        packet_report(1, 2, 1, vec![6], None),
         join_packet_report(1, 3, 1, vec![4]),
         // Packets for third OUI
-        packet_report(2, 0, 24, vec![7]),
+        packet_report(2, 0, 24, vec![7], None),
         join_packet_report(2, 1, 1, vec![4]),
     ];
     // Set up orgs:
@@ -328,14 +406,14 @@ async fn test_verifier() {
         valid_packets,
         vec![
             // First two packets for OUI #0 are valid
-            valid_packet(0, 24, vec![1]),
-            valid_packet(1000, 48, vec![2]),
+            valid_packet(0, 24, vec![1], true),
+            valid_packet(1000, 48, vec![2], true),
             // All packets for OUI #1 are valid
-            valid_packet(0, 24, vec![4]),
-            valid_packet(1000, 48, vec![5]),
-            valid_packet(2000, 1, vec![6]),
+            valid_packet(0, 24, vec![4], true),
+            valid_packet(1000, 48, vec![5], true),
+            valid_packet(2000, 1, vec![6], true),
             // All packets for OUI #2 are valid
-            valid_packet(0, 24, vec![7]),
+            valid_packet(0, 24, vec![7], true),
         ]
     );
 
@@ -398,10 +476,10 @@ async fn test_end_to_end() {
             1,
             pending_burns.clone(),
             stream::iter(vec![
-                packet_report(0, 0, BYTES_PER_DC as u32, vec![1]),
-                packet_report(0, 1, BYTES_PER_DC as u32, vec![2]),
-                packet_report(0, 2, BYTES_PER_DC as u32, vec![3]),
-                packet_report(0, 3, BYTES_PER_DC as u32, vec![4]),
+                packet_report(0, 0, BYTES_PER_DC as u32, vec![1], None),
+                packet_report(0, 1, BYTES_PER_DC as u32, vec![2], None),
+                packet_report(0, 2, BYTES_PER_DC as u32, vec![3], None),
+                packet_report(0, 3, BYTES_PER_DC as u32, vec![4], None),
             ]),
             &mut valid_packets,
             &mut invalid_packets,
@@ -424,9 +502,9 @@ async fn test_end_to_end() {
     assert_eq!(
         valid_packets,
         vec![
-            valid_packet(0, BYTES_PER_DC as u32, vec![1]),
-            valid_packet(1000, BYTES_PER_DC as u32, vec![2]),
-            valid_packet(2000, BYTES_PER_DC as u32, vec![3]),
+            valid_packet(0, BYTES_PER_DC as u32, vec![1], true),
+            valid_packet(1000, BYTES_PER_DC as u32, vec![2], true),
+            valid_packet(2000, BYTES_PER_DC as u32, vec![3], true),
         ]
     );
 
@@ -477,7 +555,13 @@ async fn test_end_to_end() {
         .verify(
             1,
             pending_burns.clone(),
-            stream::iter(vec![packet_report(0, 4, BYTES_PER_DC as u32, vec![5])]),
+            stream::iter(vec![packet_report(
+                0,
+                4,
+                BYTES_PER_DC as u32,
+                vec![5],
+                None,
+            )]),
             &mut valid_packets,
             &mut invalid_packets,
         )

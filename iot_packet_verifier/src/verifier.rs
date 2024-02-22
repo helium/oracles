@@ -23,6 +23,8 @@ use tokio::{
     time::{sleep_until, Duration, Instant},
 };
 
+const FREE_DEV_NETID: u32 = 12582995u32; // NetID c00053 as a u32 per the packet report format
+
 pub struct Verifier<D, C> {
     pub debiter: D,
     pub config_server: C,
@@ -71,7 +73,11 @@ where
                 continue;
             }
 
-            let debit_amount = payload_size_to_dc(report.payload_size as u64);
+            let debit_amount = if report.net_id == FREE_DEV_NETID {
+                0
+            } else {
+                payload_size_to_dc(report.payload_size as u64)
+            };
 
             let payer = self
                 .config_server
